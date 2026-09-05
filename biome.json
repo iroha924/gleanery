@@ -3,6 +3,6 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": { "includes": ["src/**", "test/**", "evals/**", "*.json"] },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 110 },
-  "linter": { "enabled": true, "rules": { "recommended": true } },
+  "linter": { "enabled": true, "rules": { "preset": "recommended" } },
   "assist": { "actions": { "source": { "organizeImports": "on" } } }
 }
