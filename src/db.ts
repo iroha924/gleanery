@@ -45,8 +45,16 @@ export function loadEnv(_from?: string): Env {
 const CA_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "certs", "prod-ca-2021.crt");
 let ca: string | null = null;
 
-export async function connect(env: Env): Promise<pg.Client> {
-  const raw = env.SUPABASE_DB_URL;
+/**
+ * @param readOnly 読み取りしかしない経路（MCP・フック）は true。
+ *   KNOWLEDGE_DB_URL_RO があればそちらで繋ぐ。このロールは SELECT の権限しか持たないので、
+ *   経路が増えても書けない。無ければ管理側の鍵へ落ちる（設定していない環境でも動くように）。
+ */
+export async function connect(
+  env: Env,
+  { readOnly = false }: { readOnly?: boolean } = {},
+): Promise<pg.Client> {
+  const raw = (readOnly ? env.KNOWLEDGE_DB_URL_RO : undefined) ?? env.SUPABASE_DB_URL;
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
   }

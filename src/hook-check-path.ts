@@ -58,7 +58,7 @@ let client: pg.Client | null = null;
 try {
   const env = loadEnv(process.env.KNOWLEDGE_ENV_DIR ?? cwd);
   if (!env.SUPABASE_DB_URL) done(null);
-  client = await connect(env);
+  client = await connect(env, { readOnly: true });
 
   const me = identify(cwd);
   // 未登録のディレクトリでは何も出さない。全件を見せると無関係な決定が混ざる。
