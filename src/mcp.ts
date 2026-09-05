@@ -14,20 +14,32 @@ import type pg from "pg";
 import { z } from "zod";
 import { connect, loadEnv } from "./db.ts";
 import { identify } from "./scope.ts";
-import { labelOf, outsideScopes, type Polarity, scopeFamily, search, whatAboutPath } from "./search.ts";
+import { outsideScopes, type Polarity, quote, scopeFamily, search, whatAboutPath } from "./search.ts";
 
 const env = loadEnv(process.env.KNOWLEDGE_ENV_DIR ?? process.cwd());
-let client: pg.Client | null = null;
-async function db(): Promise<pg.Client> {
-  if (client) return client;
-  const c = await connect(env);
-  // アイドル中に切られた接続を握り続けると、次のツール呼び出しが必ず失敗する。
-  c.on("error", () => {
-    if (client === c) client = null;
-    c.end().catch(() => {});
+// **接続そのものではなく、接続の約束を持つ。**ツール呼び出しは同時に来るので、
+// 実体を待ってから代入すると 2 本張られ、片方が誰にも閉じられずに残る。
+let pending: Promise<pg.Client> | null = null;
+function db(): Promise<pg.Client> {
+  if (pending) return pending;
+  const p = connect(env).then(async (c) => {
+    // **鍵は CLI と同じで、書ける。**層は分かれているが資格情報は分かれていないので、
+    // 書き込みツールを登録していないという運用だけが読み取り専用を担保している。
+    // セッションを読み取り専用にして、経路が増えても書けないようにする。
+    await c.query("set session characteristics as transaction read only");
+    // アイドル中に切られた接続を握り続けると、次のツール呼び出しが必ず失敗する。
+    c.on("error", () => {
+      if (pending === p) pending = null;
+      c.end().catch(() => {});
+    });
+    return c;
   });
-  client = c;
-  return c;
+  // 失敗を握り続けると、DB が戻っても永久に同じ失敗を返す。
+  p.catch(() => {
+    if (pending === p) pending = null;
+  });
+  pending = p;
+  return p;
 }
 
 type Scope = { ids: number[]; registered: boolean; label: string; ident: string };
@@ -46,29 +58,6 @@ async function currentScopeIds(cwd?: string): Promise<Scope> {
   if (!row) return { ids: [], registered: false, label: me.label, ident: me.ident };
   return { ids: await scopeFamily(c, row.id), registered: true, label: me.label, ident: me.ident };
 }
-
-type Shown = {
-  kind: string;
-  subkind: string | null;
-  text: string;
-  ex: string;
-  scope_label: string;
-  record_id: string;
-  key: string;
-  at: string | null;
-};
-const fmt = (rows: Shown[]): string =>
-  rows
-    .map((x) =>
-      [
-        `${labelOf(x)}${x.text}`,
-        x.ex ? `  理由: ${x.ex}` : null,
-        `  出自: ${x.scope_label} / ${x.record_id} / ${x.key}${x.at ? ` / ${String(x.at).slice(0, 10)}` : ""}`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    )
-    .join("\n\n");
 
 const server = new McpServer(
   { name: "knowledge", version: "0.1.0" },
@@ -162,7 +151,7 @@ server.registerTool(
       );
     }
     const text =
-      (rows.length ? fmt(rows) : "該当なし。") + (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
+      (rows.length ? quote(rows) : "該当なし。") + (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
     return { content: [{ type: "text" as const, text }] };
   },
 );
@@ -189,7 +178,7 @@ server.registerTool(
         {
           type: "text" as const,
           text: rows.length
-            ? `${p} について「触らない」と決めた記録が ${rows.length} 件あります。\n\n${fmt(rows)}`
+            ? quote(rows, `${p} について「触らない」と決めた記録が ${rows.length} 件あります。`)
             : `${p} について「触らない」と決めた記録はありません。`,
         },
       ],

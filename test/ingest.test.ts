@@ -22,6 +22,7 @@ test("極性は種別と場所から決まる。宣言に頼らない", () => {
         id: "d1",
         decision: "採る",
         at: "2026-01-01T00:00:00Z",
+        status: "accepted",
         options: [
           { option: "A", chosen: true },
           { option: "B", whyNot: "遅い" },
@@ -41,6 +42,11 @@ test("極性は種別と場所から決まる。宣言に頼らない", () => {
   assert.equal(by.get("e1"), "dont", "行き止まりは dont");
   assert.equal(by.get("e2"), "dont", "直しにいかない負債は dont");
   assert.equal(by.get("e3"), "na");
+  // boundary が dont から外れると whatAboutPath（polarity = 'dont' で絞る）が恒久的に 0 件になり、
+  // check_path と PreToolUse フックが「記録はありません」と正常応答し続ける。
+  const boundaries = flatten(ir).filter((n) => n.kind === "boundary");
+  assert.equal(boundaries.length, 2);
+  for (const b of boundaries) assert.equal(b.polarity, "dont", `${b.key} が dont でない`);
   assert.equal([...by.keys()].filter((k) => k.startsWith("non-goal:")).length, 1);
 });
 
@@ -71,4 +77,17 @@ test("記録の題を変えると再取得されるように、ハッシュが�
   assert.ok(a && b && again);
   assert.notEqual(a.contentHash, b.contentHash, "題が変われば再取得されないといけない");
   assert.equal(a.contentHash, again.contentHash, "変わっていなければ取り直さない");
+});
+
+test("決定の status ごとに極性が分かれる", () => {
+  // accepted 以外を do にすると、却下した決定と覆した決定が「採用済み」として返る。
+  const withStatus = (status: string): Ir => ({
+    ...base,
+    decisions: [{ id: "d1", decision: "認証のここは触らない", at: "2026-01-01T00:00:00Z", status }],
+  });
+  const polarity = (status: string) => flatten(withStatus(status))[0]?.polarity;
+  assert.equal(polarity("accepted"), "do");
+  assert.equal(polarity("superseded"), "dont", "覆した決定を現役の決定と同じに見せない");
+  assert.equal(polarity("rejected"), "dont", "却下した決定を採用済みに見せない");
+  assert.equal(polarity("proposed"), "na", "提案どまりは採否のどちらでもない");
 });

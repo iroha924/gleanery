@@ -28,21 +28,15 @@ function readInto(out: Env, file: string): boolean {
 
 /**
  * 探索順: プロセスの環境変数 → KNOWLEDGE_ENV_DIR/.env → ~/.claude/knowledge.env
- *       → 作業ディレクトリから上へ .env
- * 先に見つかったものが勝つ。グローバルを作業ディレクトリより先に見るのは、
- * 別プロジェクトの .env（無関係な鍵が入っている）を拾わないため。
+ *
+ * **作業ディレクトリから上へ .env を探さない。**フックは Edit/Write のたびに、編集中の
+ * プロジェクトを cwd として起動する。そこを探すと、他人のリポジトリがコミットした .env が
+ * 接続先の候補になる。資格情報の出所は、この 2 つだけに固定する。
  */
-export function loadEnv(from: string = process.cwd()): Env {
+export function loadEnv(_from?: string): Env {
   const out: Env = { ...process.env };
   if (process.env.KNOWLEDGE_ENV_DIR) readInto(out, path.join(process.env.KNOWLEDGE_ENV_DIR, ".env"));
   readInto(out, GLOBAL_ENV);
-  let dir = path.resolve(from);
-  for (let i = 0; i < 6; i++) {
-    if (readInto(out, path.join(dir, ".env"))) break;
-    const up = path.dirname(dir);
-    if (up === dir) break;
-    dir = up;
-  }
   return out;
 }
 
@@ -52,23 +46,40 @@ const CA_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "c
 let ca: string | null = null;
 
 export async function connect(env: Env): Promise<pg.Client> {
-  if (!env.SUPABASE_DB_URL) {
+  const raw = env.SUPABASE_DB_URL;
+  if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
   }
   ca ??= fs.readFileSync(CA_PATH, "utf8");
 
-  // 接続文字列の sslmode は ssl オプションより後に効く。`sslmode=no-verify` が 1 語入るだけで
-  // 固定した CA が無視され、検証が消える（実測）。接続先の指定だけを取り、TLS はここで決める。
-  const u = new URL(env.SUPABASE_DB_URL);
-  const sslmode = u.searchParams.get("sslmode");
-  if (sslmode && sslmode !== "verify-full") {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    // **元の文字列を例外へ乗せない。**URL の TypeError は err.input に入力全体を持ち、
+    // Node は未捕捉例外でその自前プロパティも印字する。接続文字列にはパスワードが入っている。
+    throw new Error("SUPABASE_DB_URL が URL として読めない（値は伏せる）");
+  }
+
+  // 接続文字列側の指定は pg の中で ssl オプションより後に効く。`?ssl=0` の 5 文字で
+  // TLS が丸ごと消え、`?sslrootcert=` は固定した CA を差し替える（実測で再現した）。
+  // sslmode だけを弾いても足りないので、**接続文字列そのものを pg へ渡さない。**
+  // 接続先の指定だけを取り出し、TLS はここで決める。
+  const bad = ["ssl", "sslmode", "sslrootcert", "sslcert", "sslkey"].filter((k) => u.searchParams.has(k));
+  if (bad.length) {
     throw new Error(
-      `SUPABASE_DB_URL の sslmode=${sslmode} は使えない。TLS はコード側で verify-full に固定している。この指定を消す`,
+      `SUPABASE_DB_URL の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`,
     );
   }
-  u.searchParams.delete("sslmode");
 
-  const client = new pg.Client({ connectionString: u.toString(), ssl: { ca, rejectUnauthorized: true } });
+  const client = new pg.Client({
+    host: u.hostname,
+    port: u.port ? Number(u.port) : 5432,
+    user: decodeURIComponent(u.username),
+    password: decodeURIComponent(u.password),
+    database: u.pathname.replace(/^\//, "") || "postgres",
+    ssl: { ca, rejectUnauthorized: true },
+  });
   await client.connect();
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
   // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。

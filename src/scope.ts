@@ -22,14 +22,30 @@ export type Ident = {
   label: string;
 };
 
-/** git remote を、ホスト差（ssh / https、.git の有無）を吸収した形へ揃える。
- *  資格情報付きの URL が来ることがあるので、user:pass@ は落とす。 */
+/**
+ * git remote を、ホスト差（ssh / https、.git の有無、ポート）を吸収した形へ揃える。
+ *
+ * **自前で authority を切らない。**`https://user:p@ss@host/o/r` のようにパスワードへ `@` が
+ * 入る形は実在し（curl も git も最後の `@` を区切りとする）、「最初の `@` まで」で切ると
+ * 資格情報の断片が識別子に残って DB へ平文で入る（実測で再現した）。
+ * WHATWG の URL パーサは最後の `@` を区切りとするので、そちらへ寄せる。
+ */
 export function normalizeRemote(url: string | null | undefined): string | null {
   if (!url) return null;
-  const m = String(url)
-    .trim()
-    .match(/(?:git@|https?:\/\/)(?:[^@/]*@)?([^:/]+)[:/](.+?)(?:\.git)?$/);
-  return m ? `${m[1]}/${m[2]}` : null;
+  const raw = String(url).trim();
+  if (!raw) return null;
+  // scp 風（git@host:path）は URL ではないので先に捌く。`://` を伴うものは除く。
+  const scp = raw.match(/^(?:[^@/]+@)?([^:/]+):(?!\/)(.+?)(?:\.git)?$/);
+  if (scp) return `${scp[1]}/${scp[2]}`;
+  try {
+    const u = new URL(raw);
+    // hostname はポートも資格情報も含まない。identity にポートは要らない。
+    if (!u.hostname) return null;
+    const path = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
+    return path ? `${u.hostname}/${path}` : u.hostname;
+  } catch {
+    return null;
+  }
 }
 
 export function identify(dir: string): Ident {

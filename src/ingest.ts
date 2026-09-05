@@ -11,7 +11,7 @@
 import crypto from "node:crypto";
 import type pg from "pg";
 import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
-import type { Polarity } from "./search.ts";
+import { type Polarity, scopeFamily } from "./search.ts";
 
 const sha = (s: unknown): string => crypto.createHash("sha256").update(String(s)).digest("hex");
 const arr = <T>(v: T[] | undefined | null): T[] => (Array.isArray(v) ? v : []);
@@ -97,7 +97,13 @@ function polarityOf(kind: string, subkind?: string | null): Polarity {
   if (kind === "option") return subkind === "chosen" ? "do" : "dont";
   if (kind === "event" && subkind === "dead_end") return "dont";
   if (kind === "event" && subkind === "debt") return "dont"; // 直しにいかない
-  if (kind === "decision") return "do";
+  if (kind === "decision") {
+    // 決定は 4 つの status を取る。accepted 以外を do にすると、却下した決定と
+    // 後で覆した決定が「採用済み」として返り、「触らないと決めなかったか」への答えが逆になる。
+    if (subkind === "accepted") return "do";
+    if (subkind === "rejected" || subkind === "superseded") return "dont";
+    return "na"; // proposed。まだ何も決まっていない
+  }
   return "na";
 }
 
@@ -150,6 +156,8 @@ export function flatten(ir: Ir): Node[] {
   for (const d of arr(ir.decisions)) {
     push({
       kind: "decision",
+      // status を subkind に載せる。極性も検索時の札もここからしか決まらない。
+      subkind: d.status ?? null,
       key: d.id,
       text: d.decision,
       at: d.at,
@@ -247,6 +255,18 @@ export async function ingest(
     const existingScope = (
       await client.query<{ s: number }>("select scope_id::int as s from record where id = $1", [ir.meta.id])
     ).rows[0]?.s;
+    // **他人の記録を id だけで書き換えられないようにする。**id は
+    // `invoice-pdf-export` のような意味のある語を推奨しているので推測できる。
+    // 束の中（ポリリポ）は同じ作業とみなし、それ以外の作業場所の記録は触らせない。
+    if (existingScope !== undefined && existingScope !== scopeId) {
+      const family = await scopeFamily(client, scopeId);
+      if (!family.includes(existingScope)) {
+        throw new Error(
+          `記録 "${ir.meta.id}" は別の作業場所のものなので、ここからは更新できない。` +
+            `同じ作業なら knowledge link で束ねる。別の作業なら meta.id を変える`,
+        );
+      }
+    }
     const effectiveScope = existingScope ?? scopeId;
     await client.query(
       `insert into record (id, scope_id, schema_ver, title, status, branch, hosts, problem, goal,
@@ -431,11 +451,15 @@ export async function ingest(
     }
 
     // 取り込みで消えた要素は墓標を立てる。id は再利用しない契約なので、消さずに残す。
-    await client.query(
-      `update node set deleted_at=now() where record_id=$1 and deleted_at is null
-       and (kind, key) not in (select * from unnest($2::text[], $3::text[]))`,
-      [ir.meta.id, nodes.map((n) => n.kind), nodes.map((n) => n.key)],
-    );
+    // **空の配列では何もしない。**要素ゼロの IR を投げるだけで、その記録の node を
+    // 全部 soft delete できてしまう（NOT IN 空集合は真になる）。
+    if (nodes.length > 0) {
+      await client.query(
+        `update node set deleted_at=now() where record_id=$1 and deleted_at is null
+         and (kind, key) not in (select * from unnest($2::text[], $3::text[]))`,
+        [ir.meta.id, nodes.map((n) => n.kind), nodes.map((n) => n.key)],
+      );
+    }
 
     await client.query("commit");
     return {
