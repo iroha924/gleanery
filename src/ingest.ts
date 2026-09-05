@@ -104,7 +104,7 @@ function polarityOf(kind: string, subkind?: string | null): Polarity {
 /** 埋め込みに渡す本文。**周りの文脈を前置きする。**
  *  チャンクだけでは「どの作業のいつの話か」が失われる。
  *  この IR は repo / 種別 / 時刻を構造として持っているので、推測せずに付けられる。 */
-function embedText(ir: Ir, n: Node): string {
+function embedText(ir: Ir, n: Pick<Node, "text" | "extra" | "kindLabel">): string {
   const head = [ir.meta.title, n.kindLabel].filter(Boolean).join(" / ");
   return `${head}\n${n.text}${n.extra ? `\n${n.extra}` : ""}`;
 }
@@ -122,12 +122,11 @@ const KIND_LABEL: Record<string, string> = {
 export function flatten(ir: Ir): Node[] {
   const out: Node[] = [];
   const push = (o: Omit<Node, "polarity" | "contentHash" | "kindLabel">) => {
-    out.push({
-      ...o,
-      kindLabel: KIND_LABEL[o.kind],
-      polarity: polarityOf(o.kind, o.subkind),
-      contentHash: sha(`${o.kind}|${o.text}|${o.extra ?? ""}`),
-    });
+    const base = { ...o, kindLabel: KIND_LABEL[o.kind], polarity: polarityOf(o.kind, o.subkind) };
+    // **埋め込みへ渡す文そのものをハッシュする。**再取得の要否をこの値で決めているので、
+    // 渡す文に入るのにハッシュに入らない要素があると、古い埋め込みが残り続ける。
+    // 実測: 記録の題だけを変えたとき、embed_text は変わるのにハッシュが一致して再取得されなかった。
+    out.push({ ...base, contentHash: sha(embedText(ir, base)) });
   };
 
   for (const b of arr(ir.background?.nonGoals)) {

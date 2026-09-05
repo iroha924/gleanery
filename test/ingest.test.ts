@@ -57,3 +57,18 @@ test("本文が同じ「やらないこと」と「制約」は別のノード�
 test("空の IR でも落ちない", () => {
   assert.deepEqual(flatten(base), []);
 });
+
+test("記録の題を変えると再取得されるように、ハッシュが埋め込み文を覆う", () => {
+  // ハッシュが embed_text の一部を見落とすと、古い題で作った埋め込みが残り続ける。
+  const withTitle = (title: string): Ir => ({
+    ...base,
+    meta: { ...base.meta, title },
+    background: { constraints: ["触らない"] },
+  });
+  const a = flatten(withTitle("題 A"))[0];
+  const b = flatten(withTitle("題 B"))[0];
+  const again = flatten(withTitle("題 A"))[0];
+  assert.ok(a && b && again);
+  assert.notEqual(a.contentHash, b.contentHash, "題が変われば再取得されないといけない");
+  assert.equal(a.contentHash, again.contentHash, "変わっていなければ取り直さない");
+});
