@@ -1,0 +1,60 @@
+{
+  "note": "正解が分かる質問で検索の精度を測る。ground truth は取り込んだ記録の実データから作った。同じ記録を書いた者が問いも作っているので、実運用より易しい方向に偏る。ここで落ちるものは実運用では確実に落ちる、という下限の測定として使う。",
+  "cases": [
+    { "q": "atlas への依存はどうすることにした？", "expect": ["d-drop-atlas"], "kind": "肯定・特定" },
+    {
+      "q": "記録の保管場所はどこに決めた？",
+      "expect": ["d-store-in-project-root", "d-store-on-desktop"],
+      "kind": "肯定・特定"
+    },
+    { "q": "上書きしていい欄はどれ？", "expect": ["d-append-vs-update-split"], "kind": "肯定・特定" },
+    { "q": "fact と書くときのルールは？", "expect": ["d-fact-requires-evidence"], "kind": "肯定・特定" },
+    {
+      "q": "スキルはどうやって起動する？自動発火する？",
+      "expect": ["d-explicit-invocation-only"],
+      "kind": "肯定・特定"
+    },
+    {
+      "q": "変更したファイルはどうやって集めている？",
+      "expect": ["d-git-not-shell-parsing"],
+      "kind": "肯定・特定"
+    },
+    { "q": "1 ファイルの単位はどう切る？", "expect": ["d-file-per-theme"], "kind": "肯定・特定" },
+    { "q": "この記録は誰が読む前提？", "expect": ["d-readers-three"], "kind": "肯定・特定" },
+
+    { "q": "ドキュメントに使ってはいけない記号は？", "expect": ["constraint:31eeabc1"], "kind": "否定形" },
+    {
+      "q": "Codex でも動かすために守らないといけない制約は？",
+      "expect": ["constraint:38d46b81", "constraint:36d12774"],
+      "kind": "否定形"
+    },
+    { "q": "作図はやらないと決めた？", "expect": ["non-goal:c77f6cce"], "kind": "否定形" },
+    { "q": "文章の質を機械で測るのはやらない？", "expect": ["non-goal:465c6494"], "kind": "否定形" },
+    { "q": "Linear や Jira の対応はどこまでやる？", "expect": ["non-goal:51c6238d"], "kind": "否定形" },
+    { "q": "進捗率やバーンダウンは出す？", "expect": ["non-goal:aa13d892"], "kind": "否定形" },
+
+    {
+      "q": "ブラウザで画面を確認しようとして失敗した話",
+      "expect": ["e-chrome-blocked"],
+      "kind": "行き止まり"
+    },
+    {
+      "q": "テストの書き方を間違えて健全な実装を落とした件",
+      "expect": ["e-test-was-wrong"],
+      "kind": "行き止まり"
+    },
+    {
+      "q": "取りこぼしと過剰報告のどちらが危険か",
+      "expect": ["e-undercount-is-worse"],
+      "kind": "行き止まり"
+    },
+    { "q": "意図して直していない箇所はある？", "expect": ["e-debt-hardcoded-markers"], "kind": "行き止まり" },
+
+    {
+      "q": "サイズの上限はどう決めた？閾値はいくつ？",
+      "expect": ["d-reject-size-cap", "d-fold-by-phase"],
+      "kind": "横断"
+    },
+    { "q": "抽象語を弾く辞書は入れた？", "expect": ["d-no-vocabulary-dictionary"], "kind": "横断" }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "name": "knowledge-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "作業のナレッジを Supabase(pgvector) へ貯めて、Claude と Codex から MCP で引く",
+  "bin": {
+    "knowledge": "./src/cli.ts"
+  },
+  "scripts": {
+    "check": "biome check .",
+    "fix": "biome check --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "eval": "node evals/retrieval.ts",
+    "mcp": "node src/mcp.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "pg": "^8.23.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.12",
+    "@types/node": "^24.10.1",
+    "@types/pg": "^8.23.1",
+    "lefthook": "^2.1.12",
+    "typescript": "^7.0.2"
+  }
+}
