@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "mitos": {
+      "command": "node",
+      "args": ["./dist/mcp.js"],
+      "cwd": "."
+    }
+  }
+}

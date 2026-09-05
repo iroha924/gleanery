@@ -1,0 +1,6 @@
+{
+  "name": "progress-log",
+  "private": true,
+  "type": "module",
+  "description": "進捗と意思決定の記録。Node の標準ライブラリだけで動く（依存なし）。DB への取り込みは knowledge コマンドが行う"
+}

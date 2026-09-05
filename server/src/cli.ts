@@ -12,15 +12,14 @@ import { candidates, identify } from "./scope.ts";
 import { outsideScopes, quote, scopeFamily, search } from "./search.ts";
 
 const USAGE = `使い方:
-  knowledge ingest <記録.html|ir.json> [--cwd <dir>]
-                                            記録を取り込む（作業場所が未登録なら登録もする）
-  knowledge search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
-                                            引けるかを確かめる
-  knowledge scopes                          登録済みの作業場所と束
-  knowledge candidates [--json]             束ねる候補を並べる（選ぶのは人間）
-  knowledge link <束の名前> <dir>...         選ばれたディレクトリを 1 つの束にする
-  knowledge describe <dir> <役割> [説明]      その作業場所が何なのかを書く
-  knowledge doctor                          資格情報と接続を確かめる
+  mitos ingest <記録.html|ir.json> [--cwd <dir>]  記録を取り込む（未登録なら作業場所も登録）
+  mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
+                                                 引けるかを確かめる
+  mitos scopes                                   登録済みの作業場所と束
+  mitos candidates [--json]                      束ねる候補を並べる（選ぶのは人間）
+  mitos link <束の名前> <dir>...                  選ばれたものを 1 つの束にする
+  mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
+  mitos doctor                                   資格情報と接続を確かめる
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 

@@ -1,0 +1,337 @@
+{
+  "schema": "progress/1",
+  "meta": {
+    "id": "invoice-pdf-export",
+    "title": "請求書の PDF 出力を月次バッチから切り離す",
+    "status": "in-progress",
+    "repo": "billing",
+    "branch": "feat/pdf-export-worker",
+    "created": "2026-08-28T10:12:00+09:00",
+    "updated": "2026-09-04T19:40:00+09:00",
+    "hosts": [
+      "claude-code"
+    ]
+  },
+  "background": {
+    "problem": "月次バッチが請求書 PDF の生成まで抱えているため、PDF の生成が遅いと締め処理全体が遅れる。8 月は 3 時間 40 分かかり、経理の作業開始が翌営業日にずれた。",
+    "goal": "月次バッチが PDF の生成完了を待たずに終わること。バッチの所要時間が 30 分未満で、PDF は生成後 15 分以内に管理画面からダウンロードできる。",
+    "constraints": [
+      "既存の PDF テンプレート（帳票レイアウト）は変更しない。経理の検収が通っているため",
+      "生成済み PDF の URL は変えない。外部の会計ソフトが参照している"
+    ],
+    "nonGoals": [
+      "PDF テンプレートそのものの作り直し",
+      "請求書の計算ロジックの変更",
+      "過去分の PDF の再生成"
+    ]
+  },
+  "current": {
+    "at": "2026-09-04T19:40:00+09:00",
+    "text": "ワーカーの実装と管理画面の生成状態表示までできている。ジョブが失敗したときの再実行経路がまだ無く、そこで止まっている。",
+    "phases": [
+      {
+        "id": "design",
+        "label": "設計",
+        "state": "done",
+        "from": "2026-08-28T00:00:00+09:00"
+      },
+      {
+        "id": "worker",
+        "label": "ワーカー",
+        "state": "done",
+        "from": "2026-09-01T00:00:00+09:00"
+      },
+      {
+        "id": "admin",
+        "label": "管理画面",
+        "state": "done",
+        "from": "2026-09-03T00:00:00+09:00"
+      },
+      {
+        "id": "retry",
+        "label": "再実行",
+        "state": "blocked",
+        "from": "2026-09-04T12:00:00+09:00"
+      },
+      {
+        "id": "release",
+        "label": "リリース",
+        "state": "todo"
+      }
+    ]
+  },
+  "next": [
+    {
+      "text": "失敗したジョブの再実行経路を決める。#412 の回答が要る",
+      "who": "human"
+    },
+    {
+      "text": "再実行を実装し、失敗を仕込んだ結合テストで確かめる",
+      "who": "ai"
+    }
+  ],
+  "openQuestions": [
+    {
+      "id": "q-retry-policy",
+      "at": "2026-09-04T18:05:00+09:00",
+      "q": "PDF 生成が失敗したとき、自動で再試行してよいか。経理が同じ請求書を二重に受け取る可能性がある",
+      "who": "human",
+      "when": "now",
+      "blocking": true
+    },
+    {
+      "id": "q-storage-lifecycle",
+      "at": "2026-09-02T11:20:00+09:00",
+      "q": "生成した PDF をいつまで保持するか。法定保存期間との兼ね合い",
+      "who": "human",
+      "when": "out-of-scope",
+      "blocking": false
+    }
+  ],
+  "events": [
+    {
+      "id": "e-baseline",
+      "at": "2026-08-28T10:30:00+09:00",
+      "kind": "finding",
+      "text": "8 月のバッチ実行時間 3 時間 40 分のうち、3 時間 05 分が PDF 生成だった。残りの計算処理は 35 分",
+      "confidence": "fact",
+      "evidence": [
+        {
+          "kind": "command",
+          "ref": "kubectl logs job/monthly-billing-202608 | grep duration",
+          "exit": 0
+        }
+      ]
+    },
+    {
+      "id": "e-sync-in-request",
+      "at": "2026-08-29T15:10:00+09:00",
+      "kind": "dead_end",
+      "text": "管理画面のリクエスト内で PDF を同期生成する案を試したが、100 件を超えるとタイムアウトした。ロードバランサの上限 60 秒を超える",
+      "confidence": "fact",
+      "evidence": [
+        {
+          "kind": "command",
+          "ref": "ab -n 1 -c 1 http://localhost:3000/admin/invoices/bulk_pdf",
+          "exit": 1
+        }
+      ]
+    },
+    {
+      "id": "e-url-shape",
+      "at": "2026-08-30T09:40:00+09:00",
+      "kind": "finding",
+      "text": "会計ソフトが参照している URL は署名付きで、有効期限が 7 日だった。生成を非同期にしても URL の形は変えずに済む",
+      "confidence": "fact",
+      "evidence": [
+        {
+          "kind": "file",
+          "ref": "app/models/invoice.rb:88"
+        }
+      ]
+    },
+    {
+      "id": "e-queue-depth",
+      "at": "2026-09-03T14:00:00+09:00",
+      "kind": "work",
+      "text": "ワーカーを 4 並列にしたところ、1 万件で 12 分だった。目標の 15 分以内に入る",
+      "confidence": "fact",
+      "evidence": [
+        {
+          "kind": "command",
+          "ref": "bin/rails runner scripts/bench_pdf.rb",
+          "exit": 0
+        }
+      ]
+    },
+    {
+      "id": "e-retry-blocked",
+      "at": "2026-09-04T18:05:00+09:00",
+      "kind": "state_transition",
+      "text": "再実行の方針が決まらないため停止中へ移した。自動再試行が二重送付につながるかは業務側でしか判断できない",
+      "confidence": "inference"
+    }
+  ],
+  "decisions": [
+    {
+      "id": "d-async-worker",
+      "at": "2026-08-30T11:00:00+09:00",
+      "status": "accepted",
+      "context": "月次バッチの所要時間の 8 割が PDF 生成で、締め処理の開始が翌営業日にずれていた。PDF の URL は外部が参照しているため形を変えられない。",
+      "decision": "PDF の生成を専用ワーカーへ切り出し、バッチは生成ジョブを積むだけにする",
+      "options": [
+        {
+          "option": "専用ワーカーへ切り出す",
+          "chosen": true
+        },
+        {
+          "option": "リクエスト内で同期生成する",
+          "whyNot": "100 件を超えるとロードバランサの 60 秒上限でタイムアウトした（e-sync-in-request）"
+        },
+        {
+          "option": "バッチのまま並列度を上げる",
+          "whyNot": "バッチが PDF の完了を待つ構造が変わらないため、生成が遅れれば締めも遅れる。原因を残したまま症状だけ薄める"
+        }
+      ],
+      "consequences": [
+        {
+          "text": "バッチの所要時間が計算処理ぶんだけになり、35 分程度に収まる見込み",
+          "good": true
+        },
+        {
+          "text": "PDF が「まだ無い」状態が新たに生まれる。管理画面に生成状態の表示が要る",
+          "good": false
+        },
+        {
+          "text": "ワーカーの死活監視が新しく必要になり、運用の対象が 1 つ増える",
+          "good": false
+        }
+      ],
+      "confirmation": "月次バッチのジョブ実行時間が 30 分未満であることを、9 月の本番実行のログで確かめる。あわせて生成完了までの時間が 15 分以内であることを管理画面の生成状態のタイムスタンプで見る",
+      "evidence": [
+        {
+          "kind": "commit",
+          "ref": "a91f3c2"
+        },
+        {
+          "kind": "issue",
+          "ref": "#398"
+        }
+      ]
+    },
+    {
+      "id": "d-inline-storage",
+      "at": "2026-08-29T16:20:00+09:00",
+      "status": "superseded",
+      "supersededBy": "d-async-worker",
+      "context": "当初は生成の遅さをストレージの書き込みが原因だと考えていた。",
+      "decision": "PDF をローカルディスクへ書いてから一括アップロードする",
+      "options": [
+        {
+          "option": "ローカルへ書いて一括アップロード",
+          "chosen": true
+        },
+        {
+          "option": "都度アップロード",
+          "whyNot": "アップロード回数が増えるぶん遅いと想定した"
+        }
+      ],
+      "consequences": [
+        {
+          "text": "アップロード回数は減った",
+          "good": true
+        },
+        {
+          "text": "計測すると書き込みは全体の 4% でしかなく、遅さの原因ではなかった",
+          "good": false
+        }
+      ],
+      "confirmation": "この決定は d-async-worker に置き換わっているため、確かめる対象は残っていない",
+      "evidence": [
+        {
+          "kind": "command",
+          "ref": "bin/rails runner scripts/bench_pdf.rb --profile",
+          "exit": 0
+        }
+      ]
+    }
+  ],
+  "verification": [
+    {
+      "id": "v-bench",
+      "at": "2026-09-03T14:00:00+09:00",
+      "what": "1 万件の PDF 生成が 15 分以内に終わる",
+      "cmd": "bin/rails runner scripts/bench_pdf.rb",
+      "result": "pass",
+      "output": "10000 invoices in 723.4s (4 workers)"
+    },
+    {
+      "id": "v-suite",
+      "at": "2026-09-04T17:30:00+09:00",
+      "what": "既存のテストが通る",
+      "cmd": "bundle exec rspec",
+      "result": "pass",
+      "output": "1284 examples, 0 failures"
+    },
+    {
+      "id": "v-prod-batch",
+      "at": "2026-09-04T19:40:00+09:00",
+      "what": "本番の月次バッチが 30 分未満で終わる",
+      "result": "not-run",
+      "whyNotRun": "次の月次実行が 10 月 1 日のため、それまで観測できない",
+      "verifies": "d-async-worker"
+    }
+  ],
+  "links": {
+    "issues": [
+      {
+        "key": "#398",
+        "title": "月次バッチが遅い",
+        "state": "open",
+        "url": "https://github.com/example/billing/issues/398",
+        "fetched": true,
+        "blockedBy": []
+      },
+      {
+        "key": "#405",
+        "title": "PDF 生成をワーカーへ切り出す",
+        "state": "open",
+        "url": "https://github.com/example/billing/issues/405",
+        "fetched": true,
+        "blockedBy": [
+          "#398"
+        ]
+      },
+      {
+        "key": "#412",
+        "title": "生成失敗時の再実行方針を決める",
+        "state": "open",
+        "url": "https://github.com/example/billing/issues/412",
+        "fetched": true,
+        "blockedBy": [
+          "#405"
+        ]
+      }
+    ],
+    "prs": [
+      {
+        "number": 421,
+        "title": "PDF 生成ワーカーを追加",
+        "state": "MERGED",
+        "url": "https://github.com/example/billing/pull/421",
+        "branch": "feat/pdf-export-worker"
+      },
+      {
+        "number": 430,
+        "title": "管理画面に生成状態を表示",
+        "state": "OPEN",
+        "url": "https://github.com/example/billing/pull/430",
+        "branch": "feat/pdf-status-ui"
+      }
+    ],
+    "commits": [
+      {
+        "sha": "a91f3c2",
+        "subject": "feat: PDF 生成をワーカーへ切り出す"
+      }
+    ],
+    "files": [
+      "app/workers/invoice_pdf_worker.rb",
+      "app/models/invoice.rb"
+    ]
+  },
+  "glossary": [
+    {
+      "term": "月次バッチ",
+      "meaning": "毎月 1 日に走る締め処理。請求額の計算と請求書の発行をまとめて行う"
+    },
+    {
+      "term": "締め処理",
+      "meaning": "前月ぶんの請求を確定させる作業。これが終わるまで経理は当月の作業に入れない"
+    },
+    {
+      "term": "署名付き URL",
+      "meaning": "有効期限と署名が入った一時的なダウンロード URL。ここでは 7 日で失効する"
+    }
+  ]
+}

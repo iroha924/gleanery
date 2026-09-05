@@ -42,7 +42,13 @@ export function loadEnv(_from?: string): Env {
 
 // Supabase の pooler は Supabase Root 2021 CA が発行した証明書を出すので、公開 CA では検証できない。
 // 検証を切ると、経路を握った相手が返した行がそのままフックの additionalContext と MCP の応答になる。
-const CA_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "certs", "prod-ca-2021.crt");
+// バンドル（dist/mcp.js）から見ると ../certs、ソース（server/src/db.ts）から見ると ../../certs。
+// どちらもリポジトリ直下の certs に着く。実行の形で位置が変わるので、両方を試す。
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "certs")]
+  .map((d) => path.join(d, "prod-ca-2021.crt"))
+  .find((f) => fs.existsSync(f));
+
 let ca: string | null = null;
 
 /**
@@ -58,6 +64,7 @@ export async function connect(
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
   }
+  if (!CA_PATH) throw new Error("Supabase の CA が見つからない。certs/prod-ca-2021.crt を置く");
   ca ??= fs.readFileSync(CA_PATH, "utf8");
 
   let u: URL;

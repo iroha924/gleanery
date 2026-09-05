@@ -2,9 +2,19 @@ pre-commit:
   parallel: true
   jobs:
     - name: biome
+      root: server/
       glob: "*.{ts,json}"
       run: bunx biome check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
     - name: typecheck
+      root: server/
       glob: "*.ts"
       run: bunx tsc --noEmit
+    # dist は配布物。ソースだけ直して bundle を忘れると、
+    # Codex 側（依存を自動インストールしない）で古いコードが動き続ける。
+    - name: bundle
+      glob: "server/src/*.ts"
+      run: |
+        bun build server/src/mcp.ts --target=node --outfile dist/mcp.js
+        bun build server/src/hook-check-path.ts --target=node --outfile dist/hook-check-path.js
+        git add dist/

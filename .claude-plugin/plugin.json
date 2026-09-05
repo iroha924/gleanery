@@ -1,0 +1,13 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "mitos",
+  "version": "0.1.0",
+  "description": "作業の判断を記録し、過去の決定・行き止まり・制約を横断して引く。μίτος = 辿れば戻れる糸",
+  "author": { "name": "iroha924", "email": "shunichi@hir4ta.com" },
+  "homepage": "https://github.com/iroha924/mitos",
+  "repository": "https://github.com/iroha924/mitos",
+  "keywords": ["knowledge", "rag", "progress", "decisions", "supabase", "pgvector"],
+  "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./mcp/claude.json"
+}

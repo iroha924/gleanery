@@ -1,0 +1,4 @@
+#!/bin/sh
+# CLI の入口。plugin のどこに置かれても、自分の位置から server を解決する。
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec node "$DIR/server/src/cli.ts" "$@"

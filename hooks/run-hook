@@ -1,0 +1,11 @@
+#!/bin/sh
+# フックの入口。plugin がどこへ展開されても、自分の位置から根を解決する。
+# ${CLAUDE_PLUGIN_ROOT} は Codex では展開されないので、パスに頼らない。
+set -eu
+DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ROOT=$(CDPATH= cd -- "$DIR/.." && pwd)
+case "${1:-}" in
+  session-start) exec "$DIR/session-start" "$ROOT" ;;
+  check-path)    exec node "$ROOT/dist/hook-check-path.js" ;;
+  *)             exit 0 ;;
+esac

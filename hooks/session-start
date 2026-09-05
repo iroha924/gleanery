@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+// ルールをセッションの文脈へ入れる。plugin は CLAUDE.md を配れない
+// （公式: "A CLAUDE.md file at the plugin root is not loaded as project context"）ので、
+// skill の中身を読んで additionalContext として渡す。
+//
+// **出力の形はホストで違う。**Claude Code は hookSpecificOutput.additionalContext、
+// Cursor は additional_context、SDK 標準は additionalContext。
+// 両方出すと Claude Code は重複排除せずに 2 回読むので、1 つだけ出す。
+const fs = require("node:fs");
+const path = require("node:path");
+
+try {
+  const root = process.argv[2] ?? path.join(__dirname, "..");
+  const md = fs.readFileSync(path.join(root, "skills", "using-mitos", "SKILL.md"), "utf8");
+  // フロントマターは読み手に要らない
+  const body = md.replace(/^---\n[\s\S]*?\n---\n/, "").trim();
+  const text = `<mitos>\n${body}\n</mitos>`;
+
+  const out = process.env.CURSOR_PLUGIN_ROOT
+    ? { additional_context: text }
+    : process.env.CLAUDE_PLUGIN_ROOT && !process.env.COPILOT_CLI
+      ? { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: text } }
+      : { additionalContext: text };
+  process.stdout.write(JSON.stringify(out));
+} catch {
+  // 読めなければ何も足さない。セッションの開始を止めない。
+}
