@@ -12,7 +12,8 @@ import { candidates, identify } from "./scope.ts";
 import { outsideScopes, quote, scopeFamily, search } from "./search.ts";
 
 const USAGE = `使い方:
-  knowledge ingest <ir.json> [--cwd <dir>]   IR を取り込む（作業場所が未登録なら登録もする）
+  knowledge ingest <記録.html|ir.json> [--cwd <dir>]
+                                            記録を取り込む（作業場所が未登録なら登録もする）
   knowledge search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
                                             引けるかを確かめる
   knowledge scopes                          登録済みの作業場所と束
@@ -33,6 +34,19 @@ const OPTIONS = {
   dont: { type: "boolean" },
   json: { type: "boolean" },
 } as const;
+
+// progress-log が書く HTML には IR が script 要素で埋まっている。
+// **この 1 つのタグだけが 2 つのリポジトリの接点。**ここを読めるようにすると、
+// 記録の HTML をそのまま渡せて、取り出しと取り込みが 2 コマンドに割れない。
+const IR_TAG = /<script type="application\/json" id="progress-ir">([\s\S]*?)<\/script>/;
+
+function readIr(file: string): unknown {
+  const body = fs.readFileSync(file, "utf8");
+  if (!file.endsWith(".html")) return JSON.parse(body);
+  const m = body.match(IR_TAG);
+  if (!m?.[1]) throw new Error(`${file} に progress-ir の埋め込みが無い。progress render で書いたものを渡す`);
+  return JSON.parse(m[1]);
+}
 
 // ingest が実際に読む最小の形。中身の契約は progress-log の validate が見ている。
 const IR_SHAPE = z.object({
@@ -113,7 +127,7 @@ async function main(): Promise<void> {
       // **型アサーションは検証ではない。**`{}` を渡すと ingest の中で
       // `Cannot read properties of undefined` になり、どこが悪いかも分からない。
       // ここは外から来たファイルを読む信頼境界なので、形だけは実行時に確かめる。
-      const raw: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+      const raw: unknown = readIr(file);
       const shape = IR_SHAPE.safeParse(raw);
       if (!shape.success) {
         throw new Error(
