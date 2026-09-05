@@ -48,17 +48,48 @@ function readIr(file: string): unknown {
   return JSON.parse(m[1]);
 }
 
-// ingest が実際に読む最小の形。中身の契約は progress-log の validate が見ている。
-const IR_SHAPE = z.object({
-  schema: z.string().min(1),
-  meta: z.object({
-    id: z.string().min(1).max(200),
-    title: z.string(),
-    status: z.string(),
-    created: z.string().min(1),
-    updated: z.string().min(1),
-  }),
-});
+// ingest が実際に読む形。中身の契約（棄却理由の有無など）は progress-log の validate が見ている。
+//
+// **本文が文字列であることまで確かめる。**確かめないと、要素がオブジェクトのときに
+// `String(o)` が全部 `[object Object]` になり、キーもハッシュも衝突して
+// 複数の制約が 1 件に潰れる（実測で再現した）。
+const text = z.string();
+const evidence = z.array(z.object({ kind: z.string(), ref: z.string() }).loose()).optional();
+
+const IR_SHAPE = z
+  .object({
+    schema: z.string().min(1),
+    meta: z
+      .object({
+        id: z.string().min(1).max(200),
+        title: text,
+        status: z.string(),
+        created: z.string().min(1),
+        updated: z.string().min(1),
+      })
+      .loose(),
+    background: z
+      .object({ nonGoals: z.array(text).optional(), constraints: z.array(text).optional() })
+      .loose()
+      .optional(),
+    decisions: z
+      .array(
+        z
+          .object({
+            id: text,
+            decision: text,
+            at: text,
+            options: z.array(z.object({ option: text }).loose()).optional(),
+            evidence,
+          })
+          .loose(),
+      )
+      .optional(),
+    events: z.array(z.object({ id: text, kind: text, text, at: text, evidence }).loose()).optional(),
+    verification: z.array(z.object({ id: text, what: text, at: text, evidence }).loose()).optional(),
+    openQuestions: z.array(z.object({ id: text, q: text, at: text }).loose()).optional(),
+  })
+  .loose();
 
 /** 作業場所を引く。無ければ作る（取り込みと束ね以外では作らない）。 */
 async function scopeIdFor(c: pg.Client, dir: string, create: boolean): Promise<number | null> {
@@ -90,6 +121,17 @@ async function main(): Promise<void> {
     allowPositionals: true,
   });
   const cwd = opt.cwd ?? process.cwd();
+  // **DB に触る前に落とす。**接続してから引数の不備で失敗すると、
+  // 待たされたうえに原因が接続の問題と区別できない。
+  // MCP 側は zod で 1〜20 に縛っている。CLI だけ穴を開けると、-1 が Voyage の top_k へ
+  // そのまま流れ、失敗時の slice(0, -1) がプール 30 件のうち 29 件を吐く。
+  const limit = Number(opt.limit ?? 5);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
+    throw new Error(`--limit は 1 から 20 の整数にする: ${opt.limit}`);
+  }
+  const polarity = opt.dont ? ("dont" as const) : undefined;
+  const KNOWN = ["ingest", "search", "scopes", "candidates", "link", "describe", "doctor"];
+  if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
   const env = loadEnv(cwd);
 
   if (cmd === "doctor") {
@@ -155,13 +197,6 @@ async function main(): Promise<void> {
     if (cmd === "search") {
       const question = rest.join(" ");
       if (!question) throw new Error(`質問を指定する\n\n${USAGE}`);
-      // MCP 側は zod で 1〜20 に縛っている。CLI だけ穴を開けると、-1 が Voyage の top_k へ
-      // そのまま流れ、失敗時の slice(0, -1) がプール 30 件のうち 29 件を吐く。
-      const limit = Number(opt.limit ?? 5);
-      if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
-        throw new Error(`--limit は 1 から 20 の整数にする: ${opt.limit}`);
-      }
-      const polarity = opt.dont ? ("dont" as const) : undefined;
       const mine = await scopeIdFor(c, cwd, false);
       const scopeIds = opt.all ? undefined : mine === null ? [] : await scopeFamily(c, mine);
       const { rows, queryVector, topScore } = await search(c, env, {
@@ -242,7 +277,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
+    throw new Error(`到達しないはずの分岐: ${cmd}`);
   } finally {
     await c.end().catch(() => {});
   }

@@ -37,10 +37,17 @@ test("枠の札は呼び出しごとに変わる", () => {
 test("巨大な記録 1 件で他の記録を押し出せない", () => {
   // フックの stdout はパイプ越しに 64 KiB で切れる。上限が無いと、長い記録を 1 件植えるだけで
   // 本物の「このファイルは触るな」警告を黙らせられる。
-  const rows = [row({ text: "あ".repeat(200_000), key: "big" }), row({ text: "本物の警告", key: "real" })];
-  const out = quote(rows);
-  assert.ok(out.length < 40_000, `上限が効いていない: ${out.length} 字`);
-  assert.ok(out.includes("本物の警告"), "巨大な 1 件に押し出されている");
+  // **文字数で測ると日本語で素通りする**（1 字 3 バイト）ので、バイト数で確かめる。
+  for (const filler of ["あ", "a", "🙂"]) {
+    const rows = [
+      { ...row(), text: filler.repeat(200_000), key: "big" },
+      { ...row(), text: "本物の警告", key: "real" },
+    ];
+    const out = quote(rows);
+    const size = Buffer.byteLength(out, "utf8");
+    assert.ok(size < 65_536, `${filler}: ${size} バイトでパイプの上限を超える`);
+    assert.ok(out.includes("本物の警告"), `${filler}: 巨大な 1 件に押し出されている`);
+  }
 });
 
 test("出自の日付は年つきで、ローカルの日付を保つ", () => {

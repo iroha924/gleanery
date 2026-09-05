@@ -280,9 +280,22 @@ export type Shown = {
  */
 // 1 件と全体の上限。node.text に上限が無いので、巨大な記録を 1 件植えるだけで
 // 本物の「このファイルは触るな」警告を押し出せる（フックの stdout はパイプ越しに 64 KiB で切れる）。
+//
+// **文字数ではなくバイト数で測る。**日本語は UTF-8 で 1 字 3 バイトなので、
+// 32,000 字の上限では 92,728 バイトになって上限を素通りする（実測）。
 const PER_ROW = 2000;
-const TOTAL = 32_000;
-const cut = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n)}…（ここで切った）` : s);
+const TOTAL = 48_000;
+const bytes = (s: string): number => Buffer.byteLength(s, "utf8");
+const cut = (s: string, n: number): string => {
+  if (bytes(s) <= n) return s;
+  // 文字の途中で切らない。1 字 4 バイトの絵文字もあるので、先頭から詰めて測る。
+  let out = "";
+  for (const ch of s) {
+    if (bytes(out) + bytes(ch) > n) break;
+    out += ch;
+  }
+  return `${out}…（ここで切った）`;
+};
 
 export function quote(rows: Shown[], lead = ""): string {
   const n = crypto.randomBytes(6).toString("hex");
@@ -296,12 +309,12 @@ export function quote(rows: Shown[], lead = ""): string {
     ]
       .filter(Boolean)
       .join("\n");
-    if (used + one.length > TOTAL) {
+    if (used + bytes(one) > TOTAL) {
       parts.push(`（残り ${rows.length - parts.length} 件は長さの上限で省いた）`);
       break;
     }
     parts.push(one);
-    used += one.length;
+    used += bytes(one);
   }
   return (
     `${lead ? `${lead}\n` : ""}` +

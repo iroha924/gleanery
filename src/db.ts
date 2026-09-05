@@ -111,9 +111,28 @@ export async function embed(env: Env, texts: string[], inputType: "query" | "doc
   if (texts.length === 0) return [];
 
   const out: number[][] = [];
-  // 3M TPM が voyage-4-large の上限。1 回に詰めすぎない。
-  for (let i = 0; i < texts.length; i += 96) {
-    const batch = texts.slice(i, i + 96);
+  // 1 回の要求は「120,000 トークンまで」かつ「1,000 件まで」。件数だけで割ると、
+  // 長い記録が並んだときにトークン側で 400 になる。日本語は 1 字がおよそ 1 トークンなので、
+  // **文字数で保守的に切る。**バイト数ではなく文字数で測るのは、トークンが文字に近いため。
+  const MAX_CHARS = 90_000;
+  const MAX_ITEMS = 96;
+  const batches: string[][] = [];
+  let cur: string[] = [];
+  let curChars = 0;
+  for (const t of texts) {
+    // 1 件で上限を超える記録は、そこで切る。落とすと取り込みが黙って欠ける。
+    const one = t.length > MAX_CHARS ? t.slice(0, MAX_CHARS) : t;
+    if (cur.length > 0 && (cur.length >= MAX_ITEMS || curChars + one.length > MAX_CHARS)) {
+      batches.push(cur);
+      cur = [];
+      curChars = 0;
+    }
+    cur.push(one);
+    curChars += one.length;
+  }
+  if (cur.length) batches.push(cur);
+
+  for (const batch of batches) {
     const res = await fetch(VOYAGE, {
       // 取り込みは begin の中でここを呼ぶ。詰まった分だけ行のロックを持ち続けるので、
       // 呼び出し側の都合ではなくここで切る。
