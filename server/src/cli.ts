@@ -33,6 +33,7 @@ const USAGE = `使い方:
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
   mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
+  mitos advice                                   編集時の助言が効いているかを見る
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -288,6 +289,7 @@ async function main(): Promise<void> {
     "who",
     "sync",
     "import-sessions",
+    "advice",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
   const env = loadEnv(cwd);
@@ -329,6 +331,43 @@ async function main(): Promise<void> {
     console.log(`データ                 node ${t.rows[0]?.n ?? 0} 件 / 作業場所 ${t.rows[0]?.s ?? 0} 件`);
     console.log(`いまの場所             ${me.label}（${mine ? "登録済み" : "未登録"}）`);
     await c.end();
+    return;
+  }
+
+  // **良くなったかを測る。**機能を足す前にこれが要る。
+  // 見るのは 3 つ: 編集あたりのヒット率／1 件あたりの候補数／同じ助言の再提示率。
+  if (cmd === "advice") {
+    const log = path.join(os.homedir(), ".claude", "mitos-advice.jsonl");
+    if (!fs.existsSync(log)) {
+      console.log("まだ記録がありません（編集フックが一度も走っていない）。");
+      return;
+    }
+    const rows = fs
+      .readFileSync(log, "utf8")
+      .split("\n")
+      .filter((l) => l.startsWith("{"))
+      .map((l) => JSON.parse(l) as { at: string; path: string; candidates: number; shown: string[] });
+    const shownRows = rows.filter((r) => r.shown.length > 0);
+    const all = shownRows.flatMap((r) => r.shown);
+    const uniq = new Set(all);
+    console.log(`フックが走った編集   ${rows.length} 回`);
+    console.log(
+      `助言を出せた         ${shownRows.length} 回（${((shownRows.length / Math.max(rows.length, 1)) * 100).toFixed(0)}%）`,
+    );
+    console.log(
+      `1 回あたりの候補     ${(rows.reduce((a, r) => a + r.candidates, 0) / Math.max(rows.length, 1)).toFixed(1)} 件`,
+    );
+    // 同じ助言が何度も出ていたら、抑制が効いていない。
+    console.log(
+      `同じ助言の再提示率   ${all.length ? (((all.length - uniq.size) / all.length) * 100).toFixed(0) : 0}%（低いほどよい）`,
+    );
+    const byPath = new Map<string, number>();
+    for (const r of shownRows) byPath.set(r.path, (byPath.get(r.path) ?? 0) + 1);
+    const top = [...byPath.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    if (top.length) {
+      console.log("\nよく出しているファイル:");
+      for (const [f, n] of top) console.log(`  ${String(n).padStart(3)} 回  ${f}`);
+    }
     return;
   }
 

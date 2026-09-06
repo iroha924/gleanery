@@ -328,6 +328,75 @@ export async function whatAboutPath(
   return r.rows;
 }
 
+/**
+ * これから触るところについて、過去に言われたことを引く。
+ *
+ * **「触らない」と決めた記録（whatAboutPath）とは別物。**あちらは制約で、こちらは助言。
+ * 制約は必ず出すが、助言は「出さない」を既定にして、条件を満たしたものだけ出す。
+ *
+ * 設計は Codex と詰めた。要点は 3 つ。
+ *
+ * 1. **意味検索を使わない。**パスの完全一致と行の距離だけ。埋め込みを待たないので
+ *    5 秒の予算に楽に収まり、しきい値の校正も要らない（過去に 0.35 という定数を置いて、
+ *    正解の最小 0.307 と不正解の中央 0.311 が重なり、校正できなかった実績がある）
+ * 2. **merged の PR のものだけ。**採られなかった議論は「そうすべき」ではない
+ * 3. **新しい順にしない。**最新のレビューが最も重要とは限らない。距離を主、時間を従にする
+ *
+ * 実測（monopoly-source、8 月以降に編集された 400 ファイル）: 56% に候補があり、
+ * 中央 3 件・最大 80 件。**沈黙は起きず、問題は選別**だった。だから距離で絞る。
+ * レビュー発言 10,376 件のうち 6,198 件（60%）に行番号がある。
+ */
+export type Advice = Shown & { pr: number | null; line: number | null; url: string | null };
+
+/** 行が無い候補をどれだけ遠いものとして扱うか。窓の外だが、候補が無ければ拾う。 */
+const NO_LINE_PENALTY = 400;
+
+export async function adviceForPath(
+  client: pg.Client,
+  filePath: string,
+  scopeIds: number[] | undefined,
+  editedLine: number | null,
+  limit = 2,
+): Promise<Advice[]> {
+  const r = await client.query<Advice & { pr_status: string }>(
+    `select n.key, n.kind, n.subkind, n.text,
+            coalesce(n.attrs->>'whyNot', n.attrs->>'context','') as ex,
+            rec.id as record_id, s.label as scope_label, n.at,
+            (n.attrs->>'pr')::int as pr, (n.attrs->>'line')::int as line, n.attrs->>'url' as url,
+            p.status as pr_status
+     from ref
+     join ref_link l   on l.ref_id = ref.id
+     join node     n   on n.id = l.node_id and n.kind = 'utterance' and n.deleted_at is null
+     join record   rec on rec.id = n.record_id
+     join scope    s   on s.id = n.scope_id
+     -- **その PR がマージされたものだけ。**閉じた／開いたままの議論は結論ではない。
+     join node     p   on p.record_id = n.record_id and p.kind = 'event' and p.subkind = 'pr'
+                      and (p.attrs->>'pr') = (n.attrs->>'pr') and p.status = 'merged'
+     where ref.kind = 'file' and ref.key = $1
+       ${Array.isArray(scopeIds) ? "and n.scope_id = any($2)" : ""}
+     limit 200`,
+    Array.isArray(scopeIds) ? [filePath, scopeIds] : [filePath],
+  );
+  if (r.rows.length === 0) return [];
+
+  // **同じ PR の連打は 1 件に畳む。**同じレビューで並んだ指摘がそのまま並ぶと、
+  // 毎回同じものが出続ける（Codex の指摘）。PR ごとに最も近いものだけ残す。
+  const now = Date.now();
+  const distance = (a: Advice): number =>
+    editedLine !== null && a.line !== null ? Math.abs(a.line - editedLine) : NO_LINE_PENALTY;
+  // 距離を主、時間を従。1 年前は 30 だけ足す（距離 30 行ぶんの重みしか持たせない）。
+  const rank = (a: Advice): number =>
+    distance(a) + Math.min((now - (a.at?.getTime() ?? now)) / (365 * 864e5), 1) * 30;
+
+  const best = new Map<number | string, Advice>();
+  for (const row of r.rows) {
+    const k = row.pr ?? row.key;
+    const cur = best.get(k);
+    if (!cur || rank(row) < rank(cur)) best.set(k, row);
+  }
+  return [...best.values()].sort((a, b) => rank(a) - rank(b)).slice(0, limit);
+}
+
 /** 出自に添える日付。`String(Date)` は年を落として曜日を出し、機械のローカル時刻に依存する。 */
 // sv-SE は YYYY-MM-DD を返す唯一の実用ロケール。toISOString() は UTC なので
 // JST 0:00〜9:00 に書いた記録が前日として表示される（実測）。

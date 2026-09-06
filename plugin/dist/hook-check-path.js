@@ -5066,6 +5066,8 @@ var require_lib2 = __commonJS(function(exports, module) {
 });
 
 // server/src/hook-check-path.ts
+import fs2 from "node:fs";
+import os3 from "node:os";
 import path3 from "node:path";
 
 // server/src/db.ts
@@ -5265,6 +5267,38 @@ async function whatAboutPath(client, filePath, scopeIds) {
      limit 5`, Array.isArray(scopeIds) ? [filePath, scopeIds] : [filePath]);
   return r.rows;
 }
+var NO_LINE_PENALTY = 400;
+async function adviceForPath(client, filePath, scopeIds, editedLine, limit = 2) {
+  const r = await client.query(`select n.key, n.kind, n.subkind, n.text,
+            coalesce(n.attrs->>'whyNot', n.attrs->>'context','') as ex,
+            rec.id as record_id, s.label as scope_label, n.at,
+            (n.attrs->>'pr')::int as pr, (n.attrs->>'line')::int as line, n.attrs->>'url' as url,
+            p.status as pr_status
+     from ref
+     join ref_link l   on l.ref_id = ref.id
+     join node     n   on n.id = l.node_id and n.kind = 'utterance' and n.deleted_at is null
+     join record   rec on rec.id = n.record_id
+     join scope    s   on s.id = n.scope_id
+     -- **その PR がマージされたものだけ。**閉じた／開いたままの議論は結論ではない。
+     join node     p   on p.record_id = n.record_id and p.kind = 'event' and p.subkind = 'pr'
+                      and (p.attrs->>'pr') = (n.attrs->>'pr') and p.status = 'merged'
+     where ref.kind = 'file' and ref.key = $1
+       ${Array.isArray(scopeIds) ? "and n.scope_id = any($2)" : ""}
+     limit 200`, Array.isArray(scopeIds) ? [filePath, scopeIds] : [filePath]);
+  if (r.rows.length === 0)
+    return [];
+  const now = Date.now();
+  const distance = (a) => editedLine !== null && a.line !== null ? Math.abs(a.line - editedLine) : NO_LINE_PENALTY;
+  const rank = (a) => distance(a) + Math.min((now - (a.at?.getTime() ?? now)) / (365 * 86400000), 1) * 30;
+  const best = new Map;
+  for (const row of r.rows) {
+    const k = row.pr ?? row.key;
+    const cur = best.get(k);
+    if (!cur || rank(row) < rank(cur))
+      best.set(k, row);
+  }
+  return [...best.values()].sort((a, b) => rank(a) - rank(b)).slice(0, limit);
+}
 var day = (at) => at ? at.toLocaleDateString("sv-SE") : "";
 var PER_ROW = 2000;
 var TOTAL = 48000;
@@ -5310,6 +5344,32 @@ function quote(rows, lead = "") {
 
 // server/src/hook-check-path.ts
 var TIMEOUT_MS = 2500;
+var LOG = path3.join(os3.homedir(), ".claude", "mitos-advice.jsonl");
+function recent(hours = 24) {
+  try {
+    const since = Date.now() - hours * 3600000;
+    const lines = fs2.readFileSync(LOG, "utf8").split(`
+`).slice(-400);
+    const out = new Set;
+    for (const l of lines) {
+      if (!l.startsWith("{"))
+        continue;
+      const r = JSON.parse(l);
+      if (Date.parse(r.at) >= since)
+        for (const k of r.shown)
+          out.add(k);
+    }
+    return out;
+  } catch {
+    return new Set;
+  }
+}
+function record(shot) {
+  try {
+    fs2.appendFileSync(LOG, `${JSON.stringify(shot)}
+`);
+  } catch {}
+}
 function done(text) {
   if (text) {
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: text } }));
@@ -5337,6 +5397,24 @@ if (!filePath)
 var abs = path3.resolve(cwd, filePath);
 var rel = path3.relative(cwd, abs);
 var keys = [...new Set([rel, abs, filePath])].filter(Boolean);
+function editedLine() {
+  const old = payload.tool_input?.old_string;
+  if (!old)
+    return null;
+  try {
+    const body = fs2.readFileSync(abs, "utf8");
+    const at = body.indexOf(old);
+    if (at < 0)
+      return null;
+    let line = 1;
+    for (let i = 0;i < at; i++)
+      if (body.charCodeAt(i) === 10)
+        line++;
+    return line;
+  } catch {
+    return null;
+  }
+}
 var timer = setTimeout(() => done(null), TIMEOUT_MS);
 var client = null;
 try {
@@ -5364,11 +5442,41 @@ try {
       }
     }
   }
-  clearTimeout(timer);
-  if (rows.length === 0)
-    done(null);
-  done(quote(rows, `${rel} について、過去に「触らない」と決めた記録が ${rows.length} 件あります。
+  if (rows.length > 0) {
+    clearTimeout(timer);
+    done(quote(rows, `${rel} について、過去に「触らない」と決めた記録が ${rows.length} 件あります。
 ` + `直す前に、これが欠陥なのか意図なのかを確かめてください。`));
+  }
+  const line = editedLine();
+  const shownBefore = recent();
+  const seenPr = new Set;
+  const advice = [];
+  let candidates = 0;
+  for (const k of keys) {
+    for (const a of await adviceForPath(client, k, scopeIds, line, 5)) {
+      candidates++;
+      const id = a.pr ?? a.key;
+      if (seenPr.has(id))
+        continue;
+      seenPr.add(id);
+      if (shownBefore.has(`${a.record_id}|${a.key}`))
+        continue;
+      advice.push(a);
+    }
+  }
+  clearTimeout(timer);
+  const shown = advice.slice(0, 2);
+  record({
+    at: new Date().toISOString(),
+    path: rel,
+    line,
+    candidates,
+    shown: shown.map((a) => `${a.record_id}|${a.key}`)
+  });
+  if (shown.length === 0)
+    done(null);
+  done(quote(shown, `${rel}${line ? ` の ${line} 行目あたり` : ""} について、` + `マージ済みの PR で言われたことが ${shown.length} 件あります。
+` + `**当時の話なので、いまも当てはまるかは自分で判断してください。**`));
 } catch {
   clearTimeout(timer);
   done(null);

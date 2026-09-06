@@ -3,3 +3,4 @@ node_modules/
 *.log
 dashboard/dist/
 dashboard/.tanstack/
+codex-prompt-*.md
