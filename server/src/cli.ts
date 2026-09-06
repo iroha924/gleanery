@@ -8,7 +8,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import type pg from "pg";
 import { z } from "zod";
-import { connect, loadEnv } from "./db.ts";
+import { connect, type Env, loadEnv } from "./db.ts";
 import { collect, ingestThreads } from "./github.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssue, ingestIssue, listIssues, whoAmI } from "./linear.ts";
@@ -30,6 +30,7 @@ const USAGE = `使い方:
                                                  Linear の issue とコメントを取り込む
   mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
+  mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -154,6 +155,97 @@ async function trackerScopeId(
   return id;
 }
 
+/** リポジトリ 1 つぶん。**import-github と sync が同じ道を通る。** */
+async function syncGithub(c: pg.Client, env: Env, dir: string): Promise<string> {
+  const me = identify(dir);
+  if (me.identKind !== "git-remote") throw new Error(`${dir} に git の remote が無い`);
+  const repo = me.ident.replace(/^git:[^/]+\//, "");
+  const scopeId = await scopeIdFor(c, dir, true);
+  if (scopeId === null) throw new Error("作業場所を決められなかった");
+  console.error(`  ${repo} から集めています…`);
+  const { prs, threads } = collect(repo);
+  const r = await ingestThreads(c, env, repo, scopeId, prs, threads, (m) => console.error(`  ${m}`));
+  return `${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`;
+}
+
+/** Linear のチーム 1 つぶん。team を省いたら束の「issue の出どころ」から引く。 */
+async function syncLinear(
+  c: pg.Client,
+  env: Env,
+  team: string | undefined,
+  takeAll: boolean,
+  group: string | undefined,
+): Promise<string> {
+  // 束に「issue の出どころ」が設定してあれば、チーム名はそこから取る。
+  // 画面で設定したものと CLI が同じものを見るようにするため。
+  const fromGroup = group
+    ? (
+        await c.query<{ ident: string }>(
+          `select s.ident from scope s
+           join group_member m on m.scope_id = s.id
+           join scope_group g on g.id = m.group_id
+           where g.name = $1 and s.ident like 'linear:%' limit 1`,
+          [group],
+        )
+      ).rows[0]?.ident?.replace(/^linear:/, "")
+    : undefined;
+  const teamName = team ?? fromGroup;
+  if (!teamName) {
+    throw new Error(
+      `--team <チーム名> を指定する（例: --team Onetag）。` +
+        `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける\n\n${USAGE}`,
+    );
+  }
+  const who = whoAmI();
+  console.error(`  Linear の ${teamName} を ${who} として数えています…`);
+  const issues = listIssues(teamName);
+  if (issues.length === 0) throw new Error(`${teamName} に issue が 1 件も無い。チーム名を確かめる`);
+  const mine = issues.filter((i) => i.assignee === who || i.createdBy === who);
+  const target = takeAll ? issues : mine;
+  console.error(
+    `  チーム全体 ${issues.length} 件 / 自分が関わる ${mine.length} 件 → 対象 ${target.length} 件`,
+  );
+
+  const workspace =
+    new URL(String(issues[0]?.url ?? "https://linear.app/unknown/")).pathname.split("/")[1] ?? "unknown";
+  const scopeId = await trackerScopeId(
+    c,
+    `linear:${workspace}/${teamName}`,
+    `Linear: ${teamName}`,
+    workspace,
+    group,
+  );
+
+  // **更新のあったものだけ取りに行く。**日次で回すので、ここが無いと毎回全件を
+  // 取り直して時間も費用も件数に比例する。比較は Linear が返した updatedAt の
+  // 文字列そのもの同士でやる（timestamptz へ丸めると精度差で毎回ずれる）。
+  const known = new Map(
+    (
+      await c.query<{ id: string; u: string | null }>(
+        "select id, raw->>'updatedAt' as u from record where id like 'linear:%'",
+      )
+    ).rows.map((r) => [r.id, r.u]),
+  );
+  const changed = target.filter((i) => known.get(`linear:${String(i.id)}`) !== String(i.updatedAt));
+  console.error(
+    `  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`,
+  );
+
+  let nodes = 0;
+  let embedded = 0;
+  for (const [n, row] of changed.entries()) {
+    const id = String(row.id);
+    const issue = fetchIssue(id);
+    const r = await ingestIssue(c, env, workspace, scopeId, issue);
+    nodes += r.nodes;
+    embedded += r.embedded;
+    console.error(
+      `  [${n + 1}/${changed.length}] ${id} コメント ${issue.comments.length} 件 → node ${r.nodes} 件`,
+    );
+  }
+  return `Linear ${teamName} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`;
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
@@ -188,6 +280,7 @@ async function main(): Promise<void> {
     "import-github",
     "import-linear",
     "who",
+    "sync",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
   const env = loadEnv(cwd);
@@ -299,91 +392,50 @@ async function main(): Promise<void> {
     }
 
     if (cmd === "import-github") {
-      const me = identify(cwd);
-      if (me.identKind !== "git-remote") throw new Error(`${cwd} に git の remote が無い`);
-      const repo = me.ident.replace(/^git:[^/]+\//, "");
-      const scopeId = await scopeIdFor(c, cwd, true);
-      if (scopeId === null) throw new Error("作業場所を決められなかった");
-      console.error(`  ${repo} から集めています…`);
-      const { prs, threads } = collect(repo);
-      const r = await ingestThreads(c, env, repo, scopeId, prs, threads, (m) => console.error(`  ${m}`));
-      console.log(
-        `取り込み完了: ${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`,
+      console.log(`取り込み完了: ${await syncGithub(c, env, cwd)}`);
+      return;
+    }
+
+    // 登録済みの取り込み元を順に回す。**何を取りに行くかは DB が持つ** —
+    // どのリポジトリと、どの issue の出どころが束に入っているかは画面で設定した通り。
+    // ここに一覧を書くと、画面で足したものが日次から漏れる。
+    if (cmd === "sync") {
+      const targets = await c.query<{ ident: string; abs_path: string | null; label: string }>(
+        opt.group
+          ? `select s.ident, s.abs_path, s.label from scope s
+             join group_member m on m.scope_id = s.id
+             join scope_group g on g.id = m.group_id
+             where g.name = $1 order by s.label`
+          : "select ident, abs_path, label from scope order by label",
+        opt.group ? [opt.group] : [],
       );
+      let ok = 0;
+      const skipped: string[] = [];
+      for (const t of targets.rows) {
+        try {
+          if (t.ident.startsWith("linear:")) {
+            const team = t.ident.replace(/^linear:[^/]*\//, "");
+            console.log(`取り込み完了: ${await syncLinear(c, env, team, opt.all === true, undefined)}`);
+          } else if (t.ident.startsWith("git:") && t.abs_path && fs.existsSync(t.abs_path)) {
+            console.log(`取り込み完了: ${await syncGithub(c, env, t.abs_path)}`);
+          } else {
+            // **黙って飛ばさない。**「同期したのに古い」の原因がここに集まる。
+            skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
+            continue;
+          }
+          ok++;
+        } catch (e) {
+          // 1 つ落ちても残りは回す。日次なので、翌日に持ち越すより今日入るものを入れる。
+          console.error(`  ${t.label} で失敗: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+      console.log(`同期おわり: ${ok} / ${targets.rows.length} 件`);
+      if (skipped.length) console.log(`飛ばした: ${skipped.join(" / ")}`);
       return;
     }
 
     if (cmd === "import-linear") {
-      // 束に「issue の出どころ」が設定してあれば、チーム名はそこから取る。
-      // 画面で設定したものと CLI が同じものを見るようにするため。
-      const fromGroup = opt.group
-        ? (
-            await c.query<{ ident: string }>(
-              `select s.ident from scope s
-               join group_member m on m.scope_id = s.id
-               join scope_group g on g.id = m.group_id
-               where g.name = $1 and s.ident like 'linear:%' limit 1`,
-              [opt.group],
-            )
-          ).rows[0]?.ident?.replace(/^linear:/, "")
-        : undefined;
-      const team = opt.team ?? fromGroup;
-      if (!team) {
-        throw new Error(
-          `--team <チーム名> を指定する（例: --team Onetag）。` +
-            `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける\n\n${USAGE}`,
-        );
-      }
-      const who = whoAmI();
-      console.error(`  Linear の ${team} を ${who} として数えています…`);
-      const all = listIssues(team);
-      if (all.length === 0) throw new Error(`${team} に issue が 1 件も無い。チーム名を確かめる`);
-      const mine = all.filter((i) => i.assignee === who || i.createdBy === who);
-      const target = opt.all ? all : mine;
-      console.error(
-        `  チーム全体 ${all.length} 件 / 自分が関わる ${mine.length} 件 → 対象 ${target.length} 件`,
-      );
-
-      const workspace =
-        new URL(String(all[0]?.url ?? "https://linear.app/unknown/")).pathname.split("/")[1] ?? "unknown";
-      const scopeId = await trackerScopeId(
-        c,
-        `linear:${workspace}/${team}`,
-        `Linear: ${team}`,
-        workspace,
-        opt.group,
-      );
-
-      // **更新のあったものだけ取りに行く。**日次で回すので、ここが無いと毎回全件を
-      // 取り直して時間も費用も件数に比例する。比較は Linear が返した updatedAt の
-      // 文字列そのもの同士でやる（timestamptz へ丸めると精度差で毎回ずれる）。
-      const known = new Map(
-        (
-          await c.query<{ id: string; u: string | null }>(
-            "select id, raw->>'updatedAt' as u from record where id like 'linear:%'",
-          )
-        ).rows.map((r) => [r.id, r.u]),
-      );
-      const changed = target.filter((i) => known.get(`linear:${String(i.id)}`) !== String(i.updatedAt));
-      console.error(
-        `  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`,
-      );
-
-      let nodes = 0;
-      let embedded = 0;
-      for (const [n, row] of changed.entries()) {
-        const id = String(row.id);
-        const issue = fetchIssue(id);
-        const r = await ingestIssue(c, env, workspace, scopeId, issue);
-        nodes += r.nodes;
-        embedded += r.embedded;
-        console.error(
-          `  [${n + 1}/${changed.length}] ${id} コメント ${issue.comments.length} 件 → node ${r.nodes} 件`,
-        );
-      }
-      console.log(
-        `取り込み完了: Linear ${team} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`,
-      );
+      console.log(`取り込み完了: ${await syncLinear(c, env, opt.team, opt.all === true, opt.group)}`);
       return;
     }
 

@@ -24911,6 +24911,7 @@ var USAGE = `使い方:
                                                  Linear の issue とコメントを取り込む
   mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
+  mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
@@ -24985,6 +24986,55 @@ async function trackerScopeId(c, ident, label, hostOrg, group) {
   }
   return id;
 }
+async function syncGithub(c, env, dir) {
+  const me = identify(dir);
+  if (me.identKind !== "git-remote")
+    throw new Error(`${dir} に git の remote が無い`);
+  const repo = me.ident.replace(/^git:[^/]+\//, "");
+  const scopeId = await scopeIdFor(c, dir, true);
+  if (scopeId === null)
+    throw new Error("作業場所を決められなかった");
+  console.error(`  ${repo} から集めています…`);
+  const { prs, threads: threads2 } = collect(repo);
+  const r = await ingestThreads(c, env, repo, scopeId, prs, threads2, (m) => console.error(`  ${m}`));
+  return `${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`;
+}
+async function syncLinear(c, env, team, takeAll, group) {
+  const fromGroup = group ? (await c.query(`select s.ident from scope s
+           join group_member m on m.scope_id = s.id
+           join scope_group g on g.id = m.group_id
+           where g.name = $1 and s.ident like 'linear:%' limit 1`, [group])).rows[0]?.ident?.replace(/^linear:/, "") : undefined;
+  const teamName = team ?? fromGroup;
+  if (!teamName) {
+    throw new Error(`--team <チーム名> を指定する（例: --team Onetag）。` + `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける
+
+${USAGE}`);
+  }
+  const who = whoAmI();
+  console.error(`  Linear の ${teamName} を ${who} として数えています…`);
+  const issues = listIssues(teamName);
+  if (issues.length === 0)
+    throw new Error(`${teamName} に issue が 1 件も無い。チーム名を確かめる`);
+  const mine = issues.filter((i) => i.assignee === who || i.createdBy === who);
+  const target = takeAll ? issues : mine;
+  console.error(`  チーム全体 ${issues.length} 件 / 自分が関わる ${mine.length} 件 → 対象 ${target.length} 件`);
+  const workspace = new URL(String(issues[0]?.url ?? "https://linear.app/unknown/")).pathname.split("/")[1] ?? "unknown";
+  const scopeId = await trackerScopeId(c, `linear:${workspace}/${teamName}`, `Linear: ${teamName}`, workspace, group);
+  const known = new Map((await c.query("select id, raw->>'updatedAt' as u from record where id like 'linear:%'")).rows.map((r) => [r.id, r.u]));
+  const changed = target.filter((i) => known.get(`linear:${String(i.id)}`) !== String(i.updatedAt));
+  console.error(`  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`);
+  let nodes = 0;
+  let embedded = 0;
+  for (const [n, row] of changed.entries()) {
+    const id = String(row.id);
+    const issue2 = fetchIssue(id);
+    const r = await ingestIssue(c, env, workspace, scopeId, issue2);
+    nodes += r.nodes;
+    embedded += r.embedded;
+    console.error(`  [${n + 1}/${changed.length}] ${id} コメント ${issue2.comments.length} 件 → node ${r.nodes} 件`);
+  }
+  return `Linear ${teamName} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`;
+}
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
@@ -25014,7 +25064,8 @@ async function main() {
     "usage",
     "import-github",
     "import-linear",
-    "who"
+    "who",
+    "sync"
   ];
   if (!KNOWN.includes(cmd))
     throw new Error(`知らないコマンド: ${cmd}
@@ -25105,54 +25156,39 @@ ${USAGE}`);
       return;
     }
     if (cmd === "import-github") {
-      const me = identify(cwd);
-      if (me.identKind !== "git-remote")
-        throw new Error(`${cwd} に git の remote が無い`);
-      const repo = me.ident.replace(/^git:[^/]+\//, "");
-      const scopeId = await scopeIdFor(c, cwd, true);
-      if (scopeId === null)
-        throw new Error("作業場所を決められなかった");
-      console.error(`  ${repo} から集めています…`);
-      const { prs, threads: threads2 } = collect(repo);
-      const r = await ingestThreads(c, env, repo, scopeId, prs, threads2, (m) => console.error(`  ${m}`));
-      console.log(`取り込み完了: ${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
+      console.log(`取り込み完了: ${await syncGithub(c, env, cwd)}`);
+      return;
+    }
+    if (cmd === "sync") {
+      const targets = await c.query(opt.group ? `select s.ident, s.abs_path, s.label from scope s
+             join group_member m on m.scope_id = s.id
+             join scope_group g on g.id = m.group_id
+             where g.name = $1 order by s.label` : "select ident, abs_path, label from scope order by label", opt.group ? [opt.group] : []);
+      let ok = 0;
+      const skipped = [];
+      for (const t of targets.rows) {
+        try {
+          if (t.ident.startsWith("linear:")) {
+            const team = t.ident.replace(/^linear:[^/]*\//, "");
+            console.log(`取り込み完了: ${await syncLinear(c, env, team, opt.all === true, undefined)}`);
+          } else if (t.ident.startsWith("git:") && t.abs_path && fs4.existsSync(t.abs_path)) {
+            console.log(`取り込み完了: ${await syncGithub(c, env, t.abs_path)}`);
+          } else {
+            skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
+            continue;
+          }
+          ok++;
+        } catch (e) {
+          console.error(`  ${t.label} で失敗: ${e instanceof Error ? e.message : e}`);
+        }
+      }
+      console.log(`同期おわり: ${ok} / ${targets.rows.length} 件`);
+      if (skipped.length)
+        console.log(`飛ばした: ${skipped.join(" / ")}`);
       return;
     }
     if (cmd === "import-linear") {
-      const fromGroup = opt.group ? (await c.query(`select s.ident from scope s
-               join group_member m on m.scope_id = s.id
-               join scope_group g on g.id = m.group_id
-               where g.name = $1 and s.ident like 'linear:%' limit 1`, [opt.group])).rows[0]?.ident?.replace(/^linear:/, "") : undefined;
-      const team = opt.team ?? fromGroup;
-      if (!team) {
-        throw new Error(`--team <チーム名> を指定する（例: --team Onetag）。` + `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける
-
-${USAGE}`);
-      }
-      const who = whoAmI();
-      console.error(`  Linear の ${team} を ${who} として数えています…`);
-      const all = listIssues(team);
-      if (all.length === 0)
-        throw new Error(`${team} に issue が 1 件も無い。チーム名を確かめる`);
-      const mine = all.filter((i) => i.assignee === who || i.createdBy === who);
-      const target = opt.all ? all : mine;
-      console.error(`  チーム全体 ${all.length} 件 / 自分が関わる ${mine.length} 件 → 対象 ${target.length} 件`);
-      const workspace = new URL(String(all[0]?.url ?? "https://linear.app/unknown/")).pathname.split("/")[1] ?? "unknown";
-      const scopeId = await trackerScopeId(c, `linear:${workspace}/${team}`, `Linear: ${team}`, workspace, opt.group);
-      const known = new Map((await c.query("select id, raw->>'updatedAt' as u from record where id like 'linear:%'")).rows.map((r) => [r.id, r.u]));
-      const changed = target.filter((i) => known.get(`linear:${String(i.id)}`) !== String(i.updatedAt));
-      console.error(`  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`);
-      let nodes = 0;
-      let embedded = 0;
-      for (const [n, row] of changed.entries()) {
-        const id = String(row.id);
-        const issue2 = fetchIssue(id);
-        const r = await ingestIssue(c, env, workspace, scopeId, issue2);
-        nodes += r.nodes;
-        embedded += r.embedded;
-        console.error(`  [${n + 1}/${changed.length}] ${id} コメント ${issue2.comments.length} 件 → node ${r.nodes} 件`);
-      }
-      console.log(`取り込み完了: Linear ${team} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`);
+      console.log(`取り込み完了: ${await syncLinear(c, env, opt.team, opt.all === true, opt.group)}`);
       return;
     }
     if (cmd === "who") {
