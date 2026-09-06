@@ -117,7 +117,15 @@ const SYSTEM = (people: Person[]): string =>
     "**「誰の」「いつの」「最新の」「一覧」を聞かれたら道具を使う。**それは絞り込みと",
     "並び替えであって、渡された記録を読んで答えるものではない。渡された記録に見当たらないことを",
     "「記録には無い」と答える前に、条件で引ける質問かどうかを先に考える。",
-    "PR の話なら find_prs、人の発言なら find_utterances。",
+    "PR なら find_prs、issue なら find_issues、人の発言なら find_utterances。",
+    "",
+    "**発言は「書かれた時点の話」で、いまの状態ではない。**",
+    "「進捗は」「いまどうなっている」「終わった？」と聞かれたら、コメントを読んで答える前に",
+    "find_issues と find_prs で**いまの状態を確かめる**。コメントに「レビュー0件」「open」と",
+    "書いてあっても、そのあとマージされて完了していることがある。",
+    "実測: 8/24 のコメントだけを読んで「レビュー待ち」と答えたが、PR は 8/25 にマージ済みで",
+    "issue は 8/31 に Done になっていた。**状態を答えるときは必ず現在の状態を根拠にする。**",
+    "コメントは「そこへ至る経緯」として使い、結論には使わない。",
     "author にはハンドル名を渡す（呼び名ではなく、上の対応表で変換する）。",
     "repo は「いま見ている範囲」に挙がっているものから選ぶ。",
     "",
@@ -373,6 +381,27 @@ const TOOLS: OpenAI.Responses.Tool[] = [
   },
   {
     type: "function",
+    name: "find_issues",
+    description:
+      "issue のいまの状態を返す。**進捗・状態を聞かれたら必ずこれを使う。**" +
+      "コメントは書かれた時点の話で、そのあと状態が変わっている（実測: 8/24 の「レビュー0件」を読んで" +
+      "「レビュー待ち」と答えたが、実際は 8/25 にマージされ 8/31 に Done になっていた）。" +
+      "id を渡すと 1 件の全文が返る。省くと条件で絞った一覧が返る。",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "issue 番号。例: OT-4578" },
+        status: { type: "string", description: "状態で絞る。例: Done / In Review / Todo" },
+        assignee: { type: "string", description: "担当者。Linear の表示名（対応表で変換する）" },
+        contains: { type: "string", description: "題か本文に含まれる語で絞る" },
+        limit: { type: "number", description: "何件返すか。既定 10、最大 50" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
     name: "find_utterances",
     description:
       "人の発言を新しい順に返す。「黒川さんが最近言ってたこと」「◯◯さんはこの件で何て言ってた」のように、" +
@@ -453,6 +482,8 @@ async function runTool(
     query?: string;
     person?: string;
     contains?: string;
+    id?: string;
+    assignee?: string;
     glob?: string;
     path?: string;
     from?: number;
@@ -487,6 +518,45 @@ async function runTool(
     });
     return n;
   };
+
+  if (call.name === "find_issues") {
+    const w = ["r.id like 'linear:%'", "r.scope_id = any($1)"];
+    const ps: unknown[] = [scopeIds];
+    const push = (v: unknown, f: (i: number) => string) => {
+      ps.push(v);
+      w.push(f(ps.length));
+    };
+    if (a.id) push(`linear:${a.id.replace(/^linear:/, "").toUpperCase()}`, (i) => `r.id = $${i}`);
+    if (a.status) push(a.status, (i) => `r.raw->>'status' ilike $${i}`);
+    if (a.assignee) push(a.assignee, (i) => `r.raw->>'assignee' = $${i}`);
+    if (a.contains) push(`%${a.contains}%`, (i) => `(r.title ilike $${i} or r.problem ilike $${i})`);
+    const lim = a.id ? 1 : Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
+    const q = await client.query<Record<string, unknown>>(
+      `select replace(r.id, 'linear:', '') as issue, r.title,
+              r.raw->>'status' as status, r.raw->>'project' as project,
+              r.raw->>'assignee' as assignee, r.raw->>'createdBy' as created_by,
+              to_char(r.updated_at, 'YYYY-MM-DD') as updated_at, r.raw->>'url' as url,
+              -- 1 件だけのときは本文も返す。一覧のときは題だけ（本文で文脈が埋まる）。
+              ${a.id ? "left(r.problem, 4000)" : "null"} as body
+       from record r where ${w.join(" and ")}
+       order by r.updated_at desc limit ${lim}`,
+      ps,
+    );
+    if (q.rows.length === 0) return JSON.stringify({ found: 0, note: "条件に合う issue は無かった" });
+    return JSON.stringify(
+      q.rows.map((x) => ({
+        ...x,
+        n: cite(
+          "【issue】",
+          `${x.issue} ${x.title}（${x.status}）`,
+          "Linear",
+          String(x.updated_at ?? ""),
+          `linear:${x.issue}`,
+          typeof x.url === "string" ? x.url : null,
+        ),
+      })),
+    );
+  }
 
   if (call.name === "find_utterances") {
     if (!a.person) return JSON.stringify({ error: "person が空" });
