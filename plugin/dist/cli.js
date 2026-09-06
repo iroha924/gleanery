@@ -5079,9 +5079,9 @@ var require_lib2 = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
-import fs4 from "node:fs";
+import fs5 from "node:fs";
 import os4 from "node:os";
-import path4 from "node:path";
+import path5 from "node:path";
 import { parseArgs } from "node:util";
 
 // server/node_modules/zod/v4/classic/external.js
@@ -24063,6 +24063,7 @@ var LABEL = {
   "utterance/review": "【レビューでの発言】",
   "utterance/issue": "【issue での発言】",
   "utterance/meeting": "【会議での発言】",
+  "utterance/session": "【作業中のやりとり】",
   "utterance/null": "【発言】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
@@ -24953,6 +24954,131 @@ function candidates(roots = [path3.join(HOME, "Projects")]) {
   }));
 }
 
+// server/src/session.ts
+import crypto5 from "node:crypto";
+import fs4 from "node:fs";
+import path4 from "node:path";
+var BOILERPLATE = /^(Base directory for this skill|<|\/)/;
+var textOf = (m) => {
+  const c = m?.content;
+  if (typeof c === "string")
+    return c.trim();
+  if (!Array.isArray(c))
+    return "";
+  return c.filter((x) => {
+    const o = x;
+    return o?.type === "text" && typeof o.text === "string";
+  }).map((x) => x.text).join(" ").trim();
+};
+function readSession(file2) {
+  const id = path4.basename(file2, ".jsonl");
+  const exchanges = [];
+  let cwd = "";
+  let branch = "";
+  let pending = null;
+  for (const line of fs4.readFileSync(file2, "utf8").split(`
+`)) {
+    if (!line.startsWith("{"))
+      continue;
+    let d;
+    try {
+      d = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (d.isSidechain)
+      continue;
+    if (typeof d.cwd === "string" && !cwd)
+      cwd = d.cwd;
+    if (typeof d.gitBranch === "string" && d.gitBranch)
+      branch = d.gitBranch;
+    const body = textOf(d.message);
+    if (d.type === "user") {
+      if (!body || body.length < 15 || BOILERPLATE.test(body))
+        continue;
+      pending = { ask: body, at: String(d.timestamp ?? ""), branch };
+    } else if (d.type === "assistant" && body && pending) {
+      exchanges.push({
+        key: `${id}:${exchanges.length}`,
+        at: pending.at,
+        branch: pending.branch,
+        ask: pending.ask.slice(0, 4000),
+        reply: body.slice(0, 2000)
+      });
+      pending = null;
+    }
+  }
+  return exchanges.length ? { id, file: file2, cwd, exchanges } : null;
+}
+var exchangeText = (e) => `${e.branch || "main"} / ${e.at.slice(0, 10)}
+指示: ${e.ask}
+応答: ${e.reply}`;
+var hash3 = (s) => crypto5.createHash("sha256").update(s).digest("hex");
+async function ingestSession(client, env, scopeId, s, me) {
+  const recordId = `session:${s.id}`;
+  const first = s.exchanges[0];
+  const last = s.exchanges[s.exchanges.length - 1];
+  if (!first || !last)
+    return { nodes: 0, embedded: 0 };
+  await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal,
+                         created_at, updated_at, raw, raw_hash)
+     values ($1,$2,'session/1',$3,'done',$4,'',$5,$6,'{}'::jsonb,$7)
+     on conflict (id) do update set
+       title=excluded.title, problem=excluded.problem, updated_at=excluded.updated_at,
+       raw_hash=excluded.raw_hash, ingested_at=now()`, [
+    recordId,
+    scopeId,
+    `${first.branch || "main"}: ${first.ask.slice(0, 80).replace(/\n/g, " ")}`,
+    first.ask.slice(0, 2000),
+    first.at || new Date().toISOString(),
+    last.at || new Date().toISOString(),
+    hash3(s.exchanges.map((e) => e.key).join())
+  ]);
+  const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
+  const need = s.exchanges.filter((e) => {
+    const old = existing.get(e.key);
+    return !old || old.content_hash !== hash3(exchangeText(e)) || !old.has_emb;
+  });
+  const vectors = need.length ? await embed(env, need.map((e) => exchangeText(e)), "document") : [];
+  const byKey = new Map(need.map((e, i) => [e.key, vectors[i]]));
+  await client.query("begin");
+  try {
+    for (const [ordinal, e] of s.exchanges.entries()) {
+      const v = byKey.get(e.key);
+      await client.query(`insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
+                           actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
+         values ($1,$2,'utterance','session',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
+         on conflict (record_id, kind, key) do update set
+           ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
+           content_hash=excluded.content_hash, deleted_at=null,
+           embed_text=coalesce(excluded.embed_text, node.embed_text),
+           embed_model=coalesce(excluded.embed_model, node.embed_model),
+           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
+           embedding=coalesce(excluded.embedding, node.embedding)`, [
+        recordId,
+        scopeId,
+        e.key,
+        ordinal,
+        e.at || null,
+        `${me}: ${e.ask}
+AI: ${e.reply}`,
+        JSON.stringify({ branch: e.branch, session: s.id }),
+        me,
+        hash3(exchangeText(e)),
+        v ? exchangeText(e) : null,
+        v ? EMBED_MODEL : null,
+        v ? new Date().toISOString() : null,
+        vec(v)
+      ]);
+    }
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    throw err;
+  }
+  return { nodes: s.exchanges.length, embedded: need.length };
+}
+
 // server/src/cli.ts
 var USAGE = `使い方:
   mitos ingest <記録.html|ir.json> [--cwd <dir>]  記録を取り込む（未登録なら作業場所も登録）
@@ -24970,6 +25096,7 @@ var USAGE = `使い方:
   mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
+  mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
@@ -24984,7 +25111,7 @@ var OPTIONS = {
 };
 var IR_TAG = /<script type="application\/json" id="progress-ir">([\s\S]*?)<\/script>/;
 function readIr(file2) {
-  const body = fs4.readFileSync(file2, "utf8");
+  const body = fs5.readFileSync(file2, "utf8");
   if (!file2.endsWith(".html"))
     return JSON.parse(body);
   const m = body.match(IR_TAG);
@@ -25127,7 +25254,8 @@ async function main() {
     "import-github",
     "import-linear",
     "who",
-    "sync"
+    "sync",
+    "import-sessions"
   ];
   if (!KNOWN.includes(cmd))
     throw new Error(`知らないコマンド: ${cmd}
@@ -25163,12 +25291,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "usage") {
-    const log = path4.join(os4.homedir(), ".claude", "mitos-usage.jsonl");
-    if (!fs4.existsSync(log)) {
+    const log = path5.join(os4.homedir(), ".claude", "mitos-usage.jsonl");
+    if (!fs5.existsSync(log)) {
       console.log("まだ記録がありません。");
       return;
     }
-    const rows = fs4.readFileSync(log, "utf8").split(`
+    const rows = fs5.readFileSync(log, "utf8").split(`
 `).filter(Boolean).map((l) => JSON.parse(l));
     const limit2 = Number(env.MITOS_USAGE_LIMIT ?? 10);
     const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
@@ -25244,7 +25372,7 @@ ${USAGE}`);
           if (t.ident.startsWith("linear:")) {
             const team = t.ident.replace(/^linear:[^/]*\//, "");
             console.log(`取り込み完了: ${await syncLinear(c, env, team, opt.all === true, undefined)}`);
-          } else if (t.ident.startsWith("git:") && t.abs_path && fs4.existsSync(t.abs_path)) {
+          } else if (t.ident.startsWith("git:") && t.abs_path && fs5.existsSync(t.abs_path)) {
             console.log(`取り込み完了: ${await syncGithub(c, env, t.abs_path)}`);
           } else {
             skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
@@ -25296,6 +25424,36 @@ ${USAGE}`);
       await c.query(`insert into person (display, handles, is_me) values ($1,$2,$3)
          on conflict (display) do update set handles = excluded.handles, is_me = excluded.is_me, updated_at = now()`, [display, handles, opt.me === true]);
       console.log(`名簿に入れた: ${display} = ${handles.join(" / ")}${opt.me ? "（質問者本人）" : ""}`);
+      return;
+    }
+    if (cmd === "import-sessions") {
+      const scopeId = await scopeIdFor(c, cwd, true);
+      if (scopeId === null)
+        throw new Error("作業場所を決められなかった");
+      const me = (await c.query("select display from person where is_me limit 1")).rows[0]?.display ?? "私";
+      const slug = cwd.replace(/\//g, "-");
+      const dirs = [
+        ...fs5.readdirSync(path5.join(os4.homedir(), ".ccs", "instances"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path5.join(os4.homedir(), ".ccs", "instances", d.name, "projects", slug)),
+        path5.join(os4.homedir(), ".claude", "projects", slug)
+      ].filter((d) => fs5.existsSync(d));
+      if (dirs.length === 0)
+        throw new Error(`${cwd} のセッション記録が見つからない`);
+      const files = dirs.flatMap((d) => fs5.readdirSync(d).filter((f) => f.endsWith(".jsonl")).map((f) => path5.join(d, f)));
+      console.error(`  セッション ${files.length} 本を読みます…`);
+      let nodes = 0;
+      let embedded = 0;
+      let done = 0;
+      for (const file2 of files) {
+        const s = readSession(file2);
+        if (!s)
+          continue;
+        const r = await ingestSession(c, env, scopeId, s, me);
+        nodes += r.nodes;
+        embedded += r.embedded;
+        done++;
+        console.error(`  [${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
+      }
+      console.log(`取り込み完了: セッション ${done} 本 / 往復 ${nodes} 件（埋め込み ${embedded} 件）`);
       return;
     }
     if (cmd === "search") {

@@ -63,6 +63,8 @@ const LABEL: Record<string, string> = {
   "utterance/review": "【レビューでの発言】",
   "utterance/issue": "【issue での発言】",
   "utterance/meeting": "【会議での発言】",
+  // Claude Code の作業中の会話。PR や issue に残らない前提がここにある。
+  "utterance/session": "【作業中のやりとり】",
   "utterance/null": "【発言】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】",

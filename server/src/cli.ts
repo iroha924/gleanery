@@ -14,6 +14,7 @@ import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { candidates, identify } from "./scope.ts";
 import { outsideScopes, quote, scopeFamily, search } from "./search.ts";
+import { ingestSession, readSession } from "./session.ts";
 
 const USAGE = `使い方:
   mitos ingest <記録.html|ir.json> [--cwd <dir>]  記録を取り込む（未登録なら作業場所も登録）
@@ -31,6 +32,7 @@ const USAGE = `使い方:
   mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
+  mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -285,6 +287,7 @@ async function main(): Promise<void> {
     "import-linear",
     "who",
     "sync",
+    "import-sessions",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
   const env = loadEnv(cwd);
@@ -492,6 +495,49 @@ async function main(): Promise<void> {
         [display, handles, opt.me === true],
       );
       console.log(`名簿に入れた: ${display} = ${handles.join(" / ")}${opt.me ? "（質問者本人）" : ""}`);
+      return;
+    }
+
+    // Claude Code の会話。**ここにしか無い前提がある**（口頭で伝わった判断など）。
+    if (cmd === "import-sessions") {
+      const scopeId = await scopeIdFor(c, cwd, true);
+      if (scopeId === null) throw new Error("作業場所を決められなかった");
+      const me =
+        (await c.query<{ display: string }>("select display from person where is_me limit 1")).rows[0]
+          ?.display ?? "私";
+
+      // ccs（複数インスタンス）と素の Claude Code の両方を見る。
+      const slug = cwd.replace(/\//g, "-");
+      const dirs = [
+        ...fs
+          .readdirSync(path.join(os.homedir(), ".ccs", "instances"), { withFileTypes: true })
+          .filter((d) => d.isDirectory())
+          .map((d) => path.join(os.homedir(), ".ccs", "instances", d.name, "projects", slug)),
+        path.join(os.homedir(), ".claude", "projects", slug),
+      ].filter((d) => fs.existsSync(d));
+      if (dirs.length === 0) throw new Error(`${cwd} のセッション記録が見つからない`);
+
+      const files = dirs.flatMap((d) =>
+        fs
+          .readdirSync(d)
+          .filter((f) => f.endsWith(".jsonl"))
+          .map((f) => path.join(d, f)),
+      );
+      console.error(`  セッション ${files.length} 本を読みます…`);
+
+      let nodes = 0;
+      let embedded = 0;
+      let done = 0;
+      for (const file of files) {
+        const s = readSession(file);
+        if (!s) continue;
+        const r = await ingestSession(c, env, scopeId, s, me);
+        nodes += r.nodes;
+        embedded += r.embedded;
+        done++;
+        console.error(`  [${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
+      }
+      console.log(`取り込み完了: セッション ${done} 本 / 往復 ${nodes} 件（埋め込み ${embedded} 件）`);
       return;
     }
 

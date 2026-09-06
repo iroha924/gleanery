@@ -39160,6 +39160,7 @@ var LABEL = {
   "utterance/review": "【レビューでの発言】",
   "utterance/issue": "【issue での発言】",
   "utterance/meeting": "【会議での発言】",
+  "utterance/session": "【作業中のやりとり】",
   "utterance/null": "【発言】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
