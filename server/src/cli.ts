@@ -340,13 +340,29 @@ async function main(): Promise<void> {
       .readFileSync(log, "utf8")
       .split("\n")
       .filter(Boolean)
-      .map((l) => JSON.parse(l) as { model: string; in?: number; out?: number; cost?: number });
-    const limit = Number(env.MITOS_USAGE_LIMIT ?? 5);
+      .map(
+        (l) => JSON.parse(l) as { model: string; in?: number; cached?: number; out?: number; cost?: number },
+      );
+    const limit = Number(env.MITOS_USAGE_LIMIT ?? 10);
     const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
     const per = total / Math.max(rows.length, 1);
     console.log(`呼び出し   ${rows.length} 回`);
     console.log(`費用       $${total.toFixed(4)} / 上限 $${limit}（${((total / limit) * 100).toFixed(1)}%）`);
     console.log(`1 回あたり  $${per.toFixed(4)} — 残りおよそ ${Math.floor((limit - total) / per)} 回`);
+    // **キャッシュ済み入力は 10% で課金される。**これを数えていなかったので、
+    // 実測 $2.76 に対して $3.92 と 42% 過大に報告していた（実測で判明）。
+    const older = rows.filter((r) => r.cached === undefined).length;
+    if (older) {
+      console.log(`\n※ 古い ${older} 件はキャッシュ分を数えていないので、実際より高く出ています`);
+      const withCache = rows.filter((r) => r.cached !== undefined);
+      if (withCache.length) {
+        const inTok = withCache.reduce((a, r) => a + (r.in ?? 0), 0);
+        const cachedTok = withCache.reduce((a, r) => a + (r.cached ?? 0), 0);
+        console.log(
+          `   新しい ${withCache.length} 件では入力の ${((cachedTok / Math.max(inTok, 1)) * 100).toFixed(0)}% がキャッシュ済み`,
+        );
+      }
+    }
     return;
   }
 

@@ -176,16 +176,29 @@ const PRICE: Record<string, { in: number; out: number }> = {
   "gpt-5.6-luna": { in: 0.2, out: 1.2 },
 };
 
+// **キャッシュ済み入力は通常入力の 10%**（4 モデルとも共通。openai の pricing で確認）。
+// 道具を使うと同じ文脈を 2〜3 回送り直すので、2 回目以降の入力はほぼ全部これになる。
+// 全額で数えていたため、実測 $2.76 に対して $3.92 と 42% 過大に報告していた。
+const CACHED_RATE = 0.1;
+
 const USAGE_LOG = path.join(os.homedir(), ".claude", "mitos-usage.jsonl");
 
-function recordUsage(model: string, usage: { input_tokens?: number; output_tokens?: number } | undefined) {
+function recordUsage(
+  model: string,
+  usage:
+    | { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } }
+    | undefined,
+) {
   if (!usage) return;
   const p = PRICE[model.replace(/-\d{4}-\d{2}-\d{2}$/, "")] ?? { in: 0, out: 0 };
-  const cost = ((usage.input_tokens ?? 0) * p.in + (usage.output_tokens ?? 0) * p.out) / 1_000_000;
+  const input = usage.input_tokens ?? 0;
+  const cached = Math.min(usage.input_tokens_details?.cached_tokens ?? 0, input);
+  const cost =
+    ((input - cached) * p.in + cached * p.in * CACHED_RATE + (usage.output_tokens ?? 0) * p.out) / 1_000_000;
   try {
     fs.appendFileSync(
       USAGE_LOG,
-      `${JSON.stringify({ at: new Date().toISOString(), model, in: usage.input_tokens, out: usage.output_tokens, cost })}\n`,
+      `${JSON.stringify({ at: new Date().toISOString(), model, in: input, cached, out: usage.output_tokens, cost })}\n`,
     );
   } catch {
     // 記録できなくても答えは返す

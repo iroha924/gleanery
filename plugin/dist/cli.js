@@ -25170,12 +25170,23 @@ ${USAGE}`);
     }
     const rows = fs4.readFileSync(log, "utf8").split(`
 `).filter(Boolean).map((l) => JSON.parse(l));
-    const limit2 = Number(env.MITOS_USAGE_LIMIT ?? 5);
+    const limit2 = Number(env.MITOS_USAGE_LIMIT ?? 10);
     const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
     const per = total / Math.max(rows.length, 1);
     console.log(`呼び出し   ${rows.length} 回`);
     console.log(`費用       $${total.toFixed(4)} / 上限 $${limit2}（${(total / limit2 * 100).toFixed(1)}%）`);
     console.log(`1 回あたり  $${per.toFixed(4)} — 残りおよそ ${Math.floor((limit2 - total) / per)} 回`);
+    const older = rows.filter((r) => r.cached === undefined).length;
+    if (older) {
+      console.log(`
+※ 古い ${older} 件はキャッシュ分を数えていないので、実際より高く出ています`);
+      const withCache = rows.filter((r) => r.cached !== undefined);
+      if (withCache.length) {
+        const inTok = withCache.reduce((a, r) => a + (r.in ?? 0), 0);
+        const cachedTok = withCache.reduce((a, r) => a + (r.cached ?? 0), 0);
+        console.log(`   新しい ${withCache.length} 件では入力の ${(cachedTok / Math.max(inTok, 1) * 100).toFixed(0)}% がキャッシュ済み`);
+      }
+    }
     return;
   }
   if (cmd === "candidates") {
