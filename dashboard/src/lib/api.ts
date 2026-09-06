@@ -28,6 +28,8 @@ export type ChatSource = {
   recordTitle: string;
   scope: string;
   at: string | null;
+  /** PR や issue の URL。記録そのものには無い */
+  url?: string | null;
 };
 
 /**

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BotIcon, CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { Answer } from "@/components/answer";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -76,7 +77,22 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
                 <Link to="/records/$id" params={{ id: s.recordId }} className="underline underline-offset-2">
                   {s.recordTitle}
                 </Link>
-                {s.at && ` / ${s.at}`}）
+                {s.at && ` / ${s.at}`}
+                {s.url && (
+                  <>
+                    {" / "}
+                    {/* PR や issue は外にある。**新しいタブで開く** — いまの会話を捨てさせない。 */}
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline underline-offset-2"
+                    >
+                      開く
+                    </a>
+                  </>
+                )}
+                ）
               </span>
             </li>
           ))}
@@ -193,8 +209,8 @@ function Chat() {
                         {t.sources && <Sources sources={t.sources} busy={busy && !t.content} />}
                         {t.content && (
                           <Bubble variant="ghost">
-                            <BubbleContent className="whitespace-pre-wrap leading-relaxed">
-                              {t.content}
+                            <BubbleContent>
+                              <Answer text={t.content} />
                             </BubbleContent>
                           </Bubble>
                         )}

@@ -125,6 +125,9 @@ const SYSTEM = (people: Person[]): string =>
     "聞かれたら grep_code で探し、read_code で読む。**記録とコードが食い違ったらコードが正しい。**",
     "答えるときは、記録から言っているのかコードを見て言っているのかを分けて書く。",
     "",
+    "**道具が返したものにも n という番号が付いている。**それを根拠にしたなら [n] で引く。",
+    "引用しなかったものは画面に出ないので、使ったものは必ず番号で指すこと。",
+    "",
     "日本語で、結論から答える。",
     ...(people.length
       ? [
@@ -180,6 +183,8 @@ export type ChatSource = {
   recordTitle: string;
   scope: string;
   at: string | null;
+  /** 外にあるもの（PR、issue）へ飛ぶ先。記録そのものには無い */
+  url?: string | null;
 };
 
 /**
@@ -228,9 +233,8 @@ export async function* chat(
     recordTitle: h.record_title,
     scope: h.scope_label,
     at: h.at ? h.at.toLocaleDateString("sv-SE") : null,
+    url: (h.attrs as { url?: string }).url ?? null,
   }));
-  yield { type: "sources", sources };
-
   if (rows.length === 0 && records.length === 0) {
     yield { type: "text", text: "このプロジェクトには、まだ何も記録がありません。" };
     return;
@@ -275,6 +279,7 @@ export async function* chat(
   // **最後の 1 周は道具を外す。**道具を渡し続けると、呼び続けて 1 文字も答えないまま
   // 打ち切られることがある（実測: コードを探し回って回数を使い切り、空の応答になった）。
   const ROUNDS = 4;
+  let answer = "";
   for (let round = 0; round < ROUNDS; round++) {
     const last = round === ROUNDS - 1;
     const stream = await openai.responses.create({
@@ -294,6 +299,7 @@ export async function* chat(
     const calls: OpenAI.Responses.ResponseFunctionToolCall[] = [];
     for await (const event of stream) {
       if (event.type === "response.output_text.delta") {
+        answer += event.delta;
         yield { type: "text", text: event.delta };
       } else if (event.type === "response.output_item.done") {
         items.push(event.item);
@@ -303,17 +309,22 @@ export async function* chat(
         recordUsage(event.response.model, event.response.usage);
       }
     }
-    if (calls.length === 0) return;
+    if (calls.length === 0) break;
 
     input.push(...(items as OpenAI.Responses.ResponseInput));
     for (const call of calls) {
       input.push({
         type: "function_call_output",
         call_id: call.call_id,
-        output: await runTool(client, body.scopeIds, roots, call),
+        output: await runTool(client, body.scopeIds, roots, call, sources),
       });
     }
   }
+
+  // **引用されたものだけを根拠として出す。**検索で引いただけのものを「根拠にした記録」と
+  // 並べると嘘になる（実測: 道具から答えたのに、無関係な「マージします！」が 12 件並んだ）。
+  const cited = new Set([...answer.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])));
+  yield { type: "sources", sources: sources.filter((x) => cited.has(x.n)) };
 }
 
 const TOOLS: OpenAI.Responses.Tool[] = [
@@ -321,13 +332,18 @@ const TOOLS: OpenAI.Responses.Tool[] = [
     type: "function",
     name: "find_prs",
     description:
-      "PR を条件で絞って新しい順に返す。「私の最新のマージ済み PR」「インフラで先月マージされた PR」のように、" +
+      "PR を条件で絞って新しい順に返す。番号・誰が・どのリポジトリ・状態・いつ以降で引ける。" +
+      "「#2323 では何をしてる？」「私の最新のマージ済み PR」「インフラで先月マージされた PR」のように、" +
       "意味ではなく条件（誰が / どのリポジトリ / 状態 / いつ以降）で探すときに使う。" +
       "渡された記録の中に答えが見当たらないときも、条件で引ける質問ならこれを使う。",
     strict: false,
     parameters: {
       type: "object",
       properties: {
+        number: {
+          type: "number",
+          description: "PR 番号。「#2323 では何をしている」のように番号で聞かれたらこれだけ渡す",
+        },
         author: {
           type: "string",
           description: "GitHub のハンドル名。呼び名ではなくハンドルを渡す（名簿の対応表を見て変換する）",
@@ -393,6 +409,7 @@ async function runTool(
   scopeIds: number[],
   roots: Root[],
   call: OpenAI.Responses.ResponseFunctionToolCall,
+  sources: ChatSource[],
 ): Promise<string> {
   let a: Record<string, never> & {
     author?: string;
@@ -400,6 +417,7 @@ async function runTool(
     state?: string;
     since?: string;
     limit?: number;
+    number?: number;
     query?: string;
     glob?: string;
     path?: string;
@@ -412,14 +430,49 @@ async function runTool(
     return JSON.stringify({ error: "引数が JSON として読めなかった" });
   }
 
+  // 道具が返したものにも番号を振る。**引用できないものは根拠にならない。**
+  const cite = (
+    label: string,
+    text: string,
+    scope: string,
+    at: string | null,
+    id: string,
+    url?: string | null,
+  ): number => {
+    const n = sources.length + 1;
+    sources.push({
+      n,
+      label,
+      text: text.slice(0, 400),
+      polarity: "na",
+      recordId: id,
+      recordTitle: scope,
+      scope,
+      at,
+      url,
+    });
+    return n;
+  };
+
   if (call.name === "grep_code") {
     if (!a.query) return JSON.stringify({ error: "query が空" });
     const hits = grepCode(roots, { query: a.query, repo: a.repo, glob: a.glob, limit: a.limit });
-    return JSON.stringify(hits.length ? hits : { found: 0, note: "その語はコードに無い" });
+    if (hits.length === 0) return JSON.stringify({ found: 0, note: "その語はコードに無い" });
+    return JSON.stringify(
+      hits.map((h) => ({
+        ...h,
+        n: cite("【コード】", `${h.path}:${h.line} ${h.text}`, h.repo, null, `code:${h.repo}`),
+      })),
+    );
   }
   if (call.name === "read_code") {
     if (!a.repo || !a.path) return JSON.stringify({ error: "repo と path が要る" });
-    return JSON.stringify(readCode(roots, { repo: a.repo, path: a.path, from: a.from, lines: a.lines }));
+    const r = readCode(roots, { repo: a.repo, path: a.path, from: a.from, lines: a.lines });
+    if ("error" in r) return JSON.stringify(r);
+    return JSON.stringify({
+      ...r,
+      n: cite("【コード】", `${r.path}（${r.from} 行目から）`, r.repo, null, `code:${r.repo}`),
+    });
   }
   if (call.name !== "find_prs") return JSON.stringify({ error: `知らない道具: ${call.name}` });
 
@@ -429,6 +482,7 @@ async function runTool(
     params.push(v);
     where.push(clause(params.length));
   };
+  if (a.number) add(Math.trunc(a.number), (i) => `(n.attrs->>'pr')::int = $${i}`);
   if (a.author) add(a.author, (i) => `n.actor_name = $${i}`);
   if (a.repo) add(`%${a.repo}%`, (i) => `s.label ilike $${i}`);
   if (a.state) add(a.state, (i) => `n.status = $${i}`);
@@ -438,11 +492,28 @@ async function runTool(
   const r = await client.query(
     `select (n.attrs->>'pr')::int as pr, n.attrs->>'prTitle' as title, n.status as state,
             n.actor_name as author, to_char(n.at, 'YYYY-MM-DD') as at,
-            s.label as repo, n.attrs->>'url' as url
+            s.label as repo, n.attrs->>'url' as url,
+            -- **本文も返す。**題だけでは「#2323 は何をしている」に答えられない。
+            left(n.text, 4000) as body
      from node n join scope s on s.id = n.scope_id
      where ${where.join(" and ")}
      order by n.at desc nulls last limit ${limit}`,
     params,
   );
-  return JSON.stringify(r.rows.length ? r.rows : { found: 0, note: "条件に合う PR は無かった" });
+  if (r.rows.length === 0) return JSON.stringify({ found: 0, note: "条件に合う PR は無かった" });
+  // 一覧のときは本文を落とす。**4000 字 × 50 件を返すと文脈が本文で埋まる。**
+  const rows = r.rows.length > 3 ? r.rows.map(({ body: _drop, ...rest }) => rest) : r.rows;
+  return JSON.stringify(
+    rows.map((x) => ({
+      ...x,
+      n: cite(
+        "【PR】",
+        `#${x.pr} ${x.title}`,
+        String(x.repo),
+        String(x.at ?? ""),
+        `github:${x.repo}`,
+        typeof x.url === "string" ? x.url : null,
+      ),
+    })),
+  );
 }
