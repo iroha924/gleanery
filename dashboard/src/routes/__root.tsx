@@ -3,6 +3,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 const TITLES: [string, string][] = [
   ["/records", "作業"],
@@ -19,19 +20,21 @@ function Title() {
 
 export const Route = createRootRoute({
   component: () => (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <Title />
-        </header>
-        <div className="mx-auto w-full max-w-4xl p-6">
-          <Outlet />
-        </div>
-      </SidebarInset>
-      <Toaster />
-    </SidebarProvider>
+    <TooltipProvider delayDuration={300}>
+      <SidebarProvider>
+        <AppSidebar />
+        <SidebarInset>
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 h-4" />
+            <Title />
+          </header>
+          <div className="mx-auto w-full max-w-4xl p-6">
+            <Outlet />
+          </div>
+        </SidebarInset>
+        <Toaster />
+      </SidebarProvider>
+    </TooltipProvider>
   ),
 });

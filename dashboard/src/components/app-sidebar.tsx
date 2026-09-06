@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { BanIcon, FolderIcon, ListChecksIcon, PlayIcon, SearchIcon } from "lucide-react";
+import { FolderIcon, ListChecksIcon, PlayIcon, SearchIcon } from "lucide-react";
 import type * as React from "react";
 import {
   Sidebar,
@@ -16,6 +16,7 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 
 // 種別の呼び名は、内部の kind ではなく人が言う言葉にする。
@@ -62,7 +63,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuSubItem>
                   <SidebarMenuSubButton asChild>
                     <Link to="/search" search={{ dont: true }}>
-                      <BanIcon className="size-3.5 shrink-0" />
                       <span className="truncate">やらないこと</span>
                     </Link>
                   </SidebarMenuSubButton>
@@ -89,11 +89,19 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuSub>
                   {records.slice(0, 8).map((r) => (
                     <SidebarMenuSubItem key={r.id}>
-                      <SidebarMenuSubButton asChild isActive={path === `/records/${r.id}`}>
-                        <Link to="/records/$id" params={{ id: r.id }}>
-                          <span className="truncate">{r.title}</span>
-                        </Link>
-                      </SidebarMenuSubButton>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <SidebarMenuSubButton asChild isActive={path === `/records/${r.id}`}>
+                            <Link to="/records/$id" params={{ id: r.id }}>
+                              <span className="truncate">{r.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </TooltipTrigger>
+                        {/* 幅に収まらず … で切れるので、全文はホバーで読めるようにする */}
+                        <TooltipContent side="right" className="max-w-xs">
+                          {r.title}
+                        </TooltipContent>
+                      </Tooltip>
                     </SidebarMenuSubItem>
                   ))}
                 </SidebarMenuSub>
