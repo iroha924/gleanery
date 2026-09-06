@@ -1,10 +1,21 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
+import { BotIcon, CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Label } from "@/components/ui/label";
+import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +39,7 @@ const EXAMPLES = [
   "自動発火させると決めたか、させないと決めたか",
 ];
 
+/** 根拠。**畳んでおく。**答えを読む前に 12 件並ぶと本文が押し出される。 */
 function Sources({ sources }: { sources: ChatSource[] }) {
   if (sources.length === 0) return null;
   return (
@@ -39,7 +51,7 @@ function Sources({ sources }: { sources: ChatSource[] }) {
       <ol className="mt-2 space-y-2 border-l pl-3">
         {sources.map((s) => (
           <li key={s.n} className="text-xs leading-relaxed">
-            <span className="mr-1 font-medium tabular-nums text-muted-foreground">[{s.n}]</span>
+            <span className="mr-1 font-medium text-muted-foreground tabular-nums">[{s.n}]</span>
             <span className={`mr-1 ${polarityClass(s.polarity)}`}>{s.label}</span>
             {s.text}
             <span className="ml-1 text-muted-foreground">
@@ -100,49 +112,79 @@ function Chat() {
 
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
-      <div className="flex-1 space-y-6 overflow-y-auto pr-1">
-        {turns.length === 0 && (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <MessageSquareIcon />
-              </EmptyMedia>
-              <EmptyTitle>記録に基づいて答えます</EmptyTitle>
-              <EmptyDescription>
-                答えには必ず根拠の記録が付きます。記録に無いことは「無い」と答えます。
-              </EmptyDescription>
-            </EmptyHeader>
-            <div className="flex flex-wrap justify-center gap-2">
-              {EXAMPLES.map((q) => (
-                <Badge key={q} asChild variant="outline">
-                  <button type="button" onClick={() => ask(q)}>
-                    {q}
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          </Empty>
-        )}
-
-        {turns.map((t) =>
-          t.role === "user" ? (
-            <div key={t.id} className="flex justify-end">
-              <p className="max-w-[80%] rounded-lg bg-muted px-3 py-2 text-sm leading-relaxed">{t.content}</p>
-            </div>
-          ) : (
-            <div key={t.id} className="max-w-[68ch] space-y-3">
-              {t.sources && <Sources sources={t.sources} />}
-              {t.content && <p className="whitespace-pre-wrap text-sm leading-relaxed">{t.content}</p>}
-              {!t.content && !t.error && busy && (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Spinner /> 記録を読んでいます
-                </p>
+      {/* 生成中の自動追従と最下部へ戻るボタンは MessageScroller が持っている。
+          自前の overflow-y-auto だと、答えが画面の下へ流れ落ちて追えない。 */}
+      <MessageScrollerProvider>
+        <MessageScroller className="flex-1">
+          <MessageScrollerViewport>
+            <MessageScrollerContent aria-busy={busy}>
+              {turns.length === 0 && (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <MessageSquareIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>記録に基づいて答えます</EmptyTitle>
+                    <EmptyDescription>
+                      答えには必ず根拠の記録が付きます。記録に無いことは「無い」と答えます。
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {EXAMPLES.map((q) => (
+                      <Badge key={q} asChild variant="outline">
+                        <button type="button" onClick={() => ask(q)}>
+                          {q}
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                </Empty>
               )}
-              {t.error && <p className="text-sm text-dont">{t.error}</p>}
-            </div>
-          ),
-        )}
-      </div>
+
+              {turns.map((t) => (
+                <MessageScrollerItem key={t.id} messageId={t.id} scrollAnchor={t.role === "user"}>
+                  {t.role === "user" ? (
+                    <Message align="end">
+                      <MessageContent>
+                        <Bubble>
+                          <BubbleContent>{t.content}</BubbleContent>
+                        </Bubble>
+                      </MessageContent>
+                    </Message>
+                  ) : (
+                    <Message>
+                      <MessageAvatar>
+                        <Avatar>
+                          <AvatarFallback>
+                            <BotIcon className="size-4" />
+                          </AvatarFallback>
+                        </Avatar>
+                      </MessageAvatar>
+                      <MessageContent className="space-y-3">
+                        {t.sources && <Sources sources={t.sources} />}
+                        {t.content && (
+                          <Bubble variant="ghost">
+                            <BubbleContent className="whitespace-pre-wrap leading-relaxed">
+                              {t.content}
+                            </BubbleContent>
+                          </Bubble>
+                        )}
+                        {!t.content && !t.error && busy && (
+                          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Spinner /> 記録を読んでいます
+                          </p>
+                        )}
+                        {t.error && <p className="text-sm text-dont">{t.error}</p>}
+                      </MessageContent>
+                    </Message>
+                  )}
+                </MessageScrollerItem>
+              ))}
+            </MessageScrollerContent>
+          </MessageScrollerViewport>
+          <MessageScrollerButton />
+        </MessageScroller>
+      </MessageScrollerProvider>
 
       <form
         className="space-y-2 border-t pt-4"
@@ -167,7 +209,7 @@ function Chat() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <Switch id="all" checked={allScopes} onCheckedChange={setAllScopes} />
-            <Label htmlFor="all" className="text-xs font-normal text-muted-foreground">
+            <Label htmlFor="all" className="font-normal text-muted-foreground text-xs">
               すべてのプロジェクトから探す
             </Label>
           </div>
