@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import type pg from "pg";
-import { type ChatBody, chat } from "./chat.ts";
+import { type ChatBody, chat, type Learn } from "./chat.ts";
 import { connect, loadEnv } from "./db.ts";
 import { candidates, identify } from "./scope.ts";
 import { labelOf, type Polarity, scopeFamily, search } from "./search.ts";
@@ -348,6 +348,57 @@ app.post("/api/groups/:id/tracker", async (c) => {
   }
 });
 
+// --- 用語集 ---
+//
+// **推測で埋めない。**社内語は人に聞くしかないので、AI が答えられなかった語を
+// meaning が null の行として積み、人が答えたら埋まる。
+app.get("/api/terms", async (c) => {
+  const ids = scopesOf(c);
+  const r = await (await db()).query(
+    `select t.id::int, t.word, t.aliases, t.meaning, t.asked_why, t.asked_at, g.name as project
+     from term t left join scope_group g on g.id = t.group_id
+     where $1::int[] is null or t.group_id is null or t.group_id in (
+       select m.group_id from group_member m where m.scope_id = any($1))
+     order by (t.meaning is null) desc, t.asked_at desc nulls last, t.word`,
+    [ids],
+  );
+  return c.json(r.rows);
+});
+
+app.post("/api/terms", async (c) => {
+  const body = (await c.req.json()) as {
+    word?: string;
+    meaning?: string;
+    aliases?: string[];
+    groupId?: number;
+  };
+  const word = (body.word ?? "").trim();
+  if (!word) return c.json({ error: "言葉が空" }, 400);
+  try {
+    await (await cfg()).query(
+      `insert into term (group_id, word, meaning, aliases) values ($1,$2,$3,$4)
+       on conflict (coalesce(group_id, 0), word) do update set
+         meaning = coalesce(excluded.meaning, term.meaning),
+         aliases = excluded.aliases, updated_at = now()`,
+      [body.groupId ?? null, word, body.meaning?.trim() || null, body.aliases ?? []],
+    );
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+app.delete("/api/terms/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "id が不正" }, 400);
+  try {
+    await (await cfg()).query("delete from term where id = $1", [id]);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
 // --- 人の名簿 ---
 //
 // **対応付けは推論しない。**記録に出てくるのは `@shogo-kurokawa-nm` のようなハンドル名で、
@@ -471,11 +522,34 @@ app.post("/api/chat", async (c) => {
   const ids = Array.isArray(body.scopeIds) ? body.scopeIds : [];
   const family = [...new Set((await Promise.all(ids.map((id) => scopeFamily(client, id)))).flat())];
 
+  // 用語の書き込みだけ、構成用の鍵を渡す。**ナレッジ本体には触れない鍵。**
+  const groupId = ids.length
+    ? (
+        await client.query<{ id: number }>(
+          "select m.group_id::int as id from group_member m where m.scope_id = any($1) limit 1",
+          [ids],
+        )
+      ).rows[0]?.id
+    : undefined;
+  const learn: Learn = async (t) => {
+    const w = await cfg();
+    await w.query(
+      `insert into term (group_id, word, meaning, aliases, asked_why, asked_at)
+       values ($1,$2,$3,$4,$5, case when $3::text is null then now() else null end)
+       on conflict (coalesce(group_id, 0), word) do update set
+         meaning = coalesce(excluded.meaning, term.meaning),
+         aliases = case when cardinality(excluded.aliases) > 0 then excluded.aliases else term.aliases end,
+         asked_why = coalesce(term.asked_why, excluded.asked_why),
+         updated_at = now()`,
+      [groupId ?? null, t.word, t.meaning, t.aliases, t.why],
+    );
+  };
+
   return streamSSE(c, async (stream) => {
     let answer = "";
     let sources: unknown[] = [];
     try {
-      for await (const chunk of chat(client, env, { ...body, scopeIds: family })) {
+      for await (const chunk of chat(client, env, { ...body, scopeIds: family, learn })) {
         if (chunk.type === "text") answer += chunk.text;
         else if (chunk.type === "sources") sources = chunk.sources;
         await stream.writeSSE({ event: chunk.type, data: JSON.stringify(chunk) });

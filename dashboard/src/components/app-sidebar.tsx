@@ -1,6 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { FolderIcon, ListChecksIcon, MessageSquareIcon, PlayIcon, SearchIcon, UsersIcon } from "lucide-react";
+import {
+  BookOpenIcon,
+  FolderIcon,
+  ListChecksIcon,
+  MessageSquareIcon,
+  PlayIcon,
+  SearchIcon,
+  UsersIcon,
+} from "lucide-react";
 import type * as React from "react";
 import {
   Select,
@@ -140,6 +148,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuButton asChild isActive={path.startsWith("/projects")}>
                 <Link to="/projects">
                   <FolderIcon /> プロジェクト
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={path.startsWith("/terms")}>
+                <Link to="/terms">
+                  <BookOpenIcon /> 言葉
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

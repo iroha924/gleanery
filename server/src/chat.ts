@@ -63,6 +63,22 @@ function asContext(records: RecordHit[], hits: Hit[], nonce: string): string {
   );
 }
 
+/** 用語集の 1 行。meaning が null なら「まだ聞いていない語」。 */
+export type Term = { word: string; aliases: string[]; meaning: string | null };
+
+/** そのプロジェクトの用語。**推測しない** — 人が答えたものだけ。 */
+export async function glossary(client: pg.Client, scopeIds: number[]): Promise<Term[]> {
+  const r = await client.query<Term>(
+    `select distinct t.word, t.aliases, t.meaning from term t
+     where t.meaning is not null
+       and (t.group_id is null or t.group_id in (
+         select m.group_id from group_member m where m.scope_id = any($1)))
+     order by t.word`,
+    [scopeIds],
+  );
+  return r.rows;
+}
+
 /** 名簿の 1 行。person 表そのまま。 */
 export type Person = { display: string; handles: string[]; is_me: boolean };
 
@@ -93,7 +109,7 @@ export function expandNames(question: string, people: Person[]): string {
 // Linear の表示名）だけで、それが質問者と同一人物だという情報はどこにも無い。
 // 実測: 「最新の私の PR は」と聞かれて「あなたがどの GitHub ユーザーかは書かれていません」
 // と返し、他人の PR を最新として挙げた。名乗りは名簿として渡す。
-const SYSTEM = (people: Person[]): string =>
+const SYSTEM = (people: Person[], terms: Term[]): string =>
   [
     "あなたは、選ばれたプロジェクトについて答える助手である。",
     "そのプロジェクトで書き残されたもの（何を解こうとしているか、どこを目指すか、いまどこか、",
@@ -147,6 +163,24 @@ const SYSTEM = (people: Person[]): string =>
     "引用しなかったものは画面に出ないので、使ったものは必ず番号で指すこと。",
     "",
     "日本語で、結論から答える。",
+    ...(terms.length
+      ? [
+          "",
+          "**このプロジェクトの言葉:**",
+          ...terms.map(
+            (t) => `- ${t.word}${t.aliases.length ? `（${t.aliases.join(" / ")}）` : ""}: ${t.meaning}`,
+          ),
+        ]
+      : []),
+    "",
+    "**答えの中で「〜とは何ですか」と尋ねるなら、その前に ask_term でその語を記録する。**",
+    "文章で尋ねるだけでは何も残らず、次に同じことを聞かれてもまた分からない。",
+    "記録して初めて、人が答えられる場所（画面の用語集）にその語が並ぶ。",
+    "逆に、記録やコードから答えられた語は呼ばない。",
+    "",
+    "**教えてもらったら define_term で覚える。**「〜は〜という意味」と説明されたら、次の答えを",
+    "書く前にこれを呼ぶ。**推測して埋めない** — 間違った定義が事実として引かれるほうが、",
+    "知らないままより悪い。",
     ...(people.length
       ? [
           "",
@@ -161,11 +195,21 @@ const SYSTEM = (people: Person[]): string =>
       : []),
   ].join("\n");
 
+/** 用語を覚える／聞きたい語として積む。**資格情報を持つのは呼び出し側。** */
+export type Learn = (t: {
+  word: string;
+  meaning: string | null;
+  why: string | null;
+  aliases: string[];
+}) => Promise<void>;
+
 export type ChatBody = {
   question?: string;
   history?: { role: "user" | "assistant"; content: string }[];
   /** どのプロジェクト（まとめ）について聞くか。**必須。**範囲なしの検索は答えを混ぜる。 */
   scopeIds?: number[];
+  /** 用語を覚えるときに呼ぶ。渡されなければ覚えられない */
+  learn?: Learn;
 };
 
 /** モデルごとの単価（$/1M）。表にない版は 0 として合計に足さない。 */
@@ -243,7 +287,12 @@ export async function* chat(
   // 記録に書いてあるのは `@shogo-kurokawa-nm` であって「黒川さん」ではないので、
   // 展開しないと「黒川さんはなんて言ってた？」がベクトルでもレキシカルでも当たらない。
   const people = await directory(client);
-  const forSearch = expandNames(question, people);
+  const terms = await glossary(client, body.scopeIds);
+  // 呼び名と同じく、略語も記録に書かれている形へ展開する。
+  const forSearch = expandNames(question, [
+    ...people,
+    ...terms.map((t) => ({ display: t.word, handles: t.aliases, is_me: false })),
+  ]);
 
   // 質問の埋め込みは 1 回だけ取り、判断の検索と記録の検索を**並列に回す**。
   // 直列だと記録の検索ぶんだけ根拠の表示が遅れる（実測 512ms → 435ms）。
@@ -322,7 +371,7 @@ export async function* chat(
       model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
       // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
       reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "high") as "none" | "low" | "medium" | "high" },
-      instructions: SYSTEM(people),
+      instructions: SYSTEM(people, terms),
       input,
       tools: last ? [] : TOOLS,
       stream: true,
@@ -352,7 +401,7 @@ export async function* chat(
       input.push({
         type: "function_call_output",
         call_id: call.call_id,
-        output: await runTool(client, body.scopeIds, roots, call, sources),
+        output: await runTool(client, body.scopeIds, roots, call, sources, body.learn),
       });
     }
   }
@@ -394,6 +443,43 @@ const TOOLS: OpenAI.Responses.Tool[] = [
         limit: { type: "number", description: "何件返すか。既定 10、最大 50" },
         offset: { type: "number", description: "何件目から返すか。total が limit を超えたときの続き" },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "ask_term",
+    description:
+      "分からなかった言葉を、あとで人に聞くものとして**記録する**。" +
+      "記録にもコードにも定義が無い社内語（案件の呼び方、社内の仕組みの名前、略語）に出会い、" +
+      "**答えの中でその意味を尋ねるつもりなら、尋ねる前に必ずこれを呼ぶ。**" +
+      "呼ばないと、次に同じことを聞かれてもまた分からないままになる。",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        word: { type: "string", description: "分からなかった言葉そのもの" },
+        why: { type: "string", description: "どういう文脈で出てきたか。答える側の手がかりになる" },
+      },
+      required: ["word"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "define_term",
+    description:
+      "**質問した人が言葉の意味を教えてくれたら、これで覚える。**次からは聞かなくて済む。" +
+      "記録に書いてあったことではなく、**その人がいま説明してくれたこと**だけを入れる。",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        word: { type: "string", description: "言葉" },
+        meaning: { type: "string", description: "教えてもらった意味。その人の言葉をなるべく残す" },
+        aliases: { type: "array", items: { type: "string" }, description: "表記ゆれや略し方" },
+      },
+      required: ["word", "meaning"],
       additionalProperties: false,
     },
   },
@@ -489,6 +575,7 @@ async function runTool(
   roots: Root[],
   call: OpenAI.Responses.ResponseFunctionToolCall,
   sources: ChatSource[],
+  learn: Learn | undefined,
 ): Promise<string> {
   let a: Record<string, never> & {
     author?: string;
@@ -503,6 +590,10 @@ async function runTool(
     contains?: string;
     id?: string;
     assignee?: string;
+    word?: string;
+    why?: string;
+    meaning?: string;
+    aliases?: string[];
     glob?: string;
     path?: string;
     from?: number;
@@ -537,6 +628,27 @@ async function runTool(
     });
     return n;
   };
+
+  // **用語だけは書き込みが要る。**資格情報はここに持たせず、呼び出し側の関数へ渡す。
+  if (call.name === "ask_term" || call.name === "define_term") {
+    if (!a.word) return JSON.stringify({ error: "word が空" });
+    if (!learn) return JSON.stringify({ error: "この経路では用語を覚えられない" });
+    try {
+      await learn({
+        word: a.word,
+        meaning: call.name === "define_term" ? (a.meaning ?? "") : null,
+        why: a.why ?? null,
+        aliases: Array.isArray(a.aliases) ? a.aliases : [],
+      });
+    } catch (e) {
+      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+    }
+    return JSON.stringify(
+      call.name === "define_term"
+        ? { ok: true, note: `「${a.word}」を覚えた。次からは聞かなくてよい` }
+        : { ok: true, note: `「${a.word}」を聞きたい語として記録した。答えの中で短く尋ねること` },
+    );
+  }
 
   if (call.name === "find_issues") {
     const w = ["r.id like 'linear:%'", "r.scope_id = any($1)"];

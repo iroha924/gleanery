@@ -14,6 +14,7 @@ import { Route as ChatRouteImport } from './routes/chat'
 import { Route as PeopleRouteImport } from './routes/people'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as SearchRouteImport } from './routes/search'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as RecordsIndexRouteImport } from './routes/records.index'
 import { Route as RecordsIdRouteImport } from './routes/records.$id'
 
@@ -42,6 +43,11 @@ const SearchRoute = SearchRouteImport.update({
   path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecordsIndexRoute = RecordsIndexRouteImport.update({
   id: '/records/',
   path: '/records/',
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
+  '/terms': typeof TermsRoute
   '/records/$id': typeof RecordsIdRoute
   '/records/': typeof RecordsIndexRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
+  '/terms': typeof TermsRoute
   '/records/$id': typeof RecordsIdRoute
   '/records': typeof RecordsIndexRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
+  '/terms': typeof TermsRoute
   '/records/$id': typeof RecordsIdRoute
   '/records/': typeof RecordsIndexRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/people'
     | '/projects'
     | '/search'
+    | '/terms'
     | '/records/$id'
     | '/records/'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/people'
     | '/projects'
     | '/search'
+    | '/terms'
     | '/records/$id'
     | '/records'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/people'
     | '/projects'
     | '/search'
+    | '/terms'
     | '/records/$id'
     | '/records/'
   fileRoutesById: FileRoutesById
@@ -117,6 +129,7 @@ export interface RootRouteChildren {
   PeopleRoute: typeof PeopleRoute
   ProjectsRoute: typeof ProjectsRoute
   SearchRoute: typeof SearchRoute
+  TermsRoute: typeof TermsRoute
   RecordsIdRoute: typeof RecordsIdRoute
   RecordsIndexRoute: typeof RecordsIndexRoute
 }
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/records/': {
       id: '/records/'
       path: '/records'
@@ -181,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   PeopleRoute: PeopleRoute,
   ProjectsRoute: ProjectsRoute,
   SearchRoute: SearchRoute,
+  TermsRoute: TermsRoute,
   RecordsIdRoute: RecordsIdRoute,
   RecordsIndexRoute: RecordsIndexRoute,
 }

@@ -203,6 +203,17 @@ export type Group = { id: number; name: string; members: GroupMember[] };
 /** issue の出どころ。**プロジェクトごとに違う**ので束ごとに持つ。 */
 export type TrackerKind = "linear" | "github" | "jira";
 
+/** プロジェクトの言葉。meaning が null なら「AI が聞きたがっている語」。 */
+export type Term = {
+  id: number;
+  word: string;
+  aliases: string[];
+  meaning: string | null;
+  asked_why: string | null;
+  asked_at: string | null;
+  project: string | null;
+};
+
 /** 記録に出てくる名前と、その人の呼び名。**対応付けは人が決める。** */
 export type Person = { id: number; display: string; handles: string[]; is_me: boolean; note: string | null };
 /** まだ誰にも結び付いていない名前と、その名前での発言数 */
@@ -232,6 +243,10 @@ export const api = {
   chats: () => get<ChatRow[]>("/api/chats"),
   chat: (id: string) => get<ChatDetail>(`/api/chats/${id}`),
   deleteChat: (id: string) => send<{ ok: true }>(`/api/chats/${id}`, "DELETE"),
+  terms: (scopes?: number[]) => get<Term[]>(`/api/terms${q(scopes)}`),
+  saveTerm: (t: { word: string; meaning: string; aliases: string[]; groupId?: number }) =>
+    send<{ ok: true }>("/api/terms", "POST", t),
+  deleteTerm: (id: number) => send<{ ok: true }>(`/api/terms/${id}`, "DELETE"),
   people: () => get<{ people: Person[]; unknown: UnknownHandle[] }>("/api/people"),
   savePerson: (p: { display: string; handles: string[]; isMe: boolean }) =>
     send<{ ok: true }>("/api/people", "POST", p),

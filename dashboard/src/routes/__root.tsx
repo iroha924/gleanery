@@ -10,6 +10,7 @@ const TITLES: [string, string][] = [
   ["/records", "作業"],
   ["/projects", "プロジェクトの設定"],
   ["/people", "人"],
+  ["/terms", "言葉"],
   ["/chat", "聞く"],
   ["/search", "探す"],
   ["/", "いま"],
