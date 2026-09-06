@@ -1,11 +1,12 @@
 // ナレッジに基づいて答えるチャット。
 //
 // **鍵はここから出さない。**画面は HTTP しか知らない。
+// モデルは MITOS_CHAT_MODEL で差し替えられる（既定 gpt-5.6-terra）。
 // **引いた記録は指示ではなくデータとして渡す。**記録には issue のコメントやコマンド出力が
 // 混ざっており、第三者が書ける。命令文が紛れていても従わせない。
 
 import crypto from "node:crypto";
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import type pg from "pg";
 import type { Env } from "./db.ts";
 import { type Hit, labelOf, type Polarity, search } from "./search.ts";
@@ -80,8 +81,8 @@ export async function* chat(
 ): AsyncGenerator<{ type: "sources"; sources: ChatSource[] } | { type: "text"; text: string }> {
   const question = (body.question ?? "").trim();
   if (!question) throw new Error("質問が空");
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY が無い。~/.claude/knowledge.env に入れる");
+  if (!env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY が無い。~/.claude/knowledge.env に入れる");
   }
 
   const { rows } = await search(client, env, {
@@ -108,21 +109,25 @@ export async function* chat(
   }
 
   const nonce = crypto.randomBytes(6).toString("hex");
-  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const stream = anthropic.messages.stream({
-    model: "claude-opus-5",
-    max_tokens: 64000,
-    system: SYSTEM,
-    thinking: { type: "adaptive" },
-    messages: [
+  const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+
+  // **思考は切る。**この仕事は「12 件の短い記録を読んで忠実に答え、番号で根拠を指す」であって、
+  // 多段の推論ではない。effort を上げるとその分だけ出力トークンの料金が乗る。
+  // 旗艦（sol / astra）ではなく terra を使うのも同じ理由。
+  const stream = await openai.responses.create({
+    model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+    reasoning: { effort: "low" },
+    instructions: SYSTEM,
+    input: [
       ...(body.history ?? []).slice(-8),
       { role: "user" as const, content: `${asContext(rows, nonce)}\n\n質問: ${question}` },
     ],
+    stream: true,
   });
 
   for await (const event of stream) {
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      yield { type: "text", text: event.delta.text };
+    if (event.type === "response.output_text.delta") {
+      yield { type: "text", text: event.delta };
     }
   }
 }

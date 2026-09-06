@@ -17,10 +17,10 @@
     "api": "node src/http.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.124.0",
     "@hono/node-server": "^2.1.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "hono": "4.13.7",
+    "openai": "^7.10.0",
     "pg": "^8.23.0",
     "zod": "^4.5.4"
   },
