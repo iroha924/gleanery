@@ -31,10 +31,23 @@ function asContext(records: RecordHit[], hits: Hit[], nonce: string): string {
 
   const rows = hits.map((h, i) => {
     const at = h.at ? h.at.toLocaleDateString("sv-SE") : "日付なし";
+    const a = h.attrs as { pr?: number; path?: string; line?: number; authors?: string[] };
+    // **発言は「誰が・どの PR で・どのファイルについて」まで出す。**
+    // ここを落とすと「〇〇さんが PR#17 で言った」と答えられない（実測で番号が出なかった）。
+    const from =
+      h.kind === "utterance"
+        ? [
+            a.authors?.length ? `@${a.authors.join(" @")}` : h.actor_name ? `@${h.actor_name}` : null,
+            a.pr ? `PR #${a.pr}` : null,
+            a.path ? `${a.path}${a.line ? `:${a.line}` : ""}` : null,
+            h.scope_label,
+            at,
+          ]
+        : [h.scope_label, h.record_title, at];
     return [
       `[${i + 1}] ${labelOf(h)}${h.text}`,
       h.ex ? `    理由: ${h.ex}` : null,
-      `    出自: ${h.scope_label} / ${h.record_title} / ${at}`,
+      `    出自: ${from.filter(Boolean).join(" / ")}`,
     ]
       .filter(Boolean)
       .join("\n");

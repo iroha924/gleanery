@@ -5207,6 +5207,10 @@ var LABEL = {
   "event/finding": "【分かったこと】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
+  "utterance/review": "【レビューでの発言】",
+  "utterance/issue": "【issue での発言】",
+  "utterance/meeting": "【会議での発言】",
+  "utterance/null": "【発言】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
 };

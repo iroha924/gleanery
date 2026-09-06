@@ -23798,11 +23798,158 @@ async function embed(env, texts, inputType) {
 }
 var vec = (a) => a ? `[${a.join(",")}]` : null;
 
+// server/src/github.ts
+import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
+var gh = (repo, endpoint) => {
+  const out = execFileSync("gh", ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"], {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  return JSON.parse(out).flat();
+};
+var FILLER = /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:|:eyes:|:pray:)[!！。.\s]*$/i;
+var isFiller = (body) => {
+  const t = body.trim();
+  return t.length === 0 || FILLER.test(t) || /^!?\[[^\]]*\]\([^)]*\)$/.test(t);
+};
+function collectThreads(repo) {
+  const titles = new Map;
+  for (const p of gh(repo, "pulls?state=all&per_page=100"))
+    titles.set(p.number, p.title);
+  const threads = new Map;
+  const reviews = gh(repo, "pulls/comments?per_page=100");
+  const byId = new Map(reviews.map((r) => [r.id, r]));
+  for (const r of reviews) {
+    if (isFiller(r.body))
+      continue;
+    const root = r.in_reply_to_id ? byId.get(r.in_reply_to_id) ?? r : r;
+    const pr = Number(root.pull_request_url.split("/").pop());
+    const key = `pr-review:${repo}#${pr}:${root.id}`;
+    const t = threads.get(key) ?? {
+      key,
+      pr,
+      prTitle: titles.get(pr) ?? "",
+      path: root.path ?? null,
+      line: root.line ?? null,
+      at: root.created_at,
+      turns: [],
+      url: root.html_url
+    };
+    t.turns.push({ author: r.user?.login ?? "unknown", body: r.body.trim(), at: r.created_at });
+    threads.set(key, t);
+  }
+  for (const c of gh(repo, "issues/comments?per_page=100")) {
+    if (isFiller(c.body))
+      continue;
+    const num = Number(c.issue_url.split("/").pop());
+    const key = `issue:${repo}#${num}:${c.id}`;
+    threads.set(key, {
+      key,
+      pr: num,
+      prTitle: titles.get(num) ?? "",
+      path: null,
+      line: null,
+      at: c.created_at,
+      turns: [{ author: c.user?.login ?? "unknown", body: c.body.trim(), at: c.created_at }],
+      url: c.html_url
+    });
+  }
+  for (const t of threads.values())
+    t.turns.sort((a, b) => a.at.localeCompare(b.at));
+  return [...threads.values()].sort((a, b) => a.at.localeCompare(b.at));
+}
+function threadText(t) {
+  const where = t.path ? `${t.path}${t.line ? `:${t.line}` : ""}` : "";
+  const head = [`PR #${t.pr}`, t.prTitle, where].filter(Boolean).join(" / ");
+  const body = t.turns.map((x, i) => `${i === 0 ? "指摘" : "返信"} @${x.author}: ${x.body}`).join(`
+`);
+  return `${head}
+${body}`;
+}
+var threadHash = (t) => crypto.createHash("sha256").update(threadText(t)).digest("hex");
+async function ingestThreads(client, env, repo, scopeId, threads, onProgress) {
+  const recordId = `github:${repo}`;
+  await client.query("begin");
+  try {
+    await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
+       values ($1,$2,'github/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
+       on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${repo} のレビューと議論`]);
+    const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
+    const need = threads.filter((t) => {
+      const e = existing.get(t.key);
+      return !e || e.content_hash !== threadHash(t) || !e.has_emb;
+    });
+    onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${need.length} 件`);
+    const vectors = need.length ? await embed(env, need.map(threadText), "document") : [];
+    const byKey = new Map(need.map((t, i) => [t.key, vectors[i]]));
+    for (const t of threads) {
+      const v = byKey.get(t.key);
+      const text = t.turns.map((x) => `@${x.author}: ${x.body}`).join(`
+`);
+      const r = await client.query(`insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
+                           actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
+         values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
+         on conflict (record_id, kind, key) do update set
+           at=excluded.at, text=excluded.text, subkind=excluded.subkind, attrs=excluded.attrs,
+           actor_name=excluded.actor_name, content_hash=excluded.content_hash, deleted_at=null,
+           embed_text=coalesce(excluded.embed_text, node.embed_text),
+           embed_model=coalesce(excluded.embed_model, node.embed_model),
+           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
+           embedding=coalesce(excluded.embedding, node.embedding)
+         returning id`, [
+        recordId,
+        scopeId,
+        t.key.startsWith("pr-review:") ? "review" : "issue",
+        t.key,
+        t.at,
+        text,
+        JSON.stringify({
+          pr: t.pr,
+          prTitle: t.prTitle,
+          path: t.path,
+          line: t.line,
+          url: t.url,
+          authors: [...new Set(t.turns.map((x) => x.author))]
+        }),
+        t.turns[0]?.author ?? "unknown",
+        threadHash(t),
+        v ? threadText(t) : null,
+        v ? EMBED_MODEL : null,
+        v ? new Date().toISOString() : null,
+        vec(v)
+      ]);
+      const nodeId = r.rows[0]?.id;
+      if (nodeId === undefined)
+        continue;
+      for (const [kind, key, url2] of [
+        ["pr", `${repo}#${t.pr}`, t.url],
+        ...t.path ? [["file", t.path, null]] : []
+      ]) {
+        const ref = await client.query(`insert into ref (kind, repo, key, url) values ($1,$2,$3,$4)
+           on conflict (kind, coalesce(repo,''), key) do update set url=coalesce(excluded.url, ref.url)
+           returning id`, [kind, repo, key, url2]);
+        const refId = ref.rows[0]?.id;
+        if (refId !== undefined) {
+          await client.query(`insert into ref_link (ref_id, record_id, node_id, role) values ($1,$2,$3,'evidence')
+             on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`, [refId, recordId, nodeId]);
+        }
+      }
+    }
+    await client.query("commit");
+    return { total: threads.length, embedded: need.length };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    throw e;
+  }
+}
+
 // server/src/ingest.ts
-import crypto2 from "node:crypto";
+import crypto3 from "node:crypto";
 
 // server/src/search.ts
-import crypto from "node:crypto";
+import crypto2 from "node:crypto";
 var LABEL = {
   "option/rejected": "【棄却した案】",
   "option/chosen": "【採用した案】",
@@ -23818,6 +23965,10 @@ var LABEL = {
   "event/finding": "【分かったこと】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
+  "utterance/review": "【レビューでの発言】",
+  "utterance/issue": "【issue での発言】",
+  "utterance/meeting": "【会議での発言】",
+  "utterance/null": "【発言】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
 };
@@ -23854,7 +24005,7 @@ async function search(client, env, o) {
             n.scope_id::int as scope_id,
             (n.embedding <#> $1::extensions.vector) * -1 as score,
             coalesce(n.attrs->>'whyNot', n.attrs->>'context', '') as ex,
-            n.attrs, r.id as record_id, r.title as record_title, s.label as scope_label
+            n.attrs, n.actor_name, r.id as record_id, r.title as record_title, s.label as scope_label
      from node n
      join record r on r.id = n.record_id
      join scope  s on s.id = n.scope_id
@@ -23936,7 +24087,7 @@ var cut = (s, n) => {
   return `${out}…（ここで切った）`;
 };
 function quote(rows, lead = "") {
-  const n = crypto.randomBytes(6).toString("hex");
+  const n = crypto2.randomBytes(6).toString("hex");
   const parts = [];
   let used = 0;
   for (const x of rows) {
@@ -23964,7 +24115,7 @@ function quote(rows, lead = "") {
 }
 
 // server/src/ingest.ts
-var sha = (s) => crypto2.createHash("sha256").update(String(s)).digest("hex");
+var sha = (s) => crypto3.createHash("sha256").update(String(s)).digest("hex");
 var arr = (v) => Array.isArray(v) ? v : [];
 function polarityOf(kind, subkind) {
   if (kind === "boundary")
@@ -24266,7 +24417,7 @@ async function ingest(client, env, ir, scopeId, { onProgress } = {}) {
 }
 
 // server/src/scope.ts
-import { execFileSync } from "node:child_process";
+import { execFileSync as execFileSync2 } from "node:child_process";
 import fs2 from "node:fs";
 import os2 from "node:os";
 import path2 from "node:path";
@@ -24294,7 +24445,7 @@ function identify(dir) {
   const abs = path2.resolve(dir);
   let remote = null;
   try {
-    remote = normalizeRemote(execFileSync("git", ["-C", abs, "remote", "get-url", "origin"], {
+    remote = normalizeRemote(execFileSync2("git", ["-C", abs, "remote", "get-url", "origin"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"]
     }).trim());
@@ -24359,6 +24510,7 @@ var USAGE = `使い方:
   mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
   mitos doctor                                   資格情報と接続を確かめる
   mitos usage                                    OpenAI の使用量と残り
+  mitos import-github [--cwd <dir>]              PR のレビューと議論を取り込む
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
@@ -24434,7 +24586,17 @@ async function main() {
     throw new Error(`--limit は 1 から 20 の整数にする: ${opt.limit}`);
   }
   const polarity = opt.dont ? "dont" : undefined;
-  const KNOWN = ["ingest", "search", "scopes", "candidates", "link", "describe", "doctor", "usage"];
+  const KNOWN = [
+    "ingest",
+    "search",
+    "scopes",
+    "candidates",
+    "link",
+    "describe",
+    "doctor",
+    "usage",
+    "import-github"
+  ];
   if (!KNOWN.includes(cmd))
     throw new Error(`知らないコマンド: ${cmd}
 
@@ -24516,6 +24678,20 @@ ${USAGE}`);
       if (r.keptScope !== null) {
         console.log(`※ この記録は最初に取り込んだ作業場所（id=${r.keptScope}）に留めました。1 つの記録が 2 つに割れるのを防ぐためです。`);
       }
+      return;
+    }
+    if (cmd === "import-github") {
+      const me = identify(cwd);
+      if (me.identKind !== "git-remote")
+        throw new Error(`${cwd} に git の remote が無い`);
+      const repo = me.ident.replace(/^git:[^/]+\//, "");
+      const scopeId = await scopeIdFor(c, cwd, true);
+      if (scopeId === null)
+        throw new Error("作業場所を決められなかった");
+      console.error(`  ${repo} から集めています…`);
+      const threads = collectThreads(repo);
+      const r = await ingestThreads(c, env, repo, scopeId, threads, (m) => console.error(`  ${m}`));
+      console.log(`取り込み完了: ${repo} / スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
       return;
     }
     if (cmd === "search") {

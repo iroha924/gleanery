@@ -9,6 +9,7 @@ import { parseArgs } from "node:util";
 import type pg from "pg";
 import { z } from "zod";
 import { connect, loadEnv } from "./db.ts";
+import { collectThreads, ingestThreads } from "./github.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { candidates, identify } from "./scope.ts";
 import { outsideScopes, quote, scopeFamily, search } from "./search.ts";
@@ -23,6 +24,7 @@ const USAGE = `使い方:
   mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
   mitos doctor                                   資格情報と接続を確かめる
   mitos usage                                    OpenAI の使用量と残り
+  mitos import-github [--cwd <dir>]              PR のレビューと議論を取り込む
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -132,7 +134,17 @@ async function main(): Promise<void> {
     throw new Error(`--limit は 1 から 20 の整数にする: ${opt.limit}`);
   }
   const polarity = opt.dont ? ("dont" as const) : undefined;
-  const KNOWN = ["ingest", "search", "scopes", "candidates", "link", "describe", "doctor", "usage"];
+  const KNOWN = [
+    "ingest",
+    "search",
+    "scopes",
+    "candidates",
+    "link",
+    "describe",
+    "doctor",
+    "usage",
+    "import-github",
+  ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
   const env = loadEnv(cwd);
 
@@ -230,6 +242,19 @@ async function main(): Promise<void> {
           `※ この記録は最初に取り込んだ作業場所（id=${r.keptScope}）に留めました。1 つの記録が 2 つに割れるのを防ぐためです。`,
         );
       }
+      return;
+    }
+
+    if (cmd === "import-github") {
+      const me = identify(cwd);
+      if (me.identKind !== "git-remote") throw new Error(`${cwd} に git の remote が無い`);
+      const repo = me.ident.replace(/^git:[^/]+\//, "");
+      const scopeId = await scopeIdFor(c, cwd, true);
+      if (scopeId === null) throw new Error("作業場所を決められなかった");
+      console.error(`  ${repo} から集めています…`);
+      const threads = collectThreads(repo);
+      const r = await ingestThreads(c, env, repo, scopeId, threads, (m) => console.error(`  ${m}`));
+      console.log(`取り込み完了: ${repo} / スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
       return;
     }
 

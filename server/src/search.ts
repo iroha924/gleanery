@@ -31,6 +31,7 @@ export type Hit = {
   record_id: string;
   record_title: string;
   scope_label: string;
+  actor_name: string | null;
   relevance?: number | null;
 };
 
@@ -56,6 +57,11 @@ const LABEL: Record<string, string> = {
   "event/finding": "【分かったこと】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
+  // PR のレビューと議論。**決定ではなく発言**なので、そう分かる札にする。
+  "utterance/review": "【レビューでの発言】",
+  "utterance/issue": "【issue での発言】",
+  "utterance/meeting": "【会議での発言】",
+  "utterance/null": "【発言】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】",
 };
@@ -121,7 +127,7 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
             n.scope_id::int as scope_id,
             (n.embedding <#> $1::extensions.vector) * -1 as score,
             coalesce(n.attrs->>'whyNot', n.attrs->>'context', '') as ex,
-            n.attrs, r.id as record_id, r.title as record_title, s.label as scope_label
+            n.attrs, n.actor_name, r.id as record_id, r.title as record_title, s.label as scope_label
      from node n
      join record r on r.id = n.record_id
      join scope  s on s.id = n.scope_id

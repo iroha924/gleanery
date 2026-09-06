@@ -39156,6 +39156,10 @@ var LABEL = {
   "event/finding": "【分かったこと】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
+  "utterance/review": "【レビューでの発言】",
+  "utterance/issue": "【issue での発言】",
+  "utterance/meeting": "【会議での発言】",
+  "utterance/null": "【発言】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
 };
@@ -39192,7 +39196,7 @@ async function search(client, env, o) {
             n.scope_id::int as scope_id,
             (n.embedding <#> $1::extensions.vector) * -1 as score,
             coalesce(n.attrs->>'whyNot', n.attrs->>'context', '') as ex,
-            n.attrs, r.id as record_id, r.title as record_title, s.label as scope_label
+            n.attrs, n.actor_name, r.id as record_id, r.title as record_title, s.label as scope_label
      from node n
      join record r on r.id = n.record_id
      join scope  s on s.id = n.scope_id
