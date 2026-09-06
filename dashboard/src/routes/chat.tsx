@@ -226,8 +226,11 @@ function Chat() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            // 改行より送信のほうが圧倒的に多い。改行は Shift + Enter。
-            if (e.key === "Enter" && !e.shiftKey) {
+            // **Enter では送らない。**日本語入力では Enter が変換の確定に使われるので、
+            // 送信に割り当てると変換の途中で飛ぶ（実測: 漢字に変換して確定した瞬間に送信された）。
+            // `isComposing` を見るだけでは足りない — 変換の確定と、確定後の 1 打目の Enter は
+            // どちらも composing が false で来る。送信は修飾キー付きに寄せる。
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
               ask(draft);
             }
@@ -235,7 +238,7 @@ function Chat() {
           placeholder={
             scopeIds.length === 0
               ? "先にプロジェクトを選んでください"
-              : "このプロジェクトについて聞く（Shift + Enter で改行）"
+              : "このプロジェクトについて聞く（⌘ + Enter で送信）"
           }
           disabled={scopeIds.length === 0}
           className="min-h-20 resize-none"
@@ -269,7 +272,9 @@ function Chat() {
             </Button>
           ) : (
             <Button type="submit" className="ml-auto" disabled={!draft.trim() || scopeIds.length === 0}>
-              聞く <CornerDownLeftIcon />
+              聞く
+              <kbd className="ml-1 rounded border px-1 text-[10px] leading-4 opacity-70">⌘</kbd>
+              <CornerDownLeftIcon />
             </Button>
           )}
         </div>

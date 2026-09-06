@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 import type pg from "pg";
 import { z } from "zod";
 import { connect, loadEnv } from "./db.ts";
-import { collectThreads, ingestThreads } from "./github.ts";
+import { collect, ingestThreads } from "./github.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssue, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { candidates, identify } from "./scope.ts";
@@ -305,9 +305,11 @@ async function main(): Promise<void> {
       const scopeId = await scopeIdFor(c, cwd, true);
       if (scopeId === null) throw new Error("作業場所を決められなかった");
       console.error(`  ${repo} から集めています…`);
-      const threads = collectThreads(repo);
-      const r = await ingestThreads(c, env, repo, scopeId, threads, (m) => console.error(`  ${m}`));
-      console.log(`取り込み完了: ${repo} / スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
+      const { prs, threads } = collect(repo);
+      const r = await ingestThreads(c, env, repo, scopeId, prs, threads, (m) => console.error(`  ${m}`));
+      console.log(
+        `取り込み完了: ${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`,
+      );
       return;
     }
 

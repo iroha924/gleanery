@@ -23801,6 +23801,26 @@ var vec = (a) => a ? `[${a.join(",")}]` : null;
 // server/src/github.ts
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
+
+// server/src/actor.ts
+var AI_REVIEWERS = new Set([
+  "gemini-code-assist[bot]",
+  "coderabbitai[bot]",
+  "cursor[bot]",
+  "claude[bot]",
+  "chatgpt-codex-connector[bot]",
+  "Copilot"
+]);
+function actorKind(name) {
+  if (AI_REVIEWERS.has(name))
+    return "ai";
+  if (name.endsWith("[bot]"))
+    return "ci";
+  return "human";
+}
+var isNoise = (name) => actorKind(name) === "ci";
+
+// server/src/github.ts
 var gh = (repo, endpoint) => {
   const out = execFileSync("gh", ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"], {
     encoding: "utf8",
@@ -23814,15 +23834,31 @@ var isFiller = (body) => {
   const t = body.trim();
   return t.length === 0 || FILLER.test(t) || /^!?\[[^\]]*\]\([^)]*\)$/.test(t);
 };
-function collectThreads(repo) {
+var prOf = (p) => ({
+  number: p.number,
+  title: p.title,
+  body: (p.body ?? "").trim(),
+  author: p.user?.login ?? "unknown",
+  state: p.merged_at ? "merged" : p.state === "open" ? "open" : "closed",
+  at: p.merged_at ?? p.created_at,
+  url: p.html_url,
+  branch: p.head?.ref ?? ""
+});
+var prText = (p) => `PR #${p.number} ${p.title}${p.body ? `
+${p.body.slice(0, 4000)}` : ""}`;
+function collect(repo) {
   const titles = new Map;
-  for (const p of gh(repo, "pulls?state=all&per_page=100"))
+  const prs = [];
+  for (const p of gh(repo, "pulls?state=all&per_page=100")) {
     titles.set(p.number, p.title);
+    if (!isNoise(p.user?.login ?? ""))
+      prs.push(prOf(p));
+  }
   const threads = new Map;
   const reviews = gh(repo, "pulls/comments?per_page=100");
   const byId = new Map(reviews.map((r) => [r.id, r]));
   for (const r of reviews) {
-    if (isFiller(r.body))
+    if (isFiller(r.body) || isNoise(r.user?.login ?? ""))
       continue;
     const root = r.in_reply_to_id ? byId.get(r.in_reply_to_id) ?? r : r;
     const pr = Number(root.pull_request_url.split("/").pop());
@@ -23841,7 +23877,7 @@ function collectThreads(repo) {
     threads.set(key, t);
   }
   for (const c of gh(repo, "issues/comments?per_page=100")) {
-    if (isFiller(c.body))
+    if (isFiller(c.body) || isNoise(c.user?.login ?? ""))
       continue;
     const num = Number(c.issue_url.split("/").pop());
     const key = `issue:${repo}#${num}:${c.id}`;
@@ -23858,7 +23894,10 @@ function collectThreads(repo) {
   }
   for (const t of threads.values())
     t.turns.sort((a, b) => a.at.localeCompare(b.at));
-  return [...threads.values()].sort((a, b) => a.at.localeCompare(b.at));
+  return {
+    prs: prs.sort((a, b) => a.at.localeCompare(b.at)),
+    threads: [...threads.values()].sort((a, b) => a.at.localeCompare(b.at))
+  };
 }
 function threadText(t) {
   const where = t.path ? `${t.path}${t.line ? `:${t.line}` : ""}` : "";
@@ -23870,7 +23909,7 @@ ${body}`;
 }
 var threadHash = (t) => crypto.createHash("sha256").update(threadText(t)).digest("hex");
 var CHUNK = 500;
-async function ingestThreads(client, env, repo, scopeId, threads, onProgress) {
+async function ingestThreads(client, env, repo, scopeId, prs, threads, onProgress) {
   const recordId = `github:${repo}`;
   await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
      values ($1,$2,'github/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
@@ -23881,10 +23920,53 @@ async function ingestThreads(client, env, repo, scopeId, threads, onProgress) {
     return !e || e.content_hash !== threadHash(t) || !e.has_emb;
   }).map((t) => t.key));
   onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${stale.size} 件`);
+  const prStale = prs.filter((p) => {
+    const e = existing.get(`pr:${p.number}`);
+    return !e || e.content_hash !== crypto.createHash("sha256").update(prText(p)).digest("hex") || !e.has_emb;
+  });
+  for (let from = 0;from < prStale.length; from += CHUNK) {
+    const slice = prStale.slice(from, from + CHUNK);
+    const vectors = await embed(env, slice.map(prText), "document");
+    await client.query("begin");
+    try {
+      for (const [i, p] of slice.entries()) {
+        await client.query(`insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, status, attrs,
+                             actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
+           values ($1,$2,'event','pr',$3,$4,$5,'na',$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           on conflict (record_id, kind, key) do update set
+             at=excluded.at, text=excluded.text, status=excluded.status, attrs=excluded.attrs,
+             actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+             content_hash=excluded.content_hash, deleted_at=null,
+             embed_text=excluded.embed_text, embed_model=excluded.embed_model,
+             embedded_at=excluded.embedded_at, embedding=excluded.embedding`, [
+          recordId,
+          scopeId,
+          `pr:${p.number}`,
+          p.at,
+          prText(p),
+          p.state,
+          JSON.stringify({ pr: p.number, prTitle: p.title, state: p.state, url: p.url, branch: p.branch }),
+          actorKind(p.author),
+          p.author,
+          crypto.createHash("sha256").update(prText(p)).digest("hex"),
+          prText(p),
+          EMBED_MODEL,
+          new Date().toISOString(),
+          vec(vectors[i])
+        ]);
+      }
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      throw e;
+    }
+    onProgress?.(`  PR ${Math.min(from + CHUNK, prStale.length)} / ${prStale.length} 件を確定`);
+  }
+  const changed = threads.filter((t) => stale.has(t.key));
   let done = 0;
-  for (let from = 0;from < threads.length; from += CHUNK) {
-    const slice = threads.slice(from, from + CHUNK);
-    const need = slice.filter((t) => stale.has(t.key));
+  for (let from = 0;from < changed.length; from += CHUNK) {
+    const slice = changed.slice(from, from + CHUNK);
+    const need = slice;
     const vectors = need.length ? await embed(env, need.map(threadText), "document") : [];
     const byKey = new Map(need.map((t, i) => [t.key, vectors[i]]));
     await client.query("begin");
@@ -23896,9 +23978,9 @@ async function ingestThreads(client, env, repo, scopeId, threads, onProgress) {
       throw e;
     }
     done += slice.length;
-    onProgress?.(`  ${done} / ${threads.length} 件を確定`);
+    onProgress?.(`  ${done} / ${changed.length} 件を確定`);
   }
-  return { total: threads.length, embedded: stale.size };
+  return { total: threads.length, prs: prStale.length, embedded: stale.size };
 }
 async function writeSlice(client, recordId, repo, scopeId, threads, byKey) {
   for (const t of threads) {
@@ -23907,10 +23989,11 @@ async function writeSlice(client, recordId, repo, scopeId, threads, byKey) {
 `);
     const r = await client.query(`insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
                            actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
+         values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,$8,$9,$10,$11,$12,$13,$14)
          on conflict (record_id, kind, key) do update set
            at=excluded.at, text=excluded.text, subkind=excluded.subkind, attrs=excluded.attrs,
-           actor_name=excluded.actor_name, content_hash=excluded.content_hash, deleted_at=null,
+           actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+           content_hash=excluded.content_hash, deleted_at=null,
            embed_text=coalesce(excluded.embed_text, node.embed_text),
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
@@ -23930,6 +24013,7 @@ async function writeSlice(client, recordId, repo, scopeId, threads, byKey) {
         url: t.url,
         authors: [...new Set(t.turns.map((x) => x.author))]
       }),
+      actorKind(t.turns[0]?.author ?? "unknown"),
       t.turns[0]?.author ?? "unknown",
       threadHash(t),
       v ? threadText(t) : null,
@@ -23974,6 +24058,7 @@ var LABEL = {
   "decision/proposed": "【提案どまり。まだ決まっていない】",
   "decision/null": "【決定】",
   "event/finding": "【分かったこと】",
+  "event/pr": "【PR】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
   "utterance/review": "【レビューでの発言】",
@@ -24590,7 +24675,7 @@ var isFiller2 = (body) => body.length === 0 || FILLER2.test(body);
 function threads(issue2) {
   const byRoot = new Map;
   for (const c of issue2.comments) {
-    if (isFiller2(c.body))
+    if (isFiller2(c.body) || isNoise(c.author))
       continue;
     const root = c.parentId ?? c.id;
     byRoot.set(root, [...byRoot.get(root) ?? [], c]);
@@ -24670,10 +24755,11 @@ ${issue2.description}`;
       const actor = p.turns ? p.turns[0]?.author ?? "unknown" : issue2.createdBy;
       const nodeRow = await client.query(`insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
                            actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'utterance','issue',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
+         values ($1,$2,'utterance','issue',$3,$4,$5,$6,'na',$7,$8,$9,$10,$11,$12,$13,$14)
          on conflict (record_id, kind, key) do update set
            ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
-           actor_name=excluded.actor_name, content_hash=excluded.content_hash, deleted_at=null,
+           actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+           content_hash=excluded.content_hash, deleted_at=null,
            embed_text=coalesce(excluded.embed_text, node.embed_text),
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
@@ -24694,6 +24780,7 @@ ${issue2.description}`;
           url: issue2.url,
           authors: p.turns ? [...new Set(p.turns.map((c) => c.author))] : [issue2.createdBy]
         }),
+        actorKind(actor),
         actor,
         hash2(et),
         v ? et : null,
@@ -25026,9 +25113,9 @@ ${USAGE}`);
       if (scopeId === null)
         throw new Error("作業場所を決められなかった");
       console.error(`  ${repo} から集めています…`);
-      const threads2 = collectThreads(repo);
-      const r = await ingestThreads(c, env, repo, scopeId, threads2, (m) => console.error(`  ${m}`));
-      console.log(`取り込み完了: ${repo} / スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
+      const { prs, threads: threads2 } = collect(repo);
+      const r = await ingestThreads(c, env, repo, scopeId, prs, threads2, (m) => console.error(`  ${m}`));
+      console.log(`取り込み完了: ${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
       return;
     }
     if (cmd === "import-linear") {

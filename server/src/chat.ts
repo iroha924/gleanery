@@ -113,6 +113,12 @@ const SYSTEM = (people: Person[]): string =>
     "聞かれたことに答える。決定の話とは限らない — 何をしているのか、なぜそうなっているのか、",
     "いま何が起きているのか、どれも記録にあれば答えてよい。",
     "",
+    "**「誰の」「いつの」「最新の」「一覧」を聞かれたら find_prs を使う。**それは絞り込みと",
+    "並び替えであって、渡された記録を読んで答えるものではない。渡された記録に見当たらないことを",
+    "「記録には無い」と答える前に、条件で引ける質問かどうかを先に考える。",
+    "author にはハンドル名を渡す（呼び名ではなく、上の対応表で変換する）。",
+    "repo は「いま見ている範囲」に挙がっているものから選ぶ。",
+    "",
     "日本語で、結論から答える。",
     ...(people.length
       ? [
@@ -227,27 +233,138 @@ export async function* chat(
   const nonce = crypto.randomBytes(6).toString("hex");
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
 
+  // いま見ている範囲。**「インフラ」がどのリポジトリなのかは記録に書かれていない。**
+  // 役割は scope に登録してあるので、それを渡して質問の言葉と結び付けさせる。
+  const scopes = await client.query<{ label: string; role: string | null; summary: string | null }>(
+    "select label, role, summary from scope where id = any($1) order by label",
+    [body.scopeIds],
+  );
+  const inRange = scopes.rows
+    .map((r) => `- ${r.label}${r.role ? `（${r.role}）` : ""}${r.summary ? `: ${r.summary}` : ""}`)
+    .join("\n");
+
   // **思考は切る。**この仕事は「12 件の短い記録を読んで忠実に答え、番号で根拠を指す」であって、
   // 多段の推論ではない。effort を上げるとその分だけ出力トークンの料金が乗る。
   // 旗艦（sol / astra）ではなく terra を使うのも同じ理由。
-  const stream = await openai.responses.create({
-    model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
-    // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
-    reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "low") as "none" | "low" | "medium" | "high" },
-    instructions: SYSTEM(people),
-    input: [
-      ...(body.history ?? []).slice(-8),
-      { role: "user" as const, content: `${asContext(records, rows, nonce)}\n\n質問: ${question}` },
-    ],
-    stream: true,
-  });
+  const input: OpenAI.Responses.ResponseInput = [
+    ...(body.history ?? []).slice(-8),
+    {
+      role: "user" as const,
+      content:
+        `${asContext(records, rows, nonce)}\n\n` + `### いま見ている範囲\n\n${inRange}\n\n質問: ${question}`,
+    },
+  ];
 
-  for await (const event of stream) {
-    if (event.type === "response.output_text.delta") {
-      yield { type: "text", text: event.delta };
-    } else if (event.type === "response.completed") {
-      // **実測で費用を追う。**推定だと上限に当たるまで気付けない。
-      recordUsage(event.response.model, event.response.usage);
+  // **道具を持たせる。**「私の最新のマージ済み PR は」は絞り込みと並び替えであって
+  // 意味検索ではない。ベクトルに投げると「マージします！」という発言が並ぶ（実測で 8 件並んだ）。
+  // 条件で引く質問は、条件で引かせる。
+  for (let round = 0; round < 3; round++) {
+    const stream = await openai.responses.create({
+      model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+      // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
+      reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "low") as "none" | "low" | "medium" | "high" },
+      instructions: SYSTEM(people),
+      input,
+      tools: TOOLS,
+      stream: true,
+    });
+
+    // **出た項目は全部そのまま積み直す。**function_call だけ返すと弾かれる —
+    // 「'function_call' was provided without its required 'reasoning' item」（実測）。
+    // 推論モデルは思考の項目と道具の呼び出しが対で、片方だけの差し戻しを認めない。
+    const items: OpenAI.Responses.ResponseOutputItem[] = [];
+    const calls: OpenAI.Responses.ResponseFunctionToolCall[] = [];
+    for await (const event of stream) {
+      if (event.type === "response.output_text.delta") {
+        yield { type: "text", text: event.delta };
+      } else if (event.type === "response.output_item.done") {
+        items.push(event.item);
+        if (event.item.type === "function_call") calls.push(event.item);
+      } else if (event.type === "response.completed") {
+        // **実測で費用を追う。**推定だと上限に当たるまで気付けない。
+        recordUsage(event.response.model, event.response.usage);
+      }
+    }
+    if (calls.length === 0) return;
+
+    input.push(...(items as OpenAI.Responses.ResponseInput));
+    for (const call of calls) {
+      input.push({
+        type: "function_call_output",
+        call_id: call.call_id,
+        output: await runTool(client, body.scopeIds, call),
+      });
     }
   }
+}
+
+const TOOLS: OpenAI.Responses.Tool[] = [
+  {
+    type: "function",
+    name: "find_prs",
+    description:
+      "PR を条件で絞って新しい順に返す。「私の最新のマージ済み PR」「インフラで先月マージされた PR」のように、" +
+      "意味ではなく条件（誰が / どのリポジトリ / 状態 / いつ以降）で探すときに使う。" +
+      "渡された記録の中に答えが見当たらないときも、条件で引ける質問ならこれを使う。",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        author: {
+          type: "string",
+          description: "GitHub のハンドル名。呼び名ではなくハンドルを渡す（名簿の対応表を見て変換する）",
+        },
+        repo: { type: "string", description: "リポジトリ名の一部。例: monopoly-manifests" },
+        state: {
+          type: "string",
+          enum: ["merged", "open", "closed"],
+          description: "closed はマージせず閉じたもの",
+        },
+        since: { type: "string", description: "この日付以降。YYYY-MM-DD" },
+        limit: { type: "number", description: "何件返すか。既定 10、最大 50" },
+      },
+      additionalProperties: false,
+    },
+  },
+];
+
+/**
+ * 道具を実行する。**範囲は呼び出し側が持つ。**モデルに scope を選ばせない
+ * （選ばせると、選んでいないプロジェクトの PR を返せてしまう）。
+ */
+async function runTool(
+  client: pg.Client,
+  scopeIds: number[],
+  call: OpenAI.Responses.ResponseFunctionToolCall,
+): Promise<string> {
+  if (call.name !== "find_prs") return JSON.stringify({ error: `知らない道具: ${call.name}` });
+  let a: { author?: string; repo?: string; state?: string; since?: string; limit?: number };
+  try {
+    a = JSON.parse(call.arguments);
+  } catch {
+    return JSON.stringify({ error: "引数が JSON として読めなかった" });
+  }
+
+  const where = ["n.kind = 'event'", "n.subkind = 'pr'", "n.deleted_at is null", "n.scope_id = any($1)"];
+  const params: unknown[] = [scopeIds];
+  const add = (v: unknown, clause: (i: number) => string) => {
+    params.push(v);
+    where.push(clause(params.length));
+  };
+  if (a.author) add(a.author, (i) => `n.actor_name = $${i}`);
+  if (a.repo) add(`%${a.repo}%`, (i) => `s.label ilike $${i}`);
+  if (a.state) add(a.state, (i) => `n.status = $${i}`);
+  if (a.since) add(a.since, (i) => `n.at >= $${i}::timestamptz`);
+  const limit = Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
+
+  const r = await client.query(
+    `select (n.attrs->>'pr')::int as pr, n.attrs->>'prTitle' as title, n.status as state,
+            n.actor_name as author, to_char(n.at, 'YYYY-MM-DD') as at,
+            s.label as repo, n.attrs->>'url' as url
+     from node n join scope s on s.id = n.scope_id
+     where ${where.join(" and ")}
+     order by n.at desc nulls last limit ${limit}`,
+    params,
+  );
+  return JSON.stringify(r.rows.length ? r.rows : { found: 0, note: "条件に合う PR は無かった" });
 }

@@ -27,6 +27,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type pg from "pg";
+import { actorKind, isNoise } from "./actor.ts";
 import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
 
 // --- MCP を叩く ---
@@ -273,7 +274,7 @@ const isFiller = (body: string): boolean => body.length === 0 || FILLER.test(bod
 export function threads(issue: Issue): { key: string; turns: Comment[] }[] {
   const byRoot = new Map<string, Comment[]>();
   for (const c of issue.comments) {
-    if (isFiller(c.body)) continue;
+    if (isFiller(c.body) || isNoise(c.author)) continue;
     const root = c.parentId ?? c.id;
     byRoot.set(root, [...(byRoot.get(root) ?? []), c]);
   }
@@ -397,10 +398,11 @@ export async function ingestIssue(
       const nodeRow = await client.query<{ id: number }>(
         `insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
                            actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'utterance','issue',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
+         values ($1,$2,'utterance','issue',$3,$4,$5,$6,'na',$7,$8,$9,$10,$11,$12,$13,$14)
          on conflict (record_id, kind, key) do update set
            ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
-           actor_name=excluded.actor_name, content_hash=excluded.content_hash, deleted_at=null,
+           actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+           content_hash=excluded.content_hash, deleted_at=null,
            embed_text=coalesce(excluded.embed_text, node.embed_text),
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
@@ -422,6 +424,7 @@ export async function ingestIssue(
             url: issue.url,
             authors: p.turns ? [...new Set(p.turns.map((c) => c.author))] : [issue.createdBy],
           }),
+          actorKind(actor),
           actor,
           hash(et),
           v ? et : null,

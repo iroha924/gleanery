@@ -9,6 +9,7 @@
 
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
+import { actorKind, isNoise } from "./actor.ts";
 
 export type Thread = {
   key: string;
@@ -61,12 +62,56 @@ type IssueComment = {
   issue_url: string;
 };
 
-type Pull = { number: number; title: string };
+type Pull = {
+  number: number;
+  title: string;
+  body: string | null;
+  user: { login: string } | null;
+  state: string;
+  draft?: boolean;
+  merged_at: string | null;
+  created_at: string;
+  html_url: string;
+  head?: { ref?: string };
+};
 
-/** repo は "owner/name"。PR のレビューと issue のコメントをスレッドへ束ねて返す。 */
-export function collectThreads(repo: string): Thread[] {
+/** PR そのもの。**コメントだけ入れても「私の最新のマージ済み PR」に答えられない。** */
+export type Pr = {
+  number: number;
+  title: string;
+  body: string;
+  author: string;
+  /** open / merged / closed。closed は「マージせず閉じた」 */
+  state: "open" | "merged" | "closed";
+  at: string;
+  url: string;
+  branch: string;
+};
+
+const prOf = (p: Pull): Pr => ({
+  number: p.number,
+  title: p.title,
+  body: (p.body ?? "").trim(),
+  author: p.user?.login ?? "unknown",
+  state: p.merged_at ? "merged" : p.state === "open" ? "open" : "closed",
+  // **マージ済みならマージ日。**「最新のマージ済み PR」は作成順ではなくマージ順で並ぶ。
+  at: p.merged_at ?? p.created_at,
+  url: p.html_url,
+  branch: p.head?.ref ?? "",
+});
+
+/** 埋め込む文。題と本文だけ。差分は入れない（長すぎて意味が薄まる）。 */
+export const prText = (p: Pr): string =>
+  `PR #${p.number} ${p.title}${p.body ? `\n${p.body.slice(0, 4000)}` : ""}`;
+
+/** repo は "owner/name"。PR 本体と、レビュー / issue のコメントをスレッドへ束ねて返す。 */
+export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
   const titles = new Map<number, string>();
-  for (const p of gh(repo, "pulls?state=all&per_page=100") as Pull[]) titles.set(p.number, p.title);
+  const prs: Pr[] = [];
+  for (const p of gh(repo, "pulls?state=all&per_page=100") as Pull[]) {
+    titles.set(p.number, p.title);
+    if (!isNoise(p.user?.login ?? "")) prs.push(prOf(p));
+  }
 
   const threads = new Map<string, Thread>();
 
@@ -74,7 +119,7 @@ export function collectThreads(repo: string): Thread[] {
   const reviews = gh(repo, "pulls/comments?per_page=100") as ReviewComment[];
   const byId = new Map(reviews.map((r) => [r.id, r]));
   for (const r of reviews) {
-    if (isFiller(r.body)) continue;
+    if (isFiller(r.body) || isNoise(r.user?.login ?? "")) continue;
     const root = r.in_reply_to_id ? (byId.get(r.in_reply_to_id) ?? r) : r;
     const pr = Number(root.pull_request_url.split("/").pop());
     const key = `pr-review:${repo}#${pr}:${root.id}`;
@@ -94,7 +139,7 @@ export function collectThreads(repo: string): Thread[] {
 
   // issue / PR 本体のコメント。親子が無いので 1 件 = 1 スレッド。
   for (const c of gh(repo, "issues/comments?per_page=100") as IssueComment[]) {
-    if (isFiller(c.body)) continue;
+    if (isFiller(c.body) || isNoise(c.user?.login ?? "")) continue;
     const num = Number(c.issue_url.split("/").pop());
     const key = `issue:${repo}#${num}:${c.id}`;
     threads.set(key, {
@@ -110,7 +155,10 @@ export function collectThreads(repo: string): Thread[] {
   }
 
   for (const t of threads.values()) t.turns.sort((a, b) => a.at.localeCompare(b.at));
-  return [...threads.values()].sort((a, b) => a.at.localeCompare(b.at));
+  return {
+    prs: prs.sort((a, b) => a.at.localeCompare(b.at)),
+    threads: [...threads.values()].sort((a, b) => a.at.localeCompare(b.at)),
+  };
 }
 
 /** 埋め込みへ渡す文。**構造から文脈を付ける。** */
@@ -148,9 +196,10 @@ export async function ingestThreads(
   env: Env,
   repo: string,
   scopeId: number,
+  prs: Pr[],
   threads: Thread[],
   onProgress?: (m: string) => void,
-): Promise<{ total: number; embedded: number }> {
+): Promise<{ total: number; prs: number; embedded: number }> {
   const recordId = `github:${repo}`;
 
   // リポジトリ 1 つ = 記録 1 つ。個々のスレッドはその下の node。
@@ -180,10 +229,62 @@ export async function ingestThreads(
   );
   onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${stale.size} 件`);
 
+  // **PR そのものを先に入れる。**コメントだけだと「私の最新のマージ済み PR は」に
+  // 答えられない（実測: 「マージします！」という発言が 8 件返っただけだった）。
+  const prStale = prs.filter((p) => {
+    const e = existing.get(`pr:${p.number}`);
+    return !e || e.content_hash !== crypto.createHash("sha256").update(prText(p)).digest("hex") || !e.has_emb;
+  });
+  for (let from = 0; from < prStale.length; from += CHUNK) {
+    const slice = prStale.slice(from, from + CHUNK);
+    const vectors = await embed(env, slice.map(prText), "document");
+    await client.query("begin");
+    try {
+      for (const [i, p] of slice.entries()) {
+        await client.query(
+          `insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, status, attrs,
+                             actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
+           values ($1,$2,'event','pr',$3,$4,$5,'na',$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           on conflict (record_id, kind, key) do update set
+             at=excluded.at, text=excluded.text, status=excluded.status, attrs=excluded.attrs,
+             actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+             content_hash=excluded.content_hash, deleted_at=null,
+             embed_text=excluded.embed_text, embed_model=excluded.embed_model,
+             embedded_at=excluded.embedded_at, embedding=excluded.embedding`,
+          [
+            recordId,
+            scopeId,
+            `pr:${p.number}`,
+            p.at,
+            prText(p),
+            p.state,
+            JSON.stringify({ pr: p.number, prTitle: p.title, state: p.state, url: p.url, branch: p.branch }),
+            actorKind(p.author),
+            p.author,
+            crypto.createHash("sha256").update(prText(p)).digest("hex"),
+            prText(p),
+            EMBED_MODEL,
+            new Date().toISOString(),
+            vec(vectors[i]),
+          ],
+        );
+      }
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      throw e;
+    }
+    onProgress?.(`  PR ${Math.min(from + CHUNK, prStale.length)} / ${prStale.length} 件を確定`);
+  }
+
+  // **変わっていないものは書き直さない。**content_hash が同じなら本文も出自も同じで、
+  // 書いても結果は変わらない。日次で回すのに全件へ 1 件 4 クエリを投げると、
+  // monopoly-source だけで 10 万回の往復になる（実測: 書き込みだけで 30 分）。
+  const changed = threads.filter((t) => stale.has(t.key));
   let done = 0;
-  for (let from = 0; from < threads.length; from += CHUNK) {
-    const slice = threads.slice(from, from + CHUNK);
-    const need = slice.filter((t) => stale.has(t.key));
+  for (let from = 0; from < changed.length; from += CHUNK) {
+    const slice = changed.slice(from, from + CHUNK);
+    const need = slice;
     // **埋め込みはトランザクションの外で取る。**中で待つと、その間ずっと開いたままになる。
     const vectors = need.length ? await embed(env, need.map(threadText), "document") : [];
     const byKey = new Map(need.map((t, i) => [t.key, vectors[i]]));
@@ -197,9 +298,9 @@ export async function ingestThreads(
       throw e;
     }
     done += slice.length;
-    onProgress?.(`  ${done} / ${threads.length} 件を確定`);
+    onProgress?.(`  ${done} / ${changed.length} 件を確定`);
   }
-  return { total: threads.length, embedded: stale.size };
+  return { total: threads.length, prs: prStale.length, embedded: stale.size };
 }
 
 /** 1 チャンクぶんを書く。呼び出し側がトランザクションを持つ。 */
@@ -217,10 +318,11 @@ async function writeSlice(
     const r = await client.query<{ id: number }>(
       `insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
                            actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
+         values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,$8,$9,$10,$11,$12,$13,$14)
          on conflict (record_id, kind, key) do update set
            at=excluded.at, text=excluded.text, subkind=excluded.subkind, attrs=excluded.attrs,
-           actor_name=excluded.actor_name, content_hash=excluded.content_hash, deleted_at=null,
+           actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+           content_hash=excluded.content_hash, deleted_at=null,
            embed_text=coalesce(excluded.embed_text, node.embed_text),
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
@@ -241,6 +343,7 @@ async function writeSlice(
           url: t.url,
           authors: [...new Set(t.turns.map((x) => x.author))],
         }),
+        actorKind(t.turns[0]?.author ?? "unknown"),
         // 最初に口を開いた人。返信者は attrs.authors に残す。
         t.turns[0]?.author ?? "unknown",
         threadHash(t),
