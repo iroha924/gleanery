@@ -1,3 +1,4 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BotIcon, CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -16,9 +17,10 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { askStream, type ChatSource } from "@/lib/api";
+import { api, askStream, type ChatSource } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
 import { useProject } from "@/lib/project";
 
@@ -111,12 +113,30 @@ function Chat() {
   const { scopeIds: picked, label: projectLabel } = useProject();
   const scopeIds = picked ?? [];
   const abort = useRef<AbortController | null>(null);
+  // 開いている会話。**新しい会話は最初の答えが返ってからサーバー側で作られる。**
+  const [chatId, setChatId] = useState<string | undefined>(undefined);
+  const qc = useQueryClient();
+  const history = useQuery({ queryKey: ["chats"], queryFn: api.chats });
+
+  /** 過去の会話を開く。いまの会話は捨てる（保存済みなので消えない）。 */
+  const open = async (id: string) => {
+    const c = await api.chat(id);
+    setChatId(c.id);
+    setTurns(
+      c.messages.map((m, i) => ({
+        id: `${c.id}-${i}`,
+        role: m.role,
+        content: m.content,
+        sources: m.sources,
+      })),
+    );
+  };
 
   const ask = async (question: string) => {
     if (!question.trim() || busy || scopeIds.length === 0) return;
     setDraft("");
     setBusy(true);
-    const history = turns.map((t) => ({ role: t.role, content: t.content }));
+    const past = turns.map((t) => ({ role: t.role, content: t.content }));
     const id = crypto.randomUUID();
     setTurns((t) => [
       ...t,
@@ -130,11 +150,15 @@ function Chat() {
 
     try {
       await askStream(
-        { question, history, scopeIds },
+        { question, history: past, scopeIds, chatId, scopeName: projectLabel },
         {
           sources: (s) => patch((t) => ({ ...t, sources: s })),
           text: (x) => patch((t) => ({ ...t, content: t.content + x })),
           error: (m) => patch((t) => ({ ...t, error: m })),
+          saved: (id) => {
+            setChatId(id);
+            qc.invalidateQueries({ queryKey: ["chats"] });
+          },
         },
         abort.current.signal,
       );
@@ -147,8 +171,34 @@ function Chat() {
     }
   };
 
+  const fresh = () => {
+    setChatId(undefined);
+    setTurns([]);
+  };
+
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
+      {/* 過去の会話。**消えないので聞き直さなくていい。** */}
+      <div className="flex items-center gap-2">
+        <Select value={chatId ?? ""} onValueChange={(v) => (v ? open(v) : fresh())}>
+          <SelectTrigger className="w-72" aria-label="過去の会話">
+            <SelectValue placeholder="新しい会話" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="">新しい会話</SelectItem>
+            {history.data?.map((h) => (
+              <SelectItem key={h.id} value={h.id}>
+                {h.title ?? "（無題）"}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {turns.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={fresh}>
+            新しい会話
+          </Button>
+        )}
+      </div>
       {/* 生成中の自動追従と最下部へ戻るボタンは MessageScroller が持っている。
           自前の overflow-y-auto だと、答えが画面の下へ流れ落ちて追えない。 */}
       <MessageScrollerProvider>

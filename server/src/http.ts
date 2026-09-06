@@ -429,16 +429,55 @@ app.delete("/api/groups/:id", async (c) => {
 });
 
 // ナレッジに基づいて答える。根拠を先に流し、それから本文を少しずつ返す。
+// --- チャットの履歴 ---
+//
+// **ナレッジとは別の表に置く。**生成した答えを record / node へ書き戻すと、
+// 誤りが「記録」に化けて次の答えがそれを引用する（自分の出力を自分の根拠にする輪）。
+app.get("/api/chats", async (c) => {
+  const r = await (await db()).query(
+    `select c.id, c.title, c.scope_name, c.updated_at,
+            (select count(*) from chat_message m where m.chat_id = c.id)::int as messages
+     from chat c order by c.updated_at desc limit 100`,
+  );
+  return c.json(r.rows);
+});
+
+app.get("/api/chats/:id", async (c) => {
+  const client = await db();
+  const head = await client.query("select id, title, scope_ids, scope_name from chat where id = $1", [
+    c.req.param("id"),
+  ]);
+  if (head.rows.length === 0) return c.json({ error: "その会話は無い" }, 404);
+  const msgs = await client.query(
+    "select role, content, sources, at from chat_message where chat_id = $1 order by at, id",
+    [c.req.param("id")],
+  );
+  return c.json({ ...head.rows[0], messages: msgs.rows });
+});
+
+app.delete("/api/chats/:id", async (c) => {
+  try {
+    await (await cfg()).query("delete from chat where id = $1", [c.req.param("id")]);
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
 app.post("/api/chat", async (c) => {
-  const body = (await c.req.json()) as ChatBody;
+  const body = (await c.req.json()) as ChatBody & { chatId?: string; scopeName?: string };
   const client = await db();
   // 選ばれたプロジェクトがまとめに属していれば、その相手も範囲に入れる。
   const ids = Array.isArray(body.scopeIds) ? body.scopeIds : [];
   const family = [...new Set((await Promise.all(ids.map((id) => scopeFamily(client, id)))).flat())];
 
   return streamSSE(c, async (stream) => {
+    let answer = "";
+    let sources: unknown[] = [];
     try {
       for await (const chunk of chat(client, env, { ...body, scopeIds: family })) {
+        if (chunk.type === "text") answer += chunk.text;
+        else if (chunk.type === "sources") sources = chunk.sources;
         await stream.writeSSE({ event: chunk.type, data: JSON.stringify(chunk) });
       }
     } catch (e) {
@@ -448,9 +487,44 @@ app.post("/api/chat", async (c) => {
         data: JSON.stringify({ message: e instanceof Error ? e.message : String(e) }),
       });
     }
+    // **答えが出てから残す。**途中で切れたものを履歴に積むと、読み返せない断片が増える。
+    if (answer) {
+      try {
+        const chatId = await saveTurn(body, ids, answer, sources);
+        await stream.writeSSE({ event: "saved", data: JSON.stringify({ chatId }) });
+      } catch {
+        // 残せなくても答えは返す
+      }
+    }
     await stream.writeSSE({ event: "done", data: "{}" });
   });
 });
+
+/** 1 往復を履歴へ。会話が無ければ作る。 */
+async function saveTurn(
+  body: ChatBody & { chatId?: string; scopeName?: string },
+  ids: number[],
+  answer: string,
+  sources: unknown[],
+): Promise<string> {
+  const w = await cfg();
+  let chatId = body.chatId;
+  if (!chatId) {
+    const r = await w.query<{ id: string }>(
+      "insert into chat (title, scope_ids, scope_name) values ($1,$2,$3) returning id",
+      [(body.question ?? "").slice(0, 120), ids, body.scopeName ?? null],
+    );
+    chatId = r.rows[0]?.id;
+    if (!chatId) throw new Error("会話を作れなかった");
+  } else {
+    await w.query("update chat set updated_at = now() where id = $1", [chatId]);
+  }
+  await w.query(
+    `insert into chat_message (chat_id, role, content, sources) values ($1,'user',$2,'[]'), ($1,'assistant',$3,$4)`,
+    [chatId, body.question ?? "", answer, JSON.stringify(sources)],
+  );
+  return chatId;
+}
 
 const port = Number(process.env.MITOS_API_PORT ?? 8787);
 serve({ fetch: app.fetch, port }, (i) => console.log(`mitos API: http://localhost:${i.port}`));

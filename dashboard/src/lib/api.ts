@@ -42,8 +42,16 @@ export async function askStream(
     history: { role: "user" | "assistant"; content: string }[];
     /** どのプロジェクトについて聞くか。空だとサーバーが弾く。 */
     scopeIds: number[];
+    /** 続きを書き足す会話。省くと新しい会話になる */
+    chatId?: string;
+    scopeName?: string;
   },
-  on: { sources: (s: ChatSource[]) => void; text: (t: string) => void; error: (m: string) => void },
+  on: {
+    sources: (s: ChatSource[]) => void;
+    text: (t: string) => void;
+    error: (m: string) => void;
+    saved?: (chatId: string) => void;
+  },
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await fetch("/api/chat", {
@@ -71,10 +79,27 @@ export async function askStream(
       const data = JSON.parse(raw);
       if (ev === "sources") on.sources(data.sources);
       else if (ev === "text") on.text(data.text);
+      else if (ev === "saved") on.saved?.(data.chatId);
       else if (ev === "error") on.error(data.message);
     }
   }
 }
+
+/** 会話の一覧。**ナレッジとは別物**で、記録には混ざらない。 */
+export type ChatRow = {
+  id: string;
+  title: string | null;
+  scope_name: string | null;
+  updated_at: string;
+  messages: number;
+};
+export type ChatDetail = {
+  id: string;
+  title: string | null;
+  scope_ids: number[];
+  scope_name: string | null;
+  messages: { role: "user" | "assistant"; content: string; sources: ChatSource[]; at: string }[];
+};
 
 export type Stats = { nodes: number; records: number; scopes: number; refs: number };
 
@@ -204,6 +229,9 @@ export const api = {
   deleteGroup: (id: number) => send<{ ok: true }>(`/api/groups/${id}`, "DELETE"),
   addTracker: (groupId: number, kind: TrackerKind, ident: string) =>
     send<{ ok: true; scopeId: number }>(`/api/groups/${groupId}/tracker`, "POST", { kind, ident }),
+  chats: () => get<ChatRow[]>("/api/chats"),
+  chat: (id: string) => get<ChatDetail>(`/api/chats/${id}`),
+  deleteChat: (id: string) => send<{ ok: true }>(`/api/chats/${id}`, "DELETE"),
   people: () => get<{ people: Person[]; unknown: UnknownHandle[] }>("/api/people"),
   savePerson: (p: { display: string; handles: string[]; isMe: boolean }) =>
     send<{ ok: true }>("/api/people", "POST", p),
