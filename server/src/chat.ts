@@ -6,6 +6,9 @@
 // 混ざっており、第三者が書ける。命令文が紛れていても従わせない。
 
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import OpenAI from "openai";
 import type pg from "pg";
 import { type Env, embed } from "./db.ts";
@@ -75,6 +78,30 @@ export type ChatBody = {
   /** どのプロジェクト（まとめ）について聞くか。**必須。**範囲なしの検索は答えを混ぜる。 */
   scopeIds?: number[];
 };
+
+/** モデルごとの単価（$/1M）。表にない版は 0 として合計に足さない。 */
+const PRICE: Record<string, { in: number; out: number }> = {
+  "gpt-6-astra": { in: 10, out: 50 },
+  "gpt-5.6-sol": { in: 4, out: 20 },
+  "gpt-5.6-terra": { in: 2, out: 12 },
+  "gpt-5.6-luna": { in: 0.2, out: 1.2 },
+};
+
+const USAGE_LOG = path.join(os.homedir(), ".claude", "mitos-usage.jsonl");
+
+function recordUsage(model: string, usage: { input_tokens?: number; output_tokens?: number } | undefined) {
+  if (!usage) return;
+  const p = PRICE[model.replace(/-\d{4}-\d{2}-\d{2}$/, "")] ?? { in: 0, out: 0 };
+  const cost = ((usage.input_tokens ?? 0) * p.in + (usage.output_tokens ?? 0) * p.out) / 1_000_000;
+  try {
+    fs.appendFileSync(
+      USAGE_LOG,
+      `${JSON.stringify({ at: new Date().toISOString(), model, in: usage.input_tokens, out: usage.output_tokens, cost })}\n`,
+    );
+  } catch {
+    // 記録できなくても答えは返す
+  }
+}
 
 export type ChatSource = {
   n: number;
@@ -156,6 +183,9 @@ export async function* chat(
   for await (const event of stream) {
     if (event.type === "response.output_text.delta") {
       yield { type: "text", text: event.delta };
+    } else if (event.type === "response.completed") {
+      // **実測で費用を追う。**推定だと上限に当たるまで気付けない。
+      recordUsage(event.response.model, event.response.usage);
     }
   }
 }

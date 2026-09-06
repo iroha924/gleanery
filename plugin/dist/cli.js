@@ -5080,6 +5080,8 @@ var require_lib2 = __commonJS(function(exports, module) {
 
 // server/src/cli.ts
 import fs3 from "node:fs";
+import os3 from "node:os";
+import path3 from "node:path";
 import { parseArgs } from "node:util";
 
 // server/node_modules/zod/v4/classic/external.js
@@ -24356,6 +24358,7 @@ var USAGE = `使い方:
   mitos link <束の名前> <dir>...                  選ばれたものを 1 つの束にする
   mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
   mitos doctor                                   資格情報と接続を確かめる
+  mitos usage                                    OpenAI の使用量と残り
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
@@ -24431,7 +24434,7 @@ async function main() {
     throw new Error(`--limit は 1 から 20 の整数にする: ${opt.limit}`);
   }
   const polarity = opt.dont ? "dont" : undefined;
-  const KNOWN = ["ingest", "search", "scopes", "candidates", "link", "describe", "doctor"];
+  const KNOWN = ["ingest", "search", "scopes", "candidates", "link", "describe", "doctor", "usage"];
   if (!KNOWN.includes(cmd))
     throw new Error(`知らないコマンド: ${cmd}
 
@@ -24458,6 +24461,22 @@ ${USAGE}`);
     console.log(`データ                 node ${t.rows[0]?.n ?? 0} 件 / 作業場所 ${t.rows[0]?.s ?? 0} 件`);
     console.log(`いまの場所             ${me.label}（${mine ? "登録済み" : "未登録"}）`);
     await c2.end();
+    return;
+  }
+  if (cmd === "usage") {
+    const log = path3.join(os3.homedir(), ".claude", "mitos-usage.jsonl");
+    if (!fs3.existsSync(log)) {
+      console.log("まだ記録がありません。");
+      return;
+    }
+    const rows = fs3.readFileSync(log, "utf8").split(`
+`).filter(Boolean).map((l) => JSON.parse(l));
+    const limit2 = Number(env.MITOS_USAGE_LIMIT ?? 5);
+    const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
+    const per = total / Math.max(rows.length, 1);
+    console.log(`呼び出し   ${rows.length} 回`);
+    console.log(`費用       $${total.toFixed(4)} / 上限 $${limit2}（${(total / limit2 * 100).toFixed(1)}%）`);
+    console.log(`1 回あたり  $${per.toFixed(4)} — 残りおよそ ${Math.floor((limit2 - total) / per)} 回`);
     return;
   }
   if (cmd === "candidates") {
