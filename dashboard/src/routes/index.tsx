@@ -1,7 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { SearchIcon } from "lucide-react";
 import { useState } from "react";
-import { api, type Hit } from "../lib/api";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/lib/api";
+import { polarityClass } from "@/lib/polarity";
 
 const KINDS = [
   ["decision", "決定"],
@@ -21,14 +29,10 @@ export const Route = createFileRoute("/")({
     dont: s.dont === true || s.dont === "true" ? true : undefined,
     kinds: Array.isArray(s.kinds) ? (s.kinds as string[]) : undefined,
   }),
-  component: Search,
+  component: SearchPage,
 });
 
-function polarityClass(p: Hit["polarity"]): string {
-  return p === "dont" ? "text-dont" : p === "do" ? "text-do" : "text-muted";
-}
-
-function Search() {
+function SearchPage() {
   const nav = useNavigate({ from: "/" });
   const { q, dont, kinds } = Route.useSearch();
   const [draft, setDraft] = useState(q ?? "");
@@ -46,72 +50,110 @@ function Search() {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <form
+        className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           nav({ search: (p) => ({ ...p, q: draft.trim() || undefined }) });
         }}
       >
-        <input
+        <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="例: 認証まわりで触らないと決めた場所は？"
-          className="w-full rounded-lg border border-line bg-transparent px-4 py-3 text-base outline-none focus:border-ink/40"
+          className="h-11 text-base"
         />
+        <Button type="submit" size="lg" disabled={!draft.trim()}>
+          <SearchIcon /> 引く
+        </Button>
       </form>
 
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <button
-          type="button"
-          onClick={() => nav({ search: (p) => ({ ...p, dont: p.dont ? undefined : true }) })}
-          className={`rounded-full border px-3 py-1 ${dont ? "border-dont text-dont" : "border-line text-muted"}`}
+      {/* 絞り込みは押せる要素にする。Badge は span なので、asChild で button を渡さないと
+          キーボードで操作できず、押せることも読み上げに伝わらない。 */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge
+          asChild
+          variant={dont ? "default" : "outline"}
+          className={dont ? "bg-dont hover:bg-dont/90" : ""}
         >
-          やらない・棄却・行き止まりだけ
-        </button>
-        {KINDS.map(([k, ja]) => (
           <button
             type="button"
-            key={k}
-            onClick={() => toggleKind(k)}
-            className={`rounded-full border px-3 py-1 ${
-              kinds?.includes(k) ? "border-ink text-ink" : "border-line text-muted"
-            }`}
+            aria-pressed={Boolean(dont)}
+            onClick={() => nav({ search: (p) => ({ ...p, dont: p.dont ? undefined : true }) })}
           >
-            {ja}
+            やらない・棄却・行き止まりだけ
           </button>
+        </Badge>
+        {KINDS.map(([k, ja]) => (
+          <Badge key={k} asChild variant={kinds?.includes(k) ? "secondary" : "outline"}>
+            <button type="button" aria-pressed={Boolean(kinds?.includes(k))} onClick={() => toggleKind(k)}>
+              {ja}
+            </button>
+          </Badge>
         ))}
       </div>
 
       {!q && (
-        <p className="text-sm text-muted">
-          過去の作業で下した決定・棄却した案・試して駄目だったこと・触らないと決めた制約を、意味で引く。
-        </p>
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <SearchIcon />
+            </EmptyMedia>
+            <EmptyTitle>過去の判断を引く</EmptyTitle>
+            <EmptyDescription>
+              決定・棄却した案・試して駄目だったこと・触らないと決めた制約を、意味で検索します。
+              既定ではいまの作業場所とその束に絞られます。
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
-      {isFetching && <p className="text-sm text-muted">検索中…</p>}
+
+      {isFetching && (
+        <div className="space-y-3">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </div>
+      )}
       {error && <p className="text-sm text-dont">{String(error)}</p>}
-      {data?.length === 0 && <p className="text-sm text-muted">該当なし。</p>}
+      {q && !isFetching && data?.length === 0 && (
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>該当なし</EmptyTitle>
+            <EmptyDescription>言い換えるか、種別の絞り込みを外してみてください。</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      )}
 
       <ol className="space-y-3">
-        {data?.map((h) => (
-          <li key={`${h.record_id}:${h.kind}:${h.key}`} className="rounded-lg border border-line p-4">
-            <p className="leading-relaxed">
-              <span className={`mr-1 font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
-              {h.text}
-            </p>
-            {h.ex && <p className="mt-2 text-sm text-muted">理由: {h.ex}</p>}
-            <p className="mt-2 text-xs text-muted">
-              <Link to="/records/$id" params={{ id: h.record_id }} className="underline underline-offset-2">
-                {h.record_title}
-              </Link>
-              <span> / {h.scope_label}</span>
-              {h.at && <span> / {h.at.slice(0, 10)}</span>}
-              {h.relevance !== null && (
-                <span className="tabular-nums"> / 関連度 {h.relevance.toFixed(2)}</span>
-              )}
-            </p>
-          </li>
-        ))}
+        {!isFetching &&
+          data?.map((h) => (
+            <li key={`${h.record_id}:${h.kind}:${h.key}`}>
+              <Card>
+                <CardContent className="space-y-2">
+                  <p className="leading-relaxed">
+                    <span className={`mr-1 font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
+                    {h.text}
+                  </p>
+                  {h.ex && <p className="text-sm text-muted-foreground">理由: {h.ex}</p>}
+                  <p className="text-xs text-muted-foreground">
+                    <Link
+                      to="/records/$id"
+                      params={{ id: h.record_id }}
+                      className="underline underline-offset-2"
+                    >
+                      {h.record_title}
+                    </Link>
+                    <span> / {h.scope_label}</span>
+                    {h.at && <span> / {h.at.slice(0, 10)}</span>}
+                    {h.relevance !== null && (
+                      <span className="tabular-nums"> / 関連度 {h.relevance.toFixed(2)}</span>
+                    )}
+                  </p>
+                </CardContent>
+              </Card>
+            </li>
+          ))}
       </ol>
     </div>
   );

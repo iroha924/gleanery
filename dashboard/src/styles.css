@@ -6,10 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-ink: oklch(0.22 0.01 260);
-  --color-muted: oklch(0.52 0.01 260);
-  --color-line: oklch(0.91 0.005 260);
-  --color-surface: oklch(0.99 0.002 260);
+  /* 極性の 2 色だけ自前で持つ。shadcn の destructive は「破壊的操作」の色で、
+     「やらないと決めた」とは意味が違うので使い分ける。 */
   --color-dont: oklch(0.55 0.14 25);
   --color-do: oklch(0.52 0.1 155);
 }

@@ -12,7 +12,8 @@
       "server/evals/**",
       "dashboard/src/**",
       "*.json",
-      "!dashboard/src/routeTree.gen.ts"
+      "!dashboard/src/routeTree.gen.ts",
+      "!dashboard/src/components/ui"
     ]
   },
   "formatter": {

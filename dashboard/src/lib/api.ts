@@ -61,7 +61,34 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type Candidate = {
+  ident: string;
+  label: string;
+  absPath: string;
+  hostOrg: string | null;
+  markers: string[];
+  scopeId: number | null;
+};
+
+export type Group = { id: number; name: string; members: { id: number; label: string }[] };
+
+async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = (await res.json()) as T & { error?: string };
+  if (!res.ok) throw new Error(json.error ?? `${path} が ${res.status}`);
+  return json;
+}
+
 export const api = {
+  candidates: () => get<Candidate[]>("/api/candidates"),
+  groups: () => get<Group[]>("/api/groups"),
+  saveGroup: (name: string, paths: string[]) =>
+    send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, paths }),
+  deleteGroup: (id: number) => send<{ ok: true }>(`/api/groups/${id}`, "DELETE"),
   stats: () => get<Stats>("/api/stats"),
   scopes: () => get<Scope[]>("/api/scopes"),
   records: () => get<RecordRow[]>("/api/records"),
