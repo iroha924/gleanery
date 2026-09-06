@@ -134,14 +134,20 @@ function Detail() {
           <h2 className="text-sm font-medium">関係したファイル・コマンド</h2>
           <ul className="max-w-[68ch] space-y-1 text-sm">
             {data.refs.map((r) => (
-              <li key={`${r.kind}:${r.key}`} className="truncate text-muted-foreground">
-                {r.url ? (
-                  <a href={r.url} className="underline underline-offset-2">
-                    {r.title ?? r.key}
-                  </a>
-                ) : (
-                  (r.title ?? r.key)
+              <li key={`${r.kind}:${r.key}`} className="flex items-baseline gap-2">
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                  {r.url ? (
+                    <a href={r.url} className="underline underline-offset-2">
+                      {r.title ?? r.key}
+                    </a>
+                  ) : (
+                    (r.title ?? r.key)
+                  )}
+                </span>
+                {r.roles.includes("evidence") && (
+                  <span className="shrink-0 text-xs text-muted-foreground">根拠</span>
                 )}
+                {r.failed > 0 && <span className="shrink-0 text-xs text-dont">失敗 {r.failed}</span>}
               </li>
             ))}
           </ul>

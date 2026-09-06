@@ -146,9 +146,6 @@ function SearchPage() {
                     </Link>
                     <span> / {h.scope_label}</span>
                     {h.at && <span> / {h.at.slice(0, 10)}</span>}
-                    {h.relevance !== null && (
-                      <span className="tabular-nums"> / 関連度 {h.relevance.toFixed(2)}</span>
-                    )}
                   </p>
                 </CardContent>
               </Card>

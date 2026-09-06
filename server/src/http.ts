@@ -134,8 +134,13 @@ app.get("/api/records", async (c) => {
 
 app.get("/api/records/:id", async (c) => {
   const client = await db();
+  // **列を並べる。`r.*` にしない。**IR 全文（101 KB）と 1024 次元のベクトル（12 KB）が
+  // 詳細を開くたびに流れていた（実測: 166 KB のうち 114 KB が画面の使わない 2 列）。
   const rec = await client.query(
-    `select r.*, s.label as scope_label from record r join scope s on s.id = r.scope_id where r.id = $1`,
+    `select r.id, r.title, r.status, r.branch, r.problem, r.goal, r.current_at, r.current_text,
+            r.phases, r.next, r.created_at, r.updated_at, r.ended_at, r.ingested_at,
+            s.label as scope_label
+     from record r join scope s on s.id = r.scope_id where r.id = $1`,
     [c.req.param("id")],
   );
   if (rec.rows.length === 0) return c.json({ error: "その記録は無い" }, 404);
@@ -146,10 +151,16 @@ app.get("/api/records/:id", async (c) => {
      order by kind, ordinal, at nulls last`,
     [c.req.param("id")],
   );
+  // 同じファイルが「根拠」と「触った」の両方に出ると、distinct でも 2 行残る。
+  // 役割をまとめて 1 行にする（画面のキーが重複していた。実測 7 件）。
   const refs = await client.query(
-    `select distinct ref.kind, ref.key, ref.title, ref.url, l.role
+    `select ref.kind, ref.key, min(ref.title) as title, min(ref.url) as url,
+            string_agg(distinct l.role, ',' order by l.role) as roles,
+            count(*) filter (where l.exit_code is not null and l.exit_code <> 0)::int as failed
      from ref join ref_link l on l.ref_id = ref.id
-     where l.record_id = $1 order by ref.kind, ref.key`,
+     where l.record_id = $1
+     group by ref.kind, ref.key
+     order by ref.kind, ref.key`,
     [c.req.param("id")],
   );
   return c.json({

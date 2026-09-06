@@ -39153,6 +39153,9 @@ var LABEL = {
   "decision/rejected": "【却下した決定。採用していない】",
   "decision/proposed": "【提案どまり。まだ決まっていない】",
   "decision/null": "【決定】",
+  "event/finding": "【分かったこと】",
+  "event/state_transition": "【状況が変わった】",
+  "event/null": "【経過】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
 };

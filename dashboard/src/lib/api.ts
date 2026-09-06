@@ -76,7 +76,16 @@ export type Node = {
   parent_id: number | null;
 };
 
-export type Ref = { kind: string; key: string; title: string | null; url: string | null; role: string };
+export type Ref = {
+  kind: string;
+  key: string;
+  title: string | null;
+  url: string | null;
+  /** 根拠(evidence) / 触った(touched) / 関連(link) をまとめたもの */
+  roles: string;
+  /** 0 以外で終わったコマンドの回数 */
+  failed: number;
+};
 
 export type RecordDetail = RecordRow & { nodes: Node[]; refs: Ref[] };
 
