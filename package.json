@@ -2,10 +2,11 @@
   "name": "mitos",
   "private": true,
   "scripts": {
-    "dev": "bun run api & bun run dashboard",
+    "dev": "bun run --parallel --no-orphans api dashboard",
     "api": "cd server && node src/http.ts",
-    "dashboard": "cd dashboard && vite",
-    "check": "biome check . && cd server && tsc --noEmit && cd ../dashboard && tsc -b",
+    "dashboard": "cd dashboard && ./node_modules/.bin/vite",
+    "build": "cd dashboard && ./node_modules/.bin/vite build",
+    "check": "bunx --bun @biomejs/biome@2.5.12 check . && cd server && bunx tsc --noEmit && cd ../dashboard && bunx tsc -b",
     "test": "cd server && node --test test/*.test.ts"
   }
 }
