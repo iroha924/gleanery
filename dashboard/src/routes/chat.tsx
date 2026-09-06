@@ -40,32 +40,49 @@ const EXAMPLES = [
   "何を試して駄目だった？",
 ];
 
-/** 根拠。**畳んでおく。**答えを読む前に 12 件並ぶと本文が押し出される。 */
-function Sources({ sources }: { sources: ChatSource[] }) {
+/**
+ * 根拠。**生成中は 1 位を開いて出す。**
+ * 根拠は 0.6 秒で出るのに答えは 3 秒かかる。会議中に聞く用途では、
+ * まとめを待つより「引いた 1 位」を先に読めた方が速い（実測: 体感 3.1s → 0.6s）。
+ */
+function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
   if (sources.length === 0) return null;
+  const top = sources[0];
   return (
-    <details className="group">
-      <summary className="cursor-pointer list-none text-xs text-muted-foreground hover:text-foreground">
-        根拠にした記録 {sources.length} 件
-        <span className="ml-1 inline-block transition-transform group-open:rotate-90">›</span>
-      </summary>
-      <ol className="mt-2 space-y-2 border-l pl-3">
-        {sources.map((s) => (
-          <li key={s.n} className="text-xs leading-relaxed">
-            <span className="mr-1 font-medium text-muted-foreground tabular-nums">[{s.n}]</span>
-            <span className={`mr-1 ${polarityClass(s.polarity)}`}>{s.label}</span>
-            {s.text}
-            <span className="ml-1 text-muted-foreground">
-              （
-              <Link to="/records/$id" params={{ id: s.recordId }} className="underline underline-offset-2">
-                {s.recordTitle}
-              </Link>
-              {s.at && ` / ${s.at}`}）
-            </span>
-          </li>
-        ))}
-      </ol>
-    </details>
+    <div className="space-y-2">
+      {busy && top && (
+        <div className="rounded-md border bg-muted/40 p-3">
+          <p className="text-xs text-muted-foreground">まとめています。いちばん近い記録:</p>
+          <p className="mt-1 text-sm leading-relaxed">
+            <span className={`mr-1 font-medium ${polarityClass(top.polarity)}`}>{top.label}</span>
+            {top.text}
+          </p>
+          {top.at && <p className="mt-1 text-xs text-muted-foreground tabular-nums">{top.at}</p>}
+        </div>
+      )}
+      <details className="group">
+        <summary className="cursor-pointer list-none text-muted-foreground text-xs hover:text-foreground">
+          根拠にした記録 {sources.length} 件
+          <span className="ml-1 inline-block transition-transform group-open:rotate-90">›</span>
+        </summary>
+        <ol className="mt-2 space-y-2 border-l pl-3">
+          {sources.map((s) => (
+            <li key={s.n} className="text-xs leading-relaxed">
+              <span className="mr-1 font-medium text-muted-foreground tabular-nums">[{s.n}]</span>
+              <span className={`mr-1 ${polarityClass(s.polarity)}`}>{s.label}</span>
+              {s.text}
+              <span className="ml-1 text-muted-foreground">
+                （
+                <Link to="/records/$id" params={{ id: s.recordId }} className="underline underline-offset-2">
+                  {s.recordTitle}
+                </Link>
+                {s.at && ` / ${s.at}`}）
+              </span>
+            </li>
+          ))}
+        </ol>
+      </details>
+    </div>
   );
 }
 
@@ -173,7 +190,7 @@ function Chat() {
                         </Avatar>
                       </MessageAvatar>
                       <MessageContent className="space-y-3">
-                        {t.sources && <Sources sources={t.sources} />}
+                        {t.sources && <Sources sources={t.sources} busy={busy && !t.content} />}
                         {t.content && (
                           <Bubble variant="ghost">
                             <BubbleContent className="whitespace-pre-wrap leading-relaxed">
@@ -181,9 +198,9 @@ function Chat() {
                             </BubbleContent>
                           </Bubble>
                         )}
-                        {!t.content && !t.error && busy && (
-                          <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Spinner /> 記録を読んでいます
+                        {!t.content && !t.error && !t.sources && busy && (
+                          <p className="flex items-center gap-2 text-muted-foreground text-sm">
+                            <Spinner /> 記録を探しています
                           </p>
                         )}
                         {t.error && <p className="text-sm text-dont">{t.error}</p>}

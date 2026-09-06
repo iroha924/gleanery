@@ -8,7 +8,7 @@
 import crypto from "node:crypto";
 import OpenAI from "openai";
 import type pg from "pg";
-import type { Env } from "./db.ts";
+import { type Env, embed } from "./db.ts";
 import { type Hit, labelOf, type Polarity, type RecordHit, search, searchRecords } from "./search.ts";
 
 // 引いた記録をそのまま渡すと、答えの根拠がどこから来たか追えない。
@@ -108,13 +108,15 @@ export async function* chat(
     throw new Error("OPENAI_API_KEY が無い。~/.claude/knowledge.env に入れる");
   }
 
-  const { rows, queryVector } = await search(client, env, {
-    question,
-    scopeIds: body.scopeIds,
-    limit: 12,
-  });
-  // 判断の断片だけでは「何をしているのか」に答えられない。作業の全体像も引く。
-  const records = await searchRecords(client, queryVector, body.scopeIds, 3);
+  // 質問の埋め込みは 1 回だけ取り、判断の検索と記録の検索を**並列に回す**。
+  // 直列だと記録の検索ぶんだけ根拠の表示が遅れる（実測 512ms → 435ms）。
+  // 会議中に聞く用途があるので、ここは削れるだけ削る。
+  const [queryVector] = await embed(env, [question], "query");
+  if (!queryVector) throw new Error("埋め込みが空で返った");
+  const [{ rows }, records] = await Promise.all([
+    search(client, env, { question, scopeIds: body.scopeIds, limit: 12, queryVector }),
+    searchRecords(client, queryVector, body.scopeIds, 3),
+  ]);
 
   const sources: ChatSource[] = rows.map((h, i) => ({
     n: i + 1,
@@ -141,7 +143,8 @@ export async function* chat(
   // 旗艦（sol / astra）ではなく terra を使うのも同じ理由。
   const stream = await openai.responses.create({
     model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
-    reasoning: { effort: "low" },
+    // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
+    reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "low") as "none" | "low" | "medium" | "high" },
     instructions: SYSTEM,
     input: [
       ...(body.history ?? []).slice(-8),
