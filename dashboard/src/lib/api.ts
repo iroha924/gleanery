@@ -167,7 +167,15 @@ export type Candidate = {
   scopeId: number | null;
 };
 
-export type Group = { id: number; name: string; members: { id: number; label: string }[] };
+export type GroupMember = { id: number; label: string; identKind: string; ident: string };
+export type Group = { id: number; name: string; members: GroupMember[] };
+/** issue の出どころ。**プロジェクトごとに違う**ので束ごとに持つ。 */
+export type TrackerKind = "linear" | "github" | "jira";
+
+/** 記録に出てくる名前と、その人の呼び名。**対応付けは人が決める。** */
+export type Person = { id: number; display: string; handles: string[]; is_me: boolean; note: string | null };
+/** まだ誰にも結び付いていない名前と、その名前での発言数 */
+export type UnknownHandle = { handle: string; n: number };
 
 async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -188,6 +196,12 @@ export const api = {
   saveGroup: (name: string, paths: string[]) =>
     send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, paths }),
   deleteGroup: (id: number) => send<{ ok: true }>(`/api/groups/${id}`, "DELETE"),
+  addTracker: (groupId: number, kind: TrackerKind, ident: string) =>
+    send<{ ok: true; scopeId: number }>(`/api/groups/${groupId}/tracker`, "POST", { kind, ident }),
+  people: () => get<{ people: Person[]; unknown: UnknownHandle[] }>("/api/people"),
+  savePerson: (p: { display: string; handles: string[]; isMe: boolean }) =>
+    send<{ ok: true }>("/api/people", "POST", p),
+  deletePerson: (id: number) => send<{ ok: true }>(`/api/people/${id}`, "DELETE"),
   stats: () => get<Stats>("/api/stats"),
   scopes: () => get<Scope[]>("/api/scopes"),
   records: () => get<RecordRow[]>("/api/records"),

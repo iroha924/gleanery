@@ -11,6 +11,7 @@ import { z } from "zod";
 import { connect, loadEnv } from "./db.ts";
 import { collectThreads, ingestThreads } from "./github.ts";
 import { type Ir, ingest } from "./ingest.ts";
+import { fetchIssue, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { candidates, identify } from "./scope.ts";
 import { outsideScopes, quote, scopeFamily, search } from "./search.ts";
 
@@ -25,6 +26,10 @@ const USAGE = `使い方:
   mitos doctor                                   資格情報と接続を確かめる
   mitos usage                                    OpenAI の使用量と残り
   mitos import-github [--cwd <dir>]              PR のレビューと議論を取り込む
+  mitos import-linear --team <名前> [--group <束>] [--all]
+                                                 Linear の issue とコメントを取り込む
+  mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
+  mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -35,8 +40,11 @@ const OPTIONS = {
   cwd: { type: "string" },
   limit: { type: "string" },
   all: { type: "boolean" },
+  me: { type: "boolean" },
   dont: { type: "boolean" },
   json: { type: "boolean" },
+  team: { type: "string" },
+  group: { type: "string" },
 } as const;
 
 // progress-log が書く HTML には IR が script 要素で埋まっている。
@@ -112,6 +120,40 @@ async function scopeIdFor(c: pg.Client, dir: string, create: boolean): Promise<n
   return created.id;
 }
 
+/**
+ * issue の出どころを作業場所として用意し、指定があれば束へ足す。
+ * **ディレクトリではないので identify() は通らない。**ident はトラッカー側の識別子。
+ */
+async function trackerScopeId(
+  c: pg.Client,
+  ident: string,
+  label: string,
+  hostOrg: string,
+  group: string | undefined,
+): Promise<number> {
+  const found = await c.query<{ id: number }>("select id::int as id from scope where ident = $1", [ident]);
+  const id =
+    found.rows[0]?.id ??
+    (
+      await c.query<{ id: number }>(
+        `insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label, role)
+         values ($1,'tracker',null,$2,null,$3,'issue-tracker') returning id::int as id`,
+        [ident, hostOrg, label],
+      )
+    ).rows[0]?.id;
+  if (id === undefined) throw new Error(`作業場所を作れなかった: ${ident}`);
+  if (group) {
+    await c.query("insert into scope_group (name) values ($1) on conflict (name) do nothing", [group]);
+    await c.query(
+      `insert into group_member (group_id, scope_id)
+       select g.id, $2 from scope_group g where g.name = $1
+       on conflict do nothing`,
+      [group, id],
+    );
+  }
+  return id;
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
@@ -144,6 +186,8 @@ async function main(): Promise<void> {
     "doctor",
     "usage",
     "import-github",
+    "import-linear",
+    "who",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
   const env = loadEnv(cwd);
@@ -167,6 +211,15 @@ async function main(): Promise<void> {
       console.log(`${label.padEnd(22)} ${who.rows[0]?.u} / ベクトル検索 OK（${v.rows[0]?.n} 件返った）`);
       await c.end();
     }
+    // Linear は API キーではなく OAuth 済みの MCP 越しに取る。**壊れ方が DB と違う** —
+    // claude が PATH に無い、OAuth が切れた、のどちらでも「issue が 0 件」に化けるので、
+    // ここで実際に 1 回叩いて確かめる。
+    try {
+      console.log(`Linear(MCP 経由)       ${whoAmI()} として届いた`);
+    } catch (e) {
+      console.log(`Linear(MCP 経由)       届かない: ${e instanceof Error ? e.message : e}`);
+    }
+
     const c = await connect(env);
     const me = identify(cwd);
     const mine = await scopeIdFor(c, cwd, false);
@@ -255,6 +308,116 @@ async function main(): Promise<void> {
       const threads = collectThreads(repo);
       const r = await ingestThreads(c, env, repo, scopeId, threads, (m) => console.error(`  ${m}`));
       console.log(`取り込み完了: ${repo} / スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
+      return;
+    }
+
+    if (cmd === "import-linear") {
+      // 束に「issue の出どころ」が設定してあれば、チーム名はそこから取る。
+      // 画面で設定したものと CLI が同じものを見るようにするため。
+      const fromGroup = opt.group
+        ? (
+            await c.query<{ ident: string }>(
+              `select s.ident from scope s
+               join group_member m on m.scope_id = s.id
+               join scope_group g on g.id = m.group_id
+               where g.name = $1 and s.ident like 'linear:%' limit 1`,
+              [opt.group],
+            )
+          ).rows[0]?.ident?.replace(/^linear:/, "")
+        : undefined;
+      const team = opt.team ?? fromGroup;
+      if (!team) {
+        throw new Error(
+          `--team <チーム名> を指定する（例: --team Onetag）。` +
+            `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける\n\n${USAGE}`,
+        );
+      }
+      const who = whoAmI();
+      console.error(`  Linear の ${team} を ${who} として数えています…`);
+      const all = listIssues(team);
+      if (all.length === 0) throw new Error(`${team} に issue が 1 件も無い。チーム名を確かめる`);
+      const mine = all.filter((i) => i.assignee === who || i.createdBy === who);
+      const target = opt.all ? all : mine;
+      console.error(
+        `  チーム全体 ${all.length} 件 / 自分が関わる ${mine.length} 件 → 対象 ${target.length} 件`,
+      );
+
+      const workspace =
+        new URL(String(all[0]?.url ?? "https://linear.app/unknown/")).pathname.split("/")[1] ?? "unknown";
+      const scopeId = await trackerScopeId(
+        c,
+        `linear:${workspace}/${team}`,
+        `Linear: ${team}`,
+        workspace,
+        opt.group,
+      );
+
+      // **更新のあったものだけ取りに行く。**日次で回すので、ここが無いと毎回全件を
+      // 取り直して時間も費用も件数に比例する。比較は Linear が返した updatedAt の
+      // 文字列そのもの同士でやる（timestamptz へ丸めると精度差で毎回ずれる）。
+      const known = new Map(
+        (
+          await c.query<{ id: string; u: string | null }>(
+            "select id, raw->>'updatedAt' as u from record where id like 'linear:%'",
+          )
+        ).rows.map((r) => [r.id, r.u]),
+      );
+      const changed = target.filter((i) => known.get(`linear:${String(i.id)}`) !== String(i.updatedAt));
+      console.error(
+        `  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`,
+      );
+
+      let nodes = 0;
+      let embedded = 0;
+      for (const [n, row] of changed.entries()) {
+        const id = String(row.id);
+        const issue = fetchIssue(id);
+        const r = await ingestIssue(c, env, workspace, scopeId, issue);
+        nodes += r.nodes;
+        embedded += r.embedded;
+        console.error(
+          `  [${n + 1}/${changed.length}] ${id} コメント ${issue.comments.length} 件 → node ${r.nodes} 件`,
+        );
+      }
+      console.log(
+        `取り込み完了: Linear ${team} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`,
+      );
+      return;
+    }
+
+    // 誰が誰かは**人が決める**。記録に出てくるのはハンドル名だけで、
+    // それが「黒川さん」だと結び付けられるのは人しかいない。ここは推論しない。
+    if (cmd === "who") {
+      if (rest.length === 0) {
+        const people = await c.query<{ display: string; handles: string[]; is_me: boolean }>(
+          "select display, handles, is_me from person order by is_me desc, display",
+        );
+        if (people.rows.length === 0) console.log("名簿は空。`mitos who <呼び名> <ハンドル>...` で入れる");
+        for (const r of people.rows) {
+          console.log(`${r.is_me ? "→ " : "  "}${r.display.padEnd(12)} ${r.handles.join(" / ")}`);
+        }
+        const unknown = await c.query<{ handle: string; n: number }>(
+          `select actor_name as handle, count(*)::int as n from node
+           where actor_name is not null and deleted_at is null
+             and not exists (select 1 from person p where node.actor_name = any(p.handles))
+           group by actor_name order by n desc limit 20`,
+        );
+        if (unknown.rows.length) {
+          console.log("\nまだ誰か決めていない名前（発言の多い順）:");
+          for (const r of unknown.rows) console.log(`  ${String(r.n).padStart(5)} 件  ${r.handle}`);
+        }
+        return;
+      }
+      const [display, ...handles] = rest;
+      if (!display) throw new Error(`呼び名を指定する\n\n${USAGE}`);
+      if (handles.length === 0) throw new Error("ハンドルを 1 つ以上指定する（記録に出てくる名前）");
+      if (opt.me) await c.query("update person set is_me = false where is_me");
+      await c.query(
+        `insert into person (display, handles, is_me) values ($1,$2,$3)
+         on conflict (display) do update set handles = excluded.handles, is_me = excluded.is_me, updated_at = now()`,
+        [display, handles, opt.me === true],
+      );
+      console.log(`名簿に入れた: ${display} = ${handles.join(" / ")}${opt.me ? "（質問者本人）" : ""}`);
       return;
     }
 
