@@ -39013,10 +39013,10 @@ function loadEnv(_from) {
   return out;
 }
 var HERE = path.dirname(fileURLToPath(import.meta.url));
-var CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "certs")].map((d) => path.join(d, "prod-ca-2021.crt")).find((f) => fs.existsSync(f));
+var CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].map((d) => path.join(d, "prod-ca-2021.crt")).find((f) => fs.existsSync(f));
 var ca = null;
-async function connect(env, { readOnly = false } = {}) {
-  const raw = (readOnly ? env.KNOWLEDGE_DB_URL_RO : undefined) ?? env.SUPABASE_DB_URL;
+async function connect(env, { as = "admin" } = {}) {
+  const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.SUPABASE_DB_URL;
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
   }
@@ -39326,7 +39326,7 @@ var pending = null;
 function db() {
   if (pending)
     return pending;
-  const p = connect(env, { readOnly: true }).then(async (c) => {
+  const p = connect(env, { as: "read" }).then(async (c) => {
     await c.query("set session characteristics as transaction read only");
     c.on("error", () => {
       if (pending === p)

@@ -7,6 +7,7 @@
     "dashboard": "cd dashboard && ./node_modules/.bin/vite",
     "build": "cd dashboard && ./node_modules/.bin/vite build",
     "check": "bunx --bun @biomejs/biome@2.5.12 check . && cd server && bunx tsc --noEmit && cd ../dashboard && bunx tsc -b",
-    "test": "cd server && node --test test/*.test.ts"
+    "test": "cd server && node --test test/*.test.ts",
+    "bundle": "bun build server/src/mcp.ts --target=node --outfile plugin/dist/mcp.js && bun build server/src/hook-check-path.ts --target=node --outfile plugin/dist/hook-check-path.js && bun build server/src/cli.ts --target=node --outfile plugin/dist/cli.js"
   }
 }

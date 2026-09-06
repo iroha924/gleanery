@@ -45,22 +45,28 @@ export function loadEnv(_from?: string): Env {
 // バンドル（dist/mcp.js）から見ると ../certs、ソース（server/src/db.ts）から見ると ../../certs。
 // どちらもリポジトリ直下の certs に着く。実行の形で位置が変わるので、両方を試す。
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "certs")]
+// 正本は plugin/certs。バンドル（plugin/dist/*.js）からは ../certs、
+// 素のソース（server/src/db.ts）からは ../../plugin/certs で着く。
+const CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")]
   .map((d) => path.join(d, "prod-ca-2021.crt"))
   .find((f) => fs.existsSync(f));
 
 let ca: string | null = null;
 
 /**
- * @param readOnly 読み取りしかしない経路（MCP・フック）は true。
- *   KNOWLEDGE_DB_URL_RO があればそちらで繋ぐ。このロールは SELECT の権限しか持たないので、
- *   経路が増えても書けない。無ければ管理側の鍵へ落ちる（設定していない環境でも動くように）。
+ * @param as どの鍵で繋ぐか。
+ *   read   = MCP・フック・画面の読み取り（SELECT だけ）
+ *   config = 画面の束ね設定（scope / scope_group / group_member だけ書ける）
+ *   admin  = 取り込み CLI（全部）
  */
 export async function connect(
   env: Env,
-  { readOnly = false }: { readOnly?: boolean } = {},
+  { as = "admin" }: { as?: "admin" | "read" | "config" } = {},
 ): Promise<pg.Client> {
-  const raw = (readOnly ? env.KNOWLEDGE_DB_URL_RO : undefined) ?? env.SUPABASE_DB_URL;
+  // 鍵を用途で分ける。用意されていない環境では管理側へ落ちる（設定していなくても動くように）。
+  const raw =
+    (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ??
+    env.SUPABASE_DB_URL;
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
   }

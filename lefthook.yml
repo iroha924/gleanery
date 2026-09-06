@@ -18,6 +18,5 @@ pre-commit:
     - name: bundle
       glob: "server/src/*.ts"
       run: |
-        bun build server/src/mcp.ts --target=node --outfile dist/mcp.js
-        bun build server/src/hook-check-path.ts --target=node --outfile dist/hook-check-path.js
-        git add dist/
+        bun run bundle
+        git add plugin/dist/

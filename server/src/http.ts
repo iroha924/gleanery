@@ -9,14 +9,14 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type pg from "pg";
 import { connect, loadEnv } from "./db.ts";
-import { identify } from "./scope.ts";
+import { candidates, identify } from "./scope.ts";
 import { labelOf, type Polarity, scopeFamily, search } from "./search.ts";
 
 const env = loadEnv(process.cwd());
 let pending: Promise<pg.Client> | null = null;
 function db(): Promise<pg.Client> {
   if (pending) return pending;
-  const p = connect(env, { readOnly: true }).then((c) => {
+  const p = connect(env, { as: "read" }).then((c) => {
     c.on("error", () => {
       if (pending === p) pending = null;
       c.end().catch(() => {});
@@ -27,6 +27,25 @@ function db(): Promise<pg.Client> {
     if (pending === p) pending = null;
   });
   pending = p;
+  return p;
+}
+
+// 束ねる設定だけを書ける鍵。record / node / ref には触れないので、
+// 画面が壊れてもナレッジ本体は書き換わらない。
+let cfgPending: Promise<pg.Client> | null = null;
+function cfg(): Promise<pg.Client> {
+  if (cfgPending) return cfgPending;
+  const p = connect(env, { as: "config" }).then((c) => {
+    c.on("error", () => {
+      if (cfgPending === p) cfgPending = null;
+      c.end().catch(() => {});
+    });
+    return c;
+  });
+  p.catch(() => {
+    if (cfgPending === p) cfgPending = null;
+  });
+  cfgPending = p;
   return p;
 }
 
@@ -122,6 +141,107 @@ app.post("/api/search", async (c) => {
   const polarity: Polarity | undefined = body.onlyDont ? "dont" : undefined;
   const { rows } = await search(client, env, { question, scopeIds, polarity, kinds: body.kinds, limit });
   return c.json(rows.map((r) => ({ ...r, label: labelOf(r) })));
+});
+
+// 束ねる候補。~/Projects 配下と、実際に作業した場所（transcript から拾う）の和。
+app.get("/api/candidates", async (c) => {
+  const client = await db();
+  const known = await client.query<{ ident: string; id: number }>("select ident, id::int as id from scope");
+  const byIdent = new Map(known.rows.map((r) => [r.ident, r.id]));
+  return c.json(
+    candidates().map((x) => ({
+      ident: x.ident,
+      label: x.label,
+      absPath: x.absPath,
+      hostOrg: x.hostOrg,
+      markers: x.markers,
+      scopeId: byIdent.get(x.ident) ?? null,
+    })),
+  );
+});
+
+app.get("/api/groups", async (c) => {
+  const r = await (await db()).query(
+    `select g.id::int, g.name,
+            coalesce(json_agg(json_build_object('id', s.id::int, 'label', s.label)
+                     order by s.label) filter (where s.id is not null), '[]') as members
+     from scope_group g
+     left join group_member m on m.group_id = g.id
+     left join scope s on s.id = m.scope_id
+     group by g.id, g.name order by g.name`,
+  );
+  return c.json(r.rows);
+});
+
+// **束ねるのは人間が選ぶ。**推論で束ねない（org も親ディレクトリも実データで外れた）。
+// 受けるのは絶対パス。ident の組み立ては CLI と同じ identify() に任せる。
+app.post("/api/groups", async (c) => {
+  const body = (await c.req.json()) as { name?: string; paths?: string[] };
+  const name = (body.name ?? "").trim();
+  const paths = Array.isArray(body.paths) ? body.paths.filter((x) => typeof x === "string" && x) : [];
+  if (!name) return c.json({ error: "束の名前が空" }, 400);
+  if (paths.length < 2) return c.json({ error: "2 つ以上選ぶ" }, 400);
+
+  const client = await cfg();
+  await client.query("begin");
+  try {
+    // **on conflict do update を使わない。**UPDATE 権限を要求するので、
+    // 束ねる以外は書けない鍵では通らない（実測: permission denied）。
+    const ins = await client.query<{ id: number }>(
+      "insert into scope_group (name) values ($1) on conflict (name) do nothing returning id::int as id",
+      [name],
+    );
+    const groupId =
+      ins.rows[0]?.id ??
+      (await client.query<{ id: number }>("select id::int as id from scope_group where name = $1", [name]))
+        .rows[0]?.id;
+    if (groupId === undefined) throw new Error("束を作れなかった");
+
+    // 選び直しは「選ばれたものが全部」。外したものは束から出る。
+    await client.query("delete from group_member where group_id = $1", [groupId]);
+    for (const dir of paths) {
+      const me = identify(dir);
+      const found = await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [
+        me.ident,
+      ]);
+      let id = found.rows[0]?.id;
+      if (id === undefined) {
+        const created = await client.query<{ id: number }>(
+          `insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label)
+           values ($1,$2,$3,$4,$5,$6) returning id::int as id`,
+          [me.ident, me.identKind, me.absPath, me.hostOrg, me.repoName, me.label],
+        );
+        id = created.rows[0]?.id;
+      }
+      if (id !== undefined) {
+        await client.query(
+          "insert into group_member (group_id, scope_id) values ($1,$2) on conflict do nothing",
+          [groupId, id],
+        );
+      }
+    }
+    await client.query("commit");
+    return c.json({ ok: true, groupId, members: paths.length });
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+app.delete("/api/groups/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  if (!Number.isInteger(id)) return c.json({ error: "id が不正" }, 400);
+  const client = await cfg();
+  await client.query("begin");
+  try {
+    await client.query("delete from group_member where group_id = $1", [id]);
+    await client.query("delete from scope_group where id = $1", [id]);
+    await client.query("commit");
+    return c.json({ ok: true });
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
 });
 
 const port = Number(process.env.MITOS_API_PORT ?? 8787);

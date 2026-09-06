@@ -144,7 +144,7 @@ async function main(): Promise<void> {
       ["書き込み(CLI)", false],
       ["読み取り(MCP/フック)", true],
     ] as const) {
-      const c = await connect(env, { readOnly });
+      const c = await connect(env, { as: readOnly ? "read" : "admin" });
       const who = await c.query<{ u: string }>("select current_user as u");
       const v = await c.query<{ n: number }>(
         "select count(*)::int n from (select 1 from node where embedding is not null order by embedding <#> (select embedding from node where embedding is not null limit 1) limit 3) t",

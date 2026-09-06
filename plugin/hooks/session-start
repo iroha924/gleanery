@@ -3,14 +3,19 @@
 // （公式: "A CLAUDE.md file at the plugin root is not loaded as project context"）ので、
 // skill の中身を読んで additionalContext として渡す。
 //
+// **ESM で書く。**plugin/package.json が "type": "module" なので、
+// 拡張子の無いこのファイルも ESM として読まれ、require は使えない（実測）。
+//
 // **出力の形はホストで違う。**Claude Code は hookSpecificOutput.additionalContext、
 // Cursor は additional_context、SDK 標準は additionalContext。
 // 両方出すと Claude Code は重複排除せずに 2 回読むので、1 つだけ出す。
-const fs = require("node:fs");
-const path = require("node:path");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 try {
-  const root = process.argv[2] ?? path.join(__dirname, "..");
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const root = process.argv[2] ?? path.join(here, "..");
   const md = fs.readFileSync(path.join(root, "skills", "using-mitos", "SKILL.md"), "utf8");
   // フロントマターは読み手に要らない
   const body = md.replace(/^---\n[\s\S]*?\n---\n/, "").trim();

@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
+import path from "node:path";
 import { defineConfig } from "vite";
 
 export default defineConfig({
@@ -13,6 +14,8 @@ export default defineConfig({
     react({ compiler: true }),
     tailwindcss(),
   ],
+  // shadcn/ui は "@/..." で自分のファイルを参照する。tsconfig の paths と揃える。
+  resolve: { alias: { "@": path.resolve(import.meta.dirname, "./src") } },
   server: {
     // 資格情報を持つのは API だけ。画面は同一オリジンで叩けるようにする。
     proxy: { "/api": { target: "http://localhost:8787", changeOrigin: true } },

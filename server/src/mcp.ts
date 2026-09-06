@@ -22,7 +22,7 @@ const env = loadEnv(process.env.KNOWLEDGE_ENV_DIR ?? process.cwd());
 let pending: Promise<pg.Client> | null = null;
 function db(): Promise<pg.Client> {
   if (pending) return pending;
-  const p = connect(env, { readOnly: true }).then(async (c) => {
+  const p = connect(env, { as: "read" }).then(async (c) => {
     // 鍵が読み取り専用ロールでも、この 1 行は残す。KNOWLEDGE_DB_URL_RO を
     // 設定していない環境では管理側の鍵へ落ちるので、そこでの防御がこれになる。
     await c.query("set session characteristics as transaction read only");
