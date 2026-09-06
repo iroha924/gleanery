@@ -114,9 +114,10 @@ const SYSTEM = (people: Person[]): string =>
     "聞かれたことに答える。決定の話とは限らない — 何をしているのか、なぜそうなっているのか、",
     "いま何が起きているのか、どれも記録にあれば答えてよい。",
     "",
-    "**「誰の」「いつの」「最新の」「一覧」を聞かれたら find_prs を使う。**それは絞り込みと",
+    "**「誰の」「いつの」「最新の」「一覧」を聞かれたら道具を使う。**それは絞り込みと",
     "並び替えであって、渡された記録を読んで答えるものではない。渡された記録に見当たらないことを",
     "「記録には無い」と答える前に、条件で引ける質問かどうかを先に考える。",
+    "PR の話なら find_prs、人の発言なら find_utterances。",
     "author にはハンドル名を渡す（呼び名ではなく、上の対応表で変換する）。",
     "repo は「いま見ている範囲」に挙がっているものから選ぶ。",
     "",
@@ -362,6 +363,27 @@ const TOOLS: OpenAI.Responses.Tool[] = [
   },
   {
     type: "function",
+    name: "find_utterances",
+    description:
+      "人の発言を新しい順に返す。「黒川さんが最近言ってたこと」「◯◯さんはこの件で何て言ってた」のように、" +
+      "**誰の発言か**で探すときに使う。person にはハンドル名を渡す（呼び名ではなく、上の対応表で変換する）。" +
+      "話題で絞りたいときは contains に語を渡す。返信で参加しただけのものも拾う。",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        person: { type: "string", description: "ハンドル名。例: shogo-kurokawa-nm" },
+        repo: { type: "string", description: "リポジトリ名の一部。省くと範囲の全部" },
+        contains: { type: "string", description: "本文に含まれる語で絞る" },
+        since: { type: "string", description: "この日付以降。YYYY-MM-DD" },
+        limit: { type: "number", description: "何件返すか。既定 10、最大 50" },
+      },
+      required: ["person"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
     name: "grep_code",
     description:
       "いまのコードを語で探す。**記録は「なぜそうしたか」しか持っていない**ので、" +
@@ -419,6 +441,8 @@ async function runTool(
     limit?: number;
     number?: number;
     query?: string;
+    person?: string;
+    contains?: string;
     glob?: string;
     path?: string;
     from?: number;
@@ -453,6 +477,47 @@ async function runTool(
     });
     return n;
   };
+
+  if (call.name === "find_utterances") {
+    if (!a.person) return JSON.stringify({ error: "person が空" });
+    const w = ["n.kind = 'utterance'", "n.deleted_at is null", "n.scope_id = any($1)"];
+    const ps: unknown[] = [scopeIds];
+    const push = (v: unknown, f: (i: number) => string) => {
+      ps.push(v);
+      w.push(f(ps.length));
+    };
+    // **返信だけで参加した発言も拾う。**口を開いた順の 1 人目しか actor_name に入っていないので、
+    // ここを落とすと「返事でそう言った」が全部消える。
+    push(a.person, (i) => `(n.actor_name = $${i} or n.attrs->'authors' @> to_jsonb($${i}::text))`);
+    if (a.repo) push(`%${a.repo}%`, (i) => `s.label ilike $${i}`);
+    if (a.contains) push(`%${a.contains}%`, (i) => `n.text ilike $${i}`);
+    if (a.since) push(a.since, (i) => `n.at >= $${i}::timestamptz`);
+    const lim = Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
+    const u = await client.query<{
+      author: string;
+      at: string;
+      repo: string;
+      pr: number | null;
+      text: string;
+      url: string | null;
+    }>(
+      `select n.actor_name as author, to_char(n.at, 'YYYY-MM-DD') as at, s.label as repo,
+              (n.attrs->>'pr')::int as pr, left(n.text, 1200) as text, n.attrs->>'url' as url
+       from node n join scope s on s.id = n.scope_id
+       where ${w.join(" and ")}
+       order by n.at desc nulls last limit ${lim}`,
+      ps,
+    );
+    if (u.rows.length === 0) {
+      return JSON.stringify({ found: 0, note: `${a.person} の発言は、この範囲と条件では見つからない` });
+    }
+    return JSON.stringify(
+      u.rows.map((x) => ({
+        ...x,
+        n: cite("【発言】", `@${x.author}: ${x.text}`, x.repo, x.at, `github:${x.repo}`, x.url),
+      })),
+    );
+  }
 
   if (call.name === "grep_code") {
     if (!a.query) return JSON.stringify({ error: "query が空" });
