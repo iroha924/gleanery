@@ -23851,8 +23851,7 @@ function collect(repo) {
   const prs = [];
   for (const p of gh(repo, "pulls?state=all&per_page=100")) {
     titles.set(p.number, p.title);
-    if (!isNoise(p.user?.login ?? ""))
-      prs.push(prOf(p));
+    prs.push(prOf(p));
   }
   const threads = new Map;
   const reviews = gh(repo, "pulls/comments?per_page=100");

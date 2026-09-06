@@ -110,7 +110,11 @@ export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
   const prs: Pr[] = [];
   for (const p of gh(repo, "pulls?state=all&per_page=100") as Pull[]) {
     titles.set(p.number, p.title);
-    if (!isNoise(p.user?.login ?? "")) prs.push(prOf(p));
+    // **PR は bot が作ったものも入れる。**isNoise はコメント用の判定で、
+    // 「Terraform の plan 結果」のような推論を含まない通知を落とすためのもの。
+    // リリース PR は macbeeplanet-dev[bot] が作るので、ここで落とすと
+    // 「いつ何がリリースされたか」に答えられなくなる（実測: dbt #361 が丸ごと欠けていた）。
+    prs.push(prOf(p));
   }
 
   const threads = new Map<string, Thread>();
