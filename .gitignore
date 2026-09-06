@@ -4,3 +4,4 @@ node_modules/
 dashboard/dist/
 dashboard/.tanstack/
 codex-prompt-*.md
+server/migrate-*.ts
