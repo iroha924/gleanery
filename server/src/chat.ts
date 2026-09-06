@@ -166,11 +166,17 @@ const SYSTEM = (people: Person[], terms: Term[]): string =>
     "「作成した最新」と「マージした最新」は別の問いで、答えが変わる。",
     "並べ替えは merged_or_opened_at で行うので、作成順を聞かれたらそう断る。",
     "",
+    "**期間で聞かれたら since と until を両方渡す。**日付は日本時間の丸一日として解釈される。",
+    "since だけ渡して手元で切ると境界を間違える（実測: 8/31〜9/4 を 66 件と答えたが、正しくは 65 件）。",
+    "**日別の内訳を出すなら、日ごとに呼んで total を読む。**rows を目で数えない —",
+    "rows は上限で切られているので、内訳が実測とずれる（実測: 15/10/29/8/4 と書いたが、正しくは 14/9/31/7/4）。",
     "**道具は total（条件に合う総数）と rows（返せた分）を返す。**件数を聞かれたら total で答える。",
     "rows が total より少ないときは「全 N 件のうち M 件」と断るか、offset で続きを取る。",
     "**返ってきた分だけを見て「これで全部」と書かない。**",
     "",
     "**道具が返したものにも n という番号が付いている。**それを根拠にしたなら [n] で引く。",
+    "**引くのは道具が実際に返した番号だけ。**無い番号を書くと、根拠のリンクがどこにも繋がらない",
+    "（実測: 20 件しか返っていないのに [24] と書いた）。番号を思い出しで書かず、手元の結果から拾う。",
     "引用しなかったものは画面に出ないので、使ったものは必ず番号で指すこと。",
     "",
     "日本語で、結論から答える。",
@@ -450,7 +456,11 @@ const TOOLS: OpenAI.Responses.Tool[] = [
           enum: ["merged", "open", "closed"],
           description: "closed はマージせず閉じたもの",
         },
-        since: { type: "string", description: "この日付以降。YYYY-MM-DD" },
+        since: { type: "string", description: "この日を含む、以降。YYYY-MM-DD（日本時間）" },
+        until: {
+          type: "string",
+          description: "この日を含む、まで。YYYY-MM-DD（日本時間）。期間で聞かれたら since と両方渡す",
+        },
         limit: { type: "number", description: "何件返すか。既定 10、最大 50" },
         offset: { type: "number", description: "何件目から返すか。total が limit を超えたときの続き" },
       },
@@ -529,7 +539,11 @@ const TOOLS: OpenAI.Responses.Tool[] = [
         person: { type: "string", description: "ハンドル名。例: shogo-kurokawa-nm" },
         repo: { type: "string", description: "リポジトリ名の一部。省くと範囲の全部" },
         contains: { type: "string", description: "本文に含まれる語で絞る" },
-        since: { type: "string", description: "この日付以降。YYYY-MM-DD" },
+        since: { type: "string", description: "この日を含む、以降。YYYY-MM-DD（日本時間）" },
+        until: {
+          type: "string",
+          description: "この日を含む、まで。YYYY-MM-DD（日本時間）。期間で聞かれたら since と両方渡す",
+        },
         limit: { type: "number", description: "何件返すか。既定 10、最大 50" },
       },
       required: ["person"],
@@ -580,6 +594,13 @@ const TOOLS: OpenAI.Responses.Tool[] = [
  * 道具を実行する。**範囲は呼び出し側が持つ。**モデルに scope を選ばせない
  * （選ばせると、選んでいないプロジェクトの PR を返せてしまう）。
  */
+// **日付は日本時間の丸一日として読む。**DB のセッション TZ は UTC なので、
+// `'2026-08-31'::timestamptz` は 8/31 09:00 JST になり、その朝のマージが丸ごと落ちる。
+// until は「その日を含む」なので翌日の 0 時未満で見る。
+// 実測: 8/31〜9/4 を UTC 境界で数えて 66 件と答えたが、日本時間では 65 件だった。
+const JST_FROM = (i: number) => `($${i}::date)::timestamp at time zone 'Asia/Tokyo'`;
+const JST_TO = (i: number) => `(($${i}::date) + 1)::timestamp at time zone 'Asia/Tokyo'`;
+
 async function runTool(
   client: pg.Client,
   scopeIds: number[],
@@ -593,6 +614,7 @@ async function runTool(
     repo?: string;
     state?: string;
     since?: string;
+    until?: string;
     limit?: number;
     offset?: number;
     number?: number;
@@ -719,7 +741,8 @@ async function runTool(
     push(a.person, (i) => `(n.actor_name = $${i} or n.attrs->'authors' @> to_jsonb($${i}::text))`);
     if (a.repo) push(`%${a.repo}%`, (i) => `s.label ilike $${i}`);
     if (a.contains) push(`%${a.contains}%`, (i) => `n.text ilike $${i}`);
-    if (a.since) push(a.since, (i) => `n.at >= $${i}::timestamptz`);
+    if (a.since) push(a.since, (i) => `n.at >= ${JST_FROM(i)}`);
+    if (a.until) push(a.until, (i) => `n.at < ${JST_TO(i)}`);
     const lim = Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
     const utotal = (
       await client.query<{ n: number }>(
@@ -791,7 +814,8 @@ async function runTool(
   if (a.author) add(a.author, (i) => `n.actor_name = $${i}`);
   if (a.repo) add(`%${a.repo}%`, (i) => `s.label ilike $${i}`);
   if (a.state) add(a.state, (i) => `n.status = $${i}`);
-  if (a.since) add(a.since, (i) => `n.at >= $${i}::timestamptz`);
+  if (a.since) add(a.since, (i) => `n.at >= ${JST_FROM(i)}`);
+  if (a.until) add(a.until, (i) => `n.at < ${JST_TO(i)}`);
   const limit = Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
   const offset = Math.max(Math.trunc(Number(a.offset ?? 0)) || 0, 0);
   // **総数も返す。**返せるのは 50 件までなので、これが無いと「全部でこれだけ」と
