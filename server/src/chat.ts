@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import OpenAI from "openai";
 import type pg from "pg";
+import { grepCode, type Root, readCode } from "./code.ts";
 import { type Env, embed } from "./db.ts";
 import { type Hit, labelOf, type Polarity, type RecordHit, search, searchRecords } from "./search.ts";
 
@@ -118,6 +119,11 @@ const SYSTEM = (people: Person[]): string =>
     "「記録には無い」と答える前に、条件で引ける質問かどうかを先に考える。",
     "author にはハンドル名を渡す（呼び名ではなく、上の対応表で変換する）。",
     "repo は「いま見ている範囲」に挙がっているものから選ぶ。",
+    "",
+    "**「いまどうなっているか」は記録ではなくコードを見る。**記録が持っているのは",
+    "「なぜそうしたか」だけで、実装は変わっている。どのファイルにあるか・どう実装されているかを",
+    "聞かれたら grep_code で探し、read_code で読む。**記録とコードが食い違ったらコードが正しい。**",
+    "答えるときは、記録から言っているのかコードを見て言っているのかを分けて書く。",
     "",
     "日本語で、結論から答える。",
     ...(people.length
@@ -235,17 +241,25 @@ export async function* chat(
 
   // いま見ている範囲。**「インフラ」がどのリポジトリなのかは記録に書かれていない。**
   // 役割は scope に登録してあるので、それを渡して質問の言葉と結び付けさせる。
-  const scopes = await client.query<{ label: string; role: string | null; summary: string | null }>(
-    "select label, role, summary from scope where id = any($1) order by label",
-    [body.scopeIds],
-  );
+  const scopes = await client.query<{
+    label: string;
+    role: string | null;
+    summary: string | null;
+    abs_path: string | null;
+  }>("select label, role, summary, abs_path from scope where id = any($1) order by label", [body.scopeIds]);
+  // **コードを読みに行ってよいのは、選ばれた範囲のディレクトリだけ。**
+  const roots: Root[] = scopes.rows
+    .filter(
+      (r): r is typeof r & { abs_path: string } => Boolean(r.abs_path) && fs.existsSync(r.abs_path ?? ""),
+    )
+    .map((r) => ({ label: r.label, dir: r.abs_path }));
   const inRange = scopes.rows
     .map((r) => `- ${r.label}${r.role ? `（${r.role}）` : ""}${r.summary ? `: ${r.summary}` : ""}`)
     .join("\n");
 
-  // **思考は切る。**この仕事は「12 件の短い記録を読んで忠実に答え、番号で根拠を指す」であって、
-  // 多段の推論ではない。effort を上げるとその分だけ出力トークンの料金が乗る。
-  // 旗艦（sol / astra）ではなく terra を使うのも同じ理由。
+  // **思考は少しだけ入れる。**道具（PR の絞り込み・コードの探索）をどう組み合わせるかの
+  // 判断が入ったので、切ると探し方を間違える。10 秒までは許容という前提で medium。
+  // 旗艦（sol / astra）ではなく terra を使うのは、読んで答える仕事に旗艦は要らないから。
   const input: OpenAI.Responses.ResponseInput = [
     ...(body.history ?? []).slice(-8),
     {
@@ -258,14 +272,18 @@ export async function* chat(
   // **道具を持たせる。**「私の最新のマージ済み PR は」は絞り込みと並び替えであって
   // 意味検索ではない。ベクトルに投げると「マージします！」という発言が並ぶ（実測で 8 件並んだ）。
   // 条件で引く質問は、条件で引かせる。
-  for (let round = 0; round < 3; round++) {
+  // **最後の 1 周は道具を外す。**道具を渡し続けると、呼び続けて 1 文字も答えないまま
+  // 打ち切られることがある（実測: コードを探し回って回数を使い切り、空の応答になった）。
+  const ROUNDS = 4;
+  for (let round = 0; round < ROUNDS; round++) {
+    const last = round === ROUNDS - 1;
     const stream = await openai.responses.create({
       model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
       // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
-      reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "low") as "none" | "low" | "medium" | "high" },
+      reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "medium") as "none" | "low" | "medium" | "high" },
       instructions: SYSTEM(people),
       input,
-      tools: TOOLS,
+      tools: last ? [] : TOOLS,
       stream: true,
     });
 
@@ -292,7 +310,7 @@ export async function* chat(
       input.push({
         type: "function_call_output",
         call_id: call.call_id,
-        output: await runTool(client, body.scopeIds, call),
+        output: await runTool(client, body.scopeIds, roots, call),
       });
     }
   }
@@ -326,6 +344,44 @@ const TOOLS: OpenAI.Responses.Tool[] = [
       additionalProperties: false,
     },
   },
+  {
+    type: "function",
+    name: "grep_code",
+    description:
+      "いまのコードを語で探す。**記録は「なぜそうしたか」しか持っていない**ので、" +
+      "「いまどう実装されているか」「どのファイルにあるか」を聞かれたらこれを使う。" +
+      "関数名・テーブル名・設定キー・エラー文言のような、そのまま書かれている語で探す。",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "探す語。正規表現も使える" },
+        repo: { type: "string", description: "リポジトリ名の一部。省くと範囲の全部を探す" },
+        glob: { type: "string", description: "対象を絞る。例: *.ts / **/*.sql" },
+        limit: { type: "number", description: "何件返すか。既定 30、最大 100" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    name: "read_code",
+    description:
+      "コードの一部を読む。grep_code で場所を見つけてから、その周りを読むのに使う。" + "行番号つきで返る。",
+    strict: false,
+    parameters: {
+      type: "object",
+      properties: {
+        repo: { type: "string", description: "リポジトリ名の一部" },
+        path: { type: "string", description: "リポジトリからの相対パス" },
+        from: { type: "number", description: "何行目から。既定 1" },
+        lines: { type: "number", description: "何行読むか。既定 80、最大 300" },
+      },
+      required: ["repo", "path"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /**
@@ -335,15 +391,37 @@ const TOOLS: OpenAI.Responses.Tool[] = [
 async function runTool(
   client: pg.Client,
   scopeIds: number[],
+  roots: Root[],
   call: OpenAI.Responses.ResponseFunctionToolCall,
 ): Promise<string> {
-  if (call.name !== "find_prs") return JSON.stringify({ error: `知らない道具: ${call.name}` });
-  let a: { author?: string; repo?: string; state?: string; since?: string; limit?: number };
+  let a: Record<string, never> & {
+    author?: string;
+    repo?: string;
+    state?: string;
+    since?: string;
+    limit?: number;
+    query?: string;
+    glob?: string;
+    path?: string;
+    from?: number;
+    lines?: number;
+  };
   try {
     a = JSON.parse(call.arguments);
   } catch {
     return JSON.stringify({ error: "引数が JSON として読めなかった" });
   }
+
+  if (call.name === "grep_code") {
+    if (!a.query) return JSON.stringify({ error: "query が空" });
+    const hits = grepCode(roots, { query: a.query, repo: a.repo, glob: a.glob, limit: a.limit });
+    return JSON.stringify(hits.length ? hits : { found: 0, note: "その語はコードに無い" });
+  }
+  if (call.name === "read_code") {
+    if (!a.repo || !a.path) return JSON.stringify({ error: "repo と path が要る" });
+    return JSON.stringify(readCode(roots, { repo: a.repo, path: a.path, from: a.from, lines: a.lines }));
+  }
+  if (call.name !== "find_prs") return JSON.stringify({ error: `知らない道具: ${call.name}` });
 
   const where = ["n.kind = 'event'", "n.subkind = 'pr'", "n.deleted_at is null", "n.scope_id = any($1)"];
   const params: unknown[] = [scopeIds];
