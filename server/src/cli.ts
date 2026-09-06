@@ -134,16 +134,32 @@ async function main(): Promise<void> {
   const env = loadEnv(cwd);
 
   if (cmd === "doctor") {
-    console.log(`SUPABASE_DB_URL  ${env.SUPABASE_DB_URL ? "あり" : "無い"}`);
-    console.log(`VOYAGE_API_KEY   ${env.VOYAGE_API_KEY ? "あり" : "無い"}`);
+    console.log(`SUPABASE_DB_URL      ${env.SUPABASE_DB_URL ? "あり" : "無い"}`);
+    console.log(`VOYAGE_API_KEY       ${env.VOYAGE_API_KEY ? "あり" : "無い"}`);
+    console.log(`KNOWLEDGE_DB_URL_RO  ${env.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（管理側の鍵に落ちる）"}`);
+    // **両方の経路を叩く。**MCP とフックは読み取り専用ロールで繋ぐので、
+    // 管理側だけ確かめても意味が無い。実際にベクトル検索まで通す
+    // （search_path にロール差があり、読み取り側だけ落ちたことがある）。
+    for (const [label, readOnly] of [
+      ["書き込み(CLI)", false],
+      ["読み取り(MCP/フック)", true],
+    ] as const) {
+      const c = await connect(env, { readOnly });
+      const who = await c.query<{ u: string }>("select current_user as u");
+      const v = await c.query<{ n: number }>(
+        "select count(*)::int n from (select 1 from node where embedding is not null order by embedding <#> (select embedding from node where embedding is not null limit 1) limit 3) t",
+      );
+      console.log(`${label.padEnd(22)} ${who.rows[0]?.u} / ベクトル検索 OK（${v.rows[0]?.n} 件返った）`);
+      await c.end();
+    }
     const c = await connect(env);
-    const v = await c.query<{ n: number; scopes: number }>(
-      "select (select count(*) from node where deleted_at is null)::int n, (select count(*) from scope)::int scopes",
-    );
-    console.log(`接続             OK / node ${v.rows[0]?.n ?? 0} 件 / 作業場所 ${v.rows[0]?.scopes ?? 0} 件`);
     const me = identify(cwd);
     const mine = await scopeIdFor(c, cwd, false);
-    console.log(`いまの場所       ${me.label}（${mine ? "登録済み" : "未登録"}）`);
+    const t = await c.query<{ n: number; s: number }>(
+      "select (select count(*) from node where deleted_at is null)::int n, (select count(*) from scope)::int s",
+    );
+    console.log(`データ                 node ${t.rows[0]?.n ?? 0} 件 / 作業場所 ${t.rows[0]?.s ?? 0} 件`);
+    console.log(`いまの場所             ${me.label}（${mine ? "登録済み" : "未登録"}）`);
     await c.end();
     return;
   }

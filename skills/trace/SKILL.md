@@ -1,15 +1,8 @@
 ---
 name: trace
 description: >
-  作業の進捗・意思決定・判明したことを、人間と AI の両方が使える 1 枚の HTML に記録する。
-  セッションの会話（compact で消えた分も含む）と issue・PR から材料を集め、
-  背景・ゴール・現在地・次の一手・意思決定・試して駄目だったこと・未解決の問い・検証を
-  構造化して残し、同じ issue を二度目に扱うときは既存の記録へ追記する。
-  ユーザーが「進捗をドキュメントに残して」「引き継ぎを作って」「この作業の記録をまとめて」と
-  **明示的に頼んだときだけ**使う。頼まれていないのに勝手に起動しない
-  （作業の途中で走らせると、未完成の状態が記録として残る）。
-  文章そのものを書く作業には使わない（writing-quality）。図を描く作業にも使わない（atlas）。
-  スキルやルールの作成にも使わない（docs-author）。
+  作業の判断・行き止まり・未解決の問いを、人間と AI の両方が使える 1 枚の HTML に残し、
+  次のセッションがそこから再開できるようにする。ユーザーが明示的に頼んだときだけ使う。
 argument-hint: "[作業テーマ / issue 番号 / URL]"
 disable-model-invocation: true
 allowed-tools: Read, Write, AskUserQuestion, Bash(node "$PG" *), Bash(node ${CLAUDE_SKILL_DIR}/bin/progress.mjs *), Bash(mitos *), Bash(gh issue view *), Bash(gh pr list *), Bash(git log *)

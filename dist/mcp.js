@@ -39042,6 +39042,7 @@ async function connect(env, { readOnly = false } = {}) {
     ssl: { ca, rejectUnauthorized: true }
   });
   await client.connect();
+  await client.query("set search_path = public, extensions");
   await client.query("set hnsw.iterative_scan = relaxed_order");
   client.on("error", () => {});
   return client;

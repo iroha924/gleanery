@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: oklch(0.22 0.01 260);
+  --color-muted: oklch(0.52 0.01 260);
+  --color-line: oklch(0.91 0.005 260);
+  --color-surface: oklch(0.99 0.002 260);
+  --color-dont: oklch(0.55 0.14 25);
+  --color-do: oklch(0.52 0.1 155);
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-ink: oklch(0.93 0.008 260);
+    --color-muted: oklch(0.66 0.01 260);
+    --color-line: oklch(0.3 0.008 260);
+    --color-surface: oklch(0.17 0.006 260);
+    --color-dont: oklch(0.72 0.13 25);
+    --color-do: oklch(0.75 0.11 155);
+  }
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+}

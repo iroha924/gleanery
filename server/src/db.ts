@@ -98,6 +98,12 @@ export async function connect(
   await client.connect();
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
   // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
+  // **search_path をロール任せにしない。**Supabase は postgres には extensions を入れるが、
+  // 自分で作ったロールには入らない。`<#>` は extensions にあるので、
+  // 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。
+  await client.query("set search_path = public, extensions");
+  // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
+  // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
   await client.query("set hnsw.iterative_scan = relaxed_order");
   // アイドル中の切断は 'error' として飛んでくる。リスナが無いと uncaughtException になり、
   // クエリを投げていなくても長命のサーバーが落ちる。
