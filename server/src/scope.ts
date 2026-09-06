@@ -90,7 +90,12 @@ const MARKERS = [
   "README.md",
 ];
 
-/** 候補を並べる。~/Projects 配下と、transcript に現れた作業ディレクトリの和。 */
+/**
+ * 束ねる候補。**~/Projects の直下だけ。**
+ * 以前は transcript から実際の作業ディレクトリも拾っていたが、
+ * `~/.claude/plugins/...` や `~/Documents/...` まで並んで選びにくかった。
+ * git 管理外のディレクトリも ~/Projects の下にあれば拾える。
+ */
 export function candidates(
   roots: string[] = [path.join(HOME, "Projects")],
 ): (Ident & { markers: string[] })[] {
@@ -108,54 +113,8 @@ export function candidates(
     }
     for (const e of es) if (e.isDirectory() && !e.name.startsWith(".")) add(path.join(root, e.name));
   }
-  // 実際に作業した場所。~/Projects の外や git 管理外もここで拾う。
-  for (const f of transcriptCwds()) add(f);
-
   return [...found].sort().map((d) => ({
     ...identify(d),
     markers: MARKERS.filter((m) => fs.existsSync(path.join(d, m))),
   }));
-}
-
-function transcriptCwds(): Set<string> {
-  const out = new Set<string>();
-  const roots = [path.join(HOME, ".claude", "projects"), path.join(HOME, ".codex", "sessions")];
-  const walk = (dir: string, depth = 0): void => {
-    if (depth > 4) return;
-    let es: fs.Dirent[] = [];
-    try {
-      es = fs.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of es) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (e.name !== "subagents") walk(p, depth + 1);
-        continue;
-      }
-      if (!e.name.endsWith(".jsonl")) continue;
-      // 先頭の数行だけ見る。cwd は最初の方に必ず出る。
-      let head = "";
-      try {
-        head = fs.readFileSync(p, "utf8").slice(0, 40000);
-      } catch {
-        continue;
-      }
-      for (const line of head.split("\n").slice(0, 20)) {
-        try {
-          const o = JSON.parse(line) as { cwd?: string; payload?: { cwd?: string } };
-          const cwd = o.cwd ?? o.payload?.cwd;
-          if (cwd) {
-            out.add(cwd);
-            break;
-          }
-        } catch {
-          /* 途中で切れた行は飛ばす */
-        }
-      }
-    }
-  };
-  for (const r of roots) walk(r);
-  return out;
 }

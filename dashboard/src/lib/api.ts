@@ -62,7 +62,8 @@ export type Node = {
     // 決定なら「どう確かめるか」と「受け入れた不利な点」、検証なら実行したコマンドと出力。
     // どれも記録には書かれているのに、画面が落としていた。
     confirmation?: string | null;
-    consequences?: string | null;
+    /** 実データは配列。良かった点と引き受けた不利が同じ配列に入る。 */
+    consequences?: { good: boolean; text: string }[] | null;
     supersededBy?: string | null;
     whyNot?: string | null;
     cmd?: string | null;

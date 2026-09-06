@@ -22,8 +22,8 @@ import { api } from "@/lib/api";
 const KINDS = [
   { kind: "decision", label: "決めたこと" },
   { kind: "option", label: "検討した案" },
-  { kind: "event", label: "分かったこと・行き止まり" },
-  { kind: "boundary", label: "触らない・やらない" },
+  { kind: "event", label: "分かったこと" },
+  { kind: "boundary", label: "触らない制約" },
   { kind: "verification", label: "確かめたこと" },
   { kind: "question", label: "未解決の問い" },
 ] as const;
@@ -62,7 +62,8 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 <SidebarMenuSubItem>
                   <SidebarMenuSubButton asChild>
                     <Link to="/search" search={{ dont: true }}>
-                      <BanIcon className="size-3.5" /> やらないと決めたことだけ
+                      <BanIcon className="size-3.5 shrink-0" />
+                      <span className="truncate">やらないこと</span>
                     </Link>
                   </SidebarMenuSubButton>
                 </SidebarMenuSubItem>
@@ -70,7 +71,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                   <SidebarMenuSubItem key={k.kind}>
                     <SidebarMenuSubButton asChild>
                       <Link to="/search" search={{ kinds: [k.kind] }}>
-                        {k.label}
+                        <span className="truncate">{k.label}</span>
                       </Link>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>

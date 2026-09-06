@@ -22,7 +22,11 @@ function Dot({ polarity }: { polarity: Node["polarity"] }) {
       : polarity === "do"
         ? "border-do bg-do"
         : "border-muted-foreground bg-background";
-  return <span className={`absolute -left-[5px] top-2 size-2.5 rounded-full border-2 ${cls}`} aria-hidden />;
+  // 縦線（ol の border-l）の真上に置く。ol は pl-6 なので、li から見て -1.5rem が線の位置。
+  // li の内側に -5px で出すと本文の 1 行目に食い込む（実測: 文字と点が重なった）。
+  return (
+    <span className={`absolute left-[-1.6rem] top-1.5 size-3 rounded-full border-2 ${cls}`} aria-hidden />
+  );
 }
 
 function Detail() {
@@ -68,7 +72,7 @@ function Detail() {
       {flow.map(({ label, rows }) => (
         <section key={label} className="space-y-3">
           <h2 className="text-sm font-medium">{label}</h2>
-          <ol className="ml-1 space-y-6 border-l pl-5">
+          <ol className="ml-1 space-y-7 border-l pl-6">
             {rows.map((n) => (
               <li key={n.id} className="relative max-w-[68ch] space-y-2">
                 <Dot polarity={n.polarity} />
@@ -82,10 +86,20 @@ function Detail() {
                     確かめ方: {n.attrs.confirmation}
                   </p>
                 )}
-                {n.attrs.consequences && (
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    引き受けた不利: {n.attrs.consequences}
-                  </p>
+                {/* consequences は {good, text} の配列。良かった点だけ並べると
+                    「都合のいいところだけ書いた記録」になるので、不利な点も同じ重さで出す。 */}
+                {n.attrs.consequences && n.attrs.consequences.length > 0 && (
+                  <ul className="space-y-1">
+                    {n.attrs.consequences.map((c) => (
+                      <li
+                        key={c.text}
+                        className={`text-sm leading-relaxed ${c.good ? "text-muted-foreground" : "text-dont"}`}
+                      >
+                        {c.good ? "得たもの: " : "引き受けた不利: "}
+                        {c.text}
+                      </li>
+                    ))}
+                  </ul>
                 )}
 
                 {/* 検証は、何を実行して何が返ったかが本体 */}

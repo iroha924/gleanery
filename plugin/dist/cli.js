@@ -24340,56 +24340,10 @@ function candidates(roots = [path2.join(HOME, "Projects")]) {
       if (e.isDirectory() && !e.name.startsWith("."))
         add(path2.join(root, e.name));
   }
-  for (const f of transcriptCwds())
-    add(f);
   return [...found].sort().map((d) => ({
     ...identify(d),
     markers: MARKERS.filter((m) => fs2.existsSync(path2.join(d, m)))
   }));
-}
-function transcriptCwds() {
-  const out = new Set;
-  const roots = [path2.join(HOME, ".claude", "projects"), path2.join(HOME, ".codex", "sessions")];
-  const walk = (dir, depth = 0) => {
-    if (depth > 4)
-      return;
-    let es = [];
-    try {
-      es = fs2.readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of es) {
-      const p = path2.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (e.name !== "subagents")
-          walk(p, depth + 1);
-        continue;
-      }
-      if (!e.name.endsWith(".jsonl"))
-        continue;
-      let head = "";
-      try {
-        head = fs2.readFileSync(p, "utf8").slice(0, 40000);
-      } catch {
-        continue;
-      }
-      for (const line of head.split(`
-`).slice(0, 20)) {
-        try {
-          const o = JSON.parse(line);
-          const cwd = o.cwd ?? o.payload?.cwd;
-          if (cwd) {
-            out.add(cwd);
-            break;
-          }
-        } catch {}
-      }
-    }
-  };
-  for (const r of roots)
-    walk(r);
-  return out;
 }
 
 // server/src/cli.ts
