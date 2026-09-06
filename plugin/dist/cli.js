@@ -23841,6 +23841,7 @@ var prOf = (p) => ({
   author: p.user?.login ?? "unknown",
   state: p.merged_at ? "merged" : p.state === "open" ? "open" : "closed",
   at: p.merged_at ?? p.created_at,
+  createdAt: p.created_at,
   url: p.html_url,
   branch: p.head?.ref ?? ""
 });
@@ -23944,7 +23945,14 @@ async function ingestThreads(client, env, repo, scopeId, prs, threads, onProgres
           p.at,
           prText(p),
           p.state,
-          JSON.stringify({ pr: p.number, prTitle: p.title, state: p.state, url: p.url, branch: p.branch }),
+          JSON.stringify({
+            pr: p.number,
+            prTitle: p.title,
+            state: p.state,
+            url: p.url,
+            branch: p.branch,
+            createdAt: p.createdAt
+          }),
           actorKind(p.author),
           p.author,
           crypto.createHash("sha256").update(prText(p)).digest("hex"),

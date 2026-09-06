@@ -155,6 +155,17 @@ const SYSTEM = (people: Person[], terms: Term[]): string =>
     "本文に書かれた経緯（どの機能の影響で起きたか、誰がどう気付いたか、いつのリリース後か）を",
     "拾って伝える。**そこがいちばん価値がある。**",
     "",
+    "**「実装内容は」「何を変えたのか」を聞かれたら、題だけで答えない。**",
+    "手は 2 つある。(1) find_prs に number を渡すと本文が返る。(2) 題や本文に出てくる",
+    "テーブル名・モデル名・関数名を grep_code で探し、read_code で実物を読む。",
+    "**どちらも試さずに「記録にありません」と答えない。**実測で 2 回やった —",
+    "dbt のモデルがリポジトリに実在するのに「詳細は記録にありません」と答えた。",
+    "",
+    "**日付は何の日付かを書く。**PR には merged_or_opened_at（マージ済みならマージ日、",
+    "それ以外は作成日）と created_at（作った日）がある。**混ぜない。**",
+    "「作成した最新」と「マージした最新」は別の問いで、答えが変わる。",
+    "並べ替えは merged_or_opened_at で行うので、作成順を聞かれたらそう断る。",
+    "",
     "**道具は total（条件に合う総数）と rows（返せた分）を返す。**件数を聞かれたら total で答える。",
     "rows が total より少ないときは「全 N 件のうち M 件」と断るか、offset で続きを取る。",
     "**返ってきた分だけを見て「これで全部」と書かない。**",
@@ -794,7 +805,11 @@ async function runTool(
 
   const r = await client.query(
     `select (n.attrs->>'pr')::int as pr, n.attrs->>'prTitle' as title, n.status as state,
-            n.actor_name as author, to_char(n.at, 'YYYY-MM-DD') as at,
+            n.actor_name as author,
+            -- **at が何の日付かは状態で変わる。**マージ済みならマージ日、それ以外は作成日。
+            -- 混ぜて「作成日」と書くと嘘になる（実測: マージ日を作成日として答えた）。
+            to_char(n.at, 'YYYY-MM-DD') as merged_or_opened_at,
+            left(n.attrs->>'createdAt', 10) as created_at,
             s.label as repo, n.attrs->>'url' as url,
             -- **本文も返す。**題だけでは「#2323 は何をしている」に答えられない。
             left(n.text, 4000) as body
@@ -806,7 +821,12 @@ async function runTool(
   if (r.rows.length === 0)
     return JSON.stringify({ total: total ?? 0, rows: [], note: "条件に合う PR は無かった" });
   // 一覧のときは本文を落とす。**4000 字 × 50 件を返すと文脈が本文で埋まる。**
-  const rows = r.rows.length > 3 ? r.rows.map(({ body: _drop, ...rest }) => rest) : r.rows;
+  // ただし**先頭の 1 件だけは必ず残す** —「最も新しいのはどれ？その中身は？」を
+  // 1 回で答えられるようにするため（実測: 落としたせいで「本文は取得結果に無い」と答えた）。
+  const rows =
+    r.rows.length > 3
+      ? r.rows.map((x, i) => (i === 0 ? x : (({ body: _drop, ...rest }) => rest)(x)))
+      : r.rows;
   return JSON.stringify({
     total,
     shown: rows.length,
@@ -817,7 +837,7 @@ async function runTool(
         "【PR】",
         `#${x.pr} ${x.title}`,
         String(x.repo),
-        String(x.at ?? ""),
+        String(x.merged_or_opened_at ?? ""),
         `github:${x.repo}`,
         typeof x.url === "string" ? x.url : null,
       ),

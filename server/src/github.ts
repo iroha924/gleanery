@@ -83,7 +83,10 @@ export type Pr = {
   author: string;
   /** open / merged / closed。closed は「マージせず閉じた」 */
   state: "open" | "merged" | "closed";
+  /** 並べ替えに使う日付。マージ済みならマージ日、そうでなければ作成日 */
   at: string;
+  /** 作った日。**at と別に持つ** — 「作成した最新」と「マージした最新」は別の問い */
+  createdAt: string;
   url: string;
   branch: string;
 };
@@ -96,6 +99,7 @@ const prOf = (p: Pull): Pr => ({
   state: p.merged_at ? "merged" : p.state === "open" ? "open" : "closed",
   // **マージ済みならマージ日。**「最新のマージ済み PR」は作成順ではなくマージ順で並ぶ。
   at: p.merged_at ?? p.created_at,
+  createdAt: p.created_at,
   url: p.html_url,
   branch: p.head?.ref ?? "",
 });
@@ -262,7 +266,14 @@ export async function ingestThreads(
             p.at,
             prText(p),
             p.state,
-            JSON.stringify({ pr: p.number, prTitle: p.title, state: p.state, url: p.url, branch: p.branch }),
+            JSON.stringify({
+              pr: p.number,
+              prTitle: p.title,
+              state: p.state,
+              url: p.url,
+              branch: p.branch,
+              createdAt: p.createdAt,
+            }),
             actorKind(p.author),
             p.author,
             crypto.createHash("sha256").update(prText(p)).digest("hex"),

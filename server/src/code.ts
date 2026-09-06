@@ -45,6 +45,31 @@ export function grepCode(
   const limit = Math.min(Math.max(Math.trunc(Number(q.limit ?? 30)) || 30, 1), 100);
   const out: { repo: string; path: string; line: number; text: string }[] = [];
 
+  // **名前がファイル名にしか無いことがある。**dbt のモデルは `.sql` の中に自分の名前を
+  // 書かない（ファイル名がモデル名）ので、中身だけ探すと当たらない（実測で踏んだ）。
+  // 同じことが React のコンポーネント、Terraform のモジュール、テストの対象名でも起きる。
+  for (const root of want) {
+    if (out.length >= limit) break;
+    try {
+      const names = execFileSync("rg", ["--files"], {
+        cwd: root.dir,
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      const needle = q.query.toLowerCase();
+      for (const f of names.split("\n")) {
+        if (out.length >= limit) break;
+        const file = f.replace(/^\.\//, "");
+        if (!file || SECRET.test(file)) continue;
+        if (!file.toLowerCase().includes(needle)) continue;
+        out.push({ repo: root.label, path: file, line: 0, text: "（ファイル名が一致）" });
+      }
+    } catch {
+      // 一覧が取れなくても、下の本文検索は動かす
+    }
+  }
+
   for (const root of want) {
     if (out.length >= limit) break;
     // **引数として渡す。**シェルを挟まないので、query に何が入っていても語のまま扱われる。
