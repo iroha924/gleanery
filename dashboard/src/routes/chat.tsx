@@ -1,4 +1,3 @@
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BotIcon, CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -17,11 +16,11 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { api, askStream, type ChatSource } from "@/lib/api";
+import { askStream, type ChatSource } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
+import { useProject } from "@/lib/project";
 
 export const Route = createFileRoute("/chat")({ component: Chat });
 
@@ -106,17 +105,11 @@ function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  // **どのプロジェクトについて聞くかを先に選ぶ。**選ばないと送れない。
-  // 範囲なしで全部を混ぜると、別の仕事の記録がこのプロジェクトの答えとして返る。
-  const [target, setTarget] = useState<string>("");
-  const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
-  const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
-
-  const scopeIds = target.startsWith("g:")
-    ? (groups.data?.find((g) => `g:${g.id}` === target)?.members.map((m) => m.id) ?? [])
-    : target
-      ? [Number(target)]
-      : [];
+  // 範囲はヘッダで選んだものに従う。**送信のたびに選ばせない** —
+  // プロジェクトはセッション中ほぼ変わらないので、毎回同じ答えを入力させているだけだった。
+  // ただし「すべて」では答えない。混ぜると別の仕事の記録がこの仕事の答えとして返る。
+  const { scopeIds: picked, label: projectLabel } = useProject();
+  const scopeIds = picked ?? [];
   const abort = useRef<AbortController | null>(null);
 
   const ask = async (question: string) => {
@@ -253,30 +246,18 @@ function Chat() {
           }}
           placeholder={
             scopeIds.length === 0
-              ? "先にプロジェクトを選んでください"
+              ? "左上でプロジェクトを選んでください"
               : "このプロジェクトについて聞く（⌘ + Enter で送信）"
           }
           disabled={scopeIds.length === 0}
           className="min-h-20 resize-none"
         />
         <div className="flex items-center gap-3">
-          <Select value={target} onValueChange={setTarget}>
-            <SelectTrigger className="w-[19rem]">
-              <SelectValue placeholder="どのプロジェクトについて聞くか選ぶ" />
-            </SelectTrigger>
-            <SelectContent>
-              {groups.data?.map((g) => (
-                <SelectItem key={`g:${g.id}`} value={`g:${g.id}`}>
-                  {g.name}（{g.members.length} プロジェクト）
-                </SelectItem>
-              ))}
-              {scopes.data?.map((s) => (
-                <SelectItem key={s.id} value={String(s.id)}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <span className="text-muted-foreground text-xs">
+            {scopeIds.length > 0
+              ? `${projectLabel} について聞いています`
+              : "左上でプロジェクトを選んでください"}
+          </span>
           {busy ? (
             <Button
               type="button"

@@ -4,11 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
+import { useProject } from "@/lib/project";
 
 export const Route = createFileRoute("/records/")({ component: Records });
 
 function Records() {
-  const { data, isPending, error } = useQuery({ queryKey: ["records"], queryFn: api.records });
+  const { scopeIds } = useProject();
+  const { data, isPending, error } = useQuery({
+    queryKey: ["records", scopeIds],
+    queryFn: () => api.records(scopeIds),
+  });
   if (isPending) return <Skeleton className="h-32 w-full" />;
   if (error) return <p className="text-sm text-dont">{String(error)}</p>;
   return (

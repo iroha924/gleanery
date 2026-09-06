@@ -154,6 +154,10 @@ export type Hit = Node & {
   relevance: number | null;
 };
 
+/** 範囲のクエリ。undefined は「すべて」なので付けない。 */
+const q = (scopes: number[] | undefined): string =>
+  scopes === undefined ? "" : `?scopes=${scopes.join(",")}`;
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path} が ${res.status}`);
@@ -191,7 +195,7 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
 }
 
 export const api = {
-  now: () => get<Now[]>("/api/now"),
+  now: (scopes?: number[]) => get<Now[]>(`/api/now${q(scopes)}`),
   review: (id: string) => get<Node[]>(`/api/review/${encodeURIComponent(id)}`),
   candidates: () => get<Candidate[]>("/api/candidates"),
   groups: () => get<Group[]>("/api/groups"),
@@ -204,15 +208,16 @@ export const api = {
   savePerson: (p: { display: string; handles: string[]; isMe: boolean }) =>
     send<{ ok: true }>("/api/people", "POST", p),
   deletePerson: (id: number) => send<{ ok: true }>(`/api/people/${id}`, "DELETE"),
-  stats: () => get<Stats>("/api/stats"),
+  stats: (scopes?: number[]) => get<Stats>(`/api/stats${q(scopes)}`),
   scopes: () => get<Scope[]>("/api/scopes"),
-  records: () => get<RecordRow[]>("/api/records"),
+  records: (scopes?: number[]) => get<RecordRow[]>(`/api/records${q(scopes)}`),
   record: (id: string) => get<RecordDetail>(`/api/records/${encodeURIComponent(id)}`),
   search: async (body: {
     question: string;
     onlyDont?: boolean;
     kinds?: string[];
     limit?: number;
+    scopeIds?: number[];
   }): Promise<Hit[]> => {
     const res = await fetch("/api/search", {
       method: "POST",

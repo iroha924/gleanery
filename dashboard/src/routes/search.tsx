@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
+import { useProject } from "@/lib/project";
 
 const KINDS = [
   ["decision", "決めたこと"],
@@ -36,10 +37,11 @@ function SearchPage() {
   const nav = useNavigate({ from: "/search" });
   const { q, dont, kinds } = Route.useSearch();
   const [draft, setDraft] = useState(q ?? "");
+  const { scopeIds } = useProject();
 
   const { data, isFetching, error } = useQuery({
-    queryKey: ["search", q, dont, kinds],
-    queryFn: () => api.search({ question: q ?? "", onlyDont: dont, kinds, limit: 15 }),
+    queryKey: ["search", q, dont, kinds, scopeIds],
+    queryFn: () => api.search({ question: q ?? "", onlyDont: dont, kinds, limit: 15, scopeIds }),
     enabled: Boolean(q),
     staleTime: 60_000,
   });

@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { NextItem, Now } from "@/lib/api";
 import { api } from "@/lib/api";
+import { useProject } from "@/lib/project";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -144,7 +145,11 @@ function WorkCard({ w }: { w: Now }) {
 }
 
 function Home() {
-  const { data, isPending, error } = useQuery({ queryKey: ["now"], queryFn: api.now });
+  const { scopeIds } = useProject();
+  const { data, isPending, error } = useQuery({
+    queryKey: ["now", scopeIds],
+    queryFn: () => api.now(scopeIds),
+  });
   if (isPending) return <Skeleton className="h-96 w-full" />;
   if (error) return <p className="text-sm text-dont">{String(error)}</p>;
   if (data.length === 0) {

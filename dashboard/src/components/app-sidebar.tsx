@@ -3,6 +3,15 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { FolderIcon, ListChecksIcon, MessageSquareIcon, PlayIcon, SearchIcon, UsersIcon } from "lucide-react";
 import type * as React from "react";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -18,6 +27,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
+import { useProject } from "@/lib/project";
 
 // 種別の呼び名は、内部の kind ではなく人が言う言葉にする。
 const KINDS = [
@@ -30,16 +40,21 @@ const KINDS = [
 ] as const;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const { data: records } = useQuery({ queryKey: ["records"], queryFn: api.records });
+  const { scopeIds } = useProject();
+  const { data: records } = useQuery({
+    queryKey: ["records", scopeIds],
+    queryFn: () => api.records(scopeIds),
+  });
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   return (
     <Sidebar {...props}>
-      <SidebarHeader className="px-3 py-4">
+      <SidebarHeader className="gap-3 px-3 py-4">
         <Link to="/" className="text-base font-semibold tracking-tight">
           mitos
         </Link>
-        <p className="text-xs text-muted-foreground">決めたことを残して、あとで引く</p>
+        {/* **いま何を見ているかは 1 箇所で決める。**全画面がこれに従う。 */}
+        <ProjectSwitcher />
       </SidebarHeader>
 
       <SidebarContent>
@@ -140,5 +155,50 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/**
+ * いま開いているプロジェクトの切り替え。
+ *
+ * **プロジェクト（束）だけでなく、どこにも属していないリポジトリも並べる。**
+ * そうしないと、束ねていないものが画面から一生見えなくなる。
+ */
+function ProjectSwitcher() {
+  const { target, setTarget, label } = useProject();
+  const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
+  const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
+  const grouped = new Set(groups.data?.flatMap((g) => g.members.map((m) => m.id)) ?? []);
+  const loose = scopes.data?.filter((s) => !grouped.has(s.id)) ?? [];
+
+  return (
+    <Select value={target} onValueChange={setTarget}>
+      <SelectTrigger className="w-full" aria-label="見るプロジェクト">
+        <SelectValue>{label}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="">すべて</SelectItem>
+        {groups.data && groups.data.length > 0 && (
+          <SelectGroup>
+            <SelectLabel>プロジェクト</SelectLabel>
+            {groups.data.map((g) => (
+              <SelectItem key={`g:${g.id}`} value={`g:${g.id}`}>
+                {g.name}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+        {loose.length > 0 && (
+          <SelectGroup>
+            <SelectLabel>まとめていないもの</SelectLabel>
+            {loose.map((s) => (
+              <SelectItem key={s.id} value={String(s.id)}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+      </SelectContent>
+    </Select>
   );
 }

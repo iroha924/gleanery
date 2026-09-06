@@ -55,12 +55,33 @@ const app = new Hono();
 // 開発中は Vite が別ポートで動く。読み取りしかしないので localhost に限って許す。
 app.use("/api/*", cors({ origin: (o) => (/^http:\/\/localhost:\d+$/.test(o) ? o : null) }));
 
+/**
+ * 画面がいま開いているプロジェクトの範囲。
+ *
+ * **絞り込みは画面が決める。**「いま何を見ているのか」は 1 箇所（ヘッダの切り替え）で決まり、
+ * 画面ごとに別々の範囲を持たない。指定が無いときは「すべて」なので絞らない。
+ */
+function scopesOf(c: { req: { query: (k: string) => string | undefined } }): number[] | null {
+  const raw = c.req.query("scopes");
+  if (!raw) return null;
+  const ids = raw
+    .split(",")
+    .map((x) => Number(x))
+    .filter((x) => Number.isInteger(x) && x > 0);
+  // **空文字は「どれも見ない」。**未指定（null）と区別する。
+  return ids;
+}
+
 app.get("/api/stats", async (c) => {
+  const ids = scopesOf(c);
   const q = await (await db()).query<{ nodes: number; records: number; scopes: number; refs: number }>(
-    `select (select count(*) from node where deleted_at is null)::int nodes,
-            (select count(*) from record)::int records,
-            (select count(*) from scope)::int scopes,
-            (select count(*) from ref)::int refs`,
+    `select (select count(*) from node where deleted_at is null and ($1::int[] is null or scope_id = any($1)))::int nodes,
+            (select count(*) from record where ($1::int[] is null or scope_id = any($1)))::int records,
+            (select count(*) from scope where ($1::int[] is null or id = any($1)))::int scopes,
+            (select count(*) from ref l where ($1::int[] is null or exists (
+               select 1 from ref_link k join record r on r.id = k.record_id
+               where k.ref_id = l.id and r.scope_id = any($1))))::int refs`,
+    [ids],
   );
   return c.json(q.rows[0]);
 });
@@ -73,7 +94,9 @@ app.get("/api/now", async (c) => {
     `select r.id, r.title, r.status, r.branch, r.current_at, r.current_text,
             r.phases, r.next, r.updated_at, s.label as project
      from record r join scope s on s.id = r.scope_id
+     where ($1::int[] is null or r.scope_id = any($1))
      order by r.updated_at desc nulls last limit 5`,
+    [scopesOf(c)],
   );
   const ids = r.rows.map((x) => x.id as string);
   // 触ってはいけないもの／やらないと決めたことは、流れの外に置く。
@@ -129,7 +152,9 @@ app.get("/api/records", async (c) => {
             r.updated_at, s.label as scope_label,
             (select count(*) from node where record_id = r.id and deleted_at is null)::int as nodes
      from record r join scope s on s.id = r.scope_id
+     where ($1::int[] is null or r.scope_id = any($1))
      order by r.updated_at desc nulls last`,
+    [scopesOf(c)],
   );
   return c.json(q.rows);
 });
@@ -177,8 +202,7 @@ app.post("/api/search", async (c) => {
     question?: string;
     onlyDont?: boolean;
     kinds?: string[];
-    cwd?: string;
-    allScopes?: boolean;
+    scopeIds?: number[];
     limit?: number;
   };
   const question = (body.question ?? "").trim();
@@ -186,15 +210,8 @@ app.post("/api/search", async (c) => {
   const limit = Math.min(Math.max(Number(body.limit ?? 10), 1), 20);
 
   const client = await db();
-  let scopeIds: number[] | undefined;
-  if (!body.allScopes && body.cwd) {
-    const me = identify(body.cwd);
-    const r = await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [
-      me.ident,
-    ]);
-    const row = r.rows[0];
-    scopeIds = row ? await scopeFamily(client, row.id) : [];
-  }
+  // 範囲はヘッダで選んだものが来る。**未指定は「すべて」**（絞らない）。
+  const scopeIds = Array.isArray(body.scopeIds) ? body.scopeIds : undefined;
   const polarity: Polarity | undefined = body.onlyDont ? "dont" : undefined;
   const { rows } = await search(client, env, { question, scopeIds, polarity, kinds: body.kinds, limit });
   return c.json(rows.map((r) => ({ ...r, label: labelOf(r) })));

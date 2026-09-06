@@ -30,7 +30,7 @@ function Projects() {
   const save = useMutation({
     mutationFn: () => api.saveGroup(name.trim(), [...picked]),
     onSuccess: () => {
-      toast.success(`「${name}」に ${picked.size} 件をまとめた`);
+      toast.success(`プロジェクト「${name}」に ${picked.size} 件を入れた`);
       setPicked(new Set());
       setName("");
       qc.invalidateQueries({ queryKey: ["groups"] });
@@ -42,14 +42,14 @@ function Projects() {
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteGroup(id),
     onSuccess: () => {
-      toast.success("まとめを解除した");
+      toast.success("プロジェクトを消した");
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["scopes"] });
     },
     onError: (e) => toast.error(String(e instanceof Error ? e.message : e)),
   });
 
-  // issue の出どころは束ごとに違う。**リポジトリではない**ので、まとめの一員として持つ。
+  // issue の出どころはプロジェクトごとに違う。**リポジトリではない**ので、一員として持つ。
   const [trackerFor, setTrackerFor] = useState<number | null>(null);
   const [trackerKind, setTrackerKind] = useState<TrackerKind>("linear");
   const [trackerIdent, setTrackerIdent] = useState("");
@@ -76,10 +76,10 @@ function Projects() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>関連するプロジェクトをまとめる</CardTitle>
+          <CardTitle>プロジェクトを作る</CardTitle>
           <CardDescription>
-            チェックしたプロジェクトは互いに検索されます。チェックしなかったものは独立したままで、
-            検索結果に混ざりません。フロントとバックエンドを分けているような場合にまとめます。
+            関連するリポジトリを 1 つのプロジェクトにします。左上でプロジェクトを選ぶと、
+            チャット・探す・作業がその中だけを見るようになります。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -128,25 +128,25 @@ function Projects() {
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="まとめの名前（例: nomophyl）"
+              placeholder="プロジェクト名（例: macbee planet）"
             />
             <Button
               onClick={() => save.mutate()}
               disabled={picked.size < 2 || !name.trim() || save.isPending}
             >
               {save.isPending ? <Spinner /> : <LinkIcon />}
-              {picked.size >= 2 ? `${picked.size} 件をまとめる` : "2 つ以上選ぶ"}
+              {picked.size >= 2 ? `${picked.size} 件でプロジェクトを作る` : "2 つ以上選ぶ"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">いまのまとめ</h2>
+        <h2 className="text-sm font-medium">プロジェクト</h2>
         {groups.isPending && <Skeleton className="h-20 w-full" />}
         {groups.data?.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            まだまとめはありません。プロジェクトは全部独立しています。
+            まだプロジェクトがありません。リポジトリは全部独立しています。
           </p>
         )}
         {groups.data?.map((g) => {
@@ -167,7 +167,7 @@ function Projects() {
                     size="icon"
                     onClick={() => remove.mutate(g.id)}
                     disabled={remove.isPending}
-                    aria-label={`「${g.name}」のまとめを解除`}
+                    aria-label={`プロジェクト「${g.name}」を消す`}
                   >
                     <Trash2Icon />
                   </Button>
@@ -235,14 +235,14 @@ function Projects() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">保存されているプロジェクト</h2>
+        <h2 className="text-sm font-medium">リポジトリと issue の出どころ</h2>
         {scopes.isPending && <Skeleton className="h-20 w-full" />}
         {scopes.data?.map((s) => (
           <Item key={s.id} variant="outline">
             <ItemContent>
               <ItemTitle>{s.label}</ItemTitle>
               <ItemDescription className="tabular-nums">
-                作業 {s.records} 件 / 記録 {s.nodes} 件{s.groups && ` / まとめ: ${s.groups}`}
+                作業 {s.records} 件 / 記録 {s.nodes} 件{s.groups && ` / ${s.groups}`}
                 {s.role && ` / ${s.role}`}
               </ItemDescription>
             </ItemContent>
