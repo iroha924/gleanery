@@ -116,7 +116,7 @@ export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
     titles.set(p.number, p.title);
     // **PR は bot が作ったものも入れる。**isNoise はコメント用の判定で、
     // 「Terraform の plan 結果」のような推論を含まない通知を落とすためのもの。
-    // リリース PR は macbeeplanet-dev[bot] が作るので、ここで落とすと
+    // リリース PR は release-bot[bot] が作るので、ここで落とすと
     // 「いつ何がリリースされたか」に答えられなくなる（実測: dbt #361 が丸ごと欠けていた）。
     prs.push(prOf(p));
   }
@@ -188,7 +188,7 @@ import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
 // 1 トランザクションで扱う件数。
 //
 // **全件を 1 つのトランザクションに入れない。**begin してから埋め込みを取りに行くので、
-// その間ずっと「開いたまま何もしていない」状態になる。実測: monopoly-source は
+// その間ずっと「開いたまま何もしていない」状態になる。実測: main-repo は
 // スレッド 24,568 件で、埋め込みだけで 30 分を超えた。途中で切れると全部消えるうえ、
 // 30 分ぶんの API 費用も無駄になる。分けて確定すれば、落ちても続きから再開できる
 // （content_hash が一致するものは次回そのまま飛ばされる）。
@@ -294,7 +294,7 @@ export async function ingestThreads(
 
   // **変わっていないものは書き直さない。**content_hash が同じなら本文も出自も同じで、
   // 書いても結果は変わらない。日次で回すのに全件へ 1 件 4 クエリを投げると、
-  // monopoly-source だけで 10 万回の往復になる（実測: 書き込みだけで 30 分）。
+  // main-repo だけで 10 万回の往復になる（実測: 書き込みだけで 30 分）。
   const changed = threads.filter((t) => stale.has(t.key));
   let done = 0;
   for (let from = 0; from < changed.length; from += CHUNK) {

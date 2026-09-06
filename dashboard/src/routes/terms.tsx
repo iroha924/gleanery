@@ -114,7 +114,7 @@ function Terms() {
                 id="word"
                 value={word}
                 onChange={(e) => setWord(e.target.value)}
-                placeholder="AA案件移行"
+                placeholder="旧基盤移行"
               />
             </div>
             <div className="space-y-2">
@@ -123,7 +123,7 @@ function Terms() {
                 id="meaning"
                 value={meaning}
                 onChange={(e) => setMeaning(e.target.value)}
-                placeholder="ALLADiN（旧システム）で動いている広告案件を OneTag+ へ移す作業。AA は ALLADiN の略。"
+                placeholder="旧基盤で動いている案件を新基盤へ移す作業。社内では「移行」とだけ呼ばれることが多い。"
                 className="min-h-20"
               />
             </div>
@@ -133,7 +133,7 @@ function Terms() {
                 id="aliases"
                 value={aliases}
                 onChange={(e) => setAliases(e.target.value)}
-                placeholder="AA ALLADiN案件移行"
+                placeholder="移行 基盤移行"
               />
               <p className="text-muted-foreground text-xs">
                 空白かカンマで区切る。記録の中でこの書き方をされていても引けるようになる。

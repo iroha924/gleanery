@@ -25231,7 +25231,7 @@ async function syncLinear(c, env, team, takeAll, group) {
            where g.name = $1 and s.ident like 'linear:%' limit 1`, [group])).rows[0]?.ident?.replace(/^linear:/, "") : undefined;
   const teamName = team ?? fromGroup;
   if (!teamName) {
-    throw new Error(`--team <チーム名> を指定する（例: --team Onetag）。` + `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける
+    throw new Error(`--team <チーム名> を指定する（例: --team Core）。` + `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける
 
 ${USAGE}`);
   }

@@ -401,8 +401,8 @@ app.delete("/api/terms/:id", async (c) => {
 
 // --- 人の名簿 ---
 //
-// **対応付けは推論しない。**記録に出てくるのは `@shogo-kurokawa-nm` のようなハンドル名で、
-// それが「黒川さん」だと決められるのは人だけである。ここは候補を数えて並べるだけ。
+// **対応付けは推論しない。**記録に出てくるのは `@reviewer-a` のようなハンドル名で、
+// それが「◯◯さん」だと決められるのは人だけである。ここは候補を数えて並べるだけ。
 app.get("/api/people", async (c) => {
   const client = await db();
   const people = await client.query(

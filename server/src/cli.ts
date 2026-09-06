@@ -195,7 +195,7 @@ async function syncLinear(
   const teamName = team ?? fromGroup;
   if (!teamName) {
     throw new Error(
-      `--team <チーム名> を指定する（例: --team Onetag）。` +
+      `--team <チーム名> を指定する（例: --team Core）。` +
         `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける\n\n${USAGE}`,
     );
   }
@@ -502,7 +502,7 @@ async function main(): Promise<void> {
     }
 
     // 誰が誰かは**人が決める**。記録に出てくるのはハンドル名だけで、
-    // それが「黒川さん」だと結び付けられるのは人しかいない。ここは推論しない。
+    // それが「◯◯さん」だと結び付けられるのは人しかいない。ここは推論しない。
     if (cmd === "who") {
       if (rest.length === 0) {
         const people = await c.query<{ display: string; handles: string[]; is_me: boolean }>(

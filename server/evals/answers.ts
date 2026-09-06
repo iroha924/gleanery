@@ -36,7 +36,7 @@ const c = await connect(env, { as: "read" });
 
 // **束の名前とファイル名は同じ位置に来る。**argv[2] をそのまま束名にすると
 // `answers.ts recheck.json` が「recheck.json という束」を探して落ちる（実測）。
-const group = process.argv.slice(2).find((x) => !x.endsWith(".json")) ?? "macbee planet";
+const group = process.argv.slice(2).find((x) => !x.endsWith(".json")) ?? "Example Org";
 const g = await c.query<{ id: number }>(
   `select s.id::int as id from scope s
    join group_member m on m.scope_id = s.id
@@ -71,10 +71,10 @@ for (const [i, cs] of cases.entries()) {
   const ghosts = cited.filter((x) => !have.has(x));
   if (ghosts.length) citeBad++;
   // **`re:` で始まる期待は正規表現。**素の部分一致では実体と述語を結び付けられず、
-  // 正しい答えを落とす。実測: 「OT-4856 の状態は？」に `mustNot: ["OT-4858"]` と書いたが、
-  // OT-4858 は 4856 の子なので、正しく子として挙げただけで不合格になった。
+  // 正しい答えを落とす。実測: 「ABC-456 の状態は？」に `mustNot: ["ABC-457"]` と書いたが、
+  // ABC-457 は 4856 の子なので、正しく子として挙げただけで不合格になった。
   // 捕まえたいのは「4856 の状態を QA（=4858 の状態）と言う」取り違えなので、
-  // `re:OT-4856(?:(?!OT-)[^。\n]){0,25}QA` のように**間に別の issue が挟まらない範囲**で束縛する。
+  // `re:ABC-456(?:(?!OT-)[^。\n]){0,25}QA` のように**間に別の issue が挟まらない範囲**で束縛する。
   const has = (s: string) =>
     s.startsWith("re:")
       ? new RegExp(s.slice(3), "i").test(answer)

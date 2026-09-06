@@ -9,7 +9,7 @@
 -- AI が答えられなかった語をそこへ積み、人が答えたら埋まる。
 --
 -- 元の term は scope（リポジトリ）単位だったが、用語はプロジェクト単位のもの。
--- 「ダブルライト」は monopoly-source にも dbt にも出てくる。0 行だったので作り直す。
+-- 「ダブルライト」は main-repo にも dbt にも出てくる。0 行だったので作り直す。
 drop table if exists public.term;
 
 create table public.term (

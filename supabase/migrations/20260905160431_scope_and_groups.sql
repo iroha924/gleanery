@@ -8,7 +8,7 @@ create table scope (
   ident       text not null unique,
   ident_kind  text not null check (ident_kind in ('git-remote','abs-path')),
   abs_path    text,                 -- このマシンでの場所。マシンごとに違いうるので識別子にしない
-  host_org    text,                 -- 'macbee-planet' など。表示と候補提示にだけ使う
+  host_org    text,                 -- 'example-org' など。表示と候補提示にだけ使う
   repo_name   text,
   label       text not null,        -- 人が読む名前
   -- Claude が中を見て書く。何のリポジトリで、他とどう繋がるか。
@@ -18,7 +18,7 @@ create table scope (
   updated_at  timestamptz not null default now()
 );
 
--- 束。**org では束ねられない**（実測: 関連する 5 件が macbee-planet と netmarketing にまたがっていた）。
+-- 束。**org では束ねられない**（実測: 関連する 5 件が example-org と another-org にまたがっていた）。
 -- 推論をやめて、人が名前を付けて選ぶ。
 create table scope_group (
   id         bigint generated always as identity primary key,

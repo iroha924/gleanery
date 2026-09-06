@@ -78,9 +78,9 @@ function People() {
           <CardHeader>
             <CardTitle>名簿</CardTitle>
             <CardDescription>
-              記録に残っているのは <code className="text-foreground">@shogo-kurokawa-nm</code>{" "}
+              記録に残っているのは <code className="text-foreground">@reviewer-a</code>{" "}
               のようなハンドル名だけで、それが誰なのかはどこにも書かれていない。ここで結び付けると、
-              チャットで「黒川さんはなんて言ってた？」「最新の私の PR は？」が引けるようになる。
+              チャットで「◯◯さんはなんて言ってた？」「最新の私の PR は？」が引けるようになる。
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -140,7 +140,7 @@ function People() {
                 id="display"
                 value={display}
                 onChange={(e) => setDisplay(e.target.value)}
-                placeholder="黒川さん"
+                placeholder="◯◯さん"
               />
             </div>
             <div className="space-y-2">
@@ -149,7 +149,7 @@ function People() {
                 id="handles"
                 value={handles}
                 onChange={(e) => setHandles(e.target.value)}
-                placeholder="shogo-kurokawa-nm 黒川将吾"
+                placeholder="reviewer-a レビュアー A"
                 className="font-mono"
               />
               <p className="text-xs text-muted-foreground">

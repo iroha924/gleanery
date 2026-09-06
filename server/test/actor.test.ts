@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { actorKind, isNoise } from "../src/actor.ts";
 
 test("自動通知は取り込まない", () => {
-  assert.equal(actorKind("macbeeplanet-dev[bot]"), "ci");
+  assert.equal(actorKind("release-bot[bot]"), "ci");
   assert.equal(actorKind("github-actions[bot]"), "ci");
   assert.equal(actorKind("renovate[bot]"), "ci");
   assert.equal(isNoise("github-actions[bot]"), true);
@@ -18,7 +18,7 @@ test("AI のレビューは残す", () => {
 });
 
 test("人はそのまま", () => {
-  assert.equal(actorKind("shogo-kurokawa-nm"), "human");
+  assert.equal(actorKind("reviewer-a"), "human");
   assert.equal(actorKind("Hirata Shunichi"), "human");
   assert.equal(isNoise("iroha924"), false);
 });

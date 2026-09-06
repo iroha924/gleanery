@@ -3,7 +3,7 @@
 // **課題管理はプロジェクトごとに違う**（GitHub / Linear / Jira）。ここは Linear だけを見る。
 // どの束が Linear なのかはこのファイルは知らない。束に足された tracker の作業場所が決める。
 //
-// 取得経路が github.ts と違う。**macbee planet は Linear の API キー発行を組織で止めている**ので、
+// 取得経路が github.ts と違う。**Linear の API キー発行を組織側で止めていることがある**ので、
 // GraphQL を直接叩けない。使えるのは OAuth 済みの Linear MCP だけで、それは Claude Code の
 // 中にしか無い。だから `claude -p` をヘッドレスで回して MCP を叩く。
 //
@@ -15,7 +15,7 @@
 // 渡す。任せると「だいたい全部取った」で止まる余地が残り、コメントの取りこぼしはそのまま
 // 「その話は記録に無い」に化ける。
 //
-// 実測（2026-09-06、Onetag チーム）:
+// 実測（2026-09-06、Core チーム）:
 //   list_issues  … description が切り詰められて返る（`(truncated, use get_issue ...)`）
 //   get_issue    … 全文が返る
 //   list_comments… 切り詰めなし。parentId でスレッドが辿れる
@@ -156,7 +156,7 @@ function* pages(tool: string, args: Record<string, unknown>): Generator<Record<s
 export type Comment = { id: string; parentId: string | null; author: string; body: string; at: string };
 
 export type Issue = {
-  /** OT-4550 */
+  /** ABC-789 */
   id: string;
   title: string;
   description: string;

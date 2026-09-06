@@ -5,13 +5,13 @@
 -- ユーザーかは書かれていません」と返り、他人の PR を最新として挙げた。
 --
 -- **1 人が複数のハンドルを持つ**（GitHub と Linear で別名、表記ゆれ、bot）ので配列で持つ。
--- 呼び名を別に持つのは、質問がハンドル名で来ないから — 人は「黒川さん」と聞く。
+-- 呼び名を別に持つのは、質問がハンドル名で来ないから — 人は「◯◯さん」と聞く。
 -- 呼び名からハンドルへの展開は検索の直前にやる（記録へ焼き込むと、名簿を直すたびに
 -- 全件の埋め込みを取り直すことになる）。
 create table if not exists public.person (
   id         bigint generated always as identity primary key,
-  display    text not null unique,            -- 呼び名。「黒川さん」
-  handles    text[] not null default '{}',    -- 記録に出てくる名前。{shogo-kurokawa-nm,黒川将吾}
+  display    text not null unique,            -- 呼び名。「◯◯さん」
+  handles    text[] not null default '{}',    -- 記録に出てくる名前。{reviewer-a,レビュアー A}
   is_me      boolean not null default false,  -- 質問者本人。1 人だけ
   note       text,
   created_at timestamptz not null default now(),

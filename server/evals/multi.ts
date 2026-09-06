@@ -41,7 +41,7 @@ const g = await c.query<{ id: number }>(
    join group_member m on m.scope_id = s.id
    join scope_group gr on gr.id = m.group_id
    where gr.name = $1`,
-  [process.argv[2] ?? "macbee planet"],
+  [process.argv[2] ?? "Example Org"],
 );
 const scopeIds = [...new Set((await Promise.all(g.rows.map((r) => scopeFamily(c, r.id)))).flat())];
 

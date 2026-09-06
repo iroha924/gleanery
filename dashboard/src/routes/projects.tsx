@@ -128,7 +128,7 @@ function Projects() {
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="プロジェクト名（例: macbee planet）"
+              placeholder="プロジェクト名（例: Example Org）"
             />
             <Button
               onClick={() => save.mutate()}
@@ -209,7 +209,7 @@ function Projects() {
                       onChange={(e) => setTrackerIdent(e.target.value)}
                       placeholder={
                         trackerKind === "linear"
-                          ? "チーム名（例: Onetag）"
+                          ? "チーム名（例: Core）"
                           : trackerKind === "jira"
                             ? "プロジェクトキー"
                             : "owner/repo"

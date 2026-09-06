@@ -3,15 +3,15 @@ import { test } from "node:test";
 import { embedTextFor, type Issue, resultText, threads } from "../src/linear.ts";
 
 const issue = (comments: Issue["comments"]): Issue => ({
-  id: "OT-4856",
+  id: "ABC-456",
   title: "本番アラート整備",
   description: "死活監視と業務監視を段階に分けて入れる",
-  url: "https://linear.app/macbee-planet/issue/OT-4856",
+  url: "https://linear.app/example-org/issue/ABC-456",
   status: "In Review",
   statusType: "started",
   project: "システム安定性機能開発",
   labels: [],
-  createdBy: "黒川将吾",
+  createdBy: "レビュアー A",
   assignee: "Hirata Shunichi",
   createdAt: "2026-07-31T03:20:04.059Z",
   updatedAt: "2026-09-04T02:50:15.275Z",
@@ -32,8 +32,14 @@ test("返信は親のスレッドへまとまる", () => {
   const t = threads(
     issue([
       c("a", null, "平田", "Sentry のプロジェクトを分けますか", "2026-09-04T01:00:00Z"),
-      c("b", "a", "黒川将吾", "分けなくていい。alert rule の作り直しが割に合わない", "2026-09-04T02:00:00Z"),
-      c("z", null, "黒川将吾", "別件です", "2026-09-04T03:00:00Z"),
+      c(
+        "b",
+        "a",
+        "レビュアー A",
+        "分けなくていい。alert rule の作り直しが割に合わない",
+        "2026-09-04T02:00:00Z",
+      ),
+      c("z", null, "レビュアー A", "別件です", "2026-09-04T03:00:00Z"),
     ]),
   );
   assert.equal(t.length, 2);
@@ -46,7 +52,7 @@ test("相槌は落とすが、短くても中身があるものは残す", () =>
   const t = threads(
     issue([
       c("a", null, "平田", "ありがとうございます", "2026-09-04T01:00:00Z"),
-      c("b", null, "黒川将吾", "DBT 側で", "2026-09-04T02:00:00Z"),
+      c("b", null, "レビュアー A", "DBT 側で", "2026-09-04T02:00:00Z"),
     ]),
   );
   assert.equal(t.length, 1);
@@ -54,20 +60,22 @@ test("相槌は落とすが、短くても中身があるものは残す", () =>
 });
 
 // 埋め込む文に issue 番号とプロジェクトを前置しないと、
-// 「OT-4856 の件」や「安定性の話」で引けない。
+// 「ABC-456 の件」や「安定性の話」で引けない。
 test("埋め込む文には issue 番号とプロジェクトが前置される", () => {
   const i = issue([]);
   const body = embedTextFor(i, null);
-  assert.match(body, /OT-4856/);
+  assert.match(body, /ABC-456/);
   assert.match(body, /システム安定性機能開発/);
-  assert.match(body, /@黒川将吾/, "本文の書き手が分かること");
+  assert.match(body, /@レビュアー A/, "本文の書き手が分かること");
 
-  const t = threads(issue([c("a", null, "黒川将吾", "DBT 側で実装してください", "2026-09-04T01:00:00Z")]));
+  const t = threads(
+    issue([c("a", null, "レビュアー A", "DBT 側で実装してください", "2026-09-04T01:00:00Z")]),
+  );
   const first = t[0];
   assert.ok(first);
   const comment = embedTextFor(i, first);
-  assert.match(comment, /OT-4856/);
-  assert.match(comment, /@黒川将吾/);
+  assert.match(comment, /ABC-456/);
+  assert.match(comment, /@レビュアー A/);
 });
 
 // **大きい結果はファイルへ退避され、content が文字列になる。**

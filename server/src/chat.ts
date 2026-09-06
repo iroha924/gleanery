@@ -93,8 +93,8 @@ export async function directory(client: pg.Client): Promise<Person[]> {
 /**
  * 質問を検索へ渡す前にハンドル名を添える。
  *
- * **記録へ焼き込まない。**「黒川さん」は記録のどこにも書かれておらず、書かれているのは
- * `@shogo-kurokawa-nm` である。埋め込み側へ呼び名を混ぜると、名簿を直すたびに全件を
+ * **記録へ焼き込まない。**「◯◯さん」は記録のどこにも書かれておらず、書かれているのは
+ * `@reviewer-a` である。埋め込み側へ呼び名を混ぜると、名簿を直すたびに全件を
  * 取り直すことになるので、質問の側で展開する。
  */
 export function expandNames(question: string, people: Person[]): string {
@@ -301,8 +301,8 @@ export async function* chat(
   }
 
   // 名簿は小さいので毎回引く。**呼び名で聞かれてもハンドル名で引けるようにする** —
-  // 記録に書いてあるのは `@shogo-kurokawa-nm` であって「黒川さん」ではないので、
-  // 展開しないと「黒川さんはなんて言ってた？」がベクトルでもレキシカルでも当たらない。
+  // 記録に書いてあるのは `@reviewer-a` であって「◯◯さん」ではないので、
+  // 展開しないと「◯◯さんはなんて言ってた？」がベクトルでもレキシカルでも当たらない。
   const people = await directory(client);
   const terms = await glossary(client, body.scopeIds);
   // 呼び名と同じく、略語も記録に書かれている形へ展開する。
@@ -450,7 +450,7 @@ const TOOLS: OpenAI.Responses.Tool[] = [
           type: "string",
           description: "GitHub のハンドル名。呼び名ではなくハンドルを渡す（名簿の対応表を見て変換する）",
         },
-        repo: { type: "string", description: "リポジトリ名の一部。例: monopoly-manifests" },
+        repo: { type: "string", description: "リポジトリ名の一部。例: manifests-repo" },
         state: {
           type: "string",
           enum: ["merged", "open", "closed"],
@@ -516,7 +516,7 @@ const TOOLS: OpenAI.Responses.Tool[] = [
     parameters: {
       type: "object",
       properties: {
-        id: { type: "string", description: "issue 番号。例: OT-4578" },
+        id: { type: "string", description: "issue 番号。例: ABC-123" },
         status: { type: "string", description: "状態で絞る。例: Done / In Review / Todo" },
         assignee: { type: "string", description: "担当者。Linear の表示名（対応表で変換する）" },
         contains: { type: "string", description: "題か本文に含まれる語で絞る" },
@@ -529,14 +529,14 @@ const TOOLS: OpenAI.Responses.Tool[] = [
     type: "function",
     name: "find_utterances",
     description:
-      "人の発言を新しい順に返す。「黒川さんが最近言ってたこと」「◯◯さんはこの件で何て言ってた」のように、" +
+      "人の発言を新しい順に返す。「◯◯さんが最近言ってたこと」「◯◯さんはこの件で何て言ってた」のように、" +
       "**誰の発言か**で探すときに使う。person にはハンドル名を渡す（呼び名ではなく、上の対応表で変換する）。" +
       "話題で絞りたいときは contains に語を渡す。返信で参加しただけのものも拾う。",
     strict: false,
     parameters: {
       type: "object",
       properties: {
-        person: { type: "string", description: "ハンドル名。例: shogo-kurokawa-nm" },
+        person: { type: "string", description: "ハンドル名。例: reviewer-a" },
         repo: { type: "string", description: "リポジトリ名の一部。省くと範囲の全部" },
         contains: { type: "string", description: "本文に含まれる語で絞る" },
         since: { type: "string", description: "この日を含む、以降。YYYY-MM-DD（日本時間）" },
