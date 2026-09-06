@@ -126,6 +126,11 @@ const SYSTEM = (people: Person[]): string =>
     "聞かれたら grep_code で探し、read_code で読む。**記録とコードが食い違ったらコードが正しい。**",
     "答えるときは、記録から言っているのかコードを見て言っているのかを分けて書く。",
     "",
+    "**「その項目は無い」で止めない。**PR の本文には、番号が書かれていなくても",
+    "「なぜこの変更が必要になったか」が書かれていることが多い。issue 番号が無いときは、",
+    "本文に書かれた経緯（どの機能の影響で起きたか、誰がどう気付いたか、いつのリリース後か）を",
+    "拾って伝える。**そこがいちばん価値がある。**",
+    "",
     "**道具が返したものにも n という番号が付いている。**それを根拠にしたなら [n] で引く。",
     "引用しなかったものは画面に出ないので、使ったものは必ず番号で指すこと。",
     "",
@@ -262,9 +267,14 @@ export async function* chat(
     .map((r) => `- ${r.label}${r.role ? `（${r.role}）` : ""}${r.summary ? `: ${r.summary}` : ""}`)
     .join("\n");
 
-  // **思考は少しだけ入れる。**道具（PR の絞り込み・コードの探索）をどう組み合わせるかの
-  // 判断が入ったので、切ると探し方を間違える。10 秒までは許容という前提で medium。
-  // 旗艦（sol / astra）ではなく terra を使うのは、読んで答える仕事に旗艦は要らないから。
+  // **思考を入れる。**道具（PR の絞り込み・発言の絞り込み・コードの探索）をどう組み合わせるかの
+  // 判断が入ったので、切ると探し方を間違える。
+  //
+  // 実測（「アクティブな PR はそれぞれどの issue に紐づくか」で比較）:
+  //   terra / medium … 本文に書いてある経緯を拾えず「記載がありません」で止まる。10 秒 / $0.029
+  //   terra / high   … 拾える。**しかも速い**（道具の往復が減るため）。6 秒 / $0.034
+  //   sol   / medium … 拾えるが歯切れが悪く、2.3 倍高くて遅い。11 秒 / $0.078
+  // 旗艦（sol / astra）を使わないのは、読んで答える仕事に旗艦は要らないと測れたから。
   const input: OpenAI.Responses.ResponseInput = [
     ...(body.history ?? []).slice(-8),
     {
@@ -286,7 +296,7 @@ export async function* chat(
     const stream = await openai.responses.create({
       model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
       // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
-      reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "medium") as "none" | "low" | "medium" | "high" },
+      reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "high") as "none" | "low" | "medium" | "high" },
       instructions: SYSTEM(people),
       input,
       tools: last ? [] : TOOLS,
