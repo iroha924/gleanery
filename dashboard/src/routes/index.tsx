@@ -1,160 +1,155 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { SearchIcon } from "lucide-react";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Now, Phase } from "@/lib/api";
 import { api } from "@/lib/api";
-import { polarityClass } from "@/lib/polarity";
 
-const KINDS = [
-  ["decision", "決定"],
-  ["option", "検討した案"],
-  ["event", "経過・行き止まり"],
-  ["boundary", "制約・やらないこと"],
-  ["verification", "検証"],
-  ["question", "未解決の問い"],
-] as const;
+export const Route = createFileRoute("/")({ component: Home });
 
-type Search = { q?: string; dont?: boolean; kinds?: string[] };
+/** 工程。いまどこかが一目で分かればいいので、線と点だけで出す。 */
+function Phases({ phases }: { phases: Phase[] }) {
+  if (!phases?.length) return null;
+  return (
+    <ol className="flex flex-wrap items-center gap-x-1 gap-y-2 text-sm">
+      {phases.map((p, i) => (
+        <li key={p.id} className="flex items-center gap-1">
+          {i > 0 && <span className="mr-1 h-px w-4 bg-border" aria-hidden />}
+          <span
+            className={
+              p.state === "doing"
+                ? "rounded-full bg-foreground px-2.5 py-0.5 text-background"
+                : p.state === "done"
+                  ? "text-muted-foreground line-through decoration-border"
+                  : "text-muted-foreground"
+            }
+          >
+            {p.label}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
-export const Route = createFileRoute("/")({
-  // 絞り込みは URL に持つ。共有もブックマークも戻るボタンも、これで全部効く。
-  validateSearch: (s: Record<string, unknown>): Search => ({
-    q: typeof s.q === "string" && s.q ? s.q : undefined,
-    dont: s.dont === true || s.dont === "true" ? true : undefined,
-    kinds: Array.isArray(s.kinds) ? (s.kinds as string[]) : undefined,
-  }),
-  component: SearchPage,
-});
-
-function SearchPage() {
-  const nav = useNavigate({ from: "/" });
-  const { q, dont, kinds } = Route.useSearch();
-  const [draft, setDraft] = useState(q ?? "");
-
-  const { data, isFetching, error } = useQuery({
-    queryKey: ["search", q, dont, kinds],
-    queryFn: () => api.search({ question: q ?? "", onlyDont: dont, kinds, limit: 15 }),
-    enabled: Boolean(q),
-    staleTime: 60_000,
-  });
-
-  const toggleKind = (k: string) => {
-    const next = kinds?.includes(k) ? kinds.filter((x) => x !== k) : [...(kinds ?? []), k];
-    nav({ search: (p) => ({ ...p, kinds: next.length ? next : undefined }) });
-  };
+function Card({ w }: { w: Now }) {
+  const mine = w.next.filter((n) => n.who === "human");
+  const ai = w.next.filter((n) => n.who === "ai");
+  const constraints = w.walls.filter((x) => x.subkind === "constraint");
+  const nonGoals = w.walls.filter((x) => x.subkind === "non-goal");
 
   return (
-    <div className="space-y-6">
-      <form
-        className="flex gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          nav({ search: (p) => ({ ...p, q: draft.trim() || undefined }) });
-        }}
-      >
-        <Input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="例: 認証まわりで触らないと決めた場所は？"
-          className="h-11 text-base"
-        />
-        <Button type="submit" size="lg" disabled={!draft.trim()}>
-          <SearchIcon /> 引く
-        </Button>
-      </form>
-
-      {/* 絞り込みは押せる要素にする。Badge は span なので、asChild で button を渡さないと
-          キーボードで操作できず、押せることも読み上げに伝わらない。 */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge
-          asChild
-          variant={dont ? "default" : "outline"}
-          className={dont ? "bg-dont hover:bg-dont/90" : ""}
-        >
-          <button
-            type="button"
-            aria-pressed={Boolean(dont)}
-            onClick={() => nav({ search: (p) => ({ ...p, dont: p.dont ? undefined : true }) })}
+    <section className="space-y-6 border-b pb-8 last:border-b-0">
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <Link
+            to="/records/$id"
+            params={{ id: w.id }}
+            className="text-lg font-semibold underline-offset-4 hover:underline"
           >
-            やらない・棄却・行き止まりだけ
-          </button>
-        </Badge>
-        {KINDS.map(([k, ja]) => (
-          <Badge key={k} asChild variant={kinds?.includes(k) ? "secondary" : "outline"}>
-            <button type="button" aria-pressed={Boolean(kinds?.includes(k))} onClick={() => toggleKind(k)}>
-              {ja}
-            </button>
-          </Badge>
-        ))}
+            {w.title}
+          </Link>
+          <span className="text-xs text-muted-foreground">
+            {w.project}
+            {w.branch && ` / ${w.branch}`}
+          </span>
+        </div>
+        <Phases phases={w.phases} />
+        {w.current_text && (
+          <p className="max-w-[68ch] text-sm leading-relaxed text-muted-foreground">{w.current_text}</p>
+        )}
       </div>
 
-      {!q && (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <SearchIcon />
-            </EmptyMedia>
-            <EmptyTitle>過去の判断を引く</EmptyTitle>
-            <EmptyDescription>
-              決定・棄却した案・試して駄目だったこと・触らないと決めた制約を、意味で検索します。
-              既定ではいまの作業場所とその束に絞られます。
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )}
-
-      {isFetching && (
-        <div className="space-y-3">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
+      {(mine.length > 0 || ai.length > 0) && (
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">あなたがやること</h3>
+            {mine.length === 0 ? (
+              <p className="text-sm text-muted-foreground">ありません。</p>
+            ) : (
+              <ul className="space-y-2">
+                {mine.map((n) => (
+                  <li key={n.text} className="border-l-2 border-foreground pl-3 text-sm leading-relaxed">
+                    {n.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-muted-foreground">AI に任せること</h3>
+            {ai.length === 0 ? (
+              <p className="text-sm text-muted-foreground">ありません。</p>
+            ) : (
+              <ul className="space-y-2">
+                {ai.map((n) => (
+                  <li key={n.text} className="border-l-2 pl-3 text-sm leading-relaxed text-muted-foreground">
+                    {n.text}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       )}
-      {error && <p className="text-sm text-dont">{String(error)}</p>}
-      {q && !isFetching && data?.length === 0 && (
-        <Empty>
-          <EmptyHeader>
-            <EmptyTitle>該当なし</EmptyTitle>
-            <EmptyDescription>言い換えるか、種別の絞り込みを外してみてください。</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )}
 
-      <ol className="space-y-3">
-        {!isFetching &&
-          data?.map((h) => (
-            <li key={`${h.record_id}:${h.kind}:${h.key}`}>
-              <Card>
-                <CardContent className="space-y-2">
-                  <p className="leading-relaxed">
-                    <span className={`mr-1 font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
-                    {h.text}
-                  </p>
-                  {h.ex && <p className="text-sm text-muted-foreground">理由: {h.ex}</p>}
-                  <p className="text-xs text-muted-foreground">
-                    <Link
-                      to="/records/$id"
-                      params={{ id: h.record_id }}
-                      className="underline underline-offset-2"
-                    >
-                      {h.record_title}
-                    </Link>
-                    <span> / {h.scope_label}</span>
-                    {h.at && <span> / {h.at.slice(0, 10)}</span>}
-                    {h.relevance !== null && (
-                      <span className="tabular-nums"> / 関連度 {h.relevance.toFixed(2)}</span>
-                    )}
-                  </p>
-                </CardContent>
-              </Card>
-            </li>
-          ))}
-      </ol>
+      {(constraints.length > 0 || nonGoals.length > 0) && (
+        <div className="space-y-3">
+          {constraints.length > 0 && (
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium text-dont">変えてはいけないもの</h3>
+              <ul className="space-y-1">
+                {constraints.map((x) => (
+                  <li
+                    key={x.key}
+                    className="max-w-[68ch] border-l-2 border-dont pl-3 text-sm leading-relaxed"
+                  >
+                    {x.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {nonGoals.length > 0 && (
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium text-dont">やらないと決めたこと</h3>
+              <ul className="space-y-1">
+                {nonGoals.map((x) => (
+                  <li
+                    key={x.key}
+                    className="max-w-[68ch] border-l-2 border-dont pl-3 text-sm leading-relaxed"
+                  >
+                    {x.text}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Home() {
+  const { data, isPending, error } = useQuery({ queryKey: ["now"], queryFn: api.now });
+  if (isPending) return <Skeleton className="h-72 w-full" />;
+  if (error) return <p className="text-sm text-dont">{String(error)}</p>;
+  if (data.length === 0) {
+    return (
+      <div className="max-w-[60ch] space-y-2">
+        <h1 className="text-lg font-semibold">まだ何も保存されていません</h1>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          作業の途中で <code className="rounded bg-muted px-1 py-0.5">/mitos:trace</code> を実行すると、
+          そのセッションで決めたことがここに出ます。
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-10">
+      {data.map((w) => (
+        <Card key={w.id} w={w} />
+      ))}
     </div>
   );
 }

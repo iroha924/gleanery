@@ -1,6 +1,24 @@
 // API の型。**サーバーの戻り値をここで 1 回だけ書く。**
 // 画面ごとに書くと、片方だけ直したときに気付けない。
 
+export type Phase = { id: string; label: string; state: "done" | "doing" | "todo"; from: string };
+export type NextItem = { who: "ai" | "human"; text: string };
+export type Wall = { record_id: string; subkind: "constraint" | "non-goal"; text: string; key: string };
+
+export type Now = {
+  id: string;
+  title: string;
+  status: string;
+  branch: string | null;
+  current_at: string | null;
+  current_text: string | null;
+  phases: Phase[];
+  next: NextItem[];
+  updated_at: string;
+  project: string;
+  walls: Wall[];
+};
+
 export type Stats = { nodes: number; records: number; scopes: number; refs: number };
 
 export type Scope = {
@@ -40,7 +58,21 @@ export type Node = {
   text: string;
   ex: string;
   label: string;
-  attrs: Record<string, unknown>;
+  attrs: {
+    // 決定なら「どう確かめるか」と「受け入れた不利な点」、検証なら実行したコマンドと出力。
+    // どれも記録には書かれているのに、画面が落としていた。
+    confirmation?: string | null;
+    consequences?: string | null;
+    supersededBy?: string | null;
+    whyNot?: string | null;
+    cmd?: string | null;
+    output?: string | null;
+    whyNotRun?: string | null;
+    verifies?: string | null;
+    blocking?: boolean;
+    who?: string | null;
+    when?: string | null;
+  };
   parent_id: number | null;
 };
 
@@ -84,6 +116,8 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
 }
 
 export const api = {
+  now: () => get<Now[]>("/api/now"),
+  review: (id: string) => get<Node[]>(`/api/review/${encodeURIComponent(id)}`),
   candidates: () => get<Candidate[]>("/api/candidates"),
   groups: () => get<Group[]>("/api/groups"),
   saveGroup: (name: string, paths: string[]) =>

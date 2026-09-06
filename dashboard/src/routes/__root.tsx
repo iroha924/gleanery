@@ -5,10 +5,10 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/s
 import { Toaster } from "@/components/ui/sonner";
 
 const TITLES: [string, string][] = [
-  ["/records/", "記録"],
-  ["/records", "記録"],
-  ["/scopes", "作業場所と束"],
-  ["/", "検索"],
+  ["/records", "作業"],
+  ["/projects", "プロジェクト"],
+  ["/search", "探す"],
+  ["/", "いま"],
 ];
 
 function Title() {

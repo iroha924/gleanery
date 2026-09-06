@@ -1,125 +1,147 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Node } from "@/lib/api";
 import { api } from "@/lib/api";
-import { polarityClass } from "@/lib/polarity";
 
 export const Route = createFileRoute("/records/$id")({ component: Detail });
 
-// 表示の順。**ジュニアが上から読んで分かる順にする。**
-// 何をしようとしているか → いまどこ → 何を決めた → 何が駄目だった → 何が未解決。
-const SECTIONS = [
-  { kind: "boundary", title: "境界", note: "やらないと決めたこと・変えてはいけない制約" },
-  { kind: "decision", title: "決定", note: "採用した案と、そのとき棄却した案" },
-  { kind: "event", title: "経過と行き止まり", note: "" },
-  { kind: "verification", title: "検証", note: "" },
-  { kind: "question", title: "未解決の問い", note: "" },
+// 流れの中に置くもの。制約とやらないことは流れの外（上）に固定する。
+const FLOW = [
+  { kind: "decision", label: "決めたこと" },
+  { kind: "event", label: "分かったこと・行き止まり" },
+  { kind: "verification", label: "確かめたこと" },
+  { kind: "question", label: "未解決の問い" },
 ] as const;
+
+/** 縦線に付く印。採用は塗り、やらないは輪郭。**色は極性にだけ使う。** */
+function Dot({ polarity }: { polarity: Node["polarity"] }) {
+  const cls =
+    polarity === "dont"
+      ? "border-dont bg-background"
+      : polarity === "do"
+        ? "border-do bg-do"
+        : "border-muted-foreground bg-background";
+  return <span className={`absolute -left-[5px] top-2 size-2.5 rounded-full border-2 ${cls}`} aria-hidden />;
+}
 
 function Detail() {
   const { id } = Route.useParams();
   const { data, isPending, error } = useQuery({ queryKey: ["record", id], queryFn: () => api.record(id) });
-  if (isPending) return <Skeleton className="h-64 w-full" />;
+  if (isPending) return <Skeleton className="h-96 w-full" />;
   if (error) return <p className="text-sm text-dont">{String(error)}</p>;
 
   const options = data.nodes.filter((n) => n.kind === "option");
+  const walls = data.nodes.filter((n) => n.kind === "boundary");
+  const flow = FLOW.flatMap(({ kind, label }) => {
+    const rows = data.nodes.filter((n) => n.kind === kind);
+    return rows.length ? [{ label, rows }] : [];
+  });
 
   return (
-    <article className="space-y-8">
-      <header className="space-y-2">
-        <h1 className="text-xl font-semibold">{data.title}</h1>
-        <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant="secondary">{data.status}</Badge>
-          <span>{data.scope_label}</span>
-          {data.branch && <span>/ {data.branch}</span>}
-          <span>/ 更新 {data.updated_at.slice(0, 10)}</span>
+    <article className="space-y-10">
+      <header className="max-w-[68ch] space-y-3">
+        <h1 className="text-2xl font-semibold leading-tight">{data.title}</h1>
+        <p className="text-xs text-muted-foreground">
+          {data.scope_label} · {data.status}
+          {data.branch && ` · ${data.branch}`} · 更新 {data.updated_at.slice(0, 10)}
         </p>
-        {data.problem && (
-          <p className="text-sm leading-relaxed">
-            <span className="text-muted-foreground">解こうとしている問題: </span>
-            {data.problem}
-          </p>
-        )}
+        {data.problem && <p className="text-sm leading-relaxed">{data.problem}</p>}
         {data.goal && (
-          <p className="text-sm leading-relaxed">
-            <span className="text-muted-foreground">ゴール: </span>
-            {data.goal}
-          </p>
-        )}
-        {data.current_text && (
-          <Card>
-            <CardContent className="py-4 text-sm">
-              <span className="text-muted-foreground">いまここ: </span>
-              {data.current_text}
-            </CardContent>
-          </Card>
+          <p className="text-sm leading-relaxed text-muted-foreground">目指すところ: {data.goal}</p>
         )}
       </header>
 
-      {SECTIONS.map(({ kind, title, note }) => {
-        const rows = data.nodes.filter((n) => n.kind === kind);
-        if (rows.length === 0) return null;
-        return (
-          <section key={kind} className="space-y-2">
-            <h2 className="text-sm font-medium">
-              {title} <span className="text-muted-foreground tabular-nums">{rows.length}</span>
-            </h2>
-            {note && <p className="text-xs text-muted-foreground">{note}</p>}
-            <ul className="space-y-3">
-              {rows.map((n) => (
-                <li key={n.id}>
-                  <Card>
-                    <CardContent className="space-y-2 py-4">
-                      <p className="leading-relaxed">
-                        <span className={`mr-1 text-sm font-medium ${polarityClass(n.polarity)}`}>
-                          {n.label}
-                        </span>
-                        {n.text}
-                      </p>
-                      {n.ex && <p className="text-sm text-muted-foreground">{n.ex}</p>}
-                      {kind === "decision" && (
-                        // 決定は、棄却した案と一緒でないと「なぜそれか」が読めない
-                        <ul className="space-y-1 border-l pl-3">
-                          {options
-                            .filter((o) => o.parent_id === n.id)
-                            .map((o) => (
-                              <li key={o.id} className="text-sm">
-                                <span className={`mr-1 ${polarityClass(o.polarity)}`}>{o.label}</span>
-                                {o.text}
-                                {o.ex && <span className="text-muted-foreground"> — {o.ex}</span>}
-                              </li>
-                            ))}
-                        </ul>
-                      )}
-                    </CardContent>
-                  </Card>
-                </li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+      {walls.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-medium text-dont">変えてはいけない・やらないと決めたこと</h2>
+          <ul className="space-y-1">
+            {walls.map((w) => (
+              <li key={w.id} className="max-w-[68ch] border-l-2 border-dont pl-3 text-sm leading-relaxed">
+                {w.text}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {flow.map(({ label, rows }) => (
+        <section key={label} className="space-y-3">
+          <h2 className="text-sm font-medium">{label}</h2>
+          <ol className="ml-1 space-y-6 border-l pl-5">
+            {rows.map((n) => (
+              <li key={n.id} className="relative max-w-[68ch] space-y-2">
+                <Dot polarity={n.polarity} />
+                <p className="text-sm leading-relaxed">{n.text}</p>
+
+                {n.ex && <p className="text-sm leading-relaxed text-muted-foreground">{n.ex}</p>}
+
+                {/* 決定は「どう確かめるか」と「引き受けた不利な点」まで書いて初めて読める */}
+                {n.attrs.confirmation && (
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    確かめ方: {n.attrs.confirmation}
+                  </p>
+                )}
+                {n.attrs.consequences && (
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    引き受けた不利: {n.attrs.consequences}
+                  </p>
+                )}
+
+                {/* 検証は、何を実行して何が返ったかが本体 */}
+                {n.attrs.cmd && (
+                  <pre className="overflow-x-auto rounded bg-muted px-3 py-2 text-xs leading-relaxed">
+                    <code>
+                      $ {n.attrs.cmd}
+                      {n.attrs.output ? `\n${n.attrs.output}` : ""}
+                    </code>
+                  </pre>
+                )}
+                {n.attrs.whyNotRun && (
+                  <p className="text-sm leading-relaxed text-dont">実行していない: {n.attrs.whyNotRun}</p>
+                )}
+
+                {/* 採った案は、捨てた案と並べないと「なぜそれか」が読めない */}
+                {n.kind === "decision" && (
+                  <ul className="space-y-1.5 pt-1">
+                    {options
+                      .filter((o) => o.parent_id === n.id)
+                      .map((o) => (
+                        <li
+                          key={o.id}
+                          className={`border-l-2 pl-3 text-sm leading-relaxed ${
+                            o.polarity === "dont" ? "border-dont/40" : "border-do/40"
+                          }`}
+                        >
+                          <span className={o.polarity === "dont" ? "text-muted-foreground" : ""}>
+                            {o.text}
+                          </span>
+                          {o.attrs.whyNot && (
+                            <span className="text-muted-foreground"> — {o.attrs.whyNot}</span>
+                          )}
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
 
       {data.refs.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-sm font-medium">
-            関連 <span className="text-muted-foreground tabular-nums">{data.refs.length}</span>
-          </h2>
-          <ul className="flex flex-wrap gap-1.5">
+          <h2 className="text-sm font-medium">関係したファイル・コマンド</h2>
+          <ul className="max-w-[68ch] space-y-1 text-sm">
             {data.refs.map((r) => (
-              <li key={`${r.kind}:${r.key}`}>
-                <Badge variant="outline" className="font-normal">
-                  {r.kind}:{" "}
-                  {r.url ? (
-                    <a href={r.url} className="underline underline-offset-2">
-                      {r.title ?? r.key}
-                    </a>
-                  ) : (
-                    (r.title ?? r.key)
-                  )}
-                </Badge>
+              <li key={`${r.kind}:${r.key}`} className="truncate text-muted-foreground">
+                {r.url ? (
+                  <a href={r.url} className="underline underline-offset-2">
+                    {r.title ?? r.key}
+                  </a>
+                ) : (
+                  (r.title ?? r.key)
+                )}
               </li>
             ))}
           </ul>

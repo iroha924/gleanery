@@ -63,6 +63,50 @@ app.get("/api/stats", async (c) => {
   return c.json(q.rows[0]);
 });
 
+// 「いま」の画面。**問いを持たずに開ける唯一の画面**にする。
+// 前回どこで止まって、次に誰が何をするのか。record にあるのに画面が出していなかった。
+app.get("/api/now", async (c) => {
+  const client = await db();
+  const r = await client.query(
+    `select r.id, r.title, r.status, r.branch, r.current_at, r.current_text,
+            r.phases, r.next, r.updated_at, s.label as project
+     from record r join scope s on s.id = r.scope_id
+     order by r.updated_at desc nulls last limit 5`,
+  );
+  const ids = r.rows.map((x) => x.id as string);
+  // 触ってはいけないもの／やらないと決めたことは、流れの外に置く。
+  const walls = ids.length
+    ? await client.query(
+        `select record_id, subkind, text, key from node
+         where record_id = any($1) and kind = 'boundary' and deleted_at is null
+         order by subkind, ordinal`,
+        [ids],
+      )
+    : { rows: [] };
+  return c.json(
+    r.rows.map((x) => ({
+      ...x,
+      walls: walls.rows.filter((w) => w.record_id === x.id),
+    })),
+  );
+});
+
+// 保存した直後に人が見る画面。**機械が付けた分類を人が確かめるためのもの。**
+// 直せるようにはしない — polarity は取り込みのたびに IR から計算し直されるので、
+// ここで直しても次の保存で黙って戻る（ingest.ts の upsert が polarity=excluded.polarity）。
+// おかしければ記録の側（/mitos:trace）を直す。
+app.get("/api/review/:id", async (c) => {
+  const r = await (await db()).query(
+    `select id::int, kind, subkind, polarity, confidence, status, key, at, text,
+            coalesce(attrs->>'whyNot', attrs->>'context', '') as ex,
+            attrs, parent_id::int
+     from node where record_id = $1 and deleted_at is null
+     order by kind, ordinal, at nulls last`,
+    [c.req.param("id")],
+  );
+  return c.json(r.rows);
+});
+
 app.get("/api/scopes", async (c) => {
   const q = await (await db()).query(
     `select s.id::int, s.label, s.role, s.summary,

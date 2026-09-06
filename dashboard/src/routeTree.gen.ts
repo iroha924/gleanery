@@ -10,7 +10,8 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ScopesRouteImport } from './routes/scopes'
+import { Route as ProjectsRouteImport } from './routes/projects'
+import { Route as SearchRouteImport } from './routes/search'
 import { Route as RecordsIndexRouteImport } from './routes/records.index'
 import { Route as RecordsIdRouteImport } from './routes/records.$id'
 
@@ -19,9 +20,14 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ScopesRoute = ScopesRouteImport.update({
-  id: '/scopes',
-  path: '/scopes',
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SearchRoute = SearchRouteImport.update({
+  id: '/search',
+  path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecordsIndexRoute = RecordsIndexRouteImport.update({
@@ -37,34 +43,38 @@ const RecordsIdRoute = RecordsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/scopes': typeof ScopesRoute
+  '/projects': typeof ProjectsRoute
+  '/search': typeof SearchRoute
   '/records/$id': typeof RecordsIdRoute
   '/records/': typeof RecordsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/scopes': typeof ScopesRoute
+  '/projects': typeof ProjectsRoute
+  '/search': typeof SearchRoute
   '/records/$id': typeof RecordsIdRoute
   '/records': typeof RecordsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/scopes': typeof ScopesRoute
+  '/projects': typeof ProjectsRoute
+  '/search': typeof SearchRoute
   '/records/$id': typeof RecordsIdRoute
   '/records/': typeof RecordsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/scopes' | '/records/$id' | '/records/'
+  fullPaths: '/' | '/projects' | '/search' | '/records/$id' | '/records/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/scopes' | '/records/$id' | '/records'
-  id: '__root__' | '/' | '/scopes' | '/records/$id' | '/records/'
+  to: '/' | '/projects' | '/search' | '/records/$id' | '/records'
+  id: '__root__' | '/' | '/projects' | '/search' | '/records/$id' | '/records/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  ScopesRoute: typeof ScopesRoute
+  ProjectsRoute: typeof ProjectsRoute
+  SearchRoute: typeof SearchRoute
   RecordsIdRoute: typeof RecordsIdRoute
   RecordsIndexRoute: typeof RecordsIndexRoute
 }
@@ -78,11 +88,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/scopes': {
-      id: '/scopes'
-      path: '/scopes'
-      fullPath: '/scopes'
-      preLoaderRoute: typeof ScopesRouteImport
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/search': {
+      id: '/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/records/': {
@@ -104,7 +121,8 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  ScopesRoute: ScopesRoute,
+  ProjectsRoute: ProjectsRoute,
+  SearchRoute: SearchRoute,
   RecordsIdRoute: RecordsIdRoute,
   RecordsIndexRoute: RecordsIndexRoute,
 }

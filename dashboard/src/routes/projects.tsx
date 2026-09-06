@@ -15,9 +15,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
 
-export const Route = createFileRoute("/scopes")({ component: Scopes });
+export const Route = createFileRoute("/projects")({ component: Projects });
 
-function Scopes() {
+function Projects() {
   const qc = useQueryClient();
   const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
   const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
@@ -29,7 +29,7 @@ function Scopes() {
   const save = useMutation({
     mutationFn: () => api.saveGroup(name.trim(), [...picked]),
     onSuccess: () => {
-      toast.success(`束「${name}」に ${picked.size} 件を入れた`);
+      toast.success(`「${name}」に ${picked.size} 件をまとめた`);
       setPicked(new Set());
       setName("");
       qc.invalidateQueries({ queryKey: ["groups"] });
@@ -41,7 +41,7 @@ function Scopes() {
   const remove = useMutation({
     mutationFn: (id: number) => api.deleteGroup(id),
     onSuccess: () => {
-      toast.success("束を解いた");
+      toast.success("まとめを解除した");
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["scopes"] });
     },
@@ -58,10 +58,10 @@ function Scopes() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>束ねる</CardTitle>
+          <CardTitle>関連するプロジェクトをまとめる</CardTitle>
           <CardDescription>
-            チェックしたものは互いに検索されます。**選ばなかったものは完全に独立**で、
-            互いの記録は引かれません。推論では束ねません（org も親ディレクトリも実データで外れました）。
+            チェックしたプロジェクトは互いに検索されます。チェックしなかったものは独立したままで、
+            検索結果に混ざりません。フロントとバックエンドを分けているような場合にまとめます。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -110,24 +110,26 @@ function Scopes() {
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="束の名前（例: nomophyl）"
+              placeholder="まとめの名前（例: nomophyl）"
             />
             <Button
               onClick={() => save.mutate()}
               disabled={picked.size < 2 || !name.trim() || save.isPending}
             >
               {save.isPending ? <Spinner /> : <LinkIcon />}
-              {picked.size >= 2 ? `${picked.size} 件を束ねる` : "2 つ以上選ぶ"}
+              {picked.size >= 2 ? `${picked.size} 件をまとめる` : "2 つ以上選ぶ"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">いまの束</h2>
+        <h2 className="text-sm font-medium">いまのまとめ</h2>
         {groups.isPending && <Skeleton className="h-20 w-full" />}
         {groups.data?.length === 0 && (
-          <p className="text-sm text-muted-foreground">まだ束はありません。全部が独立しています。</p>
+          <p className="text-sm text-muted-foreground">
+            まだまとめはありません。プロジェクトは全部独立しています。
+          </p>
         )}
         {groups.data?.map((g) => (
           <Item key={g.id} variant="outline">
@@ -141,7 +143,7 @@ function Scopes() {
                 size="icon"
                 onClick={() => remove.mutate(g.id)}
                 disabled={remove.isPending}
-                aria-label={`束「${g.name}」を解く`}
+                aria-label={`「${g.name}」のまとめを解除`}
               >
                 <Trash2Icon />
               </Button>
@@ -151,15 +153,14 @@ function Scopes() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">登録されている作業場所</h2>
+        <h2 className="text-sm font-medium">保存されているプロジェクト</h2>
         {scopes.isPending && <Skeleton className="h-20 w-full" />}
         {scopes.data?.map((s) => (
           <Item key={s.id} variant="outline">
             <ItemContent>
               <ItemTitle>{s.label}</ItemTitle>
               <ItemDescription className="tabular-nums">
-                記録 {s.records} / 判断 {s.nodes}
-                {s.groups && ` / 束: ${s.groups}`}
+                作業 {s.records} 件 / 記録 {s.nodes} 件{s.groups && ` / まとめ: ${s.groups}`}
                 {s.role && ` / ${s.role}`}
               </ItemDescription>
             </ItemContent>

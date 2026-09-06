@@ -23,7 +23,7 @@ function Records() {
                   <Badge variant="secondary">{r.status}</Badge>
                 </ItemTitle>
                 <ItemDescription className="tabular-nums">
-                  {r.scope_label} / 判断 {r.nodes} 件 / 更新 {r.updated_at.slice(0, 10)}
+                  {r.scope_label} · 記録 {r.nodes} 件 · 更新 {r.updated_at.slice(0, 10)}
                 </ItemDescription>
                 {r.current_text && <ItemDescription>いま: {r.current_text}</ItemDescription>}
               </ItemContent>
