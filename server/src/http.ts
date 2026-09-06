@@ -7,7 +7,9 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { streamSSE } from "hono/streaming";
 import type pg from "pg";
+import { type ChatBody, chat } from "./chat.ts";
 import { connect, loadEnv } from "./db.ts";
 import { candidates, identify } from "./scope.ts";
 import { labelOf, type Polarity, scopeFamily, search } from "./search.ts";
@@ -297,6 +299,38 @@ app.delete("/api/groups/:id", async (c) => {
     await client.query("rollback").catch(() => {});
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
   }
+});
+
+// ナレッジに基づいて答える。根拠を先に流し、それから本文を少しずつ返す。
+app.post("/api/chat", async (c) => {
+  const body = (await c.req.json()) as ChatBody;
+  const client = await db();
+
+  // 検索する範囲は、画面ではなくサーバーで決める。
+  let scopeIds: number[] | undefined;
+  if (!body.allScopes && body.cwd) {
+    const me = identify(body.cwd);
+    const r = await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [
+      me.ident,
+    ]);
+    const row = r.rows[0];
+    scopeIds = row ? await scopeFamily(client, row.id) : [];
+  }
+
+  return streamSSE(c, async (stream) => {
+    try {
+      for await (const chunk of chat(client, env, { ...body, scopeIds })) {
+        await stream.writeSSE({ event: chunk.type, data: JSON.stringify(chunk) });
+      }
+    } catch (e) {
+      // 失敗も画面へ届ける。無言で止まると原因が分からない。
+      await stream.writeSSE({
+        event: "error",
+        data: JSON.stringify({ message: e instanceof Error ? e.message : String(e) }),
+      });
+    }
+    await stream.writeSSE({ event: "done", data: "{}" });
+  });
 });
 
 const port = Number(process.env.MITOS_API_PORT ?? 8787);

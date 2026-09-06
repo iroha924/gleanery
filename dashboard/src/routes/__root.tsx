@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 const TITLES: [string, string][] = [
   ["/records", "作業"],
   ["/projects", "プロジェクト"],
+  ["/chat", "聞く"],
   ["/search", "探す"],
   ["/", "いま"],
 ];

@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
-import { FolderIcon, ListChecksIcon, PlayIcon, SearchIcon } from "lucide-react";
+import { FolderIcon, ListChecksIcon, MessageSquareIcon, PlayIcon, SearchIcon } from "lucide-react";
 import type * as React from "react";
 import {
   Sidebar,
@@ -49,6 +49,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuButton asChild isActive={path === "/"}>
                 <Link to="/">
                   <PlayIcon /> いま
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={path === "/chat"}>
+                <Link to="/chat">
+                  <MessageSquareIcon /> 聞く
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

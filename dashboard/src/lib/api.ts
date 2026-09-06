@@ -19,6 +19,56 @@ export type Now = {
   walls: Wall[];
 };
 
+export type ChatSource = {
+  n: number;
+  label: string;
+  text: string;
+  polarity: Polarity;
+  recordId: string;
+  recordTitle: string;
+  scope: string;
+  at: string | null;
+};
+
+/**
+ * 答えを流しながら受け取る。**根拠が先に来る。**
+ * 生成を待たずに「何を見て答えるのか」を出せるようにするため。
+ */
+export async function askStream(
+  body: { question: string; history: { role: "user" | "assistant"; content: string }[]; allScopes?: boolean },
+  on: { sources: (s: ChatSource[]) => void; text: (t: string) => void; error: (m: string) => void },
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!res.body) throw new Error("応答が空");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    // SSE は空行で 1 件。行の途中で切れることがあるので、最後の断片は次へ持ち越す。
+    const parts = buf.split("\n\n");
+    buf = parts.pop() ?? "";
+    for (const part of parts) {
+      const ev = part.match(/^event: (.+)$/m)?.[1];
+      const raw = part.match(/^data: (.+)$/m)?.[1];
+      if (!ev || !raw) continue;
+      const data = JSON.parse(raw);
+      if (ev === "sources") on.sources(data.sources);
+      else if (ev === "text") on.text(data.text);
+      else if (ev === "error") on.error(data.message);
+    }
+  }
+}
+
 export type Stats = { nodes: number; records: number; scopes: number; refs: number };
 
 export type Scope = {
