@@ -129,6 +129,15 @@ export const threadHash = (t: Thread): string =>
 import type pg from "pg";
 import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
 
+// 1 トランザクションで扱う件数。
+//
+// **全件を 1 つのトランザクションに入れない。**begin してから埋め込みを取りに行くので、
+// その間ずっと「開いたまま何もしていない」状態になる。実測: monopoly-source は
+// スレッド 24,568 件で、埋め込みだけで 30 分を超えた。途中で切れると全部消えるうえ、
+// 30 分ぶんの API 費用も無駄になる。分けて確定すれば、落ちても続きから再開できる
+// （content_hash が一致するものは次回そのまま飛ばされる）。
+const CHUNK = 500;
+
 /**
  * スレッドを node へ入れる。
  * **`content_hash` が変わったものだけ埋め込みを取り直す。**日次で回すので、
@@ -143,39 +152,70 @@ export async function ingestThreads(
   onProgress?: (m: string) => void,
 ): Promise<{ total: number; embedded: number }> {
   const recordId = `github:${repo}`;
-  await client.query("begin");
-  try {
-    // リポジトリ 1 つ = 記録 1 つ。個々のスレッドはその下の node。
-    await client.query(
-      `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
-       values ($1,$2,'github/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
-       on conflict (id) do update set updated_at = now(), ingested_at = now()`,
-      [recordId, scopeId, `${repo} のレビューと議論`],
-    );
 
-    const existing = new Map(
-      (
-        await client.query<{ key: string; content_hash: string; has_emb: boolean }>(
-          "select key, content_hash, embedding is not null as has_emb from node where record_id=$1",
-          [recordId],
-        )
-      ).rows.map((r) => [r.key, r]),
-    );
+  // リポジトリ 1 つ = 記録 1 つ。個々のスレッドはその下の node。
+  await client.query(
+    `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
+     values ($1,$2,'github/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
+     on conflict (id) do update set updated_at = now(), ingested_at = now()`,
+    [recordId, scopeId, `${repo} のレビューと議論`],
+  );
 
-    const need = threads.filter((t) => {
-      const e = existing.get(t.key);
-      return !e || e.content_hash !== threadHash(t) || !e.has_emb;
-    });
-    onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${need.length} 件`);
+  const existing = new Map(
+    (
+      await client.query<{ key: string; content_hash: string; has_emb: boolean }>(
+        "select key, content_hash, embedding is not null as has_emb from node where record_id=$1",
+        [recordId],
+      )
+    ).rows.map((r) => [r.key, r]),
+  );
 
+  const stale = new Set(
+    threads
+      .filter((t) => {
+        const e = existing.get(t.key);
+        return !e || e.content_hash !== threadHash(t) || !e.has_emb;
+      })
+      .map((t) => t.key),
+  );
+  onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${stale.size} 件`);
+
+  let done = 0;
+  for (let from = 0; from < threads.length; from += CHUNK) {
+    const slice = threads.slice(from, from + CHUNK);
+    const need = slice.filter((t) => stale.has(t.key));
+    // **埋め込みはトランザクションの外で取る。**中で待つと、その間ずっと開いたままになる。
     const vectors = need.length ? await embed(env, need.map(threadText), "document") : [];
     const byKey = new Map(need.map((t, i) => [t.key, vectors[i]]));
 
-    for (const t of threads) {
-      const v = byKey.get(t.key);
-      const text = t.turns.map((x) => `@${x.author}: ${x.body}`).join("\n");
-      const r = await client.query<{ id: number }>(
-        `insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
+    await client.query("begin");
+    try {
+      await writeSlice(client, recordId, repo, scopeId, slice, byKey);
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      throw e;
+    }
+    done += slice.length;
+    onProgress?.(`  ${done} / ${threads.length} 件を確定`);
+  }
+  return { total: threads.length, embedded: stale.size };
+}
+
+/** 1 チャンクぶんを書く。呼び出し側がトランザクションを持つ。 */
+async function writeSlice(
+  client: pg.Client,
+  recordId: string,
+  repo: string,
+  scopeId: number,
+  threads: Thread[],
+  byKey: Map<string, number[] | undefined>,
+): Promise<void> {
+  for (const t of threads) {
+    const v = byKey.get(t.key);
+    const text = t.turns.map((x) => `@${x.author}: ${x.body}`).join("\n");
+    const r = await client.query<{ id: number }>(
+      `insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
                            actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
          values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
          on conflict (record_id, kind, key) do update set
@@ -186,58 +226,52 @@ export async function ingestThreads(
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
            embedding=coalesce(excluded.embedding, node.embedding)
          returning id`,
-        [
-          recordId,
-          scopeId,
-          t.key.startsWith("pr-review:") ? "review" : "issue",
-          t.key,
-          t.at,
-          text,
-          JSON.stringify({
-            pr: t.pr,
-            prTitle: t.prTitle,
-            path: t.path,
-            line: t.line,
-            url: t.url,
-            authors: [...new Set(t.turns.map((x) => x.author))],
-          }),
-          // 最初に口を開いた人。返信者は attrs.authors に残す。
-          t.turns[0]?.author ?? "unknown",
-          threadHash(t),
-          v ? threadText(t) : null,
-          v ? EMBED_MODEL : null,
-          v ? new Date().toISOString() : null,
-          vec(v),
-        ],
-      );
-      const nodeId = r.rows[0]?.id;
-      if (nodeId === undefined) continue;
+      [
+        recordId,
+        scopeId,
+        t.key.startsWith("pr-review:") ? "review" : "issue",
+        t.key,
+        t.at,
+        text,
+        JSON.stringify({
+          pr: t.pr,
+          prTitle: t.prTitle,
+          path: t.path,
+          line: t.line,
+          url: t.url,
+          authors: [...new Set(t.turns.map((x) => x.author))],
+        }),
+        // 最初に口を開いた人。返信者は attrs.authors に残す。
+        t.turns[0]?.author ?? "unknown",
+        threadHash(t),
+        v ? threadText(t) : null,
+        v ? EMBED_MODEL : null,
+        v ? new Date().toISOString() : null,
+        vec(v),
+      ],
+    );
+    const nodeId = r.rows[0]?.id;
+    if (nodeId === undefined) continue;
 
-      // **どのファイルの話かを辺にする。**これが無いと check_path から引けない。
-      for (const [kind, key, url] of [
-        ["pr", `${repo}#${t.pr}`, t.url],
-        ...(t.path ? [["file", t.path, null] as const] : []),
-      ] as [string, string, string | null][]) {
-        const ref = await client.query<{ id: number }>(
-          `insert into ref (kind, repo, key, url) values ($1,$2,$3,$4)
+    // **どのファイルの話かを辺にする。**これが無いと check_path から引けない。
+    for (const [kind, key, url] of [
+      ["pr", `${repo}#${t.pr}`, t.url],
+      ...(t.path ? [["file", t.path, null] as const] : []),
+    ] as [string, string, string | null][]) {
+      const ref = await client.query<{ id: number }>(
+        `insert into ref (kind, repo, key, url) values ($1,$2,$3,$4)
            on conflict (kind, coalesce(repo,''), key) do update set url=coalesce(excluded.url, ref.url)
            returning id`,
-          [kind, repo, key, url],
-        );
-        const refId = ref.rows[0]?.id;
-        if (refId !== undefined) {
-          await client.query(
-            `insert into ref_link (ref_id, record_id, node_id, role) values ($1,$2,$3,'evidence')
+        [kind, repo, key, url],
+      );
+      const refId = ref.rows[0]?.id;
+      if (refId !== undefined) {
+        await client.query(
+          `insert into ref_link (ref_id, record_id, node_id, role) values ($1,$2,$3,'evidence')
              on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`,
-            [refId, recordId, nodeId],
-          );
-        }
+          [refId, recordId, nodeId],
+        );
       }
     }
-    await client.query("commit");
-    return { total: threads.length, embedded: need.length };
-  } catch (e) {
-    await client.query("rollback").catch(() => {});
-    throw e;
   }
 }

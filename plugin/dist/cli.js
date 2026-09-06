@@ -5079,9 +5079,9 @@ var require_lib2 = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
-import fs3 from "node:fs";
-import os3 from "node:os";
-import path3 from "node:path";
+import fs4 from "node:fs";
+import os4 from "node:os";
+import path4 from "node:path";
 import { parseArgs } from "node:util";
 
 // server/node_modules/zod/v4/classic/external.js
@@ -23869,26 +23869,43 @@ function threadText(t) {
 ${body}`;
 }
 var threadHash = (t) => crypto.createHash("sha256").update(threadText(t)).digest("hex");
+var CHUNK = 500;
 async function ingestThreads(client, env, repo, scopeId, threads, onProgress) {
   const recordId = `github:${repo}`;
-  await client.query("begin");
-  try {
-    await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
-       values ($1,$2,'github/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
-       on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${repo} のレビューと議論`]);
-    const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
-    const need = threads.filter((t) => {
-      const e = existing.get(t.key);
-      return !e || e.content_hash !== threadHash(t) || !e.has_emb;
-    });
-    onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${need.length} 件`);
+  await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
+     values ($1,$2,'github/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
+     on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${repo} のレビューと議論`]);
+  const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
+  const stale = new Set(threads.filter((t) => {
+    const e = existing.get(t.key);
+    return !e || e.content_hash !== threadHash(t) || !e.has_emb;
+  }).map((t) => t.key));
+  onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${stale.size} 件`);
+  let done = 0;
+  for (let from = 0;from < threads.length; from += CHUNK) {
+    const slice = threads.slice(from, from + CHUNK);
+    const need = slice.filter((t) => stale.has(t.key));
     const vectors = need.length ? await embed(env, need.map(threadText), "document") : [];
     const byKey = new Map(need.map((t, i) => [t.key, vectors[i]]));
-    for (const t of threads) {
-      const v = byKey.get(t.key);
-      const text = t.turns.map((x) => `@${x.author}: ${x.body}`).join(`
+    await client.query("begin");
+    try {
+      await writeSlice(client, recordId, repo, scopeId, slice, byKey);
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      throw e;
+    }
+    done += slice.length;
+    onProgress?.(`  ${done} / ${threads.length} 件を確定`);
+  }
+  return { total: threads.length, embedded: stale.size };
+}
+async function writeSlice(client, recordId, repo, scopeId, threads, byKey) {
+  for (const t of threads) {
+    const v = byKey.get(t.key);
+    const text = t.turns.map((x) => `@${x.author}: ${x.body}`).join(`
 `);
-      const r = await client.query(`insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
+    const r = await client.query(`insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
                            actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
          values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
          on conflict (record_id, kind, key) do update set
@@ -23899,49 +23916,43 @@ async function ingestThreads(client, env, repo, scopeId, threads, onProgress) {
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
            embedding=coalesce(excluded.embedding, node.embedding)
          returning id`, [
-        recordId,
-        scopeId,
-        t.key.startsWith("pr-review:") ? "review" : "issue",
-        t.key,
-        t.at,
-        text,
-        JSON.stringify({
-          pr: t.pr,
-          prTitle: t.prTitle,
-          path: t.path,
-          line: t.line,
-          url: t.url,
-          authors: [...new Set(t.turns.map((x) => x.author))]
-        }),
-        t.turns[0]?.author ?? "unknown",
-        threadHash(t),
-        v ? threadText(t) : null,
-        v ? EMBED_MODEL : null,
-        v ? new Date().toISOString() : null,
-        vec(v)
-      ]);
-      const nodeId = r.rows[0]?.id;
-      if (nodeId === undefined)
-        continue;
-      for (const [kind, key, url2] of [
-        ["pr", `${repo}#${t.pr}`, t.url],
-        ...t.path ? [["file", t.path, null]] : []
-      ]) {
-        const ref = await client.query(`insert into ref (kind, repo, key, url) values ($1,$2,$3,$4)
+      recordId,
+      scopeId,
+      t.key.startsWith("pr-review:") ? "review" : "issue",
+      t.key,
+      t.at,
+      text,
+      JSON.stringify({
+        pr: t.pr,
+        prTitle: t.prTitle,
+        path: t.path,
+        line: t.line,
+        url: t.url,
+        authors: [...new Set(t.turns.map((x) => x.author))]
+      }),
+      t.turns[0]?.author ?? "unknown",
+      threadHash(t),
+      v ? threadText(t) : null,
+      v ? EMBED_MODEL : null,
+      v ? new Date().toISOString() : null,
+      vec(v)
+    ]);
+    const nodeId = r.rows[0]?.id;
+    if (nodeId === undefined)
+      continue;
+    for (const [kind, key, url2] of [
+      ["pr", `${repo}#${t.pr}`, t.url],
+      ...t.path ? [["file", t.path, null]] : []
+    ]) {
+      const ref = await client.query(`insert into ref (kind, repo, key, url) values ($1,$2,$3,$4)
            on conflict (kind, coalesce(repo,''), key) do update set url=coalesce(excluded.url, ref.url)
            returning id`, [kind, repo, key, url2]);
-        const refId = ref.rows[0]?.id;
-        if (refId !== undefined) {
-          await client.query(`insert into ref_link (ref_id, record_id, node_id, role) values ($1,$2,$3,'evidence')
+      const refId = ref.rows[0]?.id;
+      if (refId !== undefined) {
+        await client.query(`insert into ref_link (ref_id, record_id, node_id, role) values ($1,$2,$3,'evidence')
              on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`, [refId, recordId, nodeId]);
-        }
       }
     }
-    await client.query("commit");
-    return { total: threads.length, embedded: need.length };
-  } catch (e) {
-    await client.query("rollback").catch(() => {});
-    throw e;
   }
 }
 
@@ -24416,12 +24427,310 @@ async function ingest(client, env, ir, scopeId, { onProgress } = {}) {
   }
 }
 
-// server/src/scope.ts
+// server/src/linear.ts
 import { execFileSync as execFileSync2 } from "node:child_process";
+import crypto4 from "node:crypto";
 import fs2 from "node:fs";
 import os2 from "node:os";
 import path2 from "node:path";
-var HOME = os2.homedir();
+function mcpConfigPath() {
+  const p = path2.join(os2.tmpdir(), "mitos-linear-mcp.json");
+  fs2.writeFileSync(p, JSON.stringify({ mcpServers: { "linear-server": { type: "http", url: "https://mcp.linear.app/mcp" } } }));
+  return p;
+}
+function runClaude(prompt, tools) {
+  const out = execFileSync2("claude", [
+    "-p",
+    prompt,
+    "--mcp-config",
+    mcpConfigPath(),
+    "--allowedTools",
+    tools.join(","),
+    "--output-format",
+    "stream-json",
+    "--verbose"
+  ], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  const names = new Map;
+  const results = [];
+  for (const line of out.split(`
+`)) {
+    if (!line.startsWith("{"))
+      continue;
+    let m;
+    try {
+      m = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const content = m.message?.content;
+    if (!Array.isArray(content))
+      continue;
+    for (const b of content) {
+      if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
+        names.set(b.id, b.name);
+      }
+      if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
+        const name = names.get(b.tool_use_id) ?? "";
+        if (!name.startsWith("mcp__linear-server__"))
+          continue;
+        results.push({ name, text: resultText(b.content) });
+      }
+    }
+  }
+  return results;
+}
+function resultText(content) {
+  const raw = Array.isArray(content) ? content.map((x) => typeof x.text === "string" ? x.text : "").join("") : typeof content === "string" ? content : "";
+  const saved = raw.match(/Output has been saved to (\S+?\.txt)/);
+  const file2 = saved?.[1];
+  if (file2 && fs2.existsSync(file2))
+    return fs2.readFileSync(file2, "utf8");
+  return raw;
+}
+function callOnce(tool, args) {
+  const short = tool.replace("mcp__linear-server__", "");
+  const got = runClaude(`mcp__linear-server__${short} を次の引数でちょうど 1 回だけ呼べ。引数は一字も変えるな。結果は出力しなくていい。
+${JSON.stringify(args)}`, [`mcp__linear-server__${short}`]);
+  const hit = got.find((r) => r.name === `mcp__linear-server__${short}`);
+  if (!hit)
+    throw new Error(`${short} が呼ばれなかった（Linear MCP に届いていない可能性）`);
+  try {
+    return JSON.parse(hit.text);
+  } catch {
+    throw new Error(`${short} の応答を JSON として読めなかった: ${hit.text.slice(0, 200)}`);
+  }
+}
+function* pages(tool, args) {
+  let cursor;
+  for (let guard = 0;guard < 500; guard++) {
+    const page = callOnce(tool, cursor ? { ...args, cursor } : args);
+    yield page;
+    if (page.hasNextPage !== true || typeof page.cursor !== "string")
+      return;
+    cursor = page.cursor;
+  }
+  throw new Error(`${tool} のページ送りが 500 回で終わらなかった`);
+}
+var str = (o, k) => typeof o[k] === "string" ? o[k] : "";
+var strOrNull = (o, k) => typeof o[k] === "string" && o[k] ? o[k] : null;
+function whoAmI() {
+  const me = callOnce("get_user", { query: "me" });
+  const name = str(me, "name");
+  if (!name)
+    throw new Error("Linear の自分の名前が取れなかった");
+  return name;
+}
+function listIssues(team) {
+  const out = [];
+  for (const page of pages("list_issues", {
+    team,
+    limit: 250,
+    orderBy: "updatedAt",
+    includeArchived: true,
+    fields: [
+      "id",
+      "title",
+      "url",
+      "status",
+      "statusType",
+      "createdAt",
+      "updatedAt",
+      "project",
+      "assignee",
+      "createdBy"
+    ]
+  })) {
+    for (const r of Array.isArray(page.issues) ? page.issues : []) {
+      out.push({
+        id: str(r, "id"),
+        url: str(r, "url"),
+        updatedAt: str(r, "updatedAt"),
+        assignee: strOrNull(r, "assignee"),
+        createdBy: strOrNull(r, "createdBy")
+      });
+    }
+  }
+  return out;
+}
+function fetchIssue(id) {
+  const d = callOnce("get_issue", { id });
+  const comments = [];
+  for (const page of pages("list_comments", { issueId: id, limit: 250, orderBy: "createdAt" })) {
+    for (const c of Array.isArray(page.comments) ? page.comments : []) {
+      const author = c.author;
+      comments.push({
+        id: str(c, "id"),
+        parentId: strOrNull(c, "parentId"),
+        author: author ? str(author, "name") : "unknown",
+        body: str(c, "body").trim(),
+        at: str(c, "createdAt")
+      });
+    }
+  }
+  comments.sort((a, b) => a.at.localeCompare(b.at));
+  const labels = Array.isArray(d.labels) ? d.labels : [];
+  return {
+    id: str(d, "id") || id,
+    title: str(d, "title"),
+    description: str(d, "description"),
+    url: str(d, "url"),
+    status: str(d, "status"),
+    statusType: str(d, "statusType"),
+    project: strOrNull(d, "project"),
+    labels: labels.map((x) => typeof x === "string" ? x : String(x?.name ?? "")).filter(Boolean),
+    createdBy: str(d, "createdBy") || "unknown",
+    assignee: strOrNull(d, "assignee"),
+    createdAt: str(d, "createdAt"),
+    updatedAt: str(d, "updatedAt"),
+    comments
+  };
+}
+var FILLER2 = /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:)[!！。.\s]*$/i;
+var isFiller2 = (body) => body.length === 0 || FILLER2.test(body);
+function threads(issue2) {
+  const byRoot = new Map;
+  for (const c of issue2.comments) {
+    if (isFiller2(c.body))
+      continue;
+    const root = c.parentId ?? c.id;
+    byRoot.set(root, [...byRoot.get(root) ?? [], c]);
+  }
+  return [...byRoot.entries()].map(([root, turns]) => ({ key: `c:${root}`, turns: turns.sort((a, b) => a.at.localeCompare(b.at)) })).sort((a, b) => (a.turns[0]?.at ?? "").localeCompare(b.turns[0]?.at ?? ""));
+}
+function embedTextFor(issue2, part) {
+  const head = [
+    issue2.id,
+    issue2.title,
+    issue2.project ? `プロジェクト: ${issue2.project}` : null,
+    `状態: ${issue2.status}`
+  ].filter(Boolean).join(" / ");
+  if (!part)
+    return `${head}
+起票 @${issue2.createdBy}: ${issue2.description}`;
+  const body = part.turns.map((c, i) => `${i === 0 ? "コメント" : "返信"} @${c.author}: ${c.body}`).join(`
+`);
+  return `${head}
+${body}`;
+}
+var hash2 = (s) => crypto4.createHash("sha256").update(s).digest("hex");
+var STATUS = {
+  triage: "planning",
+  backlog: "planning",
+  unstarted: "planning",
+  started: "in-progress",
+  completed: "done",
+  canceled: "abandoned",
+  duplicate: "abandoned"
+};
+async function ingestIssue(client, env, workspace, scopeId, issue2) {
+  const recordId = `linear:${issue2.id}`;
+  const parts = [
+    { key: "body", turns: null },
+    ...threads(issue2).map((t) => ({ key: t.key, turns: t.turns }))
+  ];
+  await client.query("begin");
+  try {
+    const recText = `${issue2.id} ${issue2.title}
+${issue2.description}`;
+    const existingRec = await client.query("select raw_hash, embedding is not null as has_emb from record where id = $1", [recordId]);
+    const recNeeds = existingRec.rows[0]?.raw_hash !== hash2(recText) || !existingRec.rows[0]?.has_emb;
+    const recVec = recNeeds ? (await embed(env, [recText], "document"))[0] : undefined;
+    await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal,
+                           created_at, updated_at, raw, raw_hash, embedding)
+       values ($1,$2,'linear/1',$3,$4,$5,'',$6,$7,$8,$9,$10)
+       on conflict (id) do update set
+         title=excluded.title, status=excluded.status, problem=excluded.problem,
+         updated_at=excluded.updated_at, raw=excluded.raw, raw_hash=excluded.raw_hash,
+         ingested_at=now(), embedding=coalesce(excluded.embedding, record.embedding)`, [
+      recordId,
+      scopeId,
+      issue2.title,
+      STATUS[issue2.statusType] ?? "in-progress",
+      issue2.description,
+      issue2.createdAt || new Date().toISOString(),
+      issue2.updatedAt || new Date().toISOString(),
+      JSON.stringify(issue2),
+      hash2(recText),
+      vec(recVec)
+    ]);
+    const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
+    const texts = new Map(parts.map((p) => [p.key, embedTextFor(issue2, p.turns ? { key: p.key, turns: p.turns } : null)]));
+    const need = parts.filter((p) => {
+      const e = existing.get(p.key);
+      return !e || e.content_hash !== hash2(texts.get(p.key) ?? "") || !e.has_emb;
+    });
+    const vectors = need.length ? await embed(env, need.map((p) => texts.get(p.key) ?? ""), "document") : [];
+    const byKey = new Map(need.map((p, i) => [p.key, vectors[i]]));
+    for (const [ordinal, p] of parts.entries()) {
+      const v = byKey.get(p.key);
+      const et = texts.get(p.key) ?? "";
+      const text = p.turns ? p.turns.map((c) => `@${c.author}: ${c.body}`).join(`
+`) : `@${issue2.createdBy}: ${issue2.description}`;
+      const at = p.turns ? p.turns[0]?.at ?? issue2.createdAt : issue2.createdAt;
+      const actor = p.turns ? p.turns[0]?.author ?? "unknown" : issue2.createdBy;
+      const nodeRow = await client.query(`insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
+                           actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
+         values ($1,$2,'utterance','issue',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
+         on conflict (record_id, kind, key) do update set
+           ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
+           actor_name=excluded.actor_name, content_hash=excluded.content_hash, deleted_at=null,
+           embed_text=coalesce(excluded.embed_text, node.embed_text),
+           embed_model=coalesce(excluded.embed_model, node.embed_model),
+           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
+           embedding=coalesce(excluded.embedding, node.embedding)
+         returning id`, [
+        recordId,
+        scopeId,
+        p.key,
+        ordinal,
+        at || null,
+        text,
+        JSON.stringify({
+          issue: issue2.id,
+          issueTitle: issue2.title,
+          project: issue2.project,
+          status: issue2.status,
+          labels: issue2.labels,
+          url: issue2.url,
+          authors: p.turns ? [...new Set(p.turns.map((c) => c.author))] : [issue2.createdBy]
+        }),
+        actor,
+        hash2(et),
+        v ? et : null,
+        v ? EMBED_MODEL : null,
+        v ? new Date().toISOString() : null,
+        vec(v)
+      ]);
+      const nodeId = nodeRow.rows[0]?.id;
+      if (nodeId === undefined)
+        continue;
+      const ref = await client.query(`insert into ref (kind, repo, key, url) values ('issue',$1,$2,$3)
+         on conflict (kind, coalesce(repo,''), key) do update set url=coalesce(excluded.url, ref.url)
+         returning id`, [workspace, issue2.id, issue2.url]);
+      const refId = ref.rows[0]?.id;
+      if (refId !== undefined) {
+        await client.query(`insert into ref_link (ref_id, record_id, node_id, role) values ($1,$2,$3,'evidence')
+           on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`, [refId, recordId, nodeId]);
+      }
+    }
+    if (parts.length > 0) {
+      await client.query(`update node set deleted_at = now()
+         where record_id = $1 and deleted_at is null and key <> all($2::text[])`, [recordId, parts.map((p) => p.key)]);
+    }
+    await client.query("commit");
+    return { nodes: parts.length, embedded: need.length };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    throw e;
+  }
+}
+
+// server/src/scope.ts
+import { execFileSync as execFileSync3 } from "node:child_process";
+import fs3 from "node:fs";
+import os3 from "node:os";
+import path3 from "node:path";
+var HOME = os3.homedir();
 function normalizeRemote(url2) {
   if (!url2)
     return null;
@@ -24435,17 +24744,17 @@ function normalizeRemote(url2) {
     const u = new URL(raw);
     if (!u.hostname)
       return null;
-    const path3 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
-    return path3 ? `${u.hostname}/${path3}` : u.hostname;
+    const path4 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
+    return path4 ? `${u.hostname}/${path4}` : u.hostname;
   } catch {
     return null;
   }
 }
 function identify(dir) {
-  const abs = path2.resolve(dir);
+  const abs = path3.resolve(dir);
   let remote = null;
   try {
-    remote = normalizeRemote(execFileSync2("git", ["-C", abs, "remote", "get-url", "origin"], {
+    remote = normalizeRemote(execFileSync3("git", ["-C", abs, "remote", "get-url", "origin"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"]
     }).trim());
@@ -24456,8 +24765,8 @@ function identify(dir) {
     identKind: remote ? "git-remote" : "abs-path",
     absPath: abs,
     hostOrg: rest.length > 1 ? rest[0] ?? null : null,
-    repoName: rest.length ? rest[rest.length - 1] ?? "" : path2.basename(abs),
-    label: remote ? rest.join("/") : path2.basename(abs)
+    repoName: rest.length ? rest[rest.length - 1] ?? "" : path3.basename(abs),
+    label: remote ? rest.join("/") : path3.basename(abs)
   };
 }
 var MARKERS = [
@@ -24476,26 +24785,26 @@ var MARKERS = [
   "requirements.txt",
   "README.md"
 ];
-function candidates(roots = [path2.join(HOME, "Projects")]) {
+function candidates(roots = [path3.join(HOME, "Projects")]) {
   const found = new Set;
   const add = (d) => {
-    if (!found.has(d) && fs2.existsSync(d) && fs2.statSync(d).isDirectory())
+    if (!found.has(d) && fs3.existsSync(d) && fs3.statSync(d).isDirectory())
       found.add(d);
   };
   for (const root of roots) {
     let es = [];
     try {
-      es = fs2.readdirSync(root, { withFileTypes: true });
+      es = fs3.readdirSync(root, { withFileTypes: true });
     } catch {
       continue;
     }
     for (const e of es)
       if (e.isDirectory() && !e.name.startsWith("."))
-        add(path2.join(root, e.name));
+        add(path3.join(root, e.name));
   }
   return [...found].sort().map((d) => ({
     ...identify(d),
-    markers: MARKERS.filter((m) => fs2.existsSync(path2.join(d, m)))
+    markers: MARKERS.filter((m) => fs3.existsSync(path3.join(d, m)))
   }));
 }
 
@@ -24511,18 +24820,25 @@ var USAGE = `使い方:
   mitos doctor                                   資格情報と接続を確かめる
   mitos usage                                    OpenAI の使用量と残り
   mitos import-github [--cwd <dir>]              PR のレビューと議論を取り込む
+  mitos import-linear --team <名前> [--group <束>] [--all]
+                                                 Linear の issue とコメントを取り込む
+  mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
+  mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
   cwd: { type: "string" },
   limit: { type: "string" },
   all: { type: "boolean" },
+  me: { type: "boolean" },
   dont: { type: "boolean" },
-  json: { type: "boolean" }
+  json: { type: "boolean" },
+  team: { type: "string" },
+  group: { type: "string" }
 };
 var IR_TAG = /<script type="application\/json" id="progress-ir">([\s\S]*?)<\/script>/;
 function readIr(file2) {
-  const body = fs3.readFileSync(file2, "utf8");
+  const body = fs4.readFileSync(file2, "utf8");
   if (!file2.endsWith(".html"))
     return JSON.parse(body);
   const m = body.match(IR_TAG);
@@ -24568,6 +24884,20 @@ async function scopeIdFor(c, dir, create) {
     throw new Error(`作業場所を作れなかった: ${me.ident}`);
   return created.id;
 }
+async function trackerScopeId(c, ident, label, hostOrg, group) {
+  const found = await c.query("select id::int as id from scope where ident = $1", [ident]);
+  const id = found.rows[0]?.id ?? (await c.query(`insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label, role)
+         values ($1,'tracker',null,$2,null,$3,'issue-tracker') returning id::int as id`, [ident, hostOrg, label])).rows[0]?.id;
+  if (id === undefined)
+    throw new Error(`作業場所を作れなかった: ${ident}`);
+  if (group) {
+    await c.query("insert into scope_group (name) values ($1) on conflict (name) do nothing", [group]);
+    await c.query(`insert into group_member (group_id, scope_id)
+       select g.id, $2 from scope_group g where g.name = $1
+       on conflict do nothing`, [group, id]);
+  }
+  return id;
+}
 async function main() {
   const argv = process.argv.slice(2);
   const cmd = argv[0];
@@ -24595,7 +24925,9 @@ async function main() {
     "describe",
     "doctor",
     "usage",
-    "import-github"
+    "import-github",
+    "import-linear",
+    "who"
   ];
   if (!KNOWN.includes(cmd))
     throw new Error(`知らないコマンド: ${cmd}
@@ -24616,6 +24948,11 @@ ${USAGE}`);
       console.log(`${label.padEnd(22)} ${who.rows[0]?.u} / ベクトル検索 OK（${v.rows[0]?.n} 件返った）`);
       await c3.end();
     }
+    try {
+      console.log(`Linear(MCP 経由)       ${whoAmI()} として届いた`);
+    } catch (e) {
+      console.log(`Linear(MCP 経由)       届かない: ${e instanceof Error ? e.message : e}`);
+    }
     const c2 = await connect(env);
     const me = identify(cwd);
     const mine = await scopeIdFor(c2, cwd, false);
@@ -24626,12 +24963,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "usage") {
-    const log = path3.join(os3.homedir(), ".claude", "mitos-usage.jsonl");
-    if (!fs3.existsSync(log)) {
+    const log = path4.join(os4.homedir(), ".claude", "mitos-usage.jsonl");
+    if (!fs4.existsSync(log)) {
       console.log("まだ記録がありません。");
       return;
     }
-    const rows = fs3.readFileSync(log, "utf8").split(`
+    const rows = fs4.readFileSync(log, "utf8").split(`
 `).filter(Boolean).map((l) => JSON.parse(l));
     const limit2 = Number(env.MITOS_USAGE_LIMIT ?? 5);
     const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
@@ -24689,9 +25026,80 @@ ${USAGE}`);
       if (scopeId === null)
         throw new Error("作業場所を決められなかった");
       console.error(`  ${repo} から集めています…`);
-      const threads = collectThreads(repo);
-      const r = await ingestThreads(c, env, repo, scopeId, threads, (m) => console.error(`  ${m}`));
+      const threads2 = collectThreads(repo);
+      const r = await ingestThreads(c, env, repo, scopeId, threads2, (m) => console.error(`  ${m}`));
       console.log(`取り込み完了: ${repo} / スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`);
+      return;
+    }
+    if (cmd === "import-linear") {
+      const fromGroup = opt.group ? (await c.query(`select s.ident from scope s
+               join group_member m on m.scope_id = s.id
+               join scope_group g on g.id = m.group_id
+               where g.name = $1 and s.ident like 'linear:%' limit 1`, [opt.group])).rows[0]?.ident?.replace(/^linear:/, "") : undefined;
+      const team = opt.team ?? fromGroup;
+      if (!team) {
+        throw new Error(`--team <チーム名> を指定する（例: --team Onetag）。` + `画面で束に issue の出どころを設定してあれば --group <束名> でも引ける
+
+${USAGE}`);
+      }
+      const who = whoAmI();
+      console.error(`  Linear の ${team} を ${who} として数えています…`);
+      const all = listIssues(team);
+      if (all.length === 0)
+        throw new Error(`${team} に issue が 1 件も無い。チーム名を確かめる`);
+      const mine = all.filter((i) => i.assignee === who || i.createdBy === who);
+      const target = opt.all ? all : mine;
+      console.error(`  チーム全体 ${all.length} 件 / 自分が関わる ${mine.length} 件 → 対象 ${target.length} 件`);
+      const workspace = new URL(String(all[0]?.url ?? "https://linear.app/unknown/")).pathname.split("/")[1] ?? "unknown";
+      const scopeId = await trackerScopeId(c, `linear:${workspace}/${team}`, `Linear: ${team}`, workspace, opt.group);
+      const known = new Map((await c.query("select id, raw->>'updatedAt' as u from record where id like 'linear:%'")).rows.map((r) => [r.id, r.u]));
+      const changed = target.filter((i) => known.get(`linear:${String(i.id)}`) !== String(i.updatedAt));
+      console.error(`  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`);
+      let nodes = 0;
+      let embedded = 0;
+      for (const [n, row] of changed.entries()) {
+        const id = String(row.id);
+        const issue2 = fetchIssue(id);
+        const r = await ingestIssue(c, env, workspace, scopeId, issue2);
+        nodes += r.nodes;
+        embedded += r.embedded;
+        console.error(`  [${n + 1}/${changed.length}] ${id} コメント ${issue2.comments.length} 件 → node ${r.nodes} 件`);
+      }
+      console.log(`取り込み完了: Linear ${team} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`);
+      return;
+    }
+    if (cmd === "who") {
+      if (rest.length === 0) {
+        const people = await c.query("select display, handles, is_me from person order by is_me desc, display");
+        if (people.rows.length === 0)
+          console.log("名簿は空。`mitos who <呼び名> <ハンドル>...` で入れる");
+        for (const r of people.rows) {
+          console.log(`${r.is_me ? "→ " : "  "}${r.display.padEnd(12)} ${r.handles.join(" / ")}`);
+        }
+        const unknown2 = await c.query(`select actor_name as handle, count(*)::int as n from node
+           where actor_name is not null and deleted_at is null
+             and not exists (select 1 from person p where node.actor_name = any(p.handles))
+           group by actor_name order by n desc limit 20`);
+        if (unknown2.rows.length) {
+          console.log(`
+まだ誰か決めていない名前（発言の多い順）:`);
+          for (const r of unknown2.rows)
+            console.log(`  ${String(r.n).padStart(5)} 件  ${r.handle}`);
+        }
+        return;
+      }
+      const [display, ...handles] = rest;
+      if (!display)
+        throw new Error(`呼び名を指定する
+
+${USAGE}`);
+      if (handles.length === 0)
+        throw new Error("ハンドルを 1 つ以上指定する（記録に出てくる名前）");
+      if (opt.me)
+        await c.query("update person set is_me = false where is_me");
+      await c.query(`insert into person (display, handles, is_me) values ($1,$2,$3)
+         on conflict (display) do update set handles = excluded.handles, is_me = excluded.is_me, updated_at = now()`, [display, handles, opt.me === true]);
+      console.log(`名簿に入れた: ${display} = ${handles.join(" / ")}${opt.me ? "（質問者本人）" : ""}`);
       return;
     }
     if (cmd === "search") {
