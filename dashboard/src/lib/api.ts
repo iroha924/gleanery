@@ -35,7 +35,12 @@ export type ChatSource = {
  * 生成を待たずに「何を見て答えるのか」を出せるようにするため。
  */
 export async function askStream(
-  body: { question: string; history: { role: "user" | "assistant"; content: string }[]; allScopes?: boolean },
+  body: {
+    question: string;
+    history: { role: "user" | "assistant"; content: string }[];
+    /** どのプロジェクトについて聞くか。空だとサーバーが弾く。 */
+    scopeIds: number[];
+  },
   on: { sources: (s: ChatSource[]) => void; text: (t: string) => void; error: (m: string) => void },
   signal?: AbortSignal,
 ): Promise<void> {

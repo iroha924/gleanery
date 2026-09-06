@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BotIcon, CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -6,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { Label } from "@/components/ui/label";
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
@@ -16,10 +16,10 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { askStream, type ChatSource } from "@/lib/api";
+import { api, askStream, type ChatSource } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
 
 export const Route = createFileRoute("/chat")({ component: Chat });
@@ -34,9 +34,10 @@ type Turn = {
 };
 
 const EXAMPLES = [
-  "記録をどこに置くと決めたか",
-  "認証まわりで触らないと決めたのはどこか",
-  "自動発火させると決めたか、させないと決めたか",
+  "このプロジェクトは何を解こうとしている？",
+  "いまどこまで進んでいて、次は何をする？",
+  "触ってはいけないところはどこ？",
+  "何を試して駄目だった？",
 ];
 
 /** 根拠。**畳んでおく。**答えを読む前に 12 件並ぶと本文が押し出される。 */
@@ -72,11 +73,21 @@ function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [allScopes, setAllScopes] = useState(false);
+  // **どのプロジェクトについて聞くかを先に選ぶ。**選ばないと送れない。
+  // 範囲なしで全部を混ぜると、別の仕事の記録がこのプロジェクトの答えとして返る。
+  const [target, setTarget] = useState<string>("");
+  const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
+  const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
+
+  const scopeIds = target.startsWith("g:")
+    ? (groups.data?.find((g) => `g:${g.id}` === target)?.members.map((m) => m.id) ?? [])
+    : target
+      ? [Number(target)]
+      : [];
   const abort = useRef<AbortController | null>(null);
 
   const ask = async (question: string) => {
-    if (!question.trim() || busy) return;
+    if (!question.trim() || busy || scopeIds.length === 0) return;
     setDraft("");
     setBusy(true);
     const history = turns.map((t) => ({ role: t.role, content: t.content }));
@@ -93,7 +104,7 @@ function Chat() {
 
     try {
       await askStream(
-        { question, history, allScopes },
+        { question, history, scopeIds },
         {
           sources: (s) => patch((t) => ({ ...t, sources: s })),
           text: (x) => patch((t) => ({ ...t, content: t.content + x })),
@@ -124,9 +135,10 @@ function Chat() {
                     <EmptyMedia variant="icon">
                       <MessageSquareIcon />
                     </EmptyMedia>
-                    <EmptyTitle>記録に基づいて答えます</EmptyTitle>
+                    <EmptyTitle>このプロジェクトについて聞く</EmptyTitle>
                     <EmptyDescription>
-                      答えには必ず根拠の記録が付きます。記録に無いことは「無い」と答えます。
+                      保存されているものだけで答えます。記録に無いことは「無い」と答え、
+                      答えには根拠が付きます。
                     </EmptyDescription>
                   </EmptyHeader>
                   <div className="flex flex-wrap justify-center gap-2">
@@ -203,16 +215,32 @@ function Chat() {
               ask(draft);
             }
           }}
-          placeholder="過去に決めたことを聞く（Shift + Enter で改行）"
+          placeholder={
+            scopeIds.length === 0
+              ? "先にプロジェクトを選んでください"
+              : "このプロジェクトについて聞く（Shift + Enter で改行）"
+          }
+          disabled={scopeIds.length === 0}
           className="min-h-20 resize-none"
         />
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Switch id="all" checked={allScopes} onCheckedChange={setAllScopes} />
-            <Label htmlFor="all" className="font-normal text-muted-foreground text-xs">
-              すべてのプロジェクトから探す
-            </Label>
-          </div>
+          <Select value={target} onValueChange={setTarget}>
+            <SelectTrigger className="w-[19rem]">
+              <SelectValue placeholder="どのプロジェクトについて聞くか選ぶ" />
+            </SelectTrigger>
+            <SelectContent>
+              {groups.data?.map((g) => (
+                <SelectItem key={`g:${g.id}`} value={`g:${g.id}`}>
+                  {g.name}（{g.members.length} プロジェクト）
+                </SelectItem>
+              ))}
+              {scopes.data?.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {busy ? (
             <Button
               type="button"
@@ -223,7 +251,7 @@ function Chat() {
               止める
             </Button>
           ) : (
-            <Button type="submit" className="ml-auto" disabled={!draft.trim()}>
+            <Button type="submit" className="ml-auto" disabled={!draft.trim() || scopeIds.length === 0}>
               聞く <CornerDownLeftIcon />
             </Button>
           )}

@@ -305,21 +305,13 @@ app.delete("/api/groups/:id", async (c) => {
 app.post("/api/chat", async (c) => {
   const body = (await c.req.json()) as ChatBody;
   const client = await db();
-
-  // 検索する範囲は、画面ではなくサーバーで決める。
-  let scopeIds: number[] | undefined;
-  if (!body.allScopes && body.cwd) {
-    const me = identify(body.cwd);
-    const r = await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [
-      me.ident,
-    ]);
-    const row = r.rows[0];
-    scopeIds = row ? await scopeFamily(client, row.id) : [];
-  }
+  // 選ばれたプロジェクトがまとめに属していれば、その相手も範囲に入れる。
+  const ids = Array.isArray(body.scopeIds) ? body.scopeIds : [];
+  const family = [...new Set((await Promise.all(ids.map((id) => scopeFamily(client, id)))).flat())];
 
   return streamSSE(c, async (stream) => {
     try {
-      for await (const chunk of chat(client, env, { ...body, scopeIds })) {
+      for await (const chunk of chat(client, env, { ...body, scopeIds: family })) {
         await stream.writeSSE({ event: chunk.type, data: JSON.stringify(chunk) });
       }
     } catch (e) {
