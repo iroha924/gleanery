@@ -139,6 +139,10 @@ const SYSTEM = (people: Person[]): string =>
     "本文に書かれた経緯（どの機能の影響で起きたか、誰がどう気付いたか、いつのリリース後か）を",
     "拾って伝える。**そこがいちばん価値がある。**",
     "",
+    "**道具は total（条件に合う総数）と rows（返せた分）を返す。**件数を聞かれたら total で答える。",
+    "rows が total より少ないときは「全 N 件のうち M 件」と断るか、offset で続きを取る。",
+    "**返ってきた分だけを見て「これで全部」と書かない。**",
+    "",
     "**道具が返したものにも n という番号が付いている。**それを根拠にしたなら [n] で引く。",
     "引用しなかったものは画面に出ないので、使ったものは必ず番号で指すこと。",
     "",
@@ -375,6 +379,7 @@ const TOOLS: OpenAI.Responses.Tool[] = [
         },
         since: { type: "string", description: "この日付以降。YYYY-MM-DD" },
         limit: { type: "number", description: "何件返すか。既定 10、最大 50" },
+        offset: { type: "number", description: "何件目から返すか。total が limit を超えたときの続き" },
       },
       additionalProperties: false,
     },
@@ -478,6 +483,7 @@ async function runTool(
     state?: string;
     since?: string;
     limit?: number;
+    offset?: number;
     number?: number;
     query?: string;
     person?: string;
@@ -542,9 +548,15 @@ async function runTool(
        order by r.updated_at desc limit ${lim}`,
       ps,
     );
-    if (q.rows.length === 0) return JSON.stringify({ found: 0, note: "条件に合う issue は無かった" });
-    return JSON.stringify(
-      q.rows.map((x) => ({
+    const itotal = (
+      await client.query<{ n: number }>(`select count(*)::int n from record r where ${w.join(" and ")}`, ps)
+    ).rows[0]?.n;
+    if (q.rows.length === 0)
+      return JSON.stringify({ total: 0, rows: [], note: "条件に合う issue は無かった" });
+    return JSON.stringify({
+      total: itotal,
+      shown: q.rows.length,
+      rows: q.rows.map((x) => ({
         ...x,
         n: cite(
           "【issue】",
@@ -555,7 +567,7 @@ async function runTool(
           typeof x.url === "string" ? x.url : null,
         ),
       })),
-    );
+    });
   }
 
   if (call.name === "find_utterances") {
@@ -573,6 +585,12 @@ async function runTool(
     if (a.contains) push(`%${a.contains}%`, (i) => `n.text ilike $${i}`);
     if (a.since) push(a.since, (i) => `n.at >= $${i}::timestamptz`);
     const lim = Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
+    const utotal = (
+      await client.query<{ n: number }>(
+        `select count(*)::int n from node n join scope s on s.id = n.scope_id where ${w.join(" and ")}`,
+        ps,
+      )
+    ).rows[0]?.n;
     const u = await client.query<{
       author: string;
       at: string;
@@ -589,14 +607,20 @@ async function runTool(
       ps,
     );
     if (u.rows.length === 0) {
-      return JSON.stringify({ found: 0, note: `${a.person} の発言は、この範囲と条件では見つからない` });
+      return JSON.stringify({
+        total: 0,
+        rows: [],
+        note: `${a.person} の発言は、この範囲と条件では見つからない`,
+      });
     }
-    return JSON.stringify(
-      u.rows.map((x) => ({
+    return JSON.stringify({
+      total: utotal,
+      shown: u.rows.length,
+      rows: u.rows.map((x) => ({
         ...x,
         n: cite("【発言】", `@${x.author}: ${x.text}`, x.repo, x.at, `github:${x.repo}`, x.url),
       })),
-    );
+    });
   }
 
   if (call.name === "grep_code") {
@@ -633,6 +657,15 @@ async function runTool(
   if (a.state) add(a.state, (i) => `n.status = $${i}`);
   if (a.since) add(a.since, (i) => `n.at >= $${i}::timestamptz`);
   const limit = Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
+  const offset = Math.max(Math.trunc(Number(a.offset ?? 0)) || 0, 0);
+  // **総数も返す。**返せるのは 50 件までなので、これが無いと「全部でこれだけ」と
+  // 誤って答える（実測: 53 件あるのに 39 件だけ挙げて、それが全部のように書いた）。
+  const total = (
+    await client.query<{ n: number }>(
+      `select count(*)::int n from node n join scope s on s.id = n.scope_id where ${where.join(" and ")}`,
+      params,
+    )
+  ).rows[0]?.n;
 
   const r = await client.query(
     `select (n.attrs->>'pr')::int as pr, n.attrs->>'prTitle' as title, n.status as state,
@@ -642,14 +675,18 @@ async function runTool(
             left(n.text, 4000) as body
      from node n join scope s on s.id = n.scope_id
      where ${where.join(" and ")}
-     order by n.at desc nulls last limit ${limit}`,
+     order by n.at desc nulls last limit ${limit} offset ${offset}`,
     params,
   );
-  if (r.rows.length === 0) return JSON.stringify({ found: 0, note: "条件に合う PR は無かった" });
+  if (r.rows.length === 0)
+    return JSON.stringify({ total: total ?? 0, rows: [], note: "条件に合う PR は無かった" });
   // 一覧のときは本文を落とす。**4000 字 × 50 件を返すと文脈が本文で埋まる。**
   const rows = r.rows.length > 3 ? r.rows.map(({ body: _drop, ...rest }) => rest) : r.rows;
-  return JSON.stringify(
-    rows.map((x) => ({
+  return JSON.stringify({
+    total,
+    shown: rows.length,
+    offset,
+    rows: rows.map((x) => ({
       ...x,
       n: cite(
         "【PR】",
@@ -660,5 +697,5 @@ async function runTool(
         typeof x.url === "string" ? x.url : null,
       ),
     })),
-  );
+  });
 }
