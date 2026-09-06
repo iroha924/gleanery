@@ -5224,6 +5224,25 @@ async function scopeFamily(client, scopeId) {
   const ids = r.rows.map((x) => x.scope_id);
   return ids.length ? ids : [scopeId];
 }
+var STOP = new Set([
+  "ため",
+  "こと",
+  "もの",
+  "とき",
+  "など",
+  "これ",
+  "それ",
+  "どこ",
+  "どれ",
+  "なに",
+  "ある",
+  "する",
+  "どう",
+  "何を",
+  "何の",
+  "使う",
+  "教えて"
+]);
 async function whatAboutPath(client, filePath, scopeIds) {
   const r = await client.query(`select distinct n.key, n.kind, n.subkind, n.polarity, n.text,
             coalesce(n.attrs->>'whyNot', n.attrs->>'context','') as ex,

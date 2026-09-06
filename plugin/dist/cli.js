@@ -24076,41 +24076,72 @@ async function scopeFamily(client, scopeId) {
   const ids = r.rows.map((x) => x.scope_id);
   return ids.length ? ids : [scopeId];
 }
+var STOP = new Set([
+  "ため",
+  "こと",
+  "もの",
+  "とき",
+  "など",
+  "これ",
+  "それ",
+  "どこ",
+  "どれ",
+  "なに",
+  "ある",
+  "する",
+  "どう",
+  "何を",
+  "何の",
+  "使う",
+  "教えて"
+]);
+var lexicalTerms = (q) => (q.match(/[A-Za-z][A-Za-z0-9_.#-]{2,}|[ァ-ヴー]{2,}|[一-龠]{2,}|OT-\d+|#\d+/g) ?? []).filter((t) => !STOP.has(t)).slice(0, 8);
+function fuse(lists, k = 60) {
+  const acc = new Map;
+  for (const list of lists) {
+    list.forEach((row, i) => {
+      const id = `${row.record_id}|${row.kind}|${row.key}`;
+      const cur = acc.get(id) ?? { row, s: 0 };
+      cur.s += 1 / (k + i + 1);
+      acc.set(id, cur);
+    });
+  }
+  return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
+}
 async function search(client, env, o) {
   const { question, scopeIds, polarity, kinds, limit = 5, pool = 30, rerankModel = "rerank-3" } = o;
-  const where = ["n.deleted_at is null"];
-  const params = [];
   const qv = o.queryVector ?? (await embed(env, [question], "query"))[0];
   if (!qv)
     throw new Error("埋め込みが空で返った");
-  params.push(vec(qv));
-  if (Array.isArray(scopeIds)) {
-    params.push(scopeIds);
-    where.push(`n.scope_id = any($${params.length})`);
-  }
-  if (polarity) {
-    params.push(polarity);
-    where.push(`n.polarity = $${params.length}`);
-  }
-  if (kinds?.length) {
-    params.push(kinds);
-    where.push(`n.kind = any($${params.length})`);
-  }
-  params.push(pool);
-  const r = await client.query(`select n.id, n.key, n.kind, n.subkind, n.polarity, n.status, n.at, n.text,
+  const filters = [];
+  if (Array.isArray(scopeIds))
+    filters.push({ sql: (i) => `n.scope_id = any($${i})`, value: scopeIds });
+  if (polarity)
+    filters.push({ sql: (i) => `n.polarity = $${i}`, value: polarity });
+  if (kinds?.length)
+    filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
+  const clauses = (from) => ["n.deleted_at is null", ...filters.map((f, i) => f.sql(from + i))].join(" and ");
+  const values = filters.map((f) => f.value);
+  const COLS = `n.id, n.key, n.kind, n.subkind, n.polarity, n.status, n.at, n.text,
             n.scope_id::int as scope_id,
-            (n.embedding <#> $1::extensions.vector) * -1 as score,
             coalesce(n.attrs->>'whyNot', n.attrs->>'context', '') as ex,
-            n.attrs, n.actor_name, r.id as record_id, r.title as record_title, s.label as scope_label
-     from node n
-     join record r on r.id = n.record_id
-     join scope  s on s.id = n.scope_id
-     where ${where.join(" and ")}
+            n.attrs, n.actor_name, r.id as record_id, r.title as record_title, s.label as scope_label`;
+  const JOINS = `from node n join record r on r.id = n.record_id join scope s on s.id = n.scope_id`;
+  const dense = await client.query(`select ${COLS}, (n.embedding <#> $1::extensions.vector) * -1 as score
+     ${JOINS}
+     where ${clauses(2)}
      order by n.embedding <#> $1::extensions.vector
-     limit $${params.length}`, params);
+     limit $${values.length + 2}`, [vec(qv), ...values, pool]);
+  const words = lexicalTerms(question);
+  const lex = words.length ? await client.query(`select ${COLS}, pgroonga_score(n.tableoid, n.ctid) as score
+         ${JOINS}
+         where ${clauses(1)} and n.text &@~ $${values.length + 1}
+         order by score desc, n.id
+         limit $${values.length + 2}`, [...values, words.map((t) => JSON.stringify(t)).join(" OR "), pool]) : { rows: [] };
+  const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0)
     return { rows: [], queryVector: qv, topScore: null };
-  const topScore = r.rows[0]?.score ?? null;
+  const topScore = dense.rows[0]?.score ?? null;
   const bare = () => ({
     rows: r.rows.slice(0, limit).map((x) => ({ ...x, relevance: null })),
     queryVector: qv,
@@ -24958,7 +24989,7 @@ function candidates(roots = [path3.join(HOME, "Projects")]) {
 import crypto5 from "node:crypto";
 import fs4 from "node:fs";
 import path4 from "node:path";
-var BOILERPLATE = /^(Base directory for this skill|<|\/)/;
+var BOILERPLATE = /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below)/;
 var textOf = (m) => {
   const c = m?.content;
   if (typeof c === "string")
@@ -25002,7 +25033,7 @@ function readSession(file2) {
         key: `${id}:${exchanges.length}`,
         at: pending.at,
         branch: pending.branch,
-        ask: pending.ask.slice(0, 4000),
+        ask: pending.ask.slice(0, 12000),
         reply: body.slice(0, 2000)
       });
       pending = null;

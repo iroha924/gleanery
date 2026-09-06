@@ -30,7 +30,10 @@ export type Exchange = {
 export type Session = { id: string; file: string; cwd: string; exchanges: Exchange[] };
 
 // スキルの呼び出しとスラッシュコマンドは、本人の言葉ではないので落とす。
-const BOILERPLATE = /^(Base directory for this skill|<|\/)/;
+// **文脈の圧縮要約も落とす。**あれは AI が書いた要約で、同じセッションの往復と内容が重なる
+// （実測 10 件・平均 4,079 字で、他の往復の 4 倍。検索の上位を占めてしまう）。
+const BOILERPLATE =
+  /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below)/;
 
 const textOf = (m: unknown): string => {
   const c = (m as { content?: unknown })?.content;
@@ -77,7 +80,9 @@ export function readSession(file: string): Session | null {
         key: `${id}:${exchanges.length}`,
         at: pending.at,
         branch: pending.branch,
-        ask: pending.ask.slice(0, 4000),
+        // **貼り付けた MTG の文字起こしが入る。**4,000 字で切ると議事録の後半が消えるので、
+        // 実測で最長だったもの（約 12,000 字）が収まる長さにする。
+        ask: pending.ask.slice(0, 12_000),
         reply: body.slice(0, 2000),
       });
       pending = null;

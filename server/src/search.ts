@@ -100,49 +100,107 @@ export type SearchOpts = {
 
 export type SearchResult = { rows: Hit[]; queryVector: number[]; topScore: number | null };
 
+// **質問文をそのまま `&@~` へ渡さない。**文全体を 1 つのクエリ式として扱うので
+// 「ドキュメントに使ってはいけない記号は？」が 0 件になる（実測）。語に割って OR で繋ぐ。
+const STOP = new Set([
+  "ため",
+  "こと",
+  "もの",
+  "とき",
+  "など",
+  "これ",
+  "それ",
+  "どこ",
+  "どれ",
+  "なに",
+  "ある",
+  "する",
+  "どう",
+  "何を",
+  "何の",
+  "使う",
+  "教えて",
+]);
+export const lexicalTerms = (q: string): string[] =>
+  (q.match(/[A-Za-z][A-Za-z0-9_.#-]{2,}|[ァ-ヴー]{2,}|[一-龠]{2,}|OT-\d+|#\d+/g) ?? [])
+    .filter((t) => !STOP.has(t))
+    .slice(0, 8);
+
+/**
+ * Reciprocal Rank Fusion。尺度の違う 2 つの並びを、順位だけで混ぜる。
+ * **key は記録の中でしか一意でない**ので、記録をまたいで束ねると別の行が 1 つに潰れる。
+ */
+export function fuse(lists: Hit[][], k = 60): Hit[] {
+  const acc = new Map<string, { row: Hit; s: number }>();
+  for (const list of lists) {
+    list.forEach((row, i) => {
+      const id = `${row.record_id}|${row.kind}|${row.key}`;
+      const cur = acc.get(id) ?? { row, s: 0 };
+      cur.s += 1 / (k + i + 1);
+      acc.set(id, cur);
+    });
+  }
+  return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
+}
+
 export async function search(client: pg.Client, env: Env, o: SearchOpts): Promise<SearchResult> {
   const { question, scopeIds, polarity, kinds, limit = 5, pool = 30, rerankModel = "rerank-3" } = o;
 
-  const where = ["n.deleted_at is null"];
-  const params: unknown[] = [];
   const qv = o.queryVector ?? (await embed(env, [question], "query"))[0];
   if (!qv) throw new Error("埋め込みが空で返った");
-  params.push(vec(qv));
+
+  // **絞り込みは 2 つのクエリで共有する。**番号は問い合わせごとに振り直すので、
+  // 条件と値を組で持ち、SQL は後から組み立てる（片方でしか使わない引数を混ぜると、
+  // Postgres が型を決められず `could not determine data type` になる）。
+  const filters: { sql: (i: number) => string; value: unknown }[] = [];
   // 空配列は「全部見る」ではなく「どれも見ない」。未登録のディレクトリで
   // 無関係なプロジェクトの決定が出るのを防ぐ。null / undefined のときだけ絞らない。
-  if (Array.isArray(scopeIds)) {
-    params.push(scopeIds);
-    where.push(`n.scope_id = any($${params.length})`);
-  }
-  if (polarity) {
-    params.push(polarity);
-    where.push(`n.polarity = $${params.length}`);
-  }
-  if (kinds?.length) {
-    params.push(kinds);
-    where.push(`n.kind = any($${params.length})`);
-  }
-  params.push(pool);
+  if (Array.isArray(scopeIds)) filters.push({ sql: (i) => `n.scope_id = any($${i})`, value: scopeIds });
+  if (polarity) filters.push({ sql: (i) => `n.polarity = $${i}`, value: polarity });
+  if (kinds?.length) filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
 
-  const r = await client.query<Hit>(
-    // bigint は node-postgres が文字列で返す。呼び出し側は数値の配列と突き合わせるので、
-    // ここで数値へ寄せないと includes が常に外れる。
-    `select n.id, n.key, n.kind, n.subkind, n.polarity, n.status, n.at, n.text,
+  /** from 番目から採番して where 句を作る。 */
+  const clauses = (from: number): string =>
+    ["n.deleted_at is null", ...filters.map((f, i) => f.sql(from + i))].join(" and ");
+  const values = filters.map((f) => f.value);
+
+  // bigint は node-postgres が文字列で返す。呼び出し側は数値の配列と突き合わせるので、
+  // ここで数値へ寄せないと includes が常に外れる。
+  const COLS = `n.id, n.key, n.kind, n.subkind, n.polarity, n.status, n.at, n.text,
             n.scope_id::int as scope_id,
-            (n.embedding <#> $1::extensions.vector) * -1 as score,
             coalesce(n.attrs->>'whyNot', n.attrs->>'context', '') as ex,
-            n.attrs, n.actor_name, r.id as record_id, r.title as record_title, s.label as scope_label
-     from node n
-     join record r on r.id = n.record_id
-     join scope  s on s.id = n.scope_id
-     where ${where.join(" and ")}
+            n.attrs, n.actor_name, r.id as record_id, r.title as record_title, s.label as scope_label`;
+  const JOINS = `from node n join record r on r.id = n.record_id join scope s on s.id = n.scope_id`;
+
+  const dense = await client.query<Hit>(
+    `select ${COLS}, (n.embedding <#> $1::extensions.vector) * -1 as score
+     ${JOINS}
+     where ${clauses(2)}
      order by n.embedding <#> $1::extensions.vector
-     limit $${params.length}`,
-    params,
+     limit $${values.length + 2}`,
+    [vec(qv), ...values, pool],
   );
+
+  // **語彙側も引いて融合する。**ベクトルは「OT-4578」と「OT-4856」を見分けられない
+  // （最近傍が別の番号になる）。実測 30 問: ID を含む質問の recall@5 は
+  // ベクトル+再ランクで 2/6、融合+再ランクで 5/6。全体でも 80% → 93%。
+  const words = lexicalTerms(question);
+  const lex = words.length
+    ? await client.query<Hit>(
+        `select ${COLS}, pgroonga_score(n.tableoid, n.ctid) as score
+         ${JOINS}
+         where ${clauses(1)} and n.text &@~ $${values.length + 1}
+         order by score desc, n.id
+         limit $${values.length + 2}`,
+        [...values, words.map((t) => JSON.stringify(t)).join(" OR "), pool],
+      )
+    : { rows: [] as Hit[] };
+
+  const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0) return { rows: [], queryVector: qv, topScore: null };
-  // 距離の昇順で並べているので先頭が最も近い。再ランク後の順序ではなく、素の近さを取る。
-  const topScore = r.rows[0]?.score ?? null;
+  // **範囲外かどうかの判定に使うので、融合後ではなくベクトル側の素の近さを取る。**
+  // 融合の順位は尺度が違うので、距離のしきい値としては読めない。
+  const topScore = dense.rows[0]?.score ?? null;
 
   const bare = () => ({
     rows: r.rows.slice(0, limit).map((x) => ({ ...x, relevance: null })),
