@@ -11,7 +11,7 @@ import { z } from "zod";
 import { connect, type Env, loadEnv } from "./db.ts";
 import { collect, ingestThreads } from "./github.ts";
 import { type Ir, ingest } from "./ingest.ts";
-import { fetchIssue, ingestIssue, listIssues, whoAmI } from "./linear.ts";
+import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { candidates, identify } from "./scope.ts";
 import { outsideScopes, quote, scopeFamily, search } from "./search.ts";
 
@@ -231,17 +231,21 @@ async function syncLinear(
     `  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`,
   );
 
+  // **まとめて取る。**1 件ずつ `claude -p` を起動すると 1 件 30 秒かかり、
+  // チーム全体（4,393 件）で 30 時間を超える。まとめ叩きで 4 秒/件になった（実測）。
   let nodes = 0;
   let embedded = 0;
-  for (const [n, row] of changed.entries()) {
-    const id = String(row.id);
-    const issue = fetchIssue(id);
-    const r = await ingestIssue(c, env, workspace, scopeId, issue);
-    nodes += r.nodes;
-    embedded += r.embedded;
-    console.error(
-      `  [${n + 1}/${changed.length}] ${id} コメント ${issue.comments.length} 件 → node ${r.nodes} 件`,
-    );
+  let done = 0;
+  const BATCH = 20;
+  for (let from = 0; from < changed.length; from += BATCH) {
+    const ids = changed.slice(from, from + BATCH).map((i) => String(i.id));
+    for (const issue of fetchIssues(ids)) {
+      const r = await ingestIssue(c, env, workspace, scopeId, issue);
+      nodes += r.nodes;
+      embedded += r.embedded;
+      done++;
+    }
+    console.error(`  ${done} / ${changed.length} 件（node ${nodes} 件）`);
   }
   return `Linear ${teamName} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`;
 }

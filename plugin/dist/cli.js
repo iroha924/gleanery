@@ -24552,13 +24552,13 @@ function runClaude(prompt, tools) {
       continue;
     for (const b of content) {
       if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
-        names.set(b.id, b.name);
+        names.set(b.id, { name: b.name, input: b.input ?? {} });
       }
       if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
-        const name = names.get(b.tool_use_id) ?? "";
-        if (!name.startsWith("mcp__linear-server__"))
+        const used = names.get(b.tool_use_id);
+        if (!used?.name.startsWith("mcp__linear-server__"))
           continue;
-        results.push({ name, text: resultText(b.content) });
+        results.push({ name: used.name, input: used.input, text: resultText(b.content) });
       }
     }
   }
@@ -24637,22 +24637,81 @@ function listIssues(team) {
   }
   return out;
 }
-function fetchIssue(id) {
-  const d = callOnce("get_issue", { id });
-  const comments = [];
+function fetchIssues(ids, onProgress) {
+  const out = [];
+  const BATCH = 20;
+  for (let from = 0;from < ids.length; from += BATCH) {
+    const slice = ids.slice(from, from + BATCH);
+    const args = slice.map((id) => JSON.stringify({ id })).join(`
+`);
+    const got = runClaude(`mcp__linear-server__get_issue を、次の引数それぞれについて 1 回ずつ呼べ。` + `引数は一字も変えるな。結果は出力しなくていい。
+${args}`, ["mcp__linear-server__get_issue"]);
+    const byId = new Map;
+    for (const r of got) {
+      const id = typeof r.input.id === "string" ? r.input.id : "";
+      if (!id)
+        continue;
+      try {
+        byId.set(id, JSON.parse(r.text));
+      } catch {}
+    }
+    const gotC = runClaude(`mcp__linear-server__list_comments を、次の引数それぞれについて 1 回ずつ呼べ。` + `引数は一字も変えるな。結果は出力しなくていい。
+` + slice.map((id) => JSON.stringify({ issueId: id, limit: 250, orderBy: "createdAt" })).join(`
+`), ["mcp__linear-server__list_comments"]);
+    const firstPage = new Map;
+    for (const r of gotC) {
+      const id = typeof r.input.issueId === "string" ? r.input.issueId : "";
+      if (!id)
+        continue;
+      try {
+        firstPage.set(id, JSON.parse(r.text));
+      } catch {}
+    }
+    for (const id of slice) {
+      const d = byId.get(id) ?? callOnce("get_issue", { id });
+      const page = firstPage.get(id);
+      const cs = page ? commentsFrom(id, page) : comments(id);
+      out.push(shapeIssue(id, d, cs));
+    }
+    onProgress?.(`  ${Math.min(from + BATCH, ids.length)} / ${ids.length} 件`);
+  }
+  return out;
+}
+var rowsOf = (page) => (Array.isArray(page.comments) ? page.comments : []).map((c) => {
+  const author = c.author;
+  return {
+    id: str(c, "id"),
+    parentId: strOrNull(c, "parentId"),
+    author: author ? str(author, "name") : "unknown",
+    body: str(c, "body").trim(),
+    at: str(c, "createdAt")
+  };
+});
+function comments(id) {
+  const out = [];
   for (const page of pages("list_comments", { issueId: id, limit: 250, orderBy: "createdAt" })) {
-    for (const c of Array.isArray(page.comments) ? page.comments : []) {
-      const author = c.author;
-      comments.push({
-        id: str(c, "id"),
-        parentId: strOrNull(c, "parentId"),
-        author: author ? str(author, "name") : "unknown",
-        body: str(c, "body").trim(),
-        at: str(c, "createdAt")
+    out.push(...rowsOf(page));
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}
+function commentsFrom(id, first) {
+  const out = rowsOf(first);
+  if (first.hasNextPage === true && typeof first.cursor === "string") {
+    let cursor = first.cursor;
+    while (cursor) {
+      const page = callOnce("list_comments", {
+        issueId: id,
+        limit: 250,
+        orderBy: "createdAt",
+        cursor
       });
+      out.push(...rowsOf(page));
+      cursor = page.hasNextPage === true && typeof page.cursor === "string" ? page.cursor : undefined;
     }
   }
-  comments.sort((a, b) => a.at.localeCompare(b.at));
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}
+function shapeIssue(id, d, cs) {
   const labels = Array.isArray(d.labels) ? d.labels : [];
   return {
     id: str(d, "id") || id,
@@ -24667,7 +24726,7 @@ function fetchIssue(id) {
     assignee: strOrNull(d, "assignee"),
     createdAt: str(d, "createdAt"),
     updatedAt: str(d, "updatedAt"),
-    comments
+    comments: cs
   };
 }
 var FILLER2 = /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:)[!！。.\s]*$/i;
@@ -25025,13 +25084,17 @@ ${USAGE}`);
   console.error(`  更新のあった ${changed.length} 件を取りに行きます（据え置き ${target.length - changed.length} 件）`);
   let nodes = 0;
   let embedded = 0;
-  for (const [n, row] of changed.entries()) {
-    const id = String(row.id);
-    const issue2 = fetchIssue(id);
-    const r = await ingestIssue(c, env, workspace, scopeId, issue2);
-    nodes += r.nodes;
-    embedded += r.embedded;
-    console.error(`  [${n + 1}/${changed.length}] ${id} コメント ${issue2.comments.length} 件 → node ${r.nodes} 件`);
+  let done = 0;
+  const BATCH = 20;
+  for (let from = 0;from < changed.length; from += BATCH) {
+    const ids = changed.slice(from, from + BATCH).map((i) => String(i.id));
+    for (const issue2 of fetchIssues(ids)) {
+      const r = await ingestIssue(c, env, workspace, scopeId, issue2);
+      nodes += r.nodes;
+      embedded += r.embedded;
+      done++;
+    }
+    console.error(`  ${done} / ${changed.length} 件（node ${nodes} 件）`);
   }
   return `Linear ${teamName} / issue ${changed.length} 件 / node ${nodes} 件（埋め込み ${embedded} 件）`;
 }

@@ -44,7 +44,7 @@ function mcpConfigPath(): string {
   return p;
 }
 
-type Called = { name: string; text: string };
+type Called = { name: string; input: Record<string, unknown>; text: string };
 
 /**
  * `claude -p` を 1 回回し、MCP のツール結果を**生のまま**順番に返す。
@@ -67,8 +67,10 @@ function runClaude(prompt: string, tools: string[]): Called[] {
     { encoding: "utf8", maxBuffer: 512 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
   );
 
-  // tool_result は名前を持たない。直前の tool_use と id で突き合わせる。
-  const names = new Map<string, string>();
+  // tool_result は名前も引数も持たない。直前の tool_use と id で突き合わせる。
+  // **引数まで持っておく。**まとめて呼ばせたとき、どの結果がどの issue のものかは
+  // 順番ではなく引数で決める（順番に頼ると 1 件抜けた瞬間に全部ずれる）。
+  const names = new Map<string, { name: string; input: Record<string, unknown> }>();
   const results: Called[] = [];
   for (const line of out.split("\n")) {
     if (!line.startsWith("{")) continue;
@@ -82,12 +84,12 @@ function runClaude(prompt: string, tools: string[]): Called[] {
     if (!Array.isArray(content)) continue;
     for (const b of content as Record<string, unknown>[]) {
       if (b.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
-        names.set(b.id, b.name);
+        names.set(b.id, { name: b.name, input: (b.input ?? {}) as Record<string, unknown> });
       }
       if (b.type === "tool_result" && typeof b.tool_use_id === "string") {
-        const name = names.get(b.tool_use_id) ?? "";
-        if (!name.startsWith("mcp__linear-server__")) continue;
-        results.push({ name, text: resultText(b.content) });
+        const used = names.get(b.tool_use_id);
+        if (!used?.name.startsWith("mcp__linear-server__")) continue;
+        results.push({ name: used.name, input: used.input, text: resultText(b.content) });
       }
     }
   }
@@ -127,6 +129,7 @@ function callOnce(tool: string, args: Record<string, unknown>): unknown {
     [`mcp__linear-server__${short}`],
   );
   const hit = got.find((r) => r.name === `mcp__linear-server__${short}`);
+
   if (!hit) throw new Error(`${short} が呼ばれなかった（Linear MCP に届いていない可能性）`);
   try {
     return JSON.parse(hit.text);
@@ -225,23 +228,110 @@ export function listIssues(team: string): Brief[] {
   return out;
 }
 
-/** 1 件の全文とコメント全部。**コメントは打ち止めまで辿る。** */
-export function fetchIssue(id: string): Issue {
-  const d = callOnce("get_issue", { id }) as Record<string, unknown>;
-  const comments: Comment[] = [];
+/**
+ * 複数件をまとめて取る。**`claude -p` の起動が 1 件あたり 20〜30 秒かかる**ので、
+ * 1 件ずつ回すと 4,393 件で 30 時間を超える（実測から外挿）。1 回の実行で
+ * まとめて呼ばせると起動の分が償却される。
+ *
+ * **大きい結果はファイルへ退避されるのでモデルの文脈を圧迫しない。**だから
+ * まとめても壊れない。取りこぼしは引数で突き合わせて検出し、残りを 1 件ずつ拾う。
+ */
+export function fetchIssues(ids: string[], onProgress?: (m: string) => void): Issue[] {
+  const out: Issue[] = [];
+  const BATCH = 20;
+  for (let from = 0; from < ids.length; from += BATCH) {
+    const slice = ids.slice(from, from + BATCH);
+    const args = slice.map((id) => JSON.stringify({ id })).join("\n");
+    const got = runClaude(
+      `mcp__linear-server__get_issue を、次の引数それぞれについて 1 回ずつ呼べ。` +
+        `引数は一字も変えるな。結果は出力しなくていい。\n${args}`,
+      ["mcp__linear-server__get_issue"],
+    );
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const r of got) {
+      const id = typeof r.input.id === "string" ? r.input.id : "";
+      if (!id) continue;
+      try {
+        byId.set(id, JSON.parse(r.text) as Record<string, unknown>);
+      } catch {
+        // 読めなかったものは下で 1 件ずつ拾い直す
+      }
+    }
+    // コメントもまとめて呼ばせる。**1 ページ目だけ。**続きがあるものは下で個別に辿る
+    // （ページ送りはカーソルが要るので、まとめ叩きでは 1 周ぶんしか進められない）。
+    const gotC = runClaude(
+      `mcp__linear-server__list_comments を、次の引数それぞれについて 1 回ずつ呼べ。` +
+        `引数は一字も変えるな。結果は出力しなくていい。\n` +
+        slice.map((id) => JSON.stringify({ issueId: id, limit: 250, orderBy: "createdAt" })).join("\n"),
+      ["mcp__linear-server__list_comments"],
+    );
+    const firstPage = new Map<string, Record<string, unknown>>();
+    for (const r of gotC) {
+      const id = typeof r.input.issueId === "string" ? r.input.issueId : "";
+      if (!id) continue;
+      try {
+        firstPage.set(id, JSON.parse(r.text) as Record<string, unknown>);
+      } catch {
+        // 読めなかったものは下で 1 件ずつ拾い直す
+      }
+    }
+
+    for (const id of slice) {
+      // **抜けたものは黙って飛ばさない。**取りこぼしは「その issue は無い」に化ける。
+      const d = byId.get(id) ?? (callOnce("get_issue", { id }) as Record<string, unknown>);
+      const page = firstPage.get(id);
+      const cs = page ? commentsFrom(id, page) : comments(id);
+      out.push(shapeIssue(id, d, cs));
+    }
+    onProgress?.(`  ${Math.min(from + BATCH, ids.length)} / ${ids.length} 件`);
+  }
+  return out;
+}
+
+const rowsOf = (page: Record<string, unknown>): Comment[] =>
+  ((Array.isArray(page.comments) ? page.comments : []) as Record<string, unknown>[]).map((c) => {
+    const author = c.author as Record<string, unknown> | undefined;
+    return {
+      id: str(c, "id"),
+      parentId: strOrNull(c, "parentId"),
+      author: author ? str(author, "name") : "unknown",
+      body: str(c, "body").trim(),
+      at: str(c, "createdAt"),
+    };
+  });
+
+/** コメントを打ち止めまで辿る。 */
+function comments(id: string): Comment[] {
+  const out: Comment[] = [];
   for (const page of pages("list_comments", { issueId: id, limit: 250, orderBy: "createdAt" })) {
-    for (const c of (Array.isArray(page.comments) ? page.comments : []) as Record<string, unknown>[]) {
-      const author = c.author as Record<string, unknown> | undefined;
-      comments.push({
-        id: str(c, "id"),
-        parentId: strOrNull(c, "parentId"),
-        author: author ? str(author, "name") : "unknown",
-        body: str(c, "body").trim(),
-        at: str(c, "createdAt"),
-      });
+    out.push(...rowsOf(page));
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/**
+ * まとめて取った 1 ページ目から組み立てる。**続きがあるときだけ追加で辿る。**
+ * 実測では 250 件を超える issue はほぼ無いので、たいていここで終わる。
+ */
+function commentsFrom(id: string, first: Record<string, unknown>): Comment[] {
+  const out = rowsOf(first);
+  if (first.hasNextPage === true && typeof first.cursor === "string") {
+    let cursor: string | undefined = first.cursor;
+    while (cursor) {
+      const page = callOnce("list_comments", {
+        issueId: id,
+        limit: 250,
+        orderBy: "createdAt",
+        cursor,
+      }) as Record<string, unknown>;
+      out.push(...rowsOf(page));
+      cursor = page.hasNextPage === true && typeof page.cursor === "string" ? page.cursor : undefined;
     }
   }
-  comments.sort((a, b) => a.at.localeCompare(b.at));
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+function shapeIssue(id: string, d: Record<string, unknown>, cs: Comment[]): Issue {
   const labels = Array.isArray(d.labels) ? d.labels : [];
   return {
     id: str(d, "id") || id,
@@ -258,8 +348,13 @@ export function fetchIssue(id: string): Issue {
     assignee: strOrNull(d, "assignee"),
     createdAt: str(d, "createdAt"),
     updatedAt: str(d, "updatedAt"),
-    comments,
+    comments: cs,
   };
+}
+
+/** 1 件の全文とコメント全部。 */
+export function fetchIssue(id: string): Issue {
+  return shapeIssue(id, callOnce("get_issue", { id }) as Record<string, unknown>, comments(id));
 }
 
 // --- ナレッジの形にする ---
