@@ -248,6 +248,17 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
   return json;
 }
 
+/** 会議で引かれた記録の 1 件。返信案の番号はここを指す。 */
+export type Fact = { n: number; label: string; text: string; recordId: string; recordTitle: string };
+
+/** 聞かれたことへの返信案。**missing なら記録に無い**ので、その場で作らない。 */
+export type Reply = {
+  asked: string | null;
+  missing: boolean;
+  replies: { text: string; sources: number[] }[];
+  facts: Fact[];
+};
+
 /** 文字起こしの書き直し案。**選ばなくてよい** — 生のままで足りることがある。 */
 export type PolishOption = {
   label: string;
@@ -267,6 +278,17 @@ export const api = {
     const json = (await res.json()) as { options?: PolishOption[]; error?: string };
     if (!res.ok) throw new Error(json.error ?? `整形が ${res.status}`);
     return json.options ?? [];
+  },
+  /** 会議で聞かれたことへの返信案。**記録にあることしか返さない。** */
+  reply: async (heard: string, scopeIds: number[]): Promise<Reply> => {
+    const res = await fetch("/api/reply", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ heard, scopeIds }),
+    });
+    const json = (await res.json()) as Reply & { error?: string };
+    if (!res.ok) throw new Error(json.error ?? `返信案が ${res.status}`);
+    return json;
   },
   /** 会議を聞き取るための一時鍵。**本物の API キーはここへ来ない。**10 分で切れる。 */
   realtimeToken: async (): Promise<string> => {

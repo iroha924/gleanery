@@ -3,8 +3,10 @@ import { MicIcon, SquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { Spinner } from "@/components/ui/spinner";
+import { api, type Reply } from "@/lib/api";
 import { type Heard, listen } from "@/lib/listen";
+import { useProject } from "@/lib/project";
 
 export const Route = createFileRoute("/mtg")({ component: Mtg });
 
@@ -18,18 +20,25 @@ const clock = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /**
- * 会議のかんぺ。**話者を推定しない。**
+ * 会議のかんぺ。**話者を推定せず、記憶でも答えない。**
  *
  * 自分の声はマイクから、相手の声は画面共有の音声から、別々に流す。混ざった 1 本を後から
  * 分けようとすると当たらない（実測: OpenAI の diarize は文字起こしが崩れ、6.6 倍遅い）。
  * 分けて流せば、声が重なっても誰の発言かは事実として分かる。
+ *
+ * 返信案は記録にあることだけで作る。**無いときは「無い」と出す** — その場しのぎの案は、
+ * 会議のあとで訂正する羽目になるので価値が負になる。
  */
 function Mtg() {
   const [lines, setLines] = useState<Line[]>([]);
   const [on, setOn] = useState(false);
+  const [reply, setReply] = useState<Reply | null>(null);
+  const [thinking, setThinking] = useState(false);
   const closers = useRef<(() => void)[]>([]);
   const streams = useRef<MediaStream[]>([]);
   const t0 = useRef(0);
+  const { scopeIds: picked, label: projectLabel } = useProject();
+  const scopeIds = picked ?? [];
 
   const stop = () => {
     for (const c of closers.current) c();
@@ -52,6 +61,19 @@ function Mtg() {
       const next = { ...prev, text: h.done ? h.text : prev.text + h.text, done: h.done };
       return [...ls.slice(0, i), next, ...ls.slice(i + 1)];
     });
+    // **相手の発話が確定したときだけ引く。**途中の delta で引くと、言い終える前の
+    // 半端な文で検索することになり、当たらないうえ課金だけ増える。
+    if (who === "them" && h.done && h.text.trim() && scopeIds.length > 0) {
+      setThinking(true);
+      api
+        .reply(h.text, scopeIds)
+        .then((r) => {
+          // 問われていない発言なら、いま出ている案を消さずに置く。
+          if (r.asked) setReply(r);
+        })
+        .catch(() => {})
+        .finally(() => setThinking(false));
+    }
   };
 
   const start = async () => {
@@ -89,6 +111,7 @@ function Mtg() {
     t0.current = Date.now();
     streams.current = [them, me];
     setLines([]);
+    setReply(null);
     setOn(true);
     closers.current = [
       listen(them, token, (h) => heard("them", h), toast.error),
@@ -97,63 +120,127 @@ function Mtg() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-3.5rem)] w-full max-w-[52rem] min-w-0 flex-col gap-4">
-      <header className="flex flex-none items-center gap-3">
-        <Button
-          type="button"
-          onClick={on ? stop : start}
-          className={`rounded-full ${on ? "bg-dont text-white hover:bg-dont/90" : ""}`}
-        >
-          {on ? <SquareIcon className="size-3.5" /> : <MicIcon className="size-4" />}
-          {on ? "終了" : "会議を録る"}
-        </Button>
-        {on && (
-          <span className="flex items-center gap-2 text-muted-foreground text-xs">
-            <span className="size-1.5 animate-pulse rounded-full bg-dont" />
-            聞いています
+    <div className="-m-4 flex h-[calc(100vh-3.5rem)]">
+      {/* かんぺが主。**会議中に読むのはこちらで、文字起こしは確認用。** */}
+      <div className="flex min-w-0 flex-1 flex-col gap-4 px-8 py-5">
+        <header className="flex flex-none items-center gap-3">
+          <Button
+            type="button"
+            onClick={on ? stop : start}
+            disabled={!on && scopeIds.length === 0}
+            className={`rounded-full ${on ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+          >
+            {on ? <SquareIcon className="size-3.5" /> : <MicIcon className="size-4" />}
+            {on ? "終了" : "会議を録る"}
+          </Button>
+          {on && (
+            <span className="flex items-center gap-2 text-muted-foreground text-xs">
+              <span className="size-1.5 animate-pulse rounded-full bg-dont" />
+              聞いています
+            </span>
+          )}
+          <span className="ml-auto rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
+            {projectLabel}
           </span>
-        )}
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground uppercase tracking-[0.14em]">
-          {lines.length} 発言
-        </span>
-      </header>
+        </header>
 
-      {!on && lines.length === 0 ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <h1 className="font-extrabold text-2xl">会議を聞き取る</h1>
-          <p className="max-w-[30rem] text-muted-foreground text-sm leading-[2]">
-            相手の声は画面共有の音声から、自分の声はマイクから、別々に聞きます。
-            <strong className="font-medium text-foreground">誰が話したかを推定しません。</strong>
-            <br />
-            共有を選ぶとき、<strong className="font-medium text-foreground">音声を一緒に共有</strong>
-            してください。Google Meet ならそのタブ、Zoom や Teams ならそのウィンドウを選びます。
-          </p>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {reply?.asked ? (
+            <div className="space-y-5">
+              <div>
+                <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
+                  いま聞かれています
+                </span>
+                <h2 className="mt-1.5 font-extrabold text-[1.4rem] leading-[1.6]">{reply.asked}</h2>
+              </div>
+
+              {reply.missing || reply.replies.length === 0 ? (
+                // **無いことを隠さない。**ここで曖昧に埋めると、会議のあとで訂正することになる。
+                <div className="rounded-xl border border-dont/40 border-dashed p-4">
+                  <p className="font-medium text-[15px] text-dont">記録にありません</p>
+                  <p className="mt-1.5 text-[13px] text-muted-foreground leading-[1.9]">
+                    その場で作らず、「確認して後で返します」と言うほうが安全です。
+                  </p>
+                </div>
+              ) : (
+                <ol className="space-y-3">
+                  {reply.replies.map((r) => (
+                    <li key={r.text} className="rounded-xl border bg-card p-4">
+                      <p className="text-[15px] leading-[1.95]">{r.text}</p>
+                      {r.sources.length > 0 && (
+                        <ul className="mt-3 space-y-1.5 border-t pt-2.5">
+                          {r.sources.map((n) => {
+                            const f = reply.facts.find((x) => x.n === n);
+                            return f ? (
+                              <li key={n} className="flex gap-2 text-[11.5px] leading-[1.8]">
+                                <span className="flex-none font-mono text-muted-foreground">{n}</span>
+                                <span className="min-w-0 text-muted-foreground">
+                                  <span className="text-foreground/70">{f.label}</span>
+                                  {f.text.slice(0, 90)}
+                                </span>
+                              </li>
+                            ) : null;
+                          })}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+              <h1 className="font-extrabold text-2xl">{on ? "聞いています" : "会議を聞き取る"}</h1>
+              <p className="max-w-[30rem] text-muted-foreground text-sm leading-[2]">
+                {on ? (
+                  <>
+                    相手に何か聞かれると、ここに
+                    <strong className="font-medium text-foreground">記録で裏の取れた案</strong>
+                    を出します。記録に無ければ、無いと言います。
+                  </>
+                ) : scopeIds.length === 0 ? (
+                  "左でプロジェクトを選んでください"
+                ) : (
+                  <>
+                    共有を選ぶとき、
+                    <strong className="font-medium text-foreground">音声を一緒に共有</strong>してください。
+                    Google Meet ならそのタブ、Zoom や Teams ならそのウィンドウを選びます。
+                  </>
+                )}
+              </p>
+            </div>
+          )}
         </div>
-      ) : (
-        <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-6">
+      </div>
+
+      {/* 文字起こしは従。**合っているかを目の端で確かめるためのもの。** */}
+      <aside className="flex w-[22rem] flex-none flex-col gap-3 border-l bg-secondary/25 px-5 py-5">
+        <div className="flex flex-none items-baseline gap-2">
+          <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
+            聞こえたこと
+          </span>
+          {thinking && <Spinner className="size-3" />}
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground tabular-nums">
+            {lines.length}
+          </span>
+        </div>
+        <ol className="min-h-0 flex-1 space-y-2.5 overflow-y-auto">
           {lines.map((l) => (
-            <li key={l.key} className="flex gap-3">
-              <span className="w-10 flex-none pt-1 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
+            <li key={l.key} className="flex gap-2">
+              <span className="w-8 flex-none pt-0.5 text-right font-mono text-[9px] text-muted-foreground tabular-nums">
                 {clock(l.at)}
               </span>
-              <span
-                className={`w-12 flex-none pt-0.5 font-mono text-[10px] tracking-wide ${
-                  l.who === "them" ? "text-link" : "text-muted-foreground"
-                }`}
-              >
-                {l.who === "them" ? "相手" : "あなた"}
-              </span>
               <p
-                className={`min-w-0 text-[14px] leading-[2] ${
-                  l.who === "them" ? "text-foreground" : "text-foreground/70"
-                } ${l.done ? "" : "opacity-60"}`}
+                className={`min-w-0 text-[12px] leading-[1.85] ${
+                  l.who === "them" ? "text-foreground" : "text-muted-foreground"
+                } ${l.done ? "" : "opacity-55"}`}
               >
                 {l.text}
               </p>
             </li>
           ))}
         </ol>
-      )}
+      </aside>
     </div>
   );
 }

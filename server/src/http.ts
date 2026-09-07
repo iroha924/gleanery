@@ -654,6 +654,99 @@ app.post("/api/realtime-token", async (c) => {
   }
 });
 
+/**
+ * 会議で聞かれたことへの返信案。**記録にあることしか言わない。**
+ *
+ * 会議中は記憶で答えてしまいがちで、後から食い違いが出る。ここは裏取りができている
+ * ものだけを返し、**無いときは無いと言う**。曖昧に埋めた案は、その場では役に立っても
+ * 会議のあとで訂正する羽目になるので、価値が負になる。
+ */
+const REPLY = `会議の相手の発言に対して、その場で返せる案を作る。
+
+まず、それが**答えを求められている発言かどうか**を見る。相槌・世間話・自分の作業の報告なら
+asked を null にして replies を空にする。**問われていないのに案を出さない。**
+
+問われているなら、asked にその問いを一文で書く。
+replies には返す言葉を 2 つか 3 つ。**渡された記録に書かれていることだけを使う。**
+それぞれの sources に、根拠にした記録の番号を入れる（複数可）。
+
+記録に答えが無いなら replies を空にして missing を true にする。
+**推測で埋めない。**「たぶん」「〜のはず」で答えると、会議のあとで訂正することになる。
+
+日本語で、会議でそのまま口に出せる長さにする（1 文か 2 文）。`;
+
+app.post("/api/reply", async (c) => {
+  const body = (await c.req.json()) as { heard?: string; scopeIds?: number[] };
+  const heard = body.heard?.trim();
+  if (!heard) return c.json({ error: "heard が無い" }, 400);
+  if (!env.OPENAI_API_KEY) return c.json({ error: "OPENAI_API_KEY が無い" }, 500);
+
+  try {
+    const client = await db();
+    const ids = Array.isArray(body.scopeIds) ? body.scopeIds : undefined;
+    const { rows } = await search(client, env, { question: heard, scopeIds: ids, limit: 8 });
+    // 番号は 1 始まり。**LLM が指す番号と画面の番号を一致させる。**
+    const facts = rows.map((r, i) => `[${i + 1}] ${labelOf(r)}${r.text}${r.ex ? ` — ${r.ex}` : ""}`);
+
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    const r = await openai.responses.create({
+      model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+      // 会議の最中に出すものなので、考え込ませない。
+      reasoning: { effort: "low" },
+      instructions: REPLY,
+      input: `相手の発言:\n${heard}\n\n記録:\n${facts.join("\n") || "(該当なし)"}`,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "reply",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              asked: { type: ["string", "null"] },
+              missing: { type: "boolean" },
+              replies: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    text: { type: "string" },
+                    sources: { type: "array", items: { type: "integer" } },
+                  },
+                  required: ["text", "sources"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["asked", "missing", "replies"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    const out = JSON.parse(r.output_text) as {
+      asked: string | null;
+      missing: boolean;
+      replies: { text: string; sources: number[] }[];
+    };
+    return c.json({
+      ...out,
+      // 画面が根拠を出せるように、引かれた記録も返す。
+      facts: rows.map((x, i) => ({
+        n: i + 1,
+        label: labelOf(x),
+        text: x.text,
+        recordId: x.record_id,
+        recordTitle: x.record_title,
+      })),
+    });
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    console.error("reply:", m);
+    return c.json({ error: "返信案を作れなかった" }, 500);
+  }
+});
+
 app.post("/api/polish", async (c) => {
   const { text } = (await c.req.json()) as { text?: string };
   if (!text?.trim()) return c.json({ error: "text が無い" }, 400);
