@@ -14,14 +14,7 @@
      「やらないと決めた」とは意味が違うので使い分ける。 */
   --color-dont: var(--dont);
   --color-do: var(--do);
-  /* 地図。**背景の格子と辺の色は明暗で入れ替わる**ので、ここで名前を付けて
-     :root と dark の両方で定義する。片方だけ直すと夜側で線が見えなくなる。 */
   --color-link: var(--link);
-  --color-grid-dot: var(--grid-dot);
-  --color-grid-line: var(--grid-line);
-  --color-rel-rejected: var(--dont);
-  --color-rel-considered: var(--grid-line);
-  --color-rel-shares: var(--muted-foreground);
 }
 
 :root {
@@ -45,8 +38,6 @@
   --ring: oklch(0.52 0.1 40);
   --do: oklch(0.5 0.11 155);
   --dont: oklch(0.55 0.16 28);
-  --grid-dot: oklch(0.88 0.01 80);
-  --grid-line: oklch(0.945 0.008 80);
   --chart-1: oklch(0.45 0.11 230);
   --chart-2: oklch(0.45 0.1 155);
   --chart-3: oklch(0.5 0.15 25);
@@ -130,8 +121,6 @@
   --ring: oklch(0.72 0.1 45);
   --do: oklch(0.74 0.12 155);
   --dont: oklch(0.72 0.15 28);
-  --grid-dot: oklch(0.3 0.01 70);
-  --grid-line: oklch(0.26 0.008 70);
   --chart-1: oklch(0.72 0.11 230);
   --chart-2: oklch(0.74 0.12 155);
   --chart-3: oklch(0.72 0.15 25);
@@ -184,8 +173,6 @@
     --ring: oklch(0.72 0.1 45);
     --do: oklch(0.74 0.12 155);
     --dont: oklch(0.72 0.15 28);
-    --grid-dot: oklch(0.3 0.01 70);
-    --grid-line: oklch(0.26 0.008 70);
     --chart-1: oklch(0.72 0.11 230);
     --chart-2: oklch(0.74 0.12 155);
     --chart-3: oklch(0.72 0.15 25);
