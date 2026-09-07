@@ -123,6 +123,11 @@ app.get("/api/now", async (c) => {
             r.phases, r.next, r.updated_at, s.label as project
      from record r join scope s on s.id = r.scope_id
      where ($1::int[] is null or r.scope_id = any($1))
+       -- **現在地を持ち得ない record を混ぜない。**phases と next を書くのは trace の取り込みだけで
+       -- （ingest）、GitHub 由来の record（github:<repo>）はそこを通らないので永久に空のまま出る。
+       -- 取り込みを回すたびに空の殻が 1 枚増えるので、画面側ではなくここで外す。
+       and r.phases is not null
+       and jsonb_array_length(r.phases) > 0
      order by r.updated_at desc nulls last limit 5`,
     [scopesOf(c)],
   );

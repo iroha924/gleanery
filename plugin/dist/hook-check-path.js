@@ -5444,6 +5444,13 @@ try {
   }
   if (rows.length > 0) {
     clearTimeout(timer);
+    record({
+      at: new Date().toISOString(),
+      path: rel,
+      line: editedLine(),
+      candidates: rows.length,
+      shown: rows.map((r) => r.text.slice(0, 120))
+    });
     done(quote(rows, `${rel} について、過去に「触らない」と決めた記録が ${rows.length} 件あります。
 ` + `直す前に、これが欠陥なのか意図なのかを確かめてください。`));
   }

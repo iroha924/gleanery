@@ -141,6 +141,16 @@ try {
   // 「触らない」が 1 件でもあれば、それだけを出す。**制約は助言より強い。**
   if (rows.length > 0) {
     clearTimeout(timer);
+    // **出したことをここでも記録する。**この分岐は done() で抜けるので、書かずに通すと
+    // 最も強い助言（「触らない」と決めた記録）を出した編集が分母からも分子からも消え、
+    // `mitos advice` のヒット率が実際より低く出る。
+    record({
+      at: new Date().toISOString(),
+      path: rel,
+      line: editedLine(),
+      candidates: rows.length,
+      shown: rows.map((r) => r.text.slice(0, 120)),
+    });
     // 本文は過去の記録であって、第三者が書き換えうる untrusted なテキストである。
     // 枠は quote() が張る。ここで組み立てると、枠を張り忘れた経路が増える。
     done(

@@ -141,13 +141,12 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </Collapsible>
 
             <SidebarMenuItem>
-              {/* 一覧の画面は持たない。**「いま」が同じ記録を、工程・次の一手・制約つきで出す。**
-                  ここは記録へ直接入る入口だけを残す。 */}
-              <SidebarMenuButton asChild isActive={path.startsWith("/records")}>
-                <Link to="/now">
-                  <ListChecksIcon /> 記録
-                </Link>
-              </SidebarMenuButton>
+              {/* **押せる要素にしない。**ここは下の一覧の見出しで、それ自体に行き先が無い。
+                  リンクにしていたときは /now へ飛ぶのに /records で光っていて、押した先と
+                  光る条件が食い違っていた。 */}
+              <div className="flex h-8 items-center gap-2 px-2 font-medium text-sidebar-foreground/70 text-xs">
+                <ListChecksIcon className="size-4" /> 記録
+              </div>
               {records && records.length > 0 && (
                 <SidebarMenuSub>
                   {records.slice(0, 8).map((r) => (
