@@ -46,7 +46,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
   const taken = options.filter((o) => o.parent_id === n.id);
   if (!hasDetail(n, options)) {
     return (
-      <div className="flex items-start gap-3 rounded-xl border border-dashed px-4 py-3">
+      <div className="flex items-start gap-3 rounded-md border border-dashed px-4 py-3">
         <Dot polarity={n.polarity} />
         <span className="min-w-0 flex-1 text-[14px] leading-[1.9]">{n.text}</span>
       </div>
@@ -57,7 +57,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="group flex w-full items-start gap-3 rounded-xl border bg-card px-4 py-3 text-left transition hover:-translate-y-px hover:border-primary/40 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]"
+          className="group flex w-full items-start gap-3 rounded-md border bg-card px-4 py-3 text-left transition hover:-translate-y-px hover:border-primary/40 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]"
         >
           <Dot polarity={n.polarity} />
           <span className="min-w-0 flex-1 text-[14px] leading-[1.9]">{n.text}</span>
@@ -159,10 +159,15 @@ function RecordPage() {
 
       {walls.length > 0 && (
         <section className="space-y-2">
-          <h2 className="text-sm font-medium text-dont">変えてはいけない・やらないと決めたこと</h2>
-          <ul className="space-y-1">
+          <h2 className="mb-1 font-medium text-dont text-sm">変えてはいけない・やらないと決めたこと</h2>
+          {/* **項目の間を、折り返しの行間より広く取る。**同じだと、2 行に折り返した 1 件と
+              1 行ずつの 2 件が見分けられない。 */}
+          <ul className="space-y-3.5">
             {walls.map((w) => (
-              <li key={w.id} className="max-w-[110ch] border-l-2 border-dont pl-3 text-sm leading-relaxed">
+              <li
+                key={w.id}
+                className="max-w-[110ch] border-dont border-l-2 pl-3.5 text-[14px] leading-[1.95]"
+              >
                 {w.text}
               </li>
             ))}

@@ -18,41 +18,46 @@
 }
 
 :root {
-  --background: oklch(0.99 0.004 88);
-  --foreground: oklch(0.24 0.012 65);
+  /* **白黒を地にする。**判断の記録は文字が主で、色は「採用したか / やらないか」の
+     2 値にだけ意味がある。地に色を置くと、その 2 値が沈む。
+     基準色は #2C2C2B（くすんだ黒）。純黒はコントラストが強すぎて長文が読みにくい。 */
+  --background: oklch(0.994 0 0);
+  --foreground: #2c2c2b;
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.24 0.012 65);
+  --card-foreground: #2c2c2b;
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.24 0.012 65);
-  --primary: oklch(0.3 0.014 65);
-  --primary-foreground: oklch(0.99 0.004 88);
-  --secondary: oklch(0.958 0.01 80);
-  --secondary-foreground: oklch(0.3 0.012 65);
-  --muted: oklch(0.958 0.01 80);
-  --muted-foreground: oklch(0.5 0.012 70);
-  --accent: oklch(0.958 0.01 80);
-  --accent-foreground: oklch(0.28 0.012 65);
-  --destructive: oklch(0.55 0.16 28);
-  --border: oklch(0.92 0.008 80);
-  --input: oklch(0.92 0.008 80);
-  --ring: oklch(0.52 0.1 40);
-  --do: oklch(0.5 0.11 155);
-  --dont: oklch(0.55 0.16 28);
-  --chart-1: oklch(0.45 0.11 230);
-  --chart-2: oklch(0.45 0.1 155);
-  --chart-3: oklch(0.5 0.15 25);
-  --chart-4: oklch(0.52 0.02 235);
-  --chart-5: oklch(0.72 0.02 235);
-  --radius: 0.75rem;
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.26 0.02 235);
-  --sidebar-primary: oklch(0.45 0.11 230);
-  --sidebar-primary-foreground: oklch(0.99 0.003 220);
-  --sidebar-accent: oklch(0.945 0.012 230);
-  --sidebar-accent-foreground: oklch(0.3 0.02 235);
-  --sidebar-border: oklch(0.9 0.008 220);
-  --sidebar-ring: oklch(0.45 0.11 230);
-  --link: oklch(0.52 0.1 40);
+  --popover-foreground: #2c2c2b;
+  --primary: #2c2c2b;
+  --primary-foreground: oklch(0.994 0 0);
+  --secondary: oklch(0.968 0 0);
+  --secondary-foreground: oklch(0.32 0.002 60);
+  --muted: oklch(0.968 0 0);
+  --muted-foreground: oklch(0.55 0.002 60);
+  --accent: oklch(0.955 0 0);
+  --accent-foreground: oklch(0.29 0.002 60);
+  --destructive: oklch(0.52 0.15 28);
+  --border: oklch(0.915 0 0);
+  --input: oklch(0.915 0 0);
+  --ring: oklch(0.7 0 0);
+  /* **色を持つのはここだけ。**採用したか、やらないと決めたか。 */
+  --do: oklch(0.48 0.09 155);
+  --dont: oklch(0.52 0.15 28);
+  --chart-1: oklch(0.4 0 0);
+  --chart-2: oklch(0.55 0 0);
+  --chart-3: oklch(0.7 0 0);
+  --chart-4: oklch(0.8 0 0);
+  --chart-5: oklch(0.88 0 0);
+  /* **角は浅く。**丸みが強いと札や札束に見えて、文書として読みにくい。 */
+  --radius: 0.375rem;
+  --sidebar: oklch(0.986 0 0);
+  --sidebar-foreground: oklch(0.3 0.002 60);
+  --sidebar-primary: #2c2c2b;
+  --sidebar-primary-foreground: oklch(0.994 0 0);
+  --sidebar-accent: oklch(0.945 0 0);
+  --sidebar-accent-foreground: #2c2c2b;
+  --sidebar-border: oklch(0.915 0 0);
+  --sidebar-ring: oklch(0.7 0 0);
+  --link: oklch(0.42 0.002 60);
 }
 
 @theme inline {
@@ -101,40 +106,40 @@
 }
 
 .dark {
-  --background: oklch(0.2 0.008 70);
-  --foreground: oklch(0.92 0.006 85);
-  --card: oklch(0.24 0.008 70);
-  --card-foreground: oklch(0.92 0.006 85);
-  --popover: oklch(0.24 0.008 70);
-  --popover-foreground: oklch(0.92 0.006 85);
-  --primary: oklch(0.92 0.006 85);
-  --primary-foreground: oklch(0.2 0.008 70);
-  --secondary: oklch(0.28 0.008 70);
-  --secondary-foreground: oklch(0.92 0.006 85);
-  --muted: oklch(0.28 0.008 70);
-  --muted-foreground: oklch(0.68 0.008 80);
-  --accent: oklch(0.3 0.012 70);
-  --accent-foreground: oklch(0.93 0.006 85);
-  --destructive: oklch(0.7 0.16 28);
-  --border: oklch(0.32 0.008 70);
-  --input: oklch(0.32 0.008 70);
-  --ring: oklch(0.72 0.1 45);
-  --do: oklch(0.74 0.12 155);
-  --dont: oklch(0.72 0.15 28);
-  --chart-1: oklch(0.72 0.11 230);
-  --chart-2: oklch(0.74 0.12 155);
-  --chart-3: oklch(0.72 0.15 25);
-  --chart-4: oklch(0.68 0.012 235);
-  --chart-5: oklch(0.5 0.014 240);
-  --sidebar: oklch(0.228 0.014 240);
-  --sidebar-foreground: oklch(0.91 0.008 235);
-  --sidebar-primary: oklch(0.72 0.11 230);
-  --sidebar-primary-foreground: oklch(0.19 0.014 240);
-  --sidebar-accent: oklch(0.3 0.03 235);
-  --sidebar-accent-foreground: oklch(0.93 0.008 235);
-  --sidebar-border: oklch(0.32 0.014 240);
-  --sidebar-ring: oklch(0.72 0.11 230);
-  --link: oklch(0.74 0.1 45);
+  --background: #2c2c2b;
+  --foreground: oklch(0.93 0 0);
+  --card: oklch(0.245 0 0);
+  --card-foreground: oklch(0.93 0 0);
+  --popover: oklch(0.245 0 0);
+  --popover-foreground: oklch(0.93 0 0);
+  --primary: oklch(0.93 0 0);
+  --primary-foreground: #2c2c2b;
+  --secondary: oklch(0.29 0 0);
+  --secondary-foreground: oklch(0.93 0 0);
+  --muted: oklch(0.29 0 0);
+  --muted-foreground: oklch(0.66 0 0);
+  --accent: oklch(0.31 0 0);
+  --accent-foreground: oklch(0.95 0 0);
+  --destructive: oklch(0.6 0.15 28);
+  --border: oklch(0.32 0 0);
+  --input: oklch(0.32 0 0);
+  --ring: oklch(0.55 0 0);
+  --do: oklch(0.62 0.1 155);
+  --dont: oklch(0.62 0.15 28);
+  --chart-1: oklch(0.85 0 0);
+  --chart-2: oklch(0.7 0 0);
+  --chart-3: oklch(0.58 0 0);
+  --chart-4: oklch(0.45 0 0);
+  --chart-5: oklch(0.36 0 0);
+  --sidebar: oklch(0.24 0 0);
+  --sidebar-foreground: oklch(0.9 0 0);
+  --sidebar-primary: oklch(0.93 0 0);
+  --sidebar-primary-foreground: #2c2c2b;
+  --sidebar-accent: oklch(0.31 0 0);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: oklch(0.32 0 0);
+  --sidebar-ring: oklch(0.55 0 0);
+  --link: oklch(0.78 0 0);
 }
 
 @layer base {
@@ -153,39 +158,55 @@
    .dark と同じ値をここでも当てる（片方だけ直すと文字と背景がちぐはぐになる）。 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.2 0.008 70);
-    --foreground: oklch(0.92 0.006 85);
-    --card: oklch(0.24 0.008 70);
-    --card-foreground: oklch(0.92 0.006 85);
-    --popover: oklch(0.24 0.008 70);
-    --popover-foreground: oklch(0.92 0.006 85);
-    --primary: oklch(0.92 0.006 85);
-    --primary-foreground: oklch(0.2 0.008 70);
-    --secondary: oklch(0.28 0.008 70);
-    --secondary-foreground: oklch(0.92 0.006 85);
-    --muted: oklch(0.28 0.008 70);
-    --muted-foreground: oklch(0.68 0.008 80);
-    --accent: oklch(0.3 0.012 70);
-    --accent-foreground: oklch(0.93 0.006 85);
-    --destructive: oklch(0.7 0.16 28);
-    --border: oklch(0.32 0.008 70);
-    --input: oklch(0.32 0.008 70);
-    --ring: oklch(0.72 0.1 45);
-    --do: oklch(0.74 0.12 155);
-    --dont: oklch(0.72 0.15 28);
-    --chart-1: oklch(0.72 0.11 230);
-    --chart-2: oklch(0.74 0.12 155);
-    --chart-3: oklch(0.72 0.15 25);
-    --chart-4: oklch(0.68 0.012 235);
-    --chart-5: oklch(0.5 0.014 240);
-    --sidebar: oklch(0.228 0.014 240);
-    --sidebar-foreground: oklch(0.91 0.008 235);
-    --sidebar-primary: oklch(0.72 0.11 230);
-    --sidebar-primary-foreground: oklch(0.19 0.014 240);
-    --sidebar-accent: oklch(0.3 0.03 235);
-    --sidebar-accent-foreground: oklch(0.93 0.008 235);
-    --sidebar-border: oklch(0.32 0.014 240);
-    --sidebar-ring: oklch(0.72 0.11 230);
-    --link: oklch(0.74 0.1 45);
+    --background: #2c2c2b;
+    --foreground: oklch(0.93 0 0);
+    --card: oklch(0.245 0 0);
+    --card-foreground: oklch(0.93 0 0);
+    --popover: oklch(0.245 0 0);
+    --popover-foreground: oklch(0.93 0 0);
+    --primary: oklch(0.93 0 0);
+    --primary-foreground: #2c2c2b;
+    --secondary: oklch(0.29 0 0);
+    --secondary-foreground: oklch(0.93 0 0);
+    --muted: oklch(0.29 0 0);
+    --muted-foreground: oklch(0.66 0 0);
+    --accent: oklch(0.31 0 0);
+    --accent-foreground: oklch(0.95 0 0);
+    --destructive: oklch(0.6 0.15 28);
+    --border: oklch(0.32 0 0);
+    --input: oklch(0.32 0 0);
+    --ring: oklch(0.55 0 0);
+    --do: oklch(0.62 0.1 155);
+    --dont: oklch(0.62 0.15 28);
+    --chart-1: oklch(0.85 0 0);
+    --chart-2: oklch(0.7 0 0);
+    --chart-3: oklch(0.58 0 0);
+    --chart-4: oklch(0.45 0 0);
+    --chart-5: oklch(0.36 0 0);
+    --sidebar: oklch(0.24 0 0);
+    --sidebar-foreground: oklch(0.9 0 0);
+    --sidebar-primary: oklch(0.93 0 0);
+    --sidebar-primary-foreground: #2c2c2b;
+    --sidebar-accent: oklch(0.31 0 0);
+    --sidebar-accent-foreground: oklch(0.95 0 0);
+    --sidebar-border: oklch(0.32 0 0);
+    --sidebar-ring: oklch(0.55 0 0);
+    --link: oklch(0.78 0 0);
+  }
+}
+
+@layer base {
+  /* **押せるものは指の形にする。**Tailwind の preflight は button に cursor: default を当てるので、
+     何もしないと画面のどこをホバーしても矢印のままで、押せることが分からない。 */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="option"],
+  [role="menuitem"],
+  a[href],
+  label[for],
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
   }
 }

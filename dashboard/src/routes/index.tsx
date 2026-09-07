@@ -85,7 +85,7 @@ function Source({ s }: { s: ChatSource }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="flex w-full gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] leading-[1.95] transition-colors hover:bg-secondary/70"
+          className="flex w-full gap-3 rounded-md px-3 py-2.5 text-left text-[13px] leading-[1.95] transition-colors hover:bg-secondary/70"
         >
           <span className="flex-none pt-0.5 font-mono text-[10.5px] text-muted-foreground">{s.n}</span>
           {/* **一覧では 2 行で切る。**PR 本文がそのまま入っていると 10 行を超え、
@@ -138,7 +138,7 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
     <div className="space-y-4">
       {/* 生成中は 1 位だけ先に出す。**根拠は 0.6 秒、答えは 3 秒**なので、待たせない。 */}
       {busy && top && (
-        <div className="rounded-xl bg-secondary/70 p-4">
+        <div className="rounded-md bg-secondary/70 p-4">
           <p className="text-muted-foreground text-xs">まとめています。いちばん近い記録:</p>
           <p className="mt-1.5 text-sm leading-relaxed">
             <span className={`mr-1 font-medium ${polarityClass(top.polarity)}`}>{top.label}</span>
@@ -319,7 +319,7 @@ function Chat() {
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-14 flex-none items-center gap-2 px-6">
           <Select value={chatId ?? ""} onValueChange={(v) => (v ? open(v) : fresh())}>
-            <SelectTrigger className="h-8 w-64 rounded-full border-none bg-transparent text-xs shadow-none hover:bg-secondary">
+            <SelectTrigger className="h-8 w-64 rounded-md border-none bg-transparent text-xs shadow-none hover:bg-secondary">
               <SelectValue placeholder="新しく聞く" />
             </SelectTrigger>
             <SelectContent>
@@ -363,7 +363,7 @@ function Chat() {
                     </p>
                     <div className="mt-7 flex flex-wrap justify-center gap-2">
                       {EXAMPLES.map((q) => (
-                        <Badge key={q} asChild variant="outline" className="rounded-full font-normal">
+                        <Badge key={q} asChild variant="outline" className="rounded-md font-normal">
                           <button type="button" onClick={() => ask(q)}>
                             {q}
                           </button>
@@ -426,7 +426,7 @@ function Chat() {
                 )}
               </Marker>
               {polishing ? (
-                <div className="flex items-center gap-2 rounded-xl border border-dashed px-3 py-2.5 text-[12px] text-muted-foreground">
+                <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-[12px] text-muted-foreground">
                   <Spinner className="size-3" />
                   読める文に直しています
                 </div>
@@ -440,7 +440,7 @@ function Chat() {
                         setDraft(o.text);
                         setOptions([]);
                       }}
-                      className="group flex flex-col overflow-hidden rounded-xl border bg-card text-left transition hover:border-primary/45 hover:shadow-[0_3px_14px_rgba(0,0,0,0.06)]"
+                      className="group flex flex-col overflow-hidden rounded-md border bg-card text-left transition hover:border-primary/45 hover:shadow-[0_3px_14px_rgba(0,0,0,0.06)]"
                     >
                       {/* **見出しは本文の外に置く。**中に重ねると、スクロールした本文が透ける。 */}
                       <span className="flex flex-none items-baseline gap-2 border-b bg-secondary/40 px-3 py-1.5 font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em] transition-colors group-hover:text-foreground">
@@ -469,7 +469,7 @@ function Chat() {
               ask(draft);
             }}
           >
-            <div className="rounded-2xl border bg-card px-6 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
+            <div className="rounded-md border bg-card px-6 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
               <Textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -494,7 +494,7 @@ function Chat() {
                       type="button"
                       variant={rec ? "default" : "ghost"}
                       size="icon"
-                      className={`ml-auto size-8 rounded-full ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+                      className={`ml-auto size-8 rounded-md ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
                       onClick={listen}
                       disabled={hearing || preparing || scopeIds.length === 0}
                       aria-label={rec ? "録音を終了" : "録音を開始"}
@@ -528,7 +528,7 @@ function Chat() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="rounded-full"
+                    className="rounded-md"
                     onClick={() => abort.current?.abort()}
                   >
                     止める
@@ -537,7 +537,7 @@ function Chat() {
                   <Button
                     type="submit"
                     size="icon"
-                    className="size-8 rounded-full"
+                    className="size-8 rounded-md"
                     disabled={!draft.trim() || scopeIds.length === 0}
                     aria-label="送る"
                   >

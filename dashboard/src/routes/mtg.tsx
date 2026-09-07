@@ -128,7 +128,7 @@ function Mtg() {
             type="button"
             onClick={on ? stop : start}
             disabled={!on && scopeIds.length === 0}
-            className={`rounded-full ${on ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+            className={`rounded-md ${on ? "bg-dont text-white hover:bg-dont/90" : ""}`}
           >
             {on ? <SquareIcon className="size-3.5" /> : <MicIcon className="size-4" />}
             {on ? "終了" : "会議を録る"}
@@ -156,7 +156,7 @@ function Mtg() {
 
               {reply.missing || reply.replies.length === 0 ? (
                 // **無いことを隠さない。**ここで曖昧に埋めると、会議のあとで訂正することになる。
-                <div className="rounded-xl border border-dont/40 border-dashed p-4">
+                <div className="rounded-md border border-dont/40 border-dashed p-4">
                   <p className="font-medium text-[15px] text-dont">記録にありません</p>
                   <p className="mt-1.5 text-[13px] text-muted-foreground leading-[1.9]">
                     その場で作らず、「確認して後で返します」と言うほうが安全です。
@@ -165,7 +165,7 @@ function Mtg() {
               ) : (
                 <ol className="space-y-3">
                   {reply.replies.map((r) => (
-                    <li key={r.text} className="rounded-xl border bg-card p-4">
+                    <li key={r.text} className="rounded-md border bg-card p-4">
                       <p className="text-[15px] leading-[1.95]">{r.text}</p>
                       {r.sources.length > 0 && (
                         <ul className="mt-3 space-y-1.5 border-t pt-2.5">
