@@ -4,6 +4,7 @@ import {
   BellIcon,
   BookOpenIcon,
   FolderIcon,
+  HeadphonesIcon,
   ListChecksIcon,
   MessageSquareIcon,
   PlayIcon,
@@ -81,6 +82,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuButton asChild isActive={path === "/"}>
                 <Link to="/">
                   <MessageSquareIcon /> 質問する
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={path === "/mtg"}>
+                <Link to="/mtg">
+                  <HeadphonesIcon /> 会議を聞き取る
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdviceRouteImport } from './routes/advice'
+import { Route as MtgRouteImport } from './routes/mtg'
 import { Route as NowRouteImport } from './routes/now'
 import { Route as PeopleRouteImport } from './routes/people'
 import { Route as ProjectsRouteImport } from './routes/projects'
@@ -26,6 +27,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdviceRoute = AdviceRouteImport.update({
   id: '/advice',
   path: '/advice',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MtgRoute = MtgRouteImport.update({
+  id: '/mtg',
+  path: '/mtg',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NowRoute = NowRouteImport.update({
@@ -62,6 +68,7 @@ const RecordsIdRoute = RecordsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/advice': typeof AdviceRoute
+  '/mtg': typeof MtgRoute
   '/now': typeof NowRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/advice': typeof AdviceRoute
+  '/mtg': typeof MtgRoute
   '/now': typeof NowRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/advice': typeof AdviceRoute
+  '/mtg': typeof MtgRoute
   '/now': typeof NowRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/advice'
+    | '/mtg'
     | '/now'
     | '/people'
     | '/projects'
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/advice'
+    | '/mtg'
     | '/now'
     | '/people'
     | '/projects'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/advice'
+    | '/mtg'
     | '/now'
     | '/people'
     | '/projects'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdviceRoute: typeof AdviceRoute
+  MtgRoute: typeof MtgRoute
   NowRoute: typeof NowRoute
   PeopleRoute: typeof PeopleRoute
   ProjectsRoute: typeof ProjectsRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/advice'
       fullPath: '/advice'
       preLoaderRoute: typeof AdviceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mtg': {
+      id: '/mtg'
+      path: '/mtg'
+      fullPath: '/mtg'
+      preLoaderRoute: typeof MtgRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/now': {
@@ -198,6 +218,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdviceRoute: AdviceRoute,
+  MtgRoute: MtgRoute,
   NowRoute: NowRoute,
   PeopleRoute: PeopleRoute,
   ProjectsRoute: ProjectsRoute,
