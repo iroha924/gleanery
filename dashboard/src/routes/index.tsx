@@ -1,173 +1,309 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BotIcon, GitBranchIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
-import { Phases } from "@/components/phases";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ArrowUpIcon } from "lucide-react";
+import { useRef, useState } from "react";
+import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Skeleton } from "@/components/ui/skeleton";
-import type { NextItem, Now } from "@/lib/api";
-import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
+import { api, askStream, type ChatSource } from "@/lib/api";
+import { polarityClass } from "@/lib/polarity";
 import { useProject } from "@/lib/project";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({ component: Chat });
 
-const STATUS: Record<string, string> = {
-  planning: "計画中",
-  "in-progress": "進行中",
-  blocked: "止まっている",
-  paused: "中断中",
-  done: "完了",
+type Turn = {
+  /** 本文は流れながら伸びるので、内容はキーにできない。追加時に固定の id を振る。 */
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: ChatSource[];
+  error?: string;
 };
 
-/** 次の一手。**担当で列を分ける。**who は記録が持っているので推測ではない。 */
-function NextList({ items, mine }: { items: NextItem[]; mine: boolean }) {
+const EXAMPLES = [
+  "このプロジェクトは何を解こうとしている？",
+  "いまどこまで進んでいて、次は何をする？",
+  "触ってはいけないところはどこ？",
+  "何を試して駄目だった？",
+];
+
+/**
+ * 根拠。**生成中は 1 位を開いて出す。**
+ * 根拠は 0.6 秒で出るのに答えは 3 秒かかる。会議中に聞く用途では、
+ * まとめを待つより「引いた 1 位」を先に読めた方が速い（実測: 体感 3.1s → 0.6s）。
+ */
+function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
+  if (sources.length === 0) return null;
+  const top = sources[0];
   return (
-    <div className="space-y-2.5">
-      <h3 className="flex items-center gap-1.5 text-sm font-medium">
-        {mine ? <UserIcon className="size-3.5" /> : <BotIcon className="size-3.5" />}
-        {mine ? "あなたがやること" : "AI に任せること"}
-        <span className="text-xs font-normal text-muted-foreground tabular-nums">{items.length}</span>
-      </h3>
-      {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">ありません。</p>
-      ) : (
-        <ul className="space-y-2">
-          {items.map((n) => (
-            <li
-              key={n.text}
-              className={`rounded-md border-l-2 py-1.5 pl-3 text-sm leading-relaxed ${
-                mine ? "border-l-foreground bg-muted/50" : "border-l-border"
-              }`}
-            >
-              {n.text}
-            </li>
-          ))}
-        </ul>
+    <div className="space-y-4">
+      {/* 生成中は 1 位だけ先に出す。**根拠は 0.6 秒、答えは 3 秒**なので、待たせない。 */}
+      {busy && top && (
+        <div className="rounded-xl bg-secondary/70 p-4">
+          <p className="text-muted-foreground text-xs">まとめています。いちばん近い記録:</p>
+          <p className="mt-1.5 text-sm leading-relaxed">
+            <span className={`mr-1 font-medium ${polarityClass(top.polarity)}`}>{top.label}</span>
+            {top.text}
+          </p>
+        </div>
+      )}
+      {!busy && (
+        <div className="space-y-3 border-t pt-5">
+          <div className="font-mono text-[8.5px] text-muted-foreground uppercase tracking-[0.14em]">
+            Sources
+          </div>
+          <ol className="space-y-2.5">
+            {sources.map((s) => (
+              <li key={s.n} className="flex gap-3 text-[13px] leading-[1.95]">
+                <span className="flex-none pt-0.5 font-mono text-[10.5px] text-muted-foreground">{s.n}</span>
+                <span className="text-foreground/85">
+                  <span className={`mr-1 ${polarityClass(s.polarity)}`}>{s.label}</span>
+                  {s.text}
+                  <span className="ml-1 text-muted-foreground">
+                    —{" "}
+                    <Link
+                      to="/records/$id"
+                      params={{ id: s.recordId }}
+                      className="underline underline-offset-2"
+                    >
+                      {s.recordTitle}
+                    </Link>
+                    {s.at && ` / ${s.at}`}
+                    {s.url && (
+                      <>
+                        {" / "}
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline underline-offset-2"
+                        >
+                          開く
+                        </a>
+                      </>
+                    )}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
     </div>
   );
 }
 
-function WorkCard({ w }: { w: Now }) {
-  const mine = w.next.filter((n) => n.who === "human");
-  const ai = w.next.filter((n) => n.who === "ai");
-  const constraints = w.walls.filter((x) => x.subkind === "constraint");
-  const nonGoals = w.walls.filter((x) => x.subkind === "non-goal");
-
-  return (
-    <Card>
-      <CardHeader className="gap-3">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant={w.status === "done" ? "secondary" : "default"}>
-            {STATUS[w.status] ?? w.status}
-          </Badge>
-          <span>{w.project}</span>
-          {w.branch && (
-            <span className="flex items-center gap-1">
-              <GitBranchIcon className="size-3" />
-              {w.branch}
-            </span>
-          )}
-          <span className="ml-auto tabular-nums">更新 {w.updated_at.slice(0, 10)}</span>
-        </div>
-        <Link
-          to="/records/$id"
-          params={{ id: w.id }}
-          className="text-lg font-semibold leading-snug underline-offset-4 hover:underline"
-        >
-          {w.title}
-        </Link>
-      </CardHeader>
-
-      <CardContent className="space-y-6">
-        <Phases phases={w.phases} />
-
-        {w.current_text && (
-          <div className="rounded-md border bg-muted/40 p-3">
-            <p className="text-sm leading-relaxed">{w.current_text}</p>
-            {w.current_at && (
-              <p className="mt-1.5 text-xs text-muted-foreground tabular-nums">
-                {w.current_at.slice(0, 10)} 時点
-              </p>
-            )}
-          </div>
-        )}
-
-        {(mine.length > 0 || ai.length > 0) && (
-          <>
-            <Separator />
-            <div className="grid gap-6 sm:grid-cols-2">
-              <NextList items={mine} mine />
-              <NextList items={ai} mine={false} />
-            </div>
-          </>
-        )}
-
-        {(constraints.length > 0 || nonGoals.length > 0) && (
-          <Accordion type="single" collapsible>
-            <AccordionItem value="walls" className="border-b-0">
-              <AccordionTrigger className="py-2 hover:no-underline">
-                <span className="flex items-center gap-1.5 text-sm font-medium">
-                  <ShieldAlertIcon className="size-3.5 text-dont" />
-                  触ってはいけない・やらないと決めたこと
-                  <span className="text-xs font-normal text-muted-foreground tabular-nums">
-                    {constraints.length + nonGoals.length}
-                  </span>
-                </span>
-              </AccordionTrigger>
-              <AccordionContent className="space-y-4 pt-1">
-                {[
-                  { rows: constraints, label: "変えてはいけないもの" },
-                  { rows: nonGoals, label: "やらないと決めたこと" },
-                ]
-                  .filter((g) => g.rows.length > 0)
-                  .map((g) => (
-                    <div key={g.label} className="space-y-1.5">
-                      <h4 className="text-xs font-medium text-dont">{g.label}</h4>
-                      <ul className="space-y-1.5">
-                        {g.rows.map((x) => (
-                          <li key={x.key} className="border-l-2 border-dont/50 pl-3 text-sm leading-relaxed">
-                            {x.text}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function Home() {
-  const { scopeIds } = useProject();
-  const { data, isPending, error } = useQuery({
-    queryKey: ["now", scopeIds],
-    queryFn: () => api.now(scopeIds),
-  });
-  if (isPending) return <Skeleton className="h-96 w-full" />;
-  if (error) return <p className="text-sm text-dont">{String(error)}</p>;
-  if (data.length === 0) {
-    return (
-      <div className="max-w-[60ch] space-y-2">
-        <h1 className="text-lg font-semibold">まだ何も保存されていません</h1>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          作業の途中で <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/mitos:trace</code>{" "}
-          を実行すると、そのセッションで決めたことがここに出ます。
-        </p>
-      </div>
+function Chat() {
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  // 範囲はヘッダで選んだものに従う。**送信のたびに選ばせない** —
+  // プロジェクトはセッション中ほぼ変わらないので、毎回同じ答えを入力させているだけだった。
+  // ただし「すべて」では答えない。混ぜると別の仕事の記録がこの仕事の答えとして返る。
+  const { scopeIds: picked, label: projectLabel } = useProject();
+  const scopeIds = picked ?? [];
+  const abort = useRef<AbortController | null>(null);
+  // 開いている会話。**新しい会話は最初の答えが返ってからサーバー側で作られる。**
+  const [chatId, setChatId] = useState<string | undefined>(undefined);
+  const qc = useQueryClient();
+  const history = useQuery({ queryKey: ["chats"], queryFn: api.chats });
+  /** 過去の会話を開く。いまの会話は捨てる（保存済みなので消えない）。 */
+  const open = async (id: string) => {
+    const c = await api.chat(id);
+    setChatId(c.id);
+    setTurns(
+      c.messages.map((m, i) => ({
+        id: `${c.id}-${i}`,
+        role: m.role,
+        content: m.content,
+        sources: m.sources,
+      })),
     );
-  }
+  };
+
+  const ask = async (question: string) => {
+    if (!question.trim() || busy || scopeIds.length === 0) return;
+    setDraft("");
+    setBusy(true);
+    const past = turns.map((t) => ({ role: t.role, content: t.content }));
+    const id = crypto.randomUUID();
+    setTurns((t) => [
+      ...t,
+      { id: `${id}-q`, role: "user", content: question },
+      { id: `${id}-a`, role: "assistant", content: "" },
+    ]);
+
+    abort.current = new AbortController();
+    const patch = (fn: (t: Turn) => Turn) =>
+      setTurns((prev) => prev.map((t, i) => (i === prev.length - 1 ? fn(t) : t)));
+
+    try {
+      await askStream(
+        { question, history: past, scopeIds, chatId, scopeName: projectLabel },
+        {
+          sources: (s) => patch((t) => ({ ...t, sources: s })),
+          text: (x) => patch((t) => ({ ...t, content: t.content + x })),
+          error: (m) => patch((t) => ({ ...t, error: m })),
+          saved: (id) => {
+            setChatId(id);
+            qc.invalidateQueries({ queryKey: ["chats"] });
+          },
+        },
+        abort.current.signal,
+      );
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") {
+        patch((t) => ({ ...t, error: e instanceof Error ? e.message : String(e) }));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const fresh = () => {
+    setChatId(undefined);
+    setTurns([]);
+  };
+
   return (
-    <div className="space-y-6">
-      {data.map((w) => (
-        <WorkCard key={w.id} w={w} />
-      ))}
+    // **1 往復を 1 本の短い記事として読ませる** — 質問が見出し、答えが本文、
+    // 根拠が末尾の脚注。吹き出しの往復にしない。
+    <div className="-m-4 flex h-[calc(100vh-3.5rem)]">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-14 flex-none items-center gap-2 px-6">
+          <Select value={chatId ?? ""} onValueChange={(v) => (v ? open(v) : fresh())}>
+            <SelectTrigger className="h-8 w-64 rounded-full border-none bg-transparent text-xs shadow-none hover:bg-secondary">
+              <SelectValue placeholder="新しく聞く" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">新しく聞く</SelectItem>
+              {history.data?.map((h) => (
+                <SelectItem key={h.id} value={h.id}>
+                  {h.title ?? "（無題）"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <MessageScrollerProvider>
+          <MessageScroller className="flex-1">
+            <MessageScrollerViewport>
+              <MessageScrollerContent aria-busy={busy} className="mx-auto w-full max-w-[41.5rem] px-6 pb-10">
+                {turns.length === 0 && (
+                  <div className="pt-24 text-center">
+                    <h2 className="font-extrabold text-2xl leading-relaxed">記録について聞く</h2>
+                    <p className="mx-auto mt-3 max-w-96 text-muted-foreground text-sm leading-loose">
+                      保存されているものだけで答えます。記録に無いことは「無い」と答え、
+                      答えには根拠が付きます。
+                    </p>
+                    <div className="mt-7 flex flex-wrap justify-center gap-2">
+                      {EXAMPLES.map((q) => (
+                        <Badge key={q} asChild variant="outline" className="rounded-full font-normal">
+                          <button type="button" onClick={() => ask(q)}>
+                            {q}
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {turns.map((t, i) =>
+                  t.role === "user" ? (
+                    <MessageScrollerItem key={t.id} messageId={t.id} scrollAnchor>
+                      {/* 質問が見出しになる。日付と範囲をその上に小さく乗せる */}
+                      <div className={i === 0 ? "pt-4" : "pt-14"}>
+                        <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
+                          {new Date().toLocaleDateString("sv-SE").replaceAll("-", ".")} · {projectLabel}
+                        </div>
+                        <h2 className="mt-3 font-extrabold text-[1.7rem] leading-[1.62]">{t.content}</h2>
+                        <div className="mt-5 h-px bg-border" />
+                      </div>
+                    </MessageScrollerItem>
+                  ) : (
+                    <MessageScrollerItem key={t.id} messageId={t.id}>
+                      <div className="mt-6 space-y-5">
+                        {t.content && <Answer text={t.content} />}
+                        {!t.content && !t.error && busy && (
+                          <p className="flex items-center gap-2 text-muted-foreground text-sm">
+                            <Spinner /> 記録を探しています
+                          </p>
+                        )}
+                        {t.error && <p className="text-dont text-sm">{t.error}</p>}
+                        {t.sources && <Sources sources={t.sources} busy={busy && !t.content} />}
+                      </div>
+                    </MessageScrollerItem>
+                  ),
+                )}
+              </MessageScrollerContent>
+            </MessageScrollerViewport>
+            <MessageScrollerButton />
+          </MessageScroller>
+        </MessageScrollerProvider>
+
+        <form
+          className="mx-auto w-full max-w-[41.5rem] flex-none px-6 pb-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            ask(draft);
+          }}
+        >
+          <div className="rounded-2xl border bg-card p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                // **Enter では送らない。**日本語入力では変換の確定に使われるため。
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  ask(draft);
+                }
+              }}
+              placeholder={scopeIds.length === 0 ? "左でプロジェクトを選んでください" : "続けて聞く"}
+              disabled={scopeIds.length === 0}
+              className="min-h-14 resize-none border-none bg-transparent p-0 text-[15px] shadow-none focus-visible:ring-0"
+            />
+            <div className="flex items-center gap-2 pt-2">
+              <span className="rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
+                {projectLabel}
+              </span>
+              {busy ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto rounded-full"
+                  onClick={() => abort.current?.abort()}
+                >
+                  止める
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="ml-auto size-8 rounded-full"
+                  disabled={!draft.trim() || scopeIds.length === 0}
+                  aria-label="送る"
+                >
+                  <ArrowUpIcon className="size-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

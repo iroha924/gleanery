@@ -1,7 +1,10 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/murecho";
+@import "@fontsource/m-plus-rounded-1c/400.css";
+@import "@fontsource/m-plus-rounded-1c/500.css";
+@import "@fontsource/m-plus-rounded-1c/700.css";
+@import "@fontsource/m-plus-rounded-1c/800.css";
 @import "@fontsource-variable/space-grotesk";
 
 @custom-variant dark (&:is(.dark *));
@@ -13,6 +16,7 @@
   --color-do: var(--do);
   /* 地図。**背景の格子と辺の色は明暗で入れ替わる**ので、ここで名前を付けて
      :root と dark の両方で定義する。片方だけ直すと夜側で線が見えなくなる。 */
+  --color-link: var(--link);
   --color-grid-dot: var(--grid-dot);
   --color-grid-line: var(--grid-line);
   --color-rel-rejected: var(--dont);
@@ -21,34 +25,34 @@
 }
 
 :root {
-  --background: oklch(0.981 0.004 220);
-  --foreground: oklch(0.26 0.02 235);
+  --background: oklch(0.99 0.004 88);
+  --foreground: oklch(0.24 0.012 65);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.26 0.02 235);
+  --card-foreground: oklch(0.24 0.012 65);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.26 0.02 235);
-  --primary: oklch(0.45 0.11 230);
-  --primary-foreground: oklch(0.99 0.003 220);
-  --secondary: oklch(0.955 0.006 220);
-  --secondary-foreground: oklch(0.3 0.02 235);
-  --muted: oklch(0.955 0.006 220);
-  --muted-foreground: oklch(0.52 0.02 235);
-  --accent: oklch(0.945 0.012 230);
-  --accent-foreground: oklch(0.3 0.02 235);
-  --destructive: oklch(0.55 0.16 25);
-  --border: oklch(0.9 0.008 220);
-  --input: oklch(0.9 0.008 220);
-  --ring: oklch(0.45 0.11 230);
-  --do: oklch(0.45 0.1 155);
-  --dont: oklch(0.5 0.15 25);
-  --grid-dot: oklch(0.855 0.012 220);
-  --grid-line: oklch(0.937 0.008 220);
+  --popover-foreground: oklch(0.24 0.012 65);
+  --primary: oklch(0.3 0.014 65);
+  --primary-foreground: oklch(0.99 0.004 88);
+  --secondary: oklch(0.958 0.01 80);
+  --secondary-foreground: oklch(0.3 0.012 65);
+  --muted: oklch(0.958 0.01 80);
+  --muted-foreground: oklch(0.5 0.012 70);
+  --accent: oklch(0.958 0.01 80);
+  --accent-foreground: oklch(0.28 0.012 65);
+  --destructive: oklch(0.55 0.16 28);
+  --border: oklch(0.92 0.008 80);
+  --input: oklch(0.92 0.008 80);
+  --ring: oklch(0.52 0.1 40);
+  --do: oklch(0.5 0.11 155);
+  --dont: oklch(0.55 0.16 28);
+  --grid-dot: oklch(0.88 0.01 80);
+  --grid-line: oklch(0.945 0.008 80);
   --chart-1: oklch(0.45 0.11 230);
   --chart-2: oklch(0.45 0.1 155);
   --chart-3: oklch(0.5 0.15 25);
   --chart-4: oklch(0.52 0.02 235);
   --chart-5: oklch(0.72 0.02 235);
-  --radius: 0.4rem;
+  --radius: 0.75rem;
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.26 0.02 235);
   --sidebar-primary: oklch(0.45 0.11 230);
@@ -57,11 +61,12 @@
   --sidebar-accent-foreground: oklch(0.3 0.02 235);
   --sidebar-border: oklch(0.9 0.008 220);
   --sidebar-ring: oklch(0.45 0.11 230);
+  --link: oklch(0.52 0.1 40);
 }
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: "Murecho Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "M PLUS Rounded 1c", ui-sans-serif, system-ui, sans-serif;
   /* 数と札は等幅寄りの書体で。**日付・件数・種別の札が本文と混ざらない。** */
   --font-mono: "Space Grotesk Variable", ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
@@ -105,28 +110,28 @@
 }
 
 .dark {
-  --background: oklch(0.192 0.014 240);
-  --foreground: oklch(0.91 0.008 235);
-  --card: oklch(0.228 0.014 240);
-  --card-foreground: oklch(0.91 0.008 235);
-  --popover: oklch(0.228 0.014 240);
-  --popover-foreground: oklch(0.91 0.008 235);
-  --primary: oklch(0.72 0.11 230);
-  --primary-foreground: oklch(0.19 0.014 240);
-  --secondary: oklch(0.27 0.014 240);
-  --secondary-foreground: oklch(0.91 0.008 235);
-  --muted: oklch(0.27 0.014 240);
-  --muted-foreground: oklch(0.68 0.012 235);
-  --accent: oklch(0.3 0.03 235);
-  --accent-foreground: oklch(0.93 0.008 235);
-  --destructive: oklch(0.7 0.16 25);
-  --border: oklch(0.32 0.014 240);
-  --input: oklch(0.32 0.014 240);
-  --ring: oklch(0.72 0.11 230);
+  --background: oklch(0.2 0.008 70);
+  --foreground: oklch(0.92 0.006 85);
+  --card: oklch(0.24 0.008 70);
+  --card-foreground: oklch(0.92 0.006 85);
+  --popover: oklch(0.24 0.008 70);
+  --popover-foreground: oklch(0.92 0.006 85);
+  --primary: oklch(0.92 0.006 85);
+  --primary-foreground: oklch(0.2 0.008 70);
+  --secondary: oklch(0.28 0.008 70);
+  --secondary-foreground: oklch(0.92 0.006 85);
+  --muted: oklch(0.28 0.008 70);
+  --muted-foreground: oklch(0.68 0.008 80);
+  --accent: oklch(0.3 0.012 70);
+  --accent-foreground: oklch(0.93 0.006 85);
+  --destructive: oklch(0.7 0.16 28);
+  --border: oklch(0.32 0.008 70);
+  --input: oklch(0.32 0.008 70);
+  --ring: oklch(0.72 0.1 45);
   --do: oklch(0.74 0.12 155);
-  --dont: oklch(0.72 0.15 25);
-  --grid-dot: oklch(0.3 0.016 240);
-  --grid-line: oklch(0.25 0.014 240);
+  --dont: oklch(0.72 0.15 28);
+  --grid-dot: oklch(0.3 0.01 70);
+  --grid-line: oklch(0.26 0.008 70);
   --chart-1: oklch(0.72 0.11 230);
   --chart-2: oklch(0.74 0.12 155);
   --chart-3: oklch(0.72 0.15 25);
@@ -140,6 +145,7 @@
   --sidebar-accent-foreground: oklch(0.93 0.008 235);
   --sidebar-border: oklch(0.32 0.014 240);
   --sidebar-ring: oklch(0.72 0.11 230);
+  --link: oklch(0.74 0.1 45);
 }
 
 @layer base {
@@ -158,28 +164,28 @@
    .dark と同じ値をここでも当てる（片方だけ直すと文字と背景がちぐはぐになる）。 */
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.192 0.014 240);
-    --foreground: oklch(0.91 0.008 235);
-    --card: oklch(0.228 0.014 240);
-    --card-foreground: oklch(0.91 0.008 235);
-    --popover: oklch(0.228 0.014 240);
-    --popover-foreground: oklch(0.91 0.008 235);
-    --primary: oklch(0.72 0.11 230);
-    --primary-foreground: oklch(0.19 0.014 240);
-    --secondary: oklch(0.27 0.014 240);
-    --secondary-foreground: oklch(0.91 0.008 235);
-    --muted: oklch(0.27 0.014 240);
-    --muted-foreground: oklch(0.68 0.012 235);
-    --accent: oklch(0.3 0.03 235);
-    --accent-foreground: oklch(0.93 0.008 235);
-    --destructive: oklch(0.7 0.16 25);
-    --border: oklch(0.32 0.014 240);
-    --input: oklch(0.32 0.014 240);
-    --ring: oklch(0.72 0.11 230);
+    --background: oklch(0.2 0.008 70);
+    --foreground: oklch(0.92 0.006 85);
+    --card: oklch(0.24 0.008 70);
+    --card-foreground: oklch(0.92 0.006 85);
+    --popover: oklch(0.24 0.008 70);
+    --popover-foreground: oklch(0.92 0.006 85);
+    --primary: oklch(0.92 0.006 85);
+    --primary-foreground: oklch(0.2 0.008 70);
+    --secondary: oklch(0.28 0.008 70);
+    --secondary-foreground: oklch(0.92 0.006 85);
+    --muted: oklch(0.28 0.008 70);
+    --muted-foreground: oklch(0.68 0.008 80);
+    --accent: oklch(0.3 0.012 70);
+    --accent-foreground: oklch(0.93 0.006 85);
+    --destructive: oklch(0.7 0.16 28);
+    --border: oklch(0.32 0.008 70);
+    --input: oklch(0.32 0.008 70);
+    --ring: oklch(0.72 0.1 45);
     --do: oklch(0.74 0.12 155);
-    --dont: oklch(0.72 0.15 25);
-    --grid-dot: oklch(0.3 0.016 240);
-    --grid-line: oklch(0.25 0.014 240);
+    --dont: oklch(0.72 0.15 28);
+    --grid-dot: oklch(0.3 0.01 70);
+    --grid-line: oklch(0.26 0.008 70);
     --chart-1: oklch(0.72 0.11 230);
     --chart-2: oklch(0.74 0.12 155);
     --chart-3: oklch(0.72 0.15 25);
@@ -193,35 +199,6 @@
     --sidebar-accent-foreground: oklch(0.93 0.008 235);
     --sidebar-border: oklch(0.32 0.014 240);
     --sidebar-ring: oklch(0.72 0.11 230);
-  }
-}
-
-/* 明るい側のグラフ用の色は :root、暗い側は上書き済み。ここは共通の見た目だけ。 */
-@layer components {
-  /* **動きは触っているものだけ。**既定で全部が動くと、目が休まらず
-     どれが「いま関係あるもの」なのか分からなくなる（実測で常時 20 本以上が流れていた）。 */
-  .map-flow {
-    animation: map-flow 2.8s linear infinite;
-  }
-  @keyframes map-flow {
-    to {
-      stroke-dashoffset: -36;
-    }
-  }
-  .map-halo {
-    transform: translate(-50%, -50%);
-    animation: map-spin 22s linear infinite;
-  }
-  @keyframes map-spin {
-    from {
-      transform: translate(-50%, -50%) rotate(0deg);
-    }
-    to {
-      transform: translate(-50%, -50%) rotate(360deg);
-    }
-  }
-  /* 地図の地。**格子は敷かない** — 節と辺より先に目に入ってしまう。 */
-  .map-paper {
-    background-color: var(--background);
+    --link: oklch(0.74 0.1 45);
   }
 }

@@ -70,16 +70,16 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path === "/"}>
-                <Link to="/">
+              <SidebarMenuButton asChild isActive={path === "/now"}>
+                <Link to="/now">
                   <PlayIcon /> 作業の現在地
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
 
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path === "/chat"}>
-                <Link to="/chat">
+              <SidebarMenuButton asChild isActive={path === "/"}>
+                <Link to="/">
                   <MessageSquareIcon /> 質問する
                 </Link>
               </SidebarMenuButton>
@@ -122,7 +122,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               {/* 一覧の画面は持たない。**「いま」が同じ記録を、工程・次の一手・制約つきで出す。**
                   ここは記録へ直接入る入口だけを残す。 */}
               <SidebarMenuButton asChild isActive={path.startsWith("/records")}>
-                <Link to="/">
+                <Link to="/now">
                   <ListChecksIcon /> 記録
                 </Link>
               </SidebarMenuButton>

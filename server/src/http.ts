@@ -90,103 +90,6 @@ app.get("/api/stats", async (c) => {
 });
 
 /**
- * 地図の材料。**節と辺を 1 往復で返す。**
- *
- * 辺は 2 系統ある。どちらも既にある列から導けるもので、`relation` 表は使っていない
- * （書き手がまだ無く 0 行なので、参照しても線が 1 本も出ない）。
- *
- * - `rejected` / `considered` … `node.parent_id`。案は決定にぶら下がるので、これが
- *   「その決定のときに捨てた案」を正確に表す
- * - `shares` … 同じ PR / ファイルに紐づく節どうし。**多く紐づく ref は辺にしない**
- *   （1 つの ref に 30 節ぶら下がると、そこだけで 435 本の辺が出て図が潰れる）
- *
- * 既定では発言と出来事を外す。判断の地図なので、PR コメント 1 件ずつを節にすると
- * 判断が埋もれる。`kinds=all` で全部返す。
- */
-const JUDGMENT_KINDS = ["decision", "option", "boundary", "verification", "question"];
-
-app.get("/api/graph", async (c) => {
-  const ids = scopesOf(c);
-  const kindsRaw = c.req.query("kinds");
-  const kinds = !kindsRaw ? JUDGMENT_KINDS : kindsRaw === "all" ? null : kindsRaw.split(",");
-  const client = await db();
-
-  const nodes = await client.query<{
-    id: number;
-    kind: string;
-    subkind: string | null;
-    polarity: string | null;
-    text: string;
-    at: string | null;
-    actor_name: string | null;
-    record_id: string;
-    pr: number | null;
-  }>(
-    // **bigint をそのまま返さない。**pg は bigint を文字列で返すので、画面側で
-    // 引用の節 id（数）と突き合わせたときに一致しない（実測: 強調が 1 つも点かなかった）。
-    `select n.id::int as id, n.kind, n.subkind, n.polarity, n.text, n.at, n.actor_name, n.record_id,
-            (n.attrs->>'pr')::int as pr
-       from node n
-      where n.deleted_at is null
-        and ($1::int[] is null or n.scope_id = any($1))
-        and ($2::text[] is null or n.kind = any($2))
-      order by n.at desc nulls last
-      limit 600`,
-    [ids, kinds],
-  );
-
-  const nodeIds = nodes.rows.map((r) => r.id);
-  if (nodeIds.length === 0) return c.json({ nodes: [], edges: [] });
-
-  // **PR とファイルを節として出す。**記録の 6 割は決定にぶら下がらず、
-  // ref だけが手掛かりになる（実測: 310 節中 209 が辺ゼロ、リンク 239 本が 5 つの ref に集中）。
-  // 総当たりで辺にすると 1 つの ref で数千本になるので、ref そのものを結び目にする。
-  // **2 件以上を束ねる ref だけ**を出す（1 件だけの ref は結び目にならない）。
-  const hubs = await client.query<{ id: number; kind: string; key: string; n: number }>(
-    `select r.id::int as id, r.kind, r.key, count(*)::int as n
-       from ref_link l join ref r on r.id = l.ref_id
-      where l.node_id = any($1::bigint[])
-      group by r.id, r.kind, r.key
-     having count(*) >= 2
-      order by count(*) desc
-      limit 60`,
-    [nodeIds],
-  );
-
-  // 結び目の id は負にする。**節の id と衝突させない**（画面は 1 つの表として扱う）。
-  const hubNodes = hubs.rows.map((h) => ({
-    id: -h.id,
-    kind: "ref",
-    subkind: h.kind,
-    polarity: null,
-    text: h.key,
-    at: null,
-    actor_name: null,
-    record_id: "",
-    pr: h.kind === "pr" ? Number(h.key.split("#")[1] ?? "") || null : null,
-  }));
-
-  // **両端が返した節に入っている辺だけを出す。**片側だけの辺は描けないので、
-  // ここで落としておかないと画面側が毎回間引くことになる。
-  const edges = await client.query<{ src: number; dst: number; kind: string; via: string | null }>(
-    `select child.parent_id::int as src, child.id::int as dst,
-            case when child.subkind = 'rejected' then 'rejected' else 'considered' end as kind,
-            null::text as via
-       from node child
-      where child.deleted_at is null
-        and child.parent_id = any($1::bigint[])
-        and child.id = any($1::bigint[])
-      union all
-     select distinct (-r.id)::int as src, l.node_id::int as dst, 'belongs' as kind, r.kind as via
-       from ref_link l join ref r on r.id = l.ref_id
-      where l.node_id = any($1::bigint[]) and r.id = any($2::int[])`,
-    [nodeIds, hubs.rows.map((h) => h.id)],
-  );
-
-  return c.json({ nodes: [...nodes.rows, ...hubNodes], edges: edges.rows });
-});
-
-/**
  * 編集フックが何を出したか。**CLI の `mitos advice` と同じ数字を画面へ出す。**
  *
  * 出所はフックが書く jsonl だけで、DB は見ない。フックは DB の読み取りしかせず、
@@ -352,7 +255,7 @@ app.post("/api/search", async (c) => {
   const scopeIds = Array.isArray(body.scopeIds) ? body.scopeIds : undefined;
   const polarity: Polarity | undefined = body.onlyDont ? "dont" : undefined;
   const { rows } = await search(client, env, { question, scopeIds, polarity, kinds: body.kinds, limit });
-  // **id は数で返す。**pg は bigint を文字列で返すので、地図の節と突き合わせられない。
+  // **id は数で返す。**pg は bigint を文字列で返すので、そのままだと画面側の数と一致しない。
   return c.json(rows.map((r) => ({ ...r, id: Number(r.id), label: labelOf(r) })));
 });
 

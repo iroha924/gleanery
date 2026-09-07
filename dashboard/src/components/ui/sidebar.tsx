@@ -15,7 +15,9 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = "16rem";
+// **画面幅に対する割合**で持つ。下限を置くのは、狭い窓で項目名が読めなくなるため
+// （和文 13px で「作業の現在地」が約 78px）。
+const SIDEBAR_WIDTH = "clamp(9rem, 10vw, 15rem)";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";

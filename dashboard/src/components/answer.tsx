@@ -18,9 +18,12 @@ const COMPONENTS: Components = {
       {children}
     </a>
   ),
-  p: ({ children }) => <p className="leading-relaxed">{children}</p>,
-  ul: ({ children }) => <ul className="list-disc space-y-1 pl-5">{children}</ul>,
-  ol: ({ children }) => <ol className="list-decimal space-y-1 pl-5">{children}</ol>,
+  // 記事として読ませる。**和文の長文は行間を広く取らないと目が滑る。**
+  p: ({ children }) => <p className="text-[1rem] leading-[2.15] tracking-[0.015em]">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc space-y-2 pl-5 text-[1rem] leading-[2.05]">{children}</ul>,
+  ol: ({ children }) => (
+    <ol className="list-decimal space-y-2 pl-5 text-[1rem] leading-[2.05]">{children}</ol>
+  ),
   code: ({ children, className }) =>
     className ? (
       <code className={className}>{children}</code>

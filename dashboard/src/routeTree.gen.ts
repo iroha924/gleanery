@@ -11,7 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdviceRouteImport } from './routes/advice'
-import { Route as ChatRouteImport } from './routes/chat'
+import { Route as NowRouteImport } from './routes/now'
 import { Route as PeopleRouteImport } from './routes/people'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as SearchRouteImport } from './routes/search'
@@ -28,9 +28,9 @@ const AdviceRoute = AdviceRouteImport.update({
   path: '/advice',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ChatRoute = ChatRouteImport.update({
-  id: '/chat',
-  path: '/chat',
+const NowRoute = NowRouteImport.update({
+  id: '/now',
+  path: '/now',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PeopleRoute = PeopleRouteImport.update({
@@ -62,7 +62,7 @@ const RecordsIdRoute = RecordsIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/advice': typeof AdviceRoute
-  '/chat': typeof ChatRoute
+  '/now': typeof NowRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
@@ -72,7 +72,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/advice': typeof AdviceRoute
-  '/chat': typeof ChatRoute
+  '/now': typeof NowRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
@@ -83,7 +83,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/advice': typeof AdviceRoute
-  '/chat': typeof ChatRoute
+  '/now': typeof NowRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
@@ -95,7 +95,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/advice'
-    | '/chat'
+    | '/now'
     | '/people'
     | '/projects'
     | '/search'
@@ -105,7 +105,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/advice'
-    | '/chat'
+    | '/now'
     | '/people'
     | '/projects'
     | '/search'
@@ -115,7 +115,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/advice'
-    | '/chat'
+    | '/now'
     | '/people'
     | '/projects'
     | '/search'
@@ -126,7 +126,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdviceRoute: typeof AdviceRoute
-  ChatRoute: typeof ChatRoute
+  NowRoute: typeof NowRoute
   PeopleRoute: typeof PeopleRoute
   ProjectsRoute: typeof ProjectsRoute
   SearchRoute: typeof SearchRoute
@@ -150,11 +150,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdviceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/chat': {
-      id: '/chat'
-      path: '/chat'
-      fullPath: '/chat'
-      preLoaderRoute: typeof ChatRouteImport
+    '/now': {
+      id: '/now'
+      path: '/now'
+      fullPath: '/now'
+      preLoaderRoute: typeof NowRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/people': {
@@ -198,7 +198,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdviceRoute: AdviceRoute,
-  ChatRoute: ChatRoute,
+  NowRoute: NowRoute,
   PeopleRoute: PeopleRoute,
   ProjectsRoute: ProjectsRoute,
   SearchRoute: SearchRoute,

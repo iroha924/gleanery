@@ -1,19 +1,6 @@
 // API の型。**サーバーの戻り値をここで 1 回だけ書く。**
 // 画面ごとに書くと、片方だけ直したときに気付けない。
 
-/** 地図の節。**text はそのまま返る**ので、札にするときは呼ぶ側で切る。 */
-export type GraphNode = {
-  id: number;
-  kind: string;
-  subkind: string | null;
-  polarity: string | null;
-  text: string;
-  at: string | null;
-  actor_name: string | null;
-  record_id: string;
-  pr: number | null;
-};
-
 /** 編集フックが 1 回走ったときの記録。**沈黙も 1 行として残る。** */
 export type AdviceRow = {
   at: string;
@@ -32,8 +19,6 @@ export type Advice = {
   byPath: { path: string; n: number }[];
 };
 
-/** 辺。`relation` 表ではなく parent_id と ref の共起から導かれる。 */
-export type GraphEdge = { src: number; dst: number; kind: string; via: string | null };
 export type Phase = { id: string; label: string; state: "done" | "doing" | "todo"; from: string };
 export type NextItem = { who: "ai" | "human"; text: string };
 export type Wall = { record_id: string; subkind: "constraint" | "non-goal"; text: string; key: string };
@@ -54,8 +39,6 @@ export type Now = {
 
 export type ChatSource = {
   n: number;
-  /** どの節から言っているか。**地図で光らせるのに要る**（道具が返したものは null） */
-  nodeId: number | null;
   label: string;
   text: string;
   polarity: Polarity;
@@ -289,10 +272,6 @@ export const api = {
   stats: (scopes?: number[]) => get<Stats>(`/api/stats${q(scopes)}`),
   scopes: () => get<Scope[]>("/api/scopes"),
   advice: () => get<Advice>("/api/advice"),
-  graph: (scopes?: number[], kinds?: string) =>
-    get<{ nodes: GraphNode[]; edges: GraphEdge[] }>(
-      `/api/graph${q(scopes)}${kinds ? `${q(scopes) ? "&" : "?"}kinds=${kinds}` : ""}`,
-    ),
   records: (scopes?: number[]) => get<RecordRow[]>(`/api/records${q(scopes)}`),
   record: (id: string) => get<RecordDetail>(`/api/records/${encodeURIComponent(id)}`),
   search: async (body: {

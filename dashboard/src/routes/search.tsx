@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Focus } from "@/components/focus";
-import { Graph } from "@/components/graph";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,9 +38,6 @@ function SearchPage() {
   const { q, dont, kinds } = Route.useSearch();
   const [draft, setDraft] = useState(q ?? "");
   const { scopeIds } = useProject();
-  const [selected, setSelected] = useState<number | null>(null);
-  // 地図は「聞く」と同じものを出す。**探した結果がそのまま地図で光る。**
-  const graph = useQuery({ queryKey: ["graph", scopeIds], queryFn: () => api.graph(scopeIds, "all") });
 
   const { data, isFetching, error } = useQuery({
     queryKey: ["search", q, dont, kinds, scopeIds],
@@ -51,12 +46,6 @@ function SearchPage() {
     staleTime: 60_000,
   });
 
-  const gnodes = graph.data?.nodes ?? [];
-  const gedges = graph.data?.edges ?? [];
-  const highlighted = useMemo(() => (data ?? []).map((h) => h.id), [data]);
-  const focus = gnodes.find((n) => n.id === selected) ?? null;
-  const links = focus ? gedges.filter((e) => e.src === focus.id || e.dst === focus.id).length : 0;
-
   const toggleKind = (k: string) => {
     const next = kinds?.includes(k) ? kinds.filter((x) => x !== k) : [...(kinds ?? []), k];
     nav({ search: (p) => ({ ...p, kinds: next.length ? next : undefined }) });
@@ -64,26 +53,7 @@ function SearchPage() {
 
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-4">
-      <div className="relative min-w-0 flex-[6] overflow-hidden rounded-md border">
-        {gnodes.length === 0 ? (
-          <p className="p-4 text-muted-foreground text-sm">この範囲には判断の記録がありません。</p>
-        ) : (
-          <>
-            <Graph
-              nodes={gnodes}
-              edges={gedges}
-              highlighted={highlighted}
-              selected={selected}
-              onSelect={setSelected}
-            />
-            <div className="pointer-events-none absolute top-4 left-4 font-mono text-[10px] text-muted-foreground tracking-widest">
-              {highlighted.length > 0 ? `引いた ${highlighted.length} 件を強調中` : "全体を表示中"}
-            </div>
-            {focus && <Focus node={focus} links={links} onClose={() => setSelected(null)} />}
-          </>
-        )}
-      </div>
-      <div className="flex min-w-0 flex-[4] flex-col gap-5 overflow-y-auto pr-1">
+      <div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col gap-5 overflow-y-auto">
         <form
           className="flex gap-2"
           onSubmit={(e) => {
