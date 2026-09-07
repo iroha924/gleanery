@@ -4,12 +4,12 @@
 
 - 状態: 進行中
 - 対象: mitos (main)
-- 最終更新: 2026-09-08T02:00:00+09:00
+- 最終更新: 2026-09-08T02:40:00+09:00
 - 人間向けの表示: `personal-rebuild.progress.html`
 
 ## いまここ
 
-地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。**この回のコミット 35 本は push していない。**直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）
+地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。**この回のコミット 35 本は push していない。**直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）。ファビコンとアプリアイコンを「折り返す糸」で入れた（d-icon-folded-thread）
 
 ### 工程
 
@@ -425,6 +425,27 @@
 - 検証: v-fonts [pass]
 - 根拠: commit aec5f73 / file dashboard/src/styles.css
 
+### d-icon-folded-thread
+
+**「折り返す糸」を採る。縦に伸びた線が下で折り返して途中で止まり、辿り着いた先を点で置く**
+
+- 状態: accepted / 09-08 02:40
+- 文脈: ファビコンが未設定だった。dashboard/public に紫のマーク（favicon.svg）と SNS アイコン束（icons.svg）が置いてあったが、**index.html からどこも参照しておらず**、テンプレート由来の残骸だった。第一条件は 16px のブラウザタブで潰れずに読めること。配色は既存のトークン（#2C2C2B と ほぼ白）だけで、色は足さない。4 方向を同じ枠・同じ実寸（32 / 16 / 16 暗 / アプリ）で並べて本人に選ばせた。
+- 検討した案:
+  - 採用: 折り返す糸 — μίτος（ギリシャ語の「糸」）そのもの。辿れば元の判断まで戻れることを、折り返す線で表す
+  - 棄却: 採った節と棄てた節 — 塗った点が採用した判断、輪郭だけの点が棄却した案。線でつなぎ、同じ重みで持つことを示す — 16px では輪の内側が 2px しか残らない。タブの縮小で塗りつぶれ、塗りと輪郭の差が消える。第一条件（16px で読める）を満たせない
+  - 棄却: 頭文字の m — Geist の m をパスで描く。16px で最も確実に読め、白黒基調に素直に馴染む — 何の道具かが名前でしか分からない。m で始まる他の道具と並ぶと見分けが付かない
+  - 棄却: 分岐と行き止まり — 縦線が通った道、右へ伸びた枝が塞がれている。棄却した案と行き止まりを同じ重みで持つ設計をそのまま形にする — 本人が折り返す糸を選んだ。抽象度が高く説明を聞くまで意味が伝わらない点、塞ぐ棒が「一時停止」に見える点が不利だった
+- 結果:
+  - 名前（μίτος = 糸）と印が一致する。由来を説明すれば一度で伝わる
+  - 線 3 要素・すべて 2 単位の太さで 16 の格子に乗っているので、16px でも 180px でも滲まない
+  - SVG の中で prefers-color-scheme を見ているので、暗いタブでは字面が反転する
+  - (不利) 「糸」と読めるのは名前を知っている人だけ。初見では U か釣り針に見える
+  - (不利) iOS 用の PNG は暗い地に固定なので、明暗の追随はブラウザのタブだけ。2 枚を別々に持つことになった
+- 守られていることの確かめ方: dashboard/index.html が /favicon.svg と /apple-touch-icon.png を参照し、両方が 200 で返ること。favicon.svg の viewBox が 0 0 16 16 で stroke-width が 2 のままであること（ここを変えると 16px で滲む）
+- 検証: v-icon-wired [pass]
+- 根拠: file dashboard/public/favicon.svg / file dashboard/public/apple-touch-icon.png / file dashboard/index.html
+
 ## 経過
 
 - `e-purge-timeout` 09-07 02:05 [駄目だった道] 35,074 行とその cascade を 1 つの DELETE で消そうとして、Supabase の statement_timeout（postgres ロールで 2 分）に当たり ROLLBACK した。データは 1 行も消えていない。node を 1,000 行、ref を 5,000 行ずつの塊に割り、文ごとに自動コミットさせる形で通した（所要 244 秒） — $ node scratchpad/purge.ts (exit 1)
@@ -465,6 +486,7 @@
 - `e-whisper-provenance-lost` 09-08 02:00 [判明したこと] [inference] **d-whisper-1 が手元モデルを棄却した数字の出所を、いまは切り分けられない。**レビュアーの指摘（#9）。同じ比較の周辺で 2 つの事故が起きている — e-nt-drops-tail（-nt が末尾を落とす。モデルの性質だと誤診断した）と e-zsh-word-split-again（比較スクリプトが前回の出力を読み、数字が前の実行のものだった）。「50.6 秒を 20.7 秒で打ち切った」がこの 2 つより前か後かは記録に無く、音声と実行体も残っていない（e-scratchpad-not-tracked）。**手元モデルへ戻す判断をするなら測り直しが要る。**なお whisper-1 を採った側の根拠（誤変換 0、末尾が落ちない）はこの回でも API 経由で再現できる — file personal-rebuild.progress.md
 - `e-routes-now` 09-08 02:00 [判明したこと] **いまの画面は 6 本。**レビュアーの指摘（#12）で数えた。/（質問する）、/now（作業の現在地）、/search（記録を探す）、/records/$id（記録）、/mtg（会議を聞き取る）、/settings（設定）。背景に書いた 8 本のうち /chat は / に統合、/projects と /terms は /settings のタブへ、/people（名簿）と /advice（編集時の助言）は 38d9fa4 で削除した — $ ls dashboard/src/routes/ (exit 0)
 - `e-review-triage-2` 09-08 02:10 [作業] まっさらなレビュアー 1 体に .md だけを渡し、23 件の指摘を全件裁定した（1 ラウンドで打ち切り）。**受理して直した 13 件**: 目的が削除済みの地図を完了条件に要求したままだった（d-goal-after-map）、push 範囲がリモートの実体と食い違っていた（v-remote-head。リモートは 8e3942f ではなく 357aa22 だった）、地図に依存する決定 2 件と検証 3 件が再実行できないまま [pass] で残っていた（e-graph-deps-stale）、再現手段のスクリプトが git に無い・消してある（e-scratchpad-not-tracked）、作業場所が 1 件か 2 件か（e-two-scopes）、node の件数の母数と bot 発言 139→138 の誤り（e-counts-differ-by-population、v-bot-utterances）、relation の書き手が無いという断定が未検証だった（v-relation-no-writer）、会議の聞き取りを grep でしか確かめていない（v-mtg-end-to-end を not-run で明示）、緑の証拠が 35 本前の時点だった（v-green-at-head）、SessionEnd の一次ソースに URL と参照日が無い（v-hook-doc）、書体の決定が無い（d-geist-murecho）、画面が何本か特定できない（e-routes-now）、whisper の棄却根拠の出所が切り分けられない（e-whisper-provenance-lost）、再接続中の音声欠落と scrub パターンの所在が未解決に入っていなかった（q-realtime-gap、q-scrub-pattern）。**見送った 8 件と理由**: (a) 正本が html か md かの食い違いと実行体パスの二重表記は、記録の本文ではなく trace の書き出しテンプレートが出している文言なので記録側で直せない（証拠の相対パス 1 件だけ直した）。(b)「方向を選ぶ」「画面の展開」に決定が無いのは、どちらも本人の直接の指示で棄却案が存在しないため。(c) /advice と /mtg を足した決定が無いのも同じ理由（画面の一覧は e-routes-now で確定させた）。(d) v-int-casts の what が観測より強い点は、e-bigint-as-string 自身が走査範囲の限界を書いており記録内で矛盾していない。(e) v-evals-shell が評価セット 5 本のうち 1 本しか cat していない点は、d-delete-not-scrub の中心根拠ではない。(f) 制約が 8 件と 3 件で食い違って見えるのは母数の違い — e-now-screen-kept の 8 件は /now 画面が集約して出す件数（制約 + やらないこと + 行き止まり）で、background.constraints の 3 件とは別物。(g) q-title-backfill の「ChatGPT は過去の会話名を変えない」に出典が無い点は、人への問いに添えた判断材料であって事実の主張として使っていない。(h) e-purge-timeout の ROLLBACK 後に件数を数え直していない点は、そのあと e-purge-scope で削除を完了して数え直しており、いまの DB 状態は独立に確かめられている。**なお指摘 #22 は見送らず、ここに書き残す** — 「回答精度 74/74」の出所はこの記録の外（削除済みの MEMORY.md）にあり復元できない。数値として引かないこと。「Google Meet 6 割・Zoom 2 割・Teams 2 割」は本人の申告で、実測ではない — file personal-rebuild.progress.md
+- `e-favicon-was-template-leftover` 09-08 02:40 [判明したこと] dashboard/public に置いてあった favicon.svg（紫の稲妻）と icons.svg（Bluesky などの SNS アイコン束）は**index.html からどこからも参照されていなかった。**テンプレート由来の残骸で、実質ファビコンは未設定だった。icons.svg は削除し、favicon.svg は中身を差し替えた — $ grep -rn 'favicon|icons.svg' --include='*.html' --include='*.tsx' . (exit 0)
 
 ## 検証
 
@@ -508,6 +530,7 @@
 - `v-hook-doc` [pass] SessionEnd が終了を止められないという一次ソース（止める案を棄却した根拠） （d-session-end-hint を確かめた） — `https://code.claude.com/docs/en/hooks の SessionEnd 節（2026-09-08 参照）`
 - `v-green-at-head` [pass] 最後のコミットを含む状態で、型検査・整形・テスト・本番ビルドが通ること（v-checks は 35 本前の時点、v-session-green は時点も出力も無い） — `bun run check && bun run test && bun run build`
 - `v-fonts` [pass] 書体が Geist と Murecho に入れ替わり、丸ゴシックが依存から消えていること （d-geist-murecho を確かめた） — `grep -n 'Geist Variable\|Murecho\|m-plus-rounded' dashboard/src/styles.css dashboard/package.json`
+- `v-icon-wired` [pass] ファビコンとアプリアイコンが配線され、どちらも配信されること （d-icon-folded-thread を確かめた） — `ブラウザから fetch('/favicon.svg') と fetch('/apple-touch-icon.png')、link[rel*=icon] を列挙`
 
 ## 用語
 
@@ -515,6 +538,7 @@
 - 節（node）: 記録の中の 1 つの判断・発言・出来事。決めたこと・検討した案・分かったこと・触らない制約・確かめたこと・未解決の問いの 6 種と、取り込んだ発言
 - 結び目: 地図に置く PR やファイル。判断ではないが、2 件以上の節がぶら下がるものを構造の錨として出している
 - 極性（polarity）: その節が「やる」か「やらない」か。埋め込み空間では両者がほぼ同じ位置に来るため、ベクトルではなく列で持つ
+- 折り返す糸: undefined
 
 ## この文書について
 

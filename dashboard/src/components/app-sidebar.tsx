@@ -61,7 +61,20 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar {...props}>
       <SidebarHeader className="gap-3 px-3 py-4">
-        <Link to="/" className="text-base font-semibold tracking-tight">
+        <Link to="/" className="flex items-center gap-2 text-base font-semibold tracking-tight">
+          {/* 折り返す糸。**ファビコンと同じ形をそのまま置く** — 色は currentColor に任せるので、
+              明暗の切り替えでも文字と同じ濃さで並ぶ。 */}
+          <svg viewBox="0 0 16 16" className="size-[18px] flex-none" fill="none" aria-hidden="true">
+            <g transform="translate(-0.3 0.75)">
+              <path
+                d="M4 2 V10 a2.5 2.5 0 0 0 5 0 V5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="square"
+              />
+              <circle cx="12" cy="5" r="1.6" fill="currentColor" />
+            </g>
+          </svg>
           mitos
         </Link>
         {/* **いま何を見ているかは 1 箇所で決める。**全画面がこれに従う。 */}
