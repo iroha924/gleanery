@@ -1,9 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowUpIcon, MicIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, MicIcon, SquareIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Answer } from "@/components/answer";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -84,7 +85,7 @@ function Source({ s }: { s: ChatSource }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="flex w-full gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] leading-[1.95] transition-colors hover:bg-secondary/60"
+          className="flex w-full gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] leading-[1.95] transition-colors hover:bg-secondary/70"
         >
           <span className="flex-none pt-0.5 font-mono text-[10.5px] text-muted-foreground">{s.n}</span>
           <span className="min-w-0 text-foreground/85">
@@ -93,9 +94,9 @@ function Source({ s }: { s: ChatSource }) {
           </span>
         </button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[36rem]">
+      <DialogContent className="gap-5 p-6 sm:max-w-[42rem]">
         <DialogHeader>
-          <DialogTitle className="text-[1.15rem] leading-[1.7]">
+          <DialogTitle className="pr-10 text-[1.15rem] leading-[1.7]">
             <span className={`mr-1.5 ${polarityClass(s.polarity)}`}>{s.label}</span>
             {s.recordTitle}
           </DialogTitle>
@@ -104,8 +105,8 @@ function Source({ s }: { s: ChatSource }) {
             {s.at && ` / ${s.at}`}
           </DialogDescription>
         </DialogHeader>
-        <p className="max-h-[50vh] overflow-y-auto text-[14px] leading-[2.1]">{s.text}</p>
-        <DialogFooter className="sm:justify-start">
+        <p className="max-h-[50vh] overflow-y-auto pr-1 text-[14px] leading-[2.1]">{s.text}</p>
+        <DialogFooter className="-mx-6 -mb-6 p-5 sm:justify-start">
           <Button asChild variant="outline" size="sm">
             <Link to="/records/$id" params={{ id: s.recordId }}>
               記録を開く
@@ -141,10 +142,10 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
       )}
       {!busy && (
         <div className="space-y-2 border-t pt-5">
-          <Marker className="px-2 font-mono text-[8.5px] uppercase tracking-[0.14em]">
+          <Marker className="px-3 font-mono text-[8.5px] uppercase tracking-[0.14em]">
             <MarkerContent>Sources</MarkerContent>
           </Marker>
-          <ol className="-mx-2">
+          <ol className="-mx-3 space-y-0.5">
             {sources.map((s) => (
               <li key={s.n}>
                 <Source s={s} />
@@ -324,6 +325,23 @@ function Chat() {
               ))}
             </SelectContent>
           </Select>
+          {/* **開いている会話だけ消せる。**一覧から消すと、どれを消したのか手元に残らない。 */}
+          {chatId && (
+            <ConfirmDelete
+              what={history.data?.find((h) => h.id === chatId)?.title ?? "この会話"}
+              note="この会話だけが消えます。記録は残ります。"
+              onConfirm={() => {
+                api.deleteChat(chatId).then(() => {
+                  qc.invalidateQueries({ queryKey: ["chats"] });
+                  fresh();
+                });
+              }}
+            >
+              <Button variant="ghost" size="icon" className="size-8" aria-label="この会話を消す">
+                <Trash2Icon className="size-3.5" />
+              </Button>
+            </ConfirmDelete>
+          )}
         </div>
 
         <MessageScrollerProvider>
