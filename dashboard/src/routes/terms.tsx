@@ -8,7 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemGroup,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -158,30 +166,34 @@ function Terms() {
           </CardTitle>
           <CardDescription>{known.length} 語</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent>
           {known.length === 0 && <p className="text-muted-foreground text-sm">まだありません。</p>}
-          {known.map((t) => (
-            <div key={t.id} className="space-y-1 border-b pb-3 last:border-0">
-              <div className="flex items-start justify-between gap-2">
-                <span className="font-medium text-sm">{t.word}</span>
-                <ConfirmDelete what={t.word} onConfirm={() => remove.mutate(t.id)}>
-                  <Button variant="ghost" size="icon" aria-label={`「${t.word}」を消す`}>
-                    <Trash2Icon className="size-3.5" />
-                  </Button>
-                </ConfirmDelete>
-              </div>
-              <p className="text-muted-foreground text-xs leading-relaxed">{t.meaning}</p>
-              {t.aliases.length > 0 && (
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {t.aliases.map((a) => (
-                    <Badge key={a} variant="secondary" className="text-xs">
-                      {a}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+          <ItemGroup>
+            {known.map((t) => (
+              <Item key={t.id} variant="muted" className="items-start">
+                <ItemContent>
+                  <ItemTitle>{t.word}</ItemTitle>
+                  <ItemDescription className="leading-relaxed">{t.meaning}</ItemDescription>
+                  {t.aliases.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1.5">
+                      {t.aliases.map((a) => (
+                        <Badge key={a} variant="secondary" className="text-xs">
+                          {a}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </ItemContent>
+                <ItemActions>
+                  <ConfirmDelete what={t.word} onConfirm={() => remove.mutate(t.id)}>
+                    <Button variant="ghost" size="icon" aria-label={`「${t.word}」を消す`}>
+                      <Trash2Icon className="size-3.5" />
+                    </Button>
+                  </ConfirmDelete>
+                </ItemActions>
+              </Item>
+            ))}
+          </ItemGroup>
         </CardContent>
       </Card>
     </div>

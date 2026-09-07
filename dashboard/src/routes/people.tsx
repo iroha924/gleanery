@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -113,7 +113,7 @@ function People() {
                     )}
                   </ItemDescription>
                 </ItemContent>
-                <div className="flex gap-1">
+                <ItemActions>
                   <Button variant="ghost" size="sm" onClick={() => edit(p)}>
                     直す
                   </Button>
@@ -126,7 +126,7 @@ function People() {
                       <Trash2Icon className="size-4" />
                     </Button>
                   </ConfirmDelete>
-                </div>
+                </ItemActions>
               </Item>
             ))}
           </CardContent>
