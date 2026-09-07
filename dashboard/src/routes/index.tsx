@@ -330,7 +330,7 @@ function Chat() {
               ask(draft);
             }}
           >
-            <div className="rounded-2xl border bg-card p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
+            <div className="rounded-2xl border bg-card px-5 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
               <Textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -343,7 +343,7 @@ function Chat() {
                 }}
                 placeholder={scopeIds.length === 0 ? "左でプロジェクトを選んでください" : "続けて聞く"}
                 disabled={scopeIds.length === 0}
-                className="min-h-14 resize-none border-none bg-transparent p-0 text-[15px] shadow-none focus-visible:ring-0"
+                className="min-h-12 resize-none border-none bg-transparent p-0 text-[15px] leading-[1.75] shadow-none focus-visible:ring-0"
               />
               <div className="flex items-center gap-2 pt-2">
                 <span className="rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">

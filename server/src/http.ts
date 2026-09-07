@@ -653,7 +653,9 @@ const POLISH = `日本語の音声認識の生の出力を、読める文に直�
 
 3 つの候補は、直す度合いで分ける。**どれも元の意図を変えない。**
 1. label「句読点だけ」… 語を一切変えず、句読点と改行だけを入れる
-2. label「整えた」… 言いよどみと言い直しを取り、前後から明らかな誤変換を直す
+2. label「整えた」… 言いよどみと言い直しを取り、前後から明らかな誤変換を直す。
+   **触るのはそこだけ。**誤変換でない語は 1 つも変えない（「前に」を「以前」に、
+   「ダメだった」を「うまくいかなかった」に言い換えない）。言い回しを丁寧にしない
 3. label「短く」… 要点だけにする。ただし問いの中身は落とさない
 
 推測で情報を足さない。元に無いことを書かない。`;
@@ -667,8 +669,9 @@ app.post("/api/polish", async (c) => {
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
     const r = await openai.responses.create({
       model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
-      // 話し終えた直後に出るものなので、考え込ませない。
-      reasoning: { effort: "low" },
+      // **low では直し漏れと改悪が出る。**同じ入力を 4 回投げて全部違う結果になり、
+      // 元が正しかった数字を壊すことがあった。medium は 3 回とも誤変換を直し、しかも速かった。
+      reasoning: { effort: "medium" },
       instructions: POLISH,
       input: text,
       text: {
