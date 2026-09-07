@@ -1,13 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  BookOpenIcon,
-  FolderIcon,
   HeadphonesIcon,
   ListChecksIcon,
   MessageSquareIcon,
   PlayIcon,
   SearchIcon,
+  SettingsIcon,
 } from "lucide-react";
 import type * as React from "react";
 import {
@@ -125,16 +124,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <SidebarGroupLabel>設定</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path.startsWith("/projects")}>
-                <Link to="/projects">
-                  <FolderIcon /> プロジェクト
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path.startsWith("/terms")}>
-                <Link to="/terms">
-                  <BookOpenIcon /> 社内語の辞書
+              <SidebarMenuButton asChild isActive={path.startsWith("/settings")}>
+                <Link to="/settings">
+                  <SettingsIcon /> 設定
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

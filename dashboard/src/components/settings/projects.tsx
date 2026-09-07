@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
 import { LinkIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -16,9 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
 
-export const Route = createFileRoute("/projects")({ component: Projects });
-
-function Projects() {
+export function ProjectsPanel() {
   const qc = useQueryClient();
   const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
   const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
@@ -56,7 +53,7 @@ function Projects() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[83rem] space-y-6">
+    <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>プロジェクトを作る</CardTitle>

@@ -12,9 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MtgRouteImport } from './routes/mtg'
 import { Route as NowRouteImport } from './routes/now'
-import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as SearchRouteImport } from './routes/search'
-import { Route as TermsRouteImport } from './routes/terms'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RecordsIdRouteImport } from './routes/records.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -32,19 +31,14 @@ const NowRoute = NowRouteImport.update({
   path: '/now',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjectsRoute = ProjectsRouteImport.update({
-  id: '/projects',
-  path: '/projects',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SearchRoute = SearchRouteImport.update({
   id: '/search',
   path: '/search',
   getParentRoute: () => rootRouteImport,
 } as any)
-const TermsRoute = TermsRouteImport.update({
-  id: '/terms',
-  path: '/terms',
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecordsIdRoute = RecordsIdRouteImport.update({
@@ -57,18 +51,16 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/mtg': typeof MtgRoute
   '/now': typeof NowRoute
-  '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
-  '/terms': typeof TermsRoute
+  '/settings': typeof SettingsRoute
   '/records/$id': typeof RecordsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/mtg': typeof MtgRoute
   '/now': typeof NowRoute
-  '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
-  '/terms': typeof TermsRoute
+  '/settings': typeof SettingsRoute
   '/records/$id': typeof RecordsIdRoute
 }
 export interface FileRoutesById {
@@ -76,26 +68,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/mtg': typeof MtgRoute
   '/now': typeof NowRoute
-  '/projects': typeof ProjectsRoute
   '/search': typeof SearchRoute
-  '/terms': typeof TermsRoute
+  '/settings': typeof SettingsRoute
   '/records/$id': typeof RecordsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    '/' | '/mtg' | '/now' | '/projects' | '/search' | '/terms' | '/records/$id'
+  fullPaths: '/' | '/mtg' | '/now' | '/search' | '/settings' | '/records/$id'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    '/' | '/mtg' | '/now' | '/projects' | '/search' | '/terms' | '/records/$id'
+  to: '/' | '/mtg' | '/now' | '/search' | '/settings' | '/records/$id'
   id:
     | '__root__'
     | '/'
     | '/mtg'
     | '/now'
-    | '/projects'
     | '/search'
-    | '/terms'
+    | '/settings'
     | '/records/$id'
   fileRoutesById: FileRoutesById
 }
@@ -103,9 +91,8 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   MtgRoute: typeof MtgRoute
   NowRoute: typeof NowRoute
-  ProjectsRoute: typeof ProjectsRoute
   SearchRoute: typeof SearchRoute
-  TermsRoute: typeof TermsRoute
+  SettingsRoute: typeof SettingsRoute
   RecordsIdRoute: typeof RecordsIdRoute
 }
 
@@ -132,13 +119,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NowRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projects': {
-      id: '/projects'
-      path: '/projects'
-      fullPath: '/projects'
-      preLoaderRoute: typeof ProjectsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/search': {
       id: '/search'
       path: '/search'
@@ -146,11 +126,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SearchRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/terms': {
-      id: '/terms'
-      path: '/terms'
-      fullPath: '/terms'
-      preLoaderRoute: typeof TermsRouteImport
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/records/$id': {
@@ -167,9 +147,8 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   MtgRoute: MtgRoute,
   NowRoute: NowRoute,
-  ProjectsRoute: ProjectsRoute,
   SearchRoute: SearchRoute,
-  TermsRoute: TermsRoute,
+  SettingsRoute: SettingsRoute,
   RecordsIdRoute: RecordsIdRoute,
 }
 export const routeTree = rootRouteImport

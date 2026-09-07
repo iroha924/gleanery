@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Node } from "@/lib/api";
 import { api } from "@/lib/api";
 
-export const Route = createFileRoute("/records/$id")({ component: Detail });
+export const Route = createFileRoute("/records/$id")({ component: RecordPage });
 
 // 流れの中に置くもの。制約とやらないことは流れの外（上）に固定する。
 const FLOW = [
@@ -31,7 +32,92 @@ function Dot({ polarity }: { polarity: Node["polarity"] }) {
   );
 }
 
-function Detail() {
+/** 中身があるか。**無いものをクリックできると、押しても何も起きない。** */
+function hasDetail(n: Node, options: Node[]): boolean {
+  return Boolean(
+    n.ex ||
+      n.attrs.confirmation ||
+      n.attrs.whyNotRun ||
+      n.attrs.cmd ||
+      (n.attrs.consequences?.length ?? 0) > 0 ||
+      options.some((o) => o.parent_id === n.id),
+  );
+}
+
+/** 1 件の中身。一覧では畳み、押したときだけ開く。 */
+function Detail({ n, options }: { n: Node; options: Node[] }) {
+  const taken = options.filter((o) => o.parent_id === n.id);
+  if (!hasDetail(n, options)) return <p className="text-sm leading-relaxed">{n.text}</p>;
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="w-full rounded-md text-left text-sm leading-relaxed transition-colors hover:text-link"
+        >
+          {n.text}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="gap-5 p-6 sm:max-w-[46rem]">
+        <DialogHeader>
+          <DialogTitle className="pr-10 text-[1.05rem] leading-[1.8]">{n.text}</DialogTitle>
+        </DialogHeader>
+        <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+          {n.ex && <p className="text-[13.5px] text-muted-foreground leading-[1.95]">{n.ex}</p>}
+          {n.attrs.confirmation && (
+            <p className="text-[13.5px] text-muted-foreground leading-[1.95]">
+              確かめ方: {n.attrs.confirmation}
+            </p>
+          )}
+          {/* 良かった点だけ並べると「都合のいいところだけ書いた記録」になるので、不利も同じ重さで出す。 */}
+          {n.attrs.consequences && n.attrs.consequences.length > 0 && (
+            <ul className="space-y-1">
+              {n.attrs.consequences.map((c) => (
+                <li
+                  key={c.text}
+                  className={`text-[13.5px] leading-[1.95] ${c.good ? "text-muted-foreground" : "text-dont"}`}
+                >
+                  {c.good ? "得たもの: " : "引き受けた不利: "}
+                  {c.text}
+                </li>
+              ))}
+            </ul>
+          )}
+          {/* 検証は、何を実行して何が返ったかが本体 */}
+          {n.attrs.cmd && (
+            <pre className="overflow-x-auto rounded bg-muted px-3 py-2 text-xs leading-relaxed">
+              <code>
+                $ {n.attrs.cmd}
+                {n.attrs.output ? `\n${n.attrs.output}` : ""}
+              </code>
+            </pre>
+          )}
+          {n.attrs.whyNotRun && (
+            <p className="text-[13.5px] text-dont leading-[1.95]">実行していない: {n.attrs.whyNotRun}</p>
+          )}
+          {/* 採った案は、捨てた案と並べないと「なぜそれか」が読めない */}
+          {taken.length > 0 && (
+            <ul className="space-y-1.5 border-t pt-3">
+              {taken.map((o) => (
+                <li
+                  key={o.id}
+                  className={`border-l-2 pl-3 text-[13.5px] leading-[1.95] ${
+                    o.polarity === "dont" ? "border-dont/40" : "border-do/40"
+                  }`}
+                >
+                  <span className={o.polarity === "dont" ? "text-muted-foreground" : ""}>{o.text}</span>
+                  {o.attrs.whyNot && <span className="text-muted-foreground"> — {o.attrs.whyNot}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RecordPage() {
   const { id } = Route.useParams();
   const { data, isPending, error } = useQuery({ queryKey: ["record", id], queryFn: () => api.record(id) });
   if (isPending) return <Skeleton className="h-96 w-full" />;
@@ -87,69 +173,11 @@ function Detail() {
             <AccordionContent>
               <ol className="ml-1 space-y-7 border-l pl-6 pt-2">
                 {rows.map((n) => (
-                  <li key={n.id} className="relative max-w-[110ch] space-y-2">
+                  <li key={n.id} className="relative">
                     <Dot polarity={n.polarity} />
-                    <p className="text-sm leading-relaxed">{n.text}</p>
-
-                    {n.ex && <p className="text-sm leading-relaxed text-muted-foreground">{n.ex}</p>}
-
-                    {/* 決定は「どう確かめるか」と「引き受けた不利な点」まで書いて初めて読める */}
-                    {n.attrs.confirmation && (
-                      <p className="text-sm leading-relaxed text-muted-foreground">
-                        確かめ方: {n.attrs.confirmation}
-                      </p>
-                    )}
-                    {/* consequences は {good, text} の配列。良かった点だけ並べると
-                    「都合のいいところだけ書いた記録」になるので、不利な点も同じ重さで出す。 */}
-                    {n.attrs.consequences && n.attrs.consequences.length > 0 && (
-                      <ul className="space-y-1">
-                        {n.attrs.consequences.map((c) => (
-                          <li
-                            key={c.text}
-                            className={`text-sm leading-relaxed ${c.good ? "text-muted-foreground" : "text-dont"}`}
-                          >
-                            {c.good ? "得たもの: " : "引き受けた不利: "}
-                            {c.text}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-
-                    {/* 検証は、何を実行して何が返ったかが本体 */}
-                    {n.attrs.cmd && (
-                      <pre className="overflow-x-auto rounded bg-muted px-3 py-2 text-xs leading-relaxed">
-                        <code>
-                          $ {n.attrs.cmd}
-                          {n.attrs.output ? `\n${n.attrs.output}` : ""}
-                        </code>
-                      </pre>
-                    )}
-                    {n.attrs.whyNotRun && (
-                      <p className="text-sm leading-relaxed text-dont">実行していない: {n.attrs.whyNotRun}</p>
-                    )}
-
-                    {/* 採った案は、捨てた案と並べないと「なぜそれか」が読めない */}
-                    {n.kind === "decision" && (
-                      <ul className="space-y-1.5 pt-1">
-                        {options
-                          .filter((o) => o.parent_id === n.id)
-                          .map((o) => (
-                            <li
-                              key={o.id}
-                              className={`border-l-2 pl-3 text-sm leading-relaxed ${
-                                o.polarity === "dont" ? "border-dont/40" : "border-do/40"
-                              }`}
-                            >
-                              <span className={o.polarity === "dont" ? "text-muted-foreground" : ""}>
-                                {o.text}
-                              </span>
-                              {o.attrs.whyNot && (
-                                <span className="text-muted-foreground"> — {o.attrs.whyNot}</span>
-                              )}
-                            </li>
-                          ))}
-                      </ul>
-                    )}
+                    {/* **一覧はタイトルだけ。**確かめ方・得たもの・捨てた案まで並べると
+                        1 件が 10 行を超え、どれが何なのか一覧として読めなくなる。 */}
+                    <Detail n={n} options={options} />
                   </li>
                 ))}
               </ol>
