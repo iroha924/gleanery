@@ -248,7 +248,21 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
   return json;
 }
 
+/** 文字起こしの書き直し案。**選ばなくてよい** — 生のままで足りることがある。 */
+export type PolishOption = { label: string; text: string };
+
 export const api = {
+  /** 文字起こしを読める文へ直す候補。句読点・同音異義語・桁は音では直せない。 */
+  polish: async (text: string): Promise<PolishOption[]> => {
+    const res = await fetch("/api/polish", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const json = (await res.json()) as { options?: PolishOption[]; error?: string };
+    if (!res.ok) throw new Error(json.error ?? `整形が ${res.status}`);
+    return json.options ?? [];
+  },
   /** 話した音を手元で文字にする。**音も文字も外へ出ない**（whisper.cpp が手元で回る）。 */
   transcribe: async (audio: Blob): Promise<string> => {
     const form = new FormData();

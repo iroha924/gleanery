@@ -13,6 +13,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import OpenAI from "openai";
 import type pg from "pg";
 import { type ChatBody, chat, type Learn } from "./chat.ts";
 import { connect, loadEnv } from "./db.ts";
@@ -632,6 +633,75 @@ app.post("/api/transcribe", async (c) => {
     return c.json({ error: "文字起こしに失敗した" }, 500);
   } finally {
     await fs.promises.rm(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * 文字起こしを読める文へ直す候補を出す。**選ばせるためのもので、勝手には置き換えない。**
+ *
+ * 音声認識が外すのは 3 種類（実測）。句読点が 1 つも付かない、同音異義語を取り違える
+ * （辺→変、触って→座って）、数字の桁を外す（三百十→3010）。どれも音では区別できないので
+ * ASR 側では直らない。**直せるのは前後の意味を読める側だけ**なので、ここで LLM に渡す。
+ */
+const POLISH = `日本語の音声認識の生の出力を、読める文に直す候補を 3 つ作る。
+
+その出力には次の癖がある。
+- 句読点が 1 つも付いていない
+- 同音異義語を取り違える（辺→変、触って→座って）
+- 数字の桁を外す（三百十→3010）
+- 言いよどみ（えー、あの）と言い直しが混ざる
+
+3 つの候補は、直す度合いで分ける。**どれも元の意図を変えない。**
+1. label「句読点だけ」… 語を一切変えず、句読点と改行だけを入れる
+2. label「整えた」… 言いよどみと言い直しを取り、前後から明らかな誤変換を直す
+3. label「短く」… 要点だけにする。ただし問いの中身は落とさない
+
+推測で情報を足さない。元に無いことを書かない。`;
+
+app.post("/api/polish", async (c) => {
+  const { text } = (await c.req.json()) as { text?: string };
+  if (!text?.trim()) return c.json({ error: "text が無い" }, 400);
+  if (!env.OPENAI_API_KEY) return c.json({ error: "OPENAI_API_KEY が無い" }, 500);
+
+  try {
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    const r = await openai.responses.create({
+      model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+      // 話し終えた直後に出るものなので、考え込ませない。
+      reasoning: { effort: "low" },
+      instructions: POLISH,
+      input: text,
+      text: {
+        format: {
+          type: "json_schema",
+          name: "polish",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: {
+              options: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: { label: { type: "string" }, text: { type: "string" } },
+                  required: ["label", "text"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["options"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    const parsed = JSON.parse(r.output_text) as { options: { label: string; text: string }[] };
+    // 元と同じものは候補にならない。
+    return c.json({ options: parsed.options.filter((o) => o.text.trim() && o.text.trim() !== text.trim()) });
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    console.error("polish:", m);
+    return c.json({ error: "整形に失敗した" }, 500);
   }
 });
 
