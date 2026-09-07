@@ -72,7 +72,7 @@ function Terms() {
   const known = terms.data?.filter((t) => t.meaning) ?? [];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
+    <div className="mx-auto w-full max-w-[83rem] grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <div className="space-y-6">
         {/* **AI が聞きたがっている語。**推測で埋めないので、ここが埋まるのを待っている。 */}
         <Card>

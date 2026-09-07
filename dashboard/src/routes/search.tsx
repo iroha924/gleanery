@@ -51,7 +51,7 @@ function SearchPage() {
 
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-4">
-      <div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col gap-5 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-[83rem] min-w-0 flex-1 flex-col gap-5 overflow-y-auto">
         <form
           className="flex gap-2"
           onSubmit={(e) => {

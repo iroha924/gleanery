@@ -15,13 +15,10 @@ const TITLES: [string, string][] = [
   ["/", "質問する"],
 ];
 
-/** 幅。**会話と検索だけ全幅にする** — 中で自分の読む幅を持っているので、外から max-w をかけると二重に狭まる。 */
+/** 幅。**外からは絞らない。**読む幅は画面ごとに違うので、それぞれが自分で決める。 */
 function Body() {
-  const path = useRouterState({ select: (s) => s.location.pathname });
-  const wide =
-    path === "/" || path.startsWith("/chat") || path.startsWith("/search") || path.startsWith("/mtg");
   return (
-    <div className={wide ? "w-full flex-1 p-4" : "mx-auto w-full max-w-4xl p-6"}>
+    <div className="w-full flex-1 p-4">
       <Outlet />
     </div>
   );

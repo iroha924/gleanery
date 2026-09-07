@@ -87,6 +87,13 @@ app.get("/api/now", async (c) => {
        -- 取り込みを回すたびに空の殻が 1 枚増えるので、画面側ではなくここで外す。
        and r.phases is not null
        and jsonb_array_length(r.phases) > 0
+       -- **終わった作業は「現在地」ではない。**status は書き手が手で書く値で phases と同期せず、
+       -- 全工程 done でも in-progress のまま残る（実測: personal-rebuild が 6/6 done で in-progress）。
+       -- status を信じず、工程に done でないものが残っているかで判断する。
+       and exists (
+         select 1 from jsonb_array_elements(r.phases) p
+         where p->>'state' <> 'done'
+       )
      order by r.updated_at desc nulls last limit 5`,
     [scopesOf(c)],
   );

@@ -150,21 +150,41 @@ function Home() {
     queryKey: ["now", scopeIds],
     queryFn: () => api.now(scopeIds),
   });
+  // 0 件の理由を分けるために要る。記録そのものが無いのか、全部終わったのか。
+  const { data: records } = useQuery({
+    queryKey: ["records", scopeIds],
+    queryFn: () => api.records(scopeIds),
+  });
   if (isPending) return <Skeleton className="h-96 w-full" />;
   if (error) return <p className="text-sm text-dont">{String(error)}</p>;
   if (data.length === 0) {
+    // **「無い」と「終わった」を混ぜない。**全工程が done の記録はここに出さないので、
+    // 記録があっても 0 件になる。「まだ何も保存されていません」と書くと嘘になる。
+    const has = (records?.length ?? 0) > 0;
     return (
-      <div className="max-w-[60ch] space-y-2">
-        <h1 className="text-lg font-semibold">まだ何も保存されていません</h1>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          作業の途中で <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/mitos:trace</code>{" "}
-          を実行すると、そのセッションで決めたことがここに出ます。
+      <div className="mx-auto w-full max-w-[83rem] space-y-2">
+        <h1 className="font-semibold text-lg">
+          {has ? "進行中の作業はありません" : "まだ何も保存されていません"}
+        </h1>
+        <p className="text-muted-foreground text-sm leading-relaxed">
+          {has ? (
+            <>
+              このプロジェクトの記録は全工程が終わっています。中身は左の「記録」から読めます。
+              新しく作業を始めて <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/mitos:trace</code>{" "}
+              を実行すると、その途中経過がここに出ます。
+            </>
+          ) : (
+            <>
+              作業の途中で <code className="rounded bg-muted px-1.5 py-0.5 text-xs">/mitos:trace</code>{" "}
+              を実行すると、そのセッションで決めたことがここに出ます。
+            </>
+          )}
         </p>
       </div>
     );
   }
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-[83rem] space-y-6">
       {data.map((w) => (
         <WorkCard key={w.id} w={w} />
       ))}

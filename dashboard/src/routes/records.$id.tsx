@@ -1,5 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Node } from "@/lib/api";
 import { api } from "@/lib/api";
@@ -43,8 +45,8 @@ function Detail() {
   });
 
   return (
-    <article className="space-y-10">
-      <header className="max-w-[68ch] space-y-3">
+    <article className="mx-auto w-full max-w-[83rem] space-y-10">
+      <header className="max-w-[110ch] space-y-3">
         <h1 className="text-2xl font-semibold leading-tight">{data.title}</h1>
         <p className="text-xs text-muted-foreground">
           {data.scope_label} · {data.status}
@@ -61,7 +63,7 @@ function Detail() {
           <h2 className="text-sm font-medium text-dont">変えてはいけない・やらないと決めたこと</h2>
           <ul className="space-y-1">
             {walls.map((w) => (
-              <li key={w.id} className="max-w-[68ch] border-l-2 border-dont pl-3 text-sm leading-relaxed">
+              <li key={w.id} className="max-w-[110ch] border-l-2 border-dont pl-3 text-sm leading-relaxed">
                 {w.text}
               </li>
             ))}
@@ -69,84 +71,97 @@ function Detail() {
         </section>
       )}
 
-      {flow.map(({ label, rows }) => (
-        <section key={label} className="space-y-3">
-          <h2 className="text-sm font-medium">{label}</h2>
-          <ol className="ml-1 space-y-7 border-l pl-6">
-            {rows.map((n) => (
-              <li key={n.id} className="relative max-w-[68ch] space-y-2">
-                <Dot polarity={n.polarity} />
-                <p className="text-sm leading-relaxed">{n.text}</p>
+      {/* **既定で開くのは決定だけ。**127 節を一度に並べると、どれが効いた判断なのか読み取れない
+          （実測: この記録は option 47 / event 35 / verification 21）。件数だけ見せて、要るものを開かせる。 */}
+      <Accordion type="multiple" defaultValue={["決めたこと"]} className="space-y-2">
+        {flow.map(({ label, rows }) => (
+          <AccordionItem key={label} value={label} className="border-b">
+            <AccordionTrigger className="text-sm font-medium hover:no-underline">
+              <span className="flex items-center gap-2">
+                {label}
+                <Badge variant="secondary" className="font-mono text-[10px]">
+                  {rows.length}
+                </Badge>
+              </span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <ol className="ml-1 space-y-7 border-l pl-6 pt-2">
+                {rows.map((n) => (
+                  <li key={n.id} className="relative max-w-[110ch] space-y-2">
+                    <Dot polarity={n.polarity} />
+                    <p className="text-sm leading-relaxed">{n.text}</p>
 
-                {n.ex && <p className="text-sm leading-relaxed text-muted-foreground">{n.ex}</p>}
+                    {n.ex && <p className="text-sm leading-relaxed text-muted-foreground">{n.ex}</p>}
 
-                {/* 決定は「どう確かめるか」と「引き受けた不利な点」まで書いて初めて読める */}
-                {n.attrs.confirmation && (
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    確かめ方: {n.attrs.confirmation}
-                  </p>
-                )}
-                {/* consequences は {good, text} の配列。良かった点だけ並べると
+                    {/* 決定は「どう確かめるか」と「引き受けた不利な点」まで書いて初めて読める */}
+                    {n.attrs.confirmation && (
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        確かめ方: {n.attrs.confirmation}
+                      </p>
+                    )}
+                    {/* consequences は {good, text} の配列。良かった点だけ並べると
                     「都合のいいところだけ書いた記録」になるので、不利な点も同じ重さで出す。 */}
-                {n.attrs.consequences && n.attrs.consequences.length > 0 && (
-                  <ul className="space-y-1">
-                    {n.attrs.consequences.map((c) => (
-                      <li
-                        key={c.text}
-                        className={`text-sm leading-relaxed ${c.good ? "text-muted-foreground" : "text-dont"}`}
-                      >
-                        {c.good ? "得たもの: " : "引き受けた不利: "}
-                        {c.text}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                    {n.attrs.consequences && n.attrs.consequences.length > 0 && (
+                      <ul className="space-y-1">
+                        {n.attrs.consequences.map((c) => (
+                          <li
+                            key={c.text}
+                            className={`text-sm leading-relaxed ${c.good ? "text-muted-foreground" : "text-dont"}`}
+                          >
+                            {c.good ? "得たもの: " : "引き受けた不利: "}
+                            {c.text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
 
-                {/* 検証は、何を実行して何が返ったかが本体 */}
-                {n.attrs.cmd && (
-                  <pre className="overflow-x-auto rounded bg-muted px-3 py-2 text-xs leading-relaxed">
-                    <code>
-                      $ {n.attrs.cmd}
-                      {n.attrs.output ? `\n${n.attrs.output}` : ""}
-                    </code>
-                  </pre>
-                )}
-                {n.attrs.whyNotRun && (
-                  <p className="text-sm leading-relaxed text-dont">実行していない: {n.attrs.whyNotRun}</p>
-                )}
+                    {/* 検証は、何を実行して何が返ったかが本体 */}
+                    {n.attrs.cmd && (
+                      <pre className="overflow-x-auto rounded bg-muted px-3 py-2 text-xs leading-relaxed">
+                        <code>
+                          $ {n.attrs.cmd}
+                          {n.attrs.output ? `\n${n.attrs.output}` : ""}
+                        </code>
+                      </pre>
+                    )}
+                    {n.attrs.whyNotRun && (
+                      <p className="text-sm leading-relaxed text-dont">実行していない: {n.attrs.whyNotRun}</p>
+                    )}
 
-                {/* 採った案は、捨てた案と並べないと「なぜそれか」が読めない */}
-                {n.kind === "decision" && (
-                  <ul className="space-y-1.5 pt-1">
-                    {options
-                      .filter((o) => o.parent_id === n.id)
-                      .map((o) => (
-                        <li
-                          key={o.id}
-                          className={`border-l-2 pl-3 text-sm leading-relaxed ${
-                            o.polarity === "dont" ? "border-dont/40" : "border-do/40"
-                          }`}
-                        >
-                          <span className={o.polarity === "dont" ? "text-muted-foreground" : ""}>
-                            {o.text}
-                          </span>
-                          {o.attrs.whyNot && (
-                            <span className="text-muted-foreground"> — {o.attrs.whyNot}</span>
-                          )}
-                        </li>
-                      ))}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ol>
-        </section>
-      ))}
+                    {/* 採った案は、捨てた案と並べないと「なぜそれか」が読めない */}
+                    {n.kind === "decision" && (
+                      <ul className="space-y-1.5 pt-1">
+                        {options
+                          .filter((o) => o.parent_id === n.id)
+                          .map((o) => (
+                            <li
+                              key={o.id}
+                              className={`border-l-2 pl-3 text-sm leading-relaxed ${
+                                o.polarity === "dont" ? "border-dont/40" : "border-do/40"
+                              }`}
+                            >
+                              <span className={o.polarity === "dont" ? "text-muted-foreground" : ""}>
+                                {o.text}
+                              </span>
+                              {o.attrs.whyNot && (
+                                <span className="text-muted-foreground"> — {o.attrs.whyNot}</span>
+                              )}
+                            </li>
+                          ))}
+                      </ul>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
 
       {data.refs.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-sm font-medium">関係したファイル・コマンド</h2>
-          <ul className="max-w-[68ch] space-y-1 text-sm">
+          <ul className="max-w-[110ch] space-y-1 text-sm">
             {data.refs.map((r) => (
               <li key={`${r.kind}:${r.key}`} className="flex items-baseline gap-2">
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">
