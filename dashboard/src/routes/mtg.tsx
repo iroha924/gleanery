@@ -3,18 +3,16 @@ import { MicIcon, SquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
+import { type Heard, listen } from "@/lib/listen";
 
 export const Route = createFileRoute("/mtg")({ component: Mtg });
 
 /** `systemAudio` はまだ TS の DOM 型に無い。Chrome 141 以降・macOS 14.2 以降で効く。 */
 type ShareOptions = DisplayMediaStreamOptions & { systemAudio?: "include" | "exclude" };
 
-type Line = { id: string; who: "me" | "them"; at: number; text: string };
-
-/** 何秒ごとに区切って文字にするか。**webm は途中のチャンクだけでは読めない**ので、録音そのものを区切る。 */
-const SLICE = 20_000;
+type Who = "me" | "them";
+type Line = { key: string; who: Who; at: number; text: string; done: boolean };
 
 const clock = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
@@ -22,52 +20,38 @@ const clock = (s: number) =>
 /**
  * 会議のかんぺ。**話者を推定しない。**
  *
- * 自分の声はマイクから、相手の声は画面共有の音声から、別々に録る。混ざった 1 本を
- * 後から分けようとすると当たらない（実測: OpenAI の diarize は文字起こしが崩れ、6.6 倍遅い）。
- * 分けて録れば、声が重なっても誰の発言かは事実として分かる。
+ * 自分の声はマイクから、相手の声は画面共有の音声から、別々に流す。混ざった 1 本を後から
+ * 分けようとすると当たらない（実測: OpenAI の diarize は文字起こしが崩れ、6.6 倍遅い）。
+ * 分けて流せば、声が重なっても誰の発言かは事実として分かる。
  */
 function Mtg() {
   const [lines, setLines] = useState<Line[]>([]);
   const [on, setOn] = useState(false);
-  const [waiting, setWaiting] = useState(0);
-  const alive = useRef(false);
+  const closers = useRef<(() => void)[]>([]);
   const streams = useRef<MediaStream[]>([]);
   const t0 = useRef(0);
 
   const stop = () => {
-    alive.current = false;
+    for (const c of closers.current) c();
     for (const s of streams.current) for (const t of s.getTracks()) t.stop();
+    closers.current = [];
     streams.current = [];
     setOn(false);
   };
 
-  /** 1 系統を録り続ける。**次の区間を先に始めてから**投げるので、間が空かない。 */
-  const listen = (stream: MediaStream, who: Line["who"]) => {
-    const audio = new MediaStream(stream.getAudioTracks());
-    const step = () => {
-      if (!alive.current) return;
-      const m = new MediaRecorder(audio, { audioBitsPerSecond: 24_000 });
-      const chunks: Blob[] = [];
-      const at = (Date.now() - t0.current) / 1000;
-      m.ondataavailable = (e) => chunks.push(e.data);
-      m.onstop = async () => {
-        step();
-        setWaiting((n) => n + 1);
-        try {
-          const text = await api.transcribe(new Blob(chunks, { type: m.mimeType }));
-          if (text) setLines((ls) => [...ls, { id: crypto.randomUUID(), who, at, text }]);
-        } catch {
-          // 1 区間の失敗で会議を止めない。落ちた区間が空くだけで、続きは録れている。
-        } finally {
-          setWaiting((n) => n - 1);
-        }
-      };
-      m.start();
-      setTimeout(() => {
-        if (m.state !== "inactive") m.stop();
-      }, SLICE);
-    };
-    step();
+  /** 発話 1 つを更新する。delta は継ぎ足し、completed は全文で置き換わる。 */
+  const heard = (who: Who, h: Heard) => {
+    const key = `${who}:${h.itemId}`;
+    setLines((ls) => {
+      const i = ls.findIndex((l) => l.key === key);
+      if (i === -1) {
+        return [...ls, { key, who, at: (Date.now() - t0.current) / 1000, text: h.text, done: h.done }];
+      }
+      const prev = ls[i];
+      if (!prev) return ls;
+      const next = { ...prev, text: h.done ? h.text : prev.text + h.text, done: h.done };
+      return [...ls.slice(0, i), next, ...ls.slice(i + 1)];
+    });
   };
 
   const start = async () => {
@@ -89,11 +73,13 @@ function Mtg() {
       return;
     }
     let me: MediaStream;
+    let token: string;
     try {
       me = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
+      token = await api.realtimeToken();
+    } catch (e) {
       for (const t of them.getTracks()) t.stop();
-      toast.error("マイクを使えなかった");
+      toast.error(e instanceof Error ? e.message : "マイクを使えなかった");
       return;
     }
     // ブラウザ側の「共有を停止」で終わったときも畳む。
@@ -102,14 +88,13 @@ function Mtg() {
 
     t0.current = Date.now();
     streams.current = [them, me];
-    alive.current = true;
     setLines([]);
     setOn(true);
-    listen(them, "them");
-    listen(me, "me");
+    closers.current = [
+      listen(them, token, (h) => heard("them", h), toast.error),
+      listen(me, token, (h) => heard("me", h), toast.error),
+    ];
   };
-
-  const ordered = [...lines].sort((a, b) => a.at - b.at);
 
   return (
     <div className="mx-auto flex h-[calc(100vh-3.5rem)] w-full max-w-[52rem] min-w-0 flex-col gap-4">
@@ -124,20 +109,20 @@ function Mtg() {
         </Button>
         {on && (
           <span className="flex items-center gap-2 text-muted-foreground text-xs">
-            {waiting > 0 && <Spinner className="size-3" />}
-            {SLICE / 1000} 秒ごとに文字にしています
+            <span className="size-1.5 animate-pulse rounded-full bg-dont" />
+            聞いています
           </span>
         )}
         <span className="ml-auto font-mono text-[10px] text-muted-foreground uppercase tracking-[0.14em]">
-          {ordered.length} 発言
+          {lines.length} 発言
         </span>
       </header>
 
-      {!on && ordered.length === 0 ? (
+      {!on && lines.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
           <h1 className="font-extrabold text-2xl">会議を聞き取る</h1>
           <p className="max-w-[30rem] text-muted-foreground text-sm leading-[2]">
-            相手の声は画面共有の音声から、自分の声はマイクから、別々に録ります。
+            相手の声は画面共有の音声から、自分の声はマイクから、別々に聞きます。
             <strong className="font-medium text-foreground">誰が話したかを推定しません。</strong>
             <br />
             共有を選ぶとき、<strong className="font-medium text-foreground">音声を一緒に共有</strong>
@@ -146,8 +131,8 @@ function Mtg() {
         </div>
       ) : (
         <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-6">
-          {ordered.map((l) => (
-            <li key={l.id} className="flex gap-3">
+          {lines.map((l) => (
+            <li key={l.key} className="flex gap-3">
               <span className="w-10 flex-none pt-1 text-right font-mono text-[10px] text-muted-foreground tabular-nums">
                 {clock(l.at)}
               </span>
@@ -161,7 +146,7 @@ function Mtg() {
               <p
                 className={`min-w-0 text-[14px] leading-[2] ${
                   l.who === "them" ? "text-foreground" : "text-foreground/70"
-                }`}
+                } ${l.done ? "" : "opacity-60"}`}
               >
                 {l.text}
               </p>

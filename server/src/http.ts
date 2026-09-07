@@ -619,6 +619,41 @@ changed には、その候補で**書き換えた後の語**だけを、本文�
 **つなぎの意味を変えない**（「〜だったので」を「〜だったが」にしない）。
 話し手の主張が事実と食い違って見えても、直すのは語であって論理ではない。`;
 
+/**
+ * 会議を聞き取るための一時鍵。**本物の API キーはブラウザへ出さない。**
+ *
+ * 逐次の文字起こしは Realtime を使う。20 秒ごとに切って投げる作りだと、区切りが語の途中に
+ * 落ちるうえ、「聞かれている最中」に間に合わない（最大 20 秒遅れる）。Realtime は
+ * サーバー側の VAD が発話の切れ目で区切るので、どちらも起きない。
+ */
+app.post("/api/realtime-token", async (c) => {
+  if (!env.OPENAI_API_KEY) return c.json({ error: "OPENAI_API_KEY が無い" }, 500);
+  try {
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    const r = await openai.realtime.clientSecrets.create({
+      session: {
+        type: "transcription",
+        audio: {
+          input: {
+            format: { type: "audio/pcm", rate: 24000 },
+            // **モデルは 3 つ測って決めた**（50.6 秒の日本語）。gpt-live-transcribe は VAD を
+            // 受け付けず発話が確定しない（確定 0 件）。mini は誤りが 3 倍。これだけが
+            // 「文字が流れながら、発話の切れ目で確定する」を満たした。
+            transcription: { model: "gpt-4o-transcribe", language: "ja" },
+            turn_detection: { type: "server_vad" },
+            noise_reduction: { type: "near_field" },
+          },
+        },
+      },
+    });
+    return c.json({ token: r.value, expiresAt: r.expires_at });
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    console.error("realtime-token:", m);
+    return c.json({ error: "一時鍵を作れなかった" }, 500);
+  }
+});
+
 app.post("/api/polish", async (c) => {
   const { text } = (await c.req.json()) as { text?: string };
   if (!text?.trim()) return c.json({ error: "text が無い" }, 400);

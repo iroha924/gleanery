@@ -268,6 +268,13 @@ export const api = {
     if (!res.ok) throw new Error(json.error ?? `整形が ${res.status}`);
     return json.options ?? [];
   },
+  /** 会議を聞き取るための一時鍵。**本物の API キーはここへ来ない。**10 分で切れる。 */
+  realtimeToken: async (): Promise<string> => {
+    const res = await fetch("/api/realtime-token", { method: "POST" });
+    const json = (await res.json()) as { token?: string; error?: string };
+    if (!res.ok || !json.token) throw new Error(json.error ?? `一時鍵が ${res.status}`);
+    return json.token;
+  },
   /** 話した音を文字にする。 */
   transcribe: async (audio: Blob): Promise<string> => {
     const form = new FormData();
