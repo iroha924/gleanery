@@ -249,7 +249,12 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
 }
 
 /** 文字起こしの書き直し案。**選ばなくてよい** — 生のままで足りることがある。 */
-export type PolishOption = { label: string; text: string };
+export type PolishOption = {
+  label: string;
+  text: string;
+  /** 書き換えた後の語。**本文のどこが変わったかを示すのに使う。** */
+  changed: string[];
+};
 
 export const api = {
   /** 文字起こしを読める文へ直す候補。句読点・同音異義語・桁は音では直せない。 */

@@ -703,6 +703,10 @@ const POLISH = `日本語の音声認識の生の出力を、読める文に直�
 3. label「短く」… 要点だけにする。**数値・固有名詞・条件は 1 つも落とさない。**
    係り受けも変えない（「A が縮んで B が半分」を「A と B が半分」にしない）
 
+changed には、その候補で**書き換えた後の語**だけを、本文に現れるとおりに入れる
+（「ペクトル」を「ベクトル」にしたなら "ベクトル"）。句読点の追加は入れない。
+語を変えていない候補は空の配列にする。
+
 推測で情報を足さない。元に無いことを書かない。
 **つなぎの意味を変えない**（「〜だったので」を「〜だったが」にしない）。
 話し手の主張が事実と食い違って見えても、直すのは語であって論理ではない。`;
@@ -733,8 +737,12 @@ app.post("/api/polish", async (c) => {
                 type: "array",
                 items: {
                   type: "object",
-                  properties: { label: { type: "string" }, text: { type: "string" } },
-                  required: ["label", "text"],
+                  properties: {
+                    label: { type: "string" },
+                    text: { type: "string" },
+                    changed: { type: "array", items: { type: "string" } },
+                  },
+                  required: ["label", "text", "changed"],
                   additionalProperties: false,
                 },
               },
@@ -745,7 +753,9 @@ app.post("/api/polish", async (c) => {
         },
       },
     });
-    const parsed = JSON.parse(r.output_text) as { options: { label: string; text: string }[] };
+    const parsed = JSON.parse(r.output_text) as {
+      options: { label: string; text: string; changed: string[] }[];
+    };
     // 元と同じものは候補にならない。
     return c.json({ options: parsed.options.filter((o) => o.text.trim() && o.text.trim() !== text.trim()) });
   } catch (e) {

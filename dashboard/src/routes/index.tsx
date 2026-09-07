@@ -23,6 +23,23 @@ import { api, askStream, type ChatSource, type PolishOption } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
 import { useProject } from "@/lib/project";
 
+/** 書き換えられた語を本文の中で光らせる。**3 つの候補は書き出しが同じなので、差が見えない。** */
+function Marked({ text, marks }: { text: string; marks: string[] }) {
+  const words = marks.filter(Boolean).sort((a, b) => b.length - a.length);
+  if (words.length === 0) return text;
+  const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "g");
+  return text.split(re).map((part, i) =>
+    words.includes(part) ? (
+      // biome-ignore lint/suspicious/noArrayIndexKey: 分割の位置がそのまま同一性
+      <mark key={i} className="box-decoration-clone rounded-[3px] bg-link/20 px-0.5 text-foreground">
+        {part}
+      </mark>
+    ) : (
+      part
+    ),
+  );
+}
+
 export const Route = createFileRoute("/")({ component: Chat });
 
 type Turn = {
@@ -350,12 +367,12 @@ function Chat() {
                 )}
               </div>
               {polishing ? (
-                <div className="flex items-center gap-2 rounded-xl border border-dashed p-3 text-[12px] text-muted-foreground">
+                <div className="flex items-center gap-2 rounded-xl border border-dashed px-3 py-2.5 text-[12px] text-muted-foreground">
                   <Spinner className="size-3" />
                   読める文に直しています
                 </div>
               ) : (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-3 gap-2.5">
                   {options.map((o) => (
                     <button
                       key={o.label}
@@ -364,13 +381,22 @@ function Chat() {
                         setDraft(o.text);
                         setOptions([]);
                       }}
-                      // **中でスクロールさせる。**省略すると、どこが変わったのかを見ずに選ぶことになる。
-                      className="flex max-h-44 flex-col overflow-y-auto rounded-xl border bg-card p-3 text-left transition hover:-translate-y-px hover:border-primary/40 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]"
+                      className="group flex flex-col overflow-hidden rounded-xl border bg-card text-left transition hover:border-primary/45 hover:shadow-[0_3px_14px_rgba(0,0,0,0.06)]"
                     >
-                      <span className="sticky top-0 bg-card pb-1 font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
+                      {/* **見出しは本文の外に置く。**中に重ねると、スクロールした本文が透ける。 */}
+                      <span className="flex flex-none items-baseline gap-2 border-b bg-secondary/40 px-3 py-1.5 font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em] transition-colors group-hover:text-foreground">
                         {o.label}
+                        {o.changed.length > 0 && (
+                          <span className="ml-auto normal-case tracking-normal">{o.changed.length} 箇所</span>
+                        )}
                       </span>
-                      <p className="text-[12.5px] leading-[1.8]">{o.text}</p>
+                      <span className="relative min-h-0">
+                        <span className="block max-h-36 overflow-y-auto px-3 py-2.5 text-[12.5px] leading-[1.9]">
+                          <Marked text={o.text} marks={o.changed} />
+                        </span>
+                        {/* **下端をぼかす。**切れているのか終わったのかが、切り口だけでは分からない。 */}
+                        <span className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-card to-transparent" />
+                      </span>
                     </button>
                   ))}
                 </div>
