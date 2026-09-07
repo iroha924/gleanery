@@ -119,8 +119,6 @@ export type ChatDetail = {
   messages: { role: "user" | "assistant"; content: string; sources: ChatSource[]; at: string }[];
 };
 
-export type Stats = { nodes: number; records: number; scopes: number; refs: number };
-
 export type Scope = {
   id: number;
   label: string;
@@ -307,7 +305,6 @@ export const api = {
     return json.text ?? "";
   },
   now: (scopes?: number[]) => get<Now[]>(`/api/now${q(scopes)}`),
-  review: (id: string) => get<Node[]>(`/api/review/${encodeURIComponent(id)}`),
   candidates: () => get<Candidate[]>("/api/candidates"),
   groups: () => get<Group[]>("/api/groups"),
   saveGroup: (name: string, paths: string[]) =>
@@ -326,7 +323,6 @@ export const api = {
   savePerson: (p: { display: string; handles: string[]; isMe: boolean }) =>
     send<{ ok: true }>("/api/people", "POST", p),
   deletePerson: (id: number) => send<{ ok: true }>(`/api/people/${id}`, "DELETE"),
-  stats: (scopes?: number[]) => get<Stats>(`/api/stats${q(scopes)}`),
   scopes: () => get<Scope[]>("/api/scopes"),
   advice: () => get<Advice>("/api/advice"),
   records: (scopes?: number[]) => get<RecordRow[]>(`/api/records${q(scopes)}`),

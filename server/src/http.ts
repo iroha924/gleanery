@@ -76,20 +76,6 @@ function scopesOf(c: { req: { query: (k: string) => string | undefined } }): num
   return ids;
 }
 
-app.get("/api/stats", async (c) => {
-  const ids = scopesOf(c);
-  const q = await (await db()).query<{ nodes: number; records: number; scopes: number; refs: number }>(
-    `select (select count(*) from node where deleted_at is null and ($1::int[] is null or scope_id = any($1)))::int nodes,
-            (select count(*) from record where ($1::int[] is null or scope_id = any($1)))::int records,
-            (select count(*) from scope where ($1::int[] is null or id = any($1)))::int scopes,
-            (select count(*) from ref l where ($1::int[] is null or exists (
-               select 1 from ref_link k join record r on r.id = k.record_id
-               where k.ref_id = l.id and r.scope_id = any($1))))::int refs`,
-    [ids],
-  );
-  return c.json(q.rows[0]);
-});
-
 /**
  * 編集フックが何を出したか。**CLI の `mitos advice` と同じ数字を画面へ出す。**
  *
@@ -162,18 +148,6 @@ app.get("/api/now", async (c) => {
 // 直せるようにはしない — polarity は取り込みのたびに IR から計算し直されるので、
 // ここで直しても次の保存で黙って戻る（ingest.ts の upsert が polarity=excluded.polarity）。
 // おかしければ記録の側（/mitos:trace）を直す。
-app.get("/api/review/:id", async (c) => {
-  const r = await (await db()).query(
-    `select id::int, kind, subkind, polarity, confidence, status, key, at, text,
-            coalesce(attrs->>'whyNot', attrs->>'context', '') as ex,
-            attrs, parent_id::int
-     from node where record_id = $1 and deleted_at is null
-     order by kind, ordinal, at nulls last`,
-    [c.req.param("id")],
-  );
-  return c.json(r.rows);
-});
-
 app.get("/api/scopes", async (c) => {
   const q = await (await db()).query(
     `select s.id::int, s.label, s.role, s.summary,
