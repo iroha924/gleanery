@@ -4,12 +4,12 @@
 
 - 状態: 進行中
 - 対象: mitos (main)
-- 最終更新: 2026-09-08T02:40:00+09:00
+- 最終更新: 2026-09-08T03:00:00+09:00
 - 人間向けの表示: `personal-rebuild.progress.html`
 
 ## いまここ
 
-地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。**この回のコミット 35 本は push していない。**直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）。ファビコンとアプリアイコンを「折り返す糸」で入れた（d-icon-folded-thread）
+地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）。ファビコンとアプリアイコンを「折り返す糸」で入れた（d-icon-folded-thread）。**37 コミットを origin/main へ push 済み（a9decb4）。**残る未着手は、プロジェクトの定義を DB に持たせること（scope.summary が空）だけ
 
 ### 工程
 
@@ -24,11 +24,10 @@
 - 完了: 書体と配色
 - 完了: チャット画面の作り直し
 - 未着手: プロジェクトの定義を DB に持たせる
-- 未着手: この回のコミットを push
+- 完了: この回のコミットを push（a9decb4）
 
 ## 次にやること
 
-- 未 push のコミットを origin/main へ push する。**リモートは 357aa22**（前回の記録を書き出したコミット）で、8e3942f ではない。未 push は 357aa22..HEAD、先頭は 904cd60（地図の削除） (ai)
 - mitos describe で scope の役割と一行説明を埋める。使い方は `./plugin/bin/mitos describe <dir> <役割> [説明]`（一覧は `./plugin/bin/mitos scopes`）。mitos 側は README の 3 行目から書けるが、iroha924/hir4ta-developer が何のリポジトリかは本人が決める必要がある。埋まると、プロジェクトの定義を聞かれるたびの README 読み込みが要らなくなる (human)
 - 2026-09-07 時点で「あと 1 週間」と言われた退職日までに、勤務先のリポジトリ名を含む ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうかを決める。消すと、そのリポジトリでの作業の一次記録が失われる（DB からは既に消えており、取り込み直す経路も退職後は無い）。残すと、パス名自体が勤務先を示すものが手元に残る。この回でも未決 (human)
 - 次の職場で取り込みを始めたら、relation 表に書き手を作るかを判断する。地図は削除したので線種の枠は消えたが、relation 表と parent_id は残っている (human)
@@ -487,6 +486,7 @@
 - `e-routes-now` 09-08 02:00 [判明したこと] **いまの画面は 6 本。**レビュアーの指摘（#12）で数えた。/（質問する）、/now（作業の現在地）、/search（記録を探す）、/records/$id（記録）、/mtg（会議を聞き取る）、/settings（設定）。背景に書いた 8 本のうち /chat は / に統合、/projects と /terms は /settings のタブへ、/people（名簿）と /advice（編集時の助言）は 38d9fa4 で削除した — $ ls dashboard/src/routes/ (exit 0)
 - `e-review-triage-2` 09-08 02:10 [作業] まっさらなレビュアー 1 体に .md だけを渡し、23 件の指摘を全件裁定した（1 ラウンドで打ち切り）。**受理して直した 13 件**: 目的が削除済みの地図を完了条件に要求したままだった（d-goal-after-map）、push 範囲がリモートの実体と食い違っていた（v-remote-head。リモートは 8e3942f ではなく 357aa22 だった）、地図に依存する決定 2 件と検証 3 件が再実行できないまま [pass] で残っていた（e-graph-deps-stale）、再現手段のスクリプトが git に無い・消してある（e-scratchpad-not-tracked）、作業場所が 1 件か 2 件か（e-two-scopes）、node の件数の母数と bot 発言 139→138 の誤り（e-counts-differ-by-population、v-bot-utterances）、relation の書き手が無いという断定が未検証だった（v-relation-no-writer）、会議の聞き取りを grep でしか確かめていない（v-mtg-end-to-end を not-run で明示）、緑の証拠が 35 本前の時点だった（v-green-at-head）、SessionEnd の一次ソースに URL と参照日が無い（v-hook-doc）、書体の決定が無い（d-geist-murecho）、画面が何本か特定できない（e-routes-now）、whisper の棄却根拠の出所が切り分けられない（e-whisper-provenance-lost）、再接続中の音声欠落と scrub パターンの所在が未解決に入っていなかった（q-realtime-gap、q-scrub-pattern）。**見送った 8 件と理由**: (a) 正本が html か md かの食い違いと実行体パスの二重表記は、記録の本文ではなく trace の書き出しテンプレートが出している文言なので記録側で直せない（証拠の相対パス 1 件だけ直した）。(b)「方向を選ぶ」「画面の展開」に決定が無いのは、どちらも本人の直接の指示で棄却案が存在しないため。(c) /advice と /mtg を足した決定が無いのも同じ理由（画面の一覧は e-routes-now で確定させた）。(d) v-int-casts の what が観測より強い点は、e-bigint-as-string 自身が走査範囲の限界を書いており記録内で矛盾していない。(e) v-evals-shell が評価セット 5 本のうち 1 本しか cat していない点は、d-delete-not-scrub の中心根拠ではない。(f) 制約が 8 件と 3 件で食い違って見えるのは母数の違い — e-now-screen-kept の 8 件は /now 画面が集約して出す件数（制約 + やらないこと + 行き止まり）で、background.constraints の 3 件とは別物。(g) q-title-backfill の「ChatGPT は過去の会話名を変えない」に出典が無い点は、人への問いに添えた判断材料であって事実の主張として使っていない。(h) e-purge-timeout の ROLLBACK 後に件数を数え直していない点は、そのあと e-purge-scope で削除を完了して数え直しており、いまの DB 状態は独立に確かめられている。**なお指摘 #22 は見送らず、ここに書き残す** — 「回答精度 74/74」の出所はこの記録の外（削除済みの MEMORY.md）にあり復元できない。数値として引かないこと。「Google Meet 6 割・Zoom 2 割・Teams 2 割」は本人の申告で、実測ではない — file personal-rebuild.progress.md
 - `e-favicon-was-template-leftover` 09-08 02:40 [判明したこと] dashboard/public に置いてあった favicon.svg（紫の稲妻）と icons.svg（Bluesky などの SNS アイコン束）は**index.html からどこからも参照されていなかった。**テンプレート由来の残骸で、実質ファビコンは未設定だった。icons.svg は削除し、favicon.svg は中身を差し替えた — $ grep -rn 'favicon|icons.svg' --include='*.html' --include='*.tsx' . (exit 0)
+- `e-push-2` 09-08 03:00 [状態の変化] **この回の 37 コミットを origin/main へ push した。**リモートは 357aa22 から a9decb4 へ進んだ。先頭は 904cd60（地図の削除）、末尾は a9decb4（アイコン「折り返す糸」）。push の前に型検査・整形・テスト 42 件・本番ビルド・bundle（mcp.js / hook-check-path.js / cli.js）を通してある — $ git push origin main (exit 0) / $ git ls-remote origin refs/heads/main (exit 0)
 
 ## 検証
 
@@ -531,6 +531,7 @@
 - `v-green-at-head` [pass] 最後のコミットを含む状態で、型検査・整形・テスト・本番ビルドが通ること（v-checks は 35 本前の時点、v-session-green は時点も出力も無い） — `bun run check && bun run test && bun run build`
 - `v-fonts` [pass] 書体が Geist と Murecho に入れ替わり、丸ゴシックが依存から消えていること （d-geist-murecho を確かめた） — `grep -n 'Geist Variable\|Murecho\|m-plus-rounded' dashboard/src/styles.css dashboard/package.json`
 - `v-icon-wired` [pass] ファビコンとアプリアイコンが配線され、どちらも配信されること （d-icon-folded-thread を確かめた） — `ブラウザから fetch('/favicon.svg') と fetch('/apple-touch-icon.png')、link[rel*=icon] を列挙`
+- `v-pushed` [pass] リモートがこの回の作業を含んでいること — `git ls-remote origin refs/heads/main && git rev-list --count origin/main..HEAD`
 
 ## 用語
 
