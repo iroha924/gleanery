@@ -1,21 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { Marker, MarkerContent } from "@/components/ui/marker";
+import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/advice")({ component: AdvicePage });
 
 /** 割合を 1 本の帯で。**数字だけだと「多いのか少ないのか」が読めない。** */
 function Bar({ label, value, note, tone }: { label: string; value: number; note: string; tone: string }) {
+  const pct = Math.round(value * 100);
   return (
     <div>
       <div className="flex items-baseline gap-2">
-        <span className="font-mono text-3xl tabular-nums">{Math.round(value * 100)}</span>
+        <span className="font-mono text-3xl tabular-nums">{pct}</span>
         <span className="font-mono text-muted-foreground text-sm">%</span>
         <span className="text-sm">{label}</span>
       </div>
-      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="h-full" style={{ width: `${Math.round(value * 100)}%`, background: tone }} />
-      </div>
+      {/* 帯の色は Indicator へ当てる。Progress は Root しか受け取らないので子を指す。 */}
+      <Progress value={pct} aria-label={label} className={`mt-2 h-1.5 ${tone}`} />
       <p className="mt-1.5 text-muted-foreground text-xs">{note}</p>
     </div>
   );
@@ -51,13 +53,13 @@ function AdvicePage() {
           label="助言を出せた編集"
           value={data.spoke / Math.max(data.runs, 1)}
           note={`走った編集 ${data.runs} 回のうち ${data.spoke} 回`}
-          tone="var(--primary)"
+          tone="[&>[data-slot=progress-indicator]]:bg-primary"
         />
         <Bar
           label="同じ助言の再提示"
           value={data.repeat}
           note="低いほどよい。高いなら抑制が効いていない"
-          tone="var(--dont)"
+          tone="[&>[data-slot=progress-indicator]]:bg-dont"
         />
         <div>
           <div className="flex items-baseline gap-2">
@@ -78,7 +80,9 @@ function AdvicePage() {
       </p>
 
       <section className="space-y-3">
-        <h2 className="font-mono text-[10px] text-muted-foreground tracking-widest">直近の編集</h2>
+        <Marker variant="border" className="font-mono text-[10px] tracking-widest">
+          <MarkerContent>直近の編集</MarkerContent>
+        </Marker>
         <ol className="space-y-2">
           {data.rows.map((r) => (
             <li
@@ -112,9 +116,9 @@ function AdvicePage() {
 
       {data.byPath.length > 0 && (
         <section className="space-y-3">
-          <h2 className="font-mono text-[10px] text-muted-foreground tracking-widest">
-            よく出しているファイル
-          </h2>
+          <Marker variant="border" className="font-mono text-[10px] tracking-widest">
+            <MarkerContent>よく出しているファイル</MarkerContent>
+          </Marker>
           <ul className="space-y-1.5">
             {data.byPath.map((p) => (
               <li key={p.path} className="flex items-baseline gap-3 text-sm">

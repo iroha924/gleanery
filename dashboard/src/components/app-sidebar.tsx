@@ -3,6 +3,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   BellIcon,
   BookOpenIcon,
+  ChevronRightIcon,
   FolderIcon,
   HeadphonesIcon,
   ListChecksIcon,
@@ -12,6 +13,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import type * as React from "react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -28,6 +30,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -100,31 +103,42 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               </SidebarMenuButton>
             </SidebarMenuItem>
 
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path === "/search"}>
-                <Link to="/search">
-                  <SearchIcon /> 記録を探す
-                </Link>
-              </SidebarMenuButton>
-              <SidebarMenuSub>
-                <SidebarMenuSubItem>
-                  <SidebarMenuSubButton asChild>
-                    <Link to="/search" search={{ dont: true }}>
-                      <span className="truncate">やらないこと</span>
-                    </Link>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-                {KINDS.map((k) => (
-                  <SidebarMenuSubItem key={k.kind}>
-                    <SidebarMenuSubButton asChild>
-                      <Link to="/search" search={{ kinds: [k.kind] }}>
-                        <span className="truncate">{k.label}</span>
-                      </Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                ))}
-              </SidebarMenuSub>
-            </SidebarMenuItem>
+            {/* **種別は畳んでおく。**7 つ常時出ていると、上の 4 つと同じ重さに見えてしまう。 */}
+            <Collapsible className="group/kinds">
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={path === "/search"}>
+                  <Link to="/search">
+                    <SearchIcon /> 記録を探す
+                  </Link>
+                </SidebarMenuButton>
+                <CollapsibleTrigger asChild>
+                  <SidebarMenuAction className="transition-transform group-data-[state=open]/kinds:rotate-90">
+                    <ChevronRightIcon />
+                    <span className="sr-only">種別で絞る</span>
+                  </SidebarMenuAction>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarMenuSub>
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton asChild>
+                        <Link to="/search" search={{ dont: true }}>
+                          <span className="truncate">やらないこと</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                    {KINDS.map((k) => (
+                      <SidebarMenuSubItem key={k.kind}>
+                        <SidebarMenuSubButton asChild>
+                          <Link to="/search" search={{ kinds: [k.kind] }}>
+                            <span className="truncate">{k.label}</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    ))}
+                  </SidebarMenuSub>
+                </CollapsibleContent>
+              </SidebarMenuItem>
+            </Collapsible>
 
             <SidebarMenuItem>
               {/* 一覧の画面は持たない。**「いま」が同じ記録を、工程・次の一手・制約つきで出す。**

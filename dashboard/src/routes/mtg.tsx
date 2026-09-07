@@ -3,6 +3,7 @@ import { MicIcon, SquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Marker, MarkerContent } from "@/components/ui/marker";
 import { Spinner } from "@/components/ui/spinner";
 import { api, type Reply } from "@/lib/api";
 import { type Heard, listen } from "@/lib/listen";
@@ -148,9 +149,9 @@ function Mtg() {
           {reply?.asked ? (
             <div className="space-y-5">
               <div>
-                <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
-                  いま聞かれています
-                </span>
+                <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
+                  <MarkerContent>いま聞かれています</MarkerContent>
+                </Marker>
                 <h2 className="mt-1.5 font-extrabold text-[1.4rem] leading-[1.6]">{reply.asked}</h2>
               </div>
 
@@ -215,15 +216,11 @@ function Mtg() {
 
       {/* 文字起こしは従。**合っているかを目の端で確かめるためのもの。** */}
       <aside className="flex w-[22rem] flex-none flex-col gap-3 border-l bg-secondary/25 px-5 py-5">
-        <div className="flex flex-none items-baseline gap-2">
-          <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
-            聞こえたこと
-          </span>
+        <Marker className="flex-none font-mono text-[9px] uppercase tracking-[0.14em]">
+          <MarkerContent>聞こえたこと</MarkerContent>
           {thinking && <Spinner className="size-3" />}
-          <span className="ml-auto font-mono text-[10px] text-muted-foreground tabular-nums">
-            {lines.length}
-          </span>
-        </div>
+          <span className="ml-auto font-mono text-[10px] tabular-nums">{lines.length}</span>
+        </Marker>
         <ol className="min-h-0 flex-1 space-y-2.5 overflow-y-auto">
           {lines.map((l) => (
             <li key={l.key} className="flex gap-2">

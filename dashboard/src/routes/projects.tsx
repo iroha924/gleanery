@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { LinkIcon, TicketIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -162,15 +163,20 @@ function Projects() {
                       {dirs.map((m) => m.label).join(" / ") || "リポジトリ未設定"}
                     </CardDescription>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => remove.mutate(g.id)}
-                    disabled={remove.isPending}
-                    aria-label={`プロジェクト「${g.name}」を消す`}
+                  <ConfirmDelete
+                    what={g.name}
+                    note="束ねた設定が外れます。記録そのものは残ります。"
+                    onConfirm={() => remove.mutate(g.id)}
                   >
-                    <Trash2Icon />
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={remove.isPending}
+                      aria-label={`プロジェクト「${g.name}」を消す`}
+                    >
+                      <Trash2Icon />
+                    </Button>
+                  </ConfirmDelete>
                 </div>
               </CardHeader>
               <CardContent className="space-y-3">

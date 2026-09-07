@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { PlusIcon, Trash2Icon, UserIcon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -116,9 +117,15 @@ function People() {
                   <Button variant="ghost" size="sm" onClick={() => edit(p)}>
                     直す
                   </Button>
-                  <Button variant="ghost" size="icon" onClick={() => remove.mutate(p.id)}>
-                    <Trash2Icon className="size-4" />
-                  </Button>
+                  <ConfirmDelete
+                    what={p.display}
+                    note="この人に結び付けた呼び名も外れます。記録そのものは残ります。"
+                    onConfirm={() => remove.mutate(p.id)}
+                  >
+                    <Button variant="ghost" size="icon" aria-label={`「${p.display}」を消す`}>
+                      <Trash2Icon className="size-4" />
+                    </Button>
+                  </ConfirmDelete>
                 </div>
               </Item>
             ))}

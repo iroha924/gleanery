@@ -6,7 +6,17 @@ import { toast } from "sonner";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { Marker, MarkerContent } from "@/components/ui/marker";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -63,6 +73,57 @@ const EXAMPLES = [
  * 根拠は 0.6 秒で出るのに答えは 3 秒かかる。会議中に聞く用途では、
  * まとめを待つより「引いた 1 位」を先に読めた方が速い（実測: 体感 3.1s → 0.6s）。
  */
+/**
+ * 出典 1 件。**会話から離れずに中身を読めるようにする。**
+ *
+ * 記録のページへ飛ばすと、読み終えたあと会話へ戻るのに一手かかり、続けて聞く流れが切れる。
+ */
+function Source({ s }: { s: ChatSource }) {
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] leading-[1.95] transition-colors hover:bg-secondary/60"
+        >
+          <span className="flex-none pt-0.5 font-mono text-[10.5px] text-muted-foreground">{s.n}</span>
+          <span className="min-w-0 text-foreground/85">
+            <span className={`mr-1 ${polarityClass(s.polarity)}`}>{s.label}</span>
+            {s.text}
+          </span>
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[36rem]">
+        <DialogHeader>
+          <DialogTitle className="text-[1.15rem] leading-[1.7]">
+            <span className={`mr-1.5 ${polarityClass(s.polarity)}`}>{s.label}</span>
+            {s.recordTitle}
+          </DialogTitle>
+          <DialogDescription className="font-mono text-[10px] uppercase tracking-[0.12em]">
+            {s.scope}
+            {s.at && ` / ${s.at}`}
+          </DialogDescription>
+        </DialogHeader>
+        <p className="max-h-[50vh] overflow-y-auto text-[14px] leading-[2.1]">{s.text}</p>
+        <DialogFooter className="sm:justify-start">
+          <Button asChild variant="outline" size="sm">
+            <Link to="/records/$id" params={{ id: s.recordId }}>
+              記録を開く
+            </Link>
+          </Button>
+          {s.url && (
+            <Button asChild variant="ghost" size="sm">
+              <a href={s.url} target="_blank" rel="noopener noreferrer">
+                PR を開く
+              </a>
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
   if (sources.length === 0) return null;
   const top = sources[0];
@@ -79,42 +140,14 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
         </div>
       )}
       {!busy && (
-        <div className="space-y-3 border-t pt-5">
-          <div className="font-mono text-[8.5px] text-muted-foreground uppercase tracking-[0.14em]">
-            Sources
-          </div>
-          <ol className="space-y-2.5">
+        <div className="space-y-2 border-t pt-5">
+          <Marker className="px-2 font-mono text-[8.5px] uppercase tracking-[0.14em]">
+            <MarkerContent>Sources</MarkerContent>
+          </Marker>
+          <ol className="-mx-2">
             {sources.map((s) => (
-              <li key={s.n} className="flex gap-3 text-[13px] leading-[1.95]">
-                <span className="flex-none pt-0.5 font-mono text-[10.5px] text-muted-foreground">{s.n}</span>
-                <span className="text-foreground/85">
-                  <span className={`mr-1 ${polarityClass(s.polarity)}`}>{s.label}</span>
-                  {s.text}
-                  <span className="ml-1 text-muted-foreground">
-                    —{" "}
-                    <Link
-                      to="/records/$id"
-                      params={{ id: s.recordId }}
-                      className="underline underline-offset-2"
-                    >
-                      {s.recordTitle}
-                    </Link>
-                    {s.at && ` / ${s.at}`}
-                    {s.url && (
-                      <>
-                        {" / "}
-                        <a
-                          href={s.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline underline-offset-2"
-                        >
-                          開く
-                        </a>
-                      </>
-                    )}
-                  </span>
-                </span>
+              <li key={s.n}>
+                <Source s={s} />
               </li>
             ))}
           </ol>
@@ -296,7 +329,7 @@ function Chat() {
         <MessageScrollerProvider>
           <MessageScroller className="flex-1">
             <MessageScrollerViewport>
-              <MessageScrollerContent aria-busy={busy} className="mx-auto w-full max-w-[41.5rem] px-6 pb-10">
+              <MessageScrollerContent aria-busy={busy} className="mx-auto w-full max-w-[83rem] px-6 pb-10">
                 {turns.length === 0 && (
                   <div className="pt-24 text-center">
                     <h2 className="font-extrabold text-2xl leading-relaxed">記録について聞く</h2>
@@ -321,9 +354,11 @@ function Chat() {
                     <MessageScrollerItem key={t.id} messageId={t.id} scrollAnchor>
                       {/* 質問が見出しになる。日付と範囲をその上に小さく乗せる */}
                       <div className={i === 0 ? "pt-4" : "pt-14"}>
-                        <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
-                          {new Date().toLocaleDateString("sv-SE").replaceAll("-", ".")} · {projectLabel}
-                        </div>
+                        <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
+                          <MarkerContent>
+                            {new Date().toLocaleDateString("sv-SE").replaceAll("-", ".")} · {projectLabel}
+                          </MarkerContent>
+                        </Marker>
                         <h2 className="mt-3 font-extrabold text-[1.7rem] leading-[1.62]">{t.content}</h2>
                         <div className="mt-5 h-px bg-border" />
                       </div>
@@ -351,13 +386,11 @@ function Chat() {
 
         {/* **候補は横に並べる。**絶対配置で右へ浮かすと、窓が狭いときに画面の外へ出る
             （1400px 幅で溢れる）。列にしておけば、狭ければ本文が縮むだけで崩れない。 */}
-        <div className="mx-auto w-full max-w-[41.5rem] flex-none px-6 pb-6">
+        <div className="mx-auto w-full max-w-[83rem] flex-none px-6 pb-6">
           {(polishing || options.length > 0) && (
             <aside className="mb-2.5 space-y-2">
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
-                  書き直しの候補
-                </span>
+              <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
+                <MarkerContent>書き直しの候補</MarkerContent>
                 {options.length > 0 && (
                   <button
                     type="button"
@@ -367,7 +400,7 @@ function Chat() {
                     このままでいい
                   </button>
                 )}
-              </div>
+              </Marker>
               {polishing ? (
                 <div className="flex items-center gap-2 rounded-xl border border-dashed px-3 py-2.5 text-[12px] text-muted-foreground">
                   <Spinner className="size-3" />

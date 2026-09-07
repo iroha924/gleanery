@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { BookOpenIcon, HelpCircleIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -163,9 +164,11 @@ function Terms() {
             <div key={t.id} className="space-y-1 border-b pb-3 last:border-0">
               <div className="flex items-start justify-between gap-2">
                 <span className="font-medium text-sm">{t.word}</span>
-                <Button variant="ghost" size="icon" onClick={() => remove.mutate(t.id)}>
-                  <Trash2Icon className="size-3.5" />
-                </Button>
+                <ConfirmDelete what={t.word} onConfirm={() => remove.mutate(t.id)}>
+                  <Button variant="ghost" size="icon" aria-label={`「${t.word}」を消す`}>
+                    <Trash2Icon className="size-3.5" />
+                  </Button>
+                </ConfirmDelete>
               </div>
               <p className="text-muted-foreground text-xs leading-relaxed">{t.meaning}</p>
               {t.aliases.length > 0 && (

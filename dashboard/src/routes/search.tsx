@@ -2,12 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { api } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
 import { useProject } from "@/lib/project";
@@ -46,11 +46,6 @@ function SearchPage() {
     staleTime: 60_000,
   });
 
-  const toggleKind = (k: string) => {
-    const next = kinds?.includes(k) ? kinds.filter((x) => x !== k) : [...(kinds ?? []), k];
-    nav({ search: (p) => ({ ...p, kinds: next.length ? next : undefined }) });
-  };
-
   return (
     <div className="flex h-[calc(100vh-7rem)] gap-4">
       <div className="mx-auto flex w-full max-w-[52rem] min-w-0 flex-1 flex-col gap-5 overflow-y-auto">
@@ -71,29 +66,32 @@ function SearchPage() {
           </Button>
         </form>
 
-        {/* 絞り込みは押せる要素にする。Badge は span なので、asChild で button を渡さないと
-          キーボードで操作できず、押せることも読み上げに伝わらない。 */}
+        {/* **押せるものはトグルにする。**Badge を button で包むと、押せることが読み上げに伝わらない。 */}
         <div className="flex flex-wrap items-center gap-2">
-          <Badge
-            asChild
-            variant={dont ? "default" : "outline"}
-            className={dont ? "bg-dont hover:bg-dont/90" : ""}
+          <ToggleGroup
+            type="single"
+            value={dont ? "dont" : ""}
+            onValueChange={(v) => nav({ search: (p) => ({ ...p, dont: v === "dont" ? true : undefined }) })}
+            variant="outline"
           >
-            <button
-              type="button"
-              aria-pressed={Boolean(dont)}
-              onClick={() => nav({ search: (p) => ({ ...p, dont: p.dont ? undefined : true }) })}
-            >
+            <ToggleGroupItem value="dont" className="data-[state=on]:bg-dont data-[state=on]:text-white">
               やらないと決めたことだけ
-            </button>
-          </Badge>
-          {KINDS.map(([k, ja]) => (
-            <Badge key={k} asChild variant={kinds?.includes(k) ? "secondary" : "outline"}>
-              <button type="button" aria-pressed={Boolean(kinds?.includes(k))} onClick={() => toggleKind(k)}>
+            </ToggleGroupItem>
+          </ToggleGroup>
+          <ToggleGroup
+            type="multiple"
+            value={kinds ?? []}
+            onValueChange={(v: string[]) =>
+              nav({ search: (p) => ({ ...p, kinds: v.length ? v : undefined }) })
+            }
+            variant="outline"
+          >
+            {KINDS.map(([k, ja]) => (
+              <ToggleGroupItem key={k} value={k}>
                 {ja}
-              </button>
-            </Badge>
-          ))}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
         </div>
 
         {!q && (
