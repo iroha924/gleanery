@@ -1,22 +1,22 @@
 # mitos を個人の道具に戻し、判断の地図を中心にした画面へ作り替える
 
-> mitos に残るのが本人のリポジトリの記録だけになり、追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件になること。あわせてダッシュボードが、判断のつながりを地図として出す画面へ作り替わり、bun run check とテスト 42 件と本番ビルドが通ったうえで実機の全画面が動くこと。
+> mitos に残るのが本人のリポジトリの記録だけになり、追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件になること。あわせてダッシュボードが、チャットを中心に据えた 6 画面（質問する / 作業の現在地 / 記録を探す / 記録 / 会議を聞き取る / 設定）として動き、bun run check とテスト 42 件と本番ビルドが通ること。**地図として出す案は d-drop-map で棄却したので、完了条件から外してある**（変更の経緯は d-goal-after-map）
 
 - 状態: 進行中
 - 対象: mitos (main)
-- 最終更新: 2026-09-08T01:10:00+09:00
+- 最終更新: 2026-09-08T02:00:00+09:00
 - 人間向けの表示: `personal-rebuild.progress.html`
 
 ## いまここ
 
-地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。**この回のコミット 35 本は push していない。**直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま
+地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。**この回のコミット 35 本は push していない。**直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）
 
 ### 工程
 
 - 完了: DB の削除
 - 完了: リポジトリの記述
 - 完了: 方向を選ぶ
-- 完了: 地図の実装
+- 完了: 地図の実装（のち d-drop-map で削除）
 - 完了: 画面の展開
 - 完了: 名前の見直し
 - 完了: 音声入力と会議の聞き取り
@@ -28,8 +28,8 @@
 
 ## 次にやること
 
-- この回のコミット 35 本（904cd60〜15c3423）を origin/main へ push する。前回の記録の時点では 8e3942f までが push 済みで、それ以降はローカルにしかない (ai)
-- mitos describe で scope の役割と一行説明を埋める。mitos 側は README の 3 行目から書けるが、iroha924/hir4ta-developer が何のリポジトリかは本人が決める必要がある。埋まると、プロジェクトの定義を聞かれるたびの README 読み込みが要らなくなる (human)
+- 未 push のコミットを origin/main へ push する。**リモートは 357aa22**（前回の記録を書き出したコミット）で、8e3942f ではない。未 push は 357aa22..HEAD、先頭は 904cd60（地図の削除） (ai)
+- mitos describe で scope の役割と一行説明を埋める。使い方は `./plugin/bin/mitos describe <dir> <役割> [説明]`（一覧は `./plugin/bin/mitos scopes`）。mitos 側は README の 3 行目から書けるが、iroha924/hir4ta-developer が何のリポジトリかは本人が決める必要がある。埋まると、プロジェクトの定義を聞かれるたびの README 読み込みが要らなくなる (human)
 - 2026-09-07 時点で「あと 1 週間」と言われた退職日までに、勤務先のリポジトリ名を含む ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうかを決める。消すと、そのリポジトリでの作業の一次記録が失われる（DB からは既に消えており、取り込み直す経路も退職後は無い）。残すと、パス名自体が勤務先を示すものが手元に残る。この回でも未決 (human)
 - 次の職場で取り込みを始めたら、relation 表に書き手を作るかを判断する。地図は削除したので線種の枠は消えたが、relation 表と parent_id は残っている (human)
 
@@ -40,6 +40,8 @@
 - `q-scope-summary` mitos describe をどう埋めるか。mitos 側は README から書けるが、iroha924/hir4ta-developer が何のリポジトリで、どういう役割なのかは本人にしか決められない。埋まるまで、プロジェクトの定義を聞かれるたびに README を読む往復が入り続ける — 答えるのは 人 / いま答えが要る
 - `q-title-backfill` LLM が題を付ける前に作られた会話の題を、付け直すかどうか。ChatGPT は過去の会話名を変えないのでそれに倣って何もしていないが、新旧が混ざって並んでいる — 答えるのは 人 / いま答えが要る
 - `q-busy-until-titled` 答えを読み終えてから 1.7〜2.5 秒、入力欄が「止める」のままになるのを直すか。直すには done イベントで busy を落とす配線が要り、SSE の扱いが 1 段複雑になる。放置しても壊れない — 答えるのは 人 / この作業の外
+- `q-realtime-gap` 会議の聞き取りで、再接続の間に流れた音声が落ちる件をどうするか。d-realtime-not-chunking の引き受けた不利として書いたきり、直す判断も直さない判断もしていない。**落としたことが画面に出ないので、利用者からは欠落に見えない。**直すなら、落ちた区間を画面に印として出すのが最小 — 答えるのは 人 / 実装中に解ける
+- `q-scrub-pattern` 目指すところの中心条件「追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件」を、**いま再確認する手段が無い。**v-scrub の grep パターンは、記録自体に語を書き戻さないためプレースホルダにしてある（前回のレビューで最重要として受理した対処）。語の一覧はどこにも保管しておらず、再確認するには本人が組み直す必要がある。gitignore した手元のファイルに置くか、確認をやめるかを決める — 答えるのは 人 / いま答えが要る
 
 ## 背景
 
@@ -113,7 +115,7 @@
   - (不利) 「覆した決定」「答えた問い」は表現できない。画面には枠だけがある
   - relation に書き手ができたとき、地図の実装を変えずに線が増える
 - 守られていることの確かめ方: /api/graph の戻り値で edges の kind が parent_id 由来（rejected と considered）と ref 由来（belongs）だけであること、および rejected と considered の合計が node.parent_id を持つ節の件数と一致することを確かめる
-- 検証: v-edge-kinds [pass]
+- 検証: v-edge-kinds [pass] / v-relation-no-writer [pass]
 - 根拠: $ curl -s 'http://localhost:8787/api/graph?scopes=1' (exit 0)
 
 ### d-ref-as-hub
@@ -260,7 +262,7 @@
   - (不利) ephemeral token が 600 秒で切れるので、会議中に取り直す仕組みが要る（fa017ed で入れた）
   - (不利) 再接続の間に流れた音声は落ちる。落としたことを画面に出していない
 - 守られていることの確かめ方: dashboard/src/lib/listen.ts が WebSocket を張り、openai パッケージを import していないこと
-- 検証: v-realtime-raw-ws [pass]
+- 検証: v-realtime-raw-ws [pass] / v-mtg-end-to-end [not-run]
 - 根拠: commit 84b6039 / commit fa017ed / file dashboard/src/lib/listen.ts
 
 ### d-exclude-bot-utterances
@@ -278,7 +280,7 @@
   - (不利) 発言を探したいときは kinds に utterance を明示する必要がある
   - (不利) DB の bot 発言 139 件はそのまま残っている。import-github を回せば同じ比率で増える
 - 守られていることの確かめ方: server/src/search.ts の clauses が kinds 未指定のとき n.kind <> 'utterance' を含むこと
-- 検証: v-search-excludes-utterance [pass]
+- 検証: v-search-excludes-utterance [pass] / v-bot-utterances [pass]
 - 根拠: commit 5b0eba5 / file server/src/search.ts
 
 ### d-now-by-phases
@@ -314,7 +316,7 @@
   - (不利) transcript を毎回全文読むので、長いセッションでは終了時に一拍かかる
   - (不利) スキルを起動したかで見ているので、起動して途中でやめたセッションは促されない
 - 守られていることの確かめ方: plugin/hooks/session-end が TRACED を含む transcript と、編集 0 件の transcript のどちらでも無言で exit 0 すること
-- 検証: v-session-end-silent [pass]
+- 検証: v-session-end-silent [pass] / v-hook-doc [pass]
 - 根拠: commit 86c2a22 / file plugin/hooks/session-end
 
 ### d-chat-as-conversation
@@ -387,6 +389,42 @@
 - 検証: v-four-entrypoints [pass]
 - 根拠: file server/src/http.ts / file server/src/mcp.ts / file dashboard/vite.config.ts
 
+### d-goal-after-map
+
+**目指すところから地図を外し、「チャットを中心に、記録を読む・探す・会議で引く画面が動くこと」に書き換える**
+
+- 状態: accepted / 09-08 02:00
+- 文脈: 目指すところに「ダッシュボードが、判断のつながりを地図として出す画面へ作り替わり」と書いてあるが、d-drop-map で地図は削除した。**完了条件が、途中で捨てたものを要求したまま残っていた。**レビュアーの指摘（#1）で気付いた。加えて「実機の全画面が動くこと」に対応する工程も検証も無かった。
+- 検討した案:
+  - 採用: 目的を書き換え、その変更自体を決定として残す
+  - 棄却: 元のまま置く — 再開者が「あと何をすれば終わりか」を記録から決められない。地図を作り直さない限り永久に未達になる
+  - 棄却: 記録を閉じて新しい記録を作る — 目的は変わっていない（mitos を個人の道具に戻す）。変わったのは手段だけで、分けると経緯が切れる
+- 結果:
+  - 完了条件が、いま存在する画面だけで判定できるようになった
+  - (不利) 目的を後から書き換えた記録になる。地図に投じた作業（d-ref-as-hub、d-edges-from-parent-and-ref）は目的から外れた位置に残る
+- 守られていることの確かめ方: 目指すところに「地図」の語が無く、画面の一覧が dashboard/src/routes の実体と一致すること
+- 検証: v-routes-count [pass]
+- 根拠: file dashboard/src/routes/index.tsx
+
+### d-geist-murecho
+
+**欧文を Geist、和文を Murecho、等幅を Geist Mono にする**
+
+- 状態: accepted / 09-08 00:48
+- 文脈: 本人から「フォントに合わせて UI を作っている感じがある。可愛くてポップなので、もっとモダンで整然とした感じにしたい」と言われた。使っていたのは M PLUS Rounded 1c（丸ゴシック）と、本来はディスプレイ書体である Space Grotesk を等幅として流用したもの。**package.json に Geist と Murecho が既に入っていて、どこからも使われていなかった。**
+- 検討した案:
+  - 採用: Geist + Murecho（どちらも既に依存にある）+ Geist Mono を追加
+  - 棄却: M PLUS Rounded 1c を残す — 丸ゴシックが「ポップ」の正体だった。43MB・1778 ファイルあり、削除でリポジトリも軽くなる
+  - 棄却: Space Grotesk を等幅のまま使う — ディスプレイ書体で、字形に癖がある。数字と札を本文から分ける役には向かない
+  - 棄却: 和文を OS の書体（Hiragino Sans）に任せる — macOS でしか同じ見た目にならない。Murecho は unicode-range で分割配信され 1 ファイル約 13KB なので、配信量の理由が立たない
+- 結果:
+  - 欧文と和文が別々の書体で組まれ、数字と識別子が本文から分かれて読める
+  - (不利) 書体に合わせて font-extrabold 4 箇所を semibold へ、カードの浮き上がる影と translate を平らな色変化へ直す作業が付いてきた
+  - (不利) 「モダンで整然」が達成できたかを測る基準は無い。本人の目視だけで判定している
+- 守られていることの確かめ方: dashboard/src/styles.css の --font-sans が Geist Variable と Murecho Variable を並べ、m-plus-rounded-1c が依存から消えていること
+- 検証: v-fonts [pass]
+- 根拠: commit aec5f73 / file dashboard/src/styles.css
+
 ## 経過
 
 - `e-purge-timeout` 09-07 02:05 [駄目だった道] 35,074 行とその cascade を 1 つの DELETE で消そうとして、Supabase の statement_timeout（postgres ロールで 2 分）に当たり ROLLBACK した。データは 1 行も消えていない。node を 1,000 行、ref を 5,000 行ずつの塊に割り、文ごとに自動コミットさせる形で通した（所要 244 秒） — $ node scratchpad/purge.ts (exit 1)
@@ -419,7 +457,14 @@
 - `e-no-project-identity` 09-08 01:00 [判明したこと] 「このプロジェクトは何か」に答えられなかった原因は、**DB に mitos の定義がどこにも無いこと**だった。record は 1 件（personal-rebuild）で、それは作業のセッション記録。scope.role と scope.summary は 2 リポジトリとも null で、プロンプトの『いま見ている範囲』が `- iroha924/mitos` としか出ていなかった。役割と一行説明を入れる mitos describe コマンドは前から存在するが、一度も実行されていない — $ curl -s localhost:8787/api/scopes (exit 0) / file server/src/cli.ts
 - `e-title-latency` 09-08 01:02 [意図して残した負債] 会話の題を LLM に付けさせるため、答えを流し終えてから saved を返すまでに 1.7〜2.5 秒かかる。**その間、送信ボタンは「止める」のまま。**非同期にする案は、busy の解除が SSE の切断に紐づいているせいで結局待たせるので採らなかった。直すなら done イベントで busy を落とす配線が要る — $ python3 ask.py (exit 0)
 - `e-session-commits` 09-08 01:10 [状態の変化] この回のコミットは 904cd60 から 15c3423 までの 35 本（前回の記録は 357aa22 までを含む）。ブランチは main。**push はしていない** — $ git log --format='%h|%ad|%s' --date=short -43 (exit 0)
-- `e-extra-material-none` 09-08 01:11 [作業] 記録を書く前に「記録に入れておきたいものは他にありますか。（会話に出ていない口頭の判断、別のメモ、次にやるつもりのことなど）」と 2 回聞いた（この回と、地図の削除前の回）。回答はそれぞれ「特に無い。会話から書いて」「無い。会話の内容だけでいい」で、**追加素材は未提供。**したがってこの記録は transcript と git 履歴だけから書いている — $ node bin/progress.mjs collect --out digest.json (exit 0)
+- `e-extra-material-none` 09-08 01:11 [作業] 記録を書く前に「記録に入れておきたいものは他にありますか。（会話に出ていない口頭の判断、別のメモ、次にやるつもりのことなど）」と 2 回聞いた（この回と、地図の削除前の回）。回答はそれぞれ「特に無い。会話から書いて」「無い。会話の内容だけでいい」で、**追加素材は未提供。**したがってこの記録は transcript と git 履歴だけから書いている — $ node /Users/shunichi/Projects/mitos/plugin/skills/trace/bin/progress.mjs collect --out digest.json (exit 0)
+- `e-graph-deps-stale` 09-08 02:00 [判明したこと] **地図を消したことで、地図を前提にした過去のエントリが再現できなくなっている。**レビュアーの指摘（#4）で洗い出した。確かめ方が /api/graph の戻り値に乗っている決定が 2 件（d-edges-from-parent-and-ref、d-ref-as-hub）、その検証が 3 件（v-edge-kinds、v-graph-edges、v-citation-map）。いずれも [pass] のまま残っているが、**いま再実行する手段は無い。**「確認済みで維持されている」と読まないこと。同様に q-force-layout-scale の力学配置、用語「結び目」、e-click-coordinate と e-label-collapse が指す dashboard/src/components/graph.tsx も、いまのツリーには存在しない — $ grep -rn 'graph' dashboard/src server/src -i (exit 0)
+- `e-scratchpad-not-tracked` 09-08 02:00 [判明したこと] **再現手段として書いたスクリプトのうち、いま存在しないものがある。**レビュアーの指摘（#6・#17）で確かめた。scratchpad/ は git 管理下に 1 件も無く、ディレクトリ自体が存在しない（v-purge と e-purge-scope が指す purge.ts / purge2.ts、e-relation-empty の refs.ts などが該当）。この回で書いた .title-cmp.ts（v-title-strategy）と ask.py（v-readme-grounding、e-title-latency）も、測った後に消した一時ファイルで残っていない。**これらの検証は結果だけが残り、再実行できない。** — $ git ls-files scratchpad (exit 0)
+- `e-two-scopes` 09-08 02:00 [判明したこと] **作業場所は 2 件ある。**e-purge-scope の「残ったのは 1 件」は削除直後の観測で、そのあと mitos ingest が mitos 自身の作業場所を登録したため増えた（ingest は未登録の作業ディレクトリを登録する）。id 1 が iroha924/hir4ta-developer（node 310・record 2）、**id 19 が iroha924/mitos（node 69・record 1）**。v-now-phases-mismatch の scope_id = 19 は mitos を指す — $ select id, label, count(node), count(record) from scope (exit 0)
+- `e-counts-differ-by-population` 09-08 02:00 [判明したこと] **node の件数が 310 / 330 / 379 と揺れて見えるのは母数が違うため。**レビュアーの指摘（#10）で確かめた。310 は hir4ta-developer だけの node、379 は 2 作業場所の合計（310 + 69）、330 は地図の節数で、node に結び目として置いた PR とファイル 20 件を足したもの。一方 **bot 発言を「139 件」と書いたのは誤りで、実測は 138 件**（d-exclude-bot-utterances の結果欄）。同じ決定の文脈に書いた 138 が正しい — $ select count(*) from node where kind='utterance' and deleted_at is null and (attrs->>'authors') ilike '%[bot]%' (exit 0)
+- `e-whisper-provenance-lost` 09-08 02:00 [判明したこと] [inference] **d-whisper-1 が手元モデルを棄却した数字の出所を、いまは切り分けられない。**レビュアーの指摘（#9）。同じ比較の周辺で 2 つの事故が起きている — e-nt-drops-tail（-nt が末尾を落とす。モデルの性質だと誤診断した）と e-zsh-word-split-again（比較スクリプトが前回の出力を読み、数字が前の実行のものだった）。「50.6 秒を 20.7 秒で打ち切った」がこの 2 つより前か後かは記録に無く、音声と実行体も残っていない（e-scratchpad-not-tracked）。**手元モデルへ戻す判断をするなら測り直しが要る。**なお whisper-1 を採った側の根拠（誤変換 0、末尾が落ちない）はこの回でも API 経由で再現できる — file personal-rebuild.progress.md
+- `e-routes-now` 09-08 02:00 [判明したこと] **いまの画面は 6 本。**レビュアーの指摘（#12）で数えた。/（質問する）、/now（作業の現在地）、/search（記録を探す）、/records/$id（記録）、/mtg（会議を聞き取る）、/settings（設定）。背景に書いた 8 本のうち /chat は / に統合、/projects と /terms は /settings のタブへ、/people（名簿）と /advice（編集時の助言）は 38d9fa4 で削除した — $ ls dashboard/src/routes/ (exit 0)
+- `e-review-triage-2` 09-08 02:10 [作業] まっさらなレビュアー 1 体に .md だけを渡し、23 件の指摘を全件裁定した（1 ラウンドで打ち切り）。**受理して直した 13 件**: 目的が削除済みの地図を完了条件に要求したままだった（d-goal-after-map）、push 範囲がリモートの実体と食い違っていた（v-remote-head。リモートは 8e3942f ではなく 357aa22 だった）、地図に依存する決定 2 件と検証 3 件が再実行できないまま [pass] で残っていた（e-graph-deps-stale）、再現手段のスクリプトが git に無い・消してある（e-scratchpad-not-tracked）、作業場所が 1 件か 2 件か（e-two-scopes）、node の件数の母数と bot 発言 139→138 の誤り（e-counts-differ-by-population、v-bot-utterances）、relation の書き手が無いという断定が未検証だった（v-relation-no-writer）、会議の聞き取りを grep でしか確かめていない（v-mtg-end-to-end を not-run で明示）、緑の証拠が 35 本前の時点だった（v-green-at-head）、SessionEnd の一次ソースに URL と参照日が無い（v-hook-doc）、書体の決定が無い（d-geist-murecho）、画面が何本か特定できない（e-routes-now）、whisper の棄却根拠の出所が切り分けられない（e-whisper-provenance-lost）、再接続中の音声欠落と scrub パターンの所在が未解決に入っていなかった（q-realtime-gap、q-scrub-pattern）。**見送った 8 件と理由**: (a) 正本が html か md かの食い違いと実行体パスの二重表記は、記録の本文ではなく trace の書き出しテンプレートが出している文言なので記録側で直せない（証拠の相対パス 1 件だけ直した）。(b)「方向を選ぶ」「画面の展開」に決定が無いのは、どちらも本人の直接の指示で棄却案が存在しないため。(c) /advice と /mtg を足した決定が無いのも同じ理由（画面の一覧は e-routes-now で確定させた）。(d) v-int-casts の what が観測より強い点は、e-bigint-as-string 自身が走査範囲の限界を書いており記録内で矛盾していない。(e) v-evals-shell が評価セット 5 本のうち 1 本しか cat していない点は、d-delete-not-scrub の中心根拠ではない。(f) 制約が 8 件と 3 件で食い違って見えるのは母数の違い — e-now-screen-kept の 8 件は /now 画面が集約して出す件数（制約 + やらないこと + 行き止まり）で、background.constraints の 3 件とは別物。(g) q-title-backfill の「ChatGPT は過去の会話名を変えない」に出典が無い点は、人への問いに添えた判断材料であって事実の主張として使っていない。(h) e-purge-timeout の ROLLBACK 後に件数を数え直していない点は、そのあと e-purge-scope で削除を完了して数え直しており、いまの DB 状態は独立に確かめられている。**なお指摘 #22 は見送らず、ここに書き残す** — 「回答精度 74/74」の出所はこの記録の外（削除済みの MEMORY.md）にあり復元できない。数値として引かないこと。「Google Meet 6 割・Zoom 2 割・Teams 2 割」は本人の申告で、実測ではない — file personal-rebuild.progress.md
 
 ## 検証
 
@@ -455,6 +500,14 @@
 - `v-title-in-savetun` [pass] 新規の会話が、題の生成を待ってから作られること （d-title-from-answer を確かめた） — `grep -n 'titleFor(question, answer)' server/src/http.ts`
 - `v-system-readme` [pass] システムプロンプトが、プロジェクトの定義を README へ回していること （d-readme-for-identity を確かめた） — `grep -n 'リポジトリに聞く' server/src/chat.ts`
 - `v-four-entrypoints` [pass] server/src の入口が 4 つあり、ダッシュボードがそのうち 1 つでしかないこと。Next.js が入っていないこと （d-stay-on-vite-react を確かめた） — `ls server/src/{http,mcp,cli,hook-check-path}.ts dashboard/vite.config.ts && grep -n next dashboard/package.json`
+- `v-relation-no-writer` [pass] relation 表へ書き込む経路がリポジトリのどこにも無いこと（v-relation-writer が未実行のまま残していた点） （d-edges-from-parent-and-ref を確かめた） — `grep -rn 'into relation' --include='*.ts' --include='*.sql' --include='*.mjs' . | grep -v node_modules; grep -rln relation server/src`
+- `v-bot-utterances` [pass] 検索から外した utterance のうち bot 由来が何件か（v-utterance-ratio の SQL は kind 別の総数しか返しておらず、bot かどうかを示していなかった） （d-exclude-bot-utterances を確かめた） — `select count(*) from node where kind='utterance' and deleted_at is null and (attrs->>'authors') ilike '%[bot]%'`
+- `v-remote-head` [pass] リモートがどこまで進んでいるか（次にやること「push」の範囲） — `git ls-remote origin refs/heads/main && git rev-list --count 357aa22..HEAD`
+- `v-routes-count` [pass] 目指すところが要求する「全画面」が何本で、地図が含まれないこと （d-goal-after-map を確かめた） — `ls dashboard/src/routes/`
+- `v-mtg-end-to-end` [not-run] 会議の聞き取りが、実際の会議で文字起こしを出し続け、600 秒を越えても鍵の取り直しで止まらないこと （d-realtime-not-chunking を確かめた） (未実行: 会議 1 本を実際に通す以外に確かめる手段が無い。手元に相手の音声が入る画面共有を再現できず、ephemeral token の 600 秒切れも実時間でしか起きない)
+- `v-hook-doc` [pass] SessionEnd が終了を止められないという一次ソース（止める案を棄却した根拠） （d-session-end-hint を確かめた） — `https://code.claude.com/docs/en/hooks の SessionEnd 節（2026-09-08 参照）`
+- `v-green-at-head` [pass] 最後のコミットを含む状態で、型検査・整形・テスト・本番ビルドが通ること（v-checks は 35 本前の時点、v-session-green は時点も出力も無い） — `bun run check && bun run test && bun run build`
+- `v-fonts` [pass] 書体が Geist と Murecho に入れ替わり、丸ゴシックが依存から消えていること （d-geist-murecho を確かめた） — `grep -n 'Geist Variable\|Murecho\|m-plus-rounded' dashboard/src/styles.css dashboard/package.json`
 
 ## 用語
 
