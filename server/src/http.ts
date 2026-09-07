@@ -4,9 +4,11 @@
 // **資格情報はブラウザへ出さない。**DB と Voyage を触るのはここだけで、
 // 画面は HTTP しか知らない。接続は読み取り専用ロールで張る（書き込み経路を作らない）。
 
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -554,6 +556,82 @@ app.delete("/api/chats/:id", async (c) => {
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  }
+});
+
+const MODELS = path.join(os.homedir(), ".cache/mitos/models");
+const run = promisify(execFile);
+
+/**
+ * 手元で音声を文字にする。**音声も文字起こしも外へ出ない** — whisper.cpp が手元で回る。
+ *
+ * 引数は 27.2 秒の日本語で測って決めた（q5_0 で 1.18 秒）。**どれも外すと壊れる。**
+ * `-nt` は付けない（付けると末尾のセグメントが落ちる）。`--prompt` は渡さない
+ * （用語を渡すと先頭に "The" が付き「310」が「31010」に化ける）。VAD も使わない（速度は同じで、
+ * 区切りが粗くなる分だけ文が消える）。どれも distil の decoder が 2 層しかないことに由来する。
+ *
+ * **20 秒を超える音声は末尾が落ちる。**1 回の発話はそれより短いので今は切っていない。
+ */
+app.post("/api/transcribe", async (c) => {
+  const file = (await c.req.formData()).get("audio");
+  if (!(file instanceof File)) return c.json({ error: "audio が無い" }, 400);
+  if (file.size > 50_000_000) return c.json({ error: "音声が大きすぎる" }, 413);
+
+  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "mitos-asr-"));
+  try {
+    const src = path.join(dir, "in");
+    await fs.promises.writeFile(src, Buffer.from(await file.arrayBuffer()));
+    // ブラウザは webm/opus を出す。whisper.cpp は 16kHz mono の PCM しか受けない。
+    const wav = path.join(dir, "a.wav");
+    await run("ffmpeg", [
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      src,
+      "-ar",
+      "16000",
+      "-ac",
+      "1",
+      "-c:a",
+      "pcm_s16le",
+      wav,
+    ]);
+    await run(
+      "whisper-cli",
+      // prettier-ignore
+      [
+        "-m",
+        path.join(MODELS, "ggml-kotoba-whisper-v2.0-q5_0.bin"),
+        "-l",
+        "ja",
+        "-f",
+        wav,
+        "-np",
+        "-oj",
+        "-of",
+        path.join(dir, "out"),
+      ],
+      { timeout: 600_000 },
+    );
+    const j = JSON.parse(await fs.promises.readFile(path.join(dir, "out.json"), "utf8")) as {
+      transcription: { text: string }[];
+    };
+    return c.json({
+      text: j.transcription
+        .map((t) => t.text)
+        .join("")
+        .trim(),
+    });
+  } catch (e) {
+    // 失敗の全文には一時ファイルの絶対パスが混ざる。画面へは出さず、手元のログに残す。
+    const m = e instanceof Error ? e.message : String(e);
+    console.error("transcribe:", m);
+    if (/ENOENT/.test(m)) return c.json({ error: "whisper-cli か ffmpeg が入っていない" }, 500);
+    if (/ffmpeg/.test(m)) return c.json({ error: "音声として読めなかった" }, 400);
+    return c.json({ error: "文字起こしに失敗した" }, 500);
+  } finally {
+    await fs.promises.rm(dir, { recursive: true, force: true });
   }
 });
 

@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowUpIcon } from "lucide-react";
+import { ArrowUpIcon, MicIcon, SquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -114,6 +115,9 @@ function Chat() {
   const { scopeIds: picked, label: projectLabel } = useProject();
   const scopeIds = picked ?? [];
   const abort = useRef<AbortController | null>(null);
+  // 話して入れる。**録った音は手元の whisper.cpp へ行くだけで、外へは出ない。**
+  const [rec, setRec] = useState<MediaRecorder | null>(null);
+  const [hearing, setHearing] = useState(false);
   // 開いている会話。**新しい会話は最初の答えが返ってからサーバー側で作られる。**
   const [chatId, setChatId] = useState<string | undefined>(undefined);
   const qc = useQueryClient();
@@ -130,6 +134,40 @@ function Chat() {
         sources: m.sources,
       })),
     );
+  };
+
+  /** 押すと録り始め、もう一度押すと止めて文字にする。 */
+  const listen = async () => {
+    if (rec) {
+      rec.stop();
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      toast.error("マイクを使えなかった");
+      return;
+    }
+    const m = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    m.ondataavailable = (e) => chunks.push(e.data);
+    m.onstop = async () => {
+      for (const t of stream.getTracks()) t.stop();
+      setRec(null);
+      setHearing(true);
+      try {
+        const text = await api.transcribe(new Blob(chunks, { type: m.mimeType }));
+        if (text) setDraft((d) => (d ? `${d} ${text}` : text));
+        else toast.error("何も聞き取れなかった");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      } finally {
+        setHearing(false);
+      }
+    };
+    m.start();
+    setRec(m);
   };
 
   const ask = async (question: string) => {
@@ -279,12 +317,29 @@ function Chat() {
               <span className="rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
                 {projectLabel}
               </span>
+              <Button
+                type="button"
+                variant={rec ? "default" : "ghost"}
+                size="icon"
+                className={`ml-auto size-8 rounded-full ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+                onClick={listen}
+                disabled={hearing || scopeIds.length === 0}
+                aria-label={rec ? "録音を止めて文字にする" : "話して入れる"}
+              >
+                {hearing ? (
+                  <Spinner className="size-4" />
+                ) : rec ? (
+                  <SquareIcon className="size-3.5" />
+                ) : (
+                  <MicIcon className="size-4" />
+                )}
+              </Button>
               {busy ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="ml-auto rounded-full"
+                  className="rounded-full"
                   onClick={() => abort.current?.abort()}
                 >
                   止める
@@ -293,7 +348,7 @@ function Chat() {
                 <Button
                   type="submit"
                   size="icon"
-                  className="ml-auto size-8 rounded-full"
+                  className="size-8 rounded-full"
                   disabled={!draft.trim() || scopeIds.length === 0}
                   aria-label="送る"
                 >

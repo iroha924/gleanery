@@ -249,6 +249,15 @@ async function send<T>(path: string, method: string, body?: unknown): Promise<T>
 }
 
 export const api = {
+  /** 話した音を手元で文字にする。**音も文字も外へ出ない**（whisper.cpp が手元で回る）。 */
+  transcribe: async (audio: Blob): Promise<string> => {
+    const form = new FormData();
+    form.append("audio", audio, "a.webm");
+    const res = await fetch("/api/transcribe", { method: "POST", body: form });
+    const json = (await res.json()) as { text?: string; error?: string };
+    if (!res.ok) throw new Error(json.error ?? `文字起こしが ${res.status}`);
+    return json.text ?? "";
+  },
   now: (scopes?: number[]) => get<Now[]>(`/api/now${q(scopes)}`),
   review: (id: string) => get<Node[]>(`/api/review/${encodeURIComponent(id)}`),
   candidates: () => get<Candidate[]>("/api/candidates"),
