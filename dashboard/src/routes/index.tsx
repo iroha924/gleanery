@@ -120,6 +120,8 @@ function Chat() {
   // 話して入れる。**録った音は手元の whisper.cpp へ行くだけで、外へは出ない。**
   const [rec, setRec] = useState<MediaRecorder | null>(null);
   const [hearing, setHearing] = useState(false);
+  // マイクが立ち上がるまでの数百 ms。**ここを「録音中」と見せると先頭の音が落ちる。**
+  const [preparing, setPreparing] = useState(false);
   // 書き直しの候補。**入れ替えるのは押されたときだけ**で、黙って直さない。
   const [options, setOptions] = useState<PolishOption[]>([]);
   const [polishing, setPolishing] = useState(false);
@@ -147,10 +149,13 @@ function Chat() {
       rec.stop();
       return;
     }
+    if (preparing) return;
+    setPreparing(true);
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      setPreparing(false);
       toast.error("マイクを使えなかった");
       return;
     }
@@ -181,8 +186,13 @@ function Chat() {
         setHearing(false);
       }
     };
+    // **録音が本当に始まってから「録音中」にする。**start() の時点ではまだマイクが立ち上がって
+    // おらず、押した直後に話すと先頭が落ちる（実測:「ポストグレス」の「ポ」が消えた）。
+    m.onstart = () => {
+      setPreparing(false);
+      setRec(m);
+    };
     m.start();
-    setRec(m);
   };
 
   // **⌘⇧K で録り始め、もう一度で止める。**Chrome が macOS で押さえていない組み合わせを選んだ
@@ -330,7 +340,7 @@ function Chat() {
               ask(draft);
             }}
           >
-            <div className="rounded-2xl border bg-card px-5 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
+            <div className="rounded-2xl border bg-card px-6 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
               <Textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -343,7 +353,7 @@ function Chat() {
                 }}
                 placeholder={scopeIds.length === 0 ? "左でプロジェクトを選んでください" : "続けて聞く"}
                 disabled={scopeIds.length === 0}
-                className="min-h-12 resize-none border-none bg-transparent p-0 text-[15px] leading-[1.75] shadow-none focus-visible:ring-0"
+                className="-m-2 min-h-12 resize-none border-none bg-transparent p-2 text-[15px] leading-[2.15] shadow-none focus-visible:ring-0"
               />
               <div className="flex items-center gap-2 pt-2">
                 <span className="rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
@@ -362,10 +372,10 @@ function Chat() {
                       size="icon"
                       className={`size-8 rounded-full ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
                       onClick={listen}
-                      disabled={hearing || scopeIds.length === 0}
+                      disabled={hearing || preparing || scopeIds.length === 0}
                       aria-label={rec ? "録音を終了" : "録音を開始"}
                     >
-                      {hearing ? (
+                      {hearing || preparing ? (
                         <Spinner className="size-4" />
                       ) : rec ? (
                         <SquareIcon className="size-3.5" />
@@ -375,7 +385,13 @@ function Chat() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent className="flex items-center gap-2">
-                    {hearing ? "文字にしています" : rec ? "録音を終了" : "録音を開始"}
+                    {hearing
+                      ? "文字にしています"
+                      : preparing
+                        ? "準備中。始まってから話してください"
+                        : rec
+                          ? "録音を終了"
+                          : "録音を開始"}
                     <KbdGroup>
                       <Kbd>⌘</Kbd>
                       <Kbd>⇧</Kbd>
