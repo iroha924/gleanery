@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BotIcon, CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Answer } from "@/components/answer";
 import { Focus } from "@/components/focus";
 import { Graph } from "@/components/graph";
@@ -144,21 +144,6 @@ function Chat() {
   const graph = useQuery({ queryKey: ["graph", scopeIds], queryFn: () => api.graph(picked, "all") });
   const [selected, setSelected] = useState<number | null>(null);
 
-  // 直近の答えが引いた節。**引用の番号順に並べる** — 地図のバッジと一致させるため。
-  // **毎描画で作り直さない。**新しい配列を渡すと地図側の useMemo と useEffect が
-  // 毎回走り、視点の初期化が描画のたびに掛かる。
-  const highlighted = useMemo(() => {
-    for (let i = turns.length - 1; i >= 0; i--) {
-      const t = turns[i];
-      if (t?.role === "assistant" && t.sources) {
-        // **undefined を弾く。**null だけを見ると、古い API が nodeId を返さないときに
-        // undefined が並び、強調ありの見た目で 1 つも点かない状態になる（実測）。
-        return t.sources.map((x) => x.nodeId).filter((x): x is number => typeof x === "number");
-      }
-    }
-    return [];
-  }, [turns]);
-
   const nodes = graph.data?.nodes ?? [];
   const edges = graph.data?.edges ?? [];
   // 地図に出しているのは判断だけ。**総数を出すと、見えている数と食い違う。**
@@ -237,15 +222,8 @@ function Chat() {
           </p>
         ) : (
           <>
-            <Graph
-              nodes={nodes}
-              edges={edges}
-              highlighted={highlighted}
-              selected={selected}
-              onSelect={setSelected}
-            />
-            <div className="pointer-events-none absolute top-4 left-4 flex items-center gap-2 font-mono text-[10px] text-muted-foreground tracking-widest">
-              <span>{highlighted.length > 0 ? "答えの範囲を表示中" : "全体を表示中"}</span>
+            <Graph nodes={nodes} edges={edges} selected={selected} onSelect={setSelected} />
+            <div className="pointer-events-none absolute top-4 left-4 font-mono text-[10px] text-muted-foreground tracking-widest">
               <span className="rounded-sm border bg-card px-1.5 py-0.5">
                 判断 {drawn} / 記録全体 {nodes.length}
               </span>

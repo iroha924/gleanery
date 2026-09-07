@@ -7,7 +7,7 @@ import type { GraphEdge, GraphNode } from "@/lib/api";
 // 乱数の種は節の id から作る（simulation の既定は Math.random で毎回変わる）。
 type Placed = GraphNode & { x: number; y: number };
 
-const SIZE = { decision: 26, option: 17, verification: 19, question: 17, boundary: 18 } as const;
+const SIZE = { decision: 26, option: 17, verification: 19, question: 17, boundary: 18, ref: 12 } as const;
 const size = (kind: string): number => SIZE[kind as keyof typeof SIZE] ?? 14;
 
 /** 節 1 つぶんの見た目。**種別は色ではなく形で分ける** — 色は極性に使うため。 */
@@ -43,14 +43,27 @@ function dotStyle(n: GraphNode): React.CSSProperties {
         "repeating-linear-gradient(45deg, var(--dont), var(--dont) 2px, var(--background) 2px, var(--background) 5px)",
     };
   }
+  if (n.kind === "ref") {
+    // PR とファイル。**判断ではないので小さく、色も持たせない** — 結び目として置くだけ。
+    return {
+      width: s,
+      height: s,
+      borderRadius: 2,
+      background: "var(--muted)",
+      border: "1px solid var(--border)",
+      transform: "rotate(45deg)",
+    };
+  }
   return { ...base, background: "var(--background)", border: "2px solid var(--muted-foreground)" };
 }
 
 const EDGE = {
   rejected: { stroke: "var(--dont)", width: 1.5, dash: "6 5", flow: true },
   considered: { stroke: "var(--do)", width: 1.3, dash: "0", flow: false },
-  shares: { stroke: "var(--muted-foreground)", width: 1, dash: "0", flow: false },
+  // どの PR・どのファイルの話か。**細く薄く** — 骨格であって主役ではない。
+  belongs: { stroke: "var(--border)", width: 1, dash: "0", flow: false },
 } as const;
+const EDGE_FALLBACK = EDGE.belongs;
 
 /** 節の id から決まる乱数。**同じ入力なら同じ配置**にするために要る。 */
 function seeded(id: number): number {
@@ -59,6 +72,16 @@ function seeded(id: number): number {
 }
 
 function layout(nodes: GraphNode[], edges: GraphEdge[], w: number, h: number): Placed[] {
+  // 記録ごとの錨。**円周に等間隔で置く** — どこに置くかは意味を持たないが、
+  // 同じ記録のものが同じ方角に集まることには意味がある。
+  const records = [...new Set(nodes.map((n) => n.record_id).filter(Boolean))].sort();
+  const anchors = new Map<string, { x: number; y: number }>();
+  records.forEach((r, i) => {
+    const a = (i / Math.max(records.length, 1)) * Math.PI * 2;
+    anchors.set(r, { x: w / 2 + Math.cos(a) * w * 0.2, y: h / 2 + Math.sin(a) * h * 0.2 });
+  });
+  const anchor = (n: GraphNode) => anchors.get(n.record_id) ?? { x: w / 2, y: h / 2 };
+
   const sim = nodes.map((n) => ({
     ...n,
     x: w / 2 + (seeded(n.id) - 0.5) * w * 0.7,
@@ -81,8 +104,11 @@ function layout(nodes: GraphNode[], edges: GraphEdge[], w: number, h: number): P
         .distance(110)
         .strength(0.75),
     )
-    .force("x", forceX(w / 2).strength(0.07))
-    .force("y", forceY(h / 2).strength(0.09))
+    // **同じ作業から出たものは近くに置く。**ref も親も持たない節が 84 件あり、
+    // 反発だけだと意味のない外周へ飛ぶ（実測: 引用が無関係な空白で光った）。
+    // 記録ごとの錨へ弱く引き寄せると、少なくとも「どの作業の話か」で固まる。
+    .force("rx", forceX((d) => anchor(d as unknown as GraphNode).x).strength(0.12))
+    .force("ry", forceY((d) => anchor(d as unknown as GraphNode).y).strength(0.14))
     .force(
       "collide",
       forceCollide().radius((d) => size((d as unknown as GraphNode).kind) / 2 + 26),
@@ -103,7 +129,7 @@ function bounds(placed: Placed[], pad = 120): { x: number; y: number; w: number;
 }
 
 /** 地図に常に出す種別。**発言と出来事は出さない** — 判断が埋もれる。 */
-const ALWAYS = new Set(["decision", "option", "boundary", "verification", "question"]);
+const ALWAYS = new Set(["decision", "option", "boundary", "verification", "question", "ref"]);
 
 // 札の見かけの大きさ（配置座標での目安）。当たり判定にだけ使う。
 const LABEL_W = 160;
@@ -112,21 +138,23 @@ const LABEL_H = 34;
 const PRIORITY: Record<string, number> = {
   decision: 0,
   boundary: 1,
-  verification: 2,
-  question: 3,
-  option: 4,
+  ref: 2,
+  verification: 3,
+  question: 4,
+  option: 5,
 };
 
 export function Graph({
   nodes,
   edges,
-  highlighted,
+  highlighted = [],
   selected,
   onSelect,
 }: {
   nodes: GraphNode[];
   edges: GraphEdge[];
-  highlighted: number[];
+  /** 引いた節を光らせたいときだけ渡す。**渡さなければ強調しない。** */
+  highlighted?: number[];
   selected: number | null;
   onSelect: (id: number | null) => void;
 }) {
@@ -356,7 +384,7 @@ export function Graph({
             const a = pos.get(e.src);
             const b = pos.get(e.dst);
             if (!a || !b || !shownIds.has(e.src) || !shownIds.has(e.dst)) return null;
-            const st = EDGE[e.kind as keyof typeof EDGE] ?? EDGE.shares;
+            const st = EDGE[e.kind as keyof typeof EDGE] ?? EDGE_FALLBACK;
             const on = !dim || (active?.has(e.src) === true && active?.has(e.dst) === true);
             return (
               <line

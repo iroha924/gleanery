@@ -4,6 +4,9 @@
 // **資格情報はブラウザへ出さない。**DB と Voyage を触るのはここだけで、
 // 画面は HTTP しか知らない。接続は読み取り専用ロールで張る（書き込み経路を作らない）。
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -135,6 +138,34 @@ app.get("/api/graph", async (c) => {
   const nodeIds = nodes.rows.map((r) => r.id);
   if (nodeIds.length === 0) return c.json({ nodes: [], edges: [] });
 
+  // **PR とファイルを節として出す。**記録の 6 割は決定にぶら下がらず、
+  // ref だけが手掛かりになる（実測: 310 節中 209 が辺ゼロ、リンク 239 本が 5 つの ref に集中）。
+  // 総当たりで辺にすると 1 つの ref で数千本になるので、ref そのものを結び目にする。
+  // **2 件以上を束ねる ref だけ**を出す（1 件だけの ref は結び目にならない）。
+  const hubs = await client.query<{ id: number; kind: string; key: string; n: number }>(
+    `select r.id::int as id, r.kind, r.key, count(*)::int as n
+       from ref_link l join ref r on r.id = l.ref_id
+      where l.node_id = any($1::bigint[])
+      group by r.id, r.kind, r.key
+     having count(*) >= 2
+      order by count(*) desc
+      limit 60`,
+    [nodeIds],
+  );
+
+  // 結び目の id は負にする。**節の id と衝突させない**（画面は 1 つの表として扱う）。
+  const hubNodes = hubs.rows.map((h) => ({
+    id: -h.id,
+    kind: "ref",
+    subkind: h.kind,
+    polarity: null,
+    text: h.key,
+    at: null,
+    actor_name: null,
+    record_id: "",
+    pr: h.kind === "pr" ? Number(h.key.split("#")[1] ?? "") || null : null,
+  }));
+
   // **両端が返した節に入っている辺だけを出す。**片側だけの辺は描けないので、
   // ここで落としておかないと画面側が毎回間引くことになる。
   const edges = await client.query<{ src: number; dst: number; kind: string; via: string | null }>(
@@ -146,18 +177,51 @@ app.get("/api/graph", async (c) => {
         and child.parent_id = any($1::bigint[])
         and child.id = any($1::bigint[])
       union all
-     select distinct least(a.node_id, b.node_id)::int as src, greatest(a.node_id, b.node_id)::int as dst,
-            'shares' as kind, r.kind || ':' || r.key as via
-       from ref_link a
-       join ref_link b on b.ref_id = a.ref_id and b.node_id > a.node_id
-       join ref r on r.id = a.ref_id
-       join (select ref_id from ref_link where node_id is not null
-              group by ref_id having count(*) between 2 and 8) small on small.ref_id = a.ref_id
-      where a.node_id = any($1::bigint[]) and b.node_id = any($1::bigint[])`,
-    [nodeIds],
+     select distinct (-r.id)::int as src, l.node_id::int as dst, 'belongs' as kind, r.kind as via
+       from ref_link l join ref r on r.id = l.ref_id
+      where l.node_id = any($1::bigint[]) and r.id = any($2::int[])`,
+    [nodeIds, hubs.rows.map((h) => h.id)],
   );
 
-  return c.json({ nodes: nodes.rows, edges: edges.rows });
+  return c.json({ nodes: [...nodes.rows, ...hubNodes], edges: edges.rows });
+});
+
+/**
+ * 編集フックが何を出したか。**CLI の `mitos advice` と同じ数字を画面へ出す。**
+ *
+ * 出所はフックが書く jsonl だけで、DB は見ない。フックは DB の読み取りしかせず、
+ * 出したことをここへ追記している。**沈黙も 1 行として残る**ので、
+ * 「助言を出せた割合」の分母は「走った編集」であって「助言のあった編集」ではない。
+ */
+app.get("/api/advice", async (c) => {
+  const log = path.join(os.homedir(), ".claude", "mitos-advice.jsonl");
+  if (!fs.existsSync(log)) {
+    return c.json({ rows: [], runs: 0, spoke: 0, candidates: 0, repeat: 0, byPath: [] });
+  }
+  type Row = { at: string; path: string; line: number | null; candidates: number; shown: string[] };
+  const rows: Row[] = fs
+    .readFileSync(log, "utf8")
+    .split("\n")
+    .filter((l: string) => l.startsWith("{"))
+    .map((l: string) => JSON.parse(l) as Row);
+
+  const spoke = rows.filter((r) => r.shown.length > 0);
+  const all = spoke.flatMap((r) => r.shown);
+  const byPath = new Map<string, number>();
+  for (const r of spoke) byPath.set(r.path, (byPath.get(r.path) ?? 0) + 1);
+
+  return c.json({
+    // 新しい順。**全部は返さない** — 画面が読むのは直近だけ。
+    rows: [...rows].reverse().slice(0, 40),
+    runs: rows.length,
+    spoke: spoke.length,
+    candidates: rows.reduce((a, r) => a + r.candidates, 0) / Math.max(rows.length, 1),
+    repeat: all.length ? (all.length - new Set(all).size) / all.length : 0,
+    byPath: [...byPath.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([p, n]) => ({ path: p, n })),
+  });
 });
 
 // 「いま」の画面。**問いを持たずに開ける唯一の画面**にする。
