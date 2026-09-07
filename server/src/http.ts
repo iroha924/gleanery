@@ -86,6 +86,80 @@ app.get("/api/stats", async (c) => {
   return c.json(q.rows[0]);
 });
 
+/**
+ * 地図の材料。**節と辺を 1 往復で返す。**
+ *
+ * 辺は 2 系統ある。どちらも既にある列から導けるもので、`relation` 表は使っていない
+ * （書き手がまだ無く 0 行なので、参照しても線が 1 本も出ない）。
+ *
+ * - `rejected` / `considered` … `node.parent_id`。案は決定にぶら下がるので、これが
+ *   「その決定のときに捨てた案」を正確に表す
+ * - `shares` … 同じ PR / ファイルに紐づく節どうし。**多く紐づく ref は辺にしない**
+ *   （1 つの ref に 30 節ぶら下がると、そこだけで 435 本の辺が出て図が潰れる）
+ *
+ * 既定では発言と出来事を外す。判断の地図なので、PR コメント 1 件ずつを節にすると
+ * 判断が埋もれる。`kinds=all` で全部返す。
+ */
+const JUDGMENT_KINDS = ["decision", "option", "boundary", "verification", "question"];
+
+app.get("/api/graph", async (c) => {
+  const ids = scopesOf(c);
+  const kindsRaw = c.req.query("kinds");
+  const kinds = !kindsRaw ? JUDGMENT_KINDS : kindsRaw === "all" ? null : kindsRaw.split(",");
+  const client = await db();
+
+  const nodes = await client.query<{
+    id: number;
+    kind: string;
+    subkind: string | null;
+    polarity: string | null;
+    text: string;
+    at: string | null;
+    actor_name: string | null;
+    record_id: string;
+    pr: number | null;
+  }>(
+    // **bigint をそのまま返さない。**pg は bigint を文字列で返すので、画面側で
+    // 引用の節 id（数）と突き合わせたときに一致しない（実測: 強調が 1 つも点かなかった）。
+    `select n.id::int as id, n.kind, n.subkind, n.polarity, n.text, n.at, n.actor_name, n.record_id,
+            (n.attrs->>'pr')::int as pr
+       from node n
+      where n.deleted_at is null
+        and ($1::int[] is null or n.scope_id = any($1))
+        and ($2::text[] is null or n.kind = any($2))
+      order by n.at desc nulls last
+      limit 600`,
+    [ids, kinds],
+  );
+
+  const nodeIds = nodes.rows.map((r) => r.id);
+  if (nodeIds.length === 0) return c.json({ nodes: [], edges: [] });
+
+  // **両端が返した節に入っている辺だけを出す。**片側だけの辺は描けないので、
+  // ここで落としておかないと画面側が毎回間引くことになる。
+  const edges = await client.query<{ src: number; dst: number; kind: string; via: string | null }>(
+    `select child.parent_id::int as src, child.id::int as dst,
+            case when child.subkind = 'rejected' then 'rejected' else 'considered' end as kind,
+            null::text as via
+       from node child
+      where child.deleted_at is null
+        and child.parent_id = any($1::bigint[])
+        and child.id = any($1::bigint[])
+      union all
+     select distinct least(a.node_id, b.node_id)::int as src, greatest(a.node_id, b.node_id)::int as dst,
+            'shares' as kind, r.kind || ':' || r.key as via
+       from ref_link a
+       join ref_link b on b.ref_id = a.ref_id and b.node_id > a.node_id
+       join ref r on r.id = a.ref_id
+       join (select ref_id from ref_link where node_id is not null
+              group by ref_id having count(*) between 2 and 8) small on small.ref_id = a.ref_id
+      where a.node_id = any($1::bigint[]) and b.node_id = any($1::bigint[])`,
+    [nodeIds],
+  );
+
+  return c.json({ nodes: nodes.rows, edges: edges.rows });
+});
+
 // 「いま」の画面。**問いを持たずに開ける唯一の画面**にする。
 // 前回どこで止まって、次に誰が何をするのか。record にあるのに画面が出していなかった。
 app.get("/api/now", async (c) => {

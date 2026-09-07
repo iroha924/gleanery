@@ -268,6 +268,8 @@ function recordUsage(
 
 export type ChatSource = {
   n: number;
+  /** どの節から言っているか。**地図で光らせるのに要る**（道具が返したものには無い） */
+  nodeId: number | null;
   label: string;
   text: string;
   polarity: Polarity;
@@ -323,6 +325,8 @@ export async function* chat(
 
   const sources: ChatSource[] = rows.map((h, i) => ({
     n: i + 1,
+    // pg は bigint を文字列で返すことがある。**数へ寄せてから返す。**
+    nodeId: Number(h.id),
     label: labelOf(h),
     text: h.text,
     polarity: h.polarity,
@@ -650,6 +654,8 @@ async function runTool(
     const n = sources.length + 1;
     sources.push({
       n,
+      // 道具（PR 一覧、コード）が返したものは節ではないので、地図には出せない
+      nodeId: null,
       label,
       text: text.slice(0, 400),
       polarity: "na",
