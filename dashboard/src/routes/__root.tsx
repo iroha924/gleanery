@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ProjectProvider } from "@/lib/project";
 
 const TITLES: [string, string][] = [
-  ["/records", "作業"],
+  ["/records", "記録"],
   ["/projects", "プロジェクトの設定"],
   ["/people", "人"],
   ["/terms", "言葉"],

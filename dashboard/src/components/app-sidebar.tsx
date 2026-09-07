@@ -119,8 +119,10 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuItem>
 
             <SidebarMenuItem>
+              {/* 一覧の画面は持たない。**「いま」が同じ記録を、工程・次の一手・制約つきで出す。**
+                  ここは記録へ直接入る入口だけを残す。 */}
               <SidebarMenuButton asChild isActive={path.startsWith("/records")}>
-                <Link to="/records">
+                <Link to="/">
                   <ListChecksIcon /> 作業
                 </Link>
               </SidebarMenuButton>
