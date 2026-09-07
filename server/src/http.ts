@@ -288,7 +288,8 @@ app.post("/api/search", async (c) => {
   const scopeIds = Array.isArray(body.scopeIds) ? body.scopeIds : undefined;
   const polarity: Polarity | undefined = body.onlyDont ? "dont" : undefined;
   const { rows } = await search(client, env, { question, scopeIds, polarity, kinds: body.kinds, limit });
-  return c.json(rows.map((r) => ({ ...r, label: labelOf(r) })));
+  // **id は数で返す。**pg は bigint を文字列で返すので、地図の節と突き合わせられない。
+  return c.json(rows.map((r) => ({ ...r, id: Number(r.id), label: labelOf(r) })));
 });
 
 // 束ねる候補。~/Projects 配下と、実際に作業した場所（transcript から拾う）の和。

@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { BotIcon, CornerDownLeftIcon, MessageSquareIcon } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { Answer } from "@/components/answer";
+import { Focus } from "@/components/focus";
 import { Graph } from "@/components/graph";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +22,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
-import { api, askStream, type ChatSource, type GraphNode } from "@/lib/api";
+import { api, askStream, type ChatSource } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
 import { useProject } from "@/lib/project";
 
@@ -119,64 +120,6 @@ function Sources({
           ))}
         </ol>
       </details>
-    </div>
-  );
-}
-
-const KIND_LABEL: Record<string, string> = {
-  decision: "決めたこと",
-  option: "検討した案",
-  boundary: "触らない制約",
-  verification: "確かめたこと",
-  question: "未解決の問い",
-  event: "分かったこと",
-  utterance: "発言",
-};
-
-/** 地図で選んだ節。**地図の上に浮かせる** — 列を足すと地図が狭くなる。 */
-function Focus({ node, links, onClose }: { node: GraphNode; links: number; onClose: () => void }) {
-  const rejected = node.kind === "option" && node.subkind === "rejected";
-  return (
-    <div className="absolute top-4 right-4 w-72 rounded-md border bg-card p-4 shadow-lg">
-      <div className="flex items-center gap-2">
-        <span
-          className={`font-mono text-[10px] tracking-widest ${rejected || node.kind === "boundary" ? "text-dont" : "text-muted-foreground"}`}
-        >
-          {rejected ? "棄却された案" : (KIND_LABEL[node.kind] ?? node.kind)}
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="ml-auto text-muted-foreground text-xs hover:text-foreground"
-        >
-          閉じる
-        </button>
-      </div>
-      <p className="mt-2 text-sm leading-relaxed">{node.text.slice(0, 320)}</p>
-      <dl className="mt-3 space-y-1.5 border-t pt-3 text-xs">
-        <div className="flex justify-between gap-3">
-          <dt className="text-muted-foreground">つながり</dt>
-          <dd className="font-mono">{links} 本</dd>
-        </div>
-        {node.at && (
-          <div className="flex justify-between gap-3">
-            <dt className="text-muted-foreground">いつ</dt>
-            <dd className="font-mono">{node.at.slice(0, 10)}</dd>
-          </div>
-        )}
-        {node.actor_name && (
-          <div className="flex justify-between gap-3">
-            <dt className="text-muted-foreground">誰が</dt>
-            <dd className="truncate">{node.actor_name}</dd>
-          </div>
-        )}
-        {node.pr !== null && (
-          <div className="flex justify-between gap-3">
-            <dt className="text-muted-foreground">出どころ</dt>
-            <dd className="font-mono">PR #{node.pr}</dd>
-          </div>
-        )}
-      </dl>
     </div>
   );
 }
@@ -282,10 +225,36 @@ function Chat() {
   };
 
   return (
-    // 左で聞き、右の地図が答えの範囲を映す。**別画面にしない** —
+    // 地図が主、聞くのが従。**別画面にしない** —
     // 分けると、答えを読みながら地図を辿れなくなる。
     <div className="flex h-[calc(100vh-7rem)] gap-4">
-      <div className="flex w-[26rem] flex-none flex-col gap-4">
+      <div className="relative min-w-0 flex-[6] overflow-hidden rounded-md border">
+        {graph.isPending ? (
+          <p className="p-4 text-muted-foreground text-sm">地図を組み立てています</p>
+        ) : nodes.length === 0 ? (
+          <p className="p-4 text-muted-foreground text-sm">
+            この範囲には判断の記録がありません。取り込むと地図に出ます。
+          </p>
+        ) : (
+          <>
+            <Graph
+              nodes={nodes}
+              edges={edges}
+              highlighted={highlighted}
+              selected={selected}
+              onSelect={setSelected}
+            />
+            <div className="pointer-events-none absolute top-4 left-4 flex items-center gap-2 font-mono text-[10px] text-muted-foreground tracking-widest">
+              <span>{highlighted.length > 0 ? "答えの範囲を表示中" : "全体を表示中"}</span>
+              <span className="rounded-sm border bg-card px-1.5 py-0.5">
+                判断 {drawn} / 記録全体 {nodes.length}
+              </span>
+            </div>
+            {focus && <Focus node={focus} links={links} onClose={() => setSelected(null)} />}
+          </>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-[4] flex-col gap-4">
         {/* 過去の会話。**消えないので聞き直さなくていい。** */}
         <div className="flex items-center gap-2">
           <Select value={chatId ?? ""} onValueChange={(v) => (v ? open(v) : fresh())}>
@@ -436,33 +405,6 @@ function Chat() {
             )}
           </div>
         </form>
-      </div>
-
-      <div className="relative flex-1 overflow-hidden rounded-md border">
-        {graph.isPending ? (
-          <p className="p-4 text-muted-foreground text-sm">地図を組み立てています</p>
-        ) : nodes.length === 0 ? (
-          <p className="p-4 text-muted-foreground text-sm">
-            この範囲には判断の記録がありません。取り込むと地図に出ます。
-          </p>
-        ) : (
-          <>
-            <Graph
-              nodes={nodes}
-              edges={edges}
-              highlighted={highlighted}
-              selected={selected}
-              onSelect={setSelected}
-            />
-            <div className="pointer-events-none absolute top-4 left-4 flex items-center gap-2 font-mono text-[10px] text-muted-foreground tracking-widest">
-              <span>{highlighted.length > 0 ? "答えの範囲を表示中" : "全体を表示中"}</span>
-              <span className="rounded-sm border bg-card px-1.5 py-0.5">
-                判断 {drawn} / 記録全体 {nodes.length}
-              </span>
-            </div>
-            {focus && <Focus node={focus} links={links} onClose={() => setSelected(null)} />}
-          </>
-        )}
       </div>
     </div>
   );
