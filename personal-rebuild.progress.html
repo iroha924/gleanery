@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mitos を個人の道具に戻し、判断の地図を中心にした画面へ作り替える</title>
+<script type="application/json" id="progress-ir">{"schema":"progress/1","meta":{"id":"personal-rebuild","title":"mitos を個人の道具に戻し、判断の地図を中心にした画面へ作り替える","status":"in-progress","repo":"mitos","branch":"main","created":"2026-09-07T01:41:00+09:00","updated":"2026-09-07T16:10:00+09:00","hosts":["claude-code"]},"background":{"problem":"退職が 1 週間後に決まり、mitos が持っていた記録の 99% が勤務先のもの（8 作業場所・node 35,074 件）だった。持ち続ける理由が無くなった一方で、道具そのものは次の職場でも使う。加えて、勤務先のデータを前提に作ったダッシュボード（ルート 8 本: / /chat /search /records と詳細 /projects /people /terms）は shadcn の既定のまま外観に固有性が無く、依頼者から「全体的に微妙」と言われていた。","goal":"mitos に残るのが本人のリポジトリの記録だけになり、追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件になること。あわせてダッシュボードが、判断のつながりを地図として出す画面へ作り替わり、bun run check とテスト 42 件と本番ビルドが通ったうえで実機の全画面が動くこと。","constraints":["ダッシュボードの設定用ロール mitos_cfg には record と node への書き込みを与えない。推論する層に書き込みを持たせない設計の根拠がここにあり、削除のために緩めると境界が消える","MCP と編集フックは読み取り専用の資格情報で動く。PR コメントや issue 本文という外部の文章を読む層なので、書き込みを足すと記録に仕込まれた文言が設定を書き換える経路ができる","git 履歴には手を付けない。リポジトリが private であることを根拠に、書き換えないと決めた"],"nonGoals":["勤務先の Linear issue 4,393 件の取り込み。退職により回収できないため着手しない","評価セットの作り直し。実際の質問が chat_message に 9 件しか無く、母数が足りない","「役に立ったか」を受け取る仕組みの実装。記録する表と書き込み権限の設計から要るため今回は作らない","ローカルの会話ログ原本（~/.claude/projects 配下 17MB）の削除。今回は判断材料を出すところまでにした — 消せば一次記録が戻らず、残せばパス名が勤務先を示す。どちらを取るかは本人の判断で、次にやることへ移した"]},"current":{"at":"2026-09-07T16:10:00+09:00","text":"削除と画面の作り替えは終わり、コミット 8 本を origin/main へ push 済み（8e3942f）。DB に残るのは 1 作業場所・node 310 件・名簿 1 名。地図は節 330・辺 338（310 の節に、結び目として出す PR とファイル 20 件を足した数） で、辺を持たない節は 84 件まで減っている。編集フックの助言を記録する ~/.claude/mitos-advice.jsonl は会社の記述が残っていたため削除したので、その画面は次にフックが走るまで空になる。。工程は 6 件とも完了しているが、次にやること 2 件がどちらも本人の判断待ちのため状態は進行中のままにしている","phases":[{"id":"purge-db","label":"DB の削除","state":"done"},{"id":"purge-repo","label":"リポジトリの記述","state":"done"},{"id":"direction","label":"方向を選ぶ","state":"done"},{"id":"map","label":"地図の実装","state":"done"},{"id":"screens","label":"画面の展開","state":"done"},{"id":"naming","label":"名前の見直し","state":"done"}]},"next":[{"text":"2026-09-07 時点で「あと 1 週間」と言われた退職日までに、勤務先のリポジトリ名を含む ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうかを決める。消すと、そのリポジトリでの作業の一次記録が失われる（DB からは既に消えており、取り込み直す経路も退職後は無い）。残すと、パス名自体が勤務先を示すものが手元に残る","who":"human"},{"text":"次の職場で取り込みを始めたら、relation 表に書き手を作るかを判断する。地図の線種は relation を前提に枠だけ用意してあり、いまは parent_id と ref からしか辺を作っていない","who":"human"}],"openQuestions":[{"id":"q-advice-feedback","at":"2026-09-07T15:20:00+09:00","q":"編集フックの助言が役に立ったかを、どう受け取るか。出したことは jsonl に残るが、採用されたかを記録する先が無い。これが埋まらない限り mitos advice は「出したか」までしか測れず、賢くなっているかを主張できない","who":"human","when":"out-of-scope","blocking":false},{"id":"q-force-layout-scale","at":"2026-09-07T14:30:00+09:00","q":"力学配置が節 330 件で読める状態は確認したが、次の職場で数千件になったときに読めるかは分からない。件数が増えたら畳み方（既定で発言と出来事を隠す以上のもの）が要る可能性がある","who":"ai","when":"during-implementation","blocking":false}],"events":[{"id":"e-purge-scope","at":"2026-09-07T02:10:00+09:00","kind":"work","text":"会社側の作業場所 7 件を削除した。node 34,764 件・record 82 件・孤児 ref 10,059 件・person 6 名・chat 8 件・用語 1 件・束 1 件。残ったのは iroha924/hir4ta-developer の 1 件で node 310 件、名簿は本人のみ。削除は CLI 側の全権ロール（postgres / SUPABASE_DB_URL）で行い、画面用の mitos_cfg には権限を足していない","confidence":"fact","evidence":[{"kind":"command","ref":"node scratchpad/purge2.ts","exit":0,"note":"削除後の検算を同一スクリプト内で実行し、他 scope の node が 0 件であることを確認した"}]},{"id":"e-purge-timeout","at":"2026-09-07T02:05:00+09:00","kind":"dead_end","text":"35,074 行とその cascade を 1 つの DELETE で消そうとして、Supabase の statement_timeout（postgres ロールで 2 分）に当たり ROLLBACK した。データは 1 行も消えていない。node を 1,000 行、ref を 5,000 行ずつの塊に割り、文ごとに自動コミットさせる形で通した（所要 244 秒）","confidence":"fact","evidence":[{"kind":"command","ref":"node scratchpad/purge.ts","exit":1,"note":"canceling statement due to statement timeout"}]},{"id":"e-hnsw-reclaim","at":"2026-09-07T02:25:00+09:00","kind":"finding","text":"行を消しても HNSW 索引と表の領域は返らない。VACUUM FULL を掛けて node 表が 565MB から 4,992kB、DB 全体が 1,068MB から 640MB になった","confidence":"fact","evidence":[{"kind":"command","ref":"node scratchpad/vac.ts","exit":0}]},{"id":"e-repo-scrub","at":"2026-09-07T02:32:00+09:00","kind":"work","text":"追跡ファイル 29 本から組織名・リポジトリ名・チーム名・issue 番号・実名・ハンドルを置き換え、MEMORY.md を削除、評価セット 5 本を空にした。会社由来の記述はコメント・例示・プレースホルダ・テストのフィクスチャだけに存在し、ロジックには入っていなかったので挙動は変わっていない","confidence":"fact","evidence":[{"kind":"commit","ref":"df48d72"}]},{"id":"e-perl-encoding","at":"2026-09-07T02:20:00+09:00","kind":"dead_end","text":"perl -CSD で一括置換したところ、ASCII の置換だけが効いて日本語が 1 つも置き換わらなかった。-CSD はファイルを文字列へ復号するが、スクリプト中の日本語リテラルは use utf8 が無いためバイト列のままで、突き合わせが外れる。さらに日本語を置換先に使った 1 箇所が二重エンコードされて文字化けした。バイトモード（-CSD なし）で流し直して解決した","confidence":"fact","evidence":[{"kind":"command","ref":"git grep -c '\u003c置換したはずの人名\u003e'","exit":0,"note":"1 回目の置換後も 27 行残っていた。検索語そのものはここに書かない — 書くとこの記録が同じ検索に引っかかる"}]},{"id":"e-zsh-word-split","at":"2026-09-07T02:18:00+09:00","kind":"dead_end","text":"ファイル一覧を変数に入れて perl へ未クォートで渡したが、zsh は未クォートの変数を単語分割しないため、改行を含む 1 つのファイル名として渡り全件が開けなかった。xargs 経由に変えて通した","confidence":"fact","evidence":[{"kind":"command","ref":"perl -CSD -i -pe ... $FILES","exit":0,"note":"Can't open \u003c改行を含む名前\u003e: No such file or directory"}]},{"id":"e-relation-empty","at":"2026-09-07T10:20:00+09:00","kind":"finding","text":"relation 表が 0 行だった。決定・棄却・検証・覆した決定を線種で描き分ける設計はこの表を前提にしていたが、書き込む経路がどこにも無い。辺は node.parent_id（47 本）と ref_link から導くことにした","confidence":"fact","evidence":[{"kind":"command","ref":"node scratchpad/graphdata.ts","exit":0,"note":"relation_rows 0 / with_parent 47 / ref_links 370"}]},{"id":"e-isolated-nodes","at":"2026-09-07T14:50:00+09:00","kind":"finding","text":"310 節のうち 209 が辺を持っていなかった。ref_link のリンク 239 本が 5 つの ref に集中しており、総当たりで辺にすると 1 つの ref だけで数千本になるため 2〜8 件の ref しか辺にしていなかったことが原因。力学配置は辺の無い節を意味のない外周へ飛ばすので、答えの引用がそこで光ると無関係な空白を指しているように見えた","confidence":"fact","evidence":[{"kind":"command","ref":"node scratchpad/iso.ts","exit":0,"note":"ref に紐づく node の分布: 1 件のみ 68 ref / 2-8 件 15 ref / 9 件以上 5 ref で 239 リンク"}]},{"id":"e-bigint-as-string","at":"2026-09-07T13:40:00+09:00","kind":"finding","text":"node-postgres（pg 8 系）は bigint / int8 を文字列で返す。桁が JS の安全な整数を超えうるための既定の挙動で、型変換を登録しない限り変わらない。この 1 つの理由で 3 回壊れた。答えの引用が地図で 1 つも光らない、検索結果が地図の節と一致しない、結び目 20 個が全部辺ゼロで浮く。地図と検索が画面へ返す id をすべて数へ寄せて解決した（/api/graph の 4 箇所は SQL で ::int、検索は chat.ts で Number()）。**この 4 + 1 箇所を数えただけで、リポジトリ全体を走査したわけではない**。負の値（-r.id）も同じで、括ってから落とす必要がある","confidence":"fact","evidence":[{"kind":"file","ref":"server/src/http.ts","note":"127 行 n.id::int / 146 行 r.id::int / 172 行 child.parent_id::int と child.id::int / 178 行 (-r.id)::int"},{"kind":"file","ref":"server/src/chat.ts","note":"329 行 nodeId: Number(h.id)"}]},{"id":"e-chat-source-nodeid","at":"2026-09-07T10:45:00+09:00","kind":"work","text":"ChatSource に nodeId を足した。答えの引用を地図で指すには節の id が要るが、元の型は label と text しか持っていなかった。道具（find_prs や grep_code）が返した根拠は節ではないので null になる","confidence":"fact","evidence":[{"kind":"commit","ref":"f7520c3"}]},{"id":"e-label-collapse","at":"2026-09-07T12:10:00+09:00","kind":"dead_end","text":"節の札に max-width だけを与えたところ、和文が 1 文字ずつ縦に折り返して縦書きのように見えた。絶対配置の要素は包含ブロック（点の幅 26px）を基準に幅を縮めるため。固定幅に変えて解決した","confidence":"fact","evidence":[{"kind":"file","ref":"dashboard/src/components/graph.tsx"}]},{"id":"e-shell-vs-viewport","at":"2026-09-07T11:55:00+09:00","kind":"dead_end","text":"シェルの max-w-4xl が地図の画面にも掛かり、地図の幅が 270px に潰れていた。読む画面と地図の画面で幅の要求が違うので、パスで全幅を切り替える形にした","confidence":"fact","evidence":[{"kind":"file","ref":"dashboard/src/routes/__root.tsx"}]},{"id":"e-click-coordinate","at":"2026-09-07T13:10:00+09:00","kind":"finding","text":"ブラウザ自動操作で「選択できない」「地図が 700px 飛ぶ」と 2 回報告したが、どちらも実装の欠陥ではなくクリック座標のずれだった（画面の実寸 2560×1232 に対しスクリーンショットが 1568×755）。要素を ref で指定すれば正しく動く。ただしこのとき入れた 2 つの直し（掴みが描画時の視点を引き算していた構造、節の上では掴まない）は残してある。前者は視点が入れ替わると実際に飛ぶ形だった","confidence":"fact","evidence":[{"kind":"file","ref":"dashboard/src/components/graph.tsx"}]},{"id":"e-advice-log-leftover","at":"2026-09-07T15:50:00+09:00","kind":"finding","text":"~/.claude/mitos-advice.jsonl に会社のリポジトリを指す行が残っていた。同種のファイルである mitos-sync.log は削除済みだったが、こちらを見落としていた。編集フックの画面を作ったことで表示されて気付いた。削除した。このログを書くのは PreToolUse の編集フック（server/src/hook-check-path.ts、配布物は plugin/dist/hook-check-path.js）で、Edit / Write / NotebookEdit のたびに 1 行追記する。画面が空なら、まだ編集していないだけ","confidence":"fact","evidence":[{"kind":"command","ref":"rm -f ~/.claude/mitos-advice.jsonl","exit":0}]},{"id":"e-now-screen-kept","at":"2026-09-07T15:55:00+09:00","kind":"finding","text":"「作業の現在地」の画面を地図と重複しているとみなして削除しようとしたが、API を叩いたら地図に無いものを持っていた。工程 6 件（5 完了）、あなたがやること／AI に任せることの区別、触ってはいけない制約 8 件、どこで止まったか。削らずに残した","confidence":"fact","evidence":[{"kind":"command","ref":"curl -s http://localhost:8787/api/now?scopes=1","exit":0,"note":"phases 6 / next 2 / walls 8"}]},{"id":"e-push","at":"2026-09-07T16:00:00+09:00","kind":"state_transition","text":"コミット 8 本を origin/main へ push した（df48d72 と、地図の実装 7 本）。リモートは 8e3942f","confidence":"fact","evidence":[{"kind":"command","ref":"git ls-remote origin refs/heads/main","exit":0,"note":"8e3942f05c9b35dc3beb0774dd4b78cede955b49"}]},{"id":"e-review-triage","at":"2026-09-07T16:30:00+09:00","kind":"work","text":"まっさらなレビュアー 1 体に .md だけを渡して確認させ、指摘を全件裁定した。受理して直したのは、記録自体が消したはずの語をリポジトリへ戻す点（最重要）、決定の確かめ方と検証の不一致 2 件、破壊的スクリプトを検証の再現手段にしていた点、実測でない数（4,950 本・5 時間）の断定、棄却理由の無い削除 3 件、画面数の食い違い、310 と 330 の差、node-postgres の版、「すべてに ::int」の言い過ぎ、進行中の理由。見送ったのは 4 件。(a) 決定の根拠が確かめ方と別の対象を測っているという指摘は、根拠は文脈側の主張（944 件）を支えており、確かめ方には別途 v-no-linear-scope を結び付けてあるため。(b) 残存件数の根拠が削除の実行体だという指摘は、そのスクリプトが削除後の検算まで同一実行で出しているため。(c) 設定 3 画面を残す判断を独立した決定にすべきという指摘は、理由が d-keep-now-screen の不利な結果として既に書かれており、決定を分けても振る舞いが変わらないため。(d) 退職日を絶対日付にすべきという指摘は、伝えられたのが「あと 1 週間」という相対表現だけで、確定日を書くと推測を事実として残すことになるため。**なお、指摘のうち 1 件は誤っていた** — v-checks にテスト件数と時点が無いという指摘だが、IR には入っており、Markdown の描画が pass の output を出さないだけだった。数字を what 側へ移して読めるようにした","confidence":"fact","evidence":[{"kind":"file","ref":"personal-rebuild.progress.md","note":"レビュアーへ渡したのはこのファイルのみ。会話の履歴は渡していない"}]}],"decisions":[{"id":"d-abandon-linear-import","at":"2026-09-07T01:55:00+09:00","status":"accepted","context":"網羅性を上げるために勤務先の Linear issue を取り込む案を検討していた。実測で、コーパスが番号で名指ししている issue が 944 件あり、取り込み済みは 22 件だけだった。そこで依頼者へ 「Linear の取り込み対象をどこまで広げますか。」と 3 案（34 件 / 922 件 / 4,393 件）で問うた。回答は返らず、代わりに退職が 1 週間後であること、Linear は今だけ必要で次は GitHub Issues か JIRA になることが示された。","decision":"Linear の取り込み拡大を打ち切り、精度を上げる作業自体をここで止める","options":[{"option":"打ち切る","chosen":true},{"option":"自分の発言が言及する 34 件を入れて効果を測ってから広げる","whyNot":"1 週間後に退職するため、測って広げる時間も、広げた結果を使う時間も無い"},{"option":"コーパスが言及している 922 件を一気に入れる","whyNot":"約 62 分と node 12% 増の投資に対し、回収期間が 1 週間しかない"},{"option":"チーム全体 4,393 件","whyNot":"そもそも過剰。自分の作業が一度も参照していない issue が 3,449 件含まれ、検索の分母を増やすだけになりやすい。所要は 922 件で実測 62 分の外挿として約 5 時間で、これは推定値"}],"consequences":[{"text":"5 時間（922 件の実測 62 分からの外挿）の取り込みと、その後の削除の手間を両方回避した","good":true},{"text":"網羅性は 0.5%（22/4,393）のまま。ドメイン知識に強くするという当初の最重要要件は未達で終わる","good":false},{"text":"この判断の直後に方針が「全削除」へ変わったため、取り込まなかったことが結果的に正しかった","good":true}],"confirmation":"Linear の作業場所が DB に残っていないことを mitos scopes で確かめる","evidence":[{"kind":"command","ref":"node scratchpad/refs.ts","exit":0,"note":"コーパスが言及する OT- は 944 件ユニーク、取り込み済み 22 件、自分の発言が言及するものは 56 件"}]},{"id":"d-keep-git-history","at":"2026-09-07T02:45:00+09:00","status":"accepted","context":"追跡ファイルからは記述を除いたが、過去 56 コミットのうち最大 10 コミットが会社の記述を含んでいる。リポジトリは本人の GitHub アカウントで private。コミットメッセージ側の汚染は 0 件だった。","decision":"git 履歴は書き換えない","options":[{"option":"履歴に手を付けない","chosen":true},{"option":"git filter-repo で全履歴を置換し、MEMORY.md と評価 JSON をパスごと削除して force push","whyNot":"GitHub は force push で参照されなくなったオブジェクトをしばらく SHA 指定で辿れる状態に残すと一般に言われており、書き換えても消えたと言い切れない。この点は一次ソースで検証していないため推測にとどまる"},{"option":"履歴を捨てて 1 コミットにする","whyNot":"同じ理由で確実性が上がらないうえ、mitos 自身の開発履歴 56 コミットを失う"}],"consequences":[{"text":"手間をかけずに済み、開発履歴が残る","good":true},{"text":"private であることに依存する。公開へ切り替えると履歴も一緒に出る","good":false},{"text":"確実に消したくなったときは、force push ではなく現在のツリーから新しいリポジトリを作り直す必要がある","good":false},{"text":"棄却理由の中心が未検証の推測（force push 後もオブジェクトが辿れる）に乗っている。一次ソースで否定されたら、この決定は書き換える側へ倒れる","good":false}],"confirmation":"gh repo view iroha924/mitos --json isPrivate が true を返し続けていることを、公開へ切り替える前に確かめる","evidence":[{"kind":"command","ref":"gh repo view iroha924/mitos --json visibility,isPrivate","exit":0,"note":"isPrivate true"}]},{"id":"d-edges-from-parent-and-ref","at":"2026-09-07T10:25:00+09:00","status":"accepted","context":"地図の設計は relation 表（supersedes / verifies / answers など）で線種を描き分ける前提だったが、その表は 0 行で書き込む経路が無い（e-relation-empty）。実在するのは node.parent_id 47 件と ref_link 370 件。","decision":"辺は parent_id（決定と棄却された案）と ref から導き、relation 表は参照しない。線種の枠だけ残し、データが入ったら出る形にする","options":[{"option":"parent_id と ref から導く","chosen":true},{"option":"relation 表を読む","whyNot":"0 行なので線が 1 本も出ない。モックと違って辺の無い地図が出る"},{"option":"relation に書き手を作ってから地図を実装する","whyNot":"何を supersedes と判定するかの設計が要り、今回の範囲（画面の作り替え）を超える。退職まで 1 週間で回収できない"}],"consequences":[{"text":"いまのデータでそのまま動き、棄却された案が赤い破線として実際に出る","good":true},{"text":"「覆した決定」「答えた問い」は表現できない。画面には枠だけがある","good":false},{"text":"relation に書き手ができたとき、地図の実装を変えずに線が増える","good":true}],"confirmation":"/api/graph の戻り値で edges の kind が parent_id 由来（rejected と considered）と ref 由来（belongs）だけであること、および rejected と considered の合計が node.parent_id を持つ節の件数と一致することを確かめる","evidence":[{"kind":"command","ref":"curl -s 'http://localhost:8787/api/graph?scopes=1'","exit":0,"note":"considered 15 / rejected 32 = parent_id 47 件と一致"}]},{"id":"d-ref-as-hub","at":"2026-09-07T15:05:00+09:00","status":"accepted","context":"310 節のうち 209 が辺を持たず、引用が意味のない場所で光っていた（e-isolated-nodes）。ref_link のリンクは 5 つの ref に 239 本が集中しており、節どうしを総当たりで結ぶと 1 つの ref で数千本の辺になる。","decision":"PR とファイル（ref）を節として地図に出し、そこへぶら下げる。2 件以上を束ねる ref だけを結び目にする","options":[{"option":"ref を結び目の節として出す","chosen":true},{"option":"ref を共有する節どうしを総当たりで結ぶ","whyNot":"1 つの ref に n 件ぶら下がると n(n-1)/2 本の辺になる。実測では 5 つの ref に 239 リンクが集中しており、最大のものだけで数千本に達する（100 件なら 4,950 本という計算値）。実際そのために 2〜8 件の ref しか使えておらず、239 本のリンクを捨てていた"},{"option":"辺を持たない節は光らせず「地図に置けない根拠」として一覧に出す","whyNot":"引用の多くが event と utterance なので、地図と答えを結ぶ機能がほとんど発火しなくなる"}],"consequences":[{"text":"辺を持たない節が 209 件から 84 件へ減り、引用が PR やファイルの近くに置かれる","good":true},{"text":"地図に判断でないものが増える。小さい菱形にして色を持たせないことで区別している","good":false},{"text":"ref も親も持たない 84 件は依然として構造を持たない。記録ごとの錨へ弱く引き寄せることで「どの作業の話か」までは固めた","good":false}],"confirmation":"/api/graph の戻り値で、辺を持たない節の数が全節の 3 割未満であることを確かめる。増えてきたら結び目の作り方を見直す","evidence":[{"kind":"command","ref":"curl -s 'http://localhost:8787/api/graph?scopes=1&kinds=all'","exit":0,"note":"節 330 / 辺 338 / 辺ゼロ 84（25%）"}]},{"id":"d-keep-now-screen","at":"2026-09-07T15:58:00+09:00","status":"accepted","context":"「本当に価値のあるものだけ残す」方針で ルート 8 本（当日 /advice を足して 9 本）を見直した。地図が記録の中身を出すので、記録を並べる画面は重複しているように見えた。","decision":"「作業の現在地」は残し、記録の一覧画面（/records の index）だけを削除する","options":[{"option":"一覧だけを削り、現在地は残す","chosen":true},{"option":"現在地と一覧の両方を削る","whyNot":"API を叩いたら現在地は地図に無いものを持っていた。工程・次の一手の担当区分・制約 8 件・どこで止まったか（e-now-screen-kept）"},{"option":"どちらも残す","whyNot":"一覧が出す項目は現在地の出す項目の部分集合で、遷移先も同じ。増える情報がない"}],"consequences":[{"text":"重複が消え、記録へ入る経路は現在地とサイドバーの 2 つに整理された","good":true},{"text":"削れたのはルート 9 本のうち 1 本だけだった。設定 3 画面（/projects /people /terms）はいま空でも次の職場で最初に触るので残した","good":false}],"confirmation":"routeTree.gen.ts に /records/ の index ルートが無く、/records/$id だけがあることを確かめる","evidence":[{"kind":"command","ref":"grep -n records dashboard/src/routeTree.gen.ts","exit":0,"note":"RecordsIdRouteImport のみ"}]},{"id":"d-concrete-labels","at":"2026-09-07T16:05:00+09:00","status":"accepted","context":"画面の名前を製品の思想から取っていた（いま / 聞く / 探す / 先に言う）。依頼者から「抽象的すぎてパッと何のことか分からない」と指摘された。","decision":"画面の名前を「何が得られるか」に変える。作業の現在地 / 質問する / 編集時の助言 / 記録を探す / 記録 / 社内語の辞書 / 名簿","options":[{"option":"何が得られるかを名前にする","chosen":true},{"option":"思想を映した名前のままにする","whyNot":"中身を知っている人にしか読めない。とくに「先に言う」はいつ出るのかが名前に無かった"},{"option":"名前は変えず、説明文を添える","whyNot":"サイドバーの幅では説明が入らない。読む前に選ぶ場所なので、名前そのものが読めないと意味がない"}],"consequences":[{"text":"初見で何の画面か分かる","good":true},{"text":"製品の思想（聞かれる前に言う、辿れば戻れる）が名前から消える。各画面の中の説明文へ移した","good":false}],"confirmation":"サイドバーの項目名とヘッダの見出しが一致していることを画面で確かめる","evidence":[{"kind":"commit","ref":"8e3942f"}]},{"id":"d-delete-not-scrub","at":"2026-09-07T02:30:00+09:00","status":"accepted","context":"記述を取り除く対象のうち 3 つは、置換では扱えなかった。引き継ぎ用の MEMORY.md は本文のほぼ全体が勤務先の実測値と固有名で、評価セット 5 本は問いと期待値そのものが勤務先の PR 番号・日付・件数でできている。編集フックのログは 3 行のうち 1 行が勤務先のリポジトリを指していた。依頼者からは MEMORY.md とフックのログについて明示的に削除の指示があった。","decision":"この 3 つは語の置換ではなく、ファイルごと（評価セットは中身ごと）捨てる","options":[{"option":"MEMORY.md を削除し、評価セット 5 本を空の cases にし、フックのログを削除する","chosen":true},{"option":"他の 29 本と同じく語を置換する","whyNot":"評価セットは問い自体が勤務先の作業の記述で、語を置き換えると意味を成さない問いが残る。MEMORY.md も同様で、置換後に残るのは骨格だけになる"},{"option":"フックのログを行単位で除く","whyNot":"3 行のうち助言を出せたのは 1 行だけで、それが勤務先のものだった。残る 2 行は「黙った」記録なので、残しても指標にならない"},{"option":"退避してから消す","whyNot":"退避先が手元にある限り、消したことにならない。退職に伴う削除という趣旨に反する"}],"consequences":[{"text":"語の置換では残ってしまう文脈（どの PR で何件だったか）まで消える","good":true},{"text":"評価セットの機構（must / mustNot、re: の正規表現、多ターンの不変条件）は残るので、次の職場で問いだけ書けば動く","good":true},{"text":"回答精度 74/74 を測り直す手段が同時に失われた。d-abandon-linear-import が「網羅性 0.5% のまま」と書いた未達を、以後どう測るかは持っていない","good":false},{"text":"フックの助言の履歴が復元できない。効き目の指標は次にフックが走るところから貯め直しになる","good":false}],"confirmation":"server/evals/*.json が cases 空で、かつ evals の実行体（answers.ts / multi.ts / hybrid.ts）が残っていることを確かめる","evidence":[{"kind":"commit","ref":"df48d72","note":"MEMORY.md の削除と評価セット 5 本の空化がこのコミットに入っている"}]}],"verification":[{"id":"v-purge","at":"2026-09-07T02:20:00+09:00","what":"会社側の作業場所を消したあと、他の scope の node と record が 1 件も残らず、名簿が本人のみになる","cmd":"node scratchpad/purge2.ts","result":"pass","output":"scopes 1 / records 2 / nodes 310 / stray_nodes 0 / persons 1 / other_persons 0 / chats 0 / terms 0","note":"この cmd は削除の実行体そのもので、再実行すると検証ではなく削除が走る。scratchpad 配下の使い捨てでリポジトリには入れていない。再確認するなら scopes と node の件数を読む側の問い合わせで行う"},{"id":"v-scrub","at":"2026-09-07T02:30:00+09:00","what":"追跡ファイルに、組織名・リポジトリ名・チーム名・issue 番号・実名・ハンドルが 1 件も残らない","cmd":"git grep -ilE '\u003c組織名・リポジトリ名・チーム名・issue の接頭辞・実名・ハンドルの列挙\u003e' -- .","result":"pass","output":"ヒットしたファイル数: 0","note":"検索語そのものはここに書かない。書くとこの記録が同じ検索に引っかかり、消したはずの語をリポジトリへ戻す（レビューで実際に指摘された）"},{"id":"v-graph-edges","at":"2026-09-07T15:10:00+09:00","what":"地図の辺が両端とも返した節に含まれ、片側だけの辺が出ない。あわせて辺を持たない節が 84 / 330 件（25%）で 3 割未満であること","cmd":"curl -s 'http://localhost:8787/api/graph?scopes=1&kinds=all' | python3 -c \"...\"","result":"pass","output":"節 330 / 辺 338 / 片側しか無い辺 0 / 辺ゼロ 84","verifies":"d-ref-as-hub"},{"id":"v-citation-map","at":"2026-09-07T14:35:00+09:00","what":"質問の答えの引用番号と、地図で光る節のバッジが一致する","cmd":"ブラウザで「何を試して駄目だった？」を送信し、答えの箇条書きと地図のバッジを目視で突き合わせた","result":"pass","output":"引用 9 件が中央の一かたまりに集まり、[1] 生成した HTML をブラウザで目視確認 / [3] IR の JSON ファイルを HTML の隣に置く などが答えと 1 対 1 で対応した"},{"id":"v-checks","at":"2026-09-07T16:00:00+09:00","what":"型検査・整形・テスト 42 件・本番ビルドがすべて通る（2026-09-07 16:00、push の直前）","cmd":"bun run check && bun run test && bun run build","result":"pass","output":"Checked 62 files, No fixes applied / pass 42, fail 0 / built in 423ms"},{"id":"v-relation-writer","at":"2026-09-07T10:25:00+09:00","what":"relation 表に書き込む経路が存在するかどうか","cmd":null,"result":"not-run","whyNotRun":"表が 0 行であることは確認したが、書き手が無いことをコード全体の走査では確かめていない。ingest 側に書く経路が眠っている可能性は排除できていないため、d-edges-from-parent-and-ref はこの点を前提にしていない（0 行という観測だけで足りる）"},{"id":"v-edge-kinds","at":"2026-09-07T15:10:00+09:00","what":"地図の辺が rejected / considered / belongs の 3 種だけで、rejected と considered の合計が node.parent_id の件数と一致する","cmd":"curl -s 'http://localhost:8787/api/graph?scopes=1' | python3 -c \"import json,sys,collections; d=json.load(sys.stdin); print(dict(collections.Counter(e['kind'] for e in d['edges'])))\"","result":"pass","output":"{'considered': 15, 'rejected': 32, 'shares': 5} — considered 15 + rejected 32 = 47 で parent_id の 47 件と一致（shares はこの時点の旧方式で、a691fcc で belongs へ置き換えた）","verifies":"d-edges-from-parent-and-ref"},{"id":"v-private-repo","at":"2026-09-07T02:45:00+09:00","what":"リポジトリが private であること（isPrivate true を確認）。履歴を書き換えない判断がここに依存している","cmd":"gh repo view iroha924/mitos --json visibility,pushedAt,isPrivate","result":"pass","output":"{\"isPrivate\":true,\"pushedAt\":\"2026-09-06T16:38:45Z\",\"visibility\":\"PRIVATE\"}","verifies":"d-keep-git-history"},{"id":"v-route-tree","at":"2026-09-07T15:59:00+09:00","what":"記録の一覧ルートが消え、詳細ルートだけが残っている","cmd":"grep -n records dashboard/src/routeTree.gen.ts","result":"pass","output":"RecordsIdRouteImport と '/records/$id' のみ。index ルートの参照は無い","verifies":"d-keep-now-screen"},{"id":"v-labels","at":"2026-09-07T16:08:00+09:00","what":"サイドバーの項目名とヘッダの見出しが一致し、思想を映した旧名が残っていない","cmd":"ブラウザで / を開き、サイドバーとヘッダを目視で突き合わせた","result":"pass","output":"作業の現在地 / 質問する / 編集時の助言 / 記録を探す / 記録 / 社内語の辞書 / 名簿。ヘッダの見出しも同一","verifies":"d-concrete-labels"},{"id":"v-no-linear-scope","at":"2026-09-07T02:20:00+09:00","what":"Linear の作業場所が DB に残っていない","cmd":"./plugin/bin/mitos scopes","result":"pass","output":"iroha924/hir4ta-developer  [(束なし)]  記録 2 件 — 課題管理の作業場所は 1 件も残っていない","verifies":"d-abandon-linear-import"},{"id":"v-evals-shell","at":"2026-09-07T16:20:00+09:00","what":"評価セットは中身が空で、実行体は残っている（次の職場で問いだけ書けば動く）","cmd":"cat server/evals/answers.json && ls server/evals/*.ts","result":"pass","output":"{ \"cases\": [] } / answers.ts chat.ts generate.ts hybrid.ts multi.ts retrieval.ts usage.ts","verifies":"d-delete-not-scrub"},{"id":"v-int-casts","at":"2026-09-07T16:25:00+09:00","what":"地図と検索が画面へ返す id が、すべて数として返る（bigint の文字列が残っていない）","cmd":"grep -nE 'n\\.id|child\\.id|child\\.parent_id|r\\.id::|Number\\(h\\.id\\)' server/src/http.ts server/src/chat.ts","result":"pass","output":"http.ts の 127 / 146 / 172 / 178 行はいずれも ::int、chat.ts 329 行は Number()。ただしこれは 2 ファイルの目視で、他の API を足すときは同じ踏み方をしうる"}],"links":{"issues":[],"prs":[],"commits":[{"sha":"df48d72","subject":"chore: 特定の組織と第三者に紐づく記述を全て取り除く"},{"sha":"f7520c3","subject":"feat(api): 判断のつながりを返す /api/graph を足し、引用に節の id を持たせる"},{"sha":"ab49ee9","subject":"feat(dashboard): 判断の地図を「聞く」の中心に据え、配色と書体を入れ替える"},{"sha":"fc1375f","subject":"feat(dashboard): 探すを地図と結び、地図 6 対パネル 4 でパネルを右へ寄せる"},{"sha":"a691fcc","subject":"fix(dashboard): PR とファイルを結び目として置き、孤立した節が外周へ飛ぶのをやめる"},{"sha":"f4fe7d0","subject":"feat(dashboard): 編集フックの助言と効き目を見る「先に言う」を足す"},{"sha":"2257014","subject":"refactor(dashboard): 記録の一覧画面を畳み、「いま」を記録への入口にする"},{"sha":"8e3942f","subject":"refactor(dashboard): 画面の名前を、思想ではなく何が得られるかに合わせる"}],"urls":[{"url":"https://code.claude.com/docs/en/chrome.md","note":"Claude in Chrome のサイト権限。管理は拡張機能側から、と書かれているだけで UI の手順は載っていない"},{"url":"https://code.claude.com/docs/llms.txt","note":"Claude Code のドキュメント索引。Chrome 拡張のページを探すのに使った"},{"url":"https://support.claude.com/en/articles/12012173-getting-started-with-claude-in-chrome","note":"サイト単位の許可の手順を探したが載っていなかった。インストール時の権限しか書かれておらず、UI の手順は未確認のまま"}]},"glossary":[{"term":"作業場所（scope）","meaning":"記録を束ねる単位。git remote かディレクトリの絶対パスで識別する。別のリポジトリの決定を混ぜないための境界"},{"term":"節（node）","meaning":"記録の中の 1 つの判断・発言・出来事。決めたこと・検討した案・分かったこと・触らない制約・確かめたこと・未解決の問いの 6 種と、取り込んだ発言"},{"term":"結び目","meaning":"地図に置く PR やファイル。判断ではないが、2 件以上の節がぶら下がるものを構造の錨として出している"},{"term":"極性（polarity）","meaning":"その節が「やる」か「やらない」か。埋め込み空間では両者がほぼ同じ位置に来るため、ベクトルではなく列で持つ"}]}</script>
+<style>
+:root{
+  --bg:#fbf9f4; --panel:#fff; --ink:#25211c; --dim:#6b6459; --line:#e2dbcd;
+  --accent:#b5651d; --ok:#4f7a3f; --warn:#b58900; --bad:#a03030; --idle:#9a938a;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  --sans:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#1d1b18; --panel:#262320; --ink:#ece4d8; --dim:#a49a8c; --line:#3a352e;
+  --accent:#e08a3c; --ok:#8fbf6f; --warn:#d9b64a; --bad:#e07a6a; --idle:#7d766c;
+}}
+:root[data-theme="dark"]{
+  --bg:#1d1b18; --panel:#262320; --ink:#ece4d8; --dim:#a49a8c; --line:#3a352e;
+  --accent:#e08a3c; --ok:#8fbf6f; --warn:#d9b64a; --bad:#e07a6a; --idle:#7d766c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.75;
+  font-size:15px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:980px;margin:0 auto;padding:32px 24px 96px}
+a{color:var(--accent)}
+h1{font-size:26px;line-height:1.4;margin:0 0 4px}
+h2{font-size:19px;margin:44px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line);scroll-margin-top:16px}
+h3{font-size:15px;margin:22px 0 6px}
+p{margin:0 0 10px}
+code,kbd{font-family:var(--mono);font-size:.88em;background:var(--panel);border:1px solid var(--line);
+  border-radius:4px;padding:1px 5px}
+pre{font-family:var(--mono);font-size:12.5px;background:var(--panel);border:1px solid var(--line);
+  border-radius:8px;padding:12px 14px;overflow-x:auto;margin:8px 0;line-height:1.6}
+.muted{color:var(--dim)}
+.small{font-size:12.5px}
+
+/* 冒頭 1 画面。最重要のものを先頭に置く */
+.hero{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px 24px;margin:18px 0 8px}
+.hero .goal{font-size:16px;margin:10px 0 0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;margin:14px 0 0;font-size:13px}
+.kv dt{color:var(--dim)}
+.kv dd{margin:0}
+.now{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0 0}
+@media(max-width:720px){.now{grid-template-columns:1fr}}
+.now section{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--bg)}
+.now h3{margin:0 0 6px;font-size:12px;letter-spacing:.06em;color:var(--dim);text-transform:uppercase}
+
+.badge{display:inline-block;font-size:11.5px;line-height:1.6;padding:1px 9px;border-radius:999px;
+  border:1px solid currentColor;white-space:nowrap;font-family:var(--mono)}
+.b-done{color:var(--ok)} .b-doing{color:var(--accent)} .b-blocked{color:var(--bad)}
+.b-todo{color:var(--idle)} .b-warn{color:var(--warn)}
+
+/* 工程バー */
+.phases{display:flex;gap:6px;margin:16px 0 0;flex-wrap:wrap}
+.phase{flex:1 1 90px;min-width:90px;border-radius:6px;padding:7px 10px;border:1px solid var(--line);
+  background:var(--bg);font-size:12.5px}
+.phase b{display:block;font-weight:600}
+.phase.done{border-color:var(--ok);box-shadow:inset 3px 0 var(--ok)}
+.phase.doing{border-color:var(--accent);box-shadow:inset 3px 0 var(--accent)}
+.phase.blocked{border-color:var(--bad);box-shadow:inset 3px 0 var(--bad)}
+
+/* タイムライン */
+.tl{position:relative;margin:10px 0 0;padding-left:20px}
+.tl::before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:1px;background:var(--line)}
+.ev{position:relative;padding:9px 0}
+.ev::before{content:"";position:absolute;left:-18px;top:16px;width:9px;height:9px;border-radius:50%;
+  background:var(--bg);border:2px solid var(--idle)}
+.ev.k-finding::before{border-color:var(--warn)}
+.ev.k-dead_end::before{border-color:var(--bad)}
+.ev.k-debt::before{border-color:var(--warn);background:var(--warn)}
+.ev.k-state_transition::before{border-color:var(--accent)}
+.ev .head{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+.ev time{font-family:var(--mono);font-size:12px;color:var(--dim)}
+
+/* カード */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+.card.sup{opacity:.62}
+.card h3{margin:0 0 2px}
+.opts{list-style:none;padding:0;margin:8px 0 0}
+.opts li{padding:5px 0 5px 20px;position:relative;border-top:1px dashed var(--line)}
+.opts li::before{content:"×";position:absolute;left:2px;color:var(--bad);font-family:var(--mono)}
+.opts li.chosen::before{content:"✓";color:var(--ok)}
+.cons{margin:8px 0 0;padding-left:20px}
+.cons li.bad{color:var(--bad)}
+
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13.5px}
+th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+th{background:var(--panel);font-weight:600;color:var(--dim);font-size:12px}
+/* 短い値の列が折り返して 3 行になるのを防ぐ。折り返すのは本文の列だけでよい */
+td:not(:first-child),th:not(:first-child){white-space:nowrap}
+td:first-child{width:100%}
+
+.ev-refs{margin:4px 0 0;font-size:12px;font-family:var(--mono);color:var(--dim);
+  display:flex;gap:10px;flex-wrap:wrap}
+.conf{font-size:11px;font-family:var(--mono)}
+.conf-inference,.conf-opinion{color:var(--warn)}
+
+button[data-filter]{font:inherit;font-size:12.5px;color:var(--dim);background:var(--panel);
+  border:1px solid var(--line);border-radius:999px;padding:3px 12px;cursor:pointer;margin-right:4px}
+button[data-filter][aria-pressed="true"]{color:var(--ink);border-color:var(--accent)}
+details{margin:10px 0}
+summary{cursor:pointer;color:var(--dim);font-size:13px;padding:4px 0}
+.empty{color:var(--dim);font-style:italic}
+.gen{margin-top:56px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--dim)}
+svg{max-width:100%;height:auto}
+@media print{body{background:#fff}details{display:block}details>summary{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>mitos を個人の道具に戻し、判断の地図を中心にした画面へ作り替える</h1>
+<p class="small muted">mitos · <code>main</code> · 最終更新 2026-09-07 16:10</p>
+<div class="hero">
+<span class="badge b-doing">進行中</span>
+<p class="goal"><strong>ゴール</strong>: mitos に残るのが本人のリポジトリの記録だけになり、追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件になること。あわせてダッシュボードが、判断のつながりを地図として出す画面へ作り替わり、bun run check とテスト 42 件と本番ビルドが通ったうえで実機の全画面が動くこと。</p>
+<p class="small muted">退職が 1 週間後に決まり、mitos が持っていた記録の 99% が勤務先のもの（8 作業場所・node 35,074 件）だった。持ち続ける理由が無くなった一方で、道具そのものは次の職場でも使う。加えて、勤務先のデータを前提に作ったダッシュボード（ルート 8 本: / /chat /search /records と詳細 /projects /people /terms）は shadcn の既定のまま外観に固有性が無く、依頼者から「全体的に微妙」と言われていた。</p>
+<div class="phases"><div class="phase done"><b>DB の削除</b><span class="small muted">完了</span></div><div class="phase done"><b>リポジトリの記述</b><span class="small muted">完了</span></div><div class="phase done"><b>方向を選ぶ</b><span class="small muted">完了</span></div><div class="phase done"><b>地図の実装</b><span class="small muted">完了</span></div><div class="phase done"><b>画面の展開</b><span class="small muted">完了</span></div><div class="phase done"><b>名前の見直し</b><span class="small muted">完了</span></div></div>
+<div class="now">
+<section><h3>いまここ</h3><p>削除と画面の作り替えは終わり、コミット 8 本を origin/main へ push 済み（8e3942f）。DB に残るのは 1 作業場所・node 310 件・名簿 1 名。地図は節 330・辺 338（310 の節に、結び目として出す PR とファイル 20 件を足した数） で、辺を持たない節は 84 件まで減っている。編集フックの助言を記録する ~/.claude/mitos-advice.jsonl は会社の記述が残っていたため削除したので、その画面は次にフックが走るまで空になる。。工程は 6 件とも完了しているが、次にやること 2 件がどちらも本人の判断待ちのため状態は進行中のままにしている</p></section>
+<section><h3>次にやること</h3><ol style="margin:0;padding-left:20px"><li>2026-09-07 時点で「あと 1 週間」と言われた退職日までに、勤務先のリポジトリ名を含む ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうかを決める。消すと、そのリポジトリでの作業の一次記録が失われる（DB からは既に消えており、取り込み直す経路も退職後は無い）。残すと、パス名自体が勤務先を示すものが手元に残る <span class="small muted">(human)</span></li><li>次の職場で取り込みを始めたら、relation 表に書き手を作るかを判断する。地図の線種は relation を前提に枠だけ用意してあり、いまは parent_id と ref からしか辺を作っていない <span class="small muted">(human)</span></li></ol></section>
+</div></div>
+<h2 id="open-questions">未解決の問い</h2><table><thead><tr><th>問い</th><th>誰が答えるか</th><th>いつ</th></tr></thead><tbody>
+<tr id="q-advice-feedback"><td>編集フックの助言が役に立ったかを、どう受け取るか。出したことは jsonl に残るが、採用されたかを記録する先が無い。これが埋まらない限り mitos advice は「出したか」までしか測れず、賢くなっているかを主張できない<div class="small muted"><code>q-advice-feedback</code></div></td><td>人</td><td>この作業の外</td></tr>
+<tr id="q-force-layout-scale"><td>力学配置が節 330 件で読める状態は確認したが、次の職場で数千件になったときに読めるかは分からない。件数が増えたら畳み方（既定で発言と出来事を隠す以上のもの）が要る可能性がある<div class="small muted"><code>q-force-layout-scale</code></div></td><td>AI</td><td>実装中に解ける</td></tr>
+</tbody></table>
+<h2 id="background">背景</h2><p>退職が 1 週間後に決まり、mitos が持っていた記録の 99% が勤務先のもの（8 作業場所・node 35,074 件）だった。持ち続ける理由が無くなった一方で、道具そのものは次の職場でも使う。加えて、勤務先のデータを前提に作ったダッシュボード（ルート 8 本: / /chat /search /records と詳細 /projects /people /terms）は shadcn の既定のまま外観に固有性が無く、依頼者から「全体的に微妙」と言われていた。</p>
+<h3>制約</h3><ul><li>ダッシュボードの設定用ロール mitos_cfg には record と node への書き込みを与えない。推論する層に書き込みを持たせない設計の根拠がここにあり、削除のために緩めると境界が消える</li><li>MCP と編集フックは読み取り専用の資格情報で動く。PR コメントや issue 本文という外部の文章を読む層なので、書き込みを足すと記録に仕込まれた文言が設定を書き換える経路ができる</li><li>git 履歴には手を付けない。リポジトリが private であることを根拠に、書き換えないと決めた</li></ul>
+<h3>やらないこと</h3><ul><li>勤務先の Linear issue 4,393 件の取り込み。退職により回収できないため着手しない</li><li>評価セットの作り直し。実際の質問が chat_message に 9 件しか無く、母数が足りない</li><li>「役に立ったか」を受け取る仕組みの実装。記録する表と書き込み権限の設計から要るため今回は作らない</li><li>ローカルの会話ログ原本（~/.claude/projects 配下 17MB）の削除。今回は判断材料を出すところまでにした — 消せば一次記録が戻らず、残せばパス名が勤務先を示す。どちらを取るかは本人の判断で、次にやることへ移した</li></ul>
+<h2 id="decisions">意思決定</h2>
+<div class="card" id="d-abandon-linear-import">
+<h3>Linear の取り込み拡大を打ち切り、精度を上げる作業自体をここで止める</h3>
+<p class="small muted"><code>d-abandon-linear-import</code> · 2026-09-07 01:55 · accepted</p>
+<p>網羅性を上げるために勤務先の Linear issue を取り込む案を検討していた。実測で、コーパスが番号で名指ししている issue が 944 件あり、取り込み済みは 22 件だけだった。そこで依頼者へ 「Linear の取り込み対象をどこまで広げますか。」と 3 案（34 件 / 922 件 / 4,393 件）で問うた。回答は返らず、代わりに退職が 1 週間後であること、Linear は今だけ必要で次は GitHub Issues か JIRA になることが示された。</p>
+<ul class="opts"><li class="chosen"><strong>打ち切る</strong></li><li class=""><strong>自分の発言が言及する 34 件を入れて効果を測ってから広げる</strong> — 1 週間後に退職するため、測って広げる時間も、広げた結果を使う時間も無い</li><li class=""><strong>コーパスが言及している 922 件を一気に入れる</strong> — 約 62 分と node 12% 増の投資に対し、回収期間が 1 週間しかない</li><li class=""><strong>チーム全体 4,393 件</strong> — そもそも過剰。自分の作業が一度も参照していない issue が 3,449 件含まれ、検索の分母を増やすだけになりやすい。所要は 922 件で実測 62 分の外挿として約 5 時間で、これは推定値</li></ul>
+<h3 class="small muted" style="margin-top:12px">結果</h3><ul class="cons"><li class="">5 時間（922 件の実測 62 分からの外挿）の取り込みと、その後の削除の手間を両方回避した</li><li class="bad">網羅性は 0.5%（22/4,393）のまま。ドメイン知識に強くするという当初の最重要要件は未達で終わる</li><li class="">この判断の直後に方針が「全削除」へ変わったため、取り込まなかったことが結果的に正しかった</li></ul>
+<p class="small"><strong>守られていることの確かめ方</strong>: Linear の作業場所が DB に残っていないことを mitos scopes で確かめる <span class="badge b-done"><a href="#v-no-linear-scope">v-no-linear-scope</a> pass</span></p>
+<div class="ev-refs"><span>$ node scratchpad/refs.ts (exit 0)</span></div>
+</div>
+<div class="card" id="d-keep-git-history">
+<h3>git 履歴は書き換えない</h3>
+<p class="small muted"><code>d-keep-git-history</code> · 2026-09-07 02:45 · accepted</p>
+<p>追跡ファイルからは記述を除いたが、過去 56 コミットのうち最大 10 コミットが会社の記述を含んでいる。リポジトリは本人の GitHub アカウントで private。コミットメッセージ側の汚染は 0 件だった。</p>
+<ul class="opts"><li class="chosen"><strong>履歴に手を付けない</strong></li><li class=""><strong>git filter-repo で全履歴を置換し、MEMORY.md と評価 JSON をパスごと削除して force push</strong> — GitHub は force push で参照されなくなったオブジェクトをしばらく SHA 指定で辿れる状態に残すと一般に言われており、書き換えても消えたと言い切れない。この点は一次ソースで検証していないため推測にとどまる</li><li class=""><strong>履歴を捨てて 1 コミットにする</strong> — 同じ理由で確実性が上がらないうえ、mitos 自身の開発履歴 56 コミットを失う</li></ul>
+<h3 class="small muted" style="margin-top:12px">結果</h3><ul class="cons"><li class="">手間をかけずに済み、開発履歴が残る</li><li class="bad">private であることに依存する。公開へ切り替えると履歴も一緒に出る</li><li class="bad">確実に消したくなったときは、force push ではなく現在のツリーから新しいリポジトリを作り直す必要がある</li><li class="bad">棄却理由の中心が未検証の推測（force push 後もオブジェクトが辿れる）に乗っている。一次ソースで否定されたら、この決定は書き換える側へ倒れる</li></ul>
+<p class="small"><strong>守られていることの確かめ方</strong>: gh repo view iroha924/mitos --json isPrivate が true を返し続けていることを、公開へ切り替える前に確かめる <span class="badge b-done"><a href="#v-private-repo">v-private-repo</a> pass</span></p>
+<div class="ev-refs"><span>$ gh repo view iroha924/mitos --json visibility,isPrivate (exit 0)</span></div>
+</div>
+<div class="card" id="d-edges-from-parent-and-ref">
+<h3>辺は parent_id（決定と棄却された案）と ref から導き、relation 表は参照しない。線種の枠だけ残し、データが入ったら出る形にする</h3>
+<p class="small muted"><code>d-edges-from-parent-and-ref</code> · 2026-09-07 10:25 · accepted</p>
+<p>地図の設計は relation 表（supersedes / verifies / answers など）で線種を描き分ける前提だったが、その表は 0 行で書き込む経路が無い（e-relation-empty）。実在するのは node.parent_id 47 件と ref_link 370 件。</p>
+<ul class="opts"><li class="chosen"><strong>parent_id と ref から導く</strong></li><li class=""><strong>relation 表を読む</strong> — 0 行なので線が 1 本も出ない。モックと違って辺の無い地図が出る</li><li class=""><strong>relation に書き手を作ってから地図を実装する</strong> — 何を supersedes と判定するかの設計が要り、今回の範囲（画面の作り替え）を超える。退職まで 1 週間で回収できない</li></ul>
+<h3 class="small muted" style="margin-top:12px">結果</h3><ul class="cons"><li class="">いまのデータでそのまま動き、棄却された案が赤い破線として実際に出る</li><li class="bad">「覆した決定」「答えた問い」は表現できない。画面には枠だけがある</li><li class="">relation に書き手ができたとき、地図の実装を変えずに線が増える</li></ul>
+<p class="small"><strong>守られていることの確かめ方</strong>: /api/graph の戻り値で edges の kind が parent_id 由来（rejected と considered）と ref 由来（belongs）だけであること、および rejected と considered の合計が node.parent_id を持つ節の件数と一致することを確かめる <span class="badge b-done"><a href="#v-edge-kinds">v-edge-kinds</a> pass</span></p>
+<div class="ev-refs"><span>$ curl -s &#39;http://localhost:8787/api/graph?scopes=1&#39; (exit 0)</span></div>
+</div>
+<div class="card" id="d-ref-as-hub">
+<h3>PR とファイル（ref）を節として地図に出し、そこへぶら下げる。2 件以上を束ねる ref だけを結び目にする</h3>
+<p class="small muted"><code>d-ref-as-hub</code> · 2026-09-07 15:05 · accepted</p>
+<p>310 節のうち 209 が辺を持たず、引用が意味のない場所で光っていた（e-isolated-nodes）。ref_link のリンクは 5 つの ref に 239 本が集中しており、節どうしを総当たりで結ぶと 1 つの ref で数千本の辺になる。</p>
+<ul class="opts"><li class="chosen"><strong>ref を結び目の節として出す</strong></li><li class=""><strong>ref を共有する節どうしを総当たりで結ぶ</strong> — 1 つの ref に n 件ぶら下がると n(n-1)/2 本の辺になる。実測では 5 つの ref に 239 リンクが集中しており、最大のものだけで数千本に達する（100 件なら 4,950 本という計算値）。実際そのために 2〜8 件の ref しか使えておらず、239 本のリンクを捨てていた</li><li class=""><strong>辺を持たない節は光らせず「地図に置けない根拠」として一覧に出す</strong> — 引用の多くが event と utterance なので、地図と答えを結ぶ機能がほとんど発火しなくなる</li></ul>
+<h3 class="small muted" style="margin-top:12px">結果</h3><ul class="cons"><li class="">辺を持たない節が 209 件から 84 件へ減り、引用が PR やファイルの近くに置かれる</li><li class="bad">地図に判断でないものが増える。小さい菱形にして色を持たせないことで区別している</li><li class="bad">ref も親も持たない 84 件は依然として構造を持たない。記録ごとの錨へ弱く引き寄せることで「どの作業の話か」までは固めた</li></ul>
+<p class="small"><strong>守られていることの確かめ方</strong>: /api/graph の戻り値で、辺を持たない節の数が全節の 3 割未満であることを確かめる。増えてきたら結び目の作り方を見直す <span class="badge b-done"><a href="#v-graph-edges">v-graph-edges</a> pass</span></p>
+<div class="ev-refs"><span>$ curl -s &#39;http://localhost:8787/api/graph?scopes=1&amp;kinds=all&#39; (exit 0)</span></div>
+</div>
+<div class="card" id="d-keep-now-screen">
+<h3>「作業の現在地」は残し、記録の一覧画面（/records の index）だけを削除する</h3>
+<p class="small muted"><code>d-keep-now-screen</code> · 2026-09-07 15:58 · accepted</p>
+<p>「本当に価値のあるものだけ残す」方針で ルート 8 本（当日 /advice を足して 9 本）を見直した。地図が記録の中身を出すので、記録を並べる画面は重複しているように見えた。</p>
+<ul class="opts"><li class="chosen"><strong>一覧だけを削り、現在地は残す</strong></li><li class=""><strong>現在地と一覧の両方を削る</strong> — API を叩いたら現在地は地図に無いものを持っていた。工程・次の一手の担当区分・制約 8 件・どこで止まったか（e-now-screen-kept）</li><li class=""><strong>どちらも残す</strong> — 一覧が出す項目は現在地の出す項目の部分集合で、遷移先も同じ。増える情報がない</li></ul>
+<h3 class="small muted" style="margin-top:12px">結果</h3><ul class="cons"><li class="">重複が消え、記録へ入る経路は現在地とサイドバーの 2 つに整理された</li><li class="bad">削れたのはルート 9 本のうち 1 本だけだった。設定 3 画面（/projects /people /terms）はいま空でも次の職場で最初に触るので残した</li></ul>
+<p class="small"><strong>守られていることの確かめ方</strong>: routeTree.gen.ts に /records/ の index ルートが無く、/records/$id だけがあることを確かめる <span class="badge b-done"><a href="#v-route-tree">v-route-tree</a> pass</span></p>
+<div class="ev-refs"><span>$ grep -n records dashboard/src/routeTree.gen.ts (exit 0)</span></div>
+</div>
+<div class="card" id="d-concrete-labels">
+<h3>画面の名前を「何が得られるか」に変える。作業の現在地 / 質問する / 編集時の助言 / 記録を探す / 記録 / 社内語の辞書 / 名簿</h3>
+<p class="small muted"><code>d-concrete-labels</code> · 2026-09-07 16:05 · accepted</p>
+<p>画面の名前を製品の思想から取っていた（いま / 聞く / 探す / 先に言う）。依頼者から「抽象的すぎてパッと何のことか分からない」と指摘された。</p>
+<ul class="opts"><li class="chosen"><strong>何が得られるかを名前にする</strong></li><li class=""><strong>思想を映した名前のままにする</strong> — 中身を知っている人にしか読めない。とくに「先に言う」はいつ出るのかが名前に無かった</li><li class=""><strong>名前は変えず、説明文を添える</strong> — サイドバーの幅では説明が入らない。読む前に選ぶ場所なので、名前そのものが読めないと意味がない</li></ul>
+<h3 class="small muted" style="margin-top:12px">結果</h3><ul class="cons"><li class="">初見で何の画面か分かる</li><li class="bad">製品の思想（聞かれる前に言う、辿れば戻れる）が名前から消える。各画面の中の説明文へ移した</li></ul>
+<p class="small"><strong>守られていることの確かめ方</strong>: サイドバーの項目名とヘッダの見出しが一致していることを画面で確かめる <span class="badge b-done"><a href="#v-labels">v-labels</a> pass</span></p>
+<div class="ev-refs"><span>commit 8e3942f</span></div>
+</div>
+<div class="card" id="d-delete-not-scrub">
+<h3>この 3 つは語の置換ではなく、ファイルごと（評価セットは中身ごと）捨てる</h3>
+<p class="small muted"><code>d-delete-not-scrub</code> · 2026-09-07 02:30 · accepted</p>
+<p>記述を取り除く対象のうち 3 つは、置換では扱えなかった。引き継ぎ用の MEMORY.md は本文のほぼ全体が勤務先の実測値と固有名で、評価セット 5 本は問いと期待値そのものが勤務先の PR 番号・日付・件数でできている。編集フックのログは 3 行のうち 1 行が勤務先のリポジトリを指していた。依頼者からは MEMORY.md とフックのログについて明示的に削除の指示があった。</p>
+<ul class="opts"><li class="chosen"><strong>MEMORY.md を削除し、評価セット 5 本を空の cases にし、フックのログを削除する</strong></li><li class=""><strong>他の 29 本と同じく語を置換する</strong> — 評価セットは問い自体が勤務先の作業の記述で、語を置き換えると意味を成さない問いが残る。MEMORY.md も同様で、置換後に残るのは骨格だけになる</li><li class=""><strong>フックのログを行単位で除く</strong> — 3 行のうち助言を出せたのは 1 行だけで、それが勤務先のものだった。残る 2 行は「黙った」記録なので、残しても指標にならない</li><li class=""><strong>退避してから消す</strong> — 退避先が手元にある限り、消したことにならない。退職に伴う削除という趣旨に反する</li></ul>
+<h3 class="small muted" style="margin-top:12px">結果</h3><ul class="cons"><li class="">語の置換では残ってしまう文脈（どの PR で何件だったか）まで消える</li><li class="">評価セットの機構（must / mustNot、re: の正規表現、多ターンの不変条件）は残るので、次の職場で問いだけ書けば動く</li><li class="bad">回答精度 74/74 を測り直す手段が同時に失われた。d-abandon-linear-import が「網羅性 0.5% のまま」と書いた未達を、以後どう測るかは持っていない</li><li class="bad">フックの助言の履歴が復元できない。効き目の指標は次にフックが走るところから貯め直しになる</li></ul>
+<p class="small"><strong>守られていることの確かめ方</strong>: server/evals/*.json が cases 空で、かつ evals の実行体（answers.ts / multi.ts / hybrid.ts）が残っていることを確かめる <span class="badge b-done"><a href="#v-evals-shell">v-evals-shell</a> pass</span></p>
+<div class="ev-refs"><span>commit df48d72</span></div>
+</div>
+<h2 id="events">経過</h2>
+<p class="small"><button data-filter="all" aria-pressed="true">すべて</button> <button data-filter="work" aria-pressed="false">作業</button> <button data-filter="finding" aria-pressed="false">判明したこと</button> <button data-filter="dead_end" aria-pressed="false">駄目だった道</button> <button data-filter="debt" aria-pressed="false">意図して残した負債</button> <button data-filter="state_transition" aria-pressed="false">状態の変化</button></p>
+<div class="tl">
+<div class="ev k-dead_end" id="e-purge-timeout">
+<div class="head"><time>2026-09-07 02:05</time><span class="badge b-blocked">駄目だった道</span>
+</div><div>35,074 行とその cascade を 1 つの DELETE で消そうとして、Supabase の statement_timeout（postgres ロールで 2 分）に当たり ROLLBACK した。データは 1 行も消えていない。node を 1,000 行、ref を 5,000 行ずつの塊に割り、文ごとに自動コミットさせる形で通した（所要 244 秒）</div>
+<div class="ev-refs"><span>$ node scratchpad/purge.ts (exit 1)</span></div>
+</div>
+<div class="ev k-work" id="e-purge-scope">
+<div class="head"><time>2026-09-07 02:10</time><span class="badge b-todo">作業</span>
+</div><div>会社側の作業場所 7 件を削除した。node 34,764 件・record 82 件・孤児 ref 10,059 件・person 6 名・chat 8 件・用語 1 件・束 1 件。残ったのは iroha924/hir4ta-developer の 1 件で node 310 件、名簿は本人のみ。削除は CLI 側の全権ロール（postgres / SUPABASE_DB_URL）で行い、画面用の mitos_cfg には権限を足していない</div>
+<div class="ev-refs"><span>$ node scratchpad/purge2.ts (exit 0)</span></div>
+</div>
+<div class="ev k-dead_end" id="e-zsh-word-split">
+<div class="head"><time>2026-09-07 02:18</time><span class="badge b-blocked">駄目だった道</span>
+</div><div>ファイル一覧を変数に入れて perl へ未クォートで渡したが、zsh は未クォートの変数を単語分割しないため、改行を含む 1 つのファイル名として渡り全件が開けなかった。xargs 経由に変えて通した</div>
+<div class="ev-refs"><span>$ perl -CSD -i -pe ... $FILES (exit 0)</span></div>
+</div>
+<div class="ev k-dead_end" id="e-perl-encoding">
+<div class="head"><time>2026-09-07 02:20</time><span class="badge b-blocked">駄目だった道</span>
+</div><div>perl -CSD で一括置換したところ、ASCII の置換だけが効いて日本語が 1 つも置き換わらなかった。-CSD はファイルを文字列へ復号するが、スクリプト中の日本語リテラルは use utf8 が無いためバイト列のままで、突き合わせが外れる。さらに日本語を置換先に使った 1 箇所が二重エンコードされて文字化けした。バイトモード（-CSD なし）で流し直して解決した</div>
+<div class="ev-refs"><span>$ git grep -c &#39;&lt;置換したはずの人名&gt;&#39; (exit 0)</span></div>
+</div>
+<div class="ev k-finding" id="e-hnsw-reclaim">
+<div class="head"><time>2026-09-07 02:25</time><span class="badge b-warn">判明したこと</span>
+</div><div>行を消しても HNSW 索引と表の領域は返らない。VACUUM FULL を掛けて node 表が 565MB から 4,992kB、DB 全体が 1,068MB から 640MB になった</div>
+<div class="ev-refs"><span>$ node scratchpad/vac.ts (exit 0)</span></div>
+</div>
+<div class="ev k-work" id="e-repo-scrub">
+<div class="head"><time>2026-09-07 02:32</time><span class="badge b-todo">作業</span>
+</div><div>追跡ファイル 29 本から組織名・リポジトリ名・チーム名・issue 番号・実名・ハンドルを置き換え、MEMORY.md を削除、評価セット 5 本を空にした。会社由来の記述はコメント・例示・プレースホルダ・テストのフィクスチャだけに存在し、ロジックには入っていなかったので挙動は変わっていない</div>
+<div class="ev-refs"><span>commit df48d72</span></div>
+</div>
+<div class="ev k-finding" id="e-relation-empty">
+<div class="head"><time>2026-09-07 10:20</time><span class="badge b-warn">判明したこと</span>
+</div><div>relation 表が 0 行だった。決定・棄却・検証・覆した決定を線種で描き分ける設計はこの表を前提にしていたが、書き込む経路がどこにも無い。辺は node.parent_id（47 本）と ref_link から導くことにした</div>
+<div class="ev-refs"><span>$ node scratchpad/graphdata.ts (exit 0)</span></div>
+</div>
+<div class="ev k-work" id="e-chat-source-nodeid">
+<div class="head"><time>2026-09-07 10:45</time><span class="badge b-todo">作業</span>
+</div><div>ChatSource に nodeId を足した。答えの引用を地図で指すには節の id が要るが、元の型は label と text しか持っていなかった。道具（find_prs や grep_code）が返した根拠は節ではないので null になる</div>
+<div class="ev-refs"><span>commit f7520c3</span></div>
+</div>
+<div class="ev k-dead_end" id="e-shell-vs-viewport">
+<div class="head"><time>2026-09-07 11:55</time><span class="badge b-blocked">駄目だった道</span>
+</div><div>シェルの max-w-4xl が地図の画面にも掛かり、地図の幅が 270px に潰れていた。読む画面と地図の画面で幅の要求が違うので、パスで全幅を切り替える形にした</div>
+<div class="ev-refs"><span>file dashboard/src/routes/__root.tsx</span></div>
+</div>
+<div class="ev k-dead_end" id="e-label-collapse">
+<div class="head"><time>2026-09-07 12:10</time><span class="badge b-blocked">駄目だった道</span>
+</div><div>節の札に max-width だけを与えたところ、和文が 1 文字ずつ縦に折り返して縦書きのように見えた。絶対配置の要素は包含ブロック（点の幅 26px）を基準に幅を縮めるため。固定幅に変えて解決した</div>
+<div class="ev-refs"><span>file dashboard/src/components/graph.tsx</span></div>
+</div>
+<div class="ev k-finding" id="e-click-coordinate">
+<div class="head"><time>2026-09-07 13:10</time><span class="badge b-warn">判明したこと</span>
+</div><div>ブラウザ自動操作で「選択できない」「地図が 700px 飛ぶ」と 2 回報告したが、どちらも実装の欠陥ではなくクリック座標のずれだった（画面の実寸 2560×1232 に対しスクリーンショットが 1568×755）。要素を ref で指定すれば正しく動く。ただしこのとき入れた 2 つの直し（掴みが描画時の視点を引き算していた構造、節の上では掴まない）は残してある。前者は視点が入れ替わると実際に飛ぶ形だった</div>
+<div class="ev-refs"><span>file dashboard/src/components/graph.tsx</span></div>
+</div>
+<div class="ev k-finding" id="e-bigint-as-string">
+<div class="head"><time>2026-09-07 13:40</time><span class="badge b-warn">判明したこと</span>
+</div><div>node-postgres（pg 8 系）は bigint / int8 を文字列で返す。桁が JS の安全な整数を超えうるための既定の挙動で、型変換を登録しない限り変わらない。この 1 つの理由で 3 回壊れた。答えの引用が地図で 1 つも光らない、検索結果が地図の節と一致しない、結び目 20 個が全部辺ゼロで浮く。地図と検索が画面へ返す id をすべて数へ寄せて解決した（/api/graph の 4 箇所は SQL で ::int、検索は chat.ts で Number()）。**この 4 + 1 箇所を数えただけで、リポジトリ全体を走査したわけではない**。負の値（-r.id）も同じで、括ってから落とす必要がある</div>
+<div class="ev-refs"><span>file server/src/http.ts</span><span>file server/src/chat.ts</span></div>
+</div>
+<div class="ev k-finding" id="e-isolated-nodes">
+<div class="head"><time>2026-09-07 14:50</time><span class="badge b-warn">判明したこと</span>
+</div><div>310 節のうち 209 が辺を持っていなかった。ref_link のリンク 239 本が 5 つの ref に集中しており、総当たりで辺にすると 1 つの ref だけで数千本になるため 2〜8 件の ref しか辺にしていなかったことが原因。力学配置は辺の無い節を意味のない外周へ飛ばすので、答えの引用がそこで光ると無関係な空白を指しているように見えた</div>
+<div class="ev-refs"><span>$ node scratchpad/iso.ts (exit 0)</span></div>
+</div>
+<div class="ev k-finding" id="e-advice-log-leftover">
+<div class="head"><time>2026-09-07 15:50</time><span class="badge b-warn">判明したこと</span>
+</div><div>~/.claude/mitos-advice.jsonl に会社のリポジトリを指す行が残っていた。同種のファイルである mitos-sync.log は削除済みだったが、こちらを見落としていた。編集フックの画面を作ったことで表示されて気付いた。削除した。このログを書くのは PreToolUse の編集フック（server/src/hook-check-path.ts、配布物は plugin/dist/hook-check-path.js）で、Edit / Write / NotebookEdit のたびに 1 行追記する。画面が空なら、まだ編集していないだけ</div>
+<div class="ev-refs"><span>$ rm -f ~/.claude/mitos-advice.jsonl (exit 0)</span></div>
+</div>
+<div class="ev k-finding" id="e-now-screen-kept">
+<div class="head"><time>2026-09-07 15:55</time><span class="badge b-warn">判明したこと</span>
+</div><div>「作業の現在地」の画面を地図と重複しているとみなして削除しようとしたが、API を叩いたら地図に無いものを持っていた。工程 6 件（5 完了）、あなたがやること／AI に任せることの区別、触ってはいけない制約 8 件、どこで止まったか。削らずに残した</div>
+<div class="ev-refs"><span>$ curl -s http://localhost:8787/api/now?scopes=1 (exit 0)</span></div>
+</div>
+<div class="ev k-state_transition" id="e-push">
+<div class="head"><time>2026-09-07 16:00</time><span class="badge b-todo">状態の変化</span>
+</div><div>コミット 8 本を origin/main へ push した（df48d72 と、地図の実装 7 本）。リモートは 8e3942f</div>
+<div class="ev-refs"><span>$ git ls-remote origin refs/heads/main (exit 0)</span></div>
+</div>
+<div class="ev k-work" id="e-review-triage">
+<div class="head"><time>2026-09-07 16:30</time><span class="badge b-todo">作業</span>
+</div><div>まっさらなレビュアー 1 体に .md だけを渡して確認させ、指摘を全件裁定した。受理して直したのは、記録自体が消したはずの語をリポジトリへ戻す点（最重要）、決定の確かめ方と検証の不一致 2 件、破壊的スクリプトを検証の再現手段にしていた点、実測でない数（4,950 本・5 時間）の断定、棄却理由の無い削除 3 件、画面数の食い違い、310 と 330 の差、node-postgres の版、「すべてに ::int」の言い過ぎ、進行中の理由。見送ったのは 4 件。(a) 決定の根拠が確かめ方と別の対象を測っているという指摘は、根拠は文脈側の主張（944 件）を支えており、確かめ方には別途 v-no-linear-scope を結び付けてあるため。(b) 残存件数の根拠が削除の実行体だという指摘は、そのスクリプトが削除後の検算まで同一実行で出しているため。(c) 設定 3 画面を残す判断を独立した決定にすべきという指摘は、理由が d-keep-now-screen の不利な結果として既に書かれており、決定を分けても振る舞いが変わらないため。(d) 退職日を絶対日付にすべきという指摘は、伝えられたのが「あと 1 週間」という相対表現だけで、確定日を書くと推測を事実として残すことになるため。**なお、指摘のうち 1 件は誤っていた** — v-checks にテスト件数と時点が無いという指摘だが、IR には入っており、Markdown の描画が pass の output を出さないだけだった。数字を what 側へ移して読めるようにした</div>
+<div class="ev-refs"><span>file personal-rebuild.progress.md</span></div>
+</div>
+</div>
+<h2 id="verification">検証</h2><table><thead><tr><th>確かめたこと</th><th>コマンド</th><th>結果</th></tr></thead><tbody>
+<tr id="v-purge"><td>会社側の作業場所を消したあと、他の scope の node と record が 1 件も残らず、名簿が本人のみになる<div class="small muted"><code>v-purge</code></div></td><td><code>node scratchpad/purge2.ts</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>scopes 1 / records 2 / nodes 310 / stray_nodes 0 / persons 1 / other_persons 0 / chats 0 / terms 0</pre></details></td></tr>
+<tr id="v-scrub"><td>追跡ファイルに、組織名・リポジトリ名・チーム名・issue 番号・実名・ハンドルが 1 件も残らない<div class="small muted"><code>v-scrub</code></div></td><td><code>git grep -ilE &#39;&lt;組織名・リポジトリ名・チーム名・issue の接頭辞・実名・ハンドルの列挙&gt;&#39; -- .</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>ヒットしたファイル数: 0</pre></details></td></tr>
+<tr id="v-graph-edges"><td>地図の辺が両端とも返した節に含まれ、片側だけの辺が出ない。あわせて辺を持たない節が 84 / 330 件（25%）で 3 割未満であること<div class="small muted"><code>v-graph-edges</code></div></td><td><code>curl -s &#39;http://localhost:8787/api/graph?scopes=1&amp;kinds=all&#39; | python3 -c &quot;...&quot;</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>節 330 / 辺 338 / 片側しか無い辺 0 / 辺ゼロ 84</pre></details></td></tr>
+<tr id="v-citation-map"><td>質問の答えの引用番号と、地図で光る節のバッジが一致する<div class="small muted"><code>v-citation-map</code></div></td><td><code>ブラウザで「何を試して駄目だった？」を送信し、答えの箇条書きと地図のバッジを目視で突き合わせた</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>引用 9 件が中央の一かたまりに集まり、[1] 生成した HTML をブラウザで目視確認 / [3] IR の JSON ファイルを HTML の隣に置く などが答えと 1 対 1 で対応した</pre></details></td></tr>
+<tr id="v-checks"><td>型検査・整形・テスト 42 件・本番ビルドがすべて通る（2026-09-07 16:00、push の直前）<div class="small muted"><code>v-checks</code></div></td><td><code>bun run check &amp;&amp; bun run test &amp;&amp; bun run build</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>Checked 62 files, No fixes applied / pass 42, fail 0 / built in 423ms</pre></details></td></tr>
+<tr id="v-relation-writer"><td>relation 表に書き込む経路が存在するかどうか<div class="small muted"><code>v-relation-writer</code></div></td><td><span class="muted">表が 0 行であることは確認したが、書き手が無いことをコード全体の走査では確かめていない。ingest 側に書く経路が眠っている可能性は排除できていないため、d-edges-from-parent-and-ref はこの点を前提にしていない（0 行という観測だけで足りる）</span></td><td><span class="badge b-warn">not-run</span></td></tr>
+<tr id="v-edge-kinds"><td>地図の辺が rejected / considered / belongs の 3 種だけで、rejected と considered の合計が node.parent_id の件数と一致する<div class="small muted"><code>v-edge-kinds</code></div></td><td><code>curl -s &#39;http://localhost:8787/api/graph?scopes=1&#39; | python3 -c &quot;import json,sys,collections; d=json.load(sys.stdin); print(dict(collections.Counter(e[&#39;kind&#39;] for e in d[&#39;edges&#39;])))&quot;</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>{&#39;considered&#39;: 15, &#39;rejected&#39;: 32, &#39;shares&#39;: 5} — considered 15 + rejected 32 = 47 で parent_id の 47 件と一致（shares はこの時点の旧方式で、a691fcc で belongs へ置き換えた）</pre></details></td></tr>
+<tr id="v-private-repo"><td>リポジトリが private であること（isPrivate true を確認）。履歴を書き換えない判断がここに依存している<div class="small muted"><code>v-private-repo</code></div></td><td><code>gh repo view iroha924/mitos --json visibility,pushedAt,isPrivate</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>{&quot;isPrivate&quot;:true,&quot;pushedAt&quot;:&quot;2026-09-06T16:38:45Z&quot;,&quot;visibility&quot;:&quot;PRIVATE&quot;}</pre></details></td></tr>
+<tr id="v-route-tree"><td>記録の一覧ルートが消え、詳細ルートだけが残っている<div class="small muted"><code>v-route-tree</code></div></td><td><code>grep -n records dashboard/src/routeTree.gen.ts</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>RecordsIdRouteImport と &#39;/records/$id&#39; のみ。index ルートの参照は無い</pre></details></td></tr>
+<tr id="v-labels"><td>サイドバーの項目名とヘッダの見出しが一致し、思想を映した旧名が残っていない<div class="small muted"><code>v-labels</code></div></td><td><code>ブラウザで / を開き、サイドバーとヘッダを目視で突き合わせた</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>作業の現在地 / 質問する / 編集時の助言 / 記録を探す / 記録 / 社内語の辞書 / 名簿。ヘッダの見出しも同一</pre></details></td></tr>
+<tr id="v-no-linear-scope"><td>Linear の作業場所が DB に残っていない<div class="small muted"><code>v-no-linear-scope</code></div></td><td><code>./plugin/bin/mitos scopes</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>iroha924/hir4ta-developer  [(束なし)]  記録 2 件 — 課題管理の作業場所は 1 件も残っていない</pre></details></td></tr>
+<tr id="v-evals-shell"><td>評価セットは中身が空で、実行体は残っている（次の職場で問いだけ書けば動く）<div class="small muted"><code>v-evals-shell</code></div></td><td><code>cat server/evals/answers.json &amp;&amp; ls server/evals/*.ts</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>{ &quot;cases&quot;: [] } / answers.ts chat.ts generate.ts hybrid.ts multi.ts retrieval.ts usage.ts</pre></details></td></tr>
+<tr id="v-int-casts"><td>地図と検索が画面へ返す id が、すべて数として返る（bigint の文字列が残っていない）<div class="small muted"><code>v-int-casts</code></div></td><td><code>grep -nE &#39;n\.id|child\.id|child\.parent_id|r\.id::|Number\(h\.id\)&#39; server/src/http.ts server/src/chat.ts</code></td><td><span class="badge b-done">pass</span></td></tr>
+<tr><td colspan="3"><details><summary>出力</summary><pre>http.ts の 127 / 146 / 172 / 178 行はいずれも ::int、chat.ts 329 行は Number()。ただしこれは 2 ファイルの目視で、他の API を足すときは同じ踏み方をしうる</pre></details></td></tr>
+</tbody></table>
+<h2 id="glossary">用語</h2><table><thead><tr><th>語</th><th>意味</th></tr></thead><tbody>
+<tr><td><code>作業場所（scope）</code></td><td>記録を束ねる単位。git remote かディレクトリの絶対パスで識別する。別のリポジトリの決定を混ぜないための境界</td></tr>
+<tr><td><code>節（node）</code></td><td>記録の中の 1 つの判断・発言・出来事。決めたこと・検討した案・分かったこと・触らない制約・確かめたこと・未解決の問いの 6 種と、取り込んだ発言</td></tr>
+<tr><td><code>結び目</code></td><td>地図に置く PR やファイル。判断ではないが、2 件以上の節がぶら下がるものを構造の錨として出している</td></tr>
+<tr><td><code>極性（polarity）</code></td><td>その節が「やる」か「やらない」か。埋め込み空間では両者がほぼ同じ位置に来るため、ベクトルではなく列で持つ</td></tr>
+</tbody></table>
+<p class="gen">progress-log が生成。正本はこのページに埋め込まれた <code>#progress-ir</code>。手で書き換えず、<code>progress</code> を通して追記する。記録したホスト: claude-code</p>
+</div>
+<script>
+// 折りたたみは details に任せてあるので、ここは表示切り替えだけ。JS が無くても読める。
+document.querySelectorAll('[data-filter]').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var k = btn.getAttribute('data-filter');
+    document.querySelectorAll('.ev').forEach(function(el){
+      el.hidden = k !== 'all' && !el.classList.contains('k-' + k);
+    });
+    document.querySelectorAll('[data-filter]').forEach(function(b){ b.setAttribute('aria-pressed', b === btn); });
+  });
+});
+</script>
+</body>
+</html>
