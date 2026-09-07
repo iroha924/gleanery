@@ -103,11 +103,15 @@ function Source({ s }: { s: ChatSource }) {
             {s.recordTitle}
           </DialogTitle>
           <DialogDescription className="font-mono text-[10px] uppercase tracking-[0.12em]">
+            {s.actor && `@${s.actor} / `}
             {s.scope}
             {s.at && ` / ${s.at}`}
           </DialogDescription>
         </DialogHeader>
-        <p className="max-h-[50vh] overflow-y-auto pr-1 text-[14px] leading-[2.1]">{s.text}</p>
+        <p className="max-h-[50vh] overflow-y-auto pr-1 text-[14px] leading-[2.1]">
+          {/* 見出しに @名前 を出しているので、本文の頭の同じものは剥がす。 */}
+          {s.actor ? s.text.replace(/^@[^\s:]+:\s*/, "") : s.text}
+        </p>
         <DialogFooter className="-mx-6 -mb-6 p-5 sm:justify-start">
           <Button asChild variant="outline" size="sm">
             <Link to="/records/$id" params={{ id: s.recordId }}>

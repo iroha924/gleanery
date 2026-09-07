@@ -19,6 +19,9 @@ const KINDS = [
   ["boundary", "触らない・やらない"],
   ["verification", "確かめたこと"],
   ["question", "未解決の問い"],
+  // **発言は既定では出ない**（サーバー側で外している。DB の 4 割が bot の定型文だった）。
+  // 選ぶ手段が無いと二度と引けなくなるので、ここに置く。
+  ["utterance", "発言"],
 ] as const;
 
 type Search = { q?: string; dont?: boolean; kinds?: string[] };
@@ -134,7 +137,12 @@ function SearchPage() {
                     {/* PR の本文がまるごと入っている件がある。切らないと 1 件で画面が埋まる。 */}
                     <p className="line-clamp-6 leading-relaxed">
                       <span className={`mr-1 font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
-                      {h.text}
+                      {/* **誰が言ったかを本文から読ませない。**bot か人かで重みが違う。 */}
+                      {h.actor_name && (
+                        <span className="mr-1 font-mono text-muted-foreground text-xs">@{h.actor_name}</span>
+                      )}
+                      {/* 取り込みが本文の頭にも `@名前:` を入れている。札の隣に出す以上、二重になる。 */}
+                      {h.actor_name ? h.text.replace(/^@[^\s:]+:\s*/, "") : h.text}
                     </p>
                     {h.ex && <p className="line-clamp-3 text-muted-foreground text-sm">理由: {h.ex}</p>}
                     <p className="text-xs text-muted-foreground">

@@ -21,6 +21,8 @@ export type Now = {
 
 export type ChatSource = {
   n: number;
+  /** 発言の主。判断には付かないので、発言のときだけ入る。 */
+  actor: string | null;
   label: string;
   text: string;
   polarity: Polarity;
@@ -175,6 +177,8 @@ export type Hit = Node & {
   record_title: string;
   scope_label: string;
   relevance: number | null;
+  /** 発言の主。**bot か人かは、これを見ないと本文からしか判らない。** */
+  actor_name: string | null;
 };
 
 /** 範囲のクエリ。undefined は「すべて」なので付けない。 */

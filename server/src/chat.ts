@@ -268,6 +268,8 @@ function recordUsage(
 
 export type ChatSource = {
   n: number;
+  /** 発言の主。判断には付かないので、発言のときだけ入る。 */
+  actor: string | null;
   label: string;
   text: string;
   polarity: Polarity;
@@ -323,6 +325,7 @@ export async function* chat(
 
   const sources: ChatSource[] = rows.map((h, i) => ({
     n: i + 1,
+    actor: h.actor_name,
     label: labelOf(h),
     text: h.text,
     polarity: h.polarity,
@@ -650,6 +653,7 @@ async function runTool(
     const n = sources.length + 1;
     sources.push({
       n,
+      actor: null,
       label,
       text: text.slice(0, 400),
       polarity: "na",
