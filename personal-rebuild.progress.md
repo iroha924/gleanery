@@ -4,12 +4,12 @@
 
 - 状態: 進行中
 - 対象: mitos (main)
-- 最終更新: 2026-09-08T03:00:00+09:00
+- 最終更新: 2026-09-08T03:45:00+09:00
 - 人間向けの表示: `personal-rebuild.progress.html`
 
 ## いまここ
 
-地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）。ファビコンとアプリアイコンを「折り返す糸」で入れた（d-icon-folded-thread）。**37 コミットを origin/main へ push 済み（a9decb4）。**残る未着手は、プロジェクトの定義を DB に持たせること（scope.summary が空）だけ
+地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）。ファビコンとアプリアイコンを「折り返す糸」で入れた（d-icon-folded-thread）。**37 コミットを origin/main へ push 済み（a9decb4）。**残る未着手は、プロジェクトの定義を DB に持たせること（scope.summary が空）。残る 1 工程は、**人に一行説明を書かせるのではなく、AI がリポジトリを読んで scope.role / summary を埋める**形に方針が変わった（d-infer-project-identity）。**期限のある未決が別に 1 件ある** — 退職日までに ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうか。リモートは 1a9dae7 で、手元と一致している
 
 ### 工程
 
@@ -23,12 +23,12 @@
 - 完了: shadcn へ寄せる
 - 完了: 書体と配色
 - 完了: チャット画面の作り直し
-- 未着手: プロジェクトの定義を DB に持たせる
+- 未着手: プロジェクトの定義を DB に持たせる（AI が読んで埋める）
 - 完了: この回のコミットを push（a9decb4）
 
 ## 次にやること
 
-- mitos describe で scope の役割と一行説明を埋める。使い方は `./plugin/bin/mitos describe <dir> <役割> [説明]`（一覧は `./plugin/bin/mitos scopes`）。mitos 側は README の 3 行目から書けるが、iroha924/hir4ta-developer が何のリポジトリかは本人が決める必要がある。埋まると、プロジェクトの定義を聞かれるたびの README 読み込みが要らなくなる (human)
+- 次のセッションでやること: **リポジトリを読んで scope.role / scope.summary を AI が埋める経路を作る**（d-infer-project-identity）。人に書かせる `mitos describe` は棄却済みなので、そちらへ戻らないこと。いまの回避（システムプロンプトで README を読ませる）は残したままでよいが、恒久策と取り違えない。決めることは q-identity-scope に置いてある (ai)
 - 2026-09-07 時点で「あと 1 週間」と言われた退職日までに、勤務先のリポジトリ名を含む ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうかを決める。消すと、そのリポジトリでの作業の一次記録が失われる（DB からは既に消えており、取り込み直す経路も退職後は無い）。残すと、パス名自体が勤務先を示すものが手元に残る。この回でも未決 (human)
 - 次の職場で取り込みを始めたら、relation 表に書き手を作るかを判断する。地図は削除したので線種の枠は消えたが、relation 表と parent_id は残っている (human)
 
@@ -36,11 +36,13 @@
 
 - `q-advice-feedback` 編集フックの助言が役に立ったかを、どう受け取るか。出したことは jsonl に残るが、採用されたかを記録する先が無い。これが埋まらない限り mitos advice は「出したか」までしか測れず、賢くなっているかを主張できない — 答えるのは 人 / この作業の外
 - `q-force-layout-scale` 力学配置が節 330 件で読める状態は確認したが、次の職場で数千件になったときに読めるかは分からない。件数が増えたら畳み方（既定で発言と出来事を隠す以上のもの）が要る可能性がある — 答えるのは AI / 実装中に解ける
-- `q-scope-summary` mitos describe をどう埋めるか。mitos 側は README から書けるが、iroha924/hir4ta-developer が何のリポジトリで、どういう役割なのかは本人にしか決められない。埋まるまで、プロジェクトの定義を聞かれるたびに README を読む往復が入り続ける — 答えるのは 人 / いま答えが要る
 - `q-title-backfill` LLM が題を付ける前に作られた会話の題を、付け直すかどうか。ChatGPT は過去の会話名を変えないのでそれに倣って何もしていないが、新旧が混ざって並んでいる — 答えるのは 人 / いま答えが要る
 - `q-busy-until-titled` 答えを読み終えてから 1.7〜2.5 秒、入力欄が「止める」のままになるのを直すか。直すには done イベントで busy を落とす配線が要り、SSE の扱いが 1 段複雑になる。放置しても壊れない — 答えるのは 人 / この作業の外
 - `q-realtime-gap` 会議の聞き取りで、再接続の間に流れた音声が落ちる件をどうするか。d-realtime-not-chunking の引き受けた不利として書いたきり、直す判断も直さない判断もしていない。**落としたことが画面に出ないので、利用者からは欠落に見えない。**直すなら、落ちた区間を画面に印として出すのが最小 — 答えるのは 人 / 実装中に解ける
 - `q-scrub-pattern` 目指すところの中心条件「追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件」を、**いま再確認する手段が無い。**v-scrub の grep パターンは、記録自体に語を書き戻さないためプレースホルダにしてある（前回のレビューで最重要として受理した対処）。語の一覧はどこにも保管しておらず、再確認するには本人が組み直す必要がある。gitignore した手元のファイルに置くか、確認をやめるかを決める — 答えるのは 人 / いま答えが要る
+- `q-identity-scope` 要約を作る単位と頻度をどうするか。取り込みのたびに作り直すと遅くなり、一度だけだとリポジトリの性格が変わったときに古びる。また README の無いリポジトリで何を読むか（CLAUDE.md → AGENTS.md → package.json → ディレクトリ構成、のどこまで落ちるか）も決まっていない — 答えるのは AI / 実装中に解ける
+- `q-sidebar-focus-bg` サイドバーの項目に足した `focus-visible:bg-sidebar-accent`（dashboard/src/components/ui/sidebar.tsx の 6 箇所）を残すか。**本人が選んだ「枠の色だけ変える」の範囲外**で、枠を持たない項目でフォーカスの位置が完全に消えるのを避けるために足した。外すとキーボードでサイドバーを辿れなくなる — 答えるのは 人 / いま答えが要る
+- `q-scrub-pattern-2` （q-scope-summary を畳んだ差し替え。あちらは「mitos describe をどう埋めるか」を人に聞く形で立てていたが、d-infer-project-identity でその設計自体を棄却したので問いとして成立しなくなった。**人に聞くのではなく q-identity-scope として AI が決める形へ移した。**）残っている人への問いは、目指すところの中心条件「追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件」を再確認する手段が無いこと（q-scrub-pattern と同じ） — 答えるのは 人 / この作業の外
 
 ## 背景
 
@@ -442,8 +444,48 @@
   - (不利) 「糸」と読めるのは名前を知っている人だけ。初見では U か釣り針に見える
   - (不利) iOS 用の PNG は暗い地に固定なので、明暗の追随はブラウザのタブだけ。2 枚を別々に持つことになった
 - 守られていることの確かめ方: dashboard/index.html が /favicon.svg と /apple-touch-icon.png を参照し、両方が 200 で返ること。favicon.svg の viewBox が 0 0 16 16 で stroke-width が 2 のままであること（ここを変えると 16px で滲む）
-- 検証: v-icon-wired [pass]
+- 検証: v-icon-wired [pass] / v-icon-shape [pass] / v-icon-seen-by-others [not-run]
 - 根拠: file dashboard/public/favicon.svg / file dashboard/public/apple-touch-icon.png / file dashboard/index.html
+
+### d-infer-project-identity
+
+**作業場所の説明は人に書かせない。**リポジトリを読んで AI が自分で要約し、scope.role / scope.summary を埋める経路を作る****
+
+- 状態: accepted / 09-08 03:20
+- 文脈: チャットが「このプロジェクトについて 2 行で教えて」に、直近のセッション記録だけを読んで「退職に伴い個人用へ戻した作業」と答えた（e-no-project-identity）。原因は scope.role と scope.summary が両方 null で、プロンプトの『いま見ている範囲』が `- iroha924/mitos` としか出ていなかったこと。その場では `mitos describe` で人が役割と一行説明を書く案を「次にやること」へ置いたが、**本人に設計として否定された** — 「明示しないといけないのは間違い。AI に見に行かせて理解させるのが重要。わざわざ明示しないと理解できないのは JARVIS ではない」。
+- 検討した案:
+  - 採用: 取り込みのときにリポジトリを読ませ、role と summary を自動で埋める
+  - 棄却: mitos describe で人が一行説明を書く（コマンドは前から存在する） — mitos が目指しているのは検索ではなく「聞かれる前に言う」こと。人が前提を書き足さないと働かない道具は、その目的と矛盾する。**本人が設計として棄却した**
+  - 棄却: 設定画面に入力欄を作って書かせる — 同じ理由。入口を画面に変えても、人が明示する構造は変わらない
+  - 棄却: いまの回避（システムプロンプトで README を読ませる）を恒久策にする — 質問のたびに README を読み直す往復が入る（実測 6.7 秒）。答えられるようにはなったが、DB は依然としてプロジェクトの定義を持っていない。MCP や編集フックなど、チャットを通らない経路には効かない
+- 結果:
+  - 人が前提を書き足さなくても、道具が自分でプロジェクトを理解する。JARVIS の側へ 1 歩寄る
+  - チャット以外の経路（MCP の search_knowledge、編集フック）からも同じ理解が使えるようになる
+  - (不利) AI が書いた要約が誤っていても、人が気付く場所が無い。要約の出所（どのファイルの何行目から書いたか）を残す必要がある
+  - (不利) README の無いリポジトリでは何を読むかが決まらない。読む順（README → CLAUDE.md → AGENTS.md → package.json）と、どれも無いときの振る舞いを決める必要がある
+  - (不利) 取り込みのたびに要約を作り直すのか、一度だけかを決めていない。毎回作ると取り込みが遅くなり、一度だけだとリポジトリの性格が変わったときに古びる
+- 守られていることの確かめ方: 新しい作業場所を取り込んだ直後に scope.role と scope.summary が埋まっていて、「このプロジェクトは何か」に README を読み直さずに答えられること
+- 検証: v-identity-auto [not-run]
+- 根拠: file server/src/cli.ts / file server/src/chat.ts / file README.md
+
+### d-focus-no-ring
+
+**リングをやめ、枠の色の変化だけでフォーカスを示す。枠を持たないサイドバーの項目は、ホバーと同じ背景で示す**
+
+- 状態: accepted / 09-08 03:25
+- 文脈: 本人から「input や select、tabs で何かしようとすると border が太くなる。これは何？無効にできる？」と聞かれた。実測すると、枠が太くなっているのではなく **shadcn が focus-visible で枠の外側に 3px のリングを足していた**（box-shadow に `oklab(0.7 0 0 / 0.5) 0 0 0 3px`、同時に枠の色が oklch(0.915) から oklch(0.7) へ）。見かけの太さは 0.83px + 3px ≈ 3.8px。テキスト入力でマウスのクリックでも出るのは仕様で、ブラウザは文字入力を受け付ける要素にはマウス操作でも :focus-visible を立てる。「フォーカスの表示をどうしますか。」を 3 案で聞き、本人が選んだ。
+- 検討した案:
+  - 採用: リングをやめ、枠の色だけ変える（太さは一切変わらない）
+  - 棄却: リングを 1px に細くする — 太さが変わること自体をやめたかった。1px でも枠が動いて見える
+  - 棄却: 完全に消す — キーボードで移動したときに現在位置が分からなくなる。マウスだけで使う前提でも、Tab での移動が事実上使えなくなる
+- 結果:
+  - 入力欄・select・タブ・ボタンで、フォーカスしても寸法が一切変わらなくなった
+  - (不利) タブとボタンは base に border-transparent があるので、透明だった 1px の枠が灰色になる。位置は分かるが層が薄い
+  - (不利) サイドバーの項目には枠が無く、リングを外すと印が完全に消えたので focus-visible:bg-sidebar-accent を 7 箇所足した。**本人が選んだ範囲の外**なので、不要なら外す
+  - (不利) shadcn の CLI で部品を入れ直すと、既定の 3px リングが戻ってくる
+- 守られていることの確かめ方: src/components/ui/ に focus-visible と ring の幅を同時に持つクラスが残っていないこと（ring-0 の打ち消しと aria-invalid のエラー表示は別物なので残す）
+- 検証: v-focus-no-shadow [pass] / v-focus-values [pass]
+- 根拠: commit 810615c / file dashboard/src/components/ui/input-group.tsx
 
 ## 経過
 
@@ -487,6 +529,11 @@
 - `e-review-triage-2` 09-08 02:10 [作業] まっさらなレビュアー 1 体に .md だけを渡し、23 件の指摘を全件裁定した（1 ラウンドで打ち切り）。**受理して直した 13 件**: 目的が削除済みの地図を完了条件に要求したままだった（d-goal-after-map）、push 範囲がリモートの実体と食い違っていた（v-remote-head。リモートは 8e3942f ではなく 357aa22 だった）、地図に依存する決定 2 件と検証 3 件が再実行できないまま [pass] で残っていた（e-graph-deps-stale）、再現手段のスクリプトが git に無い・消してある（e-scratchpad-not-tracked）、作業場所が 1 件か 2 件か（e-two-scopes）、node の件数の母数と bot 発言 139→138 の誤り（e-counts-differ-by-population、v-bot-utterances）、relation の書き手が無いという断定が未検証だった（v-relation-no-writer）、会議の聞き取りを grep でしか確かめていない（v-mtg-end-to-end を not-run で明示）、緑の証拠が 35 本前の時点だった（v-green-at-head）、SessionEnd の一次ソースに URL と参照日が無い（v-hook-doc）、書体の決定が無い（d-geist-murecho）、画面が何本か特定できない（e-routes-now）、whisper の棄却根拠の出所が切り分けられない（e-whisper-provenance-lost）、再接続中の音声欠落と scrub パターンの所在が未解決に入っていなかった（q-realtime-gap、q-scrub-pattern）。**見送った 8 件と理由**: (a) 正本が html か md かの食い違いと実行体パスの二重表記は、記録の本文ではなく trace の書き出しテンプレートが出している文言なので記録側で直せない（証拠の相対パス 1 件だけ直した）。(b)「方向を選ぶ」「画面の展開」に決定が無いのは、どちらも本人の直接の指示で棄却案が存在しないため。(c) /advice と /mtg を足した決定が無いのも同じ理由（画面の一覧は e-routes-now で確定させた）。(d) v-int-casts の what が観測より強い点は、e-bigint-as-string 自身が走査範囲の限界を書いており記録内で矛盾していない。(e) v-evals-shell が評価セット 5 本のうち 1 本しか cat していない点は、d-delete-not-scrub の中心根拠ではない。(f) 制約が 8 件と 3 件で食い違って見えるのは母数の違い — e-now-screen-kept の 8 件は /now 画面が集約して出す件数（制約 + やらないこと + 行き止まり）で、background.constraints の 3 件とは別物。(g) q-title-backfill の「ChatGPT は過去の会話名を変えない」に出典が無い点は、人への問いに添えた判断材料であって事実の主張として使っていない。(h) e-purge-timeout の ROLLBACK 後に件数を数え直していない点は、そのあと e-purge-scope で削除を完了して数え直しており、いまの DB 状態は独立に確かめられている。**なお指摘 #22 は見送らず、ここに書き残す** — 「回答精度 74/74」の出所はこの記録の外（削除済みの MEMORY.md）にあり復元できない。数値として引かないこと。「Google Meet 6 割・Zoom 2 割・Teams 2 割」は本人の申告で、実測ではない — file personal-rebuild.progress.md
 - `e-favicon-was-template-leftover` 09-08 02:40 [判明したこと] dashboard/public に置いてあった favicon.svg（紫の稲妻）と icons.svg（Bluesky などの SNS アイコン束）は**index.html からどこからも参照されていなかった。**テンプレート由来の残骸で、実質ファビコンは未設定だった。icons.svg は削除し、favicon.svg は中身を差し替えた — $ grep -rn 'favicon|icons.svg' --include='*.html' --include='*.tsx' . (exit 0)
 - `e-push-2` 09-08 03:00 [状態の変化] **この回の 37 コミットを origin/main へ push した。**リモートは 357aa22 から a9decb4 へ進んだ。先頭は 904cd60（地図の削除）、末尾は a9decb4（アイコン「折り返す糸」）。push の前に型検査・整形・テスト 42 件・本番ビルド・bundle（mcp.js / hook-check-path.js / cli.js）を通してある — $ git push origin main (exit 0) / $ git ls-remote origin refs/heads/main (exit 0)
+- `e-describe-rejected-as-design` 09-08 03:20 [判明したこと] **「人が明示する」を次にやることに置いたのが誤りだった。**前の回で `mitos describe` の実行を next へ入れ、hir4ta-developer の説明を本人に求めたが、本人は答えではなく設計を否定した。**聞くべきだったのは「何のリポジトリか」ではなく、「なぜ AI が自分で調べないのか」だった。**手元には材料が揃っていた（scope.abs_path が入っていて read_code と grep_code が使える）ので、実装の障害は無い — $ select id, label, role, summary, abs_path from scope order by id (exit 0)
+- `e-choices-wording` 09-08 03:25 [作業] 記録の漏れ検査（cover）が、聞いた問いの文言と記録の文言が違うだけで「落ちている」と出すことがある。「この記録に入れておきたいものは他にありますか。会話に出ていない口頭の判断や、次にやるつもりのことがあれば拾います。」への回答「特に無い。会話から書いて」は e-extra-material-none に入れてあるが、問いを言い換えて書いたため突き合わせに当たらなかった。**問いは言い換えずそのまま写す。** — $ node bin/progress.mjs cover digest.json ir.json (exit 1)
+- `e-corrections-round2` 09-08 03:45 [判明したこと] 2 巡目のレビューで、**この回に自分が書いた記録の誤りが 6 件**見つかった。過去のエントリは書き換えないので、ここに正を置く。(1) `e-favicon-was-template-leftover` の根拠コマンドは `grep -rn 'favicon|icons.svg'` で、**-E が無いので `|` が選択にならず、literal 文字列を探していた。**しかも grep の exit 0 は「一致あり」なので、記録した終了コードは主張と逆向きに読める。正しい形は `grep -rEn 'favicon|icons\.svg' --include='*.html' --include='*.tsx' --include='*.ts' dashboard/src dashboard/index.html`。(2) `d-focus-no-ring` の観測時点 03:25 は**記録を書いた時刻**で、判断した時刻ではない（コミット 810615c の時刻が実際）。そのせいで「push 済み（a9decb4）」と矛盾して見える。**810615c は a9decb4 の祖先で、push 済みである**（git merge-base --is-ancestor で確認）。(3) `d-focus-no-ring` の確かめ方のパス `src/components/ui/` は `dashboard/src/components/ui/` の誤り。(4) 同じ決定の「サイドバー 7 箇所」は **6 箇所**の誤り（grep -c で実測）。ファイルは dashboard/src/components/ui/sidebar.tsx。(5) `e-push-2` と `v-pushed` の「リモートは a9decb4」は、その後 1a9dae7 を push したので**古い**。(6) `d-infer-project-identity` の結果欄は**まだ起きていないことを断定形で書いている**（v-identity-auto が not-run なのと食い違う）。「JARVIS の側へ 1 歩寄る」「使えるようになる」は達成ではなく**狙い**として読むこと — $ git merge-base --is-ancestor 810615c origin/main (exit 0) / $ grep -c focus-visible:bg-sidebar-accent dashboard/src/components/ui/sidebar.tsx (exit 0)
+- `e-icon-png-recipe` 09-08 03:45 [作業] アプリアイコンの PNG は SVG から書き出している。**形を変えたら 2 枚を揃え直す必要があるので手順を残す。**180x180 の外枠に #2c2c2b の矩形を敷き、その中へ 112x112 の入れ子 svg として同じマークを白（#fdfdfd）で置き、`rsvg-convert -w 180 -h 180 <その svg> -o dashboard/public/apple-touch-icon.png` で変換する。**明暗の追随は SVG 側だけ**で、PNG は暗い地に固定（iOS が透過を扱わないため） — $ rsvg-convert -w 180 -h 180 mitos-app-icon.svg -o apple-touch-icon.png (exit 0)
+- `e-review-triage-3` 09-08 03:45 [作業] 2 巡目のレビュー 22 件を裁定し、**ここで打ち切った**（同じ変更へのレビューは 2 ラウンドまで）。**受理して直した**: 上の 6 件の誤り（e-corrections-round2）、PNG の再生成手順（e-icon-png-recipe）、用語集が `undefined` で出ていた件、棄却済みの設計を未解決の問いに残していた件（q-scope-summary → q-identity-scope へ寄せた）、検証が読んだ値を残していなかった 4 件（v-pushed-2 / v-icon-shape / v-focus-values / v-green-at-push）、サイドバーの変更が宙に浮いていた件（q-sidebar-focus-bg）、いまここが期限付き未決を隠していた件。**見送った**: (a) `d-infer-project-identity` が未確定のまま accepted である点 — **方針の決定と実装の決定を分けている。**採ったのは「人に書かせない」であって「取り込み時に読む」ではない。確かめ方が取り込み時に倒れているのは書き方の問題なので、q-identity-scope が決着したときに実装側の決定を別 id で立てる。(b) 読む順が決定の結果欄と q-identity-scope で違う点 — どちらも未決の例示で、決めるのは次のセッション。(c) 「折り返す糸」の棄却理由が本人の選択である点 — **4 案とも 16px の条件は満たしていた。**最後は本人の好みで決まっており、それ以上の理由は無い。無いものを書かない。(d) 初見の人に見せていない点 — 見せる相手がいない。(e) `e-choices-wording` の適用先が無い点 — 規範として残すだけで足り、道具を直すかは別の作業。(f) v-remote-head と v-pushed の重複 — 起点が違う別の観測で、v-pushed-2 が最新であることを明記した — file personal-rebuild.progress.md
 
 ## 検証
 
@@ -532,14 +579,17 @@
 - `v-fonts` [pass] 書体が Geist と Murecho に入れ替わり、丸ゴシックが依存から消えていること （d-geist-murecho を確かめた） — `grep -n 'Geist Variable\|Murecho\|m-plus-rounded' dashboard/src/styles.css dashboard/package.json`
 - `v-icon-wired` [pass] ファビコンとアプリアイコンが配線され、どちらも配信されること （d-icon-folded-thread を確かめた） — `ブラウザから fetch('/favicon.svg') と fetch('/apple-touch-icon.png')、link[rel*=icon] を列挙`
 - `v-pushed` [pass] リモートがこの回の作業を含んでいること — `git ls-remote origin refs/heads/main && git rev-list --count origin/main..HEAD`
+- `v-identity-auto` [not-run] 取り込んだ直後に scope.role と scope.summary が埋まり、README を読み直さずにプロジェクトの定義を答えられること （d-infer-project-identity を確かめた） (未実行: まだ実装していない。この回で決めたのは方針だけで、経路（何を読むか・いつ作るか）は q-identity-scope として未決のまま次のセッションへ渡す)
+- `v-focus-no-shadow` [pass] フォーカスしても box-shadow にリングが増えず、枠の色だけが変わること （d-focus-no-ring を確かめた） — `入力欄をクリックしてから getComputedStyle(inputGroup) の boxShadow と borderColor を読む`
+- `v-pushed-2` [pass] **この時点で最新の push の観測。**v-pushed と v-remote-head はどちらも古い（それぞれ a9decb4 / 357aa22 起点） — `git ls-remote origin refs/heads/main && git rev-list --count origin/main..HEAD && git rev-list --count 357aa22..HEAD`
+- `v-green-at-push` [pass] push の直前に検査が通っていたこと（e-push-2 が根拠を残していなかった） — `bun run check; bun run test; bun run build; bun run bundle`
+- `v-icon-shape` [pass] favicon の viewBox と線の太さが、16px で滲まない条件を保っていること（v-icon-wired は配信しか見ていなかった） （d-icon-folded-thread を確かめた） — `grep -o 'viewBox="[^"]*"|stroke-width="[^"]*"' dashboard/public/favicon.svg`
+- `v-focus-values` [pass] フォーカス時に読んだ実際の値（v-focus-no-shadow が変更後の値を残していなかった） （d-focus-no-ring を確かめた） — `入力欄をクリックし getComputedStyle(document.querySelector('[data-slot=input-group]')) を読む`
+- `v-icon-seen-by-others` [not-run] 「初見では U か釣り針に見える」を、名前を知らない人に見せて確かめる （d-icon-folded-thread を確かめた） (未実行: 見せる相手がいない。個人の道具で、いま使うのは本人だけ。不利として書いてあるのは形からの推論であって観測ではない)
 
 ## 用語
 
-- 作業場所（scope）: 記録を束ねる単位。git remote かディレクトリの絶対パスで識別する。別のリポジトリの決定を混ぜないための境界
-- 節（node）: 記録の中の 1 つの判断・発言・出来事。決めたこと・検討した案・分かったこと・触らない制約・確かめたこと・未解決の問いの 6 種と、取り込んだ発言
-- 結び目: 地図に置く PR やファイル。判断ではないが、2 件以上の節がぶら下がるものを構造の錨として出している
-- 極性（polarity）: その節が「やる」か「やらない」か。埋め込み空間では両者がほぼ同じ位置に来るため、ベクトルではなく列で持つ
-- 折り返す糸: undefined
+- 折り返す糸: mitos の印（ファビコンとアプリアイコン）。縦に伸びた線が下で折り返して途中で止まり、辿り着いた先に点が置かれる形。μίτος はギリシャ語の「糸」で、辿れば元の判断まで戻れることを指す。16px のタブで読めることを第一条件に、線 3 要素すべてを 2 単位の太さで 16 の格子に乗せてある。実体は dashboard/public/favicon.svg（明暗に追随）と apple-touch-icon.png（180x180、暗い地に固定）
 
 ## この文書について
 
