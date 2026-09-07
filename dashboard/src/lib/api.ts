@@ -1,24 +1,6 @@
 // API の型。**サーバーの戻り値をここで 1 回だけ書く。**
 // 画面ごとに書くと、片方だけ直したときに気付けない。
 
-/** 編集フックが 1 回走ったときの記録。**沈黙も 1 行として残る。** */
-export type AdviceRow = {
-  at: string;
-  path: string;
-  line: number | null;
-  candidates: number;
-  shown: string[];
-};
-
-export type Advice = {
-  rows: AdviceRow[];
-  runs: number;
-  spoke: number;
-  candidates: number;
-  repeat: number;
-  byPath: { path: string; n: number }[];
-};
-
 export type Phase = { id: string; label: string; state: "done" | "doing" | "todo"; from: string };
 export type NextItem = { who: "ai" | "human"; text: string };
 export type Wall = { record_id: string; subkind: "constraint" | "non-goal"; text: string; key: string };
@@ -216,8 +198,6 @@ export type Candidate = {
 
 export type GroupMember = { id: number; label: string; identKind: string; ident: string };
 export type Group = { id: number; name: string; members: GroupMember[] };
-/** issue の出どころ。**プロジェクトごとに違う**ので束ごとに持つ。 */
-export type TrackerKind = "linear" | "github" | "jira";
 
 /** プロジェクトの言葉。meaning が null なら「AI が聞きたがっている語」。 */
 export type Term = {
@@ -229,11 +209,6 @@ export type Term = {
   asked_at: string | null;
   project: string | null;
 };
-
-/** 記録に出てくる名前と、その人の呼び名。**対応付けは人が決める。** */
-export type Person = { id: number; display: string; handles: string[]; is_me: boolean; note: string | null };
-/** まだ誰にも結び付いていない名前と、その名前での発言数 */
-export type UnknownHandle = { handle: string; n: number };
 
 async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
@@ -310,8 +285,6 @@ export const api = {
   saveGroup: (name: string, paths: string[]) =>
     send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, paths }),
   deleteGroup: (id: number) => send<{ ok: true }>(`/api/groups/${id}`, "DELETE"),
-  addTracker: (groupId: number, kind: TrackerKind, ident: string) =>
-    send<{ ok: true; scopeId: number }>(`/api/groups/${groupId}/tracker`, "POST", { kind, ident }),
   chats: () => get<ChatRow[]>("/api/chats"),
   chat: (id: string) => get<ChatDetail>(`/api/chats/${id}`),
   deleteChat: (id: string) => send<{ ok: true }>(`/api/chats/${id}`, "DELETE"),
@@ -319,12 +292,7 @@ export const api = {
   saveTerm: (t: { word: string; meaning: string; aliases: string[]; groupId?: number }) =>
     send<{ ok: true }>("/api/terms", "POST", t),
   deleteTerm: (id: number) => send<{ ok: true }>(`/api/terms/${id}`, "DELETE"),
-  people: () => get<{ people: Person[]; unknown: UnknownHandle[] }>("/api/people"),
-  savePerson: (p: { display: string; handles: string[]; isMe: boolean }) =>
-    send<{ ok: true }>("/api/people", "POST", p),
-  deletePerson: (id: number) => send<{ ok: true }>(`/api/people/${id}`, "DELETE"),
   scopes: () => get<Scope[]>("/api/scopes"),
-  advice: () => get<Advice>("/api/advice"),
   records: (scopes?: number[]) => get<RecordRow[]>(`/api/records${q(scopes)}`),
   record: (id: string) => get<RecordDetail>(`/api/records/${encodeURIComponent(id)}`),
   search: async (body: {

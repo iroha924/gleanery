@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { LinkIcon, TicketIcon, Trash2Icon } from "lucide-react";
+import { LinkIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDelete } from "@/components/confirm-delete";
@@ -12,10 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
-import { api, type TrackerKind } from "@/lib/api";
+import { api } from "@/lib/api";
 
 export const Route = createFileRoute("/projects")({ component: Projects });
 
@@ -44,23 +43,6 @@ function Projects() {
     mutationFn: (id: number) => api.deleteGroup(id),
     onSuccess: () => {
       toast.success("プロジェクトを消した");
-      qc.invalidateQueries({ queryKey: ["groups"] });
-      qc.invalidateQueries({ queryKey: ["scopes"] });
-    },
-    onError: (e) => toast.error(String(e instanceof Error ? e.message : e)),
-  });
-
-  // issue の出どころはプロジェクトごとに違う。**リポジトリではない**ので、一員として持つ。
-  const [trackerFor, setTrackerFor] = useState<number | null>(null);
-  const [trackerKind, setTrackerKind] = useState<TrackerKind>("linear");
-  const [trackerIdent, setTrackerIdent] = useState("");
-
-  const addTracker = useMutation({
-    mutationFn: (groupId: number) => api.addTracker(groupId, trackerKind, trackerIdent.trim()),
-    onSuccess: () => {
-      toast.success(`issue の出どころを足した（${trackerKind}: ${trackerIdent.trim()}）`);
-      setTrackerFor(null);
-      setTrackerIdent("");
       qc.invalidateQueries({ queryKey: ["groups"] });
       qc.invalidateQueries({ queryKey: ["scopes"] });
     },
@@ -152,7 +134,6 @@ function Projects() {
         )}
         {groups.data?.map((g) => {
           const dirs = g.members.filter((m) => m.identKind !== "tracker");
-          const trackers = g.members.filter((m) => m.identKind === "tracker");
           return (
             <Card key={g.id}>
               <CardHeader>
@@ -179,62 +160,7 @@ function Projects() {
                   </ConfirmDelete>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">issue の出どころ</span>
-                  {trackers.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">未設定</span>
-                  ) : (
-                    trackers.map((t) => (
-                      <Badge key={t.id} variant="secondary" className="gap-1">
-                        <TicketIcon className="size-3" />
-                        {t.label}
-                      </Badge>
-                    ))
-                  )}
-                  {trackerFor !== g.id && (
-                    <Button variant="ghost" size="sm" onClick={() => setTrackerFor(g.id)}>
-                      足す
-                    </Button>
-                  )}
-                </div>
-                {trackerFor === g.id && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Select value={trackerKind} onValueChange={(v) => setTrackerKind(v as TrackerKind)}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="linear">Linear</SelectItem>
-                        <SelectItem value="github">GitHub</SelectItem>
-                        <SelectItem value="jira">Jira</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      value={trackerIdent}
-                      onChange={(e) => setTrackerIdent(e.target.value)}
-                      placeholder={
-                        trackerKind === "linear"
-                          ? "チーム名（例: Core）"
-                          : trackerKind === "jira"
-                            ? "プロジェクトキー"
-                            : "owner/repo"
-                      }
-                      className="w-56"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => addTracker.mutate(g.id)}
-                      disabled={!trackerIdent.trim() || addTracker.isPending}
-                    >
-                      {addTracker.isPending ? <Spinner /> : null} 決定
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => setTrackerFor(null)}>
-                      やめる
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
+              <CardContent className="space-y-3"></CardContent>
             </Card>
           );
         })}

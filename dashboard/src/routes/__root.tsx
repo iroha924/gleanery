@@ -8,10 +8,8 @@ import { ProjectProvider } from "@/lib/project";
 const TITLES: [string, string][] = [
   ["/records", "記録"],
   ["/projects", "プロジェクトの設定"],
-  ["/people", "名簿"],
   ["/terms", "社内語の辞書"],
   ["/now", "作業の現在地"],
-  ["/advice", "編集時の助言"],
   ["/mtg", "会議を聞き取る"],
   ["/search", "記録を探す"],
   ["/", "質問する"],

@@ -1,19 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  BellIcon,
   BookOpenIcon,
-  ChevronRightIcon,
   FolderIcon,
   HeadphonesIcon,
   ListChecksIcon,
   MessageSquareIcon,
   PlayIcon,
   SearchIcon,
-  UsersIcon,
 } from "lucide-react";
 import type * as React from "react";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -30,7 +26,6 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -41,16 +36,6 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { useProject } from "@/lib/project";
-
-// 種別の呼び名は、内部の kind ではなく人が言う言葉にする。
-const KINDS = [
-  { kind: "decision", label: "決めたこと" },
-  { kind: "option", label: "検討した案" },
-  { kind: "event", label: "分かったこと" },
-  { kind: "boundary", label: "触らない制約" },
-  { kind: "verification", label: "確かめたこと" },
-  { kind: "question", label: "未解決の問い" },
-] as const;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { scopeIds } = useProject();
@@ -95,50 +80,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path === "/advice"}>
-                <Link to="/advice">
-                  <BellIcon /> 編集時の助言
+              <SidebarMenuButton asChild isActive={path === "/search"}>
+                <Link to="/search">
+                  <SearchIcon /> 記録を探す
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-
-            {/* **種別は畳んでおく。**7 つ常時出ていると、上の 4 つと同じ重さに見えてしまう。 */}
-            <Collapsible className="group/kinds">
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={path === "/search"}>
-                  <Link to="/search">
-                    <SearchIcon /> 記録を探す
-                  </Link>
-                </SidebarMenuButton>
-                <CollapsibleTrigger asChild>
-                  <SidebarMenuAction className="transition-transform group-data-[state=open]/kinds:rotate-90">
-                    <ChevronRightIcon />
-                    <span className="sr-only">種別で絞る</span>
-                  </SidebarMenuAction>
-                </CollapsibleTrigger>
-                <CollapsibleContent>
-                  <SidebarMenuSub>
-                    <SidebarMenuSubItem>
-                      <SidebarMenuSubButton asChild>
-                        <Link to="/search" search={{ dont: true }}>
-                          <span className="truncate">やらないこと</span>
-                        </Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                    {KINDS.map((k) => (
-                      <SidebarMenuSubItem key={k.kind}>
-                        <SidebarMenuSubButton asChild>
-                          <Link to="/search" search={{ kinds: [k.kind] }}>
-                            <span className="truncate">{k.label}</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    ))}
-                  </SidebarMenuSub>
-                </CollapsibleContent>
-              </SidebarMenuItem>
-            </Collapsible>
 
             <SidebarMenuItem>
               {/* **押せる要素にしない。**ここは下の一覧の見出しで、それ自体に行き先が無い。
@@ -186,13 +135,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuButton asChild isActive={path.startsWith("/terms")}>
                 <Link to="/terms">
                   <BookOpenIcon /> 社内語の辞書
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path.startsWith("/people")}>
-                <Link to="/people">
-                  <UsersIcon /> 名簿
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

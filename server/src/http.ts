@@ -4,9 +4,6 @@
 // **資格情報はブラウザへ出さない。**DB と Voyage を触るのはここだけで、
 // 画面は HTTP しか知らない。接続は読み取り専用ロールで張る（書き込み経路を作らない）。
 
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -75,44 +72,6 @@ function scopesOf(c: { req: { query: (k: string) => string | undefined } }): num
   // **空文字は「どれも見ない」。**未指定（null）と区別する。
   return ids;
 }
-
-/**
- * 編集フックが何を出したか。**CLI の `mitos advice` と同じ数字を画面へ出す。**
- *
- * 出所はフックが書く jsonl だけで、DB は見ない。フックは DB の読み取りしかせず、
- * 出したことをここへ追記している。**沈黙も 1 行として残る**ので、
- * 「助言を出せた割合」の分母は「走った編集」であって「助言のあった編集」ではない。
- */
-app.get("/api/advice", async (c) => {
-  const log = path.join(os.homedir(), ".claude", "mitos-advice.jsonl");
-  if (!fs.existsSync(log)) {
-    return c.json({ rows: [], runs: 0, spoke: 0, candidates: 0, repeat: 0, byPath: [] });
-  }
-  type Row = { at: string; path: string; line: number | null; candidates: number; shown: string[] };
-  const rows: Row[] = fs
-    .readFileSync(log, "utf8")
-    .split("\n")
-    .filter((l: string) => l.startsWith("{"))
-    .map((l: string) => JSON.parse(l) as Row);
-
-  const spoke = rows.filter((r) => r.shown.length > 0);
-  const all = spoke.flatMap((r) => r.shown);
-  const byPath = new Map<string, number>();
-  for (const r of spoke) byPath.set(r.path, (byPath.get(r.path) ?? 0) + 1);
-
-  return c.json({
-    // 新しい順。**全部は返さない** — 画面が読むのは直近だけ。
-    rows: [...rows].reverse().slice(0, 40),
-    runs: rows.length,
-    spoke: spoke.length,
-    candidates: rows.reduce((a, r) => a + r.candidates, 0) / Math.max(rows.length, 1),
-    repeat: all.length ? (all.length - new Set(all).size) / all.length : 0,
-    byPath: [...byPath.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([p, n]) => ({ path: p, n })),
-  });
-});
 
 // 「いま」の画面。**問いを持たずに開ける唯一の画面**にする。
 // 前回どこで止まって、次に誰が何をするのか。record にあるのに画面が出していなかった。
@@ -325,51 +284,6 @@ app.post("/api/groups", async (c) => {
   }
 });
 
-// 束ごとに issue の出どころを持つ。
-//
-// **課題管理はプロジェクトごとに違う**（GitHub / Linear / Jira）。出どころは
-// リポジトリではないので、tracker の作業場所として束へ足す。こうしておくと、
-// チャットでプロジェクトを選んだときに issue も一緒に引ける。
-const TRACKERS: Record<string, string> = { linear: "Linear", github: "GitHub", jira: "Jira" };
-
-app.post("/api/groups/:id/tracker", async (c) => {
-  const groupId = Number(c.req.param("id"));
-  const body = (await c.req.json()) as { kind?: string; ident?: string };
-  const kind = (body.kind ?? "").trim();
-  const ident = (body.ident ?? "").trim();
-  if (!Number.isInteger(groupId)) return c.json({ error: "id が不正" }, 400);
-  if (!TRACKERS[kind]) return c.json({ error: `知らない出どころ: ${kind}` }, 400);
-  if (!ident) return c.json({ error: "識別子が空（Linear ならチーム名、Jira ならプロジェクトキー）" }, 400);
-
-  const client = await cfg();
-  await client.query("begin");
-  try {
-    const key = `${kind}:${ident}`;
-    const found = await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [
-      key,
-    ]);
-    const id =
-      found.rows[0]?.id ??
-      (
-        await client.query<{ id: number }>(
-          `insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label, role)
-           values ($1,'tracker',null,null,null,$2,'issue-tracker') returning id::int as id`,
-          [key, `${TRACKERS[kind]}: ${ident}`],
-        )
-      ).rows[0]?.id;
-    if (id === undefined) throw new Error("出どころを作れなかった");
-    await client.query(
-      "insert into group_member (group_id, scope_id) values ($1,$2) on conflict do nothing",
-      [groupId, id],
-    );
-    await client.query("commit");
-    return c.json({ ok: true, scopeId: id });
-  } catch (e) {
-    await client.query("rollback").catch(() => {});
-    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
-  }
-});
-
 // --- 用語集 ---
 //
 // **推測で埋めない。**社内語は人に聞くしかないので、AI が答えられなかった語を
@@ -415,70 +329,6 @@ app.delete("/api/terms/:id", async (c) => {
   if (!Number.isInteger(id)) return c.json({ error: "id が不正" }, 400);
   try {
     await (await cfg()).query("delete from term where id = $1", [id]);
-    return c.json({ ok: true });
-  } catch (e) {
-    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
-  }
-});
-
-// --- 人の名簿 ---
-//
-// **対応付けは推論しない。**記録に出てくるのは `@reviewer-a` のようなハンドル名で、
-// それが「◯◯さん」だと決められるのは人だけである。ここは候補を数えて並べるだけ。
-app.get("/api/people", async (c) => {
-  const client = await db();
-  const people = await client.query(
-    "select id::int, display, handles, is_me, note from person order by is_me desc, display",
-  );
-  // まだ誰にも結び付いていない名前。多い順に出す（設定する価値の高い順になる）。
-  const unknown = await client.query(
-    `select actor_name as handle, count(*)::int as n
-     from node
-     where actor_name is not null and deleted_at is null
-       and not exists (select 1 from person p where node.actor_name = any(p.handles))
-     group by actor_name order by n desc limit 100`,
-  );
-  return c.json({ people: people.rows, unknown: unknown.rows });
-});
-
-app.post("/api/people", async (c) => {
-  const body = (await c.req.json()) as {
-    display?: string;
-    handles?: string[];
-    isMe?: boolean;
-    note?: string;
-  };
-  const display = (body.display ?? "").trim();
-  const handles = (Array.isArray(body.handles) ? body.handles : [])
-    .map((x) => String(x).trim())
-    .filter(Boolean);
-  if (!display) return c.json({ error: "呼び名が空" }, 400);
-
-  const client = await cfg();
-  await client.query("begin");
-  try {
-    // 「私」は 1 人。表の一意索引が守るが、先に降ろしておかないと入れ替えができない。
-    if (body.isMe) await client.query("update person set is_me = false where is_me");
-    await client.query(
-      `insert into person (display, handles, is_me, note) values ($1,$2,$3,$4)
-       on conflict (display) do update set
-         handles = excluded.handles, is_me = excluded.is_me, note = excluded.note, updated_at = now()`,
-      [display, handles, body.isMe === true, body.note ?? null],
-    );
-    await client.query("commit");
-    return c.json({ ok: true });
-  } catch (e) {
-    await client.query("rollback").catch(() => {});
-    return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
-  }
-});
-
-app.delete("/api/people/:id", async (c) => {
-  const id = Number(c.req.param("id"));
-  if (!Number.isInteger(id)) return c.json({ error: "id が不正" }, 400);
-  const client = await cfg();
-  try {
-    await client.query("delete from person where id = $1", [id]);
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
