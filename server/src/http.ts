@@ -571,8 +571,44 @@ const run = promisify(execFile);
  * （用語を渡すと先頭に "The" が付き「310」が「31010」に化ける）。VAD も使わない（速度は同じで、
  * 区切りが粗くなる分だけ文が消える）。どれも distil の decoder が 2 層しかないことに由来する。
  *
- * **20 秒を超える音声は末尾が落ちる。**1 回の発話はそれより短いので今は切っていない。
+ * **20 秒を超えると、それ以降が丸ごと消える。**50.6 秒の音声で 20.7 秒までしか出なかった。
+ * VAD を入れても変わらない（同じ 20.7 秒で止まる）ので、こちらで切ってから渡す。
  */
+const CHUNK = 20;
+
+/**
+ * 無音の位置。**切れ目をここへ置く。**固定長で切ると境界で語が割れる
+ * （実測:「インデックス」が「インデッ」と「インデックス」に分かれた）。
+ */
+async function silences(wav: string): Promise<number[]> {
+  const { stderr } = await run("ffmpeg", [
+    "-i",
+    wav,
+    "-af",
+    "silencedetect=n=-35dB:d=0.25",
+    "-f",
+    "null",
+    "-",
+  ]);
+  return [...stderr.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
+}
+
+/** 処理する区間。[開始秒, 長さ秒] の並び。 */
+function spansOf(total: number, marks: number[]): [number, number][] {
+  const out: [number, number][] = [];
+  let at = 0;
+  while (at < total) {
+    if (total - at <= CHUNK) {
+      out.push([at, total - at]);
+      break;
+    }
+    // 区間の後半にある最後の無音で切る。無ければ端で切る（語が割れるが、消えるよりよい）。
+    const cut = marks.filter((m) => m > at + CHUNK / 2 && m <= at + CHUNK).pop() ?? at + CHUNK;
+    out.push([at, cut - at]);
+    at = cut;
+  }
+  return out;
+}
 app.post("/api/transcribe", async (c) => {
   const file = (await c.req.formData()).get("audio");
   if (!(file instanceof File)) return c.json({ error: "audio が無い" }, 400);
@@ -598,32 +634,40 @@ app.post("/api/transcribe", async (c) => {
       "pcm_s16le",
       wav,
     ]);
-    await run(
-      "whisper-cli",
-      // prettier-ignore
-      [
-        "-m",
-        path.join(MODELS, "ggml-kotoba-whisper-v2.0-q5_0.bin"),
-        "-l",
-        "ja",
-        "-f",
-        wav,
-        "-np",
-        "-oj",
-        "-of",
-        path.join(dir, "out"),
-      ],
-      { timeout: 600_000 },
-    );
-    const j = JSON.parse(await fs.promises.readFile(path.join(dir, "out.json"), "utf8")) as {
-      transcription: { text: string }[];
-    };
-    return c.json({
-      text: j.transcription
-        .map((t) => t.text)
-        .join("")
-        .trim(),
-    });
+    // ffmpeg に固定の形式で出させているので、長さはバイト数から出る（16kHz mono 16bit + 44 の頭）。
+    const total = ((await fs.promises.stat(wav)).size - 44) / 32000;
+    const spans = spansOf(total, total > CHUNK ? await silences(wav) : []);
+
+    const parts: string[] = [];
+    for (const [i, [start, dur]] of spans.entries()) {
+      const out = path.join(dir, `out${i}`);
+      await run(
+        "whisper-cli",
+        // prettier-ignore
+        [
+          "-m",
+          path.join(MODELS, "ggml-kotoba-whisper-v2.0-q5_0.bin"),
+          "-l",
+          "ja",
+          "-f",
+          wav,
+          "-np",
+          "-ot",
+          String(Math.round(start * 1000)),
+          "-d",
+          String(Math.round(dur * 1000)),
+          "-oj",
+          "-of",
+          out,
+        ],
+        { timeout: 600_000 },
+      );
+      const j = JSON.parse(await fs.promises.readFile(`${out}.json`, "utf8")) as {
+        transcription: { text: string }[];
+      };
+      parts.push(j.transcription.map((t) => t.text).join(""));
+    }
+    return c.json({ text: parts.join("").trim() });
   } catch (e) {
     // 失敗の全文には一時ファイルの絶対パスが混ざる。画面へは出さず、手元のログに残す。
     const m = e instanceof Error ? e.message : String(e);

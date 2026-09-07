@@ -332,9 +332,53 @@ function Chat() {
 
         {/* **候補は横に並べる。**絶対配置で右へ浮かすと、窓が狭いときに画面の外へ出る
             （1400px 幅で溢れる）。列にしておけば、狭ければ本文が縮むだけで崩れない。 */}
-        <div className="mx-auto flex w-full max-w-[61.75rem] flex-none items-end justify-center gap-5 px-6 pb-6">
+        <div className="mx-auto w-full max-w-[41.5rem] flex-none px-6 pb-6">
+          {(polishing || options.length > 0) && (
+            <aside className="mb-2.5 space-y-2">
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
+                  書き直しの候補
+                </span>
+                {options.length > 0 && (
+                  <button
+                    type="button"
+                    className="ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+                    onClick={() => setOptions([])}
+                  >
+                    このままでいい
+                  </button>
+                )}
+              </div>
+              {polishing ? (
+                <div className="flex items-center gap-2 rounded-xl border border-dashed p-3 text-[12px] text-muted-foreground">
+                  <Spinner className="size-3" />
+                  読める文に直しています
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {options.map((o) => (
+                    <button
+                      key={o.label}
+                      type="button"
+                      onClick={() => {
+                        setDraft(o.text);
+                        setOptions([]);
+                      }}
+                      // **中でスクロールさせる。**省略すると、どこが変わったのかを見ずに選ぶことになる。
+                      className="flex max-h-44 flex-col overflow-y-auto rounded-xl border bg-card p-3 text-left transition hover:-translate-y-px hover:border-primary/40 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]"
+                    >
+                      <span className="sticky top-0 bg-card pb-1 font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
+                        {o.label}
+                      </span>
+                      <p className="text-[12.5px] leading-[1.8]">{o.text}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </aside>
+          )}
           <form
-            className="w-full min-w-0 max-w-[41.5rem]"
+            className="w-full min-w-0"
             onSubmit={(e) => {
               e.preventDefault();
               ask(draft);
@@ -359,18 +403,13 @@ function Chat() {
                 <span className="rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
                   {projectLabel}
                 </span>
-                <KbdGroup className="ml-auto">
-                  <Kbd>⌘</Kbd>
-                  <Kbd>⇧</Kbd>
-                  <Kbd>K</Kbd>
-                </KbdGroup>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       type="button"
                       variant={rec ? "default" : "ghost"}
                       size="icon"
-                      className={`size-8 rounded-full ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+                      className={`ml-auto size-8 rounded-full ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
                       onClick={listen}
                       disabled={hearing || preparing || scopeIds.length === 0}
                       aria-label={rec ? "録音を終了" : "録音を開始"}
@@ -423,47 +462,6 @@ function Chat() {
               </div>
             </div>
           </form>
-          {(polishing || options.length > 0) && (
-            <aside className="max-h-[62vh] w-[19rem] flex-none space-y-2 overflow-y-auto">
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
-                  書き直しの候補
-                </span>
-                {options.length > 0 && (
-                  <button
-                    type="button"
-                    className="ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline"
-                    onClick={() => setOptions([])}
-                  >
-                    このままでいい
-                  </button>
-                )}
-              </div>
-              {polishing ? (
-                <div className="flex items-center gap-2 rounded-xl border border-dashed p-3 text-[12px] text-muted-foreground">
-                  <Spinner className="size-3" />
-                  読める文に直しています
-                </div>
-              ) : (
-                options.map((o) => (
-                  <button
-                    key={o.label}
-                    type="button"
-                    onClick={() => {
-                      setDraft(o.text);
-                      setOptions([]);
-                    }}
-                    className="block w-full rounded-xl border bg-card p-3 text-left transition hover:-translate-y-px hover:border-primary/40 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]"
-                  >
-                    <span className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em]">
-                      {o.label}
-                    </span>
-                    <p className="mt-1.5 text-[12.5px] leading-[1.85]">{o.text}</p>
-                  </button>
-                ))
-              )}
-            </aside>
-          )}
         </div>
       </div>
     </div>
