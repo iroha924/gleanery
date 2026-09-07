@@ -176,7 +176,9 @@ function Chat() {
       toast.error("マイクを使えなかった");
       return;
     }
-    const m = new MediaRecorder(stream);
+    // **24kbps で録る。**API の上限は 25MB で、既定の 128kbps だと 1 時間の会議で超える。
+    // 音声認識にはこれで足りる（人の声の帯域しか要らない）。
+    const m = new MediaRecorder(stream, { audioBitsPerSecond: 24_000 });
     const chunks: Blob[] = [];
     m.ondataavailable = (e) => chunks.push(e.data);
     m.onstop = async () => {

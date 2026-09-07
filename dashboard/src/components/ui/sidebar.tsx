@@ -17,7 +17,7 @@ const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 // **割合にしない。**窓を狭めると項目名が読めなくなる。最長の項目「作業の現在地」は
 // 和文 13px で約 78px、これにアイコンと余白が付くので、固定で余裕を持たせる。
-const SIDEBAR_WIDTH = "14rem";
+const SIDEBAR_WIDTH = "17rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";

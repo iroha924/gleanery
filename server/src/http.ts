@@ -4,11 +4,9 @@
 // **資格情報はブラウザへ出さない。**DB と Voyage を触るのはここだけで、
 // 画面は HTTP しか知らない。接続は読み取り専用ロールで張る（書き込み経路を作らない）。
 
-import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -560,123 +558,33 @@ app.delete("/api/chats/:id", async (c) => {
   }
 });
 
-const MODELS = path.join(os.homedir(), ".cache/mitos/models");
-const run = promisify(execFile);
-
 /**
- * 手元で音声を文字にする。**音声も文字起こしも外へ出ない** — whisper.cpp が手元で回る。
+ * 音声を文字にする。**手元の whisper.cpp をやめて API にした。**同じ 50.6 秒で測ったとき、
+ * 手元の最良（large-v3-turbo）が「退避させる」を「対比させる」と外したのに対し、
+ * whisper-1 は誤りが 0 だった。kotoba-whisper は 20.7 秒で打ち切っていた。
  *
- * 引数は 27.2 秒の日本語で測って決めた（q5_0 で 1.18 秒）。**どれも外すと壊れる。**
- * `-nt` は付けない（付けると末尾のセグメントが落ちる）。`--prompt` は渡さない
- * （用語を渡すと先頭に "The" が付き「310」が「31010」に化ける）。VAD も使わない（速度は同じで、
- * 区切りが粗くなる分だけ文が消える）。どれも distil の decoder が 2 層しかないことに由来する。
- *
- * **20 秒を超えると、それ以降が丸ごと消える。**50.6 秒の音声で 20.7 秒までしか出なかった。
- * VAD を入れても変わらない（同じ 20.7 秒で止まる）ので、こちらで切ってから渡す。
+ * **音声はブラウザが録った形のまま送る。**変換も分割も要らない
+ * （webm はそのまま受け付けるので、ffmpeg を挟むと欠ける経路が増えるだけ）。
  */
-const CHUNK = 20;
-
-/**
- * 無音の位置。**切れ目をここへ置く。**固定長で切ると境界で語が割れる
- * （実測:「インデックス」が「インデッ」と「インデックス」に分かれた）。
- */
-async function silences(wav: string): Promise<number[]> {
-  const { stderr } = await run("ffmpeg", [
-    "-i",
-    wav,
-    "-af",
-    "silencedetect=n=-35dB:d=0.25",
-    "-f",
-    "null",
-    "-",
-  ]);
-  return [...stderr.matchAll(/silence_start: ([\d.]+)/g)].map((m) => Number(m[1]));
-}
-
-/** 処理する区間。[開始秒, 長さ秒] の並び。 */
-function spansOf(total: number, marks: number[]): [number, number][] {
-  const out: [number, number][] = [];
-  let at = 0;
-  while (at < total) {
-    if (total - at <= CHUNK) {
-      out.push([at, total - at]);
-      break;
-    }
-    // 区間の後半にある最後の無音で切る。無ければ端で切る（語が割れるが、消えるよりよい）。
-    const cut = marks.filter((m) => m > at + CHUNK / 2 && m <= at + CHUNK).pop() ?? at + CHUNK;
-    out.push([at, cut - at]);
-    at = cut;
-  }
-  return out;
-}
 app.post("/api/transcribe", async (c) => {
   const file = (await c.req.formData()).get("audio");
   if (!(file instanceof File)) return c.json({ error: "audio が無い" }, 400);
-  if (file.size > 50_000_000) return c.json({ error: "音声が大きすぎる" }, 413);
+  // API の上限。24kbps で録っているので、これに当たるのは 2 時間を超えたとき。
+  if (file.size > 25_000_000) return c.json({ error: "音声が長すぎる（25MB まで）" }, 413);
+  if (!env.OPENAI_API_KEY) return c.json({ error: "OPENAI_API_KEY が無い" }, 500);
 
-  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "mitos-asr-"));
   try {
-    const src = path.join(dir, "in");
-    await fs.promises.writeFile(src, Buffer.from(await file.arrayBuffer()));
-    // ブラウザは webm/opus を出す。whisper.cpp は 16kHz mono の PCM しか受けない。
-    const wav = path.join(dir, "a.wav");
-    await run("ffmpeg", [
-      "-loglevel",
-      "error",
-      "-y",
-      "-i",
-      src,
-      "-ar",
-      "16000",
-      "-ac",
-      "1",
-      "-c:a",
-      "pcm_s16le",
-      wav,
-    ]);
-    // ffmpeg に固定の形式で出させているので、長さはバイト数から出る（16kHz mono 16bit + 44 の頭）。
-    const total = ((await fs.promises.stat(wav)).size - 44) / 32000;
-    const spans = spansOf(total, total > CHUNK ? await silences(wav) : []);
-
-    const parts: string[] = [];
-    for (const [i, [start, dur]] of spans.entries()) {
-      const out = path.join(dir, `out${i}`);
-      await run(
-        "whisper-cli",
-        // prettier-ignore
-        [
-          "-m",
-          path.join(MODELS, "ggml-kotoba-whisper-v2.0-q5_0.bin"),
-          "-l",
-          "ja",
-          "-f",
-          wav,
-          "-np",
-          "-ot",
-          String(Math.round(start * 1000)),
-          "-d",
-          String(Math.round(dur * 1000)),
-          "-oj",
-          "-of",
-          out,
-        ],
-        { timeout: 600_000 },
-      );
-      const j = JSON.parse(await fs.promises.readFile(`${out}.json`, "utf8")) as {
-        transcription: { text: string }[];
-      };
-      parts.push(j.transcription.map((t) => t.text).join(""));
-    }
-    return c.json({ text: parts.join("").trim() });
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    const r = await openai.audio.transcriptions.create({
+      file,
+      model: "whisper-1",
+      language: "ja",
+    });
+    return c.json({ text: r.text.trim() });
   } catch (e) {
-    // 失敗の全文には一時ファイルの絶対パスが混ざる。画面へは出さず、手元のログに残す。
     const m = e instanceof Error ? e.message : String(e);
     console.error("transcribe:", m);
-    if (/ENOENT/.test(m)) return c.json({ error: "whisper-cli か ffmpeg が入っていない" }, 500);
-    if (/ffmpeg/.test(m)) return c.json({ error: "音声として読めなかった" }, 400);
     return c.json({ error: "文字起こしに失敗した" }, 500);
-  } finally {
-    await fs.promises.rm(dir, { recursive: true, force: true });
   }
 });
 

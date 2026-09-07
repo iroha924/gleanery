@@ -268,7 +268,7 @@ export const api = {
     if (!res.ok) throw new Error(json.error ?? `整形が ${res.status}`);
     return json.options ?? [];
   },
-  /** 話した音を手元で文字にする。**音も文字も外へ出ない**（whisper.cpp が手元で回る）。 */
+  /** 話した音を文字にする。 */
   transcribe: async (audio: Blob): Promise<string> => {
     const form = new FormData();
     form.append("audio", audio, "a.webm");
