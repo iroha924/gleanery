@@ -57,7 +57,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="group flex w-full items-start gap-3 rounded-md border bg-card px-4 py-3 text-left transition hover:-translate-y-px hover:border-primary/40 hover:shadow-[0_2px_10px_rgba(0,0,0,0.05)]"
+          className="group flex w-full items-start gap-3 rounded-md border bg-card px-4 py-3 text-left transition-colors hover:border-foreground/25 hover:bg-accent/40"
         >
           <Dot polarity={n.polarity} />
           <span className="min-w-0 flex-1 text-[14px] leading-[1.9]">{n.text}</span>
@@ -146,7 +146,7 @@ function RecordPage() {
   return (
     <article className="mx-auto w-full max-w-[83rem] space-y-10">
       <header className="max-w-[110ch] space-y-3">
-        <h1 className="text-2xl font-semibold leading-tight">{data.title}</h1>
+        <h1 className="text-2xl font-semibold leading-tight tracking-[-0.01em]">{data.title}</h1>
         <p className="text-xs text-muted-foreground">
           {data.scope_label} · {data.status}
           {data.branch && ` · ${data.branch}`} · 更新 {data.updated_at.slice(0, 10)}

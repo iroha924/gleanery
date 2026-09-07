@@ -696,6 +696,39 @@ app.post("/api/chat", async (c) => {
   });
 });
 
+const TITLE = `会話の題を 1 つ作る。出力は題だけで、前置きも引用符も付けない。
+
+- 日本語で 20 文字以内。体言止め。
+- 何の話だったかが分かる固有の語を必ず入れる（画面名・ファイル名・技術名・決めた事柄）。
+- 「〜について」「〜の質問」「記録の確認」のような、中身の無い言い方をしない。
+- 句読点・鉤括弧・絵文字を付けない。`;
+
+/**
+ * 履歴に出す題。**質問をそのまま切り取らない。**
+ * 話し言葉の質問（「今どこまで進んでて、次何する?」）がそのまま並ぶと、
+ * 一覧で何の話だったかが読み取れない。答えの中身まで見て名前を付ける。
+ */
+async function titleFor(question: string, answer: string): Promise<string | null> {
+  if (!env.OPENAI_API_KEY) return null;
+  try {
+    const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    const r = await openai.responses.create({
+      model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+      reasoning: { effort: "none" },
+      instructions: TITLE,
+      input: `質問: ${question}\n\n答え: ${answer.slice(0, 2000)}`,
+    });
+    const t = r.output_text
+      .trim()
+      .replace(/^["「『]|["」』]$/g, "")
+      .trim();
+    return t ? t.slice(0, 60) : null;
+  } catch (e) {
+    console.error("title:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 /** 1 往復を履歴へ。会話が無ければ作る。 */
 async function saveTurn(
   body: ChatBody & { chatId?: string; scopeName?: string },
@@ -706,9 +739,12 @@ async function saveTurn(
   const w = await cfg();
   let chatId = body.chatId;
   if (!chatId) {
+    const question = body.question ?? "";
+    // 付けられなければ質問で代用する。**題が無くて履歴から消えるより、粗い題のほうがいい。**
+    const title = (await titleFor(question, answer)) ?? question.slice(0, 120);
     const r = await w.query<{ id: string }>(
       "insert into chat (title, scope_ids, scope_name) values ($1,$2,$3) returning id",
-      [(body.question ?? "").slice(0, 120), ids, body.scopeName ?? null],
+      [title, ids, body.scopeName ?? null],
     );
     chatId = r.rows[0]?.id;
     if (!chatId) throw new Error("会話を作れなかった");

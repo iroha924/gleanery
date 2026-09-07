@@ -151,7 +151,9 @@ function Mtg() {
                 <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
                   <MarkerContent>いま聞かれています</MarkerContent>
                 </Marker>
-                <h2 className="mt-1.5 font-extrabold text-[1.4rem] leading-[1.6]">{reply.asked}</h2>
+                <h2 className="mt-1.5 font-semibold text-[1.4rem] leading-[1.6] tracking-[-0.01em]">
+                  {reply.asked}
+                </h2>
               </div>
 
               {reply.missing || reply.replies.length === 0 ? (
@@ -190,7 +192,9 @@ function Mtg() {
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <h1 className="font-extrabold text-2xl">{on ? "聞いています" : "会議を聞き取る"}</h1>
+              <h1 className="font-semibold text-2xl tracking-[-0.01em]">
+                {on ? "聞いています" : "会議を聞き取る"}
+              </h1>
               <p className="max-w-[30rem] text-muted-foreground text-sm leading-[2]">
                 {on ? (
                   <>

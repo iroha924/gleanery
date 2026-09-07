@@ -329,17 +329,20 @@ function Chat() {
   };
 
   return (
-    // **1 往復を 1 本の短い記事として読ませる** — 質問が見出し、答えが本文、
-    // 根拠が末尾の脚注。吹き出しの往復にしない。
+    // **往復として読ませる。**自分の発言は右に寄せた吹き出し、答えは地の文。
+    // 質問を見出しにしていたときは、聞いた本人の一言が記事の題に化けて、
+    // 続けて聞くほど「誰が書いたのか」が読めなくなっていた。
     <div className="-m-4 flex h-[calc(100vh-3.5rem)]">
       <div className="flex min-w-0 flex-1 flex-col">
         <MessageScrollerProvider>
           <MessageScroller className="flex-1">
             <MessageScrollerViewport>
-              <MessageScrollerContent aria-busy={busy} className="mx-auto w-full max-w-[83rem] px-6 pb-10">
+              <MessageScrollerContent aria-busy={busy} className="mx-auto w-full max-w-[64rem] px-6 pb-10">
                 {turns.length === 0 && (
                   <div className="pt-24 text-center">
-                    <h2 className="font-extrabold text-2xl leading-relaxed">記録について聞く</h2>
+                    <h2 className="font-semibold text-2xl leading-[1.5] tracking-[-0.01em]">
+                      記録について聞く
+                    </h2>
                     <p className="mx-auto mt-3 max-w-96 text-muted-foreground text-sm leading-loose">
                       保存されているものだけで答えます。記録に無いことは「無い」と答え、
                       答えには根拠が付きます。
@@ -356,23 +359,19 @@ function Chat() {
                   </div>
                 )}
 
-                {turns.map((t, i) =>
+                {turns.map((t) =>
                   t.role === "user" ? (
                     <MessageScrollerItem key={t.id} messageId={t.id} scrollAnchor>
-                      {/* 質問が見出しになる。日付と範囲をその上に小さく乗せる */}
-                      <div className={i === 0 ? "pt-4" : "pt-14"}>
-                        <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
-                          <MarkerContent>
-                            {new Date().toLocaleDateString("sv-SE").replaceAll("-", ".")} · {projectLabel}
-                          </MarkerContent>
-                        </Marker>
-                        <h2 className="mt-3 font-extrabold text-[1.7rem] leading-[1.62]">{t.content}</h2>
-                        <div className="mt-5 h-px bg-border" />
+                      <div className="flex justify-end pt-9">
+                        {/* **改行を保つ。**貼り付けた箇条書きが 1 行に潰れると、何を聞いたのか読めない。 */}
+                        <div className="max-w-[75%] whitespace-pre-wrap rounded-lg bg-secondary px-4 py-2.5 text-[14px] leading-[1.9]">
+                          {t.content}
+                        </div>
                       </div>
                     </MessageScrollerItem>
                   ) : (
                     <MessageScrollerItem key={t.id} messageId={t.id}>
-                      <div className="mt-6 space-y-5">
+                      <div className="mt-5 space-y-5">
                         {t.content && <Answer text={t.content} />}
                         {!t.content && !t.error && busy && (
                           <p className="flex items-center gap-2 text-muted-foreground text-sm">
@@ -393,7 +392,7 @@ function Chat() {
 
         {/* **候補は横に並べる。**絶対配置で右へ浮かすと、窓が狭いときに画面の外へ出る
             （1400px 幅で溢れる）。列にしておけば、狭ければ本文が縮むだけで崩れない。 */}
-        <div className="mx-auto w-full max-w-[83rem] flex-none px-6 pb-6">
+        <div className="mx-auto w-full max-w-[64rem] flex-none px-6 pb-6">
           {(polishing || options.length > 0) && (
             <aside className="mb-2.5 space-y-2">
               <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
@@ -423,7 +422,7 @@ function Chat() {
                         setDraft(o.text);
                         setOptions([]);
                       }}
-                      className="group flex flex-col overflow-hidden rounded-md border bg-card text-left transition hover:border-primary/45 hover:shadow-[0_3px_14px_rgba(0,0,0,0.06)]"
+                      className="group flex flex-col overflow-hidden rounded-md border bg-card text-left transition-colors hover:border-foreground/25 hover:bg-accent/40"
                     >
                       {/* **見出しは本文の外に置く。**中に重ねると、スクロールした本文が透ける。 */}
                       <span className="flex flex-none items-baseline gap-2 border-b bg-secondary/40 px-3 py-1.5 font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em] transition-colors group-hover:text-foreground">
@@ -452,7 +451,7 @@ function Chat() {
               ask(draft);
             }}
           >
-            <div className="rounded-md border bg-card px-6 py-4 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_26px_rgba(0,0,0,0.045)]">
+            <div className="rounded-md border bg-card px-6 py-4 shadow-xs">
               <Textarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}

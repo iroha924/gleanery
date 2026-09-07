@@ -39,6 +39,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { api } from "@/lib/api";
 import { useProject } from "@/lib/project";
 
+/** 履歴に常に出す件数。これを超えたぶんは畳む。 */
+const SHOWN = 10;
+
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { scopeIds } = useProject();
   const qc = useQueryClient();
@@ -53,6 +56,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
     queryFn: () => api.records(scopeIds),
   });
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const [showAll, setShowAll] = useState(false);
 
   return (
     <Sidebar {...props}>
@@ -89,7 +93,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             {chats.data && chats.data.length > 0 && (
               <SidebarMenuItem>
                 <SidebarMenuSub>
-                  {chats.data.slice(0, 10).map((h) => (
+                  {chats.data.slice(0, showAll ? undefined : SHOWN).map((h) => (
                     <SidebarMenuSubItem key={h.id} className="group/chat relative">
                       <SidebarMenuSubButton asChild isActive={path === "/" && openChat === h.id}>
                         <Link to="/" search={{ chat: h.id }}>
@@ -116,6 +120,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                       </ConfirmDelete>
                     </SidebarMenuSubItem>
                   ))}
+                  {/* **古い会話は畳む。**全部並べると、下にある「会議を聞き取る」「記録を探す」が
+                      画面外へ押し出される。押せば残りも出る。 */}
+                  {!showAll && chats.data.length > SHOWN && (
+                    <SidebarMenuSubItem>
+                      <SidebarMenuSubButton onClick={() => setShowAll(true)}>
+                        <span className="text-sidebar-foreground/60">
+                          ほか {chats.data.length - SHOWN} 件
+                        </span>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  )}
                 </SidebarMenuSub>
               </SidebarMenuItem>
             )}
