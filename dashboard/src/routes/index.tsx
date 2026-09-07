@@ -1,11 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowUpIcon, MicIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, CheckIcon, CopyIcon, MicIcon, SquareIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
-import { Bubble, BubbleContent, BubbleGroup } from "@/components/ui/bubble";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,8 +16,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupText,
+  InputGroupTextarea,
+} from "@/components/ui/input-group";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Marker, MarkerContent } from "@/components/ui/marker";
+import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -27,7 +36,6 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, askStream, type ChatSource, type PolishOption } from "@/lib/api";
 import { polarityClass } from "@/lib/polarity";
@@ -135,6 +143,31 @@ function Source({ s }: { s: ChatSource }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 写す。**ホバーで出す** — 常に出しておくと、読んでいる行の脇で常時ちらつく。
+ * 押した後に印を変えるのは、写せたかが他に分からないため（二度押しの原因になる）。
+ */
+function Copy({ text, label }: { text: string; label: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={label}
+      className="size-7 text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover/message:opacity-100"
+      onClick={() => {
+        navigator.clipboard.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        });
+      }}
+    >
+      {done ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+    </Button>
   );
 }
 
@@ -340,15 +373,17 @@ function Chat() {
             <MessageScrollerViewport>
               <MessageScrollerContent aria-busy={busy} className="mx-auto w-full max-w-[64rem] px-6 pb-10">
                 {turns.length === 0 && (
-                  <div className="pt-24 text-center">
-                    <h2 className="font-semibold text-2xl leading-[1.5] tracking-[-0.01em]">
-                      記録について聞く
-                    </h2>
-                    <p className="mx-auto mt-3 max-w-96 text-muted-foreground text-sm leading-loose">
-                      保存されているものだけで答えます。記録に無いことは「無い」と答え、
-                      答えには根拠が付きます。
-                    </p>
-                    <div className="mt-7 flex flex-wrap justify-center gap-2">
+                  <Empty className="min-h-[55vh] border-none">
+                    <EmptyHeader className="max-w-md">
+                      <EmptyTitle className="text-2xl leading-[1.5] tracking-[-0.01em]">
+                        記録について聞く
+                      </EmptyTitle>
+                      <EmptyDescription className="text-pretty leading-loose">
+                        保存されているものだけで答えます。記録に無いことは「無い」と答え、
+                        答えには根拠が付きます。
+                      </EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent className="mt-3 max-w-2xl flex-row flex-wrap justify-center gap-2">
                       {EXAMPLES.map((q) => (
                         <Badge key={q} asChild variant="outline" className="rounded-md font-normal">
                           <button type="button" onClick={() => ask(q)}>
@@ -356,34 +391,47 @@ function Chat() {
                           </button>
                         </Badge>
                       ))}
-                    </div>
-                  </div>
+                    </EmptyContent>
+                  </Empty>
                 )}
 
                 {turns.map((t) =>
                   t.role === "user" ? (
                     <MessageScrollerItem key={t.id} messageId={t.id} scrollAnchor>
-                      <BubbleGroup className="pt-9">
-                        <Bubble align="end" variant="secondary">
-                          {/* **改行を保つ。**貼り付けた箇条書きが 1 行に潰れると、何を聞いたのか読めない。 */}
-                          <BubbleContent className="whitespace-pre-wrap px-4 py-2.5 text-[14px] leading-[1.9]">
-                            {t.content}
-                          </BubbleContent>
-                        </Bubble>
-                      </BubbleGroup>
+                      <Message align="end" className="pt-9">
+                        <MessageContent>
+                          <Bubble align="end" variant="secondary">
+                            {/* **改行を保つ。**貼り付けた箇条書きが 1 行に潰れると、何を聞いたのか読めない。 */}
+                            <BubbleContent className="whitespace-pre-wrap px-4 py-2.5 text-[14px] leading-[1.9]">
+                              {t.content}
+                            </BubbleContent>
+                          </Bubble>
+                          <MessageFooter className="px-0">
+                            <Copy text={t.content} label="質問を写す" />
+                          </MessageFooter>
+                        </MessageContent>
+                      </Message>
                     </MessageScrollerItem>
                   ) : (
                     <MessageScrollerItem key={t.id} messageId={t.id}>
-                      <div className="mt-5 space-y-5">
-                        {t.content && <Answer text={t.content} />}
-                        {!t.content && !t.error && busy && (
-                          <p className="flex items-center gap-2 text-muted-foreground text-sm">
-                            <Spinner /> 記録を探しています
-                          </p>
-                        )}
-                        {t.error && <p className="text-dont text-sm">{t.error}</p>}
-                        {t.sources && <Sources sources={t.sources} busy={busy && !t.content} />}
-                      </div>
+                      <Message className="pt-4">
+                        <MessageContent className="gap-5">
+                          {t.content && <Answer text={t.content} />}
+                          {!t.content && !t.error && busy && (
+                            <p className="flex items-center gap-2 text-muted-foreground text-sm">
+                              <Spinner /> 記録を探しています
+                            </p>
+                          )}
+                          {t.error && <p className="text-dont text-sm">{t.error}</p>}
+                          {t.sources && <Sources sources={t.sources} busy={busy && !t.content} />}
+                          {/* 流し終えるまで出さない。**途中の本文を写しても使えない。** */}
+                          {t.content && !busy && (
+                            <MessageFooter className="px-0">
+                              <Copy text={t.content} label="答えを写す" />
+                            </MessageFooter>
+                          )}
+                        </MessageContent>
+                      </Message>
                     </MessageScrollerItem>
                   ),
                 )}
@@ -395,7 +443,9 @@ function Chat() {
 
         {/* **候補は横に並べる。**絶対配置で右へ浮かすと、窓が狭いときに画面の外へ出る
             （1400px 幅で溢れる）。列にしておけば、狭ければ本文が縮むだけで崩れない。 */}
-        <div className="mx-auto w-full max-w-[64rem] flex-none px-6 pb-6">
+        <div className="relative mx-auto w-full max-w-[64rem] flex-none px-6 pb-6">
+          {/* 上の本文が入力欄の縁で断ち切られると、続きがあるのか終わりなのか分からない。 */}
+          <div className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-background to-transparent" />
           {(polishing || options.length > 0) && (
             <aside className="mb-2.5 space-y-2">
               <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
@@ -454,8 +504,10 @@ function Chat() {
               ask(draft);
             }}
           >
-            <div className="rounded-md border bg-card px-6 py-4 shadow-xs">
-              <Textarea
+            {/* **入力欄は伸びる。**textarea の field-sizing-content が効くので、
+                長い質問でも 8 行までは全文が見えたまま書ける。 */}
+            <InputGroup className="rounded-xl bg-card shadow-xs">
+              <InputGroupTextarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -467,19 +519,18 @@ function Chat() {
                 }}
                 placeholder={scopeIds.length === 0 ? "左でプロジェクトを選んでください" : "続けて聞く"}
                 disabled={scopeIds.length === 0}
-                className="-m-2 min-h-12 resize-none border-none bg-transparent p-2 text-[15px] leading-[2.15] shadow-none focus-visible:ring-0"
+                className="max-h-64 min-h-14 px-4 pt-3.5 text-[15px] leading-[2.05]"
               />
-              <div className="flex items-center gap-2 pt-2">
-                <span className="rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
+              <InputGroupAddon align="block-end" className="gap-1.5 px-3 pb-2.5">
+                <InputGroupText className="rounded-md border px-2 py-0.5 font-mono text-[9px]">
                   {projectLabel}
-                </span>
+                </InputGroupText>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Button
-                      type="button"
+                    <InputGroupButton
+                      size="icon-sm"
                       variant={rec ? "default" : "ghost"}
-                      size="icon"
-                      className={`ml-auto size-8 rounded-md ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+                      className={`ml-auto ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
                       onClick={listen}
                       disabled={hearing || preparing || scopeIds.length === 0}
                       aria-label={rec ? "録音を終了" : "録音を開始"}
@@ -491,7 +542,7 @@ function Chat() {
                       ) : (
                         <MicIcon className="size-4" />
                       )}
-                    </Button>
+                    </InputGroupButton>
                   </TooltipTrigger>
                   <TooltipContent className="flex items-center gap-2">
                     {hearing
@@ -509,28 +560,42 @@ function Chat() {
                   </TooltipContent>
                 </Tooltip>
                 {busy ? (
-                  <Button
-                    type="button"
+                  <InputGroupButton
+                    size="icon-sm"
                     variant="outline"
-                    size="sm"
-                    className="rounded-md"
                     onClick={() => abort.current?.abort()}
+                    aria-label="止める"
                   >
-                    止める
-                  </Button>
+                    <SquareIcon className="size-3" />
+                  </InputGroupButton>
                 ) : (
-                  <Button
-                    type="submit"
-                    size="icon"
-                    className="size-8 rounded-md"
-                    disabled={!draft.trim() || scopeIds.length === 0}
-                    aria-label="送る"
-                  >
-                    <ArrowUpIcon className="size-4" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <InputGroupButton
+                        type="submit"
+                        size="icon-sm"
+                        variant="default"
+                        // **disabled にしない。**InputGroup は has-disabled で枠ごと薄くするので、
+                        // 書き始める前の入力欄が「使えない欄」に見えていた。送れないことはボタン
+                        // 自身の濃さで示し、押下は ask() が空文字で弾く。
+                        aria-disabled={!draft.trim() || scopeIds.length === 0}
+                        className="aria-disabled:pointer-events-none aria-disabled:opacity-40"
+                        aria-label="送る"
+                      >
+                        <ArrowUpIcon className="size-4" />
+                      </InputGroupButton>
+                    </TooltipTrigger>
+                    <TooltipContent className="flex items-center gap-2">
+                      送る
+                      <KbdGroup>
+                        <Kbd>⌘</Kbd>
+                        <Kbd>⏎</Kbd>
+                      </KbdGroup>
+                    </TooltipContent>
+                  </Tooltip>
                 )}
-              </div>
-            </div>
+              </InputGroupAddon>
+            </InputGroup>
           </form>
         </div>
       </div>
