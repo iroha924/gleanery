@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
+import { Bubble, BubbleContent, BubbleGroup } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -362,12 +363,14 @@ function Chat() {
                 {turns.map((t) =>
                   t.role === "user" ? (
                     <MessageScrollerItem key={t.id} messageId={t.id} scrollAnchor>
-                      <div className="flex justify-end pt-9">
-                        {/* **改行を保つ。**貼り付けた箇条書きが 1 行に潰れると、何を聞いたのか読めない。 */}
-                        <div className="max-w-[75%] whitespace-pre-wrap rounded-lg bg-secondary px-4 py-2.5 text-[14px] leading-[1.9]">
-                          {t.content}
-                        </div>
-                      </div>
+                      <BubbleGroup className="pt-9">
+                        <Bubble align="end" variant="secondary">
+                          {/* **改行を保つ。**貼り付けた箇条書きが 1 行に潰れると、何を聞いたのか読めない。 */}
+                          <BubbleContent className="whitespace-pre-wrap px-4 py-2.5 text-[14px] leading-[1.9]">
+                            {t.content}
+                          </BubbleContent>
+                        </Bubble>
+                      </BubbleGroup>
                     </MessageScrollerItem>
                   ) : (
                     <MessageScrollerItem key={t.id} messageId={t.id}>
