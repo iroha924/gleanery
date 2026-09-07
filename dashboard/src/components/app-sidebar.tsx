@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   HeadphonesIcon,
   ListChecksIcon,
@@ -7,17 +7,20 @@ import {
   PlayIcon,
   SearchIcon,
   SettingsIcon,
+  Trash2Icon,
 } from "lucide-react";
 import type * as React from "react";
+import { useState } from "react";
+import { ConfirmDelete } from "@/components/confirm-delete";
+import { Marker, MarkerContent } from "@/components/ui/marker";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  NavigationMenu,
+  NavigationMenuContent,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+  NavigationMenuTrigger,
+} from "@/components/ui/navigation-menu";
 import {
   Sidebar,
   SidebarContent,
@@ -38,6 +41,13 @@ import { useProject } from "@/lib/project";
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { scopeIds } = useProject();
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const chats = useQuery({ queryKey: ["chats"], queryFn: api.chats });
+  // いま開いている会話。URL が持っているので、画面をまたいでも一致する。
+  const openChat = useRouterState({
+    select: (s) => (s.location.search as { chat?: string }).chat,
+  });
   const { data: records } = useQuery({
     queryKey: ["records", scopeIds],
     queryFn: () => api.records(scopeIds),
@@ -66,12 +76,50 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuItem>
 
             <SidebarMenuItem>
-              <SidebarMenuButton asChild isActive={path === "/"}>
-                <Link to="/">
+              {/* 会話を開いている間は光らせない。**下の履歴と二重に光ると、いまどれを読んで
+                  いるのかが読めなくなる。**押せば新しい会話へ戻る、はそのまま効く。 */}
+              <SidebarMenuButton asChild isActive={path === "/" && !openChat}>
+                <Link to="/" search={{}}>
                   <MessageSquareIcon /> 質問する
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
+            {/* **履歴はここに置く。**会話は画面ではなく道具の状態なので、本文の上に
+                切り替え役を置くと、読んでいる最中に目に入り続ける。 */}
+            {chats.data && chats.data.length > 0 && (
+              <SidebarMenuItem>
+                <SidebarMenuSub>
+                  {chats.data.slice(0, 10).map((h) => (
+                    <SidebarMenuSubItem key={h.id} className="group/chat relative">
+                      <SidebarMenuSubButton asChild isActive={path === "/" && openChat === h.id}>
+                        <Link to="/" search={{ chat: h.id }}>
+                          <span className="truncate pr-5">{h.title ?? "（無題）"}</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                      <ConfirmDelete
+                        what={h.title ?? "この会話"}
+                        note="この会話だけが消えます。記録は残ります。"
+                        onConfirm={() => {
+                          api.deleteChat(h.id).then(() => {
+                            qc.invalidateQueries({ queryKey: ["chats"] });
+                            if (openChat === h.id) navigate({ to: "/", search: {} });
+                          });
+                        }}
+                      >
+                        <button
+                          type="button"
+                          aria-label={`「${h.title ?? "この会話"}」を消す`}
+                          className="absolute top-1 right-1 rounded-md p-1 text-sidebar-foreground/50 opacity-0 transition hover:bg-sidebar-accent hover:text-sidebar-foreground group-hover/chat:opacity-100"
+                        >
+                          <Trash2Icon className="size-3" />
+                        </button>
+                      </ConfirmDelete>
+                    </SidebarMenuSubItem>
+                  ))}
+                </SidebarMenuSub>
+              </SidebarMenuItem>
+            )}
+
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={path === "/mtg"}>
                 <Link to="/mtg">
@@ -151,34 +199,62 @@ function ProjectSwitcher() {
   const grouped = new Set(groups.data?.flatMap((g) => g.members.map((m) => m.id)) ?? []);
   const loose = scopes.data?.filter((s) => !grouped.has(s.id)) ?? [];
 
+  // **選んだら閉じる。**NavigationMenu は行き先を持つリンクを前提にしていて、遷移しない
+  // リンクを押しても開いたままになる。開閉を自分で持たないと、選んだ後も一覧が居座る。
+  const [open, setOpen] = useState("");
+  const pick = (v: string) => {
+    setTarget(v);
+    setOpen("");
+  };
+  const Row = ({ value, children }: { value: string; children: React.ReactNode }) => (
+    <NavigationMenuLink
+      active={target === value}
+      onClick={() => pick(value)}
+      className="cursor-pointer truncate rounded-md px-2 py-1.5 text-sm"
+    >
+      {children}
+    </NavigationMenuLink>
+  );
+
   return (
-    <Select value={target} onValueChange={setTarget}>
-      <SelectTrigger className="w-full" aria-label="見るプロジェクト">
-        <SelectValue>{label}</SelectValue>
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="">すべて</SelectItem>
-        {groups.data && groups.data.length > 0 && (
-          <SelectGroup>
-            <SelectLabel>プロジェクト</SelectLabel>
-            {groups.data.map((g) => (
-              <SelectItem key={`g:${g.id}`} value={`g:${g.id}`}>
-                {g.name}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        )}
-        {loose.length > 0 && (
-          <SelectGroup>
-            <SelectLabel>まとめていないもの</SelectLabel>
-            {loose.map((s) => (
-              <SelectItem key={s.id} value={String(s.id)}>
-                {s.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        )}
-      </SelectContent>
-    </Select>
+    <NavigationMenu value={open} onValueChange={setOpen} className="w-full max-w-none [&>div]:w-full">
+      <NavigationMenuList className="w-full">
+        <NavigationMenuItem value="project" className="w-full">
+          <NavigationMenuTrigger
+            className="h-9 w-full justify-between border bg-transparent px-3 font-normal text-sm"
+            aria-label="見るプロジェクト"
+          >
+            <span className="truncate">{label}</span>
+          </NavigationMenuTrigger>
+          <NavigationMenuContent className="w-[15rem] p-1.5">
+            <Row value="">すべて</Row>
+            {groups.data && groups.data.length > 0 && (
+              <>
+                <Marker className="px-2 pt-2.5 pb-1 text-[11px]">
+                  <MarkerContent>プロジェクト</MarkerContent>
+                </Marker>
+                {groups.data.map((g) => (
+                  <Row key={`g:${g.id}`} value={`g:${g.id}`}>
+                    {g.name}
+                  </Row>
+                ))}
+              </>
+            )}
+            {loose.length > 0 && (
+              <>
+                <Marker className="px-2 pt-2.5 pb-1 text-[11px]">
+                  <MarkerContent>まとめていないもの</MarkerContent>
+                </Marker>
+                {loose.map((s) => (
+                  <Row key={s.id} value={String(s.id)}>
+                    {s.label}
+                  </Row>
+                ))}
+              </>
+            )}
+          </NavigationMenuContent>
+        </NavigationMenuItem>
+      </NavigationMenuList>
+    </NavigationMenu>
   );
 }

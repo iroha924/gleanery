@@ -1,10 +1,9 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowUpIcon, MicIcon, SquareIcon, Trash2Icon } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { ArrowUpIcon, MicIcon, SquareIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Answer } from "@/components/answer";
-import { ConfirmDelete } from "@/components/confirm-delete";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,7 +25,6 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -51,7 +49,15 @@ function Marked({ text, marks }: { text: string; marks: string[] }) {
   );
 }
 
-export const Route = createFileRoute("/")({ component: Chat });
+type Search = { chat?: string };
+
+export const Route = createFileRoute("/")({
+  component: Chat,
+  // **開いている会話は URL に持つ。**サイドバーから開けるようにするには状態を共有する必要があり、
+  // Context を足すより URL のほうが素直（再読み込みと戻るがそのまま効く）。
+  validateSearch: (s: Record<string, unknown>): Search =>
+    typeof s.chat === "string" && s.chat ? { chat: s.chat } : {},
+});
 
 type Turn = {
   /** 本文は流れながら伸びるので、内容はキーにできない。追加時に固定の id を振る。 */
@@ -183,22 +189,10 @@ function Chat() {
   const [options, setOptions] = useState<PolishOption[]>([]);
   const [polishing, setPolishing] = useState(false);
   // 開いている会話。**新しい会話は最初の答えが返ってからサーバー側で作られる。**
-  const [chatId, setChatId] = useState<string | undefined>(undefined);
+  const { chat: chatId } = Route.useSearch();
+  const nav = useNavigate({ from: Route.fullPath });
+  const setChatId = (id: string | undefined) => nav({ search: id ? { chat: id } : {} });
   const qc = useQueryClient();
-  const history = useQuery({ queryKey: ["chats"], queryFn: api.chats });
-  /** 過去の会話を開く。いまの会話は捨てる（保存済みなので消えない）。 */
-  const open = async (id: string) => {
-    const c = await api.chat(id);
-    setChatId(c.id);
-    setTurns(
-      c.messages.map((m, i) => ({
-        id: `${c.id}-${i}`,
-        role: m.role,
-        content: m.content,
-        sources: m.sources,
-      })),
-    );
-  };
 
   /** 押すと録り始め、もう一度押すと止めて文字にする。 */
   const listen = async () => {
@@ -267,6 +261,33 @@ function Chat() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // **URL の会話を読み込む。**サイドバーから開いたときも、再読み込みしたときも同じ経路を通る。
+  const loaded = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!chatId) {
+      if (loaded.current) {
+        loaded.current = undefined;
+        setTurns([]);
+      }
+      return;
+    }
+    if (loaded.current === chatId) return;
+    loaded.current = chatId;
+    api
+      .chat(chatId)
+      .then((c) =>
+        setTurns(
+          c.messages.map((m, i) => ({
+            id: `${c.id}-${i}`,
+            role: m.role,
+            content: m.content,
+            sources: m.sources,
+          })),
+        ),
+      )
+      .catch(() => toast.error("会話を開けなかった"));
+  }, [chatId]);
+
   const ask = async (question: string) => {
     setOptions([]);
     if (!question.trim() || busy || scopeIds.length === 0) return;
@@ -307,49 +328,11 @@ function Chat() {
     }
   };
 
-  const fresh = () => {
-    setChatId(undefined);
-    setTurns([]);
-  };
-
   return (
     // **1 往復を 1 本の短い記事として読ませる** — 質問が見出し、答えが本文、
     // 根拠が末尾の脚注。吹き出しの往復にしない。
     <div className="-m-4 flex h-[calc(100vh-3.5rem)]">
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex h-14 flex-none items-center gap-2 px-6">
-          <Select value={chatId ?? ""} onValueChange={(v) => (v ? open(v) : fresh())}>
-            <SelectTrigger className="h-8 w-64 rounded-md border-none bg-transparent text-xs shadow-none hover:bg-secondary">
-              <SelectValue placeholder="新しく聞く" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">新しく聞く</SelectItem>
-              {history.data?.map((h) => (
-                <SelectItem key={h.id} value={h.id}>
-                  {h.title ?? "（無題）"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {/* **開いている会話だけ消せる。**一覧から消すと、どれを消したのか手元に残らない。 */}
-          {chatId && (
-            <ConfirmDelete
-              what={history.data?.find((h) => h.id === chatId)?.title ?? "この会話"}
-              note="この会話だけが消えます。記録は残ります。"
-              onConfirm={() => {
-                api.deleteChat(chatId).then(() => {
-                  qc.invalidateQueries({ queryKey: ["chats"] });
-                  fresh();
-                });
-              }}
-            >
-              <Button variant="ghost" size="icon" className="size-8" aria-label="この会話を消す">
-                <Trash2Icon className="size-3.5" />
-              </Button>
-            </ConfirmDelete>
-          )}
-        </div>
-
         <MessageScrollerProvider>
           <MessageScroller className="flex-1">
             <MessageScrollerViewport>
