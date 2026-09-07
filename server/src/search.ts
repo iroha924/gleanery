@@ -159,9 +159,22 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   if (polarity) filters.push({ sql: (i) => `n.polarity = $${i}`, value: polarity });
   if (kinds?.length) filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
 
-  /** from 番目から採番して where 句を作る。 */
+  /**
+   * from 番目から採番して where 句を作る。
+   *
+   * **発言は種別を指定したときだけ出す。**実測: 全 379 節のうち発言が 159、その 138 が
+   * bot のレビューコメント（"Didn't find any major issues." のような定型文）だった。
+   * 人の発言にも「@codex review」のような定型が並ぶ。判断を引く道具でこれが上位に来ると、
+   * 探しているものが押し出される。**PR は event/pr なので、外しても残る。**
+   *
+   * 発言そのものを引きたいときは、種別を指定するか chat の find_utterances を使う。
+   */
   const clauses = (from: number): string =>
-    ["n.deleted_at is null", ...filters.map((f, i) => f.sql(from + i))].join(" and ");
+    [
+      "n.deleted_at is null",
+      ...(kinds?.length ? [] : ["n.kind <> 'utterance'"]),
+      ...filters.map((f, i) => f.sql(from + i)),
+    ].join(" and ");
   const values = filters.map((f) => f.value);
 
   // bigint は node-postgres が文字列で返す。呼び出し側は数値の配列と突き合わせるので、

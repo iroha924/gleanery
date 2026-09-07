@@ -24128,7 +24128,11 @@ async function search(client, env, o) {
     filters.push({ sql: (i) => `n.polarity = $${i}`, value: polarity });
   if (kinds?.length)
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
-  const clauses = (from) => ["n.deleted_at is null", ...filters.map((f, i) => f.sql(from + i))].join(" and ");
+  const clauses = (from) => [
+    "n.deleted_at is null",
+    ...kinds?.length ? [] : ["n.kind <> 'utterance'"],
+    ...filters.map((f, i) => f.sql(from + i))
+  ].join(" and ");
   const values = filters.map((f) => f.value);
   const COLS = `n.id, n.key, n.kind, n.subkind, n.polarity, n.status, n.at, n.text,
             n.scope_id::int as scope_id,
