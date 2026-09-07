@@ -9,12 +9,12 @@ import { ProjectProvider } from "@/lib/project";
 const TITLES: [string, string][] = [
   ["/records", "記録"],
   ["/projects", "プロジェクトの設定"],
-  ["/people", "人"],
-  ["/terms", "言葉"],
-  ["/chat", "聞く"],
-  ["/advice", "先に言う"],
-  ["/search", "探す"],
-  ["/", "いま"],
+  ["/people", "名簿"],
+  ["/terms", "社内語の辞書"],
+  ["/chat", "質問する"],
+  ["/advice", "編集時の助言"],
+  ["/search", "記録を探す"],
+  ["/", "作業の現在地"],
 ];
 
 /** 幅。**地図の画面だけ全幅にする** — 読む幅（max-w-4xl）に入れると地図が 270px まで潰れた（実測）。 */

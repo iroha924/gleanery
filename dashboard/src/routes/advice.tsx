@@ -28,7 +28,7 @@ function AdvicePage() {
   if (!data || data.runs === 0) {
     return (
       <div className="space-y-2">
-        <h1 className="font-medium text-lg">先に言う</h1>
+        <h1 className="font-medium text-lg">編集時の助言</h1>
         <p className="text-muted-foreground text-sm">
           編集フックがまだ一度も走っていません。Claude Code か Codex でファイルを編集すると、
           そのパスについて過去に言われたことをここに記録します。
@@ -40,7 +40,7 @@ function AdvicePage() {
   return (
     <div className="space-y-8">
       <header className="space-y-1">
-        <h1 className="font-medium text-lg">先に言う</h1>
+        <h1 className="font-medium text-lg">編集時の助言</h1>
         <p className="text-muted-foreground text-sm">
           編集する前に、そのファイルについて過去に言われたことを出す。ここはその効き目。
         </p>

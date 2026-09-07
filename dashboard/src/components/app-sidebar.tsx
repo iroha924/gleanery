@@ -72,7 +72,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={path === "/"}>
                 <Link to="/">
-                  <PlayIcon /> いま
+                  <PlayIcon /> 作業の現在地
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -80,14 +80,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={path === "/chat"}>
                 <Link to="/chat">
-                  <MessageSquareIcon /> 聞く
+                  <MessageSquareIcon /> 質問する
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={path === "/advice"}>
                 <Link to="/advice">
-                  <BellIcon /> 先に言う
+                  <BellIcon /> 編集時の助言
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -95,7 +95,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={path === "/search"}>
                 <Link to="/search">
-                  <SearchIcon /> 探す
+                  <SearchIcon /> 記録を探す
                 </Link>
               </SidebarMenuButton>
               <SidebarMenuSub>
@@ -123,7 +123,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                   ここは記録へ直接入る入口だけを残す。 */}
               <SidebarMenuButton asChild isActive={path.startsWith("/records")}>
                 <Link to="/">
-                  <ListChecksIcon /> 作業
+                  <ListChecksIcon /> 記録
                 </Link>
               </SidebarMenuButton>
               {records && records.length > 0 && (
@@ -164,14 +164,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={path.startsWith("/terms")}>
                 <Link to="/terms">
-                  <BookOpenIcon /> 言葉
+                  <BookOpenIcon /> 社内語の辞書
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton asChild isActive={path.startsWith("/people")}>
                 <Link to="/people">
-                  <UsersIcon /> 人
+                  <UsersIcon /> 名簿
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
