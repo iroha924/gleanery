@@ -88,7 +88,9 @@ function Source({ s }: { s: ChatSource }) {
           className="flex w-full gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] leading-[1.95] transition-colors hover:bg-secondary/70"
         >
           <span className="flex-none pt-0.5 font-mono text-[10.5px] text-muted-foreground">{s.n}</span>
-          <span className="min-w-0 text-foreground/85">
+          {/* **一覧では 2 行で切る。**PR 本文がそのまま入っていると 10 行を超え、
+              どれが何なのか読み取れなくなる。全文は押せば開く。 */}
+          <span className="line-clamp-2 min-w-0 text-foreground/85">
             <span className={`mr-1 ${polarityClass(s.polarity)}`}>{s.label}</span>
             {s.text}
           </span>

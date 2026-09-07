@@ -131,11 +131,12 @@ function SearchPage() {
               <li key={`${h.record_id}:${h.kind}:${h.key}`}>
                 <Card>
                   <CardContent className="space-y-2">
-                    <p className="leading-relaxed">
+                    {/* PR の本文がまるごと入っている件がある。切らないと 1 件で画面が埋まる。 */}
+                    <p className="line-clamp-6 leading-relaxed">
                       <span className={`mr-1 font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
                       {h.text}
                     </p>
-                    {h.ex && <p className="text-sm text-muted-foreground">理由: {h.ex}</p>}
+                    {h.ex && <p className="line-clamp-3 text-muted-foreground text-sm">理由: {h.ex}</p>}
                     <p className="text-xs text-muted-foreground">
                       <Link
                         to="/records/$id"
