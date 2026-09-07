@@ -14,6 +14,24 @@ export type GraphNode = {
   pr: number | null;
 };
 
+/** 編集フックが 1 回走ったときの記録。**沈黙も 1 行として残る。** */
+export type AdviceRow = {
+  at: string;
+  path: string;
+  line: number | null;
+  candidates: number;
+  shown: string[];
+};
+
+export type Advice = {
+  rows: AdviceRow[];
+  runs: number;
+  spoke: number;
+  candidates: number;
+  repeat: number;
+  byPath: { path: string; n: number }[];
+};
+
 /** 辺。`relation` 表ではなく parent_id と ref の共起から導かれる。 */
 export type GraphEdge = { src: number; dst: number; kind: string; via: string | null };
 export type Phase = { id: string; label: string; state: "done" | "doing" | "todo"; from: string };
@@ -270,6 +288,7 @@ export const api = {
   deletePerson: (id: number) => send<{ ok: true }>(`/api/people/${id}`, "DELETE"),
   stats: (scopes?: number[]) => get<Stats>(`/api/stats${q(scopes)}`),
   scopes: () => get<Scope[]>("/api/scopes"),
+  advice: () => get<Advice>("/api/advice"),
   graph: (scopes?: number[], kinds?: string) =>
     get<{ nodes: GraphNode[]; edges: GraphEdge[] }>(
       `/api/graph${q(scopes)}${kinds ? `${q(scopes) ? "&" : "?"}kinds=${kinds}` : ""}`,

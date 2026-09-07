@@ -12,6 +12,7 @@ const TITLES: [string, string][] = [
   ["/people", "人"],
   ["/terms", "言葉"],
   ["/chat", "聞く"],
+  ["/advice", "先に言う"],
   ["/search", "探す"],
   ["/", "いま"],
 ];

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdviceRouteImport } from './routes/advice'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as PeopleRouteImport } from './routes/people'
 import { Route as ProjectsRouteImport } from './routes/projects'
@@ -21,6 +22,11 @@ import { Route as RecordsIdRouteImport } from './routes/records.$id'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdviceRoute = AdviceRouteImport.update({
+  id: '/advice',
+  path: '/advice',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -61,6 +67,7 @@ const RecordsIdRoute = RecordsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/advice': typeof AdviceRoute
   '/chat': typeof ChatRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/advice': typeof AdviceRoute
   '/chat': typeof ChatRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/advice': typeof AdviceRoute
   '/chat': typeof ChatRoute
   '/people': typeof PeopleRoute
   '/projects': typeof ProjectsRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/advice'
     | '/chat'
     | '/people'
     | '/projects'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/advice'
     | '/chat'
     | '/people'
     | '/projects'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/advice'
     | '/chat'
     | '/people'
     | '/projects'
@@ -125,6 +137,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdviceRoute: typeof AdviceRoute
   ChatRoute: typeof ChatRoute
   PeopleRoute: typeof PeopleRoute
   ProjectsRoute: typeof ProjectsRoute
@@ -141,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/advice': {
+      id: '/advice'
+      path: '/advice'
+      fullPath: '/advice'
+      preLoaderRoute: typeof AdviceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat': {
@@ -197,6 +217,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdviceRoute: AdviceRoute,
   ChatRoute: ChatRoute,
   PeopleRoute: PeopleRoute,
   ProjectsRoute: ProjectsRoute,

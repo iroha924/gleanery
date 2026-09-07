@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
+  BellIcon,
   BookOpenIcon,
   FolderIcon,
   ListChecksIcon,
@@ -80,6 +81,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenuButton asChild isActive={path === "/chat"}>
                 <Link to="/chat">
                   <MessageSquareIcon /> 聞く
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild isActive={path === "/advice"}>
+                <Link to="/advice">
+                  <BellIcon /> 先に言う
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
