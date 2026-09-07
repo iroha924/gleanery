@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowUpIcon, MicIcon, SquareIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -170,6 +171,19 @@ function Chat() {
     setRec(m);
   };
 
+  // **⌘⇧K で録り始め、もう一度で止める。**Chrome が macOS で押さえていない組み合わせを選んだ
+  // （⌘⇧M はプロファイル切替、⌘⇧V は書式なしペースト、⌘⇧Q は macOS のログアウト）。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "k" && e.shiftKey && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        listen();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const ask = async (question: string) => {
     if (!question.trim() || busy || scopeIds.length === 0) return;
     setDraft("");
@@ -317,11 +331,16 @@ function Chat() {
               <span className="rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
                 {projectLabel}
               </span>
+              <KbdGroup className="ml-auto">
+                <Kbd>⌘</Kbd>
+                <Kbd>⇧</Kbd>
+                <Kbd>K</Kbd>
+              </KbdGroup>
               <Button
                 type="button"
                 variant={rec ? "default" : "ghost"}
                 size="icon"
-                className={`ml-auto size-8 rounded-full ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+                className={`size-8 rounded-full ${rec ? "bg-dont text-white hover:bg-dont/90" : ""}`}
                 onClick={listen}
                 disabled={hearing || scopeIds.length === 0}
                 aria-label={rec ? "録音を止めて文字にする" : "話して入れる"}
