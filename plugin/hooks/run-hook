@@ -6,6 +6,7 @@ DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/.." && pwd)
 case "${1:-}" in
   session-start) exec "$DIR/session-start" "$ROOT" ;;
+  session-end)   exec "$DIR/session-end" ;;
   check-path)    exec node "$ROOT/dist/hook-check-path.js" ;;
   *)             exit 0 ;;
 esac

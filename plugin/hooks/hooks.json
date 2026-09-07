@@ -4,7 +4,12 @@
       {
         "matcher": "startup|clear|compact",
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" session-start", "shell": "bash", "async": false }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" session-start",
+            "shell": "bash",
+            "async": false
+          }
         ]
       }
     ],
@@ -12,7 +17,23 @@
       {
         "matcher": "Edit|Write|NotebookEdit",
         "hooks": [
-          { "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" check-path", "timeout": 5 }
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" check-path",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" session-end",
+            "shell": "bash",
+            "timeout": 5
+          }
         ]
       }
     ]

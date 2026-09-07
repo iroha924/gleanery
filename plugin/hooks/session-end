@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+// 作業したのに記録せずに終わったとき、それを伝える。
+//
+// **止めない。**SessionEnd は exit code 2 を無視し、セッションは既に閉じかけている
+// （公式: "Cannot block" / "Cannot prompt"）。できるのは systemMessage を出すことだけで、
+// それでよい。残すかどうかは人が決めることで、フックが決めることではない。
+//
+// **ESM で書く。**plugin/package.json が "type": "module" なので、
+// 拡張子の無いこのファイルも ESM として読まれ、require は使えない。
+import fs from "node:fs";
+
+/** 判断を残した合図。**スキルを起動したかどうかで見る** — 完走したかは transcript から判らない。 */
+const TRACED = "<command-name>/mitos:trace</command-name>";
+/**
+ * 作業した合図。読むだけのセッションで促しても、残すものが無い。
+ * **空白を許す** — transcript の JSON は書き手によって `"name":"Edit"` にも `"name": "Edit"` にもなる。
+ */
+const EDITED = /"name"\s*:\s*"(Edit|Write|NotebookEdit)"/g;
+
+try {
+  let raw = "";
+  for await (const chunk of process.stdin) raw += chunk;
+  const input = JSON.parse(raw || "{}");
+  const file = input.transcript_path;
+  if (!file || !fs.existsSync(file)) process.exit(0);
+
+  const body = fs.readFileSync(file, "utf8");
+  if (body.includes(TRACED)) process.exit(0);
+  const edits = (body.match(EDITED) ?? []).length;
+  if (edits === 0) process.exit(0);
+
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "SessionEnd",
+        systemMessage:
+          `このセッションはファイルを ${edits} 回編集しましたが、判断を記録していません。` +
+          `次に同じ作業へ戻るとき、何をなぜ決めたかは git log から復元できません。` +
+          `残すなら /mitos:trace です。`,
+      },
+    }),
+  );
+} catch {
+  // 何が起きても終了は止めない。促しは、失敗しても実害の無い機能である。
+}
