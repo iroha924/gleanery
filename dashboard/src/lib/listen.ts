@@ -41,47 +41,78 @@ export type Heard = {
 /**
  * 1 系統を流し続ける。返るのは止めるための関数。
  *
- * `onError` は繋がらなかったときにだけ呼ぶ。**流れている途中の失敗で会議を止めない** —
- * 片方が落ちても、もう片方は録れているほうが役に立つ。
+ * **一時鍵は 10 分で切れる。**1 時間の会議なら 5 回張り直すことになるので、切れたら
+ * 鍵を取り直して繋ぎ直す。音の経路（AudioContext と Worklet）は作り直さない —
+ * 作り直すとその間の音が落ちるうえ、マイクの立ち上がりをもう一度待つことになる。
+ *
+ * `onError` は繋ぎ直しても駄目だったときにだけ呼ぶ。**一度の切断で会議を止めない。**
  */
 export function listen(
   stream: MediaStream,
-  token: string,
+  getToken: () => Promise<string>,
   onHeard: (h: Heard) => void,
   onError: (message: string) => void,
 ): () => void {
-  const ws = new WebSocket(URL_REALTIME, ["realtime", `openai-insecure-api-key.${token}`]);
   const ctx = new AudioContext({ sampleRate: 24000 });
+  let ws: WebSocket | null = null;
   let stopped = false;
+  let retries = 0;
 
   const close = () => {
     stopped = true;
-    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close();
+    ws = null;
     ctx.close().catch(() => {});
   };
 
-  ws.onerror = () => {
-    if (!stopped) onError("聞き取りに繋がらなかった");
-  };
-
-  ws.onmessage = (e) => {
-    const ev = JSON.parse(e.data as string) as {
-      type: string;
-      item_id?: string;
-      delta?: string;
-      transcript?: string;
-      error?: { message?: string };
-    };
-    if (ev.type === "conversation.item.input_audio_transcription.delta" && ev.item_id) {
-      onHeard({ itemId: ev.item_id, text: ev.delta ?? "", done: false });
-    } else if (ev.type === "conversation.item.input_audio_transcription.completed" && ev.item_id) {
-      onHeard({ itemId: ev.item_id, text: ev.transcript ?? "", done: true });
-    } else if (ev.type === "error") {
-      onError(ev.error?.message ?? "聞き取りが止まった");
+  const connect = async () => {
+    if (stopped) return;
+    let token: string;
+    try {
+      token = await getToken();
+    } catch {
+      onError("聞き取りの鍵を取り直せなかった");
+      return;
     }
+    if (stopped) return;
+
+    const sock = new WebSocket(URL_REALTIME, ["realtime", `openai-insecure-api-key.${token}`]);
+    ws = sock;
+
+    sock.onopen = () => {
+      retries = 0;
+    };
+
+    sock.onmessage = (e) => {
+      const ev = JSON.parse(e.data as string) as {
+        type: string;
+        item_id?: string;
+        delta?: string;
+        transcript?: string;
+        error?: { message?: string };
+      };
+      if (ev.type === "conversation.item.input_audio_transcription.delta" && ev.item_id) {
+        onHeard({ itemId: ev.item_id, text: ev.delta ?? "", done: false });
+      } else if (ev.type === "conversation.item.input_audio_transcription.completed" && ev.item_id) {
+        onHeard({ itemId: ev.item_id, text: ev.transcript ?? "", done: true });
+      } else if (ev.type === "error") {
+        onError(ev.error?.message ?? "聞き取りが止まった");
+      }
+    };
+
+    // 鍵切れも回線の瞬断も、閉じた事実としては同じ。数えて諦めるまで張り直す。
+    sock.onclose = () => {
+      if (stopped || ws !== sock) return;
+      retries += 1;
+      if (retries > 5) {
+        onError("聞き取りが切れたまま戻らなかった");
+        return;
+      }
+      setTimeout(connect, Math.min(retries * 500, 3000));
+    };
   };
 
-  ws.onopen = async () => {
+  void (async () => {
     try {
       const url = window.URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
       await ctx.audioWorklet.addModule(url);
@@ -89,15 +120,17 @@ export function listen(
       if (stopped) return;
       const node = new AudioWorkletNode(ctx, "pcm");
       node.port.onmessage = (m) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
+        // 繋ぎ直している最中の音は捨てる。溜めても、会議はもう先へ進んでいる。
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
         ws.send(JSON.stringify({ type: "input_audio_buffer.append", audio: encode(m.data as Float32Array) }));
       };
       // **出力へは繋がない。**繋ぐと自分の声がスピーカーへ返り、会議に回り込む。
       ctx.createMediaStreamSource(stream).connect(node);
+      await connect();
     } catch {
       onError("音を取り出せなかった");
     }
-  };
+  })();
 
   return close;
 }

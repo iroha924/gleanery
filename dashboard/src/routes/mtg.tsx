@@ -96,10 +96,8 @@ function Mtg() {
       return;
     }
     let me: MediaStream;
-    let token: string;
     try {
       me = await navigator.mediaDevices.getUserMedia({ audio: true });
-      token = await api.realtimeToken();
     } catch (e) {
       for (const t of them.getTracks()) t.stop();
       toast.error(e instanceof Error ? e.message : "マイクを使えなかった");
@@ -114,9 +112,10 @@ function Mtg() {
     setLines([]);
     setReply(null);
     setOn(true);
+    // 鍵は listen が要るたびに取り直す。**10 分で切れる**ので、渡し切りにしない。
     closers.current = [
-      listen(them, token, (h) => heard("them", h), toast.error),
-      listen(me, token, (h) => heard("me", h), toast.error),
+      listen(them, api.realtimeToken, (h) => heard("them", h), toast.error),
+      listen(me, api.realtimeToken, (h) => heard("me", h), toast.error),
     ];
   };
 
