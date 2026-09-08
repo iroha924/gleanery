@@ -51,6 +51,17 @@ fi
 [ -e /tmp/HOOK_RAN ] && ng "リポジトリのフックが走った" || ok "リポジトリのフックは走らない"
 [ -e /tmp/MCP_RAN ]  && ng "リポジトリの .mcp.json が起動した" || ok "リポジトリの .mcp.json は起動しない"
 
+# **張り直しの最中も閉じていること。**worker は sudo で init-firewall.sh を何度でも叩ける。
+# 規則をフラッシュしてから既定 DROP を入れ直すまでのあいだに穴が開くなら、
+# コマンドを実行できるワーカーはそこを通れる。
+# 実測（2026-09-08）: `iptables -F` / `-X` は既定ポリシーを消さないので、初回に DROP が
+# 入った後は閉じたまま。**それが将来も成り立つかは、ここで見るしかない。**
+# 隙間なく回すと、張り直しの数十秒でプロセスを数万回起こす。0.2 秒ごとで 200 回ほど見れば足りる。
+( while :; do reach 93.184.216.34 443 && touch /tmp/LEAKED_WHILE_RESETTING; sleep 0.2; done ) & probe=$!
+sudo /usr/local/bin/init-firewall.sh >/dev/null 2>&1
+kill "$probe" 2>/dev/null; wait "$probe" 2>/dev/null
+[ -e /tmp/LEAKED_WHILE_RESETTING ] && ng "firewall の張り直し中に外へ出られた" || ok "張り直し中も外へ出られない"
+
 echo
 [ "$fail" -eq 0 ] && echo "隔離は成立している" || echo "**成立していない項目がある**"
 exit "$fail"
