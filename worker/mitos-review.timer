@@ -1,0 +1,13 @@
+[Unit]
+Description=PR のレビューを定期的に走らせる
+
+[Timer]
+# **15 分ごと。**PR を出してから指摘が返るまでの待ち時間と、GitHub の rate limit
+# （認証済みで 5,000/時）と、無駄な起動の釣り合い。
+OnBootSec=5min
+OnUnitActiveSec=15min
+# 起動が重なると同じ PR を二重にレビューする。
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
