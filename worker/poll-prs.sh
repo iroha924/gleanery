@@ -24,11 +24,21 @@ while read -r repo; do
   case "$repo" in "" | \#*) continue ;; esac
 
   # **draft は見ない。**書きかけに指摘しても手戻りにしかならない。
-  open=$(curl -fsSL \
-    -H "Authorization: Bearer $GITHUB_TOKEN" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "https://api.github.com/repos/$repo/pulls?state=open&per_page=50" \
-    | jq -r '.[] | select(.draft | not) | "\(.number) \(.head.sha)"')
+  #
+  # **最後まで辿る。**1 ページ目だけ取ると、open が 100 件を超えたときに 101 件目以降が
+  # エラーも出さずに対象から消える。「見ていない」と「指摘が無い」が区別できなくなる。
+  open=""
+  page=1
+  while :; do
+    got=$(curl -fsSL \
+      -H "Authorization: Bearer $GITHUB_TOKEN" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      "https://api.github.com/repos/$repo/pulls?state=open&per_page=100&page=$page")
+    [ "$(printf '%s' "$got" | jq 'length')" -gt 0 ] || break
+    open="$open$(printf '%s' "$got" | jq -r '.[] | select(.draft | not) | "\(.number) \(.head.sha)"')
+"
+    page=$((page + 1))
+  done
 
   while read -r num sha; do
     [ -n "${num:-}" ] || continue

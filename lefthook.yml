@@ -32,7 +32,6 @@ pre-commit:
     # 突き合わせではなく USAGE から書き出すので、書き直した分を staged へ戻す。
     - name: pairs
       glob: "{server/src/*.ts,dashboard/src/routes/search.tsx,README.md}"
-      run: |
-        set -e
-        node scripts/check-pairs.mjs
-        git add README.md
+      # **`git add` はここに書かない。**無条件に走ると、README に残っていた別件の編集まで
+      # コミットへ巻き込む。書き換えたときだけ check-pairs.mjs 自身が staged へ戻す。
+      run: node scripts/check-pairs.mjs

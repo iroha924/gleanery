@@ -9,6 +9,7 @@
 // USAGE から書き出す）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
 // 別の形で 2 つの出口が組み立てる）はここでは捕まらない。AGENTS.md の節がそれを扱う。
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
 const read = (f) => fs.readFileSync(f, "utf8");
@@ -90,7 +91,11 @@ if (usage) {
     const after = before.replace(block, `$1${list}$2`);
     if (after !== before) {
       fs.writeFileSync("README.md", after);
-      console.log("README.md の CLI 一覧を cli.ts の USAGE から書き直した");
+      // **書いたときだけ staged へ戻す。**呼び出し側で無条件に `git add README.md` すると、
+      // 一覧が既に一致している場合でも走り、README に残していた別件の編集を
+      // そのコミットへ巻き込む（生成物だけの plugin/dist とは違い、ここは人が書く本文を含む）。
+      execFileSync("git", ["add", "README.md"], { stdio: "ignore" });
+      console.log("README.md の CLI 一覧を cli.ts の USAGE から書き直して staged へ戻した");
     }
   }
 }
