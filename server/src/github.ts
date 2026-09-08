@@ -148,8 +148,14 @@ export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
 
   // issue 本体。**issues エンドポイントは PR も返す**ので、pull_request を持つものは
   // 上の pulls で入っている。番号も本文も同じなので、ここで落とさないと二重になる。
+  //
+  // **PR と違って、bot が作った issue は入れない。**PR で bot を入れているのは
+  // リリース PR が release-bot 名義だからで、issue にその事情は無い。定期実行の
+  // レポートが同じ形で並ぶだけになる（実測: monopoly-source は非 PR issue 68 件のうち
+  // 62 件が bot 作で、本文の 96% にあたる 531,741 字を占める。人が書いたのは 18,999 字）。
+  // isNoise は推論を含まない通知だけを落とすので、AI が書いた issue は残る。
   for (const i of gh(repo, "issues?state=all&per_page=100") as RawIssue[]) {
-    if (i.pull_request) continue;
+    if (i.pull_request || isNoise(i.user?.login ?? "")) continue;
     titles.set(i.number, i.title);
     prs.push({
       number: i.number,

@@ -15,7 +15,7 @@ import { ensureIdentity } from "./identity.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { candidates, HOST, identify, rememberPath } from "./scope.ts";
-import { logSearch, outsideScopes, quote, scopeFamily, search } from "./search.ts";
+import { framed, logSearch, outsideScopes, quote, scopeFamily, search } from "./search.ts";
 import { ingestSession, readSession } from "./session.ts";
 
 const USAGE = `使い方:
@@ -799,6 +799,9 @@ async function main(): Promise<void> {
         ["node", "select count(*) as n from node where scope_id = $1"],
         ["引かれた記録", "select count(*) as n from search_log where scope_id = $1"],
         ["素材", "select count(*) as n from asset where scope_id = $1"],
+        // **チャットは丸ごと消える。**scope をまたいで話した回でも、本文にその作業場所の
+        // 記録が引用されている。id だけ外しても本文は残るので、消す側へ倒す。
+        ["チャット（丸ごと消える）", "select count(*) as n from chat where $1 = any(scope_ids)"],
       ] as [string, string][]) {
         console.log(`  ${label}: ${await count(sql)} 件`);
       }
@@ -872,14 +875,17 @@ async function main(): Promise<void> {
         console.log("まだ 1 件も引かれていません。search_knowledge か mitos search を使うと溜まります。");
         return;
       }
-      console.log(`引かれた回数: ${all.map((r) => `${r.src} ${r.n}`).join(" / ")}`);
+      // **この出力もエージェントの文脈へ入る。**trace スキルが `Bash(mitos *)` を
+      // 事前承認しているので、search と同じく枠を通す。question は検索した側が書いた
+      // 文字列で、注入されたエージェントが仕込めば別のエージェントがここで読む。
+      const out: string[] = [`引かれた回数: ${all.map((r) => `${r.src} ${r.n}`).join(" / ")}`];
       // **合否の閾値を置かない。**Voyage の関連度がこのデータでどう分布するかを
       // まだ測っていないので、「0.4 未満は失敗」のような線を引くと、較正していない
       // 数値で判定することになる。低い順に並べるだけにして、線は人が引く。
-      console.log("\n関連度の低い順（答えを持てなかった可能性が高い順）:");
+      out.push("", "関連度の低い順（答えを持てなかった可能性が高い順）:");
       for (const r of rows) {
         const rel = r.relevance === null ? "  再ランクなし" : r.relevance.toFixed(3).padStart(6);
-        console.log(
+        out.push(
           `  ${rel}  ${r.at}  ${r.source}${r.label ? ` / ${r.label}` : ""}\n          ${r.question.replace(/\s+/g, " ").slice(0, 140)}`,
         );
       }
@@ -909,11 +915,12 @@ async function main(): Promise<void> {
         )
       ).rows;
       if (unverified.length) {
-        console.log(`\n確かめ方を書いたのに、通った検証が結び付いていない決定（${unverified.length} 件）:`);
+        out.push("", `確かめ方を書いたのに、通った検証が結び付いていない決定（${unverified.length} 件）:`);
         for (const u of unverified) {
-          console.log(`  ${u.label} / ${u.record} / ${u.key}\n          ${u.text.replace(/\s+/g, " ")}`);
+          out.push(`  ${u.label} / ${u.record} / ${u.key}\n          ${u.text.replace(/\s+/g, " ")}`);
         }
       }
+      console.log(framed(out.join("\n")));
       return;
     }
 

@@ -36,6 +36,9 @@ export type Section = {
  */
 const MAX = 4000;
 
+/** 1 ファイルの上限。これを超える .md は文書ではない（生成物かデータの取り違え）。 */
+const MAX_FILE = 2 * 1024 * 1024;
+
 const slug = (s: string): string =>
   s
     .toLowerCase()
@@ -107,7 +110,10 @@ export function sections(rel: string, body: string): Section[] {
       cur.buf.push(line);
       continue;
     }
-    const h = fence === null ? line.match(/^(#{1,3}) +(.*\S)/) : null;
+    // **`.*\S` にしない。**` +` と取り合って行長の二乗になり、空白 80,000 の 1 行で
+    // 2.4 秒かかる（実測。`\S.*` なら 0.14 ms）。日次同期は無人で走るので、
+    // 追跡された巨大な .md 1 本で朝の取り込みが止まる。
+    const h = fence === null ? line.match(/^(#{1,3}) +(\S.*)$/) : null;
     if (!h?.[1] || !h[2]) {
       cur.buf.push(line);
       continue;
@@ -147,7 +153,11 @@ function lastTouched(dir: string): Map<string, string> {
   }
   let cur = "";
   for (const line of out.split("\n")) {
-    if (line.startsWith("@")) cur = line.slice(1);
+    // **日付の形まで見る。**`@` で始まるパス（`@scope/doc.md` など）を日付と読むと、
+    // そのファイルが日付を失ううえ、**次のファイルがパス文字列を日付として受け取る**。
+    // それは timestamptz へ渡って insert が落ち、そのリポジトリの取り込みが
+    // 毎回まるごとロールバックする（実測: `invalid input syntax for type timestamp`）。
+    if (/^@\d{4}-\d{2}-\d{2}T/.test(line)) cur = line.slice(1);
     // log は新しい順なので、最初に出たものがその文書の最終更新。
     else if (line && cur && !at.has(line)) at.set(line, cur);
   }
@@ -173,15 +183,21 @@ export function markdownFiles(dir: string): { files: string[]; symlinks: number 
   const files: string[] = [];
   let symlinks = 0;
   for (const rel of out.split("\0").filter(Boolean)) {
-    let real: boolean;
+    let st: fs.Stats;
     try {
-      real = !fs.lstatSync(path.join(dir, rel)).isSymbolicLink();
+      st = fs.lstatSync(path.join(dir, rel));
     } catch {
       // git は追っているが手元に無い（sparse checkout、消したまま未コミット）。
       continue;
     }
-    if (real) files.push(rel);
-    else symlinks++;
+    if (st.isSymbolicLink()) {
+      symlinks++;
+      continue;
+    }
+    // **丸ごとメモリへ載せるので上限を置く。**文書として書かれた Markdown が
+    // これを超えることはない。超えるのは生成物か、取り違えたデータファイル。
+    if (st.size > MAX_FILE) continue;
+    files.push(rel);
   }
   return { files, symlinks };
 }
