@@ -2,6 +2,7 @@
 // ナレッジ DB への書き込み口。**資格情報を持つのはこちらだけで、MCP は読み取り専用。**
 // progress-log スキルはこのコマンドを呼ぶだけで、DB のことを知らない。
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -71,6 +72,49 @@ function readIr(file: string): unknown {
   const m = body.match(IR_TAG);
   if (!m?.[1]) throw new Error(`${file} に progress-ir の埋め込みが無い。progress render で書いたものを渡す`);
   return JSON.parse(m[1]);
+}
+
+// DB を載せている 1 台の OS の状態。**Tailscale の先にしか無いので、古くなっても気付く経路が無い。**
+// ssh の宛先は接続文字列のホストと同じ（MagicDNS が両方を解決する）ので、設定は増えない。
+//
+// 見るのは 2 つだけ。**Ubuntu のセキュリティ更新と再起動は自動で当たる**ので出さない
+// （unattended-upgrades が 03:00 台に当て、保留があれば 04:00 に再起動する）。
+// **PostgreSQL は自動では上がらない** — PGDG を Allowed-Origins に入れていないため。
+// 当てると DB が止まるので、人が時機を選ぶ。
+const HOST_PROBE = [
+  `printf 'reboot=%s\\n' "$(cat /var/run/reboot-required.pkgs 2>/dev/null | tr '\\n' ' ')"`,
+  `printf 'when=%s\\n' "$(shutdown --show 2>&1 | grep -o 'scheduled for [^,]*' || true)"`,
+  `printf 'pgdg=%s\\n' "$(apt list --upgradable 2>/dev/null | grep pgdg | cut -d/ -f1 | tr '\\n' ' ')"`,
+  `printf 'other=%s\\n' "$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -cv pgdg || true)"`,
+].join("; ");
+
+function hostStatus(dbUrl: string): string[] {
+  const host = new URL(dbUrl).hostname;
+  // **stderr は捨てずに掴む。**継承したままだと ssh の理由（名前が引けない／届かない）が
+  // 端末へ素通りし、例外の message には「Command failed」しか残らない。
+  const out = execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, HOST_PROBE], {
+    encoding: "utf8",
+    timeout: 30_000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const v = new Map(
+    out
+      .split("\n")
+      .filter((l) => l.includes("="))
+      .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()] as const),
+  );
+  const pending = v.get("reboot");
+  const when = v.get("when")?.replace("scheduled for ", "");
+  const pgdg = v.get("pgdg");
+  return [
+    `VPS（${host}）  再起動 ${
+      pending
+        ? // 予約が空なら、当てる側（unattended-upgrades）が止まっている。
+          `保留: ${pending}${when ? ` → ${when} に自動で当たる` : " ← 予約が無い。自動再起動の設定を確かめる"}`
+        : "保留なし"
+    }`,
+    `PostgreSQL の更新      ${pgdg ? `${pgdg}← 人が当てる（DB が止まる）` : "なし"} / ほかの更新 ${v.get("other") ?? "?"} 件`,
+  ];
 }
 
 // ingest が実際に読む形。中身の契約（棄却理由の有無など）は progress-log の validate が見ている。
@@ -431,6 +475,17 @@ async function main(): Promise<void> {
         console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
       }
       await c.end();
+    }
+
+    // **DB が繋がることと、それが載っている箱が健全なことは別。**カーネルが更新されても
+    // 再起動しなければ当たらず、PostgreSQL 本体は自動更新の対象に入れていない。
+    // どちらも見に行かないと分からないので、ここで 1 回聞く。
+    try {
+      for (const line of hostStatus(env.KNOWLEDGE_DB_URL ?? "")) console.log(line);
+    } catch (e) {
+      const why =
+        (e as { stderr?: string }).stderr?.trim().split("\n")[0] || (e instanceof Error ? e.message : `${e}`);
+      console.log(`VPS の状態             聞けない: ${why}`);
     }
 
     // Linear は API キーではなく OAuth 済みの MCP 越しに取る。**壊れ方が DB と違う** —

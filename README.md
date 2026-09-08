@@ -162,7 +162,7 @@ mitos sync [--group <束>] [--all]               登録済みの取り込み元�
 mitos adopt                                     このマシンでの置き場所を登録する（新しい PC で最初に叩く）
 mitos gaps [--limit N] [--all]                  聞かれたのに答えを持てなかった問いと、確かめていない決定
 mitos forget <dir|ラベル> [--yes]                その作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos doctor                                    資格情報と接続、Linear MCP の疎通
+mitos doctor                                    資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
 mitos advice                                    編集フックが効いているか（ヒット率・再提示率）
 mitos usage                                     OpenAI の使用量と残り
 ```
@@ -207,7 +207,7 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 
 | ロール | 誰が使うか | 書けるもの |
 |---|---|---|
-| `postgres`（`KNOWLEDGE_DB_URL`） | CLI | 全部 |
+| `mitos_admin`（`KNOWLEDGE_DB_URL`） | CLI | 全部（BYPASSRLS） |
 | `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | **`search_log` への追記だけ**（読み戻しも削除もできない）。**未設定なら MCP とフックは繋がらない** |
 | `mitos_cfg`（`KNOWLEDGE_DB_URL_CFG`） | ダッシュボードの設定 | scope / scope_path / group / person / term / chat / search_log |
 
@@ -215,13 +215,35 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 取り込み時に作業場所の役割・説明を読み取るのに使う）。
 モデルは `MITOS_CHAT_MODEL`（既定 `gpt-5.6-terra`）と `MITOS_CHAT_EFFORT`（既定 `high`）で差し替えられる。
 
+### DB を載せている VPS
+
+`knowledge-mcp-prod-01`（ConoHa VPS / Ubuntu 24.04）。**インターネットからの受信は 1 つも開けていない**
+ので、DB も ssh も Tailscale の中からしか届かない。
+
+**OS の更新と再起動は人が触らなくてよい。**`unattended-upgrades` が Ubuntu のセキュリティ更新を
+03:00〜03:30 に当て、カーネル更新などで再起動が要る状態になっていれば 04:00 に再起動する
+（`/etc/apt/apt.conf.d/52unattended-upgrades-local`）。Mac の日次同期は 06:00 なので、復帰後に当たる。
+
+**PostgreSQL は自動では上がらない。**`postgresql-17` / `pgvector` / `pgroonga` は PGDG のリポジトリから
+入れており、そこは `Unattended-Upgrade::Allowed-Origins` に入れていない。当てると DB が止まるので、
+**時機は人が選ぶ**。
+
+```bash
+ssh knowledge-mcp-prod-01 'sudo apt-get update && sudo apt-get install --only-upgrade postgresql-17'
+```
+
+**更新が出たことに気付く経路は `mitos doctor` の 2 行だけ。**メールも通知も無い
+（この箱から外へ出せるのは `curl` だけで、通知先を足すと VPS に資格情報を置くことになる）。
+doctor は接続文字列のホストへそのまま ssh する（MagicDNS が DB と ssh の両方を解決する）ので、
+tailnet の外からは「聞けない」とだけ出て、ほかの検査は続く。
+
 ## セットアップ
 
 ```bash
 bun install
 # db/migrations を対象プロジェクトへ適用
 bun run bundle                       # plugin/dist を作る（MCP・フック・CLI）
-mitos doctor                         # 資格情報と接続を確かめる
+mitos doctor                         # 資格情報と接続、VPS の状態を確かめる
 mitos import-github --cwd <repo>     # 最初の取り込み
 ```
 
@@ -321,5 +343,6 @@ bun run bundle     # plugin/dist を作り直す
 | `mitos search` が何も返さない | `mitos scopes` にその作業場所が登録されているか |
 | チャットが「どのプロジェクトを選んで」と言う | 画面上部で Project を選ぶ。**範囲の無指定は許していない**（別の仕事の決定が混ざるため） |
 | 資格情報・接続・Linear MCP の疎通 | `mitos doctor` |
+| PostgreSQL の更新が出ていないか | `mitos doctor` の「PostgreSQL の更新」行。**自動では当たらない**（「DB を載せている VPS」） |
 | 日次同期が走っていない | `~/.claude/mitos-sync.log` |
 | チャットの費用が気になる | `mitos usage`（キャッシュ済み入力は 10% で計上される） |

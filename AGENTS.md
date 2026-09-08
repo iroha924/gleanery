@@ -4,6 +4,9 @@
 TypeScript / bun、PostgreSQL 17（pgvector + pgroonga）、埋め込みは Voyage、生成は OpenAI。
 **DB は ConoHa VPS の `knowledge-mcp-prod-01`** で、Tailscale 経由でのみ待ち受ける。
 証明書は `plugin/certs/` に置き、`db.ts` がそこにある `.crt` を全部 CA として読む。
+**OS の更新と再起動は無人で当たり、PostgreSQL の更新は人が当てる**（PGDG を自動更新の対象に
+入れていないため）。どちらも `mitos doctor` の「VPS」「PostgreSQL の更新」の 2 行に出る。
+詳しくは `README.md`「DB を載せている VPS」。
 
 **このファイルは Claude と Codex の両方に効く。**Claude 側は `CLAUDE.md` が 1 行で取り込んでいる。
 

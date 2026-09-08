@@ -5105,6 +5105,7 @@ var require_x509_transport_state = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
+import { execFileSync as execFileSync5 } from "node:child_process";
 import fs7 from "node:fs";
 import os4 from "node:os";
 import path8 from "node:path";
@@ -39054,6 +39055,29 @@ function readIr(file2) {
     throw new Error(`${file2} に progress-ir の埋め込みが無い。progress render で書いたものを渡す`);
   return JSON.parse(m[1]);
 }
+var HOST_PROBE = [
+  `printf 'reboot=%s\\n' "$(cat /var/run/reboot-required.pkgs 2>/dev/null | tr '\\n' ' ')"`,
+  `printf 'when=%s\\n' "$(shutdown --show 2>&1 | grep -o 'scheduled for [^,]*' || true)"`,
+  `printf 'pgdg=%s\\n' "$(apt list --upgradable 2>/dev/null | grep pgdg | cut -d/ -f1 | tr '\\n' ' ')"`,
+  `printf 'other=%s\\n' "$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -cv pgdg || true)"`
+].join("; ");
+function hostStatus(dbUrl) {
+  const host = new URL(dbUrl).hostname;
+  const out = execFileSync5("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, HOST_PROBE], {
+    encoding: "utf8",
+    timeout: 30000,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const v = new Map(out.split(`
+`).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]));
+  const pending = v.get("reboot");
+  const when = v.get("when")?.replace("scheduled for ", "");
+  const pgdg = v.get("pgdg");
+  return [
+    `VPS（${host}）  再起動 ${pending ? `保留: ${pending}${when ? ` → ${when} に自動で当たる` : " ← 予約が無い。自動再起動の設定を確かめる"}` : "保留なし"}`,
+    `PostgreSQL の更新      ${pgdg ? `${pgdg}← 人が当てる（DB が止まる）` : "なし"} / ほかの更新 ${v.get("other") ?? "?"} 件`
+  ];
+}
 var text = exports_external.string();
 var evidence = exports_external.array(exports_external.object({ kind: exports_external.string(), ref: exports_external.string() }).loose()).optional();
 var IR_SHAPE = exports_external.object({
@@ -39274,6 +39298,14 @@ ${USAGE}`);
         console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
       }
       await c3.end();
+    }
+    try {
+      for (const line of hostStatus(env2.KNOWLEDGE_DB_URL ?? ""))
+        console.log(line);
+    } catch (e) {
+      const why = e.stderr?.trim().split(`
+`)[0] || (e instanceof Error ? e.message : `${e}`);
+      console.log(`VPS の状態             聞けない: ${why}`);
     }
     try {
       console.log(`Linear(MCP 経由)       ${whoAmI()} として届いた`);
