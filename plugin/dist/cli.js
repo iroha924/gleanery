@@ -38959,6 +38959,18 @@ ${USAGE}`);
       console.log(`${label.padEnd(22)} ${who.rows[0]?.u} / ベクトル検索 OK（${v.rows[0]?.n} 件返った）`);
       await c3.end();
     }
+    {
+      const c3 = await connect(env2, { as: "read" });
+      const r = await c3.query(`select s.label, max(r.ingested_at) as last, count(r.id)::int as records
+         from scope s left join record r on r.scope_id = s.id
+         group by s.label order by s.label`);
+      for (const x of r.rows) {
+        const days = x.last ? Math.floor((Date.now() - x.last.getTime()) / 86400000) : null;
+        const when = x.last === null ? "**一度も取り込んでいない**" : `${x.last.toLocaleString("sv-SE")}（${days} 日前）${days !== null && days >= 2 ? " ← 日次同期が止まっているかもしれない" : ""}`;
+        console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
+      }
+      await c3.end();
+    }
     try {
       console.log(`Linear(MCP 経由)       ${whoAmI()} として届いた`);
     } catch (e) {
@@ -39091,7 +39103,10 @@ ${USAGE}`);
              join group_member m on m.scope_id = s.id
              join scope_group g on g.id = m.group_id
              where g.name = $1 order by s.label` : "select ident, abs_path, label from scope order by label", opt.group ? [opt.group] : []);
+      const startedAt = new Date;
+      console.log(`==== 同期開始 ${startedAt.toLocaleString("sv-SE")} ====`);
       let ok = 0;
+      const failed = [];
       const skipped = [];
       for (const t of targets.rows) {
         try {
@@ -39107,12 +39122,18 @@ ${USAGE}`);
           }
           ok++;
         } catch (e) {
+          failed.push(t.label);
           console.error(`  ${t.label} で失敗: ${e instanceof Error ? e.message : e}`);
         }
       }
-      console.log(`同期おわり: ${ok} / ${targets.rows.length} 件`);
+      const secs = Math.round((Date.now() - startedAt.getTime()) / 1000);
+      console.log(`==== 同期おわり ${new Date().toLocaleString("sv-SE")} / ${secs} 秒 / 成功 ${ok} / ${targets.rows.length} 件 ====`);
       if (skipped.length)
         console.log(`飛ばした: ${skipped.join(" / ")}`);
+      if (failed.length) {
+        console.error(`失敗: ${failed.join(" / ")}`);
+        process.exitCode = 1;
+      }
       return;
     }
     if (cmd === "import-linear") {

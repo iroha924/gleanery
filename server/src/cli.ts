@@ -361,6 +361,26 @@ async function main(): Promise<void> {
       console.log(`${label.padEnd(22)} ${who.rows[0]?.u} / ベクトル検索 OK（${v.rows[0]?.n} 件返った）`);
       await c.end();
     }
+    // **最後にいつ入ったかを出す。**日次同期が黙って止まっても、ログを目で見るまで気付けない。
+    // ここに出しておけば doctor 一発で分かる（record.ingested_at は取り込みのたびに now() が入る）。
+    {
+      const c = await connect(env, { as: "read" });
+      const r = await c.query<{ label: string; last: Date | null; records: number }>(
+        `select s.label, max(r.ingested_at) as last, count(r.id)::int as records
+         from scope s left join record r on r.scope_id = s.id
+         group by s.label order by s.label`,
+      );
+      for (const x of r.rows) {
+        const days = x.last ? Math.floor((Date.now() - x.last.getTime()) / 86_400_000) : null;
+        const when =
+          x.last === null
+            ? "**一度も取り込んでいない**"
+            : `${x.last.toLocaleString("sv-SE")}（${days} 日前）${days !== null && days >= 2 ? " ← 日次同期が止まっているかもしれない" : ""}`;
+        console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
+      }
+      await c.end();
+    }
+
     // Linear は API キーではなく OAuth 済みの MCP 越しに取る。**壊れ方が DB と違う** —
     // claude が PATH に無い、OAuth が切れた、のどちらでも「issue が 0 件」に化けるので、
     // ここで実際に 1 回叩いて確かめる。
@@ -539,7 +559,12 @@ async function main(): Promise<void> {
           : "select ident, abs_path, label from scope order by label",
         opt.group ? [opt.group] : [],
       );
+      // **いつ走ったかを必ず残す。**launchd は StandardOutPath を上書きするので、
+      // 日時が無いと「今朝のログか、3 日前のログか」が mtime でしか分からない。
+      const startedAt = new Date();
+      console.log(`==== 同期開始 ${startedAt.toLocaleString("sv-SE")} ====`);
       let ok = 0;
+      const failed: string[] = [];
       const skipped: string[] = [];
       for (const t of targets.rows) {
         try {
@@ -560,11 +585,22 @@ async function main(): Promise<void> {
           ok++;
         } catch (e) {
           // 1 つ落ちても残りは回す。日次なので、翌日に持ち越すより今日入るものを入れる。
+          // **ただし記録して、最後に終了コードへ反映する。**握り潰すと launchd の
+          // LastExitStatus が常に 0 になり、失敗したことを外から知る手段が無くなる。
+          failed.push(t.label);
           console.error(`  ${t.label} で失敗: ${e instanceof Error ? e.message : e}`);
         }
       }
-      console.log(`同期おわり: ${ok} / ${targets.rows.length} 件`);
+      const secs = Math.round((Date.now() - startedAt.getTime()) / 1000);
+      console.log(
+        `==== 同期おわり ${new Date().toLocaleString("sv-SE")} / ${secs} 秒 / 成功 ${ok} / ${targets.rows.length} 件 ====`,
+      );
       if (skipped.length) console.log(`飛ばした: ${skipped.join(" / ")}`);
+      if (failed.length) {
+        console.error(`失敗: ${failed.join(" / ")}`);
+        // **失敗を終了コードへ出す。**これが 0 のままだと launchctl list を見ても気付けない。
+        process.exitCode = 1;
+      }
       return;
     }
 
