@@ -1,0 +1,36 @@
+---
+paths:
+  - "dashboard/**"
+---
+
+# ダッシュボードを触るとき
+
+## 人の画面に足した絞り込みは、MCP にも足す
+
+実測（2026-09-08）: `search.tsx` の `KINDS` に `utterance` があり、コメントには
+「選ぶ手段が無いと二度と引けなくなるので、ここに置く」と書いてあった。一方 `mcp.ts` の
+`kinds` は `z.enum` で 6 種しか受け付けず、`utterance` が無かった。**逃げ道が人にだけ用意されていた。**
+
+触る場所の一覧は `.claude/rules/knowledge-schema.md` にある。あれは `server/src` と
+`db/migrations` でしか自動ロードされないので、画面から先に触った回は載らない。ここから辿る。
+
+## ブラウザへ鍵を出さない
+
+画面は HTTP しか知らない。設定画面が使う `mitos_cfg` ロールには **`record` と `node` への
+書き込みを与えない**。削除機能などのために緩めると、「推論する層に書き込みを持たせない」境界が
+ここから消える。
+
+確かめ方は 1 つ。`KNOWLEDGE_DB_URL_CFG` で繋いで `insert into node` と `insert into record` が
+どちらも `permission denied for table ...` になること（実測 2026-09-09）。**grant を読んで判定しない** —
+`mitos_cfg` への grant は 6 本の migration に散っていて、1 本だけ見ると成立しているように見える。
+
+表を足したら、画面側から読めるかを決める。`20260906180000_config_role_for_dashboard.sql:16` の
+`alter default privileges ... grant select on tables to mitos_cfg` が**後から作った表にも効く**ので、
+読ませたくない表は `revoke select` を明示する。`knowledge_ro` 側の同じ罠は
+`.claude/rules/knowledge-schema.md`「移行を書くとき」にある。
+
+## Next.js へ移さない
+
+`server/src` には入口が 4 つあり（`http.ts` / `mcp.ts` / `cli.ts` / `hook-check-path.ts`）、
+ダッシュボードはそのうち 1 つでしかない（`d-stay-on-vite-react`）。
+画面の都合で枠組みを替えると、残り 3 つが巻き込まれる。
