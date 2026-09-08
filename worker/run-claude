@@ -1,9 +1,0 @@
-#!/bin/bash
-# **リポジトリの .mcp.json を無視させる。呼び出し側の手順にしない。**
-# 実測（2026-09-08）: 仕込んだ .mcp.json のサーバーが確認なしで起動した。
-# managed settings の `allowManagedMcpServersOnly` では止まらず、これが効く唯一の口だった。
-#
-# **`--restricted` はここに入れない。**コマンド実行系のツールと WebFetch も落とすので、
-# テストを走らせるタスクでは邪魔になる。読むだけの仕事では呼び出し側が足す。
-set -euo pipefail
-exec claude --strict-mcp-config "$@"
