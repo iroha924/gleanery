@@ -23746,7 +23746,7 @@ var CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plug
 var ca = null;
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
-    throw new Error("KNOWLEDGE_DB_URL_RO が無い。MCP とフックは読み取り専用のロールでしか繋がない。" + "~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
+    throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
   }
   const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.SUPABASE_DB_URL;
   if (!raw) {
@@ -39246,7 +39246,7 @@ ${USAGE}`);
   if (cmd === "doctor") {
     console.log(`SUPABASE_DB_URL      ${env2.SUPABASE_DB_URL ? "あり" : "無い"}`);
     console.log(`VOYAGE_API_KEY       ${env2.VOYAGE_API_KEY ? "あり" : "無い"}`);
-    console.log(`KNOWLEDGE_DB_URL_RO  ${env2.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP とフックは繋がらない）"}`);
+    console.log(`KNOWLEDGE_DB_URL_RO  ${env2.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP・フック・画面の API はここで止まる）"}`);
     for (const [label, readOnly] of [
       ["書き込み(CLI)", false],
       ["読み取り(MCP/フック)", true]
@@ -39562,7 +39562,7 @@ ${USAGE}`);
       const atRoot = fs7.existsSync(path8.join(abs, ".git"));
       const hit = await c.query(`select distinct s.id::int as id, s.label, s.ident from scope s
          left join scope_path p on p.scope_id = s.id and p.host = $4
-         where s.ident = $1 or s.label = $1 or s.abs_path = $2 or p.abs_path = $2
+         where s.ident = $1 or s.label = $1 or p.abs_path = $2
             or ($3::text is not null and s.ident = $3)`, [target, abs, atRoot ? identify(abs).ident : null, HOST]);
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
@@ -39641,7 +39641,7 @@ ${USAGE}`);
                select 1 from relation rel
                join node v on v.id = rel.from_node
                where rel.to_node = n.id and rel.kind = 'verifies'
-                 -- 墓標を「通った検証」として数えない（node を引くクエリは全部これを付ける）
+                 -- 墓標を「通った検証」として数えない
                  and v.deleted_at is null
                  and v.kind = 'verification' and v.subkind = 'pass'
              )

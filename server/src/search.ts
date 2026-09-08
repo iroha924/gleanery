@@ -301,7 +301,7 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
 export async function logSearch(
   client: pg.Client,
   o: {
-    source: "mcp" | "cli" | "chat";
+    source: "mcp" | "cli" | "chat" | "dashboard";
     scopeId?: number | null;
     cwd?: string | null;
     question: string;

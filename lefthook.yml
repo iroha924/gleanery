@@ -20,3 +20,11 @@ pre-commit:
       run: |
         bun run bundle
         git add plugin/dist/
+    # **MCP は版を上げないとキャッシュへ複製されない。**Claude Code はプラグインを
+    # ~/.claude/plugins/cache/<名前>/<版>/ から動かし、複製は版が変わったときだけ起きる。
+    # 「版を上げる」を AGENTS.md に書いたが、書いた本人が 3 時間で 8 回踏んだ（実測）。
+    # 守られる保証が要るものは規約ではなく機構に置く。
+    - name: mcp-version
+      glob: "server/src/mcp.ts"
+      run: |
+        bun run scripts/check-mcp-version.mjs

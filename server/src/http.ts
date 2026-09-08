@@ -12,8 +12,8 @@ import OpenAI from "openai";
 import type pg from "pg";
 import { type ChatBody, chat, type Learn } from "./chat.ts";
 import { connect, loadEnv } from "./db.ts";
-import { candidates, identify } from "./scope.ts";
-import { currentWork, labelOf, type Polarity, scopeFamily, search } from "./search.ts";
+import { candidates, identify, rememberPath } from "./scope.ts";
+import { currentWork, labelOf, logSearch, type Polarity, scopeFamily, search } from "./search.ts";
 
 const env = loadEnv(process.cwd());
 let pending: Promise<pg.Client> | null = null;
@@ -175,7 +175,19 @@ app.post("/api/search", async (c) => {
   // 範囲はヘッダで選んだものが来る。**未指定は「すべて」**（絞らない）。
   const scopeIds = Array.isArray(body.scopeIds) ? body.scopeIds : undefined;
   const polarity: Polarity | undefined = body.onlyDont ? "dont" : undefined;
-  const { rows } = await search(client, env, { question, scopeIds, polarity, kinds: body.kinds, limit });
+  const found = await search(client, env, { question, scopeIds, polarity, kinds: body.kinds, limit });
+  const { rows } = found;
+  // 画面の検索ページも入口の 1 つ。**人が直接打った問い**なので、
+  // 何を知りたかったかの signal としてはいちばん濃い。
+  await logSearch(client, {
+    source: "dashboard",
+    scopeId: scopeIds?.[0] ?? null,
+    question,
+    kinds: body.kinds,
+    onlyRejected: body.onlyDont === true,
+    allScopes: !scopeIds,
+    result: found,
+  });
   // **id は数で返す。**pg は bigint を文字列で返すので、そのままだと画面側の数と一致しない。
   return c.json(rows.map((r) => ({ ...r, id: Number(r.id), label: labelOf(r) })));
 });
@@ -252,6 +264,9 @@ app.post("/api/groups", async (c) => {
         id = created.rows[0]?.id;
       }
       if (id !== undefined) {
+        // **画面から足した作業場所にも置き場所を書く。**書かないと日次同期が
+        // 「このホストに置き場所が未登録」で毎回飛ばす。画面はこのマシンで動いている。
+        await rememberPath(client, id, me.absPath);
         await client.query(
           "insert into group_member (group_id, scope_id) values ($1,$2) on conflict do nothing",
           [groupId, id],

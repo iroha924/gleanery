@@ -39017,7 +39017,7 @@ var CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plug
 var ca = null;
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
-    throw new Error("KNOWLEDGE_DB_URL_RO が無い。MCP とフックは読み取り専用のロールでしか繋がない。" + "~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
+    throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
   }
   const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.SUPABASE_DB_URL;
   if (!raw) {

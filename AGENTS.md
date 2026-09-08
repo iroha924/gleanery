@@ -103,8 +103,11 @@ bun run dev        # API + ダッシュボード
 | `mitos import-sessions` | Claude Code の会話（1 往復 = 1 件） |
 | `mitos import-docs` | リポジトリの Markdown（見出しで節に割る）。**既定の検索には出ない** |
 
-`mitos sync` が日次でまとめて回す（launchd。毎日 6:00）。**新しい口を足したら sync にも繋ぐ。**
-繋がないと、人が手で叩いたときしか入らない。
+**`mitos ingest` 以外の 4 つを `mitos sync` が日次で回す**（launchd。毎日 6:00）。
+判断の構造化（`/mitos:trace` → `ingest`）だけは人が明示的に頼んだときに走る
+（機械が書くと未完成の記録になる、という棄却理由が生きている）。
+
+**新しい取り込み口を足したら sync にも繋ぐ。**繋がないと、人が手で叩いたときしか入らない。
 
 ## 詳しくは
 

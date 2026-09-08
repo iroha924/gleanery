@@ -340,8 +340,7 @@ export async function* chat(
     searchRecords(client, queryVector, body.scopeIds, 3),
   ]);
   const { rows } = found;
-  // **画面から聞かれたことも残す。**source に 'chat' を用意しておきながら
-  // どこからも書いていなかった。答えを持てなかった問いは、入口を問わず同じ穴である。
+  // **画面から聞かれたことも残す。**答えを持てなかった問いは、入口を問わず同じ穴である。
   await logSearch(client, {
     source: "chat",
     scopeId: body.scopeIds[0] ?? null,

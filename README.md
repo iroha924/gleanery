@@ -249,8 +249,9 @@ mitos adopt
 # 4. 確かめる
 mitos doctor          # 「置き場所」行が 0 件でないこと
 
-# 5. 日次同期
-cp ~/Projects/mitos/... com.mitos.sync.plist ~/Library/LaunchAgents/   # パスを書き換える
+# 5. 日次同期。雛形の __MITOS_DIR__ と __HOME__ を埋める
+sed -e "s#__MITOS_DIR__#$HOME/Projects/mitos#g" -e "s#__HOME__#$HOME#g" \
+  ~/Projects/mitos/scripts/com.mitos.sync.plist > ~/Library/LaunchAgents/com.mitos.sync.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
 ```
 

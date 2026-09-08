@@ -370,7 +370,9 @@ async function main(): Promise<void> {
     console.log(`SUPABASE_DB_URL      ${env.SUPABASE_DB_URL ? "あり" : "無い"}`);
     console.log(`VOYAGE_API_KEY       ${env.VOYAGE_API_KEY ? "あり" : "無い"}`);
     console.log(
-      `KNOWLEDGE_DB_URL_RO  ${env.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP とフックは繋がらない）"}`,
+      `KNOWLEDGE_DB_URL_RO  ${
+        env.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP・フック・画面の API はここで止まる）"
+      }`,
     );
     // **両方の経路を叩く。**MCP とフックは読み取り専用ロールで繋ぐので、
     // 管理側だけ確かめても意味が無い。実際にベクトル検索まで通す
@@ -794,12 +796,13 @@ async function main(): Promise<void> {
       const abs = path.resolve(target);
       const atRoot = fs.existsSync(path.join(abs, ".git"));
       const hit = await c.query<{ id: number; label: string; ident: string }>(
-        `select distinct s.id::int as id, s.label, s.ident from scope s
-         left join scope_path p on p.scope_id = s.id and p.host = $4
-         where s.ident = $1 or s.label = $1 or s.abs_path = $2 or p.abs_path = $2
-            or ($3::text is not null and s.ident = $3)`,
         // **パスで引くのはこのホストの登録だけ。**別のマシンで同じパスが
         // 別のリポジトリに割り当たっていると、1 件に当たったまま向こうのナレッジを消す。
+        // `scope.abs_path` は 1 台ぶんしか持てない古い列なので、ここでは見ない。
+        `select distinct s.id::int as id, s.label, s.ident from scope s
+         left join scope_path p on p.scope_id = s.id and p.host = $4
+         where s.ident = $1 or s.label = $1 or p.abs_path = $2
+            or ($3::text is not null and s.ident = $3)`,
         [target, abs, atRoot ? identify(abs).ident : null, HOST],
       );
       if (hit.rows.length === 0)
@@ -895,9 +898,8 @@ async function main(): Promise<void> {
         console.log("まだ 1 件も引かれていません。search_knowledge か mitos search を使うと溜まります。");
         return;
       }
-      // **この出力もエージェントの文脈へ入る。**trace スキルが `Bash(mitos *)` を
-      // 事前承認しているので、search と同じく枠を通す。question は検索した側が書いた
-      // 文字列で、注入されたエージェントが仕込めば別のエージェントがここで読む。
+      // **この出力もエージェントの文脈へ入る。**question は検索した側が書いた文字列で、
+      // 注入されたエージェントが仕込めば別のエージェントがここで読む。search と同じく枠を通す。
       const out: string[] = [`引かれた回数: ${all.map((r) => `${r.src} ${r.n}`).join(" / ")}`];
       // **合否の閾値を置かない。**Voyage の関連度がこのデータでどう分布するかを
       // まだ測っていないので、「0.4 未満は失敗」のような線を引くと、較正していない
@@ -927,7 +929,7 @@ async function main(): Promise<void> {
                select 1 from relation rel
                join node v on v.id = rel.from_node
                where rel.to_node = n.id and rel.kind = 'verifies'
-                 -- 墓標を「通った検証」として数えない（node を引くクエリは全部これを付ける）
+                 -- 墓標を「通った検証」として数えない
                  and v.deleted_at is null
                  and v.kind = 'verification' and v.subkind = 'pass'
              )

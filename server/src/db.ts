@@ -64,14 +64,14 @@ export async function connect(
   { as = "admin" }: { as?: "admin" | "read" | "config" } = {},
 ): Promise<pg.Client> {
   // 鍵を用途で分ける。用意されていない環境では管理側へ落ちる（設定していなくても動くように）。
-  // **推論する層は、管理側の鍵へ落とさない。**落ちると MCP とフックが
+  // **推論する層は、管理側の鍵へ落とさない。**落ちると MCP・フック・画面の API が
   // 「全部書ける鍵」を持つことになり、ロールを分けた意味が消える
   // （20260906120000_readonly_role_for_mcp.sql）。落とさないと決めたので、
   // セッションを読み取り専用にする迂回も要らなくなる。
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
     throw new Error(
-      "KNOWLEDGE_DB_URL_RO が無い。MCP とフックは読み取り専用のロールでしか繋がない。" +
-        "~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる",
+      "KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" +
+        "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる",
     );
   }
   const raw =

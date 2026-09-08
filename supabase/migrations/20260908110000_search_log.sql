@@ -47,7 +47,6 @@ create policy search_log_append_ro on public.search_log for insert to knowledge_
 
 -- 読むのは画面と CLI。
 grant select, insert, delete on public.search_log to mitos_cfg;
-grant usage, select on sequence public.search_log_id_seq to mitos_cfg;
 drop policy if exists search_log_cfg on public.search_log;
 create policy search_log_cfg on public.search_log for all to mitos_cfg using (true) with check (true);
 
