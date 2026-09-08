@@ -736,17 +736,29 @@ async function main(): Promise<void> {
           )
         ).rows.map((r) => [r.ident, r]),
       );
+      // **同じ識別子のディレクトリが複数あったら、どれかを選ばない。**
+      // 並び順で先に来たほうへ黙って結ぶと、同じ remote を持つ複製やクローンが
+      // 本物より前に並ぶだけで置き場所を奪える。
+      const byIdent = new Map<string, typeof here>();
+      for (const cand of here) byIdent.set(cand.ident, [...(byIdent.get(cand.ident) ?? []), cand]);
+
       const linked: string[] = [];
       const unknown: string[] = [];
-      for (const cand of here) {
-        const scope = known.get(cand.ident);
+      const ambiguous: string[] = [];
+      for (const [ident, cands] of byIdent) {
+        const scope = known.get(ident);
         if (!scope) {
-          unknown.push(`${cand.label}  ${cand.absPath}`);
+          for (const cand of cands) unknown.push(`${cand.label}  ${cand.absPath}`);
           continue;
         }
-        await rememberPath(c, scope.id, cand.absPath);
-        linked.push(`${scope.label}  ${cand.absPath}`);
-        known.delete(cand.ident);
+        known.delete(ident);
+        const only = cands[0];
+        if (cands.length > 1 || !only) {
+          ambiguous.push(`${scope.label}\n    ${cands.map((x) => x.absPath).join("\n    ")}`);
+          continue;
+        }
+        await rememberPath(c, scope.id, only.absPath);
+        linked.push(`${scope.label}  ${only.absPath}`);
       }
       console.log(`このマシン: ${HOST}`);
       console.log(`\n置き場所を登録した作業場所（${linked.length} 件）:`);
@@ -755,6 +767,11 @@ async function main(): Promise<void> {
         console.log(`\nナレッジにはあるが、このマシンに見当たらない（${known.size} 件）:`);
         for (const k of known.values()) console.log(`  ${k.label}`);
         console.log("  ※ クローンしてから mitos adopt をもう一度叩く。引くだけなら登録は要らない");
+      }
+      if (ambiguous.length) {
+        console.log(`\n同じ識別子のディレクトリが複数あるので結んでいない（${ambiguous.length} 件）:`);
+        for (const a of ambiguous) console.log(`  ${a}`);
+        console.log("  ※ どれか 1 つだけを残すか、mitos import-github --cwd <dir> で明示する");
       }
       if (unknown.length) {
         console.log(`\nこのマシンにあるが、ナレッジには未登録（${unknown.length} 件）:`);
@@ -778,10 +795,12 @@ async function main(): Promise<void> {
       const atRoot = fs.existsSync(path.join(abs, ".git"));
       const hit = await c.query<{ id: number; label: string; ident: string }>(
         `select distinct s.id::int as id, s.label, s.ident from scope s
-         left join scope_path p on p.scope_id = s.id
+         left join scope_path p on p.scope_id = s.id and p.host = $4
          where s.ident = $1 or s.label = $1 or s.abs_path = $2 or p.abs_path = $2
             or ($3::text is not null and s.ident = $3)`,
-        [target, abs, atRoot ? identify(abs).ident : null],
+        // **パスで引くのはこのホストの登録だけ。**別のマシンで同じパスが
+        // 別のリポジトリに割り当たっていると、1 件に当たったまま向こうのナレッジを消す。
+        [target, abs, atRoot ? identify(abs).ident : null, HOST],
       );
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);

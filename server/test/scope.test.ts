@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
-import { normalizeRemote } from "../src/scope.ts";
+import { identify, normalizeRemote } from "../src/scope.ts";
 
 test("ssh と https の remote が同じ識別子へ揃う", () => {
   const want = "github.com/iroha924/hir4ta-developer";
@@ -42,4 +46,30 @@ test("remote が無いときは null", () => {
 
 test("ネストしたグループを潰さない", () => {
   assert.equal(normalizeRemote("git@gitlab.com:org/team/repo.git"), "gitlab.com/org/team/repo");
+});
+
+// **識別子と置き場所は同じ基点でなければならない。**git は親方向へ `.git` を探すので
+// remote は根まで遡る。パスだけ遡らないと、リポジトリの途中で読み取り系のコマンドを
+// 叩くだけで「この作業場所の置き場所」がサブディレクトリに書き換わり、
+// 翌朝の同期がそこを根として読んで、根から取った節を全部墓標にする。
+test("リポジトリの途中を指しても、置き場所は根を返す", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-scope-"));
+  try {
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(path.join(repo, "a", "b"), { recursive: true });
+    execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
+    execFileSync("git", ["-C", repo, "remote", "add", "origin", "https://github.com/o/r.git"], {
+      stdio: "ignore",
+    });
+    const root = fs.realpathSync(repo);
+    for (const d of [repo, path.join(repo, "a"), path.join(repo, "a", "b")]) {
+      const got = identify(d);
+      assert.equal(got.ident, "git:github.com/o/r");
+      assert.equal(fs.realpathSync(got.absPath), root, `${d} で根を返さなかった`);
+    }
+    // git 管理外は渡されたパスのまま
+    assert.equal(identify(tmp).identKind, "abs-path");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 });

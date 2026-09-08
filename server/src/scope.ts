@@ -49,18 +49,25 @@ export function normalizeRemote(url: string | null | undefined): string | null {
 }
 
 export function identify(dir: string): Ident {
-  const abs = path.resolve(dir);
-  let remote: string | null = null;
-  try {
-    remote = normalizeRemote(
-      execFileSync("git", ["-C", abs, "remote", "get-url", "origin"], {
+  const given = path.resolve(dir);
+  const git = (...args: string[]): string | null => {
+    try {
+      return execFileSync("git", ["-C", given, ...args], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
-      }).trim(),
-    );
-  } catch {
-    /* git が無い、remote が無い。どちらも普通のこと */
-  }
+      }).trim();
+    } catch {
+      /* git が無い、remote が無い。どちらも普通のこと */
+      return null;
+    }
+  };
+  const remote = normalizeRemote(git("remote", "get-url", "origin"));
+  // **識別子と置き場所の基点を揃える。**git は親方向へ `.git` を探すので remote は
+  // 根まで遡るのに、パスは渡されたディレクトリのままだった。リポジトリの途中で
+  // `mitos search` を叩くだけで「この scope の置き場所」がサブディレクトリに書き換わり、
+  // 翌朝の同期がそこを根として読んで、根から取った節を全部墓標にする。
+  const top = remote ? git("rev-parse", "--show-toplevel") : null;
+  const abs = top || given;
   const rest = remote ? remote.split("/").slice(1) : [];
   return {
     ident: remote ? `git:${remote}` : `path:${abs}`,

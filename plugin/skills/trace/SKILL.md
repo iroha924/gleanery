@@ -5,7 +5,7 @@ description: >
   次のセッションが MCP の current_work から再開できるようにする。ユーザーが明示的に頼んだときだけ使う。
 argument-hint: "[作業テーマ / issue 番号 / URL]"
 disable-model-invocation: true
-allowed-tools: Read, Write, AskUserQuestion, Bash(node "$PG" *), Bash(node ${CLAUDE_SKILL_DIR}/bin/progress.mjs *), Bash(mitos *), Bash(gh issue view *), Bash(gh pr list *), Bash(git log *)
+allowed-tools: Read, Write, AskUserQuestion, Bash(node "$PG" *), Bash(node ${CLAUDE_SKILL_DIR}/bin/progress.mjs *), Bash(mitos ingest *), Bash(mitos export *), Bash(mitos search *), Bash(mitos scopes), Bash(mitos candidates *), Bash(mitos link *), Bash(gh issue view *), Bash(gh pr list *), Bash(git log *)
 ---
 
 # trace — 作業の判断を、後から引ける形で残す

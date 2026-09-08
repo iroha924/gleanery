@@ -37822,14 +37822,20 @@ function normalizeRemote(url2) {
   }
 }
 function identify(dir) {
-  const abs = path4.resolve(dir);
-  let remote = null;
-  try {
-    remote = normalizeRemote(execFileSync3("git", ["-C", abs, "remote", "get-url", "origin"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim());
-  } catch {}
+  const given = path4.resolve(dir);
+  const git = (...args) => {
+    try {
+      return execFileSync3("git", ["-C", given, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"]
+      }).trim();
+    } catch {
+      return null;
+    }
+  };
+  const remote = normalizeRemote(git("remote", "get-url", "origin"));
+  const top = remote ? git("rev-parse", "--show-toplevel") : null;
+  const abs = top || given;
   const rest = remote ? remote.split("/").slice(1) : [];
   return {
     ident: remote ? `git:${remote}` : `path:${abs}`,
@@ -39491,17 +39497,29 @@ ${USAGE}`);
     if (cmd === "adopt") {
       const here = candidates();
       const known = new Map((await c.query("select id::int as id, ident, label from scope where ident like 'git:%' or ident_kind = 'abs-path'")).rows.map((r) => [r.ident, r]));
+      const byIdent = new Map;
+      for (const cand of here)
+        byIdent.set(cand.ident, [...byIdent.get(cand.ident) ?? [], cand]);
       const linked = [];
       const unknown2 = [];
-      for (const cand of here) {
-        const scope = known.get(cand.ident);
+      const ambiguous = [];
+      for (const [ident, cands] of byIdent) {
+        const scope = known.get(ident);
         if (!scope) {
-          unknown2.push(`${cand.label}  ${cand.absPath}`);
+          for (const cand of cands)
+            unknown2.push(`${cand.label}  ${cand.absPath}`);
           continue;
         }
-        await rememberPath(c, scope.id, cand.absPath);
-        linked.push(`${scope.label}  ${cand.absPath}`);
-        known.delete(cand.ident);
+        known.delete(ident);
+        const only = cands[0];
+        if (cands.length > 1 || !only) {
+          ambiguous.push(`${scope.label}
+    ${cands.map((x) => x.absPath).join(`
+    `)}`);
+          continue;
+        }
+        await rememberPath(c, scope.id, only.absPath);
+        linked.push(`${scope.label}  ${only.absPath}`);
       }
       console.log(`このマシン: ${HOST}`);
       console.log(`
@@ -39514,6 +39532,13 @@ ${USAGE}`);
         for (const k of known.values())
           console.log(`  ${k.label}`);
         console.log("  ※ クローンしてから mitos adopt をもう一度叩く。引くだけなら登録は要らない");
+      }
+      if (ambiguous.length) {
+        console.log(`
+同じ識別子のディレクトリが複数あるので結んでいない（${ambiguous.length} 件）:`);
+        for (const a of ambiguous)
+          console.log(`  ${a}`);
+        console.log("  ※ どれか 1 つだけを残すか、mitos import-github --cwd <dir> で明示する");
       }
       if (unknown2.length) {
         console.log(`
@@ -39533,9 +39558,9 @@ ${USAGE}`);
       const abs = path8.resolve(target);
       const atRoot = fs7.existsSync(path8.join(abs, ".git"));
       const hit = await c.query(`select distinct s.id::int as id, s.label, s.ident from scope s
-         left join scope_path p on p.scope_id = s.id
+         left join scope_path p on p.scope_id = s.id and p.host = $4
          where s.ident = $1 or s.label = $1 or s.abs_path = $2 or p.abs_path = $2
-            or ($3::text is not null and s.ident = $3)`, [target, abs, atRoot ? identify(abs).ident : null]);
+            or ($3::text is not null and s.ident = $3)`, [target, abs, atRoot ? identify(abs).ident : null, HOST]);
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
       if (hit.rows.length > 1)

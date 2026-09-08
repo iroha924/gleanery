@@ -39123,14 +39123,20 @@ function normalizeRemote(url2) {
   }
 }
 function identify(dir) {
-  const abs = path2.resolve(dir);
-  let remote = null;
-  try {
-    remote = normalizeRemote(execFileSync("git", ["-C", abs, "remote", "get-url", "origin"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim());
-  } catch {}
+  const given = path2.resolve(dir);
+  const git = (...args) => {
+    try {
+      return execFileSync("git", ["-C", given, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"]
+      }).trim();
+    } catch {
+      return null;
+    }
+  };
+  const remote = normalizeRemote(git("remote", "get-url", "origin"));
+  const top = remote ? git("rev-parse", "--show-toplevel") : null;
+  const abs = top || given;
   const rest = remote ? remote.split("/").slice(1) : [];
   return {
     ident: remote ? `git:${remote}` : `path:${abs}`,
