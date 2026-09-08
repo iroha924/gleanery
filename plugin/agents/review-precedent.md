@@ -2,7 +2,7 @@
 name: review-precedent
 description: diff が過去の判断に反していないかを確認する。以前に棄却した案を同じ形で再導入していないか、試して駄目だった道をもう一度通っていないか、「触らない」と決めたパスに触っていないか、覆されたはずの決定に依拠していないか。mitos のナレッジ（search_knowledge / check_path）を一次情報として読む。実装に入る前や、既存の方針を変える diff をレビューする時に使用。明文化された規約との照合は対象外（review-conventions が担当。こちらが見るのは規約に昇格しなかった判断である）。正しさ・セキュリティ・冗長さも対象外。変更を生んだ思考を記憶していない状態にするため、fork ではなく必ず新規エージェントとして起動すること。範囲と変更ファイル一覧を渡せば diff は自分で読む。依頼元の会話にはアクセスできない。
 tools: Read, Grep, Glob, Bash, mcp__plugin_mitos_mitos__search_knowledge, mcp__plugin_mitos_mitos__check_path, mcp__plugin_mitos_mitos__list_scopes
-model: inherit
+model: opus
 effort: medium
 maxTurns: 40
 color: purple
@@ -20,7 +20,7 @@ color: purple
 このファイルは変えなくてよい。
 
 **`effort: medium` と `maxTurns: 40` はフロントマターで固定してある。**
-**引く先が MCP に限られる。**深さより、引く問いの立て方で決まる。**セッションの値を継承させないのが要点で、レビューの深さが「たまたまその日の設定」で変わらないようにしてある。**`maxTurns` は無限ループを止めるためで、到達した場合の出力は partial として印が付く。
+**引く先が MCP に限られる。**深さより、引く問いの立て方で決まる。**セッションの値を継承させないのが要点で、レビューの深さが「たまたまその日の設定」で変わらないようにしてある。**`model` も同じ理由で固定してある — `inherit` だと**セッションが安いモデルの日にレビューだけ浅くなり、しかも出力は同じ形で返るので気付けない。**加えて `effort` の取りうる値はモデルによって違うので、**モデルを固定して初めて `effort` の指定が意味を持つ。**`maxTurns` は無限ループを止めるためで、到達した場合の出力は partial として印が付く。
 
 ## 渡されるもの
 
