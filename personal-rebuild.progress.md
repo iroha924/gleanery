@@ -1,19 +1,19 @@
-# mitos を個人の道具に戻し、判断の地図を中心にした画面へ作り替える
+# mitos を個人の道具に戻し、判断が引ける形へ作り替える
 
 > mitos に残るのが本人のリポジトリの記録だけになり、追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件になること。あわせてダッシュボードが、チャットを中心に据えた 6 画面（質問する / 作業の現在地 / 記録を探す / 記録 / 会議を聞き取る / 設定）として動き、bun run check とテスト 42 件と本番ビルドが通ること。**地図として出す案は d-drop-map で棄却したので、完了条件から外してある**（変更の経緯は d-goal-after-map）
 
 - 状態: 進行中
 - 対象: mitos (main)
-- 最終更新: 2026-09-08T03:45:00+09:00
+- 最終更新: 2026-09-08T10:45:00+09:00
 - 人間向けの表示: `personal-rebuild.progress.html`
 
 ## いまここ
 
-地図をやめてチャットを中心に戻し、そこから画面全体を作り直した。チャットは往復の形（自分の発言は右の吹き出し、答えは地の文）になり、会話の題は LLM が付ける。音声入力は whisper-1、会議の聞き取りは Realtime へ 2 系統を別々に流す形で入っている。検索は既定で bot の発言を外し、現在地は phases の未完だけを出す。書体は Geist と Murecho、配色は #2C2C2B を基準にした白黒。直前に直したのは「このプロジェクトは何か」に答えられなかった件で、原因は DB にプロジェクトの定義が無いこと（scope.summary が空）。プロンプトで README を読ませる回避を入れたが、根本の summary は空のまま。レビュアー 1 体に .md だけを渡して 23 件の指摘を受け、再開できない箇所と証拠の無い断定を裁定した（目的が地図を要求したままだった点、push 範囲、地図に依存する過去の検証、件数の母数、bot 発言 139→138 の誤り）。ファビコンとアプリアイコンを「折り返す糸」で入れた（d-icon-folded-thread）。**37 コミットを origin/main へ push 済み（a9decb4）。**残る未着手は、プロジェクトの定義を DB に持たせること（scope.summary が空）。残る 1 工程は、**人に一行説明を書かせるのではなく、AI がリポジトリを読んで scope.role / summary を埋める**形に方針が変わった（d-infer-project-identity）。**期限のある未決が別に 1 件ある** — 退職日までに ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうか。リモートは 1a9dae7 で、手元と一致している
+**この回で見つけた欠陥は全部 1 種類だった — 書いたものが AI 向けの面に届いていない**（`e-wiring-not-reaching`、11 件）。人間向けの面では動いているので、作った本人には壊れて見えない。**直したのは出口で、新しい欄は 1 つも足していない**（`d-no-new-fields`）。入れたのは、毎ターン想起を促す `UserPromptSubmit` フック、SessionEnd の 3 つの欠陥（表示されない / 誤検知 / Bash 編集が見えない）、検証の結果を札に出すこと（pass 63 と fail 3 が同じ字面で返っていた）、PR 本文を既定の検索から外すこと（予算の大半を食っていた）、`confirmation` 38 件と `consequences` の good:false 67 個を渡すこと、そして現在地を MCP から引く `current_work` と、DB から IR を書き戻す `mitos export`。4 コミットを push 済み（`ad4410f`）。**記録の保管は方針が決まって着手した段階**で、`.html` と `.md` の廃止（`d-drop-record-files`）が残っている — 人が読むのはダッシュボード、AI が読むのは MCP、IR の受け渡しは一時ファイルで足りる、という形。段取り 6 段のうち 1 段目（AI の読み口）だけが終わっていて、**2 段目以降は `current_work` をしばらく使って確信を得てから進める**。副産物として、`.mcp.json` が古い Supabase プロジェクトを指していて、そこに勤務先データ 35,074 件が生きていることが分かった（`e-old-supabase-project`）。本人の裁定で「一度きりの移行の残骸」として扱い、参照だけ現行へ直した。**旧プロジェクトの存在確認は本人の宿題として残っている。**
 
 ### 工程
 
-- 完了: DB の削除
+- 完了: DB の削除（knowledge.env が指す DB のみ。旧プロジェクトは e-old-supabase-project で未達）
 - 完了: リポジトリの記述
 - 完了: 方向を選ぶ
 - 完了: 地図の実装（のち d-drop-map で削除）
@@ -24,13 +24,19 @@
 - 完了: 書体と配色
 - 完了: チャット画面の作り直し
 - 未着手: プロジェクトの定義を DB に持たせる（AI が読んで埋める）
-- 完了: この回のコミットを push（a9decb4）
+- 完了: この回のコミットを push
+- 完了: AI 向けの出口を開ける
+- 進行中: 記録ファイルを廃止し、ダッシュボードと MCP に寄せる
 
 ## 次にやること
 
-- 次のセッションでやること: **リポジトリを読んで scope.role / scope.summary を AI が埋める経路を作る**（d-infer-project-identity）。人に書かせる `mitos describe` は棄却済みなので、そちらへ戻らないこと。いまの回避（システムプロンプトで README を読ませる）は残したままでよいが、恒久策と取り違えない。決めることは q-identity-scope に置いてある (ai)
-- 2026-09-07 時点で「あと 1 週間」と言われた退職日までに、勤務先のリポジトリ名を含む ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうかを決める。消すと、そのリポジトリでの作業の一次記録が失われる（DB からは既に消えており、取り込み直す経路も退職後は無い）。残すと、パス名自体が勤務先を示すものが手元に残る。この回でも未決 (human)
-- 次の職場で取り込みを始めたら、relation 表に書き手を作るかを判断する。地図は削除したので線種の枠は消えたが、relation 表と parent_id は残っている (human)
+- **`d-drop-record-files` の段取り 2〜6 へ進んでよいかを判定する。**門の条件はこれ — **次の 3 セッションで、`current_work` と `search_knowledge` だけを使って作業を再開し、`personal-rebuild.progress.md` を一度も開かずに済んだか。**開く必要が出たら、何を読むために開いたかを `events` に残してから段取りを見直す。判定できるのは実際に使う本人だけなので、AI は勝手に進めない (human)
+- **門を通ったら、この順で進める。順序に理由がある** — 4 で `progress.mjs` の read / render を消すと 「IR を取り出して直し、描き直す」経路が無くなるので、記録を書き換える作業を先に済ませる。**2**: `progress-log-skill#d-ir-in-html-plus-md` と `progress-log-skill#d-store-in-project-root` を supersede として書き直す（いまの経路が生きているうちに）。**3**: `glossary` 7 件と `links.urls` 3 件を取り込む（`ingest.ts` にループが無い。消す前に拾わないと `raw` に埋もれる）。**4**: `trace` を ingest 直行にする（IR を書く → `progress validate` → `mitos ingest <ir.json>`。`render` を通さない）。**5**: `render.mjs` 453 行・`assets/template.html` 128 行・`progress.mjs` の find / resume / show / read / render と、HTML の往復と XSS 境界に紐づく evals を消す。**6**: `personal-rebuild.progress.{html,md}` を削除する。**削除の直前に `mitos export <id>` が通り、書き出した IR の中身が手元のファイルの IR と一致することを必ず確かめる** — `.html` を先に消すと IR が DB にしか無い期間が生まれ、`export` が壊れていたら復元できない (ai)
+- **リポジトリを読んで `scope.role` / `scope.summary` を AI が埋める経路を作る**（`d-infer-project-identity`）。人に書かせる `mitos describe` は棄却済みなので、そちらへ戻らないこと。決めることは `q-identity-scope` に置いてある。**あわせて `server/src/mcp.ts` の `list_scopes` が `summary` を選んでいないことを直す** — 埋めても AI に届かない状態のままになる（人間向けの `http.ts` の `/api/scopes` は選んでいる） (ai)
+- **Supabase のダッシュボードで `etprvasdnwvegbcvhian` が残っているかを確認する。**残っていれば勤務先データが生きている（record 84 / node 35,074 / scope 8 / person 7、削除ゼロ）。行を消してもプロジェクト自体は残る。**バックアップや PITR に残るかは一次ソースで確かめていない（未検証）**ので、確実を期すならプロジェクトごと削除するのが素直だが、その必要性は未確認である。**これが済むまで、目指すところの「mitos に残るのが本人のリポジトリの記録だけ」は未達である**（`v-purge-scope-was-one-db` [fail]） (human)
+- **`q-scrub-pattern` を決着させる。**目指すところの中心条件「追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件」を、**いま再確認する手段が無い**（`v-scrub` の grep パターンはプレースホルダで、語の一覧はどこにも保管していない）。取れる手は 2 つ — 語の一覧を gitignore 下のファイルへ置いて再確認できるようにするか、**この条件を目指すところから外す**か。決めないと、完了条件が判定不能のまま残る (human)
+- 2026-09-07 時点で「あと 1 週間」と言われた退職日までに、勤務先のリポジトリ名を含む ~/.claude/projects/ 配下の会話ログ原本（17MB・10 ファイル）を消すかどうかを決める。この回でも未決 (human)
+- 次の職場で取り込みを始めたら、relation 表に書き手を作るかを判断する (human)
 
 ## 未解決の問い
 
@@ -43,6 +49,9 @@
 - `q-identity-scope` 要約を作る単位と頻度をどうするか。取り込みのたびに作り直すと遅くなり、一度だけだとリポジトリの性格が変わったときに古びる。また README の無いリポジトリで何を読むか（CLAUDE.md → AGENTS.md → package.json → ディレクトリ構成、のどこまで落ちるか）も決まっていない — 答えるのは AI / 実装中に解ける
 - `q-sidebar-focus-bg` サイドバーの項目に足した `focus-visible:bg-sidebar-accent`（dashboard/src/components/ui/sidebar.tsx の 6 箇所）を残すか。**本人が選んだ「枠の色だけ変える」の範囲外**で、枠を持たない項目でフォーカスの位置が完全に消えるのを避けるために足した。外すとキーボードでサイドバーを辿れなくなる — 答えるのは 人 / いま答えが要る
 - `q-scrub-pattern-2` （q-scope-summary を畳んだ差し替え。あちらは「mitos describe をどう埋めるか」を人に聞く形で立てていたが、d-infer-project-identity でその設計自体を棄却したので問いとして成立しなくなった。**人に聞くのではなく q-identity-scope として AI が決める形へ移した。**）残っている人への問いは、目指すところの中心条件「追跡ファイルから特定の組織・第三者に紐づく記述が検索して 0 件」を再確認する手段が無いこと（q-scrub-pattern と同じ） — 答えるのは 人 / この作業の外
+- `q-current-entry` **MCP の `current_work` だけで足りるか。**skill として作る案は `d-current-work-tool` で棄却済み（人が打たないと動かない）なので、ここで問うのはツールの是非ではなく**人が明示的に呼ぶ入口が別に要るか**である。3 セッション使って、AI が自分で呼ばず人が呼びたくなる場面があったかで判定する — 答えるのは 人 / この作業の外
+- `q-perf-has-no-numbers` パフォーマンスのレビュー観点を出せるようにするか。**IR には数値を入れる欄が 1 つも無く**（`goal` は散文、`verification.result` は 3 値）、実データも本物は 2 件しかない。`d-no-new-fields` で欄を足さないと決めたので、数値をどこに置くかが決まっていない — 答えるのは AI / 実装中に解ける
+- `q-links-dead-writes` `links.files`（`role='touched'` 10 件）と `links.commits`（`role='link'` 8 件）は `node_id` が NULL で、`whatAboutPath()` の内部結合から落ちてどのクエリからも到達できない。読み手を足すか、書くのをやめるか。`check_path` が実際に使えているのは `evidence` 経由の file 187 件だけである — 答えるのは AI / 実装中に解ける
 
 ## 背景
 
@@ -487,6 +496,178 @@
 - 検証: v-focus-no-shadow [pass] / v-focus-values [pass]
 - 根拠: commit 810615c / file dashboard/src/components/ui/input-group.tsx
 
+### d-prompt-submit-hook
+
+**`UserPromptSubmit` フックを新設し、毎ターン「引くかを決める」短い問いを注入する。検索は走らせず、引くかどうかは Claude が判断する**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: 「MCP で確認しなかったのはなぜ」と聞かれ、調べると案内が 3 層あった（SessionStart の注入・`using-mitos` スキル・MCP サーバーの instructions）。**3 つとも「こういうときに引け」と書いてあり、3 つとも発火しなかった。**どれもセッション開始時に 1 回置かれるだけで、ターンが進むと文脈の奥へ流れる。4 つ目の案内を足しても同じになる。`mitos search` の実測は 0.79〜0.81 秒で、毎ターン検索を走らせることも技術的には可能だった。3 案を出して本人が選んだ。
+
+**あわせて「閾値をどう決めますか？（案 B / A+B を選んだ場合）」も聞き、「実測してから決める」が選ばれた。ただし案 A では検索を走らせないので、この選択は成立しなくなった。**案 B へ倒すことがあれば、今セッションの実プロンプトでスコア分布を取って決める、という指針として残る。
+- 検討した案:
+  - 採用: フックは促すだけ、引くのは Claude
+  - 棄却: フックが検索まで走らせ、閾値を超えた記録だけ注入する — 本人が「Claude が判断する」形を選んだ。判断を機械へ移すと、引くかどうかの裁量が消える
+  - 棄却: 促し文も注入し、検索も走らせる — 常に何かを喋ることになり、`d-session-end-hint` で棄却した「常に促す」に当たる
+- 結果:
+  - 毎ターン、プロンプトの直前に想起が入る。**フック導入後に方針を決める場面で 4 回引いた**（17:40 追跡ファイルの正本 / 17:45 作業判定を git で見るか / 00:59 記録ファイルを git に置く理由 / 01:17 ダッシュボードで記録を見る画面）。ほかに現在地の照会と id 確認で 2 回、検索機能そのものの動作確認で 7 回
+  - (不利) 注入は 4 行だが、毎ターン載るので長くすると数ターンで壁紙になる。抑制する仕組みは無く、短さと「毎回答えを迫る書き方」だけが対抗手段である
+  - (不利) `d-session-end-hint` が棄却した「常に促す」と形が同じ。本人の判断で受け入れた
+- 守られていることの確かめ方: 注入の本体は `plugin/hooks/prompt-submit`（stdout へ 4 行を出すだけの sh）。新しいセッションで `<mitos-turn>` がプロンプトの直前に入っていること、`plugin/hooks/hooks.json` に `UserPromptSubmit` が登録され、`plugin/hooks/run-hook` に分岐があること
+- 検証: v-prompt-submit-fires [pass]
+- 根拠: commit 573a2c5 / file plugin/hooks/prompt-submit / $ transcript の tool_use から search_knowledge と mitos search を時刻順に数える (exit 0)
+
+### d-session-end-uses-git
+
+**`systemMessage` を最上位へ出し、番兵は JSONL をパースして user の text ブロックだけを見る。**作業したかどうかは git の status と log で判定する****
+
+- 状態: accepted / 09-08 10:45
+- 文脈: `UserPromptSubmit` の動作確認で印字セッションを立てたところ、SessionEnd フックの検証エラーが出た。`systemMessage` を `hookSpecificOutput` の中に入れていたため enum に当たらず、**書かれて以来一度も表示されていなかった**。直すと今度は 2 つ目が出た — 編集判定の正規表現が transcript のツール定義に 4 件ヒットし、編集 0 件のセッションでも促していた。さらに直すと 3 つ目 — auto モードでは Bash 経由で書くのでツール呼び出しが 0 件になる。
+- 検討した案:
+  - 採用: git の status と log で見る
+  - 棄却: transcript のツール呼び出しを数える — heredoc や python -c で書いたファイルはツールの引数に現れず 0 件になる。実測でこのセッションが 0 件だった
+  - 棄却: シェルのコマンド文字列を解析して書き込み先を拾う — 塞ぐ面に終端が無い。同じ判断が `progress-log-skill#d-git-not-shell-parsing` で既に下りている
+- 結果:
+  - auto モードで作業したセッションでも促されるようになった。実測で、修正前は黙り、修正後は「未コミット 4 ファイル」と実数で促した
+  - (不利) フックが git を呼ぶので、リポジトリでない cwd や git が無い環境では黙る。実害は無いが、促しの取りこぼしは観測できない
+  - (不利) 作業前からワーキングツリーが汚れていた場合、読むだけのセッションでも促す。この回では許容した
+- 守られていることの確かめ方: 3 種類の transcript（編集あり・記録済み・git 管理外の cwd）と cwd 無しの入力で、促す／黙るが正しく分岐すること
+- 検証: v-session-end-branches [pass]
+- 根拠: commit 573a2c5
+
+### d-verification-result-as-subkind
+
+**取り込みで `subkind: v.result` を載せ、`LABEL` に `verification/pass` / `fail` / `not-run` の 3 行を足す**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: 検証の結果が AI に届いていなかった（`e-verification-collapsed`）。直し方が 2 つあり、`quote()` に `status` を印字するか、`subkind` に載せて札にするかだった。`decision` は既に `subkind = d.status` で同じことをしている。
+- 検討した案:
+  - 採用: `subkind` に載せて札にする
+  - 棄却: `quote()` が `status` 列を印字する — 両立しない案ではないが、これだけでは再ランクに効かない。札は `labelOf` を通って再ランクの入力になるので、`subkind` に載せれば印字と再ランクの両方が直る。`status` の印字を足すのは、それでも足りないと分かってからでよい
+- 結果:
+  - 落ちた検証を通った検証と読み違えることが無くなった。実測で【検証・落ちた。直っていない】が返った
+  - `subkind` は `embedText` に入らないので、取り込み直しても埋め込みを取り直さない（実測 0 件）
+  - (不利) `polarityOf()` は依然 verification を扱わないので、`only_rejected_or_forbidden: true` では落ちた検証を引けないまま。札が付いただけで極性は付いていない
+  - (不利) 既存の記録は取り込み直すまで `subkind` が null のまま。別リポジトリの記録は、そのディレクトリを指定して入れ直す必要があった
+- 守られていることの確かめ方: `labelOf({kind:"verification", subkind:"fail"})` が pass と違う文字列を返し、検索で落ちた検証が落ちたと分かる形で返ること
+- 検証: v-verification-label-split [pass] / v-reingest-no-reembed [pass]
+- 根拠: commit 6cdae02
+
+### d-exclude-pr-from-default-search
+
+**`event/pr` を既定の検索から外す。種別を指定したときは出す**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: `event/pr` は 24 件で本文が平均 5,015 バイトあり、全件返すと `TOTAL` 48,000 バイトの大半を占めたうえ `PER_ROW` で切られて後半が届かない。**注意の予算を最も食いながら、最も届いていない。**発言（`utterance`）を既定から外した前例がある。
+- 検討した案:
+  - 採用: 既定から外し、`kinds` 指定で出す
+  - 棄却: `PER_ROW` を PR だけ下げる — 切り方を変えても、予算を占める問題が残る。届く量が増えるわけでもない
+  - 棄却: そのままにする — 外さないと、他の修正で増える出力の効果が観測できない
+- 結果:
+  - 予算が空き、`confirmation` と `consequences` を足しても収まるようになった。実測: 既定 0 件 / kinds 指定 7 件
+  - (不利) PR 本文に書いた「採った案と棄却した案」の表が、既定では引けなくなった。同じ内容は decisions にも入っているが、PR 本文にしか無い文脈は落ちる
+- 守られていることの確かめ方: 既定の検索で `event/pr` が 0 件になり、`kinds: ["event"]` を指定すると出ること
+- 検証: v-pr-excluded-by-default [pass]
+- 根拠: commit 6cdae02
+
+### d-surface-confirmation-and-consequences
+
+**`Shown` に `attrs` を**省略可能**で足し、`quote()` が `確かめ方:` と `引き受けた不利:` を出す**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: IR の欄のうち AI に届くのは `text` と `whyNot`/`context` だけで、**`confirmation` 38 件と `consequences` の good:false 67 個は書かれたまま一度も出ていなかった**。どちらも `validate()` が必須にしていて 38/38 件が埋まっている。**`confirmation` は「この決定が守られているかの確かめ方」= レビュー観点そのものである。**
+- 検討した案:
+  - 採用: `attrs` を省略可能にして `quote()` で出す
+  - 棄却: `attrs` を必須にする — `attrs` を選んでいない `PathHit` と `Advice` が構造的に代入不能になり、編集フックの経路まで巻き込む
+  - 棄却: 観点の軸を新しい欄として足す — `d-no-new-fields` で棄却した。書く欄ではなく出す口が足りていない
+- 結果:
+  - レビュー観点 38 件と、承知で引き受けた不利 67 個が AI から読めるようになった
+  - `attrs` を省略可能にしたので、編集フックとチャットの出力は 1 バイトも増えない
+  - (不利) 決定 1 件あたりの出力が 12〜36% 増える。`d-exclude-pr-from-default-search` で空けた予算を使っている
+- 守られていることの確かめ方: 決定を引いたときに `確かめ方:` と `引き受けた不利:` の行が出ること。`COLS` は既に `n.attrs` を選んでいるので SQL は変わらないこと
+- 検証: v-confirmation-in-output [pass]
+- 根拠: commit 6cdae02 / $ select count(*) filter (where attrs ? 'confirmation'), count(*) filter (where attrs ? 'consequences') from node where deleted_at is null (exit 0)
+
+### d-no-new-fields
+
+****観点の軸を欄として足さない。**足りないのは書く欄ではなく出す口なので、取り出し口だけを直す**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: 「UI/UX・パフォーマンス・アクセシビリティ・データの受け渡しを批判的にレビューする人間の役割を、Claude と Codex にもできるようにする」のが目的だと示された。観点の軸を欄として足すかを検討したが、**この道具には既に腐った欄の実例がある** — `confidence` は「運用されず全部 fact になる」と予言されたうえで採用され、予言どおりになった（`e-confidence-is-evidence`）。
+- 検討した案:
+  - 採用: 欄を足さず、取り出し口を直す
+  - 棄却: `aspect` のような観点の軸を欄として足す — `confidence` と同じ死に方をする。値が書き手の自己評価で選ばれ、書く瞬間に全部の値が生じるとは限らない
+  - 棄却: 一般化した「レビュー観点」の層を mitos に持たせる — 昇格の経路は既に人が歩いている（PR #17 の件が `~/.claude/rules/code-review-triage.md` の段落になっている）。層を足すと製品が 2 つになる
+- 結果:
+  - 4 観点のうち 3 つは既に良い記録が入っていることが実データで確認できた。形は足りていて出口だけが無かった
+  - 欄を足してよいかの検査が 3 問として言語化された（値が記録の外の事象で決まるか / 書く瞬間に全ての値が生じうるか / 世界の報告であって書き手の告白でないか）
+  - (不利) パフォーマンスの観点だけは実データがほぼ空で（本物 2 件）、出口を直しても引けるものが無い。数値を持つ欄が IR に 1 つも無いのは未解決のまま
+- 守られていることの確かめ方: この回で足した欄が 0 個であること。`git diff` に `ir.mjs` のスキーマ変更が含まれないこと
+- 検証: v-review-perspectives [not-run]
+- 根拠: $ select coalesce(confidence,'(未記入)'), count(*) from node where deleted_at is null and kind='event' group by 1 (exit 0) / $ select subkind, count(*) from node where deleted_at is null and kind='decision' group by 1 (exit 0) / $ select count(*) from node where deleted_at is null and attrs->>'blocking'='true' (exit 0)
+
+### d-current-work-tool
+
+**MCP に `current_work` ツールを足す。判定規則（status を信じず phases の未完で見る）は `search.ts` の `currentWork()` に集約し、`/api/now` と共有する**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: `search_knowledge` は `node` しか引かないので、`current` / `next` / `phases` を原理的に返せない（`record` の列にしか入らない）。一方 `searchRecords()` は最初から実装されていて、`chat.ts` の 1 箇所だけが呼んでいた（`e-searchrecords-existed`）。本人が `/mitos:resume` という入口を提案したが、`resume`（再開）は動作の名前で、返すものは状態なのでズレていた。
+- 検討した案:
+  - 採用: MCP ツール `current_work`
+  - 棄却: `resume` という名前 — 英語の resume は「再開」と「履歴書」の多義で、目的語が無く何を再開するのか名前が言っていない。返すのは状態であって動作ではない
+  - 棄却: skill（`/mitos:current`）として作る — 人が打たないと動かない。この回の教訓は「明示しないと動かない形を作らない」だった。後から入口として足す余地は残る
+  - 棄却: 判定規則を MCP 側にもう一度書く — 同じ規則を 2 箇所に書くと片方だけ直したときに黙ってずれる。この回に見つけた欠陥の大半がその形だった
+- 結果:
+  - 質問を投げずに現在地が引けるようになった。実測 14,957 バイトで、旧 `progress resume`（40,064 バイト）の 37%
+  - `/api/now` が 3 行になり、判定規則の複製が消えた
+  - (不利) `/mitos:current` のコマンド側はまだ無い。MCP だけで足りるかは使ってみないと分からない
+  - (不利) 返す量は `limit 40` で頭打ちにしているだけで、件数が増えたときに何を落とすかは決めていない
+- 守られていることの確かめ方: MCP の tools/list に `current_work` が並び、引数なしで現在地・残り工程・次にやること・通ってはいけない道が返ること。`/api/now` が同じ関数を使い、ダッシュボードが従来どおり動くこと
+- 検証: v-current-work-mcp [pass] / v-api-now-after-refactor [pass]
+- 根拠: commit ad4410f
+
+### d-mitos-export
+
+**`mitos export <id>` を足し、`record.raw` をそのまま書き出す**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: マイグレーションの列コメントは `raw jsonb not null, -- 取り込んだ IR 全文。投影の再構築元` と宣言しているのに、**再構築するコマンドが存在しなかった**。手で確かめると、DB の `raw` と HTML 内蔵 IR は内容が完全一致し、`progress render` は HTML と MD をバイト単位で再現した。
+- 検討した案:
+  - 採用: 読み取り専用の `export` を足す
+  - 棄却: `raw` 列を落とす — `not null` で、Linear 経路が実際に読んでいる（`chat.ts` の `raw->>'status'` 等）。3 つの取り込み経路を触ることになる
+  - 棄却: 何もしない — 宣言された役目に実装が無い状態が残る。「DB は下流」という主張を検査できない
+- 結果:
+  - 「DB は下流」が初めて検査可能になった。実測で内容ハッシュが一致した（682256e5cfbd）
+  - HTML を手元に持たない記録も取り込み直せるようになった。実際にこの回で別リポジトリの記録を復元して入れ直した
+  - (不利) バイト一致はしない。`jsonb` がキー順を正規化するので、再生成した HTML の内蔵 IR は並びが変わる
+  - (不利) `KNOWN` への登録を忘れて、USAGE に載っているのに使えない状態で一度出した（`e-known-list-missed`）
+- 守られていることの確かめ方: `mitos export <id> > ir.json` が IR を出し、キー順を揃えたハッシュがファイルの IR と一致すること
+- 検証: v-export-roundtrip [pass]
+- 根拠: commit 6cdae02
+
+### d-drop-record-files
+
+****`<id>.progress.html` と `.md` を廃止する。**人が読むのはダッシュボード、AI が読むのは MCP、IR の受け渡しは一時ファイルで足りる**
+
+- 状態: accepted / 09-08 10:45
+- 文脈: **記録ファイルの役割が、作られた当時と変わっていた。**`.md` は「DB も MCP も無い世界で AI が読む面」として作られたが、AI の読み口は `search_knowledge` と `current_work` になり、実測で `.md` を読む機械は 0 件だった。`.html` の「人が読む面」も、ダッシュボードの `/records/$id`（209 行）が既に肩代わりしている — しかもタブで畳み、一覧はタイトルだけ、詳細は開いたときだけ出す。HTML は 45 件を平坦に出し、唯一の畳む機構は一度も発火していない（`e-fold-never-fires`）。本人から「それはダッシュボードが無かった名残り」と指摘された。PR #25 が挙げた 3 つ（なぜその設計にしたか / 何を試して駄目だったか / 何が未解決か）は、実測で全部 DB に入っている。
+
+**経緯を残す。**当初は「組み立てた `.html` を git に残しますか？」と「HTML の本文をクライアント描画へ移しますか？」を選択肢として提示したが、**どちらも回答される前に本人から「それはダッシュボードが無かった名残り」と指摘され、問い自体が成立しなくなった。**`.html` を git に残すかどうかは、ファイルを廃止するなら問う必要が無い。
+- 検討した案:
+  - 採用: 両方を廃止し、ダッシュボードと MCP に寄せる
+  - 棄却: `.md` だけ消して `.html` を正本のまま残す — `.html` の「人が読む面」もダッシュボードが上回っている。残る用途は IR の入れ物だけで、264KB を git に置く理由にならない
+  - 棄却: HTML の本文をクライアント描画にして 37% 縮める — **消えるべきファイルを最適化しようとしていた。**ファイルごと無くなるなら、大きさも git diff も問題ごと消える
+  - 棄却: `.html` を gitignore してローカルの生成物にする — チームのリポジトリでは正しいが、ファイルを残す限り `progress find/resume/show` の維持コストが残る。ダッシュボードと MCP が揃った以上、ファイル自体が要らない
+- 結果:
+  - リポジトリから 264KB + 97KB が消える。git diff がファイルサイズに比例する問題も同時に消える
+  - `render.mjs` 453 行、`template.html` 128 行、`progress.mjs` の find / resume / show / read / render が不要になる。削除が主な変更になる
+  - (不利) **まだ実装していない。**この回で入れたのは AI の読み口（`current_work`）だけで、段取りの 1/6 である
+  - (不利) `glossary` 7 件と `links.urls` 3 件は取り込まれていないので、消す前に拾わないと `raw` の中に埋もれたまま引けなくなる
+  - (不利) `SKILL.md` の「このスキルは HTML と Markdown を出すのが仕事で、DB はその先の任意の層」を覆すことになる。ネットワーク非依存という設計を捨てる
+  - (不利) evals 79 件のうち HTML の往復と XSS 境界に紐づくものは、対象が消えるので作り直しになる
+- 守られていることの確かめ方: `personal-rebuild.progress.html` と `.md` がリポジトリから消え、それでも現在地・決定・行き止まり・未解決の問いが `current_work` と `search_knowledge` から引けること
+- 検証: v-drop-record-files [not-run]
+- 根拠: $ grep -rn 'progress\.md' server/src plugin dashboard/src (exit 1) / $ select kind, count(*) from node where deleted_at is null group by 1 (exit 0) / file dashboard/src/routes/records.$id.tsx / url https://github.com/iroha924/hir4ta-developer/pull/25
+
 ## 経過
 
 - `e-purge-timeout` 09-07 02:05 [駄目だった道] 35,074 行とその cascade を 1 つの DELETE で消そうとして、Supabase の statement_timeout（postgres ロールで 2 分）に当たり ROLLBACK した。データは 1 行も消えていない。node を 1,000 行、ref を 5,000 行ずつの塊に割り、文ごとに自動コミットさせる形で通した（所要 244 秒） — $ node scratchpad/purge.ts (exit 1)
@@ -534,6 +715,24 @@
 - `e-corrections-round2` 09-08 03:45 [判明したこと] 2 巡目のレビューで、**この回に自分が書いた記録の誤りが 6 件**見つかった。過去のエントリは書き換えないので、ここに正を置く。(1) `e-favicon-was-template-leftover` の根拠コマンドは `grep -rn 'favicon|icons.svg'` で、**-E が無いので `|` が選択にならず、literal 文字列を探していた。**しかも grep の exit 0 は「一致あり」なので、記録した終了コードは主張と逆向きに読める。正しい形は `grep -rEn 'favicon|icons\.svg' --include='*.html' --include='*.tsx' --include='*.ts' dashboard/src dashboard/index.html`。(2) `d-focus-no-ring` の観測時点 03:25 は**記録を書いた時刻**で、判断した時刻ではない（コミット 810615c の時刻が実際）。そのせいで「push 済み（a9decb4）」と矛盾して見える。**810615c は a9decb4 の祖先で、push 済みである**（git merge-base --is-ancestor で確認）。(3) `d-focus-no-ring` の確かめ方のパス `src/components/ui/` は `dashboard/src/components/ui/` の誤り。(4) 同じ決定の「サイドバー 7 箇所」は **6 箇所**の誤り（grep -c で実測）。ファイルは dashboard/src/components/ui/sidebar.tsx。(5) `e-push-2` と `v-pushed` の「リモートは a9decb4」は、その後 1a9dae7 を push したので**古い**。(6) `d-infer-project-identity` の結果欄は**まだ起きていないことを断定形で書いている**（v-identity-auto が not-run なのと食い違う）。「JARVIS の側へ 1 歩寄る」「使えるようになる」は達成ではなく**狙い**として読むこと — $ git merge-base --is-ancestor 810615c origin/main (exit 0) / $ grep -c focus-visible:bg-sidebar-accent dashboard/src/components/ui/sidebar.tsx (exit 0)
 - `e-icon-png-recipe` 09-08 03:45 [作業] アプリアイコンの PNG は SVG から書き出している。**形を変えたら 2 枚を揃え直す必要があるので手順を残す。**180x180 の外枠に #2c2c2b の矩形を敷き、その中へ 112x112 の入れ子 svg として同じマークを白（#fdfdfd）で置き、`rsvg-convert -w 180 -h 180 <その svg> -o dashboard/public/apple-touch-icon.png` で変換する。**明暗の追随は SVG 側だけ**で、PNG は暗い地に固定（iOS が透過を扱わないため） — $ rsvg-convert -w 180 -h 180 mitos-app-icon.svg -o apple-touch-icon.png (exit 0)
 - `e-review-triage-3` 09-08 03:45 [作業] 2 巡目のレビュー 22 件を裁定し、**ここで打ち切った**（同じ変更へのレビューは 2 ラウンドまで）。**受理して直した**: 上の 6 件の誤り（e-corrections-round2）、PNG の再生成手順（e-icon-png-recipe）、用語集が `undefined` で出ていた件、棄却済みの設計を未解決の問いに残していた件（q-scope-summary → q-identity-scope へ寄せた）、検証が読んだ値を残していなかった 4 件（v-pushed-2 / v-icon-shape / v-focus-values / v-green-at-push）、サイドバーの変更が宙に浮いていた件（q-sidebar-focus-bg）、いまここが期限付き未決を隠していた件。**見送った**: (a) `d-infer-project-identity` が未確定のまま accepted である点 — **方針の決定と実装の決定を分けている。**採ったのは「人に書かせない」であって「取り込み時に読む」ではない。確かめ方が取り込み時に倒れているのは書き方の問題なので、q-identity-scope が決着したときに実装側の決定を別 id で立てる。(b) 読む順が決定の結果欄と q-identity-scope で違う点 — どちらも未決の例示で、決めるのは次のセッション。(c) 「折り返す糸」の棄却理由が本人の選択である点 — **4 案とも 16px の条件は満たしていた。**最後は本人の好みで決まっており、それ以上の理由は無い。無いものを書かない。(d) 初見の人に見せていない点 — 見せる相手がいない。(e) `e-choices-wording` の適用先が無い点 — 規範として残すだけで足り、道具を直すかは別の作業。(f) v-remote-head と v-pushed の重複 — 起点が違う別の観測で、v-pushed-2 が最新であることを明記した — file personal-rebuild.progress.md
+- `e-wiring-not-reaching` 09-08 10:45 [判明したこと] **この回に見つかった欠陥は、全部 1 種類だった — 書いたものが AI 向けの面に届いていない。**11 件が同じ形をしている: (1) UserPromptSubmit が未配線で、案内が 3 層あっても発火しない。(2) SessionEnd の出力が検証で落ち、書かれて以来一度も表示されていない。(3) その編集判定が Bash 経由の編集を見ない。(4) `current` / `next` / `phases` が node にならず `search_knowledge` から引けない。(5) `confirmation` 38 件と `consequences` の good:false 67 個が AI に届かない。(6) 検証の pass / fail / not-run が同じ札で返る。(7) `glossary` 7 件がどこにも入らない。(8) `links.urls` 3 件が黙って落ちる。(9) `links.files` の touched 10 件が `node_id` NULL で到達不能。(10) `progress-log-skill#d-fold-by-phase` が一度も発火していない。(11) `mitos export` を `KNOWN` に登録し忘れ、USAGE に載っているのに使えなかった。**共通するのは、人間向けの面では動いていて、自分では読まない面だけが壊れていたこと。** — file server/src/search.ts / file server/src/ingest.ts
+- `e-verification-collapsed` 09-08 10:45 [駄目だった道] **検証の結果が AI に一度も届いていなかった。**`labelOf()` は `pass` / `fail` / `not-run` のどれに対しても「【検証】」を返し、`quote()` は `status` を出さない。実データは pass 63 / fail 3 / not-run 4 で、**この道具の中核の主張が「失敗した」と記録されているのに 「確かめた」と読める形で返っていた**（`v-output-quality`: 素で良い記録を書かせられるか = fail）。原因は非対称で、`decisions.status` は `subkind` に載るので札が付くが、`verification.result` は `status` 列に入るので札の経路に乗らない。**余波: `only_rejected_or_forbidden: true` では落ちた検証を絶対に引けない**（`polarityOf()` は verification を扱わず `na` を返す）。 — $ node -e 'labelOf({kind:"verification",subkind:"fail"})' (exit 0)
+- `e-session-end-never-shown` 09-08 10:45 [駄目だった道] **SessionEnd フックの促しは、書かれて以来一度も表示されていなかった。**`systemMessage` を `hookSpecificOutput` の中に入れていたが、`hookEventName` の enum に `SessionEnd` が無く、検証で落ちていた。失敗は画面に出ないので気付けない。**しかもその陰に 2 つ隠れていた** — 編集判定の正規表現が transcript のツール定義（`{"name":"Edit",...}`）に 4 件ヒットし、編集 0 件のセッションでも「4 回編集した」と出る状態で、逆にフック自身のソースを開いたセッションでは番兵が tool_result に載って黙っていた。 — $ claude -p '1+1 は？' (exit 0) / file plugin/hooks/session-end
+- `e-bash-edits-invisible-again` 09-08 10:45 [駄目だった道] **auto モードで作業したセッションでは、編集がツール呼び出しに 1 件も現れない。**実測: 6 ファイルを書いたこのセッションで `Edit` / `Write` / `NotebookEdit` の tool_use が 0 件だった（すべて heredoc と python3 経由）。**同じ判断が 3 日前に別リポジトリで決着していた** — `progress-log-skill#d-git-not-shell-parsing`（2026-09-05）が 「変更ファイルとコミットは git の status と log から取る」を採用し、その理由が「transcript から数えるとシェル経由が落ちて 0 件になる」だった。**決定は DB にあり検索できたのに、3 日後に書かれたフックは棄却済みの方式を再実装していた。** — $ select count(*) from node where kind='event' (exit 0)
+- `e-old-supabase-project` 09-08 10:45 [判明したこと] **`.mcp.json` が指していた Supabase プロジェクトに、勤務先のデータが丸ごと生きていた。**観測時点で record 84 / node 35,074（削除ゼロ）/ scope 8 / person 7。これは purge 前の状態と完全に一致する。ナレッジの実体は `~/.claude/knowledge.env` の別プロジェクトで、そちらは record 3 / node 518 / scope 2 と健全だった。**`v-purge` [pass] は別の DB を見て成功と記録していた。**本人の判断で「一度きりの移行の残骸であり、記録の耐久性の問題ではない」と裁定し、`.mcp.json` を現行の ref へ直した。 — commit 6366728 / $ select (select count(*) from record) r,(select count(*) from node where deleted_at is null) n,(select count(*) from scope) s (exit 0) / $ select id, ident, ident_kind, label from scope order by id (exit 0)
+- `e-confidence-is-evidence` 09-08 10:45 [判明したこと] **`confidence` が形骸化した理由は「強制しなかったから」ではなく「強制の仕方が欄の意味を奪ったから」だった。**実データは fact 77 / inference 3 / opinion 0 / 未記入 24 で、**104 件中 101 件が `evidence` の有無と完全に一致する**。`validate()` が `fact` に evidence を必須にした結果、この欄は `evidence` の言い直しにしかなれなくなった。`inference` の 3 件はどれも「確かめられなかった」ケースで、書き手が選んだのではなく evidence を出せなかっただけである。 — $ select coalesce(confidence,'(未記入)'), count(*), count(*) filter (where exists (select 1 from ref_link rl where rl.node_id=node.id and rl.role='evidence')) from node where deleted_at is null and kind='event' group by 1 (exit 0)
+- `e-fold-never-fires` 09-08 10:45 [駄目だった道] **唯一の成長対策 `progress-log-skill#d-fold-by-phase` が、実データで一度も発火していない。**畳む条件は `cur && byPhase.size > 1` で、`cur` は `state` が `doing` か `blocked` の工程。観測時点の 12 工程は done 11 + todo 1 で該当ゼロだった。**この回で `doing` の工程を 1 つ作って条件の片側を満たしたが、それでも 1 箇所も畳まれなかった** — `from` を持つ工程が 0/14、`phase` を持つ events が 0/59 なので、グループのキーが全件空になり `byPhase.size` が 1 のままになる。HTML の `<details>` は 48 → 62 に増えたが、増分 14 はこの回に追記した検証の出力ブロックで、工程の畳みではない。**決定として記録され、動作は一度も確かめられていなかった。** — file plugin/skills/trace/lib/render.mjs / $ grep -c '<details' personal-rebuild.progress.html (exit 0)
+- `e-searchrecords-existed` 09-08 10:45 [判明したこと] **現在地を返す関数は最初から実装されていた。**`searchRecords()`（`server/src/search.ts`）は `record` から `current_text` / `problem` / `goal` / `status` を引き、docstring は「『このプロジェクトは何をしているのか』の類は**判断を何件集めても答えられない**ので、record の埋め込みを別に引く」と書いている。**書いた本人がこの回の失敗を予見し、対処まで実装していた。**呼んでいたのは `chat.ts` の 1 箇所だけで、ダッシュボードのチャットは現在地を見ており、MCP 越しの Claude と Codex だけが見ていなかった。 — file server/src/search.ts
+- `e-known-list-missed` 09-08 10:45 [駄目だった道] **`mitos export` を足して USAGE にも書いたのに `知らないコマンド: export` と言われた。**`cli.ts` に `KNOWN` という許可リストがあり、そこへの登録を忘れていた。**この回に見つけた「配線はあるのに届かない」を、自分でもう一度やった。**実行して確かめていなければ、使えないコマンドをドキュメント付きで納品していた。 — $ ./plugin/bin/mitos export progress-log-skill (exit 1)
+- `e-debate-four-judges` 09-08 10:45 [作業] **3 体のサブエージェントと Codex に、保管の形とスキーマを独立に議論させた。**私の推奨は渡さず、問題・制約・実測・棄却済みの案だけを渡した。1 巡目で 1 体が誤った DB（`.mcp.json` 側）を見て「進行中の記録が DB に 1 件も無い」と報告し、そこから「DB 正本化はデータ消失事故になる」と結論したが、**私の実測と食い違ったので裏を取り、撤回させた。**その誤りが旧プロジェクトの発見につながった。汚染を持ち越さないため、途中で全員を停止し、確定した事実だけを載せた材料で立て直した。 — file codex-prompt-knowledge.md
+- `e-review-5-withdrawn` 09-08 10:45 [判明したこと] **サブエージェントの提案 1 件を、実装直前に自分で読んで取り下げた。**「`ref_link` の `link` / `touched` に `node_id` を入れれば `check_path` の 19 件が到達可能になる（2〜3 行）」という指摘だったが、`whatAboutPath()` を読むと `n.polarity = 'dont'` で絞って node の行を返す関数で、`links.files` は**対応する node を持たない記録レベルの事実**だった。`node_id` を入れても引けるようにならず、`check_path` の契約（「触らないと決めた記録」）とも意味が違う。 — file server/src/search.ts
+- `e-storage-direction-changed` 09-08 10:45 [状態の変化] **記録の保管について、方針が 3 段階で変わった。**(1) 当初は「`.md` を消して HTML を 37% 縮める（クライアント描画）」を提案した。(2) 本人から「ファイルを増やしたくない。DB から組み立てたい」と言われ、DB 経由の生成へ寄せた。(3) さらに「それはダッシュボードが無かった名残り。ダッシュボードで見られるようにすればよいのでは」と指摘され、**HTML と Markdown を完全に廃止する方針に変わった**（`d-drop-record-files`）。**(1) は消えるべきファイルを最適化しようとしていた。**
+
+**この 3 段は会話の経緯であり、解決できる識別子を証拠に持たない。**判断の根拠は会話そのものではなく、`d-drop-record-files` に付けた実測（.md の読み手 0 件 / DB の網羅 / ダッシュボードの実装）にある。
+- `e-state-ai-surface` 09-08 10:45 [状態の変化] **現在地が「チャット画面の作り直しまで終えて、プロジェクトの定義が残る」から「AI 向けの出口を開け終えて、記録ファイルの廃止が残る」へ変わった。**この回で入れたのは、毎ターンの想起（フック）・SessionEnd の 3 つの欠陥の修正・検証の結果を札に出す・PR 本文を既定から外す・確かめ方と引き受けた不利を渡す・現在地を MCP から引く・`mitos export`。4 コミットを push した（13bdab7..ad4410f）。**`scope.summary` を埋める作業は着手していない**ので、工程としては残っている。 — commit ad4410f
+- `e-record-review-triage` 09-08 10:45 [作業] **まっさらなレビュアー 1 体に `.md` だけを渡し、指摘を全件裁定した（1 ラウンドで打ち切り）。****受理して直した**: (R1) 別の記録にある決定を裸の id で参照していて、どこに住んでいるか分からなかった — `progress-log-skill#` を付けた。(R2) 段取り 4 で read / render を消した後に 6 の「書き直す」を行う経路が無かった — supersede の記録を先頭へ移し、順序に理由を書いた。(R3) 着手の門が「しばらく使って困らなければ」で測れなかった — 「次の 3 セッションで `.md` を一度も開かずに再開できたか」に変え、判定者を人にした。(R4) 目標の中心条件が判定不能のまま宙に浮いていた — `q-scrub-pattern` を next の人の判断へ上げた。(R5) `d-prompt-submit-hook` の成果物ファイル名が無かった — `plugin/hooks/prompt-submit` を確かめ方と証拠へ入れた。(M1) 「DB の削除」が完了・`v-purge` が pass のままで、旧プロジェクトに 35,074 件が生きている事実と両立していなかった — `v-purge-scope-was-one-db` [fail] を追記し、工程のラベルを「knowledge.env が指す DB のみ」へ直した。(M2) 題に「地図」が残っていた — `d-goal-after-map` で goal からは消したが題が残っていたので直した。(M3) 工程の push が a9decb4 のままだった。(M5) `v-session-end-silent` の前提が新実装で一部崩れていた — 関係を明記した。**見送った**: (M4) `d-focus-no-ring` の「7 箇所」とパスの誤り — **過去の決定は書き換えない**規約があり、`e-corrections-round2` に既に正が置かれている。(M6) `q-scrub-pattern-2` の id と中身の食い違い — 同じ問いが 2 つ並ぶのは冗長だが、どちらも人への問いとして生きており、`q-scrub-pattern` を next へ上げたことで実害が消えた。(cover の警告) `e-label-collapse` が消えた `dashboard/src/components/graph.tsx` を指している — 過去の記録で、同種の陳腐化は `e-graph-deps-stale` に記録済み。
+
+**2 巡目（同じレビュアーの後半）で証拠の無い断定が 9 件挙がり、全部直した。**(E2) 旧プロジェクトの件数を出したクエリが無かった。(E3) `confirmation` 38 / `consequences` 67 を数えたコマンドが無かった。(E4) **添えたクエリが主張を返さないものだった** — confidence 別の件数しか返らず、evidence との一致（101/104）は出ない。正しいクエリへ差し替えた。`v-utterance-ratio` が bot かどうかを示していなかったのと同じ型である。(E5)(E8) `d-drop-record-files` と `d-no-new-fields` が根拠を 1 つも持っていなかった — **廃止という不可逆な作業の根拠が 2 文に乗っていた。**.md の読み手 0 件・DB の網羅・ダッシュボードの実装・PR #25 の URL を付けた。(E6) 「4 回引いた」を transcript から数え直した（フック初回注入 17:37:54 以降 13 件のうち、方針の判断が 4 件）。(E7) **PITR の挙動に一次ソースが無いまま、不可逆な削除を勧めていた** — 未検証と明記し、必要性も未確認と書き直した。(E1) 会話の経緯には解決できる識別子が無いことを明示し、判断の根拠は決定側の実測にあると書いた。(E9) 議論の材料が `.gitignore` の `codex-prompt-*.md` に当たり git に残らないことを明記した（`e-scratchpad-not-tracked` と同じ形の再発）。(R6) `.html` を消す前に `mitos export` の往復を確かめる順序条件を段取り 6 へ入れた。(W1) 棄却理由が採用案の利点しか言っていなかったので、両立可能だが再ランクに効かない、という形へ直した。(W3) `/mitos:current` が「棄却済み」と「未解決」の両方に立っていたので、問いを「人が呼ぶ入口が別に要るか」へ絞った。**見送りは 1 件のみ** — (W2) `d-prompt-submit-hook` の棄却 A の前半が選択の事実であって理由でない点は、レビュアー自身が「理由は後半だけで、これは成立している」と書いており、直す必要が無い。**ここで 2 ラウンド打ち切り。**
 
 ## 検証
 
@@ -586,6 +785,20 @@
 - `v-icon-shape` [pass] favicon の viewBox と線の太さが、16px で滲まない条件を保っていること（v-icon-wired は配信しか見ていなかった） （d-icon-folded-thread を確かめた） — `grep -o 'viewBox="[^"]*"|stroke-width="[^"]*"' dashboard/public/favicon.svg`
 - `v-focus-values` [pass] フォーカス時に読んだ実際の値（v-focus-no-shadow が変更後の値を残していなかった） （d-focus-no-ring を確かめた） — `入力欄をクリックし getComputedStyle(document.querySelector('[data-slot=input-group]')) を読む`
 - `v-icon-seen-by-others` [not-run] 「初見では U か釣り針に見える」を、名前を知らない人に見せて確かめる （d-icon-folded-thread を確かめた） (未実行: 見せる相手がいない。個人の道具で、いま使うのは本人だけ。不利として書いてあるのは形からの推論であって観測ではない)
+- `v-prompt-submit-fires` [pass] 毎ターンの想起が、実セッションのプロンプト直前に入っていること （d-prompt-submit-hook を確かめた） — `timeout 180 claude -p 'あなたのコンテキストに <mitos-turn> というタグは入っていますか' < /dev/null`
+- `v-session-end-branches` [pass] 促す／黙るが 4 ケースで正しく分岐すること （d-session-end-uses-git を確かめた） — `echo '{"transcript_path":...,"cwd":...}' | ./plugin/hooks/run-hook session-end`
+- `v-verification-label-split` [pass] 検証の pass / fail / not-run が別の札で返ること （d-verification-result-as-subkind を確かめた） — `node -e 'labelOf({kind:"verification",subkind:"fail"})' && ./plugin/bin/mitos search '...' --all`
+- `v-reingest-no-reembed` [pass] 取り込み直しで埋め込みを取り直さないこと （d-verification-result-as-subkind を確かめた） — `./plugin/bin/mitos ingest personal-rebuild.progress.html`
+- `v-pr-excluded-by-default` [pass] PR 本文が既定で出ず、種別を指定すると出ること （d-exclude-pr-from-default-search を確かめた） — `node -e 'search(c, env, {question, kinds})' で kinds 未指定と ["event"] を比較`
+- `v-confirmation-in-output` [pass] 決定を引くと確かめ方と引き受けた不利が出ること （d-surface-confirmation-and-consequences を確かめた） — `./plugin/bin/mitos search 'HTML に IR を内蔵する決定' --limit 2`
+- `v-current-work-mcp` [pass] MCP から質問なしで現在地が引けること （d-current-work-tool を確かめた） — `printf '...tools/call current_work...' | timeout 90 node plugin/dist/mcp.js`
+- `v-api-now-after-refactor` [pass] 判定規則を共有した後も /api/now が従来どおり返ること （d-current-work-tool を確かめた） — `curl -s http://localhost:8787/api/now`
+- `v-export-roundtrip` [pass] DB から書き戻した IR が、ファイルの IR と中身で一致すること （d-mitos-export を確かめた） — `./plugin/bin/mitos export personal-rebuild | キー順を揃えて SHA-256`
+- `v-green-this-session` [pass] この回の変更で型検査・整形・テスト・本番ビルド・バンドルが通ること — `bun run check && bun run test && bun run build && bun run bundle`
+- `v-pushed-3` [pass] この回の 4 コミットがリモートに入っていること — `git push origin main && git rev-parse --short HEAD origin/main`
+- `v-drop-record-files` [not-run] 記録ファイルを消しても、現在地・決定・行き止まり・未解決の問いが引けること （d-drop-record-files を確かめた） (未実行: **まだ実装していない。**この回で入れたのは AI の読み口だけで、段取り 6 段のうち 1 段目である。2〜6（glossary と links.urls の取り込み / trace の ingest 直行 / 死んだコードの削除 / ファイルの削除 / 決定の supersede）は、current_work をしばらく使って「これで困らない」と確認してから進める)
+- `v-review-perspectives` [not-run] この道具が UI/UX・性能・アクセシビリティ・データの受け渡しのレビュー観点を出せること （d-no-new-fields を確かめた） (未実行: 出口は直したが、実際の PR に対して観点を出させる試行をしていない。パフォーマンスの実データがほぼ空（本物 2 件）なので、4 観点のうち 1 つは出せない見込み)
+- `v-purge-scope-was-one-db` [fail] 会社側の作業場所が、mitos が触る**すべての** Supabase プロジェクトから消えていること — `supabase MCP で etprvasdnwvegbcvhian を引き、knowledge.env の DB と件数を突き合わせる`
 
 ## 用語
 
