@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// 仕込んだ欠陥を validate() が拾えるかを測る。加えて、外部由来のテキストが
-// HTML と JSON の境界を越えないことと、IR が往復で一致することを見る。
+// 仕込んだ欠陥を validate() が拾えるかを測る。加えて、採掘が人の発話を落とさないことと、
+// 網羅の検査が材料の取りこぼしを拾えることを見る。
+//
+// **描画に関する検査は d-drop-record-files で消した。**HTML と Markdown を出さなくなり、
+// XSS の境界・往復の一致・要約・折りたたみは、対象そのものが無くなった。
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { validate, extractIr, embedJson } from '../lib/ir.mjs';
-import { render, briefing } from '../lib/render.mjs';
+import { validate } from '../lib/ir.mjs';
 import { collect } from '../lib/collect.mjs';
 import { cover, refsExist } from '../lib/cover.mjs';
 
@@ -26,144 +27,6 @@ for (const c of cases) {
   if (c.expect_warnings !== undefined && r.warnings.length !== c.expect_warnings) { ng(c.id, `警告が ${r.warnings.length} 件、期待は ${c.expect_warnings}（${r.warnings.map((w) => w.code).join(', ')}）`); continue; }
   ok(c.id);
 }
-
-// 外部由来のテキストは信頼境界。issue 本文にも stderr にも入りうる。
-console.log('境界:');
-const hostile = '</script><img src=x onerror=alert(1)> <!--</SCRIPT>';
-const ir = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
-ir.events[0].text = hostile;
-ir.glossary[0].meaning = hostile;
-const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'progress-eval-')), 'x.html');
-render(ir, out);
-const html = fs.readFileSync(out, 'utf8');
-const embedded = html.slice(html.indexOf('id="progress-ir"'), html.indexOf('</script>'));
-if (/<\/script>/i.test(embedded)) ng('embed-closes-script', 'IR の中で script が閉じている'); else ok('embed-closes-script');
-// 見るのは**生のタグが立っているか**だけ。エスケープ済みテキストの中には
-// "onerror=" のような文字列がそのまま残るが、< が &lt; になっていれば無害である。
-// ここを文字列一致で見ると、正しくエスケープされたものを失敗と判定する。
-{
-  const body = html.slice(html.indexOf('<body>'));
-  const stripped = body.replace(/<script>[\s\S]*?<\/script>/g, '');
-  if (/<img/i.test(stripped) || /<script/i.test(stripped)) ng('body-escapes', '本文に生のタグが立っている');
-  else ok('body-escapes');
-}
-const back = extractIr(html);
-if (back.events[0].text !== hostile) ng('round-trip', 'IR が往復で変わった'); else ok('round-trip');
-if (JSON.stringify(back) !== JSON.stringify(ir)) ng('round-trip-full', 'IR 全体が往復で一致しない'); else ok('round-trip-full');
-
-// 再開の要約は、通ってはいけない道を必ず含む。ここが落ちると再開時に同じ道を通る。
-const b = briefing(JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8')));
-for (const [label, needle] of [['ng-section', '通ってはいけない道'], ['ng-dead-end', '通って駄目だった'], ['ng-superseded', '一度採って覆した'], ['ng-rejected', '検討して棄却済み'], ['next-first', '## 次にやること'], ['uncertainty', 'まだ未知が残っている']]) {
-  if (b.includes(needle)) ok(label); else ng(label, `要約に「${needle}」が無い`);
-}
-// 行動の順: 次にやること が 決まっていること より前に来る
-if (b.indexOf('## 次にやること') < b.indexOf('## 決まっていること')) ok('order'); else ng('order', '次にやることが後ろにある');
-// 棄却した案は名前と参照先だけを載せる。理由の全文を戻すと、決定が増えるほど
-// 要約が全文へ近づき、「要約から入る」という設計が成立しなくなる。
-{
-  const ir3 = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
-  const b3 = briefing(ir3);
-  const rejected = ir3.decisions.find((x) => x.status === 'accepted').options.find((o) => o.chosen !== true);
-  if (b3.includes(`（理由は ${ir3.decisions.find((x) => x.status === 'accepted').id}）`)) ok('brief-points-to-decision');
-  else ng('brief-points-to-decision', '棄却した案に決定 id への参照が無い');
-  if (b3.includes(rejected.option)) ok('brief-names-rejected'); else ng('brief-names-rejected', '棄却した案の名前が要約に無い');
-  if (!b3.includes(rejected.whyNot)) ok('brief-omits-why-not'); else ng('brief-omits-why-not', '棄却理由の全文が要約に載っている');
-}
-
-// debt は「直しにいかないもの」として要約に出る。出ないと後任が意図を欠陥と読む。
-{
-  const d = briefing(JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'with-debt.json'), 'utf8')));
-  if (d.includes('意図して残している')) ok('ng-debt'); else ng('ng-debt', '要約に意図して残した負債が無い');
-}
-// 未知が無いときは、そう書く。無言だと「調べ終わっている」と誤読される。
-{
-  const ir2 = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
-  ir2.openQuestions = ir2.openQuestions.map((q) => ({ ...q, blocking: false }));
-  if (briefing(ir2).includes('未知は残っていない')) ok('uncertainty-clear'); else ng('uncertainty-clear', '未知が無いことが書かれない');
-}
-
-// Markdown は、本文が ID で参照するものに ID を印字していること。
-// 印字していないと「ID なら検索で引ける」という期待が裏切られ、探索が一番遅くなる。
-console.log('Markdown:');
-{
-  const irm = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
-  const out2 = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'progress-md-')), 'y.html');
-  render(irm, out2);
-  const md = fs.readFileSync(out2.replace(/\.html$/, '.md'), 'utf8');
-  for (const [label, id] of [['md-event-id', irm.events[0].id], ['md-verification-id', irm.verification[0].id], ['md-question-id', irm.openQuestions[0].id], ['md-decision-id', irm.decisions[0].id]]) {
-    if (md.includes(id)) ok(label); else ng(label, `${id} が Markdown に印字されていない`);
-  }
-  // 記録自身が引用している規約（水平線を使わない）に、生成物が違反しないこと
-  if (!/^---$/m.test(md)) ok('md-no-horizontal-rule'); else ng('md-no-horizontal-rule', '水平線が出力されている');
-  // 見出しは ID だけ。1 文まるごとの見出しは一覧に使えない
-  if (md.includes(`### ${irm.decisions[0].id}\n`)) ok('md-short-heading'); else ng('md-short-heading', '決定の見出しが ID だけになっていない');
-  // md が指す HTML のファイル名は、実際に書き出した名前でなければならない。
-  // meta.id から組み立てると、接尾辞が変わったときに存在しない名前を書く。
-  const realName = path.basename(out2);
-  if (md.includes(realName)) ok('md-points-to-real-html'); else ng('md-points-to-real-html', `md が ${realName} を指していない`);
-  if (!md.includes(`${irm.meta.id}.html\``)) ok('md-no-fabricated-name'); else ng('md-no-fabricated-name', '存在しないファイル名を書いている');
-  // 素の `progress` は PATH に無い。読み手がコピーして空振りする。
-  if (!/(?<![./\w])progress (read|render) /.test(md)) ok('md-no-bare-command');
-  else ng('md-no-bare-command', 'md に素の progress コマンドが残っている');
-}
-
-// HTML と Markdown は同じ IR から出るのに、節を別々に書いているのでずれる。
-// 実測: Markdown が工程（phases）を落としていて、md を読む側に「どこまで進んだか」が届いていなかった。
-// IR に入れた内容が両方へ出ているかを、識別子と固有の文字列で突き合わせる。
-console.log('HTML と Markdown の一致:');
-{
-  const irp = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
-  const outp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'progress-par-')), 'z.html');
-  render(irp, outp);
-  const H = fs.readFileSync(outp, 'utf8');
-  const Hbody = H.slice(H.indexOf('<body>'));           // 埋め込み IR は数えない
-  const M = fs.readFileSync(outp.replace(/\.html$/, '.md'), 'utf8');
-  const targets = [
-    ...irp.current.phases.map((p) => ['phase', p.label]),
-    ...irp.events.map((e) => ['event', e.id]),
-    ...irp.decisions.map((d) => ['decision', d.id]),
-    ...irp.verification.map((v) => ['verification', v.id]),
-    ...irp.openQuestions.map((q) => ['question', q.id]),
-    ...irp.glossary.map((g) => ['glossary', g.term]),
-    ...irp.background.nonGoals.map((x) => ['non-goal', x.slice(0, 24)]),
-    ...irp.background.constraints.map((x) => ['constraint', x.slice(0, 24)]),
-    ...(irp.links.issues || []).map((i) => ['issue', i.key]),
-    ...(irp.links.prs || []).map((p) => ['pr', String(p.number)]),
-  ];
-  const missing = [];
-  for (const [kind, needle] of targets) {
-    const inH = Hbody.includes(needle), inM = M.includes(needle);
-    if (!inH || !inM) missing.push(`${kind} "${needle}" が ${!inH ? 'HTML' : 'Markdown'} に無い`);
-  }
-  if (missing.length === 0) ok(`parity（${targets.length} 項目）`);
-  else for (const msg of missing.slice(0, 6)) ng('parity', msg);
-}
-
-// 既定の表示は、いまの工程を開いてそれ以前を畳む。**データは削らない。**
-// 畳んだ中身が消えていると、記録としての「漏れなく」が壊れる。
-console.log('折りたたみ:');
-{
-  const irf = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'phased.json'), 'utf8'));
-  const outf = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'progress-fold-')), 'f.html');
-  render(irf, outf);
-  const H = fs.readFileSync(outf, 'utf8');
-  const body = H.slice(H.indexOf('<body>'));
-  // 進行中の工程（retry）は開き、それ以前（design）は details に入る
-  if (/<details><summary>設計/.test(body)) ok('fold-past-phase'); else ng('fold-past-phase', '過去の工程が畳まれていない');
-  if (/<h3>再実行<\/h3>/.test(body)) ok('fold-current-open'); else ng('fold-current-open', 'いまの工程が開いていない');
-  // 畳んでも中身は全部ある
-  for (const e of irf.events) {
-    if (!body.includes(e.id)) { ng('fold-keeps-all', `${e.id} が消えている`); break; }
-  }
-  if (irf.events.every((e) => body.includes(e.id))) ok('fold-keeps-all');
-  // 件数の閾値でデータを削っていないこと
-  const md = fs.readFileSync(outf.replace(/\.html$/, '.md'), 'utf8');
-  if (irf.events.every((e) => md.includes(e.id))) ok('fold-md-unaffected'); else ng('fold-md-unaffected', 'md 側で欠けている');
-}
-
-// 記録をまたぐ参照と、決定と検証の接続。
-// 「3 か月前の別作業の決定をいま覆した」と「決めたのに確かめていない決定」は、
-// どちらも DB の中核になるのに、記録の側で表現できていなかった。
 console.log('参照と検証の接続:');
 {
   const base = () => JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
@@ -183,43 +46,8 @@ console.log('参照と検証の接続:');
   else ng('unverified-warned', '結び付けが無いのに警告が出ない');
   if (!validate(base()).warnings.some((w) => w.code === 'decisions/unverified')) ok('unverified-clears');
   else ng('unverified-clears', '結び付けたのに警告が残る');
-  // 表示: 別の記録への参照をリンクにしない（必ず切れる）
-  const outr = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'progress-ref-')), 'r.html');
-  x = base(); x.decisions[1].supersededBy = 'other-record#d-foo';
-  render(x, outr);
-  const H2 = fs.readFileSync(outr, 'utf8');
-  if (!H2.includes('href="#other-record#d-foo"')) ok('ref-not-linked'); else ng('ref-not-linked', '別記録への参照をアンカーにしている');
-  if (H2.includes('未検証')) ok('unverified-shown'); else ng('unverified-shown', '未検証のバッジが出ていない');
 }
 
-// 工程は時刻から導出する。events[].phase を宣言させると書かれずに腐る
-// （実測: 例 5 件・実記録 34 件のいずれも phase 記入 0 件で、折りたたみが発火しなかった）。
-console.log('工程の導出:');
-{
-  const irx = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'phase-from.json'), 'utf8'));
-  if (irx.events.every((e) => !e.phase)) ok('derive-no-declared-phase');
-  else ng('derive-no-declared-phase', 'fixture に phase が書かれている');
-  const outx = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'progress-der-')), 'd.html');
-  render(irx, outx);
-  const body = fs.readFileSync(outx, 'utf8');
-  if (/<details><summary>設計/.test(body)) ok('derive-folds-by-time');
-  else ng('derive-folds-by-time', '時刻から工程を決めて畳めていない');
-  if (irx.events.every((e) => body.includes(e.id))) ok('derive-keeps-all');
-  else ng('derive-keeps-all', '導出で消えたエントリがある');
-  // 現在の工程にエントリが無くても、必ずどこかが開いている。
-  // 全部畳まれると「いま何が起きているか」が 1 つも見えない。
-  const iry = JSON.parse(JSON.stringify(irx));
-  iry.current.phases.push({ id: 'release', label: 'リリース', state: 'doing', from: '2099-01-01T00:00:00+09:00' });
-  iry.current.phases = iry.current.phases.map((p) => (p.id === 'retry' ? { ...p, state: 'done' } : p));
-  const outy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'progress-open-')), 'o.html');
-  render(iry, outy);
-  const b2 = fs.readFileSync(outy, 'utf8');
-  const evBody = b2.slice(b2.indexOf('<h2 id="events">'));
-  if (/<h3>/.test(evBody)) ok('always-one-open'); else ng('always-one-open', '全部畳まれて開いている工程が無い');
-}
-
-// 採掘: 人の発話と通知を取り違えないこと。**ターン中の発言を落とさないこと。**
-// 落ちても transcript には残るので痕跡が出ない。ここで押さえないと気付けない。
 console.log('採掘:');
 {
   const d = collect(path.join(HERE, 'fixtures', 'transcript.claude.jsonl'), 'claude-code', '/tmp');

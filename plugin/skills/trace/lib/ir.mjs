@@ -187,24 +187,3 @@ export function validate(ir) {
 }
 
 // --- HTML への埋め込みと取り出し ---
-// script 要素の中身は生テキストなので、"</script" が現れた時点で閉じる。
-// issue 本文やコマンド出力を載せる以上ここは信頼境界になるので、< > と行区切りを潰す。
-export const IR_ELEMENT_ID = 'progress-ir';
-
-export const embedJson = (o) =>
-  JSON.stringify(o)
-    .replace(/</g, '\\u003c')
-    .replace(/>/g, '\\u003e')
-    .replace(/\u2028/g, '\\u2028')
-    .replace(/\u2029/g, '\\u2029');
-
-export function extractIr(html) {
-  const re = new RegExp(`<script type="application/json" id="${IR_ELEMENT_ID}">([\\s\\S]*?)</script>`);
-  const m = html.match(re);
-  if (!m) return null;
-  return JSON.parse(m[1]);
-}
-
-// 本文へ出すときのエスケープ。属性値にも使うので " と ' も潰す。
-export const esc = (s) =>
-  String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
