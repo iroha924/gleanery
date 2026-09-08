@@ -27,10 +27,21 @@ RUN apt-get update \
 # ubuntu:24.04 は uid 1000 を `ubuntu` が先に取っているので、外してから作る。
 RUN userdel -r ubuntu 2>/dev/null || true; useradd -m -u 1000 worker
 
+# **クローンしたリポジトリが持ち込む実行経路を塞ぐ。**`claude -p` はサブスクリプションの
+# トークンで動くので `--bare` が使えず、既定では**リポジトリの .claude/settings.json の
+# フックと .mcp.json のサーバーが確認なしで走る**（実測: 仕込んだ SessionStart フックが走った）。
+# managed settings は設定の階層で最優先なので、リポジトリ側から外せない。
+# **フックを 1 本でも要るようになったら `disableAllHooks` を `allowManagedHooksOnly` へ替える。**
+# `disableAllHooks` はフックだけを止める。**.mcp.json はこれでは止まらない**（実測）ので、
+# run-claude が `--strict-mcp-config` を必ず足す。
+COPY managed-settings.json /etc/claude-code/managed-settings.json
+COPY run-claude /usr/local/bin/run-claude
+COPY verify.sh /usr/local/bin/verify.sh
+
 # **ファイアウォールを張る 1 本にだけ sudo を許す。**公式と同じ形。
 COPY init-firewall.sh /usr/local/bin/init-firewall.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh \
+RUN chmod 0755 /usr/local/bin/init-firewall.sh /usr/local/bin/entrypoint.sh /usr/local/bin/run-claude /usr/local/bin/verify.sh \
  && echo "worker ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/worker-firewall \
  && chmod 0440 /etc/sudoers.d/worker-firewall
 

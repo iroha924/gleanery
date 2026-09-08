@@ -239,6 +239,38 @@ ssh knowledge-mcp-prod-01 'sudo apt-get update && sudo apt-get install --only-up
 doctor は接続文字列のホストへそのまま ssh する（MagicDNS が DB と ssh の両方を解決する）ので、
 tailnet の外からは「聞けない」とだけ出て、ほかの検査は続く。
 
+### AI ワーカー（隔離コンテナ）
+
+`worker/` は、PR レビューなどを VPS 上で無人実行するための使い捨てコンテナ。**まだ何にも繋がっていない**
+（起動する仕組みは無い）。読むのは PR の diff とクローンしたリポジトリで、**どちらも他人が書ける**ため、
+実行する側をここに閉じ込める。
+
+```bash
+rsync -a worker/ knowledge-mcp-prod-01:/tmp/worker/
+ssh knowledge-mcp-prod-01 'cd /tmp/worker && sudo docker build -t mitos-worker:2.1.259 .'
+ssh knowledge-mcp-prod-01 'sudo docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+  --env-file ~/.claude/worker.env mitos-worker:2.1.259 /usr/local/bin/verify.sh'
+```
+
+**`verify.sh` が隔離の契約そのもの。**通らなくなったら中で走らせるのをやめる。見るのは 9 項目 —
+本番 DB・host・tailnet・任意のインターネットに届かないこと、GitHub と推論には届くこと、
+リポジトリのフックと `.mcp.json` が走らないこと、そして**claude が実際に答えること**
+（動いていなければ後ろ 2 つは何も証明しない）。
+
+| 何を止めるか | どこで止まるか |
+|---|---|
+| DB・tailnet への到達 | **host の ufw**（`tailscale0` 以外の入力を落とす）。コンテナ側の設定ではない |
+| 任意のインターネット | `init-firewall.sh`（`anthropics/claude-code` から借用。GitHub の IP レンジ＋許可ドメインのみ） |
+| リポジトリのフック | `/etc/claude-code/managed-settings.json` の `disableAllHooks`。**リポジトリ側から外せない** |
+| リポジトリの `.mcp.json` | `run-claude` が付ける `--strict-mcp-config`。**managed settings では止まらない**（実測） |
+
+**トークンは `~/.claude/worker.env` に置く**（`CLAUDE_CODE_OAUTH_TOKEN=...`、mode 600）。
+`claude setup-token` が作る 1 年もので、モデル要求しかできない。**イメージには焼かない。**
+
+**`--bare` は使えない。**bare mode は `CLAUDE_CODE_OAUTH_TOKEN` を読まないので、
+サブスクリプションで動かすかぎり隔離が要る。読むだけの仕事なら `--restricted` を足すと、
+コマンド実行系のツールと WebFetch も落ちる。
+
 ## セットアップ
 
 ```bash
