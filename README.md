@@ -233,23 +233,30 @@ mitos import-github --cwd <repo>     # 最初の取り込み
 **ナレッジは VPS の PostgreSQL にあるので、引く側は何もしなくても動く**（作業場所は git remote で
 引くため、パスに依存しない）。設定が要るのは**取り込む側**だけ。
 
+**DB は Tailscale の中にしかいない。**`knowledge-mcp-prod-01` はインターネットからの受信を
+1 つも開けていないので、**tailnet に入っていないマシンからは到達できない**。
+
 ```bash
-# 1. 資格情報。リポジトリには入っていないので手で置く
+# 1. Tailscale に入る。これが無いと 5 の doctor が繋がらない
+tailscale status | grep knowledge-mcp-prod-01   # 見えることを確かめる
+
+# 2. 資格情報。リポジトリには入っていないので手で置く
 #    ~/.claude/knowledge.env に KNOWLEDGE_DB_URL / KNOWLEDGE_DB_URL_RO /
 #    KNOWLEDGE_DB_URL_CFG / VOYAGE_API_KEY
+#    サーバーの証明書は plugin/certs/ に入っているので、クローンすれば揃う
 
-# 2. リポジトリを置いて、プラグインを入れる
+# 3. リポジトリを置いて、プラグインを入れる
 git clone https://github.com/iroha924/mitos.git ~/Projects/mitos
 cd ~/Projects/mitos && bun install && bun run bundle
 claude plugin marketplace add ~/Projects/mitos && claude plugin install mitos@mitos
 
-# 3. このマシンでの置き場所を登録する。**これを忘れると 1 件も取り込まれない**
+# 4. このマシンでの置き場所を登録する。**これを忘れると 1 件も取り込まれない**
 mitos adopt
 
-# 4. 確かめる
+# 5. 確かめる
 mitos doctor          # 「置き場所」行が 0 件でないこと
 
-# 5. 日次同期。雛形の __MITOS_DIR__ と __HOME__ を埋める
+# 6. 日次同期。雛形の __MITOS_DIR__ と __HOME__ を埋める
 sed -e "s#__MITOS_DIR__#$HOME/Projects/mitos#g" -e "s#__HOME__#$HOME#g" \
   ~/Projects/mitos/scripts/com.mitos.sync.plist > ~/Library/LaunchAgents/com.mitos.sync.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
