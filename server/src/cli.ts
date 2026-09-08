@@ -2,6 +2,7 @@
 // ナレッジ DB への書き込み口。**資格情報を持つのはこちらだけで、MCP は読み取り専用。**
 // progress-log スキルはこのコマンドを呼ぶだけで、DB のことを知らない。
 
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,29 +20,30 @@ import { framed, logSearch, outsideScopes, quote, scopeFamily, search } from "./
 import { ingestSession, readSession } from "./session.ts";
 
 const USAGE = `使い方:
-  mitos ingest <記録.html|ir.json> [--cwd <dir>]  記録を取り込む（未登録なら作業場所も登録）
-  mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す）
+  mitos ingest <ir.json> [--cwd <dir>]           記録を取り込む（未登録なら作業場所も登録し、
+                                                 空なら役割と説明もリポジトリを読んで埋める）
+  mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す。編集して ingest で戻す）
   mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
                                                  引けるかを確かめる
   mitos scopes                                   登録済みの作業場所と束
   mitos candidates [--json]                      束ねる候補を並べる（選ぶのは人間）
   mitos link <束の名前> <dir>...                  選ばれたものを 1 つの束にする
   mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
-  mitos doctor                                   資格情報と接続を確かめる
-  mitos usage                                    OpenAI の使用量と残り
-  mitos import-github [--cwd <dir>]              PR のレビューと議論を取り込む
-  mitos import-linear --team <名前> [--group <束>] [--all]
-                                                 Linear の issue とコメントを取り込む
   mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
+  mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
+  mitos import-linear --team <名前> [--group <束>] [--all]
+                                                 Linear の issue とコメントを取り込む
+  mitos import-sessions [--cwd <dir>]            Claude Code / Codex の会話をナレッジにする（sync からも呼ばれる）
+  mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
-  mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
-  mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする
-  mitos advice                                   編集時の助言が効いているかを見る
-  mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
-  mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
                                                  --yes は既に登録済みの場所を入れ替える）
+  mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
+  mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
+  mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+  mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
+  mitos usage                                    OpenAI の使用量と残り
 
 資格情報: ~/.claude/knowledge.env の KNOWLEDGE_DB_URL と VOYAGE_API_KEY`;
 
@@ -71,6 +73,49 @@ function readIr(file: string): unknown {
   const m = body.match(IR_TAG);
   if (!m?.[1]) throw new Error(`${file} に progress-ir の埋め込みが無い。progress render で書いたものを渡す`);
   return JSON.parse(m[1]);
+}
+
+// DB を載せている 1 台の OS の状態。**Tailscale の先にしか無いので、古くなっても気付く経路が無い。**
+// ssh の宛先は接続文字列のホストと同じ（MagicDNS が両方を解決する）ので、設定は増えない。
+//
+// 見るのは 2 つだけ。**Ubuntu のセキュリティ更新と再起動は自動で当たる**ので出さない
+// （unattended-upgrades が 03:00 台に当て、保留があれば 04:00 に再起動する）。
+// **PostgreSQL は自動では上がらない** — PGDG を Allowed-Origins に入れていないため。
+// 当てると DB が止まるので、人が時機を選ぶ。
+const HOST_PROBE = [
+  `printf 'reboot=%s\\n' "$(cat /var/run/reboot-required.pkgs 2>/dev/null | tr '\\n' ' ')"`,
+  `printf 'when=%s\\n' "$(shutdown --show 2>&1 | grep -o 'scheduled for [^,]*' || true)"`,
+  `printf 'pgdg=%s\\n' "$(apt list --upgradable 2>/dev/null | grep pgdg | cut -d/ -f1 | tr '\\n' ' ')"`,
+  `printf 'other=%s\\n' "$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -cv pgdg || true)"`,
+].join("; ");
+
+function hostStatus(dbUrl: string): string[] {
+  const host = new URL(dbUrl).hostname;
+  // **stderr は捨てずに掴む。**継承したままだと ssh の理由（名前が引けない／届かない）が
+  // 端末へ素通りし、例外の message には「Command failed」しか残らない。
+  const out = execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, HOST_PROBE], {
+    encoding: "utf8",
+    timeout: 30_000,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const v = new Map(
+    out
+      .split("\n")
+      .filter((l) => l.includes("="))
+      .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()] as const),
+  );
+  const pending = v.get("reboot");
+  const when = v.get("when")?.replace("scheduled for ", "");
+  const pgdg = v.get("pgdg");
+  return [
+    `VPS（${host}）  再起動 ${
+      pending
+        ? // 予約が空なら、当てる側（unattended-upgrades）が止まっている。
+          `保留: ${pending}${when ? ` → ${when} に自動で当たる` : " ← 予約が無い。自動再起動の設定を確かめる"}`
+        : "保留なし"
+    }`,
+    `PostgreSQL の更新      ${pgdg ? `${pgdg}← 人が当てる（DB が止まる）` : "なし"} / ほかの更新 ${v.get("other") ?? "?"} 件`,
+  ];
 }
 
 // ingest が実際に読む形。中身の契約（棄却理由の有無など）は progress-log の validate が見ている。
@@ -431,6 +476,17 @@ async function main(): Promise<void> {
         console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
       }
       await c.end();
+    }
+
+    // **DB が繋がることと、それが載っている箱が健全なことは別。**カーネルが更新されても
+    // 再起動しなければ当たらず、PostgreSQL 本体は自動更新の対象に入れていない。
+    // どちらも見に行かないと分からないので、ここで 1 回聞く。
+    try {
+      for (const line of hostStatus(env.KNOWLEDGE_DB_URL ?? "")) console.log(line);
+    } catch (e) {
+      const why =
+        (e as { stderr?: string }).stderr?.trim().split("\n")[0] || (e instanceof Error ? e.message : `${e}`);
+      console.log(`VPS の状態             聞けない: ${why}`);
     }
 
     // Linear は API キーではなく OAuth 済みの MCP 越しに取る。**壊れ方が DB と違う** —

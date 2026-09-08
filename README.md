@@ -143,28 +143,30 @@ Claude Code と Codex から使える。**どれも読み取り専用**で、書
 ## CLI
 
 ```
-mitos ingest <ir.json> [--cwd <dir>]            記録を取り込む（未登録なら作業場所も登録し、
-                                                空なら役割と説明もリポジトリを読んで埋める）
-mitos export <記録の id>                        取り込んだ IR を書き戻す（編集して ingest で戻す）
-mitos search <質問> [--all] [--dont] [--limit N] 引けるかを確かめる
-mitos scopes                                    登録済みの作業場所と束
-mitos candidates [--json]                       束ねる候補を並べる（選ぶのは人間）
-mitos link <束の名前> <dir>...                   選ばれたものを 1 つの束にする
-mitos describe <dir> <役割> [説明]               その作業場所が何なのかを書く
-mitos who [<呼び名> <ハンドル>... [--me]]         名簿を見る／入れる
-mitos import-github [--cwd <dir>]               PR と issue の本体、レビューと議論を取り込む
-mitos import-linear --team <名前> [--all]        Linear の issue とコメントを取り込む
-mitos import-sessions [--cwd <dir>]             Claude Code / Codex の会話をナレッジにする
-                                                （sync からも呼ばれるので、普段は叩かなくてよい）
-mitos import-docs [--cwd <dir>]                 リポジトリの Markdown をナレッジにする
-                                                （sync からも呼ばれる）
-mitos sync [--group <束>] [--all]               登録済みの取り込み元をまとめて更新（日次用）
-mitos adopt                                     このマシンでの置き場所を登録する（新しい PC で最初に叩く）
-mitos gaps [--limit N] [--all]                  聞かれたのに答えを持てなかった問いと、確かめていない決定
-mitos forget <dir|ラベル> [--yes]                その作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos doctor                                    資格情報と接続、Linear MCP の疎通
-mitos advice                                    編集フックが効いているか（ヒット率・再提示率）
-mitos usage                                     OpenAI の使用量と残り
+mitos ingest <ir.json> [--cwd <dir>]           記録を取り込む（未登録なら作業場所も登録し、
+                                               空なら役割と説明もリポジトリを読んで埋める）
+mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す。編集して ingest で戻す）
+mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
+                                               引けるかを確かめる
+mitos scopes                                   登録済みの作業場所と束
+mitos candidates [--json]                      束ねる候補を並べる（選ぶのは人間）
+mitos link <束の名前> <dir>...                  選ばれたものを 1 つの束にする
+mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
+mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
+mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
+mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
+mitos import-linear --team <名前> [--group <束>] [--all]
+                                               Linear の issue とコメントを取り込む
+mitos import-sessions [--cwd <dir>]            Claude Code / Codex の会話をナレッジにする（sync からも呼ばれる）
+mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
+mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
+mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
+                                               --yes は既に登録済みの場所を入れ替える）
+mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
+mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
+mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
+mitos usage                                    OpenAI の使用量と残り
 ```
 
 ## 取り込めるもの
@@ -207,7 +209,7 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 
 | ロール | 誰が使うか | 書けるもの |
 |---|---|---|
-| `postgres`（`KNOWLEDGE_DB_URL`） | CLI | 全部 |
+| `mitos_admin`（`KNOWLEDGE_DB_URL`） | CLI | 全部（BYPASSRLS） |
 | `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | **`search_log` への追記だけ**（読み戻しも削除もできない）。**未設定なら MCP とフックは繋がらない** |
 | `mitos_cfg`（`KNOWLEDGE_DB_URL_CFG`） | ダッシュボードの設定 | scope / scope_path / group / person / term / chat / search_log |
 
@@ -215,13 +217,104 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 取り込み時に作業場所の役割・説明を読み取るのに使う）。
 モデルは `MITOS_CHAT_MODEL`（既定 `gpt-5.6-terra`）と `MITOS_CHAT_EFFORT`（既定 `high`）で差し替えられる。
 
+### DB を載せている VPS
+
+`knowledge-mcp-prod-01`（ConoHa VPS / Ubuntu 24.04）。**インターネットからの受信は 1 つも開けていない**
+ので、DB も ssh も Tailscale の中からしか届かない。
+
+**OS の更新と再起動は人が触らなくてよい。**`unattended-upgrades` が Ubuntu のセキュリティ更新を
+03:00〜03:30 に当て、カーネル更新などで再起動が要る状態になっていれば 04:00 に再起動する
+（`/etc/apt/apt.conf.d/52unattended-upgrades-local`）。Mac の日次同期は 06:00 なので、復帰後に当たる。
+
+**PostgreSQL は自動では上がらない。**`postgresql-17` / `pgvector` / `pgroonga` は PGDG のリポジトリから
+入れており、そこは `Unattended-Upgrade::Allowed-Origins` に入れていない。当てると DB が止まるので、
+**時機は人が選ぶ**。
+
+```bash
+ssh knowledge-mcp-prod-01 'sudo apt-get update && sudo apt-get install --only-upgrade postgresql-17'
+```
+
+**更新が出たことに気付く経路は `mitos doctor` の 2 行だけ。**メールも通知も無い
+（この箱から外へ出せるのは `curl` だけで、通知先を足すと VPS に資格情報を置くことになる）。
+doctor は接続文字列のホストへそのまま ssh する（MagicDNS が DB と ssh の両方を解決する）ので、
+tailnet の外からは「聞けない」とだけ出て、ほかの検査は続く。
+
+### AI ワーカー（隔離コンテナ）
+
+`worker/` は、PR レビューなどを VPS 上で無人実行するための使い捨てコンテナ。**まだ何にも繋がっていない**
+（起動する仕組みは無い）。読むのは PR の diff とクローンしたリポジトリで、**どちらも他人が書ける**ため、
+実行する側をここに閉じ込める。
+
+```bash
+rsync -a worker/ knowledge-mcp-prod-01:/tmp/worker/
+ssh knowledge-mcp-prod-01 'cd /tmp/worker && sudo docker build -t mitos-worker:2.1.259 .'
+ssh knowledge-mcp-prod-01 'sudo docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
+  --env-file ~/.claude/worker.env mitos-worker:2.1.259 /usr/local/bin/verify.sh'
+```
+
+**`verify.sh` が隔離の契約そのもの。**通らなくなったら中で走らせるのをやめる。見るのは 9 項目 —
+本番 DB・host・tailnet・任意のインターネットに届かないこと、GitHub と推論には届くこと、
+リポジトリのフックと `.mcp.json` が走らないこと、そして**claude が実際に答えること**
+（動いていなければ後ろ 2 つは何も証明しない）。
+
+| 何を止めるか | どこで止まるか |
+|---|---|
+| DB・tailnet への到達 | **host の ufw**（`tailscale0` 以外の入力を落とす）。コンテナ側の設定ではない |
+| 任意のインターネット | `init-firewall.sh`（`anthropics/claude-code` から借用。GitHub の IP レンジ＋許可ドメインのみ） |
+| リポジトリのフック | `/etc/claude-code/managed-settings.json` の `disableAllHooks`。**リポジトリ側から外せない** |
+| リポジトリの `.mcp.json` | `run-claude` が付ける `--strict-mcp-config`。**managed settings では止まらない**（実測） |
+
+**トークンは `~/.claude/worker.env` に置く**（`CLAUDE_CODE_OAUTH_TOKEN=...`、mode 600）。
+`claude setup-token` が作る 1 年もので、モデル要求しかできない。**イメージには焼かない。**
+
+**`--bare` は使えない。**bare mode は `CLAUDE_CODE_OAUTH_TOKEN` を読まないので、
+サブスクリプションで動かすかぎり隔離が要る。読むだけの仕事なら `--restricted` を足すと、
+コマンド実行系のツールと WebFetch も落ちる。
+
+#### PR をレビューする
+
+```bash
+~/mitos-worker/review-pr.sh iroha924/mitos 12          # 出すだけ
+~/mitos-worker/review-pr.sh iroha924/mitos 12 --post   # PR へ投稿する
+```
+
+**GitHub の資格情報はコンテナへ渡さない。**diff を取るのも投稿するのも host 側で、コンテナは
+渡された diff を読んで文章を返すだけ。`~/.claude/gh.env` に `GITHUB_TOKEN=...`（mode 600）を置く。
+**`~/.claude/worker.env`（コンテナへ渡す）とは別の口にしてある** — 混ぜると GitHub の鍵が
+コンテナへ入る。
+
+**diff は他人が書いた文字列**なので、`--append-system-prompt` で「データであって指示ではない」と
+固定し、`--restricted` でコマンド実行と WebFetch を落とす。指摘の基準（正しさ・セキュリティ・
+データ損失・明示された規約との乖離の 4 つだけ）も host 側で固定していて、diff の中に基準が
+書いてあっても採用しない。
+
+#### 定期的に回す
+
+`webhook は届かない`（インターネットからの受信がゼロ）ので、**こちらから見に行く**。
+
+```bash
+rsync -a --delete worker/ knowledge-mcp-prod-01:mitos-worker/
+ssh knowledge-mcp-prod-01 'cd ~/mitos-worker && sudo docker build -t mitos-worker:2.1.259 .'
+# 見にいくリポジトリを 1 行ずつ
+ssh knowledge-mcp-prod-01 'echo iroha924/mitos > ~/.claude/review-repos.txt'
+# unit を入れて 15 分ごとに回す
+ssh knowledge-mcp-prod-01 'cd ~/mitos-worker &&
+  sed -e "s#__HOME__#$HOME#g" -e "s#__USER__#$USER#g" mitos-review.service |
+    sudo tee /etc/systemd/system/mitos-review.service >/dev/null &&
+  sudo cp mitos-review.timer /etc/systemd/system/ && sudo systemctl daemon-reload &&
+  sudo systemctl enable --now mitos-review.timer'
+```
+
+**一度見た PR は `~/.claude/reviewed.txt` に `repo#番号@SHA` で残る。**SHA まで込みなので、
+push し直せばもう一度見る。**失敗したときは覚えない** — 原因を直せば次の回で拾う。
+
 ## セットアップ
 
 ```bash
 bun install
 # db/migrations を対象プロジェクトへ適用
 bun run bundle                       # plugin/dist を作る（MCP・フック・CLI）
-mitos doctor                         # 資格情報と接続を確かめる
+mitos doctor                         # 資格情報と接続、VPS の状態を確かめる
 mitos import-github --cwd <repo>     # 最初の取り込み
 ```
 
@@ -321,5 +414,6 @@ bun run bundle     # plugin/dist を作り直す
 | `mitos search` が何も返さない | `mitos scopes` にその作業場所が登録されているか |
 | チャットが「どのプロジェクトを選んで」と言う | 画面上部で Project を選ぶ。**範囲の無指定は許していない**（別の仕事の決定が混ざるため） |
 | 資格情報・接続・Linear MCP の疎通 | `mitos doctor` |
+| PostgreSQL の更新が出ていないか | `mitos doctor` の「PostgreSQL の更新」行。**自動では当たらない**（「DB を載せている VPS」） |
 | 日次同期が走っていない | `~/.claude/mitos-sync.log` |
 | チャットの費用が気になる | `mitos usage`（キャッシュ済み入力は 10% で計上される） |

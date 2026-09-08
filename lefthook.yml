@@ -20,7 +20,18 @@ pre-commit:
     # 理由は AGENTS.md「MCP を直したら、版を上げないと誰にも届かない」。
     - name: bundle
       glob: "{server/src/*.ts,plugin/**}"
+      # **`set -e` を置く。**複数行の run は最後のコマンドの終了コードだけが結果になるので、
+      # これが無いと bundle が失敗しても後ろの検査が 0 を返して打ち消す。
       run: |
+        set -e
         bun run bundle
         git add plugin/dist/
         bun run scripts/check-mcp-version.mjs
+    # 同じ知識が複数の出口に写されている場所を突き合わせる。
+    # 理由は AGENTS.md「片方を直したら対を探す」。README の CLI 一覧は
+    # 突き合わせではなく USAGE から書き出すので、書き直した分を staged へ戻す。
+    - name: pairs
+      glob: "{server/src/*.ts,dashboard/src/routes/search.tsx,README.md}"
+      # **`git add` はここに書かない。**無条件に走ると、README に残っていた別件の編集まで
+      # コミットへ巻き込む。書き換えたときだけ check-pairs.mjs 自身が staged へ戻す。
+      run: node scripts/check-pairs.mjs

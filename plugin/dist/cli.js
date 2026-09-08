@@ -5105,6 +5105,7 @@ var require_x509_transport_state = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
+import { execFileSync as execFileSync5 } from "node:child_process";
 import fs7 from "node:fs";
 import os4 from "node:os";
 import path8 from "node:path";
@@ -39008,29 +39009,30 @@ AI: ${e.reply}`,
 
 // server/src/cli.ts
 var USAGE = `使い方:
-  mitos ingest <記録.html|ir.json> [--cwd <dir>]  記録を取り込む（未登録なら作業場所も登録）
-  mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す）
+  mitos ingest <ir.json> [--cwd <dir>]           記録を取り込む（未登録なら作業場所も登録し、
+                                                 空なら役割と説明もリポジトリを読んで埋める）
+  mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す。編集して ingest で戻す）
   mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
                                                  引けるかを確かめる
   mitos scopes                                   登録済みの作業場所と束
   mitos candidates [--json]                      束ねる候補を並べる（選ぶのは人間）
   mitos link <束の名前> <dir>...                  選ばれたものを 1 つの束にする
   mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
-  mitos doctor                                   資格情報と接続を確かめる
-  mitos usage                                    OpenAI の使用量と残り
-  mitos import-github [--cwd <dir>]              PR のレビューと議論を取り込む
-  mitos import-linear --team <名前> [--group <束>] [--all]
-                                                 Linear の issue とコメントを取り込む
   mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
+  mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
+  mitos import-linear --team <名前> [--group <束>] [--all]
+                                                 Linear の issue とコメントを取り込む
+  mitos import-sessions [--cwd <dir>]            Claude Code / Codex の会話をナレッジにする（sync からも呼ばれる）
+  mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
-  mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
-  mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする
-  mitos advice                                   編集時の助言が効いているかを見る
-  mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
-  mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
                                                  --yes は既に登録済みの場所を入れ替える）
+  mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
+  mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
+  mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+  mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
+  mitos usage                                    OpenAI の使用量と残り
 
 資格情報: ~/.claude/knowledge.env の KNOWLEDGE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
@@ -39053,6 +39055,29 @@ function readIr(file2) {
   if (!m?.[1])
     throw new Error(`${file2} に progress-ir の埋め込みが無い。progress render で書いたものを渡す`);
   return JSON.parse(m[1]);
+}
+var HOST_PROBE = [
+  `printf 'reboot=%s\\n' "$(cat /var/run/reboot-required.pkgs 2>/dev/null | tr '\\n' ' ')"`,
+  `printf 'when=%s\\n' "$(shutdown --show 2>&1 | grep -o 'scheduled for [^,]*' || true)"`,
+  `printf 'pgdg=%s\\n' "$(apt list --upgradable 2>/dev/null | grep pgdg | cut -d/ -f1 | tr '\\n' ' ')"`,
+  `printf 'other=%s\\n' "$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -cv pgdg || true)"`
+].join("; ");
+function hostStatus(dbUrl) {
+  const host = new URL(dbUrl).hostname;
+  const out = execFileSync5("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, HOST_PROBE], {
+    encoding: "utf8",
+    timeout: 30000,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  const v = new Map(out.split(`
+`).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]));
+  const pending = v.get("reboot");
+  const when = v.get("when")?.replace("scheduled for ", "");
+  const pgdg = v.get("pgdg");
+  return [
+    `VPS（${host}）  再起動 ${pending ? `保留: ${pending}${when ? ` → ${when} に自動で当たる` : " ← 予約が無い。自動再起動の設定を確かめる"}` : "保留なし"}`,
+    `PostgreSQL の更新      ${pgdg ? `${pgdg}← 人が当てる（DB が止まる）` : "なし"} / ほかの更新 ${v.get("other") ?? "?"} 件`
+  ];
 }
 var text = exports_external.string();
 var evidence = exports_external.array(exports_external.object({ kind: exports_external.string(), ref: exports_external.string() }).loose()).optional();
@@ -39274,6 +39299,14 @@ ${USAGE}`);
         console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
       }
       await c3.end();
+    }
+    try {
+      for (const line of hostStatus(env2.KNOWLEDGE_DB_URL ?? ""))
+        console.log(line);
+    } catch (e) {
+      const why = e.stderr?.trim().split(`
+`)[0] || (e instanceof Error ? e.message : `${e}`);
+      console.log(`VPS の状態             聞けない: ${why}`);
     }
     try {
       console.log(`Linear(MCP 経由)       ${whoAmI()} として届いた`);

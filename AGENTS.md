@@ -4,6 +4,9 @@
 TypeScript / bun、PostgreSQL 17（pgvector + pgroonga）、埋め込みは Voyage、生成は OpenAI。
 **DB は ConoHa VPS の `knowledge-mcp-prod-01`** で、Tailscale 経由でのみ待ち受ける。
 証明書は `plugin/certs/` に置き、`db.ts` がそこにある `.crt` を全部 CA として読む。
+**OS の更新と再起動は無人で当たり、PostgreSQL の更新は人が当てる**（PGDG を自動更新の対象に
+入れていないため）。どちらも `mitos doctor` の「VPS」「PostgreSQL の更新」の 2 行に出る。
+詳しくは `README.md`「DB を載せている VPS」。
 
 **このファイルは Claude と Codex の両方に効く。**Claude 側は `CLAUDE.md` が 1 行で取り込んでいる。
 
@@ -46,6 +49,34 @@ claude plugin update mitos     # 「Restart to apply changes」と出る
 | `plugin/bin/mitos`（CLI） | `plugin/dist/mcp.js`（プラグインのキャッシュ経由） |
 
 **両方を実際に叩いて確かめる。**片方の成功をもう片方の証拠にしない。
+
+### 片方を直したら、対を探す
+
+**同じ判断が 2 箇所以上に現れる形が多い。**直す側は 1 箇所しか見ていないので、もう片方が
+古いまま残り、**そちらはそちらで動くので気付けない**。上の「人間向け / AI 向け」はこの特殊形で、
+対はその 2 面に限らない。
+
+実測（2026-09-08、1 日で 6 回）。
+
+| 直した場所 | 見落とした対 |
+|---|---|
+| symlink の末端を lstat で弾く | 途中のディレクトリ自体が symlink のとき（realpath の前方一致へ） |
+| `identify()` が見る基点 | `syncDocs` へ渡す引数 |
+| `search()` の既定の除外 | `outsideScopes()` が持つ同じリスト |
+| MCP が返す記録の帰属 | 画面のチャットが出す帰属 |
+| 引用の枠へ入れる `node.text` | 枠の外へ漏れていた `record` の列 |
+| README の `mitos doctor` の説明 | `cli.ts` の `USAGE` |
+| pre-commit の `pairs` が終了コードを落としていた | 同じ形の `bundle`（**この表を書いた直後に踏んだ**） |
+
+**探し方は 1 つ。直した関数と定数の参照を全部引く。**同じ判断が要る呼び出し元が 2 つ以上
+あれば、それが対である。**同じ値を読む場所が複数あるなら、括り出して 1 つにする** —
+`DEFAULT_EXCLUDED` と `framed()` はそうして対そのものを消した。
+
+**機構で止まるのは一部だけ。**pre-commit の `pairs`（`scripts/check-pairs.mjs`）が見るのは、
+集合として列挙できる対に限る — `kind` の一覧が 3 つの出口で揃っているか、と README の CLI 一覧
+（**突き合わせず `USAGE` から書き出すので、写しが 1 つになる**）。
+**経路の各段で同じ検査が要る形と、同じデータを別々に組み立てる 2 つの出口は捕まらない。**
+そこは上の探し方でやる。
 
 ### 置き場所はマシンごとに違う
 
