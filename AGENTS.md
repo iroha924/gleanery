@@ -66,6 +66,7 @@ claude plugin update mitos     # 「Restart to apply changes」と出る
 | MCP が返す記録の帰属 | 画面のチャットが出す帰属 |
 | 引用の枠へ入れる `node.text` | 枠の外へ漏れていた `record` の列 |
 | README の `mitos doctor` の説明 | `cli.ts` の `USAGE` |
+| pre-commit の `pairs` が終了コードを落としていた | 同じ形の `bundle`（**この表を書いた直後に踏んだ**） |
 
 **探し方は 1 つ。直した関数と定数の参照を全部引く。**同じ判断が要る呼び出し元が 2 つ以上
 あれば、それが対である。**同じ値を読む場所が複数あるなら、括り出して 1 つにする** —

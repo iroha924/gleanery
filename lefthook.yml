@@ -20,7 +20,10 @@ pre-commit:
     # 理由は AGENTS.md「MCP を直したら、版を上げないと誰にも届かない」。
     - name: bundle
       glob: "{server/src/*.ts,plugin/**}"
+      # **`set -e` を置く。**複数行の run は最後のコマンドの終了コードだけが結果になるので、
+      # これが無いと bundle が失敗しても後ろの検査が 0 を返して打ち消す。
       run: |
+        set -e
         bun run bundle
         git add plugin/dist/
         bun run scripts/check-mcp-version.mjs
@@ -30,5 +33,6 @@ pre-commit:
     - name: pairs
       glob: "{server/src/*.ts,dashboard/src/routes/search.tsx,README.md}"
       run: |
+        set -e
         node scripts/check-pairs.mjs
         git add README.md
