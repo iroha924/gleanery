@@ -11,7 +11,7 @@
 -- **AI のレビューは残す。**gemini-code-assist と coderabbitai の指摘には中身がある
 -- （CI 的な定型は 5,300 件中 252 件だった）。落とすのは推論を含まない通知だけ。
 -- **1 行に 1024 次元の埋め込み（12KB）がある。**34,464 行を無条件に更新すると
--- 400MB の書き換えになり、Supabase の statement_timeout（2 分）に当たる（実測で落ちた）。
+-- 400MB の書き換えになり、**当時の実行環境の statement_timeout（2 分）に当たった**（実測で落ちた）。
 -- 値が変わる行だけに絞る。
 set statement_timeout = '30min';
 

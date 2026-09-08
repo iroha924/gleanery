@@ -119,8 +119,4 @@ bun run dev        # API + ダッシュボード
 
 - `README.md` — 全体像、精度の測り方、新しい PC で使い始める、うまく動かないとき
 - `.claude/rules/knowledge-schema.md` — データの形（`server/src` と `db/migrations` で自動ロード）
-
-**2026-09-08 より前の移行ファイルは Supabase 上で書かれている。**そこに残る
-「Supabase の statement_timeout」「Supabase の公式サンプル」のような記述は**当時の実測の根拠**であって、
-いまの構成の説明ではない。判断の理由なので消していない。
 - `plugin/skills/trace/SKILL.md` — 記録を作る側の契約

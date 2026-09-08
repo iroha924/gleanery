@@ -6,7 +6,8 @@ create index node_record_at    on node (record_id, at);
 create index node_failure      on node (failure_sig)  where failure_sig is not null;
 
 -- ベクトル。**内積を使う**。Voyage の埋め込みは正規化済みなので、
--- cosine にすると正規化の計算を無駄に払う（Supabase の公式サンプルは cosine で書かれている）。
+-- cosine にすると正規化の計算を無駄に払う（**世に出ているサンプルの多くは cosine で書かれている**ので、
+-- そのまま真似すると気付かずに払う）。
 create index node_embedding on node
   using hnsw (embedding extensions.vector_ip_ops);
 create index record_embedding on record

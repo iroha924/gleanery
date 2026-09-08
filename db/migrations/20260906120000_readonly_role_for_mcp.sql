@@ -12,8 +12,8 @@ begin
   end if;
 end $$;
 
--- anon / authenticated には Supabase の既定で INSERT/UPDATE/DELETE/TRUNCATE まで付いており、
--- 書き込みを止めているのは RLS だけである。このロールは**権限の側で**読み取りに限る。
+-- **RLS だけに頼らない。**表の既定の権限に INSERT/UPDATE/DELETE/TRUNCATE が付いたまま、
+-- 書き込みを止めているのがポリシーだけ、という状態は作らない。このロールは**権限の側で**読み取りに限る。
 revoke all on all tables in schema public from knowledge_ro;
 grant usage on schema public, extensions to knowledge_ro;
 grant select on all tables in schema public to knowledge_ro;
