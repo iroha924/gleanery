@@ -57,3 +57,13 @@ PR と会話は追記しかされないので要らないが、文書には要�
 `alter default privileges ... grant select ... to knowledge_ro` が**後から作った表にも効く**。
 読ませたくない表を足したら `revoke select` を明示する（実測: `search_log` が RLS で 0 行に
 なっていただけで、権限としては読めていた）。
+
+**同じ罠が画面用ロールにもある。**`20260906180000_config_role_for_dashboard.sql:16` の
+`alter default privileges ... grant select on tables to mitos_cfg` も後から作った表に効く。
+**読み取りの既定が 2 つあるので、表を足したら両方について決める。**
+
+**`mitos_cfg` に `record` と `node` への書き込みを与えない。**推論する層に書き込みを持たせない
+境界がここで決まる。**grant を読んで判定しない** — `mitos_cfg` への grant は 6 本の migration に
+散っていて、1 本だけ見ると成立しているように見える。確かめ方は `KNOWLEDGE_DB_URL_CFG` で繋いで
+`insert into node` と `insert into record` がどちらも `permission denied for table ...` になること
+（実測 2026-09-09）。

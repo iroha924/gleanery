@@ -62,7 +62,7 @@ CLI は別経路で、`plugin/bin/mitos` は `plugin/dist/cli.js` を直接読�
 古いまま残り、そちらはそちらで動くので気付けない。上の「人間向け / AI 向け」はこの特殊形で、
 対はその 2 面に限らない。
 
-実測。件数はここに書かない — 表が増えるたびに数字だけ古くなる。
+実測（2026-09-08 から）。件数はここに書かない — 表が増えるたびに数字だけ古くなる。
 
 | 直した場所 | 見落とした対 |
 |---|---|
@@ -132,6 +132,10 @@ Codex で進めた回の判断は `/mitos:trace` を通さないと残らない�
 
 `bun run dev` は前面でだけ使う。背景で起動すると `--parallel` が TTY を取りにいって落ちる。
 
+資格情報は `~/.claude/knowledge.env`。**リポジトリには置かない。**
+鍵は用途で 3 つに分かれていて（管理・読み取り専用・画面の設定）、どれを使うかが
+「書き込みの境界」の実体になる。
+
 ## 記録の置き場所
 
 **HTML と Markdown の記録ファイルは廃止済み。**正本は DB で、人が読む面はダッシュボード
@@ -144,7 +148,7 @@ Codex で進めた回の判断は `/mitos:trace` を通さないと残らない�
 | `mitos ingest` | `/mitos:trace` が書いた IR（判断そのもの） |
 | `mitos import-github` | PR と issue の本体、レビューと議論 |
 | `mitos import-linear` | Linear の issue とコメント |
-| `mitos import-sessions` | Claude Code の会話（1 往復 = 1 件）。Codex の rollout は読まない |
+| `mitos import-sessions` | Claude Code の会話（1 往復 = 1 件） |
 | `mitos import-docs` | リポジトリの Markdown（見出しで節に割る）。既定の検索には出ない |
 
 `mitos ingest` 以外を `mitos sync` が日次で回す（launchd。毎日 6:00）。
@@ -156,18 +160,23 @@ Codex で進めた回の判断は `/mitos:trace` を通さないと残らない�
 ### PR と issue の本文は、そのまま記録になる
 
 `import-github` が本文を丸ごと埋め込む（`server/src/github.ts` の `prText`。12,000 字まで、
-差分は入れない）。つまり本文だけが、その変更の説明として後から引かれる。
+差分は入れない）。つまり本文だけが、その変更の説明として残る。
+
+**引かれ方は 2 つで違う。**issue の本文は既定の検索に出る。**PR の本文は既定から外してある**
+（`search.ts` の `DEFAULT_EXCLUDED`。実測で 24 件・平均 5,015 バイトが結果を埋めたため）ので、
+`kinds` を明示したときだけ返る。**したがって定型が直に効くのは issue 側**だが、PR 側も
+「引いたときに出てくる唯一の説明」であることは変わらない。
 
 書く前に `.github/pull_request_template.md`（issue は `.github/ISSUE_TEMPLATE/`）を読み、
 その節に沿って書く。`gh` の `--template` は `--body` / `--body-file` と併用できないので、
 **本文を渡す経路で雛形が自動で入る道は無い。**テンプレートは雛形ではなく、読んで埋める契約である。
 
-埋まらない節は消す。全 PR に同じ定型が並ぶと、意味で引くときに効かない。
+埋まらない節は消す。定型だけの節は、埋め込みに入って何も足さない。
 
 ## 詳しくは
 
 - `README.md` — 全体像、精度の測り方、新しい PC で使い始める、うまく動かないとき
 - `plugin/skills/trace/SKILL.md` — 記録を作る側の契約
 - `plugin/skills/review/SKILL.md` — `/mitos:review` の手順と、レビュアーの分担
-- `.claude/rules/` — Claude でだけ自動ロードされる規約（Codex はこの機構を持たない）。
-  データの形は `knowledge-schema.md`、レビュアーの定義を触るときは `plugin-agents.md`
+- `.claude/rules/` — データの形は `knowledge-schema.md`、画面は `dashboard.md`、
+  レビュアーの定義を触るときは `plugin-agents.md`

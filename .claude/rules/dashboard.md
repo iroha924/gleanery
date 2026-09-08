@@ -24,10 +24,8 @@ paths:
 どちらも `permission denied for table ...` になること（実測 2026-09-09）。**grant を読んで判定しない** —
 `mitos_cfg` への grant は 6 本の migration に散っていて、1 本だけ見ると成立しているように見える。
 
-表を足したら、画面側から読めるかを決める。`20260906180000_config_role_for_dashboard.sql:16` の
-`alter default privileges ... grant select on tables to mitos_cfg` が**後から作った表にも効く**ので、
-読ませたくない表は `revoke select` を明示する。`knowledge_ro` 側の同じ罠は
-`.claude/rules/knowledge-schema.md`「移行を書くとき」にある。
+表を足すときの扱いは `.claude/rules/knowledge-schema.md`「移行を書くとき」にある。
+**そちらは `db/migrations/**` で載るので、migration を書く回はここを読まなくてよい。**
 
 ## Next.js へ移さない
 

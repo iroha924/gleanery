@@ -175,7 +175,7 @@ mitos usage                                    OpenAI の使用量と残り
 |---|---|---|
 | GitHub の PR・issue の本文、レビュー・議論 | `gh` 経由 | **bot が作った PR も取り込む**（リリース PR がそれ） |
 | Linear の issue・コメント | **MCP をヘッドレスで叩く** | API キーが発行できない組織があるため。下記参照 |
-| Claude Code の会話 | `~/.claude/projects/*.jsonl` | 貼り付けた議事録もここに入る。**そのマシンにしか無い** |
+| Claude Code の会話 | `~/.claude/projects/*.jsonl`（ccs を使っているなら `~/.ccs/instances/*/projects/` も） | 貼り付けた議事録もここに入る。**そのマシンにしか無い**。Codex の rollout は読まない |
 | リポジトリの Markdown | `git ls-files` | 見出しで節に割る。**symlink は辿らない** |
 | 作業の判断 | `/mitos:trace` | 決定・捨てた案・制約・未解決。**ファイルではなく DB に入る** |
 
