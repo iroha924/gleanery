@@ -276,6 +276,66 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
 }
 
 /**
+ * 何を聞かれたかを残す。
+ *
+ * **これが無いと「ナレッジに何が足りないか」に答えられない。**検索は常に上位 N 件を
+ * 返すので、結果の件数を見ても分からない。関連度の低い問いが「聞かれたのに
+ * 答えを持っていなかった」ものになる。
+ *
+ * **失敗しても検索は返す。**観測のために本題を落とさない。
+ *
+ * **明示的に書き込みトランザクションを開く。**MCP は接続時に
+ * `set session characteristics as transaction read only` を入れており、素の insert は
+ * `cannot execute INSERT in a read-only transaction` で落ちる（実測。握り潰していたので
+ * 検索は成功したまま記録だけが 1 件も残らなかった）。この 1 文だけ既定を上書きする。
+ * **境界はこれで緩まない** — 本当の境界はロールの権限で、同じ経路から node へ insert しても
+ * `permission denied` のままであることを実測で確かめてある。
+ *
+ * 接続は 1 本を共有するので、同時に 2 件の検索が来ると後から来た側の begin が入れ子になり、
+ * その 1 行が落ちることがある。**観測ログなので、落ちても壊れない側へ倒す。**
+ */
+export async function logSearch(
+  client: pg.Client,
+  o: {
+    source: "mcp" | "cli" | "chat";
+    scopeId?: number | null;
+    cwd?: string | null;
+    question: string;
+    kinds?: string[] | undefined;
+    onlyRejected?: boolean;
+    allScopes?: boolean;
+    result: SearchResult;
+  },
+): Promise<void> {
+  try {
+    await client.query("begin read write");
+    await client.query(
+      `insert into search_log
+         (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [
+        o.source,
+        o.scopeId ?? null,
+        o.cwd ?? null,
+        o.question,
+        o.kinds?.length ? o.kinds : null,
+        o.onlyRejected === true,
+        o.allScopes === true,
+        o.result.rows.length,
+        o.result.rows[0]?.relevance ?? null,
+        o.result.topScore,
+        o.result.rows.map((r) => r.id),
+      ],
+    );
+    await client.query("commit");
+  } catch {
+    // 記録できないことと、検索が答えられないことは別。
+    // **開いたまま返さない。**次のツール呼び出しが失敗した取引の中で走ることになる。
+    await client.query("rollback").catch(() => {});
+  }
+}
+
+/**
  * 指定した範囲の**外**に、見るべき記録があるかを調べる。
  * 返すのは**どの作業場所にあるか**だけで、中身は返さない（ノイズを持ち込まないため）。
  * 束ね忘れに気付くのに要るのは件数ではなく、どこと束ねるべきかの名前である。

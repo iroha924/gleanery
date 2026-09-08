@@ -88,8 +88,8 @@ AI が読むのは MCP である。
   そのままでよく、横断したいときだけ `all_scopes: true`
 - **会話も既定で引ける。**外しているのは bot の定型文だけ（使用量の通知と
   "Didn't find any major issues."）。PR のレビューの具体的な指摘は出る
-- **`bun run bundle` の後はセッションを張り直す。**MCP サーバーはプロセス起動時に
-  `plugin/dist/mcp.js` を読むので、動いているセッションは古いバンドルを握ったままになる
+- **MCP を直したら、版を上げてプラグインを更新する。**セッションを張り直すだけでは届かない
+  （下の「MCP の変更を届ける」）
 
 ## ダッシュボード
 
@@ -233,6 +233,24 @@ bun run bundle     # plugin/dist を作り直す
 ```
 
 **`bun run bundle` を忘れると、plugin 側（MCP・フック・CLI）は古いままになる。**
+
+### MCP の変更を届ける
+
+`bun run bundle` だけでは Claude Code に届かない。**プラグインは
+`~/.claude/plugins/cache/mitos/mitos/<版>/` へ複製されたものから動き、複製は版が変わったときしか
+起きない**（実測: `plugin/dist/mcp.js` を 2 日分書き換えても、キャッシュは 9/6 のままだった。
+`claude plugin marketplace update` を通しても入れ替わらない）。
+
+```bash
+bun run bundle
+# plugin/.claude-plugin/plugin.json と .claude-plugin/marketplace.json の version を上げる
+claude plugin update mitos          # 「Restart to apply changes」と出る
+# セッションを張り直す
+```
+
+**届いたかはツールの一覧で分かる。**新しいツールを足したなら、それが見えていなければ古いまま。
+CLI（`plugin/bin/mitos`）は `plugin/dist/cli.js` を直接読むので、この手順は要らない。
+**片方だけ新しくなるので、CLI で動いたことは MCP で動く証拠にならない。**
 
 ## 精度をどう測っているか
 

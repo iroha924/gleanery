@@ -37985,6 +37985,29 @@ async function search(client, env2, o) {
   });
   return { rows, queryVector: qv, topScore };
 }
+async function logSearch(client, o) {
+  try {
+    await client.query("begin read write");
+    await client.query(`insert into search_log
+         (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [
+      o.source,
+      o.scopeId ?? null,
+      o.cwd ?? null,
+      o.question,
+      o.kinds?.length ? o.kinds : null,
+      o.onlyRejected === true,
+      o.allScopes === true,
+      o.result.rows.length,
+      o.result.rows[0]?.relevance ?? null,
+      o.result.topScore,
+      o.result.rows.map((r) => r.id)
+    ]);
+    await client.query("commit");
+  } catch {
+    await client.query("rollback").catch(() => {});
+  }
+}
 async function outsideScopes(client, queryVector, scopeIds, {
   polarity,
   kinds,
@@ -38958,6 +38981,7 @@ var USAGE = `使い方:
   mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする
   mitos advice                                   編集時の助言が効いているかを見る
+  mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
@@ -39154,6 +39178,7 @@ async function main() {
     "sync",
     "import-sessions",
     "import-docs",
+    "gaps",
     "advice"
   ];
   if (!KNOWN.includes(cmd))
@@ -39399,6 +39424,30 @@ ${USAGE}`);
       console.log(`取り込み完了: ${await syncSessions(c, env2, cwd, (m) => console.error(`  ${m}`))}`);
       return;
     }
+    if (cmd === "gaps") {
+      const n = Number(opt.limit ?? 15);
+      const mine = opt.all ? null : await scopeIdFor(c, cwd, false);
+      const rows = (await c.query(`select to_char(l.at, 'YYYY-MM-DD') as at, l.source, l.question, l.relevance, l.hits, s.label
+           from search_log l left join scope s on s.id = l.scope_id
+           where ($1::bigint is null or l.scope_id = $1)
+           order by l.relevance asc nulls first, l.at desc
+           limit $2`, [mine, n])).rows;
+      const all = (await c.query(`select count(*) as n, source as src from search_log
+           where ($1::bigint is null or scope_id = $1) group by source order by source`, [mine])).rows;
+      if (all.length === 0) {
+        console.log("まだ 1 件も引かれていません。search_knowledge か mitos search を使うと溜まります。");
+        return;
+      }
+      console.log(`引かれた回数: ${all.map((r) => `${r.src} ${r.n}`).join(" / ")}`);
+      console.log(`
+関連度の低い順（答えを持てなかった可能性が高い順）:`);
+      for (const r of rows) {
+        const rel = r.relevance === null ? "  再ランクなし" : r.relevance.toFixed(3).padStart(6);
+        console.log(`  ${rel}  ${r.at}  ${r.source}${r.label ? ` / ${r.label}` : ""}
+          ${r.question.replace(/\s+/g, " ").slice(0, 140)}`);
+      }
+      return;
+    }
     if (cmd === "search") {
       const question = rest.join(" ");
       if (!question)
@@ -39412,6 +39461,15 @@ ${USAGE}`);
         scopeIds,
         polarity,
         limit: limit2
+      });
+      await logSearch(c, {
+        source: "cli",
+        scopeId: mine,
+        cwd,
+        question,
+        onlyRejected: polarity === "dont",
+        allScopes: opt.all === true,
+        result: { rows, queryVector, topScore }
       });
       console.log(rows.length === 0 ? "該当なし。" : quote(rows));
       const outside = await outsideScopes(c, queryVector, scopeIds, { polarity, floor: topScore });

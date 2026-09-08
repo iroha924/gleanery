@@ -39284,6 +39284,29 @@ async function search(client, env, o) {
   });
   return { rows, queryVector: qv, topScore };
 }
+async function logSearch(client, o) {
+  try {
+    await client.query("begin read write");
+    await client.query(`insert into search_log
+         (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [
+      o.source,
+      o.scopeId ?? null,
+      o.cwd ?? null,
+      o.question,
+      o.kinds?.length ? o.kinds : null,
+      o.onlyRejected === true,
+      o.allScopes === true,
+      o.result.rows.length,
+      o.result.rows[0]?.relevance ?? null,
+      o.result.topScore,
+      o.result.rows.map((r) => r.id)
+    ]);
+    await client.query("commit");
+  } catch {
+    await client.query("rollback").catch(() => {});
+  }
+}
 async function outsideScopes(client, queryVector, scopeIds, {
   polarity,
   kinds,
@@ -39517,6 +39540,16 @@ server.registerTool("search_knowledge", {
   const lead = records.length ? `関連する作業:
 
 ${overview(records)}` : "";
+  await logSearch(c, {
+    source: "mcp",
+    scopeId: scope?.ids[0] ?? null,
+    cwd: cwd ?? null,
+    question,
+    kinds,
+    onlyRejected: onlyDont === true,
+    allScopes: all_scopes === true,
+    result: { rows, queryVector, topScore }
+  });
   const text = (rows.length ? quote(rows, lead) : lead ? `${lead}
 
 該当なし。` : "該当なし。") + (notes.length ? `

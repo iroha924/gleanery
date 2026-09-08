@@ -15,7 +15,7 @@ import { ensureIdentity } from "./identity.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { candidates, identify } from "./scope.ts";
-import { outsideScopes, quote, scopeFamily, search } from "./search.ts";
+import { logSearch, outsideScopes, quote, scopeFamily, search } from "./search.ts";
 import { ingestSession, readSession } from "./session.ts";
 
 const USAGE = `使い方:
@@ -38,6 +38,7 @@ const USAGE = `使い方:
   mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする
   mitos advice                                   編集時の助言が効いているかを見る
+  mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -348,6 +349,7 @@ async function main(): Promise<void> {
     "sync",
     "import-sessions",
     "import-docs",
+    "gaps",
     "advice",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
@@ -670,6 +672,53 @@ async function main(): Promise<void> {
       return;
     }
 
+    // **ナレッジに何が足りないかは、引かれ方にしか出ない。**
+    // 記録の側を眺めても「無いもの」は見えない。
+    if (cmd === "gaps") {
+      const n = Number(opt.limit ?? 15);
+      const mine = opt.all ? null : await scopeIdFor(c, cwd, false);
+      const rows = (
+        await c.query<{
+          at: string;
+          source: string;
+          question: string;
+          relevance: number | null;
+          hits: number;
+          label: string | null;
+        }>(
+          `select to_char(l.at, 'YYYY-MM-DD') as at, l.source, l.question, l.relevance, l.hits, s.label
+           from search_log l left join scope s on s.id = l.scope_id
+           where ($1::bigint is null or l.scope_id = $1)
+           order by l.relevance asc nulls first, l.at desc
+           limit $2`,
+          [mine, n],
+        )
+      ).rows;
+      const all = (
+        await c.query<{ n: string; src: string }>(
+          `select count(*) as n, source as src from search_log
+           where ($1::bigint is null or scope_id = $1) group by source order by source`,
+          [mine],
+        )
+      ).rows;
+      if (all.length === 0) {
+        console.log("まだ 1 件も引かれていません。search_knowledge か mitos search を使うと溜まります。");
+        return;
+      }
+      console.log(`引かれた回数: ${all.map((r) => `${r.src} ${r.n}`).join(" / ")}`);
+      // **合否の閾値を置かない。**Voyage の関連度がこのデータでどう分布するかを
+      // まだ測っていないので、「0.4 未満は失敗」のような線を引くと、較正していない
+      // 数値で判定することになる。低い順に並べるだけにして、線は人が引く。
+      console.log("\n関連度の低い順（答えを持てなかった可能性が高い順）:");
+      for (const r of rows) {
+        const rel = r.relevance === null ? "  再ランクなし" : r.relevance.toFixed(3).padStart(6);
+        console.log(
+          `  ${rel}  ${r.at}  ${r.source}${r.label ? ` / ${r.label}` : ""}\n          ${r.question.replace(/\s+/g, " ").slice(0, 140)}`,
+        );
+      }
+      return;
+    }
+
     if (cmd === "search") {
       const question = rest.join(" ");
       if (!question) throw new Error(`質問を指定する\n\n${USAGE}`);
@@ -680,6 +729,15 @@ async function main(): Promise<void> {
         scopeIds,
         polarity,
         limit,
+      });
+      await logSearch(c, {
+        source: "cli",
+        scopeId: mine,
+        cwd,
+        question,
+        onlyRejected: polarity === "dont",
+        allScopes: opt.all === true,
+        result: { rows, queryVector, topScore },
       });
       // この出力は progress-log の allowed-tools 経由でそのままエージェントの文脈へ入る。
       // 枠を通さずに出すと、フック側だけ守っても意味が無い。

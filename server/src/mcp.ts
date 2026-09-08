@@ -16,6 +16,7 @@ import { connect, loadEnv } from "./db.ts";
 import { identify } from "./scope.ts";
 import {
   currentWork,
+  logSearch,
   outsideScopes,
   type Polarity,
   quote,
@@ -192,6 +193,17 @@ server.registerTool(
     // 進行中かどうかを見ていない（search.ts の where は r.embedding is not null だけ）。
     // 完了した作業を「いま進行中」と断言することになる。
     const lead = records.length ? `関連する作業:\n\n${overview(records)}` : "";
+    // **何を聞かれたかを残す。**関連度の低い問いが「ナレッジに無かったもの」の一覧になる。
+    await logSearch(c, {
+      source: "mcp",
+      scopeId: scope?.ids[0] ?? null,
+      cwd: cwd ?? null,
+      question,
+      kinds,
+      onlyRejected: onlyDont === true,
+      allScopes: all_scopes === true,
+      result: { rows, queryVector, topScore },
+    });
     const text =
       (rows.length ? quote(rows, lead) : lead ? `${lead}\n\n該当なし。` : "該当なし。") +
       (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
