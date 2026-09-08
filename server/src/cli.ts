@@ -769,10 +769,18 @@ async function main(): Promise<void> {
     if (cmd === "forget") {
       const target = rest.join(" ");
       if (!target) throw new Error(`消す作業場所をディレクトリかラベルで指定する\n\n${USAGE}`);
+      // **ディレクトリ名から識別子を引くのは、そこがリポジトリの根のときだけ。**
+      // git は親方向へ .git を探すので、`mitos forget server` がリポジトリ内のどの名前でも
+      // 囲っている側の remote を返し、**mitos 全体に 1 件だけ当たっていた**（実測）。
+      // ちょうど 1 件なので曖昧さの番人も発火せず、--yes を付けていれば全部消えた。
+      const abs = path.resolve(target);
+      const atRoot = fs.existsSync(path.join(abs, ".git"));
       const hit = await c.query<{ id: number; label: string; ident: string }>(
-        `select id::int as id, label, ident from scope
-         where ident = $1 or label = $1 or abs_path = $2 or ident = $3`,
-        [target, path.resolve(target), identify(target).ident],
+        `select distinct s.id::int as id, s.label, s.ident from scope s
+         left join scope_path p on p.scope_id = s.id
+         where s.ident = $1 or s.label = $1 or s.abs_path = $2 or p.abs_path = $2
+            or ($3::text is not null and s.ident = $3)`,
+        [target, abs, atRoot ? identify(abs).ident : null],
       );
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
@@ -804,6 +812,10 @@ async function main(): Promise<void> {
         // record を消せば node / ref_link / asset は cascade で落ちる。
         // scope を直に指している参照は restrict なので、先に外さないと消せない。
         await c.query("delete from search_log where scope_id = $1", [gone.id]);
+        // **チャットは外部キーで繋がっていない。**scope_ids は int[] なので scope を消しても
+        // 残り、その作業場所の記録から作った回答本文が chat_message にそのまま居座る。
+        // 消す境界なので、生成物の側も落とす。
+        await c.query("delete from chat where $1 = any(scope_ids)", [gone.id]);
         await c.query("delete from asset where scope_id = $1", [gone.id]);
         await c.query("delete from record where scope_id = $1", [gone.id]);
         await c.query("delete from node where scope_id = $1", [gone.id]);
@@ -826,6 +838,12 @@ async function main(): Promise<void> {
     if (cmd === "gaps") {
       const n = Number(opt.limit ?? 15);
       const mine = opt.all ? null : await scopeIdFor(c, cwd, false);
+      // **未登録のディレクトリでは何も出さない。**null を「全部見る」と読むと、
+      // 関係のないプロジェクトの問いと決定が並ぶ（search はここを空配列に倒している）。
+      if (!opt.all && mine === null) {
+        console.log(`${identify(cwd).label} はナレッジ DB に未登録です。--all で全部を見られます。`);
+        return;
+      }
       const rows = (
         await c.query<{
           at: string;

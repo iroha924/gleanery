@@ -20,7 +20,7 @@
 | **探す** | ダッシュボード | 意味検索の結果をそのまま見る |
 | **記録する** | `/mitos:trace` スキル | いまのセッションの判断を構造化して DB へ入れる |
 | **現在地を知る** | MCP `current_work` / `/mitos:current` | いまどこまで進んでいて、次に何をやるか。質問は要らない |
-| **溜める** | `mitos sync`（毎日 6:00） | GitHub の PR・レビュー、Linear の issue・コメント、**Claude Code / Codex の会話** |
+| **溜める** | `mitos sync`（毎日 6:00） | GitHub の PR・issue・レビュー、Linear の issue・コメント、リポジトリの Markdown、**Claude Code / Codex の会話** |
 
 ## Claude Code で開発しているときの使いどころ
 
@@ -152,11 +152,16 @@ mitos candidates [--json]                       束ねる候補を並べる（�
 mitos link <束の名前> <dir>...                   選ばれたものを 1 つの束にする
 mitos describe <dir> <役割> [説明]               その作業場所が何なのかを書く
 mitos who [<呼び名> <ハンドル>... [--me]]         名簿を見る／入れる
-mitos import-github [--cwd <dir>]               PR のレビューと議論を取り込む
+mitos import-github [--cwd <dir>]               PR と issue の本体、レビューと議論を取り込む
 mitos import-linear --team <名前> [--all]        Linear の issue とコメントを取り込む
 mitos import-sessions [--cwd <dir>]             Claude Code / Codex の会話をナレッジにする
                                                 （sync からも呼ばれるので、普段は叩かなくてよい）
+mitos import-docs [--cwd <dir>]                 リポジトリの Markdown をナレッジにする
+                                                （sync からも呼ばれる）
 mitos sync [--group <束>] [--all]               登録済みの取り込み元をまとめて更新（日次用）
+mitos adopt                                     このマシンでの置き場所を登録する（新しい PC で最初に叩く）
+mitos gaps [--limit N] [--all]                  聞かれたのに答えを持てなかった問いと、確かめていない決定
+mitos forget <dir|ラベル> [--yes]                その作業場所のデータを消す（--yes が無ければ数えるだけ）
 mitos doctor                                    資格情報と接続、Linear MCP の疎通
 mitos advice                                    編集フックが効いているか（ヒット率・再提示率）
 mitos usage                                     OpenAI の使用量と残り
@@ -166,10 +171,11 @@ mitos usage                                     OpenAI の使用量と残り
 
 | 元 | 手段 | 注意 |
 |---|---|---|
-| GitHub の PR・レビュー・議論 | `gh` 経由 | **bot が作った PR も取り込む**（リリース PR がそれ） |
+| GitHub の PR・issue の本文、レビュー・議論 | `gh` 経由 | **bot が作った PR も取り込む**（リリース PR がそれ） |
 | Linear の issue・コメント | **MCP をヘッドレスで叩く** | API キーが発行できない組織があるため。下記参照 |
-| Claude Code の会話 | `~/.claude/projects/*.jsonl` | 貼り付けた議事録もここに入る |
-| 作業の判断 | `/mitos:trace` の HTML | 決定・捨てた案・制約・未解決 |
+| Claude Code の会話 | `~/.claude/projects/*.jsonl` | 貼り付けた議事録もここに入る。**そのマシンにしか無い** |
+| リポジトリの Markdown | `git ls-files` | 見出しで節に割る。**symlink は辿らない** |
+| 作業の判断 | `/mitos:trace` | 決定・捨てた案・制約・未解決。**ファイルではなく DB に入る** |
 
 **issue の出どころはプロジェクトごとに違う**（GitHub / Linear / Jira）ので、ダッシュボードで設定する。
 
@@ -202,8 +208,8 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 | ロール | 誰が使うか | 書けるもの |
 |---|---|---|
 | `postgres`（`SUPABASE_DB_URL`） | CLI | 全部 |
-| `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | 何も書けない |
-| `mitos_cfg`（`KNOWLEDGE_DB_URL_CFG`） | ダッシュボードの設定 | scope / group / person / term / chat のみ |
+| `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | **`search_log` への追記だけ**（読み戻しも削除もできない） |
+| `mitos_cfg`（`KNOWLEDGE_DB_URL_CFG`） | ダッシュボードの設定 | scope / scope_path / group / person / term / chat / search_log |
 
 ほかに `VOYAGE_API_KEY`（埋め込みと rerank）と `OPENAI_API_KEY`（チャットの生成と、
 取り込み時に作業場所の役割・説明を読み取るのに使う）。

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
-import { sections, sectionText } from "../src/docs.ts";
+import { markdownFiles, sections, sectionText } from "../src/docs.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
 // 説明と、その説明が指すコマンドが別々の断片になる。
@@ -62,4 +66,31 @@ test("見出しの無い本文も 1 件になる", () => {
   assert.equal(out.length, 1);
   assert.equal(out[0]?.text, "@AGENTS.md");
   assert.equal(out[0]?.key, "CLAUDE.md#claude.md");
+});
+
+// **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
+// `.gitignore` は参照先にしか効かないので、symlink 自体は追跡できてしまう。
+// 日次同期は無人で走るので、ここが開くと誰も見ていないところで資格情報が出ていく。
+test("追跡された symlink は読む対象に入れない", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-docs-"));
+  try {
+    fs.writeFileSync(path.join(dir, "outside.env"), "SECRET_TOKEN=sk-live-abc123\n");
+    const repo = path.join(dir, "repo");
+    fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
+    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { stdio: "ignore" });
+    execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    fs.writeFileSync(path.join(repo, "docs", "real.md"), "# 本物\n中身\n");
+    fs.symlinkSync("../../outside.env", path.join(repo, "docs", "leak.md"));
+    fs.symlinkSync("/etc/hosts", path.join(repo, "docs", "abs.md"));
+    git("add", "-A");
+    git("commit", "-qm", "x");
+
+    const got = markdownFiles(repo);
+    assert.deepEqual(got.files, ["docs/real.md"]);
+    assert.equal(got.symlinks, 2);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

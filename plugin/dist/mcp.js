@@ -39157,6 +39157,7 @@ var LABEL = {
   "decision/null": "【決定】",
   "event/finding": "【分かったこと】",
   "event/pr": "【PR】",
+  "event/issue": "【issue（本文）】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
   "utterance/review": "【レビューでの発言】",

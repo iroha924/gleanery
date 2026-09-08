@@ -154,14 +154,36 @@ function lastTouched(dir: string): Map<string, string> {
   return at;
 }
 
-/** その作業場所で git が追っている Markdown。**自前で走査しない** — gitignore と node_modules を勝手に避ける。 */
-export function markdownFiles(dir: string): string[] {
+/**
+ * その作業場所で git が追っている Markdown。
+ * **自前で走査しない** — gitignore と node_modules を勝手に避ける。
+ *
+ * **symlink は返さない。**git は追跡された symlink をそのまま列挙し、読む側は
+ * その先を開く。`docs/setup.md -> ~/.claude/knowledge.env` を追跡しているリポジトリが
+ * 1 つあれば、日次同期が無人で資格情報を埋め込み API へ送り、本文として保存し、
+ * 以後どのエージェントの文脈にも返す。**.gitignore は効かない** —
+ * ignore されるのは参照先であって、追跡されている symlink 自体ではない。
+ */
+export function markdownFiles(dir: string): { files: string[]; symlinks: number } {
   const out = execFileSync("git", ["-C", dir, "ls-files", "-z", "*.md", "*.mdx"], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  return out.split("\0").filter(Boolean);
+  const files: string[] = [];
+  let symlinks = 0;
+  for (const rel of out.split("\0").filter(Boolean)) {
+    let real: boolean;
+    try {
+      real = !fs.lstatSync(path.join(dir, rel)).isSymbolicLink();
+    } catch {
+      // git は追っているが手元に無い（sparse checkout、消したまま未コミット）。
+      continue;
+    }
+    if (real) files.push(rel);
+    else symlinks++;
+  }
+  return { files, symlinks };
 }
 
 /** 埋め込む文。**どの文書のどの節かを前置する**（github.ts の PR 題と同じ発想）。 */
@@ -186,21 +208,21 @@ export async function ingestDocs(
   onProgress?: (m: string) => void,
 ): Promise<string> {
   const recordId = `docs:${ident}`;
-  const files = markdownFiles(dir);
+  const { files, symlinks } = markdownFiles(dir);
   const at = lastTouched(dir);
   const all: Section[] = [];
   for (const rel of files) {
-    const full = path.join(dir, rel);
     let body: string;
     try {
-      body = fs.readFileSync(full, "utf8");
+      body = fs.readFileSync(path.join(dir, rel), "utf8");
     } catch {
-      // git は追っているが手元に無い（sparse checkout、消したまま未コミット）。
+      // 読めるとしたものが読めなかった。列挙と読み取りの間に消えた場合。
       continue;
     }
     for (const s of sections(rel, body)) all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
   }
-  if (all.length === 0) return `${label} / Markdown なし`;
+  const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
+  if (all.length === 0) return `${label} / Markdown なし${skipped}`;
 
   await client.query(
     `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
@@ -275,7 +297,7 @@ export async function ingestDocs(
     await client.query("commit");
     return `${label} / 文書 ${files.length} 本・節 ${all.length} 件（埋め込み ${need.length} 件${
       gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""
-    }）`;
+    }）${skipped}`;
   } catch (e) {
     await client.query("rollback").catch(() => {});
     throw e;

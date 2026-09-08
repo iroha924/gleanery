@@ -59,6 +59,9 @@ const LABEL: Record<string, string> = {
   "event/finding": "【分かったこと】",
   // PR そのもの。発言ではなく変更の単位なので、別の札にする。
   "event/pr": "【PR】",
+  // issue 本体。**PR とも「issue での発言」とも別。**実装より先に設計を issue へ書く
+  // 進め方だと、ここが決定そのものになる。
+  "event/issue": "【issue（本文）】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
   // PR のレビューと議論。**決定ではなく発言**なので、そう分かる札にする。

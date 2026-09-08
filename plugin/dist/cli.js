@@ -23926,7 +23926,21 @@ function markdownFiles(dir) {
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
   });
-  return out.split("\x00").filter(Boolean);
+  const files = [];
+  let symlinks = 0;
+  for (const rel of out.split("\x00").filter(Boolean)) {
+    let real;
+    try {
+      real = !fs2.lstatSync(path2.join(dir, rel)).isSymbolicLink();
+    } catch {
+      continue;
+    }
+    if (real)
+      files.push(rel);
+    else
+      symlinks++;
+  }
+  return { files, symlinks };
 }
 var sectionText = (s) => `${s.trail}
 ${s.text}`;
@@ -23935,22 +23949,22 @@ var subkindOf = (rel) => /(^|\/)adr(s)?\//i.test(rel) || /(^|\/)\d{4}-[^/]+\.mdx
 var CHUNK = 200;
 async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
   const recordId = `docs:${ident}`;
-  const files = markdownFiles(dir);
+  const { files, symlinks } = markdownFiles(dir);
   const at = lastTouched(dir);
   const all = [];
   for (const rel of files) {
-    const full = path2.join(dir, rel);
     let body;
     try {
-      body = fs2.readFileSync(full, "utf8");
+      body = fs2.readFileSync(path2.join(dir, rel), "utf8");
     } catch {
       continue;
     }
     for (const s of sections(rel, body))
       all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
   }
+  const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
   if (all.length === 0)
-    return `${label} / Markdown なし`;
+    return `${label} / Markdown なし${skipped}`;
   await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
      values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
      on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${label} の文書`]);
@@ -24001,7 +24015,7 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
        where record_id = $1 and kind = 'doc' and deleted_at is null and not (key = any($2))
        returning 1 as n`, [recordId, all.map((s) => s.key)]);
     await client.query("commit");
-    return `${label} / 文書 ${files.length} 本・節 ${all.length} 件（埋め込み ${need.length} 件${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}）`;
+    return `${label} / 文書 ${files.length} 本・節 ${all.length} 件（埋め込み ${need.length} 件${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}）${skipped}`;
   } catch (e) {
     await client.query("rollback").catch(() => {});
     throw e;
@@ -37951,6 +37965,7 @@ var LABEL = {
   "decision/null": "【決定】",
   "event/finding": "【分かったこと】",
   "event/pr": "【PR】",
+  "event/issue": "【issue（本文）】",
   "event/state_transition": "【状況が変わった】",
   "event/null": "【経過】",
   "utterance/review": "【レビューでの発言】",
@@ -39511,8 +39526,12 @@ ${USAGE}`);
         throw new Error(`消す作業場所をディレクトリかラベルで指定する
 
 ${USAGE}`);
-      const hit = await c.query(`select id::int as id, label, ident from scope
-         where ident = $1 or label = $1 or abs_path = $2 or ident = $3`, [target, path8.resolve(target), identify(target).ident]);
+      const abs = path8.resolve(target);
+      const atRoot = fs7.existsSync(path8.join(abs, ".git"));
+      const hit = await c.query(`select distinct s.id::int as id, s.label, s.ident from scope s
+         left join scope_path p on p.scope_id = s.id
+         where s.ident = $1 or s.label = $1 or s.abs_path = $2 or p.abs_path = $2
+            or ($3::text is not null and s.ident = $3)`, [target, abs, atRoot ? identify(abs).ident : null]);
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
       if (hit.rows.length > 1)
@@ -39538,6 +39557,7 @@ ${USAGE}`);
       await c.query("begin");
       try {
         await c.query("delete from search_log where scope_id = $1", [gone.id]);
+        await c.query("delete from chat where $1 = any(scope_ids)", [gone.id]);
         await c.query("delete from asset where scope_id = $1", [gone.id]);
         await c.query("delete from record where scope_id = $1", [gone.id]);
         await c.query("delete from node where scope_id = $1", [gone.id]);
@@ -39555,6 +39575,10 @@ ${USAGE}`);
     if (cmd === "gaps") {
       const n = Number(opt.limit ?? 15);
       const mine = opt.all ? null : await scopeIdFor(c, cwd, false);
+      if (!opt.all && mine === null) {
+        console.log(`${identify(cwd).label} はナレッジ DB に未登録です。--all で全部を見られます。`);
+        return;
+      }
       const rows = (await c.query(`select to_char(l.at, 'YYYY-MM-DD') as at, l.source, l.question, l.relevance, l.hits, s.label
            from search_log l left join scope s on s.id = l.scope_id
            where ($1::bigint is null or l.scope_id = $1)

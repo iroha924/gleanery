@@ -13,7 +13,7 @@ paths:
 |---|---|
 | `kind` | `event` / `decision` / `option` / `question` / `verification` / `boundary` / `utterance` / `doc` |
 | `subkind` | `kind` の内訳。`option/rejected`、`verification/fail`、`doc/adr` など |
-| `polarity` | `do` / `dont` / `na`。**取り込み時に `polarityOf()` が導出する。**手で入れない |
+| `polarity` | `do` / `dont` / `na`。IR の取り込みだけ `polarityOf()`（`ingest.ts`）が導出する。ほかの 4 つの口は `na` を直に書く |
 | `confidence` | `fact` / `inference` / `opinion`。`fact` は証拠が要る |
 
 `kind` は enum ではなく text + check。**ドメイン知識の種別を後から足すための余地**で、
