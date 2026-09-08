@@ -309,33 +309,16 @@ export async function logSearch(
   client: pg.Client,
   o: {
     source: "mcp" | "cli" | "chat" | "dashboard";
+    /** cwd 自身の作業場所。**束の代表を渡さない** — 引いた側の帰属が変わる */
     scopeId?: number | null;
-    cwd?: string | null;
     question: string;
-    kinds?: string[] | undefined;
-    onlyRejected?: boolean;
-    allScopes?: boolean;
     result: SearchResult;
   },
 ): Promise<void> {
   try {
     await client.query(
-      `insert into search_log
-         (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [
-        o.source,
-        o.scopeId ?? null,
-        o.cwd ?? null,
-        o.question,
-        o.kinds?.length ? o.kinds : null,
-        o.onlyRejected === true,
-        o.allScopes === true,
-        o.result.rows.length,
-        o.result.rows[0]?.relevance ?? null,
-        o.result.topScore,
-        o.result.rows.map((r) => r.id),
-      ],
+      "insert into search_log (source, scope_id, question, relevance) values ($1,$2,$3,$4)",
+      [o.source, o.scopeId ?? null, o.question, o.result.rows[0]?.relevance ?? null],
     );
   } catch {
     // 記録できないことと、検索が答えられないことは別。

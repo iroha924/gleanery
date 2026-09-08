@@ -23974,10 +23974,6 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
       all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
   }
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
-  if (all.length === 0) {
-    const gone = await client.query("update node set deleted_at = now() where record_id = $1 and kind = 'doc' and deleted_at is null", [`docs:${ident}`]);
-    return `${label} / Markdown なし${skipped}${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}`;
-  }
   await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
      values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
      on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${label} の文書`]);
@@ -38115,21 +38111,7 @@ async function search(client, env2, o) {
 }
 async function logSearch(client, o) {
   try {
-    await client.query(`insert into search_log
-         (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [
-      o.source,
-      o.scopeId ?? null,
-      o.cwd ?? null,
-      o.question,
-      o.kinds?.length ? o.kinds : null,
-      o.onlyRejected === true,
-      o.allScopes === true,
-      o.result.rows.length,
-      o.result.rows[0]?.relevance ?? null,
-      o.result.topScore,
-      o.result.rows.map((r) => r.id)
-    ]);
+    await client.query("insert into search_log (source, scope_id, question, relevance) values ($1,$2,$3,$4)", [o.source, o.scopeId ?? null, o.question, o.result.rows[0]?.relevance ?? null]);
   } catch {}
 }
 async function outsideScopes(client, queryVector, scopeIds, {
@@ -39153,6 +39135,9 @@ async function syncSessions(c, env2, dir, say) {
 }
 async function syncDocs(c, env2, dir, say) {
   const me = identify(dir);
+  if (!fs7.existsSync(path8.join(me.absPath, ".git"))) {
+    throw new Error(`${dir} は git 管理下に無い。取り込む対象は git が追っている Markdown`);
+  }
   const scopeId = await scopeIdFor(c, dir, true);
   if (scopeId === null)
     throw new Error("作業場所を決められなかった");
@@ -39571,11 +39556,16 @@ ${USAGE}`);
 
 ${USAGE}`);
       const abs = path8.resolve(target);
-      const atRoot = fs7.existsSync(path8.join(abs, ".git"));
-      const hit = await c.query(`select distinct s.id::int as id, s.label, s.ident from scope s
-         left join scope_path p on p.scope_id = s.id and p.host = $4
-         where s.ident = $1 or s.label = $1 or p.abs_path = $2
-            or ($3::text is not null and s.ident = $3)`, [target, abs, atRoot ? identify(abs).ident : null, HOST]);
+      const here = identify(abs);
+      const same = (a, b) => {
+        try {
+          return fs7.realpathSync(a) === fs7.realpathSync(b);
+        } catch {
+          return false;
+        }
+      };
+      const hit = await c.query(`select id::int as id, label, ident from scope
+         where ident = $1 or label = $1 or ($2::text is not null and ident = $2)`, [target, same(here.absPath, abs) ? here.ident : null]);
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
       if (hit.rows.length > 1)
@@ -39605,7 +39595,6 @@ ${USAGE}`);
         await c.query("delete from chat where $1 = any(scope_ids)", [gone.id]);
         await c.query("delete from asset where scope_id = $1", [gone.id]);
         await c.query("delete from record where scope_id = $1", [gone.id]);
-        await c.query("delete from node where scope_id = $1", [gone.id]);
         await c.query("delete from scope where id = $1", [gone.id]);
         const orphan = await c.query("delete from ref where not exists (select 1 from ref_link l where l.ref_id = ref.id)");
         await c.query("commit");
@@ -39624,7 +39613,7 @@ ${USAGE}`);
         console.log(`${identify(cwd).label} はナレッジ DB に未登録です。--all で全部を見られます。`);
         return;
       }
-      const rows = (await c.query(`select to_char(l.at, 'YYYY-MM-DD') as at, l.source, l.question, l.relevance, l.hits, s.label
+      const rows = (await c.query(`select to_char(l.at, 'YYYY-MM-DD') as at, l.source, l.question, l.relevance, s.label
            from search_log l left join scope s on s.id = l.scope_id
            where ($1::bigint is null or l.scope_id = $1)
            order by l.relevance asc nulls first, l.at desc
@@ -39684,15 +39673,7 @@ ${USAGE}`);
         polarity,
         limit: limit2
       });
-      await logSearch(c, {
-        source: "cli",
-        scopeId: mine,
-        cwd,
-        question,
-        onlyRejected: polarity === "dont",
-        allScopes: opt.all === true,
-        result: { rows, queryVector, topScore }
-      });
+      await logSearch(c, { source: "cli", scopeId: mine, question, result: { rows, queryVector, topScore } });
       console.log(rows.length === 0 ? "該当なし。" : quote(rows));
       const outside = await outsideScopes(c, queryVector, scopeIds, { polarity, floor: topScore });
       if (outside.length)

@@ -345,7 +345,6 @@ export async function* chat(
     source: "chat",
     scopeId: body.scopeIds[0] ?? null,
     question: forSearch,
-    allScopes: false,
     result: found,
   });
 

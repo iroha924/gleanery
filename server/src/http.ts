@@ -179,15 +179,7 @@ app.post("/api/search", async (c) => {
   const { rows } = found;
   // 画面の検索ページも入口の 1 つ。**人が直接打った問い**なので、
   // 何を知りたかったかの signal としてはいちばん濃い。
-  await logSearch(client, {
-    source: "dashboard",
-    scopeId: scopeIds?.[0] ?? null,
-    question,
-    kinds: body.kinds,
-    onlyRejected: body.onlyDont === true,
-    allScopes: !scopeIds,
-    result: found,
-  });
+  await logSearch(client, { source: "dashboard", scopeId: scopeIds?.[0] ?? null, question, result: found });
   // **id は数で返す。**pg は bigint を文字列で返すので、そのままだと画面側の数と一致しない。
   return c.json(rows.map((r) => ({ ...r, id: Number(r.id), label: labelOf(r) })));
 });

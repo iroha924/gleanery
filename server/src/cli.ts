@@ -223,6 +223,11 @@ async function syncSessions(c: pg.Client, env: Env, dir: string, say: (m: string
 /** その作業場所の Markdown。**sync からも呼ぶ** — 文書は書いた本人が取り込みを覚えていない。 */
 async function syncDocs(c: pg.Client, env: Env, dir: string, say: (m: string) => void): Promise<string> {
   const me = identify(dir);
+  // **作業場所を作る前に確かめる。**取り込む対象は git が追っている Markdown なので、
+  // git 管理外では 1 件も入らない。syncGithub が remote を先に見るのと同じ形。
+  if (!fs.existsSync(path.join(me.absPath, ".git"))) {
+    throw new Error(`${dir} は git 管理下に無い。取り込む対象は git が追っている Markdown`);
+  }
   const scopeId = await scopeIdFor(c, dir, true);
   if (scopeId === null) throw new Error("作業場所を決められなかった");
   // **根を渡す。**ident は根から作るのに dir がサブディレクトリだと、
@@ -793,21 +798,26 @@ async function main(): Promise<void> {
     if (cmd === "forget") {
       const target = rest.join(" ");
       if (!target) throw new Error(`消す作業場所をディレクトリかラベルで指定する\n\n${USAGE}`);
-      // **ディレクトリ名から識別子を引くのは、そこがリポジトリの根のときだけ。**
-      // git は親方向へ .git を探すので、`mitos forget server` がリポジトリ内のどの名前でも
+      // **ディレクトリから識別子を引くのは、それがその作業場所そのものを指すときだけ。**
+      // git は親方向へ `.git` を探すので、`mitos forget server` がリポジトリ内のどの名前でも
       // 囲っている側の remote を返し、**mitos 全体に 1 件だけ当たっていた**（実測）。
       // ちょうど 1 件なので曖昧さの番人も発火せず、--yes を付けていれば全部消えた。
+      //
+      // `identify()` は git なら根、そうでなければ渡されたパスを返す。**それが渡されたものと
+      // 同じときだけ**識別子で引けば、git と git 以外を同じ 1 つの規則で扱える。
       const abs = path.resolve(target);
-      const atRoot = fs.existsSync(path.join(abs, ".git"));
+      const here = identify(abs);
+      const same = (a: string, b: string): boolean => {
+        try {
+          return fs.realpathSync(a) === fs.realpathSync(b);
+        } catch {
+          return false;
+        }
+      };
       const hit = await c.query<{ id: number; label: string; ident: string }>(
-        // **パスで引くのはこのホストの登録だけ。**別のマシンで同じパスが
-        // 別のリポジトリに割り当たっていると、1 件に当たったまま向こうのナレッジを消す。
-        // `scope.abs_path` は 1 台ぶんしか持てない古い列なので、ここでは見ない。
-        `select distinct s.id::int as id, s.label, s.ident from scope s
-         left join scope_path p on p.scope_id = s.id and p.host = $4
-         where s.ident = $1 or s.label = $1 or p.abs_path = $2
-            or ($3::text is not null and s.ident = $3)`,
-        [target, abs, atRoot ? identify(abs).ident : null, HOST],
+        `select id::int as id, label, ident from scope
+         where ident = $1 or label = $1 or ($2::text is not null and ident = $2)`,
+        [target, same(here.absPath, abs) ? here.ident : null],
       );
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
@@ -847,8 +857,8 @@ async function main(): Promise<void> {
         // 消す境界なので、生成物の側も落とす。
         await c.query("delete from chat where $1 = any(scope_ids)", [gone.id]);
         await c.query("delete from asset where scope_id = $1", [gone.id]);
+        // node は record から cascade で落ちる（node.record_id は not null）。
         await c.query("delete from record where scope_id = $1", [gone.id]);
-        await c.query("delete from node where scope_id = $1", [gone.id]);
         await c.query("delete from scope where id = $1", [gone.id]);
         // どの記録からも指されなくなった参照は、残しても引けない。
         const orphan = await c.query(
@@ -880,10 +890,9 @@ async function main(): Promise<void> {
           source: string;
           question: string;
           relevance: number | null;
-          hits: number;
           label: string | null;
         }>(
-          `select to_char(l.at, 'YYYY-MM-DD') as at, l.source, l.question, l.relevance, l.hits, s.label
+          `select to_char(l.at, 'YYYY-MM-DD') as at, l.source, l.question, l.relevance, s.label
            from search_log l left join scope s on s.id = l.scope_id
            where ($1::bigint is null or l.scope_id = $1)
            order by l.relevance asc nulls first, l.at desc
@@ -963,15 +972,7 @@ async function main(): Promise<void> {
         polarity,
         limit,
       });
-      await logSearch(c, {
-        source: "cli",
-        scopeId: mine,
-        cwd,
-        question,
-        onlyRejected: polarity === "dont",
-        allScopes: opt.all === true,
-        result: { rows, queryVector, topScore },
-      });
+      await logSearch(c, { source: "cli", scopeId: mine, question, result: { rows, queryVector, topScore } });
       // この出力は progress-log の allowed-tools 経由でそのままエージェントの文脈へ入る。
       // 枠を通さずに出すと、フック側だけ守っても意味が無い。
       console.log(rows.length === 0 ? "該当なし。" : quote(rows));

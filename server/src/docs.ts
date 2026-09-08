@@ -180,10 +180,10 @@ export function markdownFiles(dir: string): { files: string[]; symlinks: number 
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  // **末端の lstat だけでは足りない。**`docs/` 自体が外への symlink だと、
-  // `docs/notes.md` の末端は普通のファイルに見えるので素通りする（実測）。
-  // 実体まで解決して、作業ツリーの下に収まっているかで見る
-  // （`server/src/code.ts` の `inside()` と同じ形）。
+  // **外へ出さないのは realpath の前方一致。**末端の lstat だけでは足りない —
+  // `docs/` 自体が外への symlink だと、`docs/notes.md` の末端は普通のファイルに見える（実測）。
+  // 判定は `server/src/code.ts` の `inside()` と同じ形にする。
+  // lstat のほうは**リポジトリ内を指す別名**を落とす（同じ本文が 2 つの key で入るのを防ぐ）。
   const base = fs.realpathSync(dir);
   const files: string[] = [];
   let symlinks = 0;
@@ -246,17 +246,9 @@ export async function ingestDocs(
     for (const s of sections(rel, body)) all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
   }
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
-  // **0 件でも早く返さない。**文書を全部消した（README を廃止して DB へ移した等）ときに
+  // **0 件でも早く返さない。**文書を全部消したとき（README を廃止して DB へ移した等）に
   // ここで戻ると墓標を立てる処理へ到達せず、撤回した記述が永久に検索で返る。
-  // 「上書きで編集される取り込み元は、消えたものを落とす」の対象がまさにこの場合である。
-  if (all.length === 0) {
-    const gone = await client.query(
-      "update node set deleted_at = now() where record_id = $1 and kind = 'doc' and deleted_at is null",
-      [`docs:${ident}`],
-    );
-    return `${label} / Markdown なし${skipped}${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}`;
-  }
-
+  // 空の `all` はそのまま流れて、末尾の `not (key = any('{}'))` が全件に当たる。
   await client.query(
     `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
      values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')

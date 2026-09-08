@@ -52,9 +52,11 @@ function db(): Promise<pg.Client> {
 
 type Scope = {
   ids: number[];
-  /** cwd 自身の作業場所。**束の代表ではない** — 記録の帰属はこちらで決める */
+  /**
+   * cwd 自身の作業場所。**束の代表ではない** — 記録の帰属はこちらで決める。
+   * null なら未登録。
+   */
   own: number | null;
-  registered: boolean;
   label: string;
   ident: string;
 };
@@ -70,14 +72,8 @@ async function currentScopeIds(cwd?: string): Promise<Scope> {
   const me = identify(cwd ?? process.cwd());
   const r = await c.query<{ id: number }>("select id::int as id from scope where ident = $1", [me.ident]);
   const row = r.rows[0];
-  if (!row) return { ids: [], own: null, registered: false, label: me.label, ident: me.ident };
-  return {
-    ids: await scopeFamily(c, row.id),
-    own: row.id,
-    registered: true,
-    label: me.label,
-    ident: me.ident,
-  };
+  if (!row) return { ids: [], own: null, label: me.label, ident: me.ident };
+  return { ids: await scopeFamily(c, row.id), own: row.id, label: me.label, ident: me.ident };
 }
 
 const server = new McpServer(
@@ -189,7 +185,7 @@ server.registerTool(
       : [];
 
     const notes: string[] = [];
-    if (scope && !scope.registered) {
+    if (scope && scope.own === null) {
       notes.push(
         `このディレクトリ（${scope.label}）はナレッジ DB に未登録です。登録するまで、ここの検索結果は空になります。`,
       );
@@ -197,7 +193,7 @@ server.registerTool(
     if (outside.length > 0) {
       notes.push(
         `${outside.join(" / ")} に、${rows.length ? "ここの結果より近い" : "近い"}記録があります` +
-          `（${scope?.registered ? "関連付けの設定漏れ" : "未登録のため"}かもしれません）。all_scopes: true で見られます。`,
+          `（${scope?.own !== null ? "関連付けの設定漏れ" : "未登録のため"}かもしれません）。all_scopes: true で見られます。`,
       );
     }
     // 検索本体の埋め込みを使い回すので、API 呼び出しは増えない（outside と同じ形）。
@@ -207,17 +203,13 @@ server.registerTool(
     // 完了した作業を「いま進行中」と断言することになる。
     const lead = records.length ? `関連する作業:\n\n${overview(records)}` : "";
     // **何を聞かれたかを残す。**関連度の低い問いが「ナレッジに無かったもの」の一覧になる。
+    // **束の先頭ではなく cwd 自身。**scopeFamily は order by を持たないので、
+    // ids[0] は「最も古い兄弟」にも「任意の 1 件」にもなる。それで記録すると
+    // gaps が自分の問いを 1 件も拾わず、兄弟の問いを自分のラベルで並べる。
     await logSearch(c, {
       source: "mcp",
-      // **束の先頭ではなく cwd 自身。**scopeFamily は order by を持たないので、
-      // ids[0] は「最も古い兄弟」にも「任意の 1 件」にもなる。それで記録すると
-      // gaps が自分の問いを 1 件も拾わず、兄弟の問いを自分のラベルで並べる。
       scopeId: scope?.own ?? null,
-      cwd: cwd ?? null,
       question,
-      kinds,
-      onlyRejected: onlyDont === true,
-      allScopes: all_scopes === true,
       result: { rows, queryVector, topScore },
     });
     const text =
@@ -245,7 +237,7 @@ server.registerTool(
   async ({ cwd }) => {
     const c = await db();
     const scope = await currentScopeIds(cwd);
-    if (!scope.registered) {
+    if (scope.own === null) {
       return {
         content: [
           {

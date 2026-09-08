@@ -39298,21 +39298,7 @@ async function search(client, env, o) {
 }
 async function logSearch(client, o) {
   try {
-    await client.query(`insert into search_log
-         (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [
-      o.source,
-      o.scopeId ?? null,
-      o.cwd ?? null,
-      o.question,
-      o.kinds?.length ? o.kinds : null,
-      o.onlyRejected === true,
-      o.allScopes === true,
-      o.result.rows.length,
-      o.result.rows[0]?.relevance ?? null,
-      o.result.topScore,
-      o.result.rows.map((r) => r.id)
-    ]);
+    await client.query("insert into search_log (source, scope_id, question, relevance) values ($1,$2,$3,$4)", [o.source, o.scopeId ?? null, o.question, o.result.rows[0]?.relevance ?? null]);
   } catch {}
 }
 async function outsideScopes(client, queryVector, scopeIds, {
@@ -39483,14 +39469,8 @@ async function currentScopeIds(cwd) {
   const r = await c.query("select id::int as id from scope where ident = $1", [me.ident]);
   const row = r.rows[0];
   if (!row)
-    return { ids: [], own: null, registered: false, label: me.label, ident: me.ident };
-  return {
-    ids: await scopeFamily(c, row.id),
-    own: row.id,
-    registered: true,
-    label: me.label,
-    ident: me.ident
-  };
+    return { ids: [], own: null, label: me.label, ident: me.ident };
+  return { ids: await scopeFamily(c, row.id), own: row.id, label: me.label, ident: me.ident };
 }
 var server = new McpServer({ name: "knowledge", version: "0.1.0" }, {
   instructions: [
@@ -39550,11 +39530,11 @@ server.registerTool("search_knowledge", {
   });
   const outside = scope ? await outsideScopes(c, queryVector, scope.ids, { polarity, kinds, floor: topScore }) : [];
   const notes = [];
-  if (scope && !scope.registered) {
+  if (scope && scope.own === null) {
     notes.push(`このディレクトリ（${scope.label}）はナレッジ DB に未登録です。登録するまで、ここの検索結果は空になります。`);
   }
   if (outside.length > 0) {
-    notes.push(`${outside.join(" / ")} に、${rows.length ? "ここの結果より近い" : "近い"}記録があります` + `（${scope?.registered ? "関連付けの設定漏れ" : "未登録のため"}かもしれません）。all_scopes: true で見られます。`);
+    notes.push(`${outside.join(" / ")} に、${rows.length ? "ここの結果より近い" : "近い"}記録があります` + `（${scope?.own !== null ? "関連付けの設定漏れ" : "未登録のため"}かもしれません）。all_scopes: true で見られます。`);
   }
   const records = await searchRecords(c, queryVector, scope ? scope.ids : undefined, 2);
   const lead = records.length ? `関連する作業:
@@ -39563,11 +39543,7 @@ ${overview(records)}` : "";
   await logSearch(c, {
     source: "mcp",
     scopeId: scope?.own ?? null,
-    cwd: cwd ?? null,
     question,
-    kinds,
-    onlyRejected: onlyDont === true,
-    allScopes: all_scopes === true,
     result: { rows, queryVector, topScore }
   });
   const text = (rows.length ? quote(rows, lead) : lead ? `${lead}
@@ -39588,7 +39564,7 @@ server.registerTool("current_work", {
 }, async ({ cwd }) => {
   const c = await db();
   const scope = await currentScopeIds(cwd);
-  if (!scope.registered) {
+  if (scope.own === null) {
     return {
       content: [
         {

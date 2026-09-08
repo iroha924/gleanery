@@ -1,15 +1,8 @@
 #!/usr/bin/env node
 // バンドルが変わったコミットで版が上がっているかを見る。
 //
-// **これは規約では守れない。**Claude Code はプラグインを
-// `~/.claude/plugins/cache/mitos/mitos/<版>/` へ複製したものから動かし、
-// 複製は版が変わったときだけ起きる。`bun run bundle` もセッションの張り直しも
-// `claude plugin marketplace update` も効かない。
-//
-// AGENTS.md にそう書いた当日に、書いた本人が 8 コミット続けて踏んだ（実測）。
-// **CLI は `plugin/dist/cli.js` を直接読むので普通に動いてしまい、気付けない。**
-//
-// **見るのはソースではなくバンドルそのもの。**`mcp.js` には search.ts も db.ts も
+// **理由は AGENTS.md「MCP を直したら、版を上げないと誰にも届かない」。**
+// 見るのはソースではなくバンドルそのもの — `mcp.js` には search.ts も db.ts も
 // 畳み込まれるので、`mcp.ts` を触ったかだけで判定すると穴が開く（実際に開いた）。
 
 import { execFileSync } from "node:child_process";
