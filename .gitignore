@@ -5,3 +5,4 @@ dashboard/dist/
 dashboard/.tanstack/
 codex-prompt-*.md
 server/migrate-*.ts
+.review-tmp/

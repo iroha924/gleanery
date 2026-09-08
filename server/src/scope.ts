@@ -138,11 +138,29 @@ import type pg from "pg";
  */
 export const HOST = os.hostname();
 
-/** このホストでの置き場所を覚える。作業したマシンが自分で名乗る形にする。 */
-export async function rememberPath(client: pg.Client, scopeId: number, absPath: string): Promise<void> {
-  await client.query(
-    `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
-     on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()`,
+/**
+ * このホストでの置き場所を覚える。**まだ無いときだけ書く。**
+ *
+ * **黙って差し替えない。**識別子は git の remote なので、同じ remote を持つ空のリポジトリを
+ * 置いて `--cwd` でそこを指すだけで、日次同期の対象と `read_code` の根を丸ごと移せてしまう。
+ * 置き場所を変えるのは `mitos adopt`（`replace`）だけにして、そこは食い違いを見せて止める。
+ *
+ * 変えなかったときは false を返す。
+ */
+export async function rememberPath(
+  client: pg.Client,
+  scopeId: number,
+  absPath: string,
+  { replace = false } = {},
+): Promise<boolean> {
+  const r = await client.query(
+    replace
+      ? `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+         on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()`
+      : `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+         on conflict (scope_id, host) do update set seen_at = now()
+         where scope_path.abs_path = excluded.abs_path`,
     [scopeId, HOST, absPath],
   );
+  return (r.rowCount ?? 0) > 0;
 }

@@ -180,17 +180,25 @@ export function markdownFiles(dir: string): { files: string[]; symlinks: number 
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  // **末端の lstat だけでは足りない。**`docs/` 自体が外への symlink だと、
+  // `docs/notes.md` の末端は普通のファイルに見えるので素通りする（実測）。
+  // 実体まで解決して、作業ツリーの下に収まっているかで見る
+  // （`server/src/code.ts` の `inside()` と同じ形）。
+  const base = fs.realpathSync(dir);
   const files: string[] = [];
   let symlinks = 0;
   for (const rel of out.split("\0").filter(Boolean)) {
+    let real: string;
     let st: fs.Stats;
     try {
-      st = fs.lstatSync(path.join(dir, rel));
+      const full = path.join(dir, rel);
+      st = fs.lstatSync(full);
+      real = fs.realpathSync(full);
     } catch {
       // git は追っているが手元に無い（sparse checkout、消したまま未コミット）。
       continue;
     }
-    if (st.isSymbolicLink()) {
+    if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path.sep}`))) {
       symlinks++;
       continue;
     }

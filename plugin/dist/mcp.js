@@ -39183,6 +39183,11 @@ var LABEL = {
   "doc/doc": "【文書】"
 };
 var labelOf = (r) => LABEL[`${r.kind}/${r.subkind}`] ?? LABEL[`${r.kind}/null`] ?? "";
+var DEFAULT_EXCLUDED = [
+  "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
+  "not (n.kind = 'event' and n.subkind = 'pr')",
+  "not (n.kind = 'doc')"
+];
 async function scopeFamily(client, scopeId) {
   const r = await client.query(`select distinct m2.scope_id::int as scope_id from group_member m1
      join group_member m2 on m2.group_id = m1.group_id
@@ -39236,11 +39241,7 @@ async function search(client, env, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
-    ...kinds?.length ? [] : [
-      "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
-      "not (n.kind = 'event' and n.subkind = 'pr')",
-      "not (n.kind = 'doc')"
-    ],
+    ...kinds?.length ? [] : DEFAULT_EXCLUDED,
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
   const values = filters.map((f) => f.value);
@@ -39322,7 +39323,11 @@ async function outsideScopes(client, queryVector, scopeIds, {
   if (!Array.isArray(scopeIds))
     return [];
   const params = [vec(queryVector), scopeIds];
-  const where = ["n.deleted_at is null", "not (n.scope_id = any($2))"];
+  const where = [
+    "n.deleted_at is null",
+    "not (n.scope_id = any($2))",
+    ...kinds?.length ? [] : DEFAULT_EXCLUDED
+  ];
   if (polarity) {
     params.push(polarity);
     where.push(`n.polarity = $${params.length}`);
@@ -39478,8 +39483,14 @@ async function currentScopeIds(cwd) {
   const r = await c.query("select id::int as id from scope where ident = $1", [me.ident]);
   const row = r.rows[0];
   if (!row)
-    return { ids: [], registered: false, label: me.label, ident: me.ident };
-  return { ids: await scopeFamily(c, row.id), registered: true, label: me.label, ident: me.ident };
+    return { ids: [], own: null, registered: false, label: me.label, ident: me.ident };
+  return {
+    ids: await scopeFamily(c, row.id),
+    own: row.id,
+    registered: true,
+    label: me.label,
+    ident: me.ident
+  };
 }
 var server = new McpServer({ name: "knowledge", version: "0.1.0" }, {
   instructions: [
@@ -39551,7 +39562,7 @@ server.registerTool("search_knowledge", {
 ${overview(records)}` : "";
   await logSearch(c, {
     source: "mcp",
-    scopeId: scope?.ids[0] ?? null,
+    scopeId: scope?.own ?? null,
     cwd: cwd ?? null,
     question,
     kinds,

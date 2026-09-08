@@ -50,7 +50,14 @@ function db(): Promise<pg.Client> {
   return p;
 }
 
-type Scope = { ids: number[]; registered: boolean; label: string; ident: string };
+type Scope = {
+  ids: number[];
+  /** cwd 自身の作業場所。**束の代表ではない** — 記録の帰属はこちらで決める */
+  own: number | null;
+  registered: boolean;
+  label: string;
+  ident: string;
+};
 
 /**
  * いまの作業ディレクトリに対応する scope の束。
@@ -63,8 +70,14 @@ async function currentScopeIds(cwd?: string): Promise<Scope> {
   const me = identify(cwd ?? process.cwd());
   const r = await c.query<{ id: number }>("select id::int as id from scope where ident = $1", [me.ident]);
   const row = r.rows[0];
-  if (!row) return { ids: [], registered: false, label: me.label, ident: me.ident };
-  return { ids: await scopeFamily(c, row.id), registered: true, label: me.label, ident: me.ident };
+  if (!row) return { ids: [], own: null, registered: false, label: me.label, ident: me.ident };
+  return {
+    ids: await scopeFamily(c, row.id),
+    own: row.id,
+    registered: true,
+    label: me.label,
+    ident: me.ident,
+  };
 }
 
 const server = new McpServer(
@@ -196,7 +209,10 @@ server.registerTool(
     // **何を聞かれたかを残す。**関連度の低い問いが「ナレッジに無かったもの」の一覧になる。
     await logSearch(c, {
       source: "mcp",
-      scopeId: scope?.ids[0] ?? null,
+      // **束の先頭ではなく cwd 自身。**scopeFamily は order by を持たないので、
+      // ids[0] は「最も古い兄弟」にも「任意の 1 件」にもなる。それで記録すると
+      // gaps が自分の問いを 1 件も拾わず、兄弟の問いを自分のラベルで並べる。
+      scopeId: scope?.own ?? null,
       cwd: cwd ?? null,
       question,
       kinds,

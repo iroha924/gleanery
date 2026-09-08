@@ -73,3 +73,20 @@ test("リポジトリの途中を指しても、置き場所は根を返す", ()
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+// **remote が無いリポジトリの識別子はパスそのもの。**基点がずれると
+// 同じリポジトリが別の作業場所として登録され、過去が 1 件も引けなくなる。
+test("remote の無いリポジトリでも、識別子はどこから見ても同じ", () => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-noremote-")));
+  try {
+    const repo = path.join(tmp, "repo");
+    fs.mkdirSync(path.join(repo, "a"), { recursive: true });
+    execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
+    const fromRoot = identify(repo);
+    const fromSub = identify(path.join(repo, "a"));
+    assert.equal(fromRoot.identKind, "abs-path");
+    assert.equal(fromSub.ident, fromRoot.ident, "サブディレクトリから別の識別子になった");
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

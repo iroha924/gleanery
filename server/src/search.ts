@@ -88,6 +88,19 @@ const LABEL: Record<string, string> = {
 export const labelOf = (r: { kind: string; subkind: string | null }): string =>
   LABEL[`${r.kind}/${r.subkind}`] ?? LABEL[`${r.kind}/null`] ?? "";
 
+/**
+ * 種別を指定しなかったときに出さないもの。
+ *
+ * **どれも「1 件の決定に対して周辺が何十件も並ぶ」形をしている。**理由はそれぞれ
+ * search() の clauses() の上にある。**範囲内と範囲外で同じものを使う** —
+ * 片方だけに効かせると、母集団の違う 2 つを 1 つの閾値で比べることになる。
+ */
+const DEFAULT_EXCLUDED = [
+  "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
+  "not (n.kind = 'event' and n.subkind = 'pr')",
+  "not (n.kind = 'doc')",
+];
+
 /** そのスコープが属する束の全スコープ。束ねられていなければ自分だけ。 */
 export async function scopeFamily(client: pg.Client, scopeId: number): Promise<number[]> {
   const r = await client.query<{ scope_id: number }>(
@@ -202,13 +215,7 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   const clauses = (from: number): string =>
     [
       "n.deleted_at is null",
-      ...(kinds?.length
-        ? []
-        : [
-            "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
-            "not (n.kind = 'event' and n.subkind = 'pr')",
-            "not (n.kind = 'doc')",
-          ]),
+      ...(kinds?.length ? [] : DEFAULT_EXCLUDED),
       ...filters.map((f, i) => f.sql(from + i)),
     ].join(" and ");
   const values = filters.map((f) => f.value);
@@ -360,7 +367,14 @@ export async function outsideScopes(
   // undefined は「絞っていない＝外が存在しない」なので、そのときだけ打ち切る。
   if (!Array.isArray(scopeIds)) return [];
   const params: unknown[] = [vec(queryVector), scopeIds];
-  const where = ["n.deleted_at is null", "not (n.scope_id = any($2))"];
+  // **範囲内と同じ母集団で比べる。**floor は範囲内の上位スコアなので、
+  // ここだけ除外を効かせないと「外に近いものがある」が量の多い種別に駆動され、
+  // 言われた通り all_scopes で見にいっても既定の検索が外すので何も出てこない。
+  const where = [
+    "n.deleted_at is null",
+    "not (n.scope_id = any($2))",
+    ...(kinds?.length ? [] : DEFAULT_EXCLUDED),
+  ];
   if (polarity) {
     params.push(polarity);
     where.push(`n.polarity = $${params.length}`);

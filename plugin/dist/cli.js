@@ -23930,16 +23930,20 @@ function markdownFiles(dir) {
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
   });
+  const base = fs2.realpathSync(dir);
   const files = [];
   let symlinks = 0;
   for (const rel of out.split("\x00").filter(Boolean)) {
+    let real;
     let st;
     try {
-      st = fs2.lstatSync(path2.join(dir, rel));
+      const full = path2.join(dir, rel);
+      st = fs2.lstatSync(full);
+      real = fs2.realpathSync(full);
     } catch {
       continue;
     }
-    if (st.isSymbolicLink()) {
+    if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path2.sep}`))) {
       symlinks++;
       continue;
     }
@@ -37887,9 +37891,12 @@ function candidates(roots = [path4.join(HOME, "Projects")]) {
   }));
 }
 var HOST = os2.hostname();
-async function rememberPath(client, scopeId, absPath) {
-  await client.query(`insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
-     on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()`, [scopeId, HOST, absPath]);
+async function rememberPath(client, scopeId, absPath, { replace = false } = {}) {
+  const r = await client.query(replace ? `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+         on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()` : `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+         on conflict (scope_id, host) do update set seen_at = now()
+         where scope_path.abs_path = excluded.abs_path`, [scopeId, HOST, absPath]);
+  return (r.rowCount ?? 0) > 0;
 }
 
 // server/src/identity.ts
@@ -37993,6 +38000,11 @@ var LABEL = {
   "doc/doc": "【文書】"
 };
 var labelOf = (r) => LABEL[`${r.kind}/${r.subkind}`] ?? LABEL[`${r.kind}/null`] ?? "";
+var DEFAULT_EXCLUDED = [
+  "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
+  "not (n.kind = 'event' and n.subkind = 'pr')",
+  "not (n.kind = 'doc')"
+];
 async function scopeFamily(client, scopeId) {
   const r = await client.query(`select distinct m2.scope_id::int as scope_id from group_member m1
      join group_member m2 on m2.group_id = m1.group_id
@@ -38046,11 +38058,7 @@ async function search(client, env2, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
-    ...kinds?.length ? [] : [
-      "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
-      "not (n.kind = 'event' and n.subkind = 'pr')",
-      "not (n.kind = 'doc')"
-    ],
+    ...kinds?.length ? [] : DEFAULT_EXCLUDED,
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
   const values2 = filters.map((f) => f.value);
@@ -38132,7 +38140,11 @@ async function outsideScopes(client, queryVector, scopeIds, {
   if (!Array.isArray(scopeIds))
     return [];
   const params = [vec(queryVector), scopeIds];
-  const where = ["n.deleted_at is null", "not (n.scope_id = any($2))"];
+  const where = [
+    "n.deleted_at is null",
+    "not (n.scope_id = any($2))",
+    ...kinds?.length ? [] : DEFAULT_EXCLUDED
+  ];
   if (polarity) {
     params.push(polarity);
     where.push(`n.polarity = $${params.length}`);
@@ -39116,7 +39128,7 @@ async function syncSessions(c, env2, dir, say) {
   if (scopeId === null)
     throw new Error("作業場所を決められなかった");
   const me = (await c.query("select display from person where is_me limit 1")).rows[0]?.display ?? "私";
-  const slug2 = dir.replace(/\//g, "-");
+  const slug2 = identify(dir).absPath.replace(/\//g, "-");
   const dirs = [
     ...fs7.existsSync(path8.join(os4.homedir(), ".ccs", "instances")) ? fs7.readdirSync(path8.join(os4.homedir(), ".ccs", "instances"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path8.join(os4.homedir(), ".ccs", "instances", d.name, "projects", slug2)) : [],
     path8.join(os4.homedir(), ".claude", "projects", slug2)
@@ -39144,7 +39156,7 @@ async function syncDocs(c, env2, dir, say) {
   const scopeId = await scopeIdFor(c, dir, true);
   if (scopeId === null)
     throw new Error("作業場所を決められなかった");
-  return ingestDocs(c, env2, me.ident, me.label, dir, scopeId, say);
+  return ingestDocs(c, env2, me.ident, me.label, me.absPath, scopeId, say);
 }
 async function syncGithub(c, env2, dir) {
   const me = identify(dir);
@@ -39521,7 +39533,7 @@ ${USAGE}`);
     `)}`);
           continue;
         }
-        await rememberPath(c, scope.id, only.absPath);
+        await rememberPath(c, scope.id, only.absPath, { replace: true });
         linked.push(`${scope.label}  ${only.absPath}`);
       }
       console.log(`このマシン: ${HOST}`);

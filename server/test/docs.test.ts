@@ -94,3 +94,34 @@ test("追跡された symlink は読む対象に入れない", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// **末端の lstat だけでは足りない。**`docs/` 自体が外への symlink だと、
+// `docs/notes.md` の末端は普通のファイルに見えて素通りする。
+// git は index を見るので、作業ツリー側の形が変わっても列挙は続く。
+test("途中のディレクトリが symlink でも外へ出られない", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-docs2-"));
+  try {
+    fs.mkdirSync(path.join(dir, "outside"));
+    fs.writeFileSync(path.join(dir, "outside", "notes.md"), "SECRET_TOKEN=sk-live-xyz\n");
+    const repo = path.join(dir, "repo");
+    fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
+    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { stdio: "ignore" });
+    execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    fs.writeFileSync(path.join(repo, "docs", "notes.md"), "# 本物\n中身\n");
+    fs.writeFileSync(path.join(repo, "keep.md"), "# 残る\n中身\n");
+    git("add", "-A");
+    git("commit", "-qm", "x");
+
+    // docs/ ごと外への symlink に差し替える。git の index は変わらない。
+    fs.rmSync(path.join(repo, "docs"), { recursive: true });
+    fs.symlinkSync(path.join(dir, "outside"), path.join(repo, "docs"));
+
+    const got = markdownFiles(repo);
+    assert.deepEqual(got.files, ["keep.md"], "外の実体を読む対象に入れた");
+    assert.equal(got.symlinks, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

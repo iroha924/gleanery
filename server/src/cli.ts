@@ -185,7 +185,9 @@ async function syncSessions(c: pg.Client, env: Env, dir: string, say: (m: string
     "私";
 
   // ccs（複数インスタンス）と素の Claude Code の両方を見る。
-  const slug = dir.replace(/\//g, "-");
+  // **slug はリポジトリの根から作る。**サブディレクトリで叩くと別の slug になり、
+  // 「セッション記録なし」で黙って 0 件になる。
+  const slug = identify(dir).absPath.replace(/\//g, "-");
   const dirs = [
     ...(fs.existsSync(path.join(os.homedir(), ".ccs", "instances"))
       ? fs
@@ -223,7 +225,9 @@ async function syncDocs(c: pg.Client, env: Env, dir: string, say: (m: string) =>
   const me = identify(dir);
   const scopeId = await scopeIdFor(c, dir, true);
   if (scopeId === null) throw new Error("作業場所を決められなかった");
-  return ingestDocs(c, env, me.ident, me.label, dir, scopeId, say);
+  // **根を渡す。**ident は根から作るのに dir がサブディレクトリだと、
+  // 同じ記録に対して別の相対パスで節を作り、根から入れた節を全部墓標にする（実測）。
+  return ingestDocs(c, env, me.ident, me.label, me.absPath, scopeId, say);
 }
 
 async function syncGithub(c: pg.Client, env: Env, dir: string): Promise<string> {
@@ -759,7 +763,7 @@ async function main(): Promise<void> {
           ambiguous.push(`${scope.label}\n    ${cands.map((x) => x.absPath).join("\n    ")}`);
           continue;
         }
-        await rememberPath(c, scope.id, only.absPath);
+        await rememberPath(c, scope.id, only.absPath, { replace: true });
         linked.push(`${scope.label}  ${only.absPath}`);
       }
       console.log(`このマシン: ${HOST}`);
