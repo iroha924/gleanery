@@ -105,6 +105,13 @@ app.get("/api/records", async (c) => {
             (select count(*) from node where record_id = r.id and deleted_at is null)::int as nodes
      from record r join scope s on s.id = r.scope_id
      where ($1::int[] is null or r.scope_id = any($1))
+       -- **一覧は「作業の見取り図」なので、セッションの記録は並べない。**
+       -- import-sessions は 1 セッション = 1 record を作るので、使うほど増え続ける
+       -- （実測: 20 件中 18 件がこれで、サイドバーの 8 枠を占領していた）。
+       -- 中身は最初の指示だけで phases も next も goal も埋め込みも無く、そこから次の一手は決まらない。
+       -- **到達性は落とさない** — 発言を種別で絞って探せば出自から辿れる。
+       -- ここだけに入れる。/api/records/:id へ入れるとその経路が 404 になる。
+       and r.schema_ver <> 'session/1'
      order by r.updated_at desc nulls last`,
     [scopesOf(c)],
   );

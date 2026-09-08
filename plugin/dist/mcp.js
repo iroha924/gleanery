@@ -39144,6 +39144,7 @@ import crypto from "node:crypto";
 var LABEL = {
   "option/rejected": "【棄却した案】",
   "option/chosen": "【採用した案】",
+  "option/was-chosen": "【当時は採った案。その決定はもう有効ではない】",
   "event/dead_end": "【試して駄目だった】",
   "event/debt": "【意図して残した負債。直しにいかない】",
   "boundary/non-goal": "【やらないと決めたこと】",
@@ -39222,7 +39223,10 @@ async function search(client, env, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
-    ...kinds?.length ? [] : ["n.kind <> 'utterance'", "not (n.kind = 'event' and n.subkind = 'pr')"],
+    ...kinds?.length ? [] : [
+      "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
+      "not (n.kind = 'event' and n.subkind = 'pr')"
+    ],
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
   const values = filters.map((f) => f.value);
@@ -39481,7 +39485,7 @@ server.registerTool("search_knowledge", {
   inputSchema: {
     question: exports_external.string().describe("自然文の質問"),
     only_rejected_or_forbidden: exports_external.boolean().optional().describe("「やらないと決めた」「棄却した案」「試して駄目だった」「触らない制約」だけに絞る。逆に何を採用したかは出ない"),
-    kinds: exports_external.array(exports_external.enum(["decision", "option", "event", "boundary", "verification", "question"])).optional().describe("種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い"),
+    kinds: exports_external.array(exports_external.enum(["decision", "option", "event", "boundary", "verification", "question", "utterance"])).optional().describe("種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い"),
     all_scopes: exports_external.boolean().optional().describe("関連付けた作業場所の外まで含めて探す。既定は現在の場所とその束のみ"),
     cwd: exports_external.string().optional().describe("どの作業場所として検索するか。省略時はサーバーの作業ディレクトリ"),
     limit: exports_external.number().int().min(1).max(20).optional().describe("返す件数。既定 5。増やすと出力が長くなる")
@@ -39507,7 +39511,7 @@ server.registerTool("search_knowledge", {
     notes.push(`${outside.join(" / ")} に、${rows.length ? "ここの結果より近い" : "近い"}記録があります` + `（${scope?.registered ? "関連付けの設定漏れ" : "未登録のため"}かもしれません）。all_scopes: true で見られます。`);
   }
   const records = await searchRecords(c, queryVector, scope ? scope.ids : undefined, 2);
-  const lead = records.length ? `いま進行中の作業:
+  const lead = records.length ? `関連する作業:
 
 ${overview(records)}` : "";
   const text = (rows.length ? quote(rows, lead) : lead ? `${lead}

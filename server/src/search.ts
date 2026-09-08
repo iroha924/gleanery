@@ -42,6 +42,8 @@ export type Hit = {
 const LABEL: Record<string, string> = {
   "option/rejected": "【棄却した案】",
   "option/chosen": "【採用した案】",
+  // 決定が覆された／却下された後の「採った案」。**採用のまま返すと、死んだ設計を推奨する。**
+  "option/was-chosen": "【当時は採った案。その決定はもう有効ではない】",
   "event/dead_end": "【試して駄目だった】",
   "event/debt": "【意図して残した負債。直しにいかない】",
   "boundary/non-goal": "【やらないと決めたこと】",
@@ -168,10 +170,15 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   /**
    * from 番目から採番して where 句を作る。
    *
-   * **発言は種別を指定したときだけ出す。**実測: 全 379 節のうち発言が 159、その 138 が
-   * bot のレビューコメント（"Didn't find any major issues." のような定型文）だった。
-   * 人の発言にも「@codex review」のような定型が並ぶ。判断を引く道具でこれが上位に来ると、
-   * 探しているものが押し出される。**PR は event/pr なので、外しても残る。**
+   * **外すのは bot の定型文だけにする。**当初は発言を丸ごと外していたが、
+   * 数え直すと定型は 13 件（使用量の通知 11 + "Didn't find any major issues." 2）で、
+   * すべて `issue`+`ai` だった。残る `review` 125 件は P1/P2 の具体的な指摘（平均 734 字）で
+   * ノイズではない。長さでは切れない — bot のレビューは p50 667 字、人と AI の往復は p50 215 字で逆向きである。
+   *
+   * **丸ごと外していたときに落ちていたのは、人と AI の往復だけだった。**
+   * bot は別の作業場所にいて、束が空なので候補に入っていない（実測）。
+   * 20 問の eval で、発言を全部戻しても top1 95% / recall@5 100% / MRR 0.967 は 1 つも動かず、
+   * セッションにしか答えの無い 10 問は 0/10 → 9/10 になった。
    *
    * **PR 本文も同じ理由で外す。**実測: event/pr は 24 件で本文が平均 5,015 バイトあり、
    * 全件返すと TOTAL 48,000 バイトの大半を占めたうえ、PER_ROW で切られて後半が届かない。
@@ -182,7 +189,12 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   const clauses = (from: number): string =>
     [
       "n.deleted_at is null",
-      ...(kinds?.length ? [] : ["n.kind <> 'utterance'", "not (n.kind = 'event' and n.subkind = 'pr')"]),
+      ...(kinds?.length
+        ? []
+        : [
+            "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
+            "not (n.kind = 'event' and n.subkind = 'pr')",
+          ]),
       ...filters.map((f, i) => f.sql(from + i)),
     ].join(" and ");
   const values = filters.map((f) => f.value);

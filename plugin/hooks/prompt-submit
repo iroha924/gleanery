@@ -15,8 +15,8 @@
 # JSON も additionalContext も要らないので、ホスト別の分岐を持たない。
 cat <<'EOF'
 <mitos-turn>
-引くかを決める。方針を決める / 実装に入る / この作業場所の経緯・現在地を答える
-のどれかなら、答える前に search_knowledge を引く（棄却済みの確認は
-only_rejected_or_forbidden: true）。どれでもなければ黙って進む。
+引くかを決める。いまどこまで進んでいるかを答えるなら current_work。
+方針を決める / 実装に入る / 過去の判断を知りたいなら search_knowledge
+（棄却済みの確認は only_rejected_or_forbidden: true）。どちらでもなければ黙って進む。
 </mitos-turn>
 EOF

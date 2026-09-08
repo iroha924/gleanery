@@ -5197,6 +5197,7 @@ import crypto from "node:crypto";
 var LABEL = {
   "option/rejected": "【棄却した案】",
   "option/chosen": "【採用した案】",
+  "option/was-chosen": "【当時は採った案。その決定はもう有効ではない】",
   "event/dead_end": "【試して駄目だった】",
   "event/debt": "【意図して残した負債。直しにいかない】",
   "boundary/non-goal": "【やらないと決めたこと】",

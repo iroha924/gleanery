@@ -750,7 +750,22 @@ async function runTool(
     };
     // **返信だけで参加した発言も拾う。**口を開いた順の 1 人目しか actor_name に入っていないので、
     // ここを落とすと「返事でそう言った」が全部消える。
-    push(a.person, (i) => `(n.actor_name = $${i} or n.attrs->'authors' @> to_jsonb($${i}::text))`);
+    // **名簿を展開して照合する。**渡されるのは呼び名かハンドルのどちらかで、
+    // 書かれている値は経路で違う（実測: import-sessions は person.display の「平田」を書き、
+    // GitHub 由来は handle の「iroha924」を書く）。片方だけで照合すると、
+    // ハンドルを渡した瞬間にセッション由来の 118 件が全部落ちる。
+    push(
+      a.person,
+      (i) => `(
+      n.actor_name = $${i}
+      or n.attrs->'authors' @> to_jsonb($${i}::text)
+      or exists (
+        select 1 from person p
+        where ($${i} = p.display or $${i} = any(p.handles))
+          and (n.actor_name = p.display or n.actor_name = any(p.handles))
+      )
+    )`,
+    );
     if (a.repo) push(`%${a.repo}%`, (i) => `s.label ilike $${i}`);
     if (a.contains) push(`%${a.contains}%`, (i) => `n.text ilike $${i}`);
     if (a.since) push(a.since, (i) => `n.at >= ${JST_FROM(i)}`);

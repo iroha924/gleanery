@@ -32,8 +32,14 @@ export type Session = { id: string; file: string; cwd: string; exchanges: Exchan
 // スキルの呼び出しとスラッシュコマンドは、本人の言葉ではないので落とす。
 // **文脈の圧縮要約も落とす。**あれは AI が書いた要約で、同じセッションの往復と内容が重なる
 // （実測 10 件・平均 4,079 字で、他の往復の 4 倍。検索の上位を占めてしまう）。
+/**
+ * 人が打っていない発言。**「人の発話」の欄に入ると、量も意味も汚す。**
+ *
+ * 実測（118 往復）: 28 件（24%）が人の言葉でないのに入っており、**文字量の 67%** を占めていた。
+ * とくに別セッションからの通知は 12 件で平均 6,221 字あり、1 件で本物 12 件分の重さになる。
+ */
 const BOILERPLATE =
-  /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below)/;
+  /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below|Another Claude session sent a message|# Claude in Chrome|\(Re-invocation of|\[Image: source:|mcp__[a-z0-9_]+__ ?を呼ん)/;
 
 const textOf = (m: unknown): string => {
   const c = (m as { content?: unknown })?.content;
@@ -76,14 +82,20 @@ export function readSession(file: string): Session | null {
       if (!body || body.length < 15 || BOILERPLATE.test(body)) continue;
       pending = { ask: body, at: String(d.timestamp ?? ""), branch };
     } else if (d.type === "assistant" && body && pending) {
+      const ask = pending.ask.slice(0, 12_000);
+      const reply = body.slice(0, 2000);
       exchanges.push({
-        key: `${id}:${exchanges.length}`,
+        // **位置ではなく中身で決める。**連番にすると、途中の 1 件を落としただけで
+        // 以降が全部繰り上がり、同じ発言が別のキーで再登録される（実測: ノイズを
+        // 落としたら 15 件が重複した）。会話は後から編集も削除もされうるので、
+        // 位置に依存する識別子はそのたびに壊れる。
+        key: `${id}:${hash(ask + "\n" + reply).slice(0, 12)}`,
         at: pending.at,
         branch: pending.branch,
         // **貼り付けた MTG の文字起こしが入る。**4,000 字で切ると議事録の後半が消えるので、
         // 実測で最長だったもの（約 12,000 字）が収まる長さにする。
-        ask: pending.ask.slice(0, 12_000),
-        reply: body.slice(0, 2000),
+        ask,
+        reply,
       });
       pending = null;
     }

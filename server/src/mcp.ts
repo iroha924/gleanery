@@ -138,7 +138,7 @@ server.registerTool(
           "「やらないと決めた」「棄却した案」「試して駄目だった」「触らない制約」だけに絞る。逆に何を採用したかは出ない",
         ),
       kinds: z
-        .array(z.enum(["decision", "option", "event", "boundary", "verification", "question"]))
+        .array(z.enum(["decision", "option", "event", "boundary", "verification", "question", "utterance"]))
         .optional()
         .describe(
           "種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い",
@@ -186,7 +186,10 @@ server.registerTool(
     }
     // 検索本体の埋め込みを使い回すので、API 呼び出しは増えない（outside と同じ形）。
     const records = await searchRecords(c, queryVector, scope ? scope.ids : undefined, 2);
-    const lead = records.length ? `いま進行中の作業:\n\n${overview(records)}` : "";
+    // **「進行中」と言わない。**searchRecords は埋め込みの近さだけで引き、
+    // 進行中かどうかを見ていない（search.ts の where は r.embedding is not null だけ）。
+    // 完了した作業を「いま進行中」と断言することになる。
+    const lead = records.length ? `関連する作業:\n\n${overview(records)}` : "";
     const text =
       (rows.length ? quote(rows, lead) : lead ? `${lead}\n\n該当なし。` : "該当なし。") +
       (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");

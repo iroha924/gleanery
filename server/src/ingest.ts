@@ -180,7 +180,19 @@ export function flatten(ir: Ir): Node[] {
     arr(d.options).forEach((o, i) => {
       push({
         kind: "option",
-        subkind: o.chosen ? "chosen" : "rejected",
+        // **覆された決定の「採った案」を、採用のまま返さない。**
+        // 決定は superseded で dont に落ちるのに、配下の chosen は do のままで
+        // 【採用した案】として返っていた（実測 2 件）。訂正を superseded で記録するたび増える。
+        //
+        // **`rejected` へ寄せない。**「かつて採った案」であることが札から消え、
+        // しかも chosen だった案には whyNot が無いので、理由の空いた棄却案に見える。
+        // **status が書かれていない決定は落とさない** — 決定自体が na なのに、
+        // 書かれていない値から配下の否定を作ることになる。
+        subkind: o.chosen
+          ? d.status === "superseded" || d.status === "rejected"
+            ? "was-chosen"
+            : "chosen"
+          : "rejected",
         key: `${d.id}:${i}`,
         parentKey: d.id,
         ordinal: i,

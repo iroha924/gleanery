@@ -37641,6 +37641,7 @@ import crypto3 from "node:crypto";
 var LABEL = {
   "option/rejected": "【棄却した案】",
   "option/chosen": "【採用した案】",
+  "option/was-chosen": "【当時は採った案。その決定はもう有効ではない】",
   "event/dead_end": "【試して駄目だった】",
   "event/debt": "【意図して残した負債。直しにいかない】",
   "boundary/non-goal": "【やらないと決めたこと】",
@@ -37719,7 +37720,10 @@ async function search(client, env2, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
-    ...kinds?.length ? [] : ["n.kind <> 'utterance'", "not (n.kind = 'event' and n.subkind = 'pr')"],
+    ...kinds?.length ? [] : [
+      "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
+      "not (n.kind = 'event' and n.subkind = 'pr')"
+    ],
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
   const values2 = filters.map((f) => f.value);
@@ -37927,7 +37931,7 @@ function flatten(ir) {
     arr(d.options).forEach((o, i) => {
       push({
         kind: "option",
-        subkind: o.chosen ? "chosen" : "rejected",
+        subkind: o.chosen ? d.status === "superseded" || d.status === "rejected" ? "was-chosen" : "chosen" : "rejected",
         key: `${d.id}:${i}`,
         parentKey: d.id,
         ordinal: i,
@@ -38602,7 +38606,7 @@ function candidates(roots = [path5.join(HOME, "Projects")]) {
 import crypto6 from "node:crypto";
 import fs5 from "node:fs";
 import path6 from "node:path";
-var BOILERPLATE = /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below)/;
+var BOILERPLATE = /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below|Another Claude session sent a message|# Claude in Chrome|\(Re-invocation of|\[Image: source:|mcp__[a-z0-9_]+__ ?を呼ん)/;
 var textOf = (m) => {
   const c = m?.content;
   if (typeof c === "string")
@@ -38642,12 +38646,15 @@ function readSession(file2) {
         continue;
       pending = { ask: body, at: String(d.timestamp ?? ""), branch };
     } else if (d.type === "assistant" && body && pending) {
+      const ask = pending.ask.slice(0, 12000);
+      const reply = body.slice(0, 2000);
       exchanges.push({
-        key: `${id}:${exchanges.length}`,
+        key: `${id}:${hash3(ask + `
+` + reply).slice(0, 12)}`,
         at: pending.at,
         branch: pending.branch,
-        ask: pending.ask.slice(0, 12000),
-        reply: body.slice(0, 2000)
+        ask,
+        reply
       });
       pending = null;
     }
