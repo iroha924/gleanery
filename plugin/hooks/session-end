@@ -15,6 +15,15 @@
 // 拾おうとするとシェルの構文解析になり、そこに終端は無い。
 // 同じ判断が d-git-not-shell-parsing（2026-09-05）に既にある。
 //
+// **git だけでは足りない。**コードを触らず設計だけ議論したセッションでは変更が 0 件になり、
+// 一度も促されない。**保存を忘れて最も痛いのがそのセッションである**（判断が会話の中にしか無い）。
+// だから「人がどれだけ話したか」も見る。
+//
+// **閾値は実測から。**この作業場所の 21 セッションで、人の発話は 0-1 件が 19 本、
+// 32 件と 77 件が 2 本。間が完全に空いているので、どこに置いても同じ結果になる。
+// 5 件は probe の 5 倍・実作業の 1/6 で、両側に余裕がある。
+// `d-session-end-hint` が棄却した「常に促す」とは別物 — 読むだけのセッションでは黙る。
+//
 // **番兵は 1 行 1 JSON として探す。文字列一致で見ない。**
 // このファイル自身を開いたセッションでは、番兵が tool_result に載って
 // 記録していないのに黙る（実測 2026-09-08）。
@@ -27,10 +36,23 @@ import fs from "node:fs";
 /** 判断を残した合図。**スキルを起動したかどうかで見る** — 完走したかは transcript から判らない。 */
 const TRACED = "<command-name>/mitos:trace</command-name>";
 
-const git = (cwd, args) =>
-  execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
-    .split("\n")
-    .filter(Boolean).length;
+/**
+ * git の出力の行数。**失敗したら 0 を返す。投げない。**
+ * cwd がリポジトリでないときに投げると、外側の catch に飲まれて
+ * 発話での判定まで到達せず、議論だけのセッションで黙る（実測）。
+ */
+const git = (cwd, args) => {
+  try {
+    return execFileSync("git", ["-C", cwd, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .split("\n")
+      .filter(Boolean).length;
+  } catch {
+    return 0;
+  }
+};
 
 try {
   let raw = "";
@@ -40,7 +62,13 @@ try {
   const cwd = input.cwd;
   if (!file || !cwd || !fs.existsSync(file)) process.exit(0);
 
+  /** 人が打った発言。**貼り付けと通知は数えない。**session.ts の BOILERPLATE と同じ線。 */
+  const BOILERPLATE =
+    /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below|Another Claude session sent a message|# Claude in Chrome|\(Re-invocation of|\[Image: source:)/;
+  const SAID = 5;
+
   let startedAt = null;
+  let said = 0;
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     if (!line) continue;
     let entry;
@@ -60,17 +88,24 @@ try {
           ? content.filter((b) => b?.type === "text").map((b) => b.text ?? "")
           : [];
     if (texts.some((t) => t.includes(TRACED))) process.exit(0);
+    for (const t of texts) {
+      const body = t.trim();
+      if (body.length >= 15 && !BOILERPLATE.test(body)) said++;
+    }
   }
 
   const changed = git(cwd, ["status", "--porcelain"]);
   const commits = startedAt ? git(cwd, ["log", "--oneline", `--since=${startedAt}`]) : 0;
-  if (changed === 0 && commits === 0) process.exit(0);
+  const touched = changed > 0 || commits > 0;
+  if (!touched && said < SAID) process.exit(0);
 
+  const what = touched
+    ? `リポジトリが変わりました（未コミット ${changed} ファイル / コミット ${commits} 件）`
+    : `${said} 回やりとりしました（コードは変わっていません）`;
   process.stdout.write(
     JSON.stringify({
       systemMessage:
-        `このセッションでリポジトリが変わりました` +
-        `（未コミット ${changed} ファイル / コミット ${commits} 件）が、判断を記録していません。` +
+        `このセッションで${what}が、判断を記録していません。` +
         `次に同じ作業へ戻るとき、何をなぜ決めたかは git log から復元できません。` +
         `残すなら /mitos:trace です。`,
     }),

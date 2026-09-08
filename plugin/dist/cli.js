@@ -38824,6 +38824,34 @@ async function trackerScopeId(c, ident, label, hostOrg, group) {
   }
   return id;
 }
+async function syncSessions(c, env2, dir, say) {
+  const scopeId = await scopeIdFor(c, dir, true);
+  if (scopeId === null)
+    throw new Error("作業場所を決められなかった");
+  const me = (await c.query("select display from person where is_me limit 1")).rows[0]?.display ?? "私";
+  const slug = dir.replace(/\//g, "-");
+  const dirs = [
+    ...fs6.existsSync(path7.join(os4.homedir(), ".ccs", "instances")) ? fs6.readdirSync(path7.join(os4.homedir(), ".ccs", "instances"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path7.join(os4.homedir(), ".ccs", "instances", d.name, "projects", slug)) : [],
+    path7.join(os4.homedir(), ".claude", "projects", slug)
+  ].filter((d) => fs6.existsSync(d));
+  if (dirs.length === 0)
+    return `${identify(dir).label} / セッション記録なし`;
+  const files = dirs.flatMap((d) => fs6.readdirSync(d).filter((f) => f.endsWith(".jsonl")).map((f) => path7.join(d, f)));
+  let nodes = 0;
+  let embedded = 0;
+  let done = 0;
+  for (const file2 of files) {
+    const s = readSession(file2);
+    if (!s)
+      continue;
+    const r = await ingestSession(c, env2, scopeId, s, me);
+    nodes += r.nodes;
+    embedded += r.embedded;
+    done++;
+    say(`[${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
+  }
+  return `${identify(dir).label} / セッション ${done} 本・往復 ${nodes} 件（埋め込み ${embedded} 件）`;
+}
 async function syncGithub(c, env2, dir) {
   const me = identify(dir);
   if (me.identKind !== "git-remote")
@@ -39072,6 +39100,7 @@ ${USAGE}`);
             console.log(`取り込み完了: ${await syncLinear(c, env2, team, opt.all === true, undefined)}`);
           } else if (t.ident.startsWith("git:") && t.abs_path && fs6.existsSync(t.abs_path)) {
             console.log(`取り込み完了: ${await syncGithub(c, env2, t.abs_path)}`);
+            console.log(`取り込み完了: ${await syncSessions(c, env2, t.abs_path, () => {})}`);
           } else {
             skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
             continue;
@@ -39125,33 +39154,7 @@ ${USAGE}`);
       return;
     }
     if (cmd === "import-sessions") {
-      const scopeId = await scopeIdFor(c, cwd, true);
-      if (scopeId === null)
-        throw new Error("作業場所を決められなかった");
-      const me = (await c.query("select display from person where is_me limit 1")).rows[0]?.display ?? "私";
-      const slug = cwd.replace(/\//g, "-");
-      const dirs = [
-        ...fs6.readdirSync(path7.join(os4.homedir(), ".ccs", "instances"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path7.join(os4.homedir(), ".ccs", "instances", d.name, "projects", slug)),
-        path7.join(os4.homedir(), ".claude", "projects", slug)
-      ].filter((d) => fs6.existsSync(d));
-      if (dirs.length === 0)
-        throw new Error(`${cwd} のセッション記録が見つからない`);
-      const files = dirs.flatMap((d) => fs6.readdirSync(d).filter((f) => f.endsWith(".jsonl")).map((f) => path7.join(d, f)));
-      console.error(`  セッション ${files.length} 本を読みます…`);
-      let nodes = 0;
-      let embedded = 0;
-      let done = 0;
-      for (const file2 of files) {
-        const s = readSession(file2);
-        if (!s)
-          continue;
-        const r = await ingestSession(c, env2, scopeId, s, me);
-        nodes += r.nodes;
-        embedded += r.embedded;
-        done++;
-        console.error(`  [${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
-      }
-      console.log(`取り込み完了: セッション ${done} 本 / 往復 ${nodes} 件（埋め込み ${embedded} 件）`);
+      console.log(`取り込み完了: ${await syncSessions(c, env2, cwd, (m) => console.error(`  ${m}`))}`);
       return;
     }
     if (cmd === "search") {

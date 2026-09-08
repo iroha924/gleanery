@@ -161,6 +161,51 @@ async function trackerScopeId(
 }
 
 /** リポジトリ 1 つぶん。**import-github と sync が同じ道を通る。** */
+/**
+ * その作業場所の Claude Code / Codex の会話を取り込む。
+ * **sync からも呼ぶ。**手で叩く前提にすると、記録し忘れたセッションが永久に入らない。
+ */
+async function syncSessions(c: pg.Client, env: Env, dir: string, say: (m: string) => void): Promise<string> {
+  const scopeId = await scopeIdFor(c, dir, true);
+  if (scopeId === null) throw new Error("作業場所を決められなかった");
+  const me =
+    (await c.query<{ display: string }>("select display from person where is_me limit 1")).rows[0]?.display ??
+    "私";
+
+  // ccs（複数インスタンス）と素の Claude Code の両方を見る。
+  const slug = dir.replace(/\//g, "-");
+  const dirs = [
+    ...(fs.existsSync(path.join(os.homedir(), ".ccs", "instances"))
+      ? fs
+          .readdirSync(path.join(os.homedir(), ".ccs", "instances"), { withFileTypes: true })
+          .filter((d) => d.isDirectory())
+          .map((d) => path.join(os.homedir(), ".ccs", "instances", d.name, "projects", slug))
+      : []),
+    path.join(os.homedir(), ".claude", "projects", slug),
+  ].filter((d) => fs.existsSync(d));
+  if (dirs.length === 0) return `${identify(dir).label} / セッション記録なし`;
+
+  const files = dirs.flatMap((d) =>
+    fs
+      .readdirSync(d)
+      .filter((f) => f.endsWith(".jsonl"))
+      .map((f) => path.join(d, f)),
+  );
+  let nodes = 0;
+  let embedded = 0;
+  let done = 0;
+  for (const file of files) {
+    const s = readSession(file);
+    if (!s) continue;
+    const r = await ingestSession(c, env, scopeId, s, me);
+    nodes += r.nodes;
+    embedded += r.embedded;
+    done++;
+    say(`[${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
+  }
+  return `${identify(dir).label} / セッション ${done} 本・往復 ${nodes} 件（埋め込み ${embedded} 件）`;
+}
+
 async function syncGithub(c: pg.Client, env: Env, dir: string): Promise<string> {
   const me = identify(dir);
   if (me.identKind !== "git-remote") throw new Error(`${dir} に git の remote が無い`);
@@ -503,6 +548,10 @@ async function main(): Promise<void> {
             console.log(`取り込み完了: ${await syncLinear(c, env, team, opt.all === true, undefined)}`);
           } else if (t.ident.startsWith("git:") && t.abs_path && fs.existsSync(t.abs_path)) {
             console.log(`取り込み完了: ${await syncGithub(c, env, t.abs_path)}`);
+            // **会話もここで入れる。**手で叩く前提だと、記録し忘れたセッションが永久に入らない。
+            // 保存を忘れて痛いのは「何も残らない」ことなので、判断の構造化（/mitos:trace）は
+            // 人に任せたまま、会話だけは自動で残す。
+            console.log(`取り込み完了: ${await syncSessions(c, env, t.abs_path, () => {})}`);
           } else {
             // **黙って飛ばさない。**「同期したのに古い」の原因がここに集まる。
             skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
@@ -562,44 +611,7 @@ async function main(): Promise<void> {
 
     // Claude Code の会話。**ここにしか無い前提がある**（口頭で伝わった判断など）。
     if (cmd === "import-sessions") {
-      const scopeId = await scopeIdFor(c, cwd, true);
-      if (scopeId === null) throw new Error("作業場所を決められなかった");
-      const me =
-        (await c.query<{ display: string }>("select display from person where is_me limit 1")).rows[0]
-          ?.display ?? "私";
-
-      // ccs（複数インスタンス）と素の Claude Code の両方を見る。
-      const slug = cwd.replace(/\//g, "-");
-      const dirs = [
-        ...fs
-          .readdirSync(path.join(os.homedir(), ".ccs", "instances"), { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => path.join(os.homedir(), ".ccs", "instances", d.name, "projects", slug)),
-        path.join(os.homedir(), ".claude", "projects", slug),
-      ].filter((d) => fs.existsSync(d));
-      if (dirs.length === 0) throw new Error(`${cwd} のセッション記録が見つからない`);
-
-      const files = dirs.flatMap((d) =>
-        fs
-          .readdirSync(d)
-          .filter((f) => f.endsWith(".jsonl"))
-          .map((f) => path.join(d, f)),
-      );
-      console.error(`  セッション ${files.length} 本を読みます…`);
-
-      let nodes = 0;
-      let embedded = 0;
-      let done = 0;
-      for (const file of files) {
-        const s = readSession(file);
-        if (!s) continue;
-        const r = await ingestSession(c, env, scopeId, s, me);
-        nodes += r.nodes;
-        embedded += r.embedded;
-        done++;
-        console.error(`  [${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
-      }
-      console.log(`取り込み完了: セッション ${done} 本 / 往復 ${nodes} 件（埋め込み ${embedded} 件）`);
+      console.log(`取り込み完了: ${await syncSessions(c, env, cwd, (m) => console.error(`  ${m}`))}`);
       return;
     }
 
