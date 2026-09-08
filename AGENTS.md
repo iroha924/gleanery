@@ -1,7 +1,9 @@
 # mitos で作業するとき
 
 過去の作業から「なぜそうしたか」を貯めて、Claude Code と Codex から引けるようにする道具。
-TypeScript / bun、Supabase（pgvector + pgroonga）、埋め込みは Voyage、生成は OpenAI。
+TypeScript / bun、PostgreSQL 17（pgvector + pgroonga）、埋め込みは Voyage、生成は OpenAI。
+**DB は ConoHa VPS の `knowledge-mcp-prod-01`** で、Tailscale 経由でのみ待ち受ける。
+証明書は `plugin/certs/` に置き、`db.ts` がそこにある `.crt` を全部 CA として読む。
 
 **このファイルは Claude と Codex の両方に効く。**Claude 側は `CLAUDE.md` が 1 行で取り込んでいる。
 
@@ -91,6 +93,8 @@ bun run dev        # API + ダッシュボード
 
 資格情報は `~/.claude/knowledge.env`（`SUPABASE_DB_URL` / `KNOWLEDGE_DB_URL_RO` /
 `KNOWLEDGE_DB_URL_CFG` / `VOYAGE_API_KEY`）。**リポジトリには置かない。**
+**`SUPABASE_DB_URL` という名前は Supabase を離れた後も残っている**（書き込み用の鍵という意味）。
+名前の付け替えは移行と分けるために保留した。
 
 ## 記録の置き場所
 

@@ -39013,7 +39013,7 @@ function loadEnv(_from) {
   return out;
 }
 var HERE = path.dirname(fileURLToPath(import.meta.url));
-var CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].map((d) => path.join(d, "prod-ca-2021.crt")).find((f) => fs.existsSync(f));
+var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
 var ca = null;
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
@@ -39023,9 +39023,11 @@ async function connect(env, { as = "admin" } = {}) {
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
   }
-  if (!CA_PATH)
-    throw new Error("Supabase の CA が見つからない。certs/prod-ca-2021.crt を置く");
-  ca ??= fs.readFileSync(CA_PATH, "utf8");
+  if (!CERT_DIR)
+    throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
+  ca ??= fs.readdirSync(CERT_DIR).filter((f) => f.endsWith(".crt")).map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"));
+  if (ca.length === 0)
+    throw new Error(`${CERT_DIR} に .crt が 1 つも無い`);
   let u;
   try {
     u = new URL(raw);

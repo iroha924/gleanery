@@ -40,18 +40,20 @@ export function loadEnv(_from?: string): Env {
   return out;
 }
 
-// Supabase の pooler は Supabase Root 2021 CA が発行した証明書を出すので、公開 CA では検証できない。
+// **公開 CA では検証できない証明書を使う。**Supabase の pooler は Supabase Root 2021 CA が、
+// 自前の PostgreSQL は自己署名の証明書を出す。どちらも公開 CA の連鎖に載っていない。
 // 検証を切ると、経路を握った相手が返した行がそのままフックの additionalContext と MCP の応答になる。
-// バンドル（dist/mcp.js）から見ると ../certs、ソース（server/src/db.ts）から見ると ../../certs。
-// どちらもリポジトリ直下の certs に着く。実行の形で位置が変わるので、両方を試す。
+//
+// **certs にあるものを全部 CA として読む。**接続先を替えるたびにファイル名を書き換えると、
+// 移行の途中で片方が繋がらなくなる。Node の ca は配列を取るので、束ねて渡せば両方通る。
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // 正本は plugin/certs。バンドル（plugin/dist/*.js）からは ../certs、
 // 素のソース（server/src/db.ts）からは ../../plugin/certs で着く。
-const CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")]
-  .map((d) => path.join(d, "prod-ca-2021.crt"))
-  .find((f) => fs.existsSync(f));
+const CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) =>
+  fs.existsSync(d),
+);
 
-let ca: string | null = null;
+let ca: string[] | null = null;
 
 /**
  * @param as どの鍵で繋ぐか。
@@ -80,8 +82,12 @@ export async function connect(
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
   }
-  if (!CA_PATH) throw new Error("Supabase の CA が見つからない。certs/prod-ca-2021.crt を置く");
-  ca ??= fs.readFileSync(CA_PATH, "utf8");
+  if (!CERT_DIR) throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
+  ca ??= fs
+    .readdirSync(CERT_DIR)
+    .filter((f) => f.endsWith(".crt"))
+    .map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"));
+  if (ca.length === 0) throw new Error(`${CERT_DIR} に .crt が 1 つも無い`);
 
   let u: URL;
   try {
