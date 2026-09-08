@@ -39377,7 +39377,13 @@ async function currentWork(client, scopeIds, limit = 5) {
      where ($1::int[] is null or r.scope_id = any($1))
        and r.phases is not null
        and jsonb_array_length(r.phases) > 0
-       and exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
+       -- **未完の工程か、残っている次の一手のどちらかがあれば進行中。**
+       -- 工程だけで見ると、実装が終わって人の判断だけが残った記録が現在地から消える
+       -- （実測: 工程 14 件が全部 done で next が 4 件あるのに「進行中の作業はありません」と返った）。
+       and (
+         exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
+         or jsonb_array_length(coalesce(r.next, '[]'::jsonb)) > 0
+       )
      order by r.updated_at desc nulls last limit $2`, [scopeIds, limit]);
   const ids = r.rows.map((x) => x.id);
   if (ids.length === 0)
