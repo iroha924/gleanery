@@ -83,7 +83,6 @@ const LABEL: Record<string, string> = {
   // ADR は棄却案と理由を持つ決定そのものなので、仕様の説明文と同じ札で返すと重みが揃わない。
   "doc/adr": "【決定の記録・ADR】",
   "doc/doc": "【文書】",
-  "doc/null": "【文書】",
 };
 
 export const labelOf = (r: { kind: string; subkind: string | null }): string =>

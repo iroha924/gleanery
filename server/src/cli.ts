@@ -626,9 +626,8 @@ async function main(): Promise<void> {
             console.log(`取り込み完了: ${await syncDocs(c, env, t.abs_path, () => {})}`);
             // **作業場所が何なのかも、まだ空ならここで読む。**ingest からしか呼んでいなかったので、
             // 会話や PR だけで登録された作業場所は名前の無いまま残っていた（実測: nomophyl）。
-            const said = await ensureIdentity(c, env, (await scopeIdFor(c, t.abs_path, false)) ?? 0).catch(
-              () => null,
-            );
+            const scopeId = await scopeIdFor(c, t.abs_path, false);
+            const said = scopeId === null ? null : await ensureIdentity(c, env, scopeId);
             if (said) console.log(said);
           } else {
             // **黙って飛ばさない。**「同期したのに古い」の原因がここに集まる。
@@ -909,8 +908,7 @@ async function main(): Promise<void> {
                select 1 from relation rel
                join node v on v.id = rel.from_node
                where rel.to_node = n.id and rel.kind = 'verifies'
-                 -- **墓標を数えない。**取り込みは node を消さずに deleted_at を立てるので、
-                 -- IR から取り除いた検証が「通った検証」として残り、決定が一覧から消える。
+                 -- 墓標を「通った検証」として数えない（node を引くクエリは全部これを付ける）
                  and v.deleted_at is null
                  and v.kind = 'verification' and v.subkind = 'pass'
              )

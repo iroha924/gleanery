@@ -5227,8 +5227,7 @@ var LABEL = {
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】",
   "doc/adr": "【決定の記録・ADR】",
-  "doc/doc": "【文書】",
-  "doc/null": "【文書】"
+  "doc/doc": "【文書】"
 };
 var labelOf = (r) => LABEL[`${r.kind}/${r.subkind}`] ?? LABEL[`${r.kind}/null`] ?? "";
 async function scopeFamily(client, scopeId) {

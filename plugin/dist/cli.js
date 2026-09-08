@@ -37883,11 +37883,6 @@ async function rememberPath(client, scopeId, absPath) {
   await client.query(`insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
      on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()`, [scopeId, HOST, absPath]);
 }
-async function localPath(client, scopeId) {
-  const r = await client.query("select abs_path from scope_path where scope_id = $1 and host = $2", [scopeId, HOST]);
-  const p = r.rows[0]?.abs_path;
-  return p && fs3.existsSync(p) ? p : null;
-}
 
 // server/src/identity.ts
 var SOURCES = ["README.md", "CLAUDE.md", "AGENTS.md", "package.json"];
@@ -37938,14 +37933,15 @@ async function inferIdentity(env2, absPath) {
   }
 }
 async function ensureIdentity(c, env2, scopeId) {
-  const r = await c.query("select role, summary, label from scope where id = $1", [scopeId]);
+  const r = await c.query(`select s.role, s.summary, s.label, p.abs_path from scope s
+     left join scope_path p on p.scope_id = s.id and p.host = $2
+     where s.id = $1`, [scopeId, HOST]);
   const s = r.rows[0];
   if (!s || s.role && s.summary)
     return null;
-  const dir = await localPath(c, scopeId);
-  if (!dir)
+  if (!s.abs_path || !fs4.existsSync(s.abs_path))
     return null;
-  const got = await inferIdentity(env2, dir);
+  const got = await inferIdentity(env2, s.abs_path);
   if (!got)
     return null;
   await c.query("update scope set role = coalesce(role, $1), summary = coalesce(summary, $2), updated_at = now() where id = $3", [got.role, got.summary, scopeId]);
@@ -37986,8 +37982,7 @@ var LABEL = {
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】",
   "doc/adr": "【決定の記録・ADR】",
-  "doc/doc": "【文書】",
-  "doc/null": "【文書】"
+  "doc/doc": "【文書】"
 };
 var labelOf = (r) => LABEL[`${r.kind}/${r.subkind}`] ?? LABEL[`${r.kind}/null`] ?? "";
 async function scopeFamily(client, scopeId) {
@@ -39419,7 +39414,8 @@ ${USAGE}`);
             console.log(`取り込み完了: ${await syncGithub(c, env2, t.abs_path)}`);
             console.log(`取り込み完了: ${await syncSessions(c, env2, t.abs_path, () => {})}`);
             console.log(`取り込み完了: ${await syncDocs(c, env2, t.abs_path, () => {})}`);
-            const said = await ensureIdentity(c, env2, await scopeIdFor(c, t.abs_path, false) ?? 0).catch(() => null);
+            const scopeId = await scopeIdFor(c, t.abs_path, false);
+            const said = scopeId === null ? null : await ensureIdentity(c, env2, scopeId);
             if (said)
               console.log(said);
           } else {
@@ -39617,8 +39613,7 @@ ${USAGE}`);
                select 1 from relation rel
                join node v on v.id = rel.from_node
                where rel.to_node = n.id and rel.kind = 'verifies'
-                 -- **墓標を数えない。**取り込みは node を消さずに deleted_at を立てるので、
-                 -- IR から取り除いた検証が「通った検証」として残り、決定が一覧から消える。
+                 -- 墓標を「通った検証」として数えない（node を引くクエリは全部これを付ける）
                  and v.deleted_at is null
                  and v.kind = 'verification' and v.subkind = 'pass'
              )
