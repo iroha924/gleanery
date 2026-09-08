@@ -143,28 +143,30 @@ Claude Code と Codex から使える。**どれも読み取り専用**で、書
 ## CLI
 
 ```
-mitos ingest <ir.json> [--cwd <dir>]            記録を取り込む（未登録なら作業場所も登録し、
-                                                空なら役割と説明もリポジトリを読んで埋める）
-mitos export <記録の id>                        取り込んだ IR を書き戻す（編集して ingest で戻す）
-mitos search <質問> [--all] [--dont] [--limit N] 引けるかを確かめる
-mitos scopes                                    登録済みの作業場所と束
-mitos candidates [--json]                       束ねる候補を並べる（選ぶのは人間）
-mitos link <束の名前> <dir>...                   選ばれたものを 1 つの束にする
-mitos describe <dir> <役割> [説明]               その作業場所が何なのかを書く
-mitos who [<呼び名> <ハンドル>... [--me]]         名簿を見る／入れる
-mitos import-github [--cwd <dir>]               PR と issue の本体、レビューと議論を取り込む
-mitos import-linear --team <名前> [--all]        Linear の issue とコメントを取り込む
-mitos import-sessions [--cwd <dir>]             Claude Code / Codex の会話をナレッジにする
-                                                （sync からも呼ばれるので、普段は叩かなくてよい）
-mitos import-docs [--cwd <dir>]                 リポジトリの Markdown をナレッジにする
-                                                （sync からも呼ばれる）
-mitos sync [--group <束>] [--all]               登録済みの取り込み元をまとめて更新（日次用）
-mitos adopt                                     このマシンでの置き場所を登録する（新しい PC で最初に叩く）
-mitos gaps [--limit N] [--all]                  聞かれたのに答えを持てなかった問いと、確かめていない決定
-mitos forget <dir|ラベル> [--yes]                その作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos doctor                                    資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
-mitos advice                                    編集フックが効いているか（ヒット率・再提示率）
-mitos usage                                     OpenAI の使用量と残り
+mitos ingest <ir.json> [--cwd <dir>]           記録を取り込む（未登録なら作業場所も登録し、
+                                               空なら役割と説明もリポジトリを読んで埋める）
+mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す。編集して ingest で戻す）
+mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
+                                               引けるかを確かめる
+mitos scopes                                   登録済みの作業場所と束
+mitos candidates [--json]                      束ねる候補を並べる（選ぶのは人間）
+mitos link <束の名前> <dir>...                  選ばれたものを 1 つの束にする
+mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
+mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
+mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
+mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
+mitos import-linear --team <名前> [--group <束>] [--all]
+                                               Linear の issue とコメントを取り込む
+mitos import-sessions [--cwd <dir>]            Claude Code / Codex の会話をナレッジにする（sync からも呼ばれる）
+mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
+mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
+mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
+                                               --yes は既に登録済みの場所を入れ替える）
+mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
+mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
+mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
+mitos usage                                    OpenAI の使用量と残り
 ```
 
 ## 取り込めるもの

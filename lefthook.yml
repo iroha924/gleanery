@@ -24,3 +24,11 @@ pre-commit:
         bun run bundle
         git add plugin/dist/
         bun run scripts/check-mcp-version.mjs
+    # 同じ知識が複数の出口に写されている場所を突き合わせる。
+    # 理由は AGENTS.md「片方を直したら対を探す」。README の CLI 一覧は
+    # 突き合わせではなく USAGE から書き出すので、書き直した分を staged へ戻す。
+    - name: pairs
+      glob: "{server/src/*.ts,dashboard/src/routes/search.tsx,README.md}"
+      run: |
+        node scripts/check-pairs.mjs
+        git add README.md
