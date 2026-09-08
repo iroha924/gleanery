@@ -23,6 +23,10 @@ claude plugin update mitos     # 「Restart to apply changes」と出る
 # セッションを張り直す
 ```
 
+**忘れても止まる。**`plugin/dist/mcp.js` が変わったのに版が同じコミットは、pre-commit の
+`mcp-version`（`scripts/check-mcp-version.mjs`）が弾く。**規約では守れなかったので機構にした** —
+これを書いた当日に、書いた本人が 8 コミット続けて踏んだ。
+
 **届いたかはツールの一覧で確かめる。**足したツールが見えなければ古いまま。
 
 **CLI は別経路。**`plugin/bin/mitos` は `plugin/dist/cli.js` を直接読むので、この手順は要らない。

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// MCP を触ったコミットで版が上がっているかを見る。
+// バンドルが変わったコミットで版が上がっているかを見る。
 //
 // **これは規約では守れない。**Claude Code はプラグインを
 // `~/.claude/plugins/cache/mitos/mitos/<版>/` へ複製したものから動かし、
@@ -8,32 +8,40 @@
 //
 // AGENTS.md にそう書いた当日に、書いた本人が 8 コミット続けて踏んだ（実測）。
 // **CLI は `plugin/dist/cli.js` を直接読むので普通に動いてしまい、気付けない。**
+//
+// **見るのはソースではなくバンドルそのもの。**`mcp.js` には search.ts も db.ts も
+// 畳み込まれるので、`mcp.ts` を触ったかだけで判定すると穴が開く（実際に開いた）。
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
-const git = (...a) => execFileSync("git", a, { encoding: "utf8" }).trim();
-const version = (ref) => {
-  const body =
-    ref === null
-      ? fs.readFileSync("plugin/.claude-plugin/plugin.json", "utf8")
-      : git("show", `${ref}:plugin/.claude-plugin/plugin.json`);
-  return JSON.parse(body).version;
+const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const at = (ref, file) => {
+  try {
+    return git("show", `${ref}:${file}`);
+  } catch {
+    return null;
+  }
 };
 
-// HEAD が無い（最初のコミット）なら比べる先が無い。
-let head;
 try {
-  head = git("rev-parse", "HEAD");
+  git("rev-parse", "HEAD");
 } catch {
+  // 最初のコミット。比べる先が無い。
   process.exit(0);
 }
 
-if (version(head) !== version(null)) process.exit(0);
+const BUNDLE = "plugin/dist/mcp.js";
+if (at("HEAD", BUNDLE) === fs.readFileSync(BUNDLE, "utf8")) process.exit(0);
+
+const MANIFEST = "plugin/.claude-plugin/plugin.json";
+const was = JSON.parse(at("HEAD", MANIFEST) ?? "{}").version;
+const now = JSON.parse(fs.readFileSync(MANIFEST, "utf8")).version;
+if (was !== now) process.exit(0);
 
 console.error(
   [
-    "server/src/mcp.ts を変えたのに版が上がっていない。",
+    `${BUNDLE} が変わったのに版が ${now} のままになっている。`,
     "",
     "  Claude Code は ~/.claude/plugins/cache/mitos/mitos/<版>/ の複製から動く。",
     "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
