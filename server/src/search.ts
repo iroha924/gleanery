@@ -76,6 +76,11 @@ const LABEL: Record<string, string> = {
   "verification/not-run": "【検証・未実行。確かめていない】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】",
+  // リポジトリの文書。**決定の記録（ADR）と、それ以外の文書を分ける。**
+  // ADR は棄却案と理由を持つ決定そのものなので、仕様の説明文と同じ札で返すと重みが揃わない。
+  "doc/adr": "【決定の記録・ADR】",
+  "doc/doc": "【文書】",
+  "doc/null": "【文書】",
 };
 
 export const labelOf = (r: { kind: string; subkind: string | null }): string =>

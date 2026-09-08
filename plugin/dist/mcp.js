@@ -39167,7 +39167,10 @@ var LABEL = {
   "verification/fail": "【検証・落ちた。直っていない】",
   "verification/not-run": "【検証・未実行。確かめていない】",
   "verification/null": "【検証】",
-  "question/null": "【未解決の問い】"
+  "question/null": "【未解決の問い】",
+  "doc/adr": "【決定の記録・ADR】",
+  "doc/doc": "【文書】",
+  "doc/null": "【文書】"
 };
 var labelOf = (r) => LABEL[`${r.kind}/${r.subkind}`] ?? LABEL[`${r.kind}/null`] ?? "";
 async function scopeFamily(client, scopeId) {
@@ -39485,7 +39488,7 @@ server.registerTool("search_knowledge", {
   inputSchema: {
     question: exports_external.string().describe("自然文の質問"),
     only_rejected_or_forbidden: exports_external.boolean().optional().describe("「やらないと決めた」「棄却した案」「試して駄目だった」「触らない制約」だけに絞る。逆に何を採用したかは出ない"),
-    kinds: exports_external.array(exports_external.enum(["decision", "option", "event", "boundary", "verification", "question", "utterance"])).optional().describe("種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い"),
+    kinds: exports_external.array(exports_external.enum(["decision", "option", "event", "boundary", "verification", "question", "utterance", "doc"])).optional().describe("種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い / utterance=レビューや会話での発言 / doc=リポジトリの設計文書と ADR"),
     all_scopes: exports_external.boolean().optional().describe("関連付けた作業場所の外まで含めて探す。既定は現在の場所とその束のみ"),
     cwd: exports_external.string().optional().describe("どの作業場所として検索するか。省略時はサーバーの作業ディレクトリ"),
     limit: exports_external.number().int().min(1).max(20).optional().describe("返す件数。既定 5。増やすと出力が長くなる")

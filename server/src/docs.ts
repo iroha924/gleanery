@@ -1,0 +1,283 @@
+// リポジトリの Markdown をナレッジにする。
+//
+// **コードは埋め込まないが、文書は埋め込む。**code.ts が「コード（いまどうなっているか）は
+// 変わるので、聞かれたときに読みに行く」と決めているのに対し、設計文書と ADR は
+// 「なぜそうしたか」であり、そこで貯める価値があると同じ判断が名指ししている。
+// そしてリポジトリが消えれば読みに行く先も消える。
+//
+// **見出しで切る。**ファイル 1 本を丸ごと 1 件にすると、3,460 行の設計書が
+// 1 つのベクトルに潰れて何にも当たらない。節は書いた人が付けた意味の区切りなので、
+// 機械が長さで切るより境界が正しい。
+
+import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import type pg from "pg";
+import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
+
+export type Section = {
+  key: string;
+  /** リポジトリ根からの相対パス */
+  path: string;
+  /** この節の見出し（先頭の節だけはファイル名） */
+  title: string;
+  /** 祖先の見出しをつないだ道。埋め込みの前置きに使う */
+  trail: string;
+  text: string;
+  /** その文書を最後に触ったコミットの日時。未コミットなら null */
+  at: string | null;
+  ordinal: number;
+};
+
+/**
+ * 1 つの節の上限。**超えたぶんは捨てずに続きの節へ回す。**
+ * リポジトリが消えた後は原文を取り直せないので、切り落とすと永久に失われる。
+ */
+const MAX = 4000;
+
+const slug = (s: string): string =>
+  s
+    .toLowerCase()
+    .replace(/[`*_[\]()#]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .slice(0, 60) || "本文";
+
+/**
+ * 見出しで節に割る。
+ *
+ * **コードフェンスの中は見ない。**シェルのコメント（`# 使い方`）や YAML の
+ * フロントマターの区切りが見出しに化けて、節が本文の途中で割れる。
+ */
+export function sections(rel: string, body: string): Section[] {
+  const lines = body.split("\n");
+  const out: Section[] = [];
+  // 見出しの深さごとの直近の題。前置きに使う道を作る
+  const trail: string[] = [];
+  let fence: string | null = null;
+  let cur: { title: string; level: number; trail: string; buf: string[] } = {
+    title: path.basename(rel),
+    level: 0,
+    trail: rel,
+    buf: [],
+  };
+  const used = new Map<string, number>();
+
+  const flush = (): void => {
+    const raw = cur.buf.join("\n").trim();
+    if (!raw) return;
+    // **見出しだけの節は置かない。**「## 背景」の直後に「### 経緯」が来る形で、
+    // 中身は子が持っている。実測（nomophyl の 91 本）で 811 件中 64 件がこれで、
+    // 埋め込んでも 10 字のベクトルが増えるだけになる。見出し自体は子の trail に残る。
+    if (cur.level > 0 && raw === cur.buf.find((l) => l.trim())?.trim()) return;
+    // 上限で割る。**段落の切れ目で割る** — 文の途中で切ると両側とも読めなくなる。
+    const parts: string[] = [];
+    let rest = raw;
+    while (rest.length > MAX) {
+      const cut = rest.lastIndexOf("\n\n", MAX);
+      const at = cut > MAX / 2 ? cut : MAX;
+      parts.push(rest.slice(0, at).trim());
+      rest = rest.slice(at).trim();
+    }
+    parts.push(rest);
+    for (const text of parts) {
+      const base = `${rel}#${slug(cur.title)}`;
+      // 同じ題の節が 1 つのファイルに何度も出る（「## 背景」など）。
+      // key が衝突すると unique (record_id, kind, key) で後勝ちになり、前の節が消える。
+      const n = (used.get(base) ?? 0) + 1;
+      used.set(base, n);
+      out.push({
+        key: n === 1 && parts.length === 1 ? base : `${base}:${n}`,
+        path: rel,
+        title: cur.title,
+        trail: cur.trail,
+        text,
+        at: null,
+        ordinal: out.length,
+      });
+    }
+  };
+
+  for (const line of lines) {
+    const f = line.match(/^\s*(```+|~~~+)/);
+    if (f?.[1]) {
+      if (fence === null) fence = f[1][0] ?? "`";
+      else if (line.trimStart().startsWith(fence)) fence = null;
+      cur.buf.push(line);
+      continue;
+    }
+    const h = fence === null ? line.match(/^(#{1,3}) +(.*\S)/) : null;
+    if (!h?.[1] || !h[2]) {
+      cur.buf.push(line);
+      continue;
+    }
+    flush();
+    const level = h[1].length;
+    const title = h[2].trim();
+    trail.length = level - 1;
+    trail[level - 1] = title;
+    cur = { title, level, trail: [rel, ...trail.filter(Boolean)].join(" > "), buf: [line] };
+  }
+  flush();
+  return out;
+}
+
+/**
+ * 文書ごとの最終更新日。
+ *
+ * **文書にも観測時点が要る。**「いつ書かれたか」が無い決定は、10 年前のものでも
+ * 恒久的な事実として読まれる。記録の側は全エントリに ISO 8601 を強制しているのに、
+ * 取り込んだ文書だけが時点を持たないのは同じ穴になる。
+ *
+ * **1 回の git log で全部取る。**ファイルごとに叩くと本数に比例して遅くなる。
+ */
+function lastTouched(dir: string): Map<string, string> {
+  const at = new Map<string, string>();
+  let out: string;
+  try {
+    out = execFileSync(
+      "git",
+      ["-C", dir, "-c", "core.quotepath=false", "log", "--format=@%aI", "--name-only", "--", "*.md", "*.mdx"],
+      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
+    );
+  } catch {
+    // まだ 1 度もコミットしていないリポジトリ。日付なしで進む。
+    return at;
+  }
+  let cur = "";
+  for (const line of out.split("\n")) {
+    if (line.startsWith("@")) cur = line.slice(1);
+    // log は新しい順なので、最初に出たものがその文書の最終更新。
+    else if (line && cur && !at.has(line)) at.set(line, cur);
+  }
+  return at;
+}
+
+/** その作業場所で git が追っている Markdown。**自前で走査しない** — gitignore と node_modules を勝手に避ける。 */
+export function markdownFiles(dir: string): string[] {
+  const out = execFileSync("git", ["-C", dir, "ls-files", "-z", "*.md", "*.mdx"], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return out.split("\0").filter(Boolean);
+}
+
+/** 埋め込む文。**どの文書のどの節かを前置する**（github.ts の PR 題と同じ発想）。 */
+export const sectionText = (s: Section): string => `${s.trail}\n${s.text}`;
+
+const hash = (s: string): string => crypto.createHash("sha256").update(s).digest("hex");
+
+/** ADR は決定そのもの。仕様と分けて引けるようにする。 */
+const subkindOf = (rel: string): string =>
+  /(^|\/)adr(s)?\//i.test(rel) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(rel) ? "adr" : "doc";
+
+const CHUNK = 200;
+
+/** リポジトリ 1 つぶん。**docs は 1 記録**にして、どの文書かは node の key が持つ。 */
+export async function ingestDocs(
+  client: pg.Client,
+  env: Env,
+  ident: string,
+  label: string,
+  dir: string,
+  scopeId: number,
+  onProgress?: (m: string) => void,
+): Promise<string> {
+  const recordId = `docs:${ident}`;
+  const files = markdownFiles(dir);
+  const at = lastTouched(dir);
+  const all: Section[] = [];
+  for (const rel of files) {
+    const full = path.join(dir, rel);
+    let body: string;
+    try {
+      body = fs.readFileSync(full, "utf8");
+    } catch {
+      // git は追っているが手元に無い（sparse checkout、消したまま未コミット）。
+      continue;
+    }
+    for (const s of sections(rel, body)) all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
+  }
+  if (all.length === 0) return `${label} / Markdown なし`;
+
+  await client.query(
+    `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
+     values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
+     on conflict (id) do update set updated_at = now(), ingested_at = now()`,
+    [recordId, scopeId, `${label} の文書`],
+  );
+
+  const existing = new Map(
+    (
+      await client.query<{ key: string; content_hash: string; has_emb: boolean }>(
+        "select key, content_hash, embedding is not null as has_emb from node where record_id=$1 and deleted_at is null",
+        [recordId],
+      )
+    ).rows.map((r) => [r.key, r]),
+  );
+  const need = all.filter((s) => {
+    const old = existing.get(s.key);
+    return !old || old.content_hash !== hash(sectionText(s)) || !old.has_emb;
+  });
+  onProgress?.(`文書 ${files.length} 本 / 節 ${all.length} 件 / 埋め込みを取り直す ${need.length} 件`);
+
+  const byKey = new Map<string, number[] | undefined>();
+  for (let from = 0; from < need.length; from += CHUNK) {
+    const slice = need.slice(from, from + CHUNK);
+    const vectors = await embed(env, slice.map(sectionText), "document");
+    for (const [i, s] of slice.entries()) byKey.set(s.key, vectors[i]);
+    onProgress?.(`  ${Math.min(from + CHUNK, need.length)} / ${need.length} 件を埋め込み`);
+  }
+
+  await client.query("begin");
+  try {
+    for (const s of all) {
+      const v = byKey.get(s.key);
+      await client.query(
+        `insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
+                           actor_kind, content_hash, embed_text, embed_model, embedded_at, embedding)
+         values ($1,$2,'doc',$3,$4,$5,$6,$7,'na',$8,'unknown',$9,$10,$11,$12,$13)
+         on conflict (record_id, kind, key) do update set
+           subkind=excluded.subkind, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
+           content_hash=excluded.content_hash, deleted_at=null,
+           embed_text=coalesce(excluded.embed_text, node.embed_text),
+           embed_model=coalesce(excluded.embed_model, node.embed_model),
+           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
+           embedding=coalesce(excluded.embedding, node.embedding)`,
+        [
+          recordId,
+          scopeId,
+          subkindOf(s.path),
+          s.key,
+          s.ordinal,
+          s.at,
+          s.text,
+          JSON.stringify({ path: s.path, title: s.title, trail: s.trail }),
+          hash(sectionText(s)),
+          v ? sectionText(s) : null,
+          v ? EMBED_MODEL : null,
+          v ? new Date().toISOString() : null,
+          vec(v),
+        ],
+      );
+    }
+    // **消えた節を残さない。**文書は上書きで編集されるので、節を消して書き直すと
+    // 古い本文が DB に残り続け、撤回した記述が検索で返る。PR や会話は追記しか
+    // されないのでこの手当てが要らなかったが、文書には要る。
+    const gone = await client.query<{ n: string }>(
+      `update node set deleted_at = now()
+       where record_id = $1 and kind = 'doc' and deleted_at is null and not (key = any($2))
+       returning 1 as n`,
+      [recordId, all.map((s) => s.key)],
+    );
+    await client.query("commit");
+    return `${label} / 文書 ${files.length} 本・節 ${all.length} 件（埋め込み ${need.length} 件${
+      gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""
+    }）`;
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    throw e;
+  }
+}

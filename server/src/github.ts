@@ -62,6 +62,18 @@ type IssueComment = {
   issue_url: string;
 };
 
+type RawIssue = {
+  number: number;
+  title: string;
+  body: string | null;
+  user: { login: string } | null;
+  state: string;
+  created_at: string;
+  html_url: string;
+  /** この鍵があるものは PR。issues エンドポイントは PR も返す */
+  pull_request?: unknown;
+};
+
 type Pull = {
   number: number;
   title: string;
@@ -75,9 +87,16 @@ type Pull = {
   head?: { ref?: string };
 };
 
-/** PR そのもの。**コメントだけ入れても「私の最新のマージ済み PR」に答えられない。** */
+/**
+ * PR と issue そのもの。**コメントだけ入れても本体は入らない。**
+ * PR では「私の最新のマージ済み PR」に答えられず（実測）、issue では
+ * **本文がまるごと落ちる** — issues/comments は付いたコメントしか返さないので、
+ * 実装より先に設計を issue へ書く進め方だと、決めたこと自体が 1 件も入らない
+ * （実測: nomophyl の 108 件・213,863 字が全部欠けていた）。
+ */
 export type Pr = {
   number: number;
+  kind: "pr" | "issue";
   title: string;
   body: string;
   author: string;
@@ -93,6 +112,7 @@ export type Pr = {
 
 const prOf = (p: Pull): Pr => ({
   number: p.number,
+  kind: "pr",
   title: p.title,
   body: (p.body ?? "").trim(),
   author: p.user?.login ?? "unknown",
@@ -104,11 +124,16 @@ const prOf = (p: Pull): Pr => ({
   branch: p.head?.ref ?? "",
 });
 
-/** 埋め込む文。題と本文だけ。差分は入れない（長すぎて意味が薄まる）。 */
+/**
+ * 埋め込む文。題と本文だけ。差分は入れない（長すぎて意味が薄まる）。
+ *
+ * **本文は 12,000 字まで取る。**設計を issue へ書く進め方だと本文がそのまま設計文書になり、
+ * 4,000 字では後半が消える（実測: nomophyl の最長 11,450 字、中央値 1,299 字）。
+ */
 export const prText = (p: Pr): string =>
-  `PR #${p.number} ${p.title}${p.body ? `\n${p.body.slice(0, 4000)}` : ""}`;
+  `${p.kind === "pr" ? "PR" : "issue"} #${p.number} ${p.title}${p.body ? `\n${p.body.slice(0, 12_000)}` : ""}`;
 
-/** repo は "owner/name"。PR 本体と、レビュー / issue のコメントをスレッドへ束ねて返す。 */
+/** repo は "owner/name"。PR と issue の本体、レビュー / issue のコメントを返す。 */
 export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
   const titles = new Map<number, string>();
   const prs: Pr[] = [];
@@ -119,6 +144,26 @@ export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
     // リリース PR は release-bot[bot] が作るので、ここで落とすと
     // 「いつ何がリリースされたか」に答えられなくなる（実測: dbt #361 が丸ごと欠けていた）。
     prs.push(prOf(p));
+  }
+
+  // issue 本体。**issues エンドポイントは PR も返す**ので、pull_request を持つものは
+  // 上の pulls で入っている。番号も本文も同じなので、ここで落とさないと二重になる。
+  for (const i of gh(repo, "issues?state=all&per_page=100") as RawIssue[]) {
+    if (i.pull_request) continue;
+    titles.set(i.number, i.title);
+    prs.push({
+      number: i.number,
+      kind: "issue",
+      title: i.title,
+      body: (i.body ?? "").trim(),
+      author: i.user?.login ?? "unknown",
+      // issue に merged は無い。closed は「解決した」と「やらないことにした」の両方を含む。
+      state: i.state === "open" ? "open" : "closed",
+      at: i.created_at,
+      createdAt: i.created_at,
+      url: i.html_url,
+      branch: "",
+    });
   }
 
   const threads = new Map<string, Thread>();
@@ -240,7 +285,7 @@ export async function ingestThreads(
   // **PR そのものを先に入れる。**コメントだけだと「私の最新のマージ済み PR は」に
   // 答えられない（実測: 「マージします！」という発言が 8 件返っただけだった）。
   const prStale = prs.filter((p) => {
-    const e = existing.get(`pr:${p.number}`);
+    const e = existing.get(`${p.kind}:${p.number}`);
     return !e || e.content_hash !== crypto.createHash("sha256").update(prText(p)).digest("hex") || !e.has_emb;
   });
   for (let from = 0; from < prStale.length; from += CHUNK) {
@@ -252,9 +297,10 @@ export async function ingestThreads(
         await client.query(
           `insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, status, attrs,
                              actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-           values ($1,$2,'event','pr',$3,$4,$5,'na',$6,$7,$8,$9,$10,$11,$12,$13,$14)
+           values ($1,$2,'event',$3,$4,$5,$6,'na',$7,$8,$9,$10,$11,$12,$13,$14,$15)
            on conflict (record_id, kind, key) do update set
              at=excluded.at, text=excluded.text, status=excluded.status, attrs=excluded.attrs,
+             subkind=excluded.subkind,
              actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
              content_hash=excluded.content_hash, deleted_at=null,
              embed_text=excluded.embed_text, embed_model=excluded.embed_model,
@@ -262,18 +308,24 @@ export async function ingestThreads(
           [
             recordId,
             scopeId,
-            `pr:${p.number}`,
+            p.kind,
+            `${p.kind}:${p.number}`,
             p.at,
             prText(p),
             p.state,
-            JSON.stringify({
-              pr: p.number,
-              prTitle: p.title,
-              state: p.state,
-              url: p.url,
-              branch: p.branch,
-              createdAt: p.createdAt,
-            }),
+            // **PR の attrs の形は変えない。**チャットと check-path が attrs->>'pr' を読む。
+            JSON.stringify(
+              p.kind === "pr"
+                ? {
+                    pr: p.number,
+                    prTitle: p.title,
+                    state: p.state,
+                    url: p.url,
+                    branch: p.branch,
+                    createdAt: p.createdAt,
+                  }
+                : { issue: p.number, title: p.title, state: p.state, url: p.url, createdAt: p.createdAt },
+            ),
             actorKind(p.author),
             p.author,
             crypto.createHash("sha256").update(prText(p)).digest("hex"),

@@ -138,10 +138,12 @@ server.registerTool(
           "「やらないと決めた」「棄却した案」「試して駄目だった」「触らない制約」だけに絞る。逆に何を採用したかは出ない",
         ),
       kinds: z
-        .array(z.enum(["decision", "option", "event", "boundary", "verification", "question", "utterance"]))
+        .array(
+          z.enum(["decision", "option", "event", "boundary", "verification", "question", "utterance", "doc"]),
+        )
         .optional()
         .describe(
-          "種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い",
+          "種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い / utterance=レビューや会話での発言 / doc=リポジトリの設計文書と ADR",
         ),
       all_scopes: z
         .boolean()

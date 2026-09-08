@@ -9,6 +9,7 @@ import { parseArgs } from "node:util";
 import type pg from "pg";
 import { z } from "zod";
 import { connect, type Env, loadEnv } from "./db.ts";
+import { ingestDocs } from "./docs.ts";
 import { collect, ingestThreads } from "./github.ts";
 import { ensureIdentity } from "./identity.ts";
 import { type Ir, ingest } from "./ingest.ts";
@@ -35,6 +36,7 @@ const USAGE = `使い方:
   mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
   mitos import-sessions [--cwd <dir>]           Claude Code の会話をナレッジにする
+  mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする
   mitos advice                                   編集時の助言が効いているかを見る
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
@@ -206,6 +208,14 @@ async function syncSessions(c: pg.Client, env: Env, dir: string, say: (m: string
   return `${identify(dir).label} / セッション ${done} 本・往復 ${nodes} 件（埋め込み ${embedded} 件）`;
 }
 
+/** その作業場所の Markdown。**sync からも呼ぶ** — 文書は書いた本人が取り込みを覚えていない。 */
+async function syncDocs(c: pg.Client, env: Env, dir: string, say: (m: string) => void): Promise<string> {
+  const me = identify(dir);
+  const scopeId = await scopeIdFor(c, dir, true);
+  if (scopeId === null) throw new Error("作業場所を決められなかった");
+  return ingestDocs(c, env, me.ident, me.label, dir, scopeId, say);
+}
+
 async function syncGithub(c: pg.Client, env: Env, dir: string): Promise<string> {
   const me = identify(dir);
   if (me.identKind !== "git-remote") throw new Error(`${dir} に git の remote が無い`);
@@ -337,6 +347,7 @@ async function main(): Promise<void> {
     "who",
     "sync",
     "import-sessions",
+    "import-docs",
     "advice",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
@@ -577,6 +588,8 @@ async function main(): Promise<void> {
             // 保存を忘れて痛いのは「何も残らない」ことなので、判断の構造化（/mitos:trace）は
             // 人に任せたまま、会話だけは自動で残す。
             console.log(`取り込み完了: ${await syncSessions(c, env, t.abs_path, () => {})}`);
+            // **文書もここで入れる。**設計を書き換えたときに取り込み直す人はいない。
+            console.log(`取り込み完了: ${await syncDocs(c, env, t.abs_path, () => {})}`);
           } else {
             // **黙って飛ばさない。**「同期したのに古い」の原因がここに集まる。
             skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
@@ -642,6 +655,12 @@ async function main(): Promise<void> {
         [display, handles, opt.me === true],
       );
       console.log(`名簿に入れた: ${display} = ${handles.join(" / ")}${opt.me ? "（質問者本人）" : ""}`);
+      return;
+    }
+
+    // リポジトリの設計文書と ADR。**リポジトリが消えると一緒に消える。**
+    if (cmd === "import-docs") {
+      console.log(`取り込み完了: ${await syncDocs(c, env, cwd, (m) => console.error(`  ${m}`))}`);
       return;
     }
 
