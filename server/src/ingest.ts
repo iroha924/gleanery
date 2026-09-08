@@ -70,6 +70,7 @@ export type Ir = {
     prs?: { number: number; title?: string; state?: string; url?: string }[];
     commits?: { sha: string; subject?: string }[];
     files?: string[];
+    urls?: { url?: string; note?: string }[];
   };
 };
 
@@ -104,6 +105,11 @@ function polarityOf(kind: string, subkind?: string | null): Polarity {
     if (subkind === "rejected" || subkind === "superseded") return "dont";
     return "na"; // proposed。まだ何も決まっていない
   }
+  // **落ちた検証は行き止まりである。**確かめて駄目だったという観測なので、
+  // 「試して駄目だったこと」を引く道具（only_rejected_or_forbidden）に出ないと、
+  // 直っていないものが検索から構造的に外れる。
+  // not-run は「まだ確かめていない」で、駄目だったという主張ではないので na のまま。
+  if (kind === "verification") return subkind === "fail" ? "dont" : "na";
   return "na";
 }
 
@@ -443,6 +449,12 @@ export async function ingest(
     }
     for (const f of arr(ir.links?.files)) {
       await linkRef(await putRef("file", String(f).split(":")[0]), "touched");
+    }
+    // **URL も入れる。**ここにループが無かったので、IR に書いた参照が黙って落ちていた
+    // （実測: personal-rebuild に 3 件。`raw` には残るが、どこからも引けない状態だった）。
+    for (const u of arr(ir.links?.urls)) {
+      if (!u?.url) continue;
+      await linkRef(await putRef("url", u.url, { url: u.url }), "link", null, u.note ?? null);
     }
 
     // 親子（option → decision）

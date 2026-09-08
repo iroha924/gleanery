@@ -166,6 +166,8 @@ export type Ref = {
   url: string | null;
   /** 根拠(evidence) / 触った(touched) / 関連(link) をまとめたもの */
   roles: string;
+  /** その参照について書き残したこと。URL はここにしか説明が無い */
+  note: string | null;
   /** 0 以外で終わったコマンドの回数 */
   failed: number;
 };

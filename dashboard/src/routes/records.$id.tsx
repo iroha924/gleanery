@@ -4,8 +4,70 @@ import { ChevronRightIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { Node } from "@/lib/api";
+import type { Node, Ref } from "@/lib/api";
 import { api } from "@/lib/api";
+
+/** 参照の種別。**外から持ってきたものを先に置く。**URL と コミットは記録の外を指すので、
+ *  読み手が確かめに行ける。ファイルとコマンドはリポジトリの中なので後ろでよい。 */
+const REF_KINDS: { kind: string; label: string }[] = [
+  { kind: "url", label: "URL" },
+  { kind: "issue", label: "issue" },
+  { kind: "pr", label: "PR" },
+  { kind: "commit", label: "コミット" },
+  { kind: "file", label: "ファイル" },
+  { kind: "command", label: "コマンド" },
+];
+const ROLE_LABEL: Record<string, string> = { evidence: "根拠", touched: "触った", link: "関連" };
+
+/**
+ * 記録が指している外部のもの。
+ *
+ * **既定は畳む。**1 件の記録で 140 件になるので、開いたまま置くと判断が読めなくなる。
+ * **note を必ず出す。**URL は「何を調べて何が分かったか」が note にしかなく、
+ * 落とすとリンクの列だけが残って意味を失う。
+ */
+function Refs({ refs }: { refs: Ref[] }) {
+  const groups = REF_KINDS.map((k) => ({ ...k, rows: refs.filter((r) => r.kind === k.kind) })).filter(
+    (g) => g.rows.length > 0,
+  );
+  if (groups.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h2 className="font-medium text-muted-foreground text-sm">参照</h2>
+      {groups.map((g) => (
+        <details key={g.kind} className="border-border/60 border-t py-2">
+          <summary className="cursor-pointer list-none text-[13px] marker:content-none">
+            {g.label}
+            <span className="ml-2 font-mono text-[10px] text-muted-foreground tabular-nums">
+              {g.rows.length}
+            </span>
+          </summary>
+          <ul className="mt-2 space-y-2">
+            {g.rows.map((r) => (
+              <li key={`${r.kind}:${r.key}`} className="max-w-[110ch] text-[13px] leading-[1.85]">
+                <span className="text-muted-foreground">
+                  {r.roles
+                    .split(",")
+                    .map((x) => ROLE_LABEL[x] ?? x)
+                    .join(" / ")}
+                </span>{" "}
+                {r.url ? (
+                  <a href={r.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                    {r.title || r.key}
+                  </a>
+                ) : (
+                  <code className="font-mono text-[12px]">{r.key}</code>
+                )}
+                {r.failed > 0 && <span className="ml-2 text-dont text-[11px]">失敗 {r.failed}</span>}
+                {r.note && <div className="text-muted-foreground">{r.note}</div>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ))}
+    </section>
+  );
+}
 
 export const Route = createFileRoute("/records/$id")({ component: RecordPage });
 
@@ -204,6 +266,8 @@ function RecordPage() {
           ))}
         </Tabs>
       )}
+
+      <Refs refs={data.refs} />
     </article>
   );
 }

@@ -37865,6 +37865,8 @@ function polarityOf(kind, subkind) {
       return "dont";
     return "na";
   }
+  if (kind === "verification")
+    return subkind === "fail" ? "dont" : "na";
   return "na";
 }
 function embedText(ir, n) {
@@ -38121,6 +38123,11 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
     }
     for (const f of arr(ir.links?.files)) {
       await linkRef(await putRef("file", String(f).split(":")[0]), "touched");
+    }
+    for (const u of arr(ir.links?.urls)) {
+      if (!u?.url)
+        continue;
+      await linkRef(await putRef("url", u.url, { url: u.url }), "link", null, u.note ?? null);
     }
     for (const n of nodes) {
       if (!n.parentKey)

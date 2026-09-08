@@ -135,6 +135,9 @@ app.get("/api/records/:id", async (c) => {
   const refs = await client.query(
     `select ref.kind, ref.key, min(ref.title) as title, min(ref.url) as url,
             string_agg(distinct l.role, ',' order by l.role) as roles,
+            -- **note まで返す。**URL の参照は「何を調べて何が分かったか」が note にしか無く、
+            -- ここを落としていたので画面から読めなかった。
+            string_agg(distinct l.note, ' / ') filter (where l.note is not null) as note,
             count(*) filter (where l.exit_code is not null and l.exit_code <> 0)::int as failed
      from ref join ref_link l on l.ref_id = ref.id
      where l.record_id = $1
