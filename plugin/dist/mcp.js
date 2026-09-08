@@ -39603,7 +39603,7 @@ server.registerTool("list_scopes", {
   annotations: READ_ONLY
 }, async () => {
   const c = await db();
-  const r = await c.query(`select s.id, s.label, s.role,
+  const r = await c.query(`select s.id, s.label, s.role, s.summary,
               coalesce(string_agg(g.name, ', ' order by g.name), '(束なし)') as groups,
               (select count(*) from record where scope_id = s.id)::int as records
        from scope s
@@ -39614,7 +39614,8 @@ server.registerTool("list_scopes", {
     content: [
       {
         type: "text",
-        text: r.rows.map((x) => `${x.label}  [${x.groups}]  記録 ${x.records} 件${x.role ? ` / ${x.role}` : ""}`).join(`
+        text: r.rows.map((x) => `${x.label}  [${x.groups}]  記録 ${x.records} 件${x.role ? ` / ${x.role}` : ""}` + (x.summary ? `
+    ${x.summary}` : "")).join(`
 `) || "登録なし"
       }
     ]

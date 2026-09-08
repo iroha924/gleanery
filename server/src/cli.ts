@@ -10,6 +10,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { connect, type Env, loadEnv } from "./db.ts";
 import { collect, ingestThreads } from "./github.ts";
+import { ensureIdentity } from "./identity.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { candidates, identify } from "./scope.ts";
@@ -444,6 +445,10 @@ async function main(): Promise<void> {
       const scopeId = await scopeIdFor(c, cwd, true);
       if (scopeId === null) throw new Error("作業場所を決められなかった");
       const r = await ingest(c, env, ir, scopeId, { onProgress: (m) => console.error(`  ${m}`) });
+      // **作業場所が何なのかを、まだ持っていなければここで読む。**
+      // 人に書かせない（d-infer-project-identity）。空のときだけなので、取り込みのたびには走らない。
+      const said = await ensureIdentity(c, env, scopeId).catch(() => null);
+      if (said) console.log(said);
       console.log(
         `取り込み完了: ${ir.meta.id} / node ${r.nodes} 件（埋め込みを取り直した ${r.embedded} 件）`,
       );
@@ -621,18 +626,25 @@ async function main(): Promise<void> {
     }
 
     if (cmd === "scopes") {
-      const r = await c.query<{ label: string; role: string | null; groups: string; records: number }>(
-        `select s.label, s.role,
+      const r = await c.query<{
+        label: string;
+        role: string | null;
+        summary: string | null;
+        groups: string;
+        records: number;
+      }>(
+        `select s.label, s.role, s.summary,
                 coalesce(string_agg(g.name, ', ' order by g.name), '(束なし)') as groups,
                 (select count(*) from record where scope_id = s.id)::int as records
          from scope s
          left join group_member m on m.scope_id = s.id
          left join scope_group  g on g.id = m.group_id
-         group by s.id, s.label, s.role order by s.label`,
+         group by s.id, s.label, s.role, s.summary order by s.label`,
       );
       if (r.rows.length === 0) console.log("登録なし");
       for (const x of r.rows) {
         console.log(`${x.label}  [${x.groups}]  記録 ${x.records} 件${x.role ? ` / ${x.role}` : ""}`);
+        if (x.summary) console.log(`    ${x.summary}`);
       }
       return;
     }

@@ -317,8 +317,14 @@ server.registerTool(
   },
   async () => {
     const c = await db();
-    const r = await c.query<{ label: string; role: string | null; groups: string; records: number }>(
-      `select s.id, s.label, s.role,
+    const r = await c.query<{
+      label: string;
+      role: string | null;
+      summary: string | null;
+      groups: string;
+      records: number;
+    }>(
+      `select s.id, s.label, s.role, s.summary,
               coalesce(string_agg(g.name, ', ' order by g.name), '(束なし)') as groups,
               (select count(*) from record where scope_id = s.id)::int as records
        from scope s
@@ -332,7 +338,12 @@ server.registerTool(
           type: "text" as const,
           text:
             r.rows
-              .map((x) => `${x.label}  [${x.groups}]  記録 ${x.records} 件${x.role ? ` / ${x.role}` : ""}`)
+              .map(
+                (x) =>
+                  `${x.label}  [${x.groups}]  記録 ${x.records} 件${x.role ? ` / ${x.role}` : ""}` +
+                  // **説明まで出す。**ここを落としていたので、埋めても AI には届かなかった。
+                  (x.summary ? `\n    ${x.summary}` : ""),
+              )
               .join("\n") || "登録なし",
         },
       ],
