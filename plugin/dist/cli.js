@@ -38649,8 +38649,8 @@ function readSession(file2) {
       const ask = pending.ask.slice(0, 12000);
       const reply = body.slice(0, 2000);
       exchanges.push({
-        key: `${id}:${hash3(ask + `
-` + reply).slice(0, 12)}`,
+        key: `${id}:${hash3(`${ask}
+${reply}`).slice(0, 12)}`,
         at: pending.at,
         branch: pending.branch,
         ask,

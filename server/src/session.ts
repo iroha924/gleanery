@@ -89,7 +89,7 @@ export function readSession(file: string): Session | null {
         // 以降が全部繰り上がり、同じ発言が別のキーで再登録される（実測: ノイズを
         // 落としたら 15 件が重複した）。会話は後から編集も削除もされうるので、
         // 位置に依存する識別子はそのたびに壊れる。
-        key: `${id}:${hash(ask + "\n" + reply).slice(0, 12)}`,
+        key: `${id}:${hash(`${ask}\n${reply}`).slice(0, 12)}`,
         at: pending.at,
         branch: pending.branch,
         // **貼り付けた MTG の文字起こしが入る。**4,000 字で切ると議事録の後半が消えるので、
