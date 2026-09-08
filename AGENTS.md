@@ -23,7 +23,10 @@ TypeScript / bun、PostgreSQL 17（pgvector + pgroonga）、埋め込みは Voya
 
 ```bash
 bun run bundle
-# plugin/.claude-plugin/plugin.json と .claude-plugin/marketplace.json の version を上げる
+# 版を上げる。**3 箇所すべてを同じ版にする**（pre-commit が揃っているかを見る）
+#   .claude-plugin/marketplace.json
+#   plugin/.claude-plugin/plugin.json
+#   plugin/.codex-plugin/plugin.json  ← **配る先ごとにマニフェストがある**
 claude plugin update mitos     # 「Restart to apply changes」と出る
 # セッションを張り直す
 ```
@@ -67,6 +70,7 @@ claude plugin update mitos     # 「Restart to apply changes」と出る
 | 引用の枠へ入れる `node.text` | 枠の外へ漏れていた `record` の列 |
 | README の `mitos doctor` の説明 | `cli.ts` の `USAGE` |
 | pre-commit の `pairs` が終了コードを落としていた | 同じ形の `bundle`（**この表を書いた直後に踏んだ**） |
+| Claude のプラグインの版（13 回上げた） | **Codex のプラグインの版**（作られたときの `0.1.0` のまま。版のゲート自身が Claude 側しか見ていなかった） |
 
 **探し方は 1 つ。直した関数と定数の参照を全部引く。**同じ判断が要る呼び出し元が 2 つ以上
 あれば、それが対である。**同じ値を読む場所が複数あるなら、括り出して 1 つにする** —

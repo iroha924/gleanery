@@ -24,18 +24,45 @@ try {
   process.exit(0);
 }
 
+// **版は 3 箇所にある。**片方だけ上げても届かないので、全部を見る。
+// 実測（2026-09-09）: Claude 側が 13 回上がるあいだ、**Codex 側は作られたときの 0.1.0 のまま
+// 一度も上がっていなかった。**このゲート自身が Claude 側しか見ていなかったため、
+// 「版を上げ忘れたら止まる」という約束が片側にしか効いていなかった。
+const MANIFESTS = {
+  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "mitos")?.version,
+  "plugin/.claude-plugin/plugin.json": (j) => j.version,
+  "plugin/.codex-plugin/plugin.json": (j) => j.version,
+};
+
+const read = (f) => JSON.parse(fs.readFileSync(f, "utf8"));
+const versions = Object.entries(MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
+const distinct = [...new Set(versions.map(([, v]) => v))];
+if (distinct.length !== 1) {
+  console.error(
+    [
+      "プラグインの版が揃っていない。",
+      "",
+      ...versions.map(([f, v]) => `  ${v}  ${f}`),
+      "",
+      "  **配る先ごとにマニフェストがある。**片方だけ上げると、もう片方の利用者には",
+      "  古い中身が届き続ける。3 つとも同じ版にする。",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 // **見るのは index（このコミットに入る内容）。**作業ツリーを読むと、bundle が
 // 書き終える前に読んで素通りする。**対象は plugin/ 配下すべて** — キャッシュへ複製されるのは
 // mcp.js だけではなく、フック（dist/hook-check-path.js）もスキル（skills/**）も入る。
-const MANIFEST = "plugin/.claude-plugin/plugin.json";
-const changed = git("diff", "--cached", "--name-only", "--", "plugin/")
+const changed = git("diff", "--cached", "--name-only", "--", "plugin/", ".claude-plugin/")
   .split("\n")
   .filter(Boolean)
-  .filter((f) => f !== MANIFEST);
+  .filter((f) => !(f in MANIFESTS));
 if (changed.length === 0) process.exit(0);
 
+const MANIFEST = "plugin/.claude-plugin/plugin.json";
 const was = JSON.parse(at("HEAD", MANIFEST) ?? "{}").version;
-const now = JSON.parse(fs.readFileSync(MANIFEST, "utf8")).version;
+const now = distinct[0];
 if (was !== now) process.exit(0);
 
 console.error(
