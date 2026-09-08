@@ -478,6 +478,31 @@ export async function ingest(
       ]);
     }
 
+    // **辺を作る。**IR は「この検証がどの決定を確かめたか」「どの決定がどれを覆したか」を
+    // 持っているのに、attrs へ文字列として入れるだけで relation 表が空のままだった
+    // （実測: 8 種類の辺が 1 本も無く、検証 82 件のうち 61 件が決定を指していた）。
+    // 文字列のままだと「決めたのに確かめていない」を数えられない。
+    for (const [fromKind, fromKey, toKey, kind] of [
+      ...arr(ir.verification).flatMap((v) =>
+        v.verifies ? ([["verification", v.id, v.verifies, "verifies"]] as const) : [],
+      ),
+      // A が B に覆されたなら、辺は「B が A を覆す」向き。
+      ...arr(ir.decisions).flatMap((d) =>
+        d.supersededBy ? ([["decision", d.supersededBy, d.id, "supersedes"]] as const) : [],
+      ),
+    ] as [string, string, string, string][]) {
+      const from = idOf.get(`${fromKind}|${fromKey}`);
+      const to = idOf.get(`decision|${toKey}`);
+      // **別の記録を指す参照はここでは結ばない。**この記録の node しか手元に無い。
+      // 結べなかったことは attrs に文字列として残るので、失われはしない。
+      if (from === undefined || to === undefined || from === to) continue;
+      await client.query(
+        `insert into relation (from_node, to_node, kind, source) values ($1,$2,$3,'record')
+         on conflict (from_node, to_node, kind) do nothing`,
+        [from, to, kind],
+      );
+    }
+
     // 取り込みで消えた要素は墓標を立てる。id は再利用しない契約なので、消さずに残す。
     // **空の配列では何もしない。**要素ゼロの IR を投げるだけで、その記録の node を
     // 全部 soft delete できてしまう（NOT IN 空集合は真になる）。

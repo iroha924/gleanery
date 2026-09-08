@@ -39,6 +39,7 @@ const USAGE = `使い方:
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする
   mitos advice                                   編集時の助言が効いているかを見る
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
+  mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -52,6 +53,7 @@ const OPTIONS = {
   me: { type: "boolean" },
   dont: { type: "boolean" },
   json: { type: "boolean" },
+  yes: { type: "boolean" },
   team: { type: "string" },
   group: { type: "string" },
 } as const;
@@ -350,6 +352,7 @@ async function main(): Promise<void> {
     "import-sessions",
     "import-docs",
     "gaps",
+    "forget",
     "advice",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
@@ -672,6 +675,64 @@ async function main(): Promise<void> {
       return;
     }
 
+    // **境界は、消せて初めて境界になる。**scope は「どこまでが 1 つの範囲か」を決めているのに、
+    // 範囲ごと消す手段が無かった。実測（2026-09-08）: 消したはずの勤務先のデータが
+    // 別のプロジェクトに残っていて、SQL を手で書いて消すことになった。
+    if (cmd === "forget") {
+      const target = rest.join(" ");
+      if (!target) throw new Error(`消す作業場所をディレクトリかラベルで指定する\n\n${USAGE}`);
+      const hit = await c.query<{ id: number; label: string; ident: string }>(
+        `select id::int as id, label, ident from scope
+         where ident = $1 or label = $1 or abs_path = $2 or ident = $3`,
+        [target, path.resolve(target), identify(target).ident],
+      );
+      if (hit.rows.length === 0)
+        throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
+      if (hit.rows.length > 1)
+        throw new Error(
+          `${target} が ${hit.rows.length} 件に当たる: ${hit.rows.map((r) => r.label).join(" / ")}。ラベルで指定する`,
+        );
+      const gone = hit.rows[0];
+      if (!gone) throw new Error("作業場所を決められなかった");
+
+      const count = async (sql: string): Promise<number> =>
+        Number((await c.query<{ n: string }>(sql, [gone.id])).rows[0]?.n ?? 0);
+      console.log(`${gone.label}（${gone.ident}）`);
+      for (const [label, sql] of [
+        ["記録", "select count(*) as n from record where scope_id = $1"],
+        ["node", "select count(*) as n from node where scope_id = $1"],
+        ["引かれた記録", "select count(*) as n from search_log where scope_id = $1"],
+        ["素材", "select count(*) as n from asset where scope_id = $1"],
+      ] as [string, string][]) {
+        console.log(`  ${label}: ${await count(sql)} 件`);
+      }
+
+      if (opt.yes !== true) {
+        console.log("\n消していません。消すなら --yes を付ける。**元に戻せない。**");
+        return;
+      }
+      await c.query("begin");
+      try {
+        // record を消せば node / ref_link / asset は cascade で落ちる。
+        // scope を直に指している参照は restrict なので、先に外さないと消せない。
+        await c.query("delete from search_log where scope_id = $1", [gone.id]);
+        await c.query("delete from asset where scope_id = $1", [gone.id]);
+        await c.query("delete from record where scope_id = $1", [gone.id]);
+        await c.query("delete from node where scope_id = $1", [gone.id]);
+        await c.query("delete from scope where id = $1", [gone.id]);
+        // どの記録からも指されなくなった参照は、残しても引けない。
+        const orphan = await c.query(
+          "delete from ref where not exists (select 1 from ref_link l where l.ref_id = ref.id)",
+        );
+        await c.query("commit");
+        console.log(`\n消しました。宙に浮いた参照 ${orphan.rowCount ?? 0} 件も片付けました。`);
+      } catch (e) {
+        await c.query("rollback").catch(() => {});
+        throw e;
+      }
+      return;
+    }
+
     // **ナレッジに何が足りないかは、引かれ方にしか出ない。**
     // 記録の側を眺めても「無いもの」は見えない。
     if (cmd === "gaps") {
@@ -715,6 +776,37 @@ async function main(): Promise<void> {
         console.log(
           `  ${rel}  ${r.at}  ${r.source}${r.label ? ` / ${r.label}` : ""}\n          ${r.question.replace(/\s+/g, " ").slice(0, 140)}`,
         );
+      }
+
+      // **知らないことは 2 種類ある。**引けなかった問いと、決めたのに確かめていない決定。
+      // 後者は「確かめ方を書いた決定に、それを確かめた検証が結び付いていない」形で出る。
+      // 未検証を「まだ分からない」ではなく「済んだ」として読むと、直っていないものが
+      // 確かめたものとして扱われる。
+      const unverified = (
+        await c.query<{ label: string; record: string; key: string; text: string }>(
+          `select s.label, n.record_id as record, n.key, left(n.text, 120) as text
+           from node n
+           join record r on r.id = n.record_id
+           join scope s on s.id = n.scope_id
+           where n.kind = 'decision' and n.deleted_at is null
+             and n.attrs->>'confirmation' is not null
+             and ($1::bigint is null or n.scope_id = $1)
+             and not exists (
+               select 1 from relation rel
+               join node v on v.id = rel.from_node
+               where rel.to_node = n.id and rel.kind = 'verifies'
+                 and v.kind = 'verification' and v.subkind = 'pass'
+             )
+           order by r.updated_at desc
+           limit $2`,
+          [mine, n],
+        )
+      ).rows;
+      if (unverified.length) {
+        console.log(`\n確かめ方を書いたのに、通った検証が結び付いていない決定（${unverified.length} 件）:`);
+        for (const u of unverified) {
+          console.log(`  ${u.label} / ${u.record} / ${u.key}\n          ${u.text.replace(/\s+/g, " ")}`);
+        }
       }
       return;
     }
