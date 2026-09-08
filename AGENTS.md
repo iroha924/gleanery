@@ -62,10 +62,16 @@ claude plugin update mitos     # 「Restart to apply changes」と出る
 （`supabase/migrations/20260906120000_readonly_role_for_mcp.sql`）。推論する層に資格情報を持たせない。
 
 例外は `search_log` 1 表だけで、**追記しかできず、読み戻せず、消せない**。
-MCP は接続時にセッションを read only にしているので、そこへ書くには
-`begin read write` を明示する（`server/src/search.ts` の `logSearch`）。
+
+**境界を決めるのはロールの権限だけにする。**セッションを読み取り専用にする迂回を置くと、
+そこへ書くために書き込みトランザクションを開くことになり、接続を共有している他の
+ツール呼び出しからも読み取り専用が外れる（実測で確認して撤去した）。
+代わりに `KNOWLEDGE_DB_URL_RO` が無いときは**繋がずに落とす** — 管理側の鍵へ落ちると、
+推論する層が「全部書ける鍵」を持つ。
 
 **ナレッジ本体（`record` / `node`）へ MCP から書く道を作らない。**
+実測で確かめる手順は `mitos doctor` と、`knowledge_ro` で繋いで
+`insert into node` が `permission denied` になることの確認。
 
 ## コマンド
 

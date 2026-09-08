@@ -5116,6 +5116,9 @@ var HERE = path.dirname(fileURLToPath(import.meta.url));
 var CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].map((d) => path.join(d, "prod-ca-2021.crt")).find((f) => fs.existsSync(f));
 var ca = null;
 async function connect(env, { as = "admin" } = {}) {
+  if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
+    throw new Error("KNOWLEDGE_DB_URL_RO が無い。MCP とフックは読み取り専用のロールでしか繋がない。" + "~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
+  }
   const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.SUPABASE_DB_URL;
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");

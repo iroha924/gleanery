@@ -39016,6 +39016,9 @@ var HERE = path.dirname(fileURLToPath(import.meta.url));
 var CA_PATH = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].map((d) => path.join(d, "prod-ca-2021.crt")).find((f) => fs.existsSync(f));
 var ca = null;
 async function connect(env, { as = "admin" } = {}) {
+  if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
+    throw new Error("KNOWLEDGE_DB_URL_RO が無い。MCP とフックは読み取り専用のロールでしか繋がない。" + "~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
+  }
   const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.SUPABASE_DB_URL;
   if (!raw) {
     throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
@@ -39288,7 +39291,6 @@ async function search(client, env, o) {
 }
 async function logSearch(client, o) {
   try {
-    await client.query("begin read write");
     await client.query(`insert into search_log
          (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [
@@ -39304,10 +39306,7 @@ async function logSearch(client, o) {
       o.result.topScore,
       o.result.rows.map((r) => r.id)
     ]);
-    await client.query("commit");
-  } catch {
-    await client.query("rollback").catch(() => {});
-  }
+  } catch {}
 }
 async function outsideScopes(client, queryVector, scopeIds, {
   polarity,
@@ -39453,7 +39452,6 @@ function db() {
   if (pending)
     return pending;
   const p = connect(env, { as: "read" }).then(async (c) => {
-    await c.query("set session characteristics as transaction read only");
     c.on("error", () => {
       if (pending === p)
         pending = null;

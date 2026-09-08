@@ -287,15 +287,10 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
  *
  * **失敗しても検索は返す。**観測のために本題を落とさない。
  *
- * **明示的に書き込みトランザクションを開く。**MCP は接続時に
- * `set session characteristics as transaction read only` を入れており、素の insert は
- * `cannot execute INSERT in a read-only transaction` で落ちる（実測。握り潰していたので
- * 検索は成功したまま記録だけが 1 件も残らなかった）。この 1 文だけ既定を上書きする。
- * **境界はこれで緩まない** — 本当の境界はロールの権限で、同じ経路から node へ insert しても
- * `permission denied` のままであることを実測で確かめてある。
- *
- * 接続は 1 本を共有するので、同時に 2 件の検索が来ると後から来た側の begin が入れ子になり、
- * その 1 行が落ちることがある。**観測ログなので、落ちても壊れない側へ倒す。**
+ * 書けるかを決めるのはロールの権限だけである（`knowledge_ro` は search_log の insert しか
+ * 持たない）。**セッションを読み取り専用にする迂回は置かない** — 置くとこの 1 文のために
+ * 書き込みトランザクションを開くことになり、接続を共有している他のツール呼び出しからも
+ * 読み取り専用が外れる（実測: 割り込んだクエリから `transaction_read_only: off` が見えた）。
  */
 export async function logSearch(
   client: pg.Client,
@@ -311,7 +306,6 @@ export async function logSearch(
   },
 ): Promise<void> {
   try {
-    await client.query("begin read write");
     await client.query(
       `insert into search_log
          (source, scope_id, cwd, question, kinds, only_rejected, all_scopes, hits, relevance, top_score, node_ids)
@@ -330,11 +324,8 @@ export async function logSearch(
         o.result.rows.map((r) => r.id),
       ],
     );
-    await client.query("commit");
   } catch {
     // 記録できないことと、検索が答えられないことは別。
-    // **開いたまま返さない。**次のツール呼び出しが失敗した取引の中で走ることになる。
-    await client.query("rollback").catch(() => {});
   }
 }
 

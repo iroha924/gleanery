@@ -369,7 +369,9 @@ async function main(): Promise<void> {
   if (cmd === "doctor") {
     console.log(`SUPABASE_DB_URL      ${env.SUPABASE_DB_URL ? "あり" : "無い"}`);
     console.log(`VOYAGE_API_KEY       ${env.VOYAGE_API_KEY ? "あり" : "無い"}`);
-    console.log(`KNOWLEDGE_DB_URL_RO  ${env.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（管理側の鍵に落ちる）"}`);
+    console.log(
+      `KNOWLEDGE_DB_URL_RO  ${env.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP とフックは繋がらない）"}`,
+    );
     // **両方の経路を叩く。**MCP とフックは読み取り専用ロールで繋ぐので、
     // 管理側だけ確かめても意味が無い。実際にベクトル検索まで通す
     // （search_path にロール差があり、読み取り側だけ落ちたことがある）。

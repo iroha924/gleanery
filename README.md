@@ -208,7 +208,7 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 | ロール | 誰が使うか | 書けるもの |
 |---|---|---|
 | `postgres`（`SUPABASE_DB_URL`） | CLI | 全部 |
-| `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | **`search_log` への追記だけ**（読み戻しも削除もできない） |
+| `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | **`search_log` への追記だけ**（読み戻しも削除もできない）。**未設定なら MCP とフックは繋がらない** |
 | `mitos_cfg`（`KNOWLEDGE_DB_URL_CFG`） | ダッシュボードの設定 | scope / scope_path / group / person / term / chat / search_log |
 
 ほかに `VOYAGE_API_KEY`（埋め込みと rerank）と `OPENAI_API_KEY`（チャットの生成と、
