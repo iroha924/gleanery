@@ -17,6 +17,7 @@ import { identify } from "./scope.ts";
 import {
   currentWork,
   framed,
+  liveLabel,
   logSearch,
   outsideScopes,
   type Polarity,
@@ -120,7 +121,7 @@ const overview = (records: RecordHit[]): string =>
         .filter((n) => n?.text)
         .map((n) => `  - [${n.who === "human" ? "人" : "AI"}] ${String(n.text).slice(0, 200)}`);
       return [
-        `## ${r.title}（${r.scope_label} / ${r.status}）`,
+        `## ${r.title}（${r.scope_label} / ${liveLabel(r)}）`,
         r.current_text ? `いまの状況: ${r.current_text.slice(0, 700)}` : null,
         next.length ? `次にやること:\n${next.join("\n")}` : null,
       ]
@@ -199,9 +200,9 @@ server.registerTool(
     }
     // 検索本体の埋め込みを使い回すので、API 呼び出しは増えない（outside と同じ形）。
     const records = await searchRecords(c, queryVector, scope ? scope.ids : undefined, 2);
-    // **「進行中」と言わない。**searchRecords は埋め込みの近さだけで引き、
-    // 進行中かどうかを見ていない（search.ts の where は r.embedding is not null だけ）。
-    // 完了した作業を「いま進行中」と断言することになる。
+    // **searchRecords は埋め込みの近さだけで引く**ので、完了した作業も返る。
+    // 進行中かどうかは `live` 列（search.ts の IN_PROGRESS）が持っていて、
+    // overview はそれを出す。**手で書いた status を出さない** — 断言が外れる。
     const lead = records.length ? `関連する作業:\n\n${overview(records)}` : "";
     // **何を聞かれたかを残す。**関連度の低い問いが「ナレッジに無かったもの」の一覧になる。
     // **束の先頭ではなく cwd 自身。**scopeFamily は order by を持たないので、
@@ -270,7 +271,9 @@ server.registerTool(
           .filter((n) => n?.text)
           .map((n) => `  - [${n.who === "human" ? "人" : "AI"}] ${n.text}`);
         return [
-          `## ${w.title}（${w.project} / ${w.status}）`,
+          // **status を出さない。**このツールが返す record は IN_PROGRESS を通ったものだけで、
+          // 定義上すべて進行中。手で書いた status を添えると、そこだけ別のことを言う。
+          `## ${w.title}（${w.project}）`,
           w.goal ? `目指すところ: ${w.goal}` : null,
           w.current_text ? `いまの状況: ${w.current_text}` : null,
           left.length

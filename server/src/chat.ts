@@ -17,6 +17,7 @@ import { HOST } from "./scope.ts";
 import {
   type Hit,
   labelOf,
+  liveLabel,
   logSearch,
   type Polarity,
   type RecordHit,
@@ -30,7 +31,7 @@ function asContext(records: RecordHit[], hits: Hit[], nonce: string): string {
   // 全体像を先に置く。「何をしているのか」を判断の断片から組み立てさせない。
   const overview = records.map((r) =>
     [
-      `## ${r.title}（${r.scope_label} / ${r.status}）`,
+      `## ${r.title}（${r.scope_label} / ${liveLabel(r)}）`,
       r.problem ? `解こうとしている問題: ${r.problem}` : null,
       r.goal ? `目指すところ: ${r.goal}` : null,
       r.current_text ? `いまの状況: ${r.current_text}` : null,

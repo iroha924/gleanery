@@ -611,7 +611,26 @@ export type RecordHit = {
   updated_at: Date;
   scope_label: string;
   score: number;
+  /** 導出した進行中かどうか（`IN_PROGRESS`）。**ヘッダへ `status` を出さないための列。** */
+  live: boolean;
 };
+
+/**
+ * 記録のヘッダに出す進行中の表示。**MCP と画面のチャットが同じこれを読む**
+ * （`AGENTS.md`「片方を直したら、対を探す」の表に載っている対そのもの）。
+ *
+ * **手で書いた `status` をそのまま出さない。**取り込み口が `in-progress` 固定で入れるので、
+ * github / 文書 由来の記録では常に実態と食い違う（実測 2026-09-09: 52 件中 6 件）。
+ *
+ * **ただし逆向きだけは出す。**「終わったと書いてあるのに、未完の工程か次の一手が残っている」は
+ * 取り込みの構造から出るものではなく、記録が古いことの印である（実測 2026-09-09 時点で 0 件）。
+ */
+export const liveLabel = (r: { live: boolean; status: string }): string =>
+  r.live && (r.status === "done" || r.status === "abandoned")
+    ? `進行中 / 記録は ${r.status} だが、まだ次の一手が残っている`
+    : r.live
+      ? "進行中"
+      : "進行中ではない";
 
 export type Wall = { record_id: string; subkind: string; text: string; key: string };
 
@@ -632,15 +651,39 @@ export type WorkNow = {
 };
 
 /**
- * いま進行中の作業と、その外枠。
+ * **進行中かどうかを決める、record 1 行ぶんの条件。**別名は `r` に固定してある。
+ * `currentWork`（画面と MCP が共有）・`searchRecords`・テストが、この 1 つを読む。
  *
- * **status を信じない。**status は書き手が手で書く値で phases と同期せず、
- * 全工程 done でも in-progress のまま残る（実測: 6/6 done で in-progress）。
- * 代わりに「未完の工程」か「残っている次の一手」のどちらかがあるかで判定する。
+ * **status を信じない。**status は書き手が手で書く値で、全工程 done でも `in-progress` の
+ * まま残る（実測: 6/6 done で in-progress）。代わりに「未完の工程」か「残っている次の一手」の
+ * どちらかがあるかで見る。どちらも無ければ空の殻で、GitHub / Linear / 会話 / 文書の
+ * 取り込みが作る record はここに落ちる（`next` と `phases` を書くのは `ingest.ts` だけ）。
  *
- * **phases を持たない record は最初から外す。**phases と next を書くのは trace の取り込みだけで、
- * GitHub 由来の record はそこを通らないので永久に空のまま出る。取り込みを回すたびに
- * 空の殻が 1 枚増える。
+ * **`phases` の有無を前提条件にしない。**`phases` は `current.phases` で、書き手が省ける。
+ * 省いた記録は `next` を 6 件持っていても現在地から丸ごと消え、**`search_knowledge` は
+ * `in-progress` と言い、`current_work` は「進行中なし」と言う**状態になる
+ * （実測 2026-09-09: `personal-rebuild`）。
+ *
+ * `coalesce` は要らない。`phases` も `next` も `not null default '[]'`
+ * （`20260905160457_record_and_node.sql`）。
+ */
+export const IN_PROGRESS = `(
+         exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
+         or jsonb_array_length(r.next) > 0
+       )`;
+
+/**
+ * `currentWork` が record を絞る条件の**全体**。`$1` は作業場所の id。
+ *
+ * **括り出してあるのは、条件が増えたことを機械で捕まえるため。**元の欠陥は
+ * `IN_PROGRESS` の中ではなく**外に足された 1 行**（`and r.phases is not null`）で、
+ * 述語だけを見るテストは緑のまま通った（実測 2026-09-09 で再現）。
+ * テストはこの文字列を丸ごと突き合わせるので、条件を足せば落ちる。
+ */
+export const CURRENT_WORK_WHERE = `($1::int[] is null or r.scope_id = any($1)) and ${IN_PROGRESS}`;
+
+/**
+ * いま進行中の作業と、その外枠。判定は `IN_PROGRESS`。
  *
  * **画面（/api/now）と MCP（current_work）で共有する。**同じ規則を 2 箇所に書くと、
  * 片方だけ直したときに黙ってずれる。
@@ -654,16 +697,7 @@ export async function currentWork(
     `select r.id, r.title, r.status, r.branch, r.goal, r.current_at, r.current_text,
             r.phases, r.next, r.updated_at, s.label as project
      from record r join scope s on s.id = r.scope_id
-     where ($1::int[] is null or r.scope_id = any($1))
-       and r.phases is not null
-       and jsonb_array_length(r.phases) > 0
-       -- **未完の工程か、残っている次の一手のどちらかがあれば進行中。**
-       -- 工程だけで見ると、実装が終わって人の判断だけが残った記録が現在地から消える
-       -- （実測: 工程 14 件が全部 done で next が 4 件あるのに「進行中の作業はありません」と返った）。
-       and (
-         exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
-         or jsonb_array_length(coalesce(r.next, '[]'::jsonb)) > 0
-       )
+     where ${CURRENT_WORK_WHERE}
      order by r.updated_at desc nulls last limit $2`,
     [scopeIds, limit],
   );
@@ -698,7 +732,7 @@ export async function searchRecords(
   params.push(limit);
   const r = await client.query<RecordHit>(
     `select r.id, r.title, r.status, r.problem, r.goal, r.current_text, r.next, r.updated_at,
-            s.label as scope_label,
+            s.label as scope_label, ${IN_PROGRESS} as live,
             (r.embedding <#> $1::extensions.vector) * -1 as score
      from record r join scope s on s.id = r.scope_id
      where ${where.join(" and ")}

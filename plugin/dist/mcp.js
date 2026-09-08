@@ -39404,20 +39404,17 @@ function quote(rows, lead = "") {
 
 `), lead);
 }
+var liveLabel = (r) => r.live && (r.status === "done" || r.status === "abandoned") ? `進行中 / 記録は ${r.status} だが、まだ次の一手が残っている` : r.live ? "進行中" : "進行中ではない";
+var IN_PROGRESS = `(
+         exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
+         or jsonb_array_length(r.next) > 0
+       )`;
+var CURRENT_WORK_WHERE = `($1::int[] is null or r.scope_id = any($1)) and ${IN_PROGRESS}`;
 async function currentWork(client, scopeIds, limit = 5) {
   const r = await client.query(`select r.id, r.title, r.status, r.branch, r.goal, r.current_at, r.current_text,
             r.phases, r.next, r.updated_at, s.label as project
      from record r join scope s on s.id = r.scope_id
-     where ($1::int[] is null or r.scope_id = any($1))
-       and r.phases is not null
-       and jsonb_array_length(r.phases) > 0
-       -- **未完の工程か、残っている次の一手のどちらかがあれば進行中。**
-       -- 工程だけで見ると、実装が終わって人の判断だけが残った記録が現在地から消える
-       -- （実測: 工程 14 件が全部 done で next が 4 件あるのに「進行中の作業はありません」と返った）。
-       and (
-         exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
-         or jsonb_array_length(coalesce(r.next, '[]'::jsonb)) > 0
-       )
+     where ${CURRENT_WORK_WHERE}
      order by r.updated_at desc nulls last limit $2`, [scopeIds, limit]);
   const ids = r.rows.map((x) => x.id);
   if (ids.length === 0)
@@ -39436,7 +39433,7 @@ async function searchRecords(client, queryVector, scopeIds, limit = 3) {
   }
   params.push(limit);
   const r = await client.query(`select r.id, r.title, r.status, r.problem, r.goal, r.current_text, r.next, r.updated_at,
-            s.label as scope_label,
+            s.label as scope_label, ${IN_PROGRESS} as live,
             (r.embedding <#> $1::extensions.vector) * -1 as score
      from record r join scope s on s.id = r.scope_id
      where ${where.join(" and ")}
@@ -39498,7 +39495,7 @@ var READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: tr
 var overview = (records) => records.map((r) => {
   const next = (r.next ?? []).filter((n) => n?.text).map((n) => `  - [${n.who === "human" ? "人" : "AI"}] ${String(n.text).slice(0, 200)}`);
   return [
-    `## ${r.title}（${r.scope_label} / ${r.status}）`,
+    `## ${r.title}（${r.scope_label} / ${liveLabel(r)}）`,
     r.current_text ? `いまの状況: ${r.current_text.slice(0, 700)}` : null,
     next.length ? `次にやること:
 ${next.join(`
@@ -39590,7 +39587,7 @@ server.registerTool("current_work", {
     const left = (w.phases ?? []).filter((x) => x?.state !== "done");
     const next = (w.next ?? []).filter((n) => n?.text).map((n) => `  - [${n.who === "human" ? "人" : "AI"}] ${n.text}`);
     return [
-      `## ${w.title}（${w.project} / ${w.status}）`,
+      `## ${w.title}（${w.project}）`,
       w.goal ? `目指すところ: ${w.goal}` : null,
       w.current_text ? `いまの状況: ${w.current_text}` : null,
       left.length ? `残っている工程: ${left.map((x) => `${x.label ?? x.id}（${x.state ?? "?"}）`).join(" / ")}` : null,

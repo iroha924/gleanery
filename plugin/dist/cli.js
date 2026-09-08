@@ -38196,6 +38196,11 @@ function quote(rows, lead = "") {
 
 `), lead);
 }
+var IN_PROGRESS = `(
+         exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
+         or jsonb_array_length(r.next) > 0
+       )`;
+var CURRENT_WORK_WHERE = `($1::int[] is null or r.scope_id = any($1)) and ${IN_PROGRESS}`;
 
 // server/src/ingest.ts
 var sha = (s) => crypto5.createHash("sha256").update(String(s)).digest("hex");

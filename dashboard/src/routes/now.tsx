@@ -19,7 +19,11 @@ const STATUS: Record<string, string> = {
   blocked: "止まっている",
   paused: "中断中",
   done: "完了",
+  abandoned: "取りやめ",
 };
+
+/** 終わったことになっている値。**この画面に出たら、記録の側が古い。** */
+const DONEISH = new Set(["done", "abandoned"]);
 
 /** 次の一手。**担当で列を分ける。**who は記録が持っているので推測ではない。 */
 function NextList({ items, mine }: { items: NextItem[]; mine: boolean }) {
@@ -60,9 +64,16 @@ function WorkCard({ w }: { w: Now }) {
     <Card>
       <CardHeader className="gap-3">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Badge variant={w.status === "done" ? "secondary" : "default"}>
-            {STATUS[w.status] ?? w.status}
-          </Badge>
+          {/* **この画面に並ぶのは、すべて進行中と判定された記録**（server の IN_PROGRESS）。
+              手で書いた status はそれと同期しないので、そのまま出さない。
+              `in-progress` は画面の意味と重なるので省き、終わったはずの値が来たら
+              「記録が古い」印として目立たせる。 */}
+          {w.status !== "in-progress" && (
+            <Badge variant={DONEISH.has(w.status) ? "destructive" : "default"}>
+              {STATUS[w.status] ?? w.status}
+              {DONEISH.has(w.status) ? "（次の一手が残っています）" : ""}
+            </Badge>
+          )}
           <span>{w.project}</span>
           {w.branch && (
             <span className="flex items-center gap-1">

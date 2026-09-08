@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { framed, labelOf, quote, type Shown } from "../src/search.ts";
+import { framed, labelOf, liveLabel, quote, type Shown } from "../src/search.ts";
 
 const row = (over: Partial<Shown> = {}): Shown => ({
   kind: "event",
@@ -82,4 +82,17 @@ test("前置きも引用の枠の中に入る", () => {
   const lead = out.indexOf("いまの状況");
   assert.ok(opens >= 0 && closes > opens, "枠が閉じていない");
   assert.ok(lead > opens && lead < closes, "前置きが枠の外に出た");
+});
+
+test("記録のヘッダに、手で書いた status をそのまま出さない", () => {
+  // 取り込み口が status を 'in-progress' 固定で入れるので、github / 文書 由来の記録は
+  // 実態と食い違ったまま並ぶ（実測 2026-09-09: 52 件中 6 件）。そこを併記すると定型になる。
+  assert.equal(liveLabel({ live: false, status: "in-progress" }), "進行中ではない");
+  assert.equal(liveLabel({ live: true, status: "in-progress" }), "進行中");
+
+  // **逆向きだけは出す。**終わったと書いてあるのに仕事が残っているのは、記録が古い印。
+  for (const status of ["done", "abandoned"]) {
+    assert.match(liveLabel({ live: true, status }), new RegExp(`記録は ${status} だが`), status);
+  }
+  assert.equal(liveLabel({ live: false, status: "done" }), "進行中ではない");
 });
