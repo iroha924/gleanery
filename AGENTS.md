@@ -101,7 +101,7 @@ bun run dev        # API + ダッシュボード
 | `mitos import-github` | PR と issue の本体、レビューと議論 |
 | `mitos import-linear` | Linear の issue とコメント |
 | `mitos import-sessions` | Claude Code の会話（1 往復 = 1 件） |
-| `mitos import-docs` | リポジトリの Markdown（見出しで節に割る） |
+| `mitos import-docs` | リポジトリの Markdown（見出しで節に割る）。**既定の検索には出ない** |
 
 `mitos sync` が日次でまとめて回す（launchd。毎日 6:00）。**新しい口を足したら sync にも繋ぐ。**
 繋がないと、人が手で叩いたときしか入らない。

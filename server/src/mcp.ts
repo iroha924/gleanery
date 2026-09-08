@@ -141,7 +141,10 @@ server.registerTool(
         )
         .optional()
         .describe(
-          "種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い / utterance=レビューや会話での発言 / doc=リポジトリの設計文書と ADR",
+          "種別で絞る。decision=採用した決定 / option=検討した案 / event=経過と行き止まり / boundary=制約とやらないこと / verification=検証 / question=未解決の問い / " +
+            "utterance=レビューや会話での発言 / doc=リポジトリの設計文書と ADR。" +
+            "**utterance の bot 定型文・PR 本文・doc は既定の結果に出ない**（決定を押し出すため）。" +
+            '仕様書や ADR の本文が要るときは kinds: ["doc"] を明示する',
         ),
       all_scopes: z
         .boolean()

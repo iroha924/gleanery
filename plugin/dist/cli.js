@@ -38048,7 +38048,8 @@ async function search(client, env2, o) {
     "n.deleted_at is null",
     ...kinds?.length ? [] : [
       "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
-      "not (n.kind = 'event' and n.subkind = 'pr')"
+      "not (n.kind = 'event' and n.subkind = 'pr')",
+      "not (n.kind = 'doc')"
     ],
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");

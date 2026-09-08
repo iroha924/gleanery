@@ -191,7 +191,13 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
    * 全件返すと TOTAL 48,000 バイトの大半を占めたうえ、PER_ROW で切られて後半が届かない。
    * 中身の設計判断は decisions として別に入っているので、外しても判断は残る。
    *
-   * どちらも、種別を指定すれば出る（kinds: ["utterance"] / ["event"]）。
+   * **リポジトリの文書も外す。**取り込んだ時点で node の半分を超え、決定を押し出した。
+   * 実測（20 問）: 既定に入れると top1 35% / recall@5 90% / MRR 0.588、
+   * 外すと top1 80% / recall@5 95% / MRR 0.867。**45 ポイントの差**である。
+   * 文書は「なぜそうしたか」の周辺を厚く説明するので語が近く、
+   * 決定 1 件に対して節が何十件も並ぶ。既定は決定を返す面である。
+   *
+   * どれも、種別を指定すれば出る（kinds: ["utterance"] / ["event"] / ["doc"]）。
    */
   const clauses = (from: number): string =>
     [
@@ -201,6 +207,7 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
         : [
             "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
             "not (n.kind = 'event' and n.subkind = 'pr')",
+            "not (n.kind = 'doc')",
           ]),
       ...filters.map((f, i) => f.sql(from + i)),
     ].join(" and ");
