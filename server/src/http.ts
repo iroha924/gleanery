@@ -653,7 +653,14 @@ app.post("/api/chat", async (c) => {
     let answer = "";
     let sources: unknown[] = [];
     try {
-      for await (const chunk of chat(client, env, { ...body, scopeIds: family, learn })) {
+      // **帰属は画面が選んだ側。**family は検索の範囲で、`scopeFamily` は order by を
+      // 持たないので先頭は任意の兄弟になる（MCP 側で同じ欠陥を直した）。
+      for await (const chunk of chat(client, env, {
+        ...body,
+        scopeIds: family,
+        ownScope: ids[0] ?? null,
+        learn,
+      })) {
         if (chunk.type === "text") answer += chunk.text;
         else if (chunk.type === "sources") sources = chunk.sources;
         await stream.writeSSE({ event: chunk.type, data: JSON.stringify(chunk) });
@@ -743,4 +750,9 @@ async function saveTurn(
 }
 
 const port = Number(process.env.MITOS_API_PORT ?? 8787);
-serve({ fetch: app.fetch, port }, (i) => console.log(`mitos API: http://localhost:${i.port}`));
+// **手元だけで待ち受ける。**この API に認証は無い。hostname を省くと Node は
+// 全インターフェースへ bind するので（実測: `*:8787 (LISTEN)`）、同じネットワークから
+// /api/chat の read_code も各 DELETE も叩ける。画面は同じマシンの vite から来る。
+serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (i) =>
+  console.log(`mitos API: http://localhost:${i.port}`),
+);

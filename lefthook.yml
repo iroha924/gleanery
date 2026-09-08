@@ -15,13 +15,12 @@ pre-commit:
       run: bunx tsc -b
     # dist は配布物。ソースだけ直して bundle を忘れると、
     # Codex 側（依存を自動インストールしない）で古いコードが動き続ける。
+    # **版の判定は bundle の後でなければ意味が無い。**parallel なので別ジョブにすると
+    # 作り直す前のバンドルを読んで素通りする（実測: 4/4 で通った）。同じジョブで順に走らせる。
+    # 理由は AGENTS.md「MCP を直したら、版を上げないと誰にも届かない」。
     - name: bundle
-      glob: "server/src/*.ts"
+      glob: "{server/src/*.ts,plugin/**}"
       run: |
         bun run bundle
         git add plugin/dist/
-    # 理由は AGENTS.md「MCP を直したら、版を上げないと誰にも届かない」。
-    - name: mcp-version
-      glob: "{server/src/*.ts,plugin/dist/mcp.js}"
-      run: |
         bun run scripts/check-mcp-version.mjs

@@ -54,7 +54,13 @@ const slug = (s: string): string =>
  * フロントマターの区切りが見出しに化けて、節が本文の途中で割れる。
  */
 export function sections(rel: string, body: string): Section[] {
-  const lines = body.split("\n");
+  // **CRLF と BOM を先に落とす。**JS の `.` は `\r` を行終端として扱うので、
+  // `/^(#{1,3}) +(\S.*)$/` が CRLF の見出しに一致しない。Windows で書かれた文書だけが
+  // **1 本まるごと 1 つのベクトルに潰れる**（実測）。BOM は先頭の見出しだけを落とす。
+  const lines = body
+    .replace(/^\uFEFF/, "")
+    .split("\n")
+    .map((l) => l.replace(/\r$/, ""));
   const out: Section[] = [];
   // 見出しの深さごとの直近の題。前置きに使う道を作る
   const trail: string[] = [];

@@ -16,6 +16,7 @@ import { connect, loadEnv } from "./db.ts";
 import { identify } from "./scope.ts";
 import {
   currentWork,
+  framed,
   logSearch,
   outsideScopes,
   type Polarity,
@@ -213,7 +214,8 @@ server.registerTool(
       result: { rows, queryVector, topScore },
     });
     const text =
-      (rows.length ? quote(rows, lead) : lead ? `${lead}\n\n該当なし。` : "該当なし。") +
+      // **0 件でも枠を通す。**lead は DB の値なので、ここだけ素で返すと枠から漏れる。
+      (rows.length ? quote(rows, lead) : lead ? framed("該当なし。", lead) : "該当なし。") +
       (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
     return { content: [{ type: "text" as const, text }] };
   },

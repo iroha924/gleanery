@@ -125,3 +125,20 @@ test("途中のディレクトリが symlink でも外へ出られない", () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// **JS の `.` は `\r` を行終端として扱う。**CRLF の見出しに `/^(#{1,3}) +(\S.*)$/` が
+// 一致せず、Windows で書かれた文書だけが 1 本まるごと 1 つのベクトルに潰れる。
+test("CRLF と BOM でも見出しで割れる", () => {
+  const want = ["背景", "決定"];
+  const lf = "# 設計\n\n## 背景\n本文\n\n## 決定\nこちら\n";
+  assert.deepEqual(
+    sections("a.md", lf.replace(/\n/g, "\r\n")).map((s) => s.title),
+    want,
+    "CRLF で割れなかった",
+  );
+  assert.deepEqual(
+    sections("a.md", `﻿${lf}`).map((s) => s.title),
+    want,
+    "BOM で先頭の見出しが落ちた",
+  );
+});

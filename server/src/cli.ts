@@ -40,7 +40,8 @@ const USAGE = `使い方:
   mitos advice                                   編集時の助言が効いているかを見る
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
   mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-  mitos adopt                                    このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く）
+  mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
+                                                 --yes は既に登録済みの場所を入れ替える）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -740,10 +741,16 @@ async function main(): Promise<void> {
     // クローンし忘れているリポジトリもここで分かる。
     if (cmd === "adopt") {
       const here = candidates();
+      // **いま登録されている場所も引く。**比べないと、同じ remote を持つ別のクローンが
+      // 見つかっただけで黙って差し替わる（`rememberPath` の doc が「食い違いを見せて止める」と
+      // 宣言しているのに、比べる材料を取っていなかった）。
       const known = new Map(
         (
-          await c.query<{ id: number; ident: string; label: string }>(
-            "select id::int as id, ident, label from scope where ident like 'git:%' or ident_kind = 'abs-path'",
+          await c.query<{ id: number; ident: string; label: string; abs_path: string | null }>(
+            `select s.id::int as id, s.ident, s.label, p.abs_path from scope s
+             left join scope_path p on p.scope_id = s.id and p.host = $1
+             where s.ident like 'git:%' or s.ident_kind = 'abs-path'`,
+            [HOST],
           )
         ).rows.map((r) => [r.ident, r]),
       );
@@ -756,6 +763,7 @@ async function main(): Promise<void> {
       const linked: string[] = [];
       const unknown: string[] = [];
       const ambiguous: string[] = [];
+      const moved: string[] = [];
       for (const [ident, cands] of byIdent) {
         const scope = known.get(ident);
         if (!scope) {
@@ -768,6 +776,11 @@ async function main(): Promise<void> {
           ambiguous.push(`${scope.label}\n    ${cands.map((x) => x.absPath).join("\n    ")}`);
           continue;
         }
+        // **既に別の場所が登録されているなら、勝手に移さない。**--yes で入れ替える。
+        if (opt.yes !== true && scope.abs_path && scope.abs_path !== only.absPath) {
+          moved.push(`${scope.label}\n    いま: ${scope.abs_path}\n    候補: ${only.absPath}`);
+          continue;
+        }
         await rememberPath(c, scope.id, only.absPath, { replace: true });
         linked.push(`${scope.label}  ${only.absPath}`);
       }
@@ -778,6 +791,11 @@ async function main(): Promise<void> {
         console.log(`\nナレッジにはあるが、このマシンに見当たらない（${known.size} 件）:`);
         for (const k of known.values()) console.log(`  ${k.label}`);
         console.log("  ※ クローンしてから mitos adopt をもう一度叩く。引くだけなら登録は要らない");
+      }
+      if (moved.length) {
+        console.log(`\n別の場所が登録済みなので動かしていない（${moved.length} 件）:`);
+        for (const m of moved) console.log(`  ${m}`);
+        console.log("  ※ 移したのなら `mitos adopt --yes` で入れ替える");
       }
       if (ambiguous.length) {
         console.log(`\n同じ識別子のディレクトリが複数あるので結んでいない（${ambiguous.length} 件）:`);

@@ -242,6 +242,12 @@ export type ChatBody = {
   history?: { role: "user" | "assistant"; content: string }[];
   /** どのプロジェクト（まとめ）について聞くか。**必須。**範囲なしの検索は答えを混ぜる。 */
   scopeIds?: number[];
+  /**
+   * 画面が選んだ作業場所。**scopeIds は束を展開した検索範囲**で、
+   * `scopeFamily` は order by を持たないので先頭は任意の兄弟になる。
+   * 問いの帰属はこちらで決める。
+   */
+  ownScope?: number | null;
   /** 用語を覚えるときに呼ぶ。渡されなければ覚えられない */
   learn?: Learn;
 };
@@ -343,7 +349,7 @@ export async function* chat(
   // **画面から聞かれたことも残す。**答えを持てなかった問いは、入口を問わず同じ穴である。
   await logSearch(client, {
     source: "chat",
-    scopeId: body.scopeIds[0] ?? null,
+    scopeId: body.ownScope ?? null,
     question: forSearch,
     result: found,
   });

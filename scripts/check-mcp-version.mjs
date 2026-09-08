@@ -24,17 +24,23 @@ try {
   process.exit(0);
 }
 
-const BUNDLE = "plugin/dist/mcp.js";
-if (at("HEAD", BUNDLE) === fs.readFileSync(BUNDLE, "utf8")) process.exit(0);
-
+// **見るのは index（このコミットに入る内容）。**作業ツリーを読むと、bundle が
+// 書き終える前に読んで素通りする。**対象は plugin/ 配下すべて** — キャッシュへ複製されるのは
+// mcp.js だけではなく、フック（dist/hook-check-path.js）もスキル（skills/**）も入る。
 const MANIFEST = "plugin/.claude-plugin/plugin.json";
+const changed = git("diff", "--cached", "--name-only", "--", "plugin/")
+  .split("\n")
+  .filter(Boolean)
+  .filter((f) => f !== MANIFEST);
+if (changed.length === 0) process.exit(0);
+
 const was = JSON.parse(at("HEAD", MANIFEST) ?? "{}").version;
 const now = JSON.parse(fs.readFileSync(MANIFEST, "utf8")).version;
 if (was !== now) process.exit(0);
 
 console.error(
   [
-    `${BUNDLE} が変わったのに版が ${now} のままになっている。`,
+    `plugin/ の ${changed.length} 個が変わったのに版が ${now} のままになっている（${changed[0]} など）。`,
     "",
     "  Claude Code は ~/.claude/plugins/cache/mitos/mitos/<版>/ の複製から動く。",
     "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
