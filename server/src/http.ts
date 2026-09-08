@@ -13,7 +13,7 @@ import type pg from "pg";
 import { type ChatBody, chat, type Learn } from "./chat.ts";
 import { connect, loadEnv } from "./db.ts";
 import { candidates, identify } from "./scope.ts";
-import { labelOf, type Polarity, scopeFamily, search } from "./search.ts";
+import { currentWork, labelOf, type Polarity, scopeFamily, search } from "./search.ts";
 
 const env = loadEnv(process.cwd());
 let pending: Promise<pg.Client> | null = null;
@@ -76,43 +76,8 @@ function scopesOf(c: { req: { query: (k: string) => string | undefined } }): num
 // 「いま」の画面。**問いを持たずに開ける唯一の画面**にする。
 // 前回どこで止まって、次に誰が何をするのか。record にあるのに画面が出していなかった。
 app.get("/api/now", async (c) => {
-  const client = await db();
-  const r = await client.query(
-    `select r.id, r.title, r.status, r.branch, r.current_at, r.current_text,
-            r.phases, r.next, r.updated_at, s.label as project
-     from record r join scope s on s.id = r.scope_id
-     where ($1::int[] is null or r.scope_id = any($1))
-       -- **現在地を持ち得ない record を混ぜない。**phases と next を書くのは trace の取り込みだけで
-       -- （ingest）、GitHub 由来の record（github:<repo>）はそこを通らないので永久に空のまま出る。
-       -- 取り込みを回すたびに空の殻が 1 枚増えるので、画面側ではなくここで外す。
-       and r.phases is not null
-       and jsonb_array_length(r.phases) > 0
-       -- **終わった作業は「現在地」ではない。**status は書き手が手で書く値で phases と同期せず、
-       -- 全工程 done でも in-progress のまま残る（実測: personal-rebuild が 6/6 done で in-progress）。
-       -- status を信じず、工程に done でないものが残っているかで判断する。
-       and exists (
-         select 1 from jsonb_array_elements(r.phases) p
-         where p->>'state' <> 'done'
-       )
-     order by r.updated_at desc nulls last limit 5`,
-    [scopesOf(c)],
-  );
-  const ids = r.rows.map((x) => x.id as string);
-  // 触ってはいけないもの／やらないと決めたことは、流れの外に置く。
-  const walls = ids.length
-    ? await client.query(
-        `select record_id, subkind, text, key from node
-         where record_id = any($1) and kind = 'boundary' and deleted_at is null
-         order by subkind, ordinal`,
-        [ids],
-      )
-    : { rows: [] };
-  return c.json(
-    r.rows.map((x) => ({
-      ...x,
-      walls: walls.rows.filter((w) => w.record_id === x.id),
-    })),
-  );
+  // 判定の規則は search.ts の currentWork に置いてある（MCP の current_work と共有する）。
+  return c.json(await currentWork(await db(), scopesOf(c)));
 });
 
 // 保存した直後に人が見る画面。**機械が付けた分類を人が確かめるためのもの。**

@@ -521,6 +521,64 @@ export type RecordHit = {
   score: number;
 };
 
+export type Wall = { record_id: string; subkind: string; text: string; key: string };
+
+export type WorkNow = {
+  id: string;
+  title: string;
+  status: string;
+  branch: string | null;
+  goal: string;
+  current_at: Date | null;
+  current_text: string | null;
+  phases: { id?: string; label?: string; state?: string }[];
+  next: { who?: string; text?: string }[];
+  updated_at: Date;
+  project: string;
+  /** 触ってはいけないもの／やらないと決めたこと。流れの外に置く */
+  walls: Wall[];
+};
+
+/**
+ * いま進行中の作業と、その外枠。
+ *
+ * **status を信じず phases の未完で判定する。**status は書き手が手で書く値で phases と
+ * 同期せず、全工程 done でも in-progress のまま残る（実測: 6/6 done で in-progress）。
+ *
+ * **phases を持たない record は最初から外す。**phases と next を書くのは trace の取り込みだけで、
+ * GitHub 由来の record はそこを通らないので永久に空のまま出る。取り込みを回すたびに
+ * 空の殻が 1 枚増える。
+ *
+ * **画面（/api/now）と MCP（current_work）で共有する。**同じ規則を 2 箇所に書くと、
+ * 片方だけ直したときに黙ってずれる。
+ */
+export async function currentWork(
+  client: pg.Client,
+  scopeIds: number[] | null,
+  limit = 5,
+): Promise<WorkNow[]> {
+  const r = await client.query<Omit<WorkNow, "walls">>(
+    `select r.id, r.title, r.status, r.branch, r.goal, r.current_at, r.current_text,
+            r.phases, r.next, r.updated_at, s.label as project
+     from record r join scope s on s.id = r.scope_id
+     where ($1::int[] is null or r.scope_id = any($1))
+       and r.phases is not null
+       and jsonb_array_length(r.phases) > 0
+       and exists (select 1 from jsonb_array_elements(r.phases) p where p->>'state' <> 'done')
+     order by r.updated_at desc nulls last limit $2`,
+    [scopeIds, limit],
+  );
+  const ids = r.rows.map((x) => x.id);
+  if (ids.length === 0) return [];
+  const walls = await client.query<Wall>(
+    `select record_id, subkind, text, key from node
+     where record_id = any($1) and kind = 'boundary' and deleted_at is null
+     order by subkind, ordinal`,
+    [ids],
+  );
+  return r.rows.map((x) => ({ ...x, walls: walls.rows.filter((w) => w.record_id === x.id) }));
+}
+
 /**
  * 記録そのものを引く。node は個々の判断で、これは**作業の全体像**（何を解こうとして、
  * どこを目指し、いまどこか）。「このプロジェクトは何をしているのか」の類は

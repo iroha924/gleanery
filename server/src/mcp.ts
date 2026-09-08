@@ -15,10 +15,12 @@ import { z } from "zod";
 import { connect, loadEnv } from "./db.ts";
 import { identify } from "./scope.ts";
 import {
+  currentWork,
   outsideScopes,
   type Polarity,
   quote,
   type RecordHit,
+  type Shown,
   scopeFamily,
   search,
   searchRecords,
@@ -189,6 +191,89 @@ server.registerTool(
       (rows.length ? quote(rows, lead) : lead ? `${lead}\n\n該当なし。` : "該当なし。") +
       (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
     return { content: [{ type: "text" as const, text }] };
+  },
+);
+
+server.registerTool(
+  "current_work",
+  {
+    title: "作業の現在地",
+    description:
+      "いまどこまで進んでいて、次に何をやることになっているかを引く。**質問は要らない。**" +
+      "セッションの最初や、しばらく離れていた作業場所へ戻ったときに呼ぶ。" +
+      "返るのは、目指すところ・いまの状況・残っている工程・次にやること・" +
+      "通ってはいけない道（制約 / やらないと決めたこと / 試して駄目だったこと）・未解決の問い。" +
+      "進行中の作業が無ければ、無いと返る。",
+    inputSchema: {
+      cwd: z.string().optional().describe("どの作業場所として引くか。省略時はサーバーの作業ディレクトリ"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ cwd }) => {
+    const c = await db();
+    const scope = await currentScopeIds(cwd);
+    if (!scope.registered) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `このディレクトリ（${scope.label}）はナレッジ DB に未登録です。記録がまだ 1 件もありません。`,
+          },
+        ],
+      };
+    }
+    const works = await currentWork(c, scope.ids, 2);
+    if (works.length === 0) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "進行中の作業はありません（工程が全部 done か、記録がまだありません）。",
+          },
+        ],
+      };
+    }
+
+    // **前置きは record の列から作る。**current / next / phases は node にならないので、
+    // 判断を何件集めても組み立てられない。
+    const lead = works
+      .map((w) => {
+        const left = (w.phases ?? []).filter((x) => x?.state !== "done");
+        const next = (w.next ?? [])
+          .filter((n) => n?.text)
+          .map((n) => `  - [${n.who === "human" ? "人" : "AI"}] ${n.text}`);
+        return [
+          `## ${w.title}（${w.project} / ${w.status}）`,
+          w.goal ? `目指すところ: ${w.goal}` : null,
+          w.current_text ? `いまの状況: ${w.current_text}` : null,
+          left.length
+            ? `残っている工程: ${left.map((x) => `${x.label ?? x.id}（${x.state ?? "?"}）`).join(" / ")}`
+            : null,
+          next.length ? `次にやること:\n${next.join("\n")}` : null,
+        ]
+          .filter(Boolean)
+          .join("\n");
+      })
+      .join("\n\n");
+
+    // 通ってはいけない道と未解決の問い。**quote() を通す** — 記録の本文は
+    // issue のコメントやコマンド出力を含むので、枠に入れずに出さない。
+    const ids = works.map((w) => w.id);
+    const rows = await c.query<Shown>(
+      `select n.kind, n.subkind, n.text,
+              coalesce(n.attrs->>'whyNot', n.attrs->>'context','') as ex,
+              n.attrs, r.id as record_id, s.label as scope_label, n.key, n.at
+       from node n join record r on r.id = n.record_id join scope s on s.id = n.scope_id
+       where n.record_id = any($1) and n.deleted_at is null
+         and (n.kind in ('boundary', 'question') or (n.kind = 'event' and n.subkind = 'dead_end'))
+       order by case n.kind when 'boundary' then 0 when 'question' then 1 else 2 end,
+                n.at desc nulls last
+       limit 40`,
+      [ids],
+    );
+    return {
+      content: [{ type: "text" as const, text: quote(rows.rows, `いまの作業:\n\n${lead}`) }],
+    };
   },
 );
 
