@@ -53,7 +53,12 @@ export function refsExist(ir, repoRoot, run) {
 
 export function cover(digest, ir) {
   const blob = JSON.stringify(ir);
-  const hit = (s) => Boolean(s) && blob.includes(s);
+  // **正規化は両側に当てる。**針だけ `key()` を通して記録側を生のまま照合すると、
+  // 句読点や鉤括弧が 1 つ入っただけで当たらない（実測: 回答「生きている。進めて良い」を
+  // そのまま書いた記録が、針「生きている進めて」に当たらず未記録と報告された）。
+  // 記録側を歪めて針に合わせることになるので、片側だけの正規化は誤りである。
+  const keyed = key(blob);
+  const hit = (s) => Boolean(s) && (blob.includes(s) || keyed.includes(s));
   const groups = [];
 
   // 人が選んだ決定。**これだけは落としてはいけない**ので、唯一の違反にする。
