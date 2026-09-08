@@ -38,8 +38,10 @@ alter table public.search_log force row level security;
 -- （20260906120000_readonly_role_for_mcp.sql）は、守っている対象がナレッジ本体である。
 -- 追記しかできず、読み戻せず、消せもしない観測ログはその対象ではない。
 -- select を与えないので、MCP は自分が書いたものを引くことすらできない。
+-- **シーケンスの権限は要らない。**`generated always as identity` は PostgreSQL 10 以降
+-- 内部で採番するので、`serial` の `nextval()` と違って権限を要求しない（実測: 外しても
+-- insert は通った）。与えると `last_value` が読め、「読み戻せない」に検索回数という穴が開く。
 grant insert on public.search_log to knowledge_ro;
-grant usage, select on sequence public.search_log_id_seq to knowledge_ro;
 drop policy if exists search_log_append_ro on public.search_log;
 create policy search_log_append_ro on public.search_log for insert to knowledge_ro with check (true);
 

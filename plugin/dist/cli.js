@@ -38487,6 +38487,8 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
         idOf.get(`${n.kind}|${n.key}`)
       ]);
     }
+    await client.query(`delete from relation r using node n
+       where r.from_node = n.id and n.record_id = $1 and r.source = 'record'`, [ir.meta.id]);
     for (const [fromKind, fromKey, toKey, kind] of [
       ...arr(ir.verification).flatMap((v) => v.verifies ? [["verification", v.id, v.verifies, "verifies"]] : []),
       ...arr(ir.decisions).flatMap((d) => d.supersededBy ? [["decision", d.supersededBy, d.id, "supersedes"]] : [])
@@ -39616,6 +39618,9 @@ ${USAGE}`);
                select 1 from relation rel
                join node v on v.id = rel.from_node
                where rel.to_node = n.id and rel.kind = 'verifies'
+                 -- **墓標を数えない。**取り込みは node を消さずに deleted_at を立てるので、
+                 -- IR から取り除いた検証が「通った検証」として残り、決定が一覧から消える。
+                 and v.deleted_at is null
                  and v.kind = 'verification' and v.subkind = 'pass'
              )
            order by r.updated_at desc

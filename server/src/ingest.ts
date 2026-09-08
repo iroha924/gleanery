@@ -482,6 +482,14 @@ export async function ingest(
     // 持っているのに、attrs へ文字列として入れるだけで relation 表が空のままだった
     // （実測: 8 種類の辺が 1 本も無く、検証 82 件のうち 61 件が決定を指していた）。
     // 文字列のままだと「決めたのに確かめていない」を数えられない。
+    // **この記録が張った辺は、いったん外してから張り直す。**追記だけだと、
+    // IR から検証を取り除いても辺が残り、「確かめた」と読める状態が消えない。
+    // 人が結んだ辺と自動で見つけた辺（source が record 以外）は触らない。
+    await client.query(
+      `delete from relation r using node n
+       where r.from_node = n.id and n.record_id = $1 and r.source = 'record'`,
+      [ir.meta.id],
+    );
     for (const [fromKind, fromKey, toKey, kind] of [
       ...arr(ir.verification).flatMap((v) =>
         v.verifies ? ([["verification", v.id, v.verifies, "verifies"]] as const) : [],

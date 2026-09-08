@@ -907,6 +907,9 @@ async function main(): Promise<void> {
                select 1 from relation rel
                join node v on v.id = rel.from_node
                where rel.to_node = n.id and rel.kind = 'verifies'
+                 -- **墓標を数えない。**取り込みは node を消さずに deleted_at を立てるので、
+                 -- IR から取り除いた検証が「通った検証」として残り、決定が一覧から消える。
+                 and v.deleted_at is null
                  and v.kind = 'verification' and v.subkind = 'pass'
              )
            order by r.updated_at desc

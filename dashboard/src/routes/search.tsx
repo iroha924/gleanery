@@ -22,6 +22,8 @@ const KINDS = [
   // **発言は既定では出ない**（サーバー側で外している。DB の 4 割が bot の定型文だった）。
   // 選ぶ手段が無いと二度と引けなくなるので、ここに置く。
   ["utterance", "発言"],
+  // リポジトリの Markdown。既定でも出るが、**選べないと「設計文書だけ」に絞れない**。
+  ["doc", "文書・ADR"],
 ] as const;
 
 type Search = { q?: string; dont?: boolean; kinds?: string[] };

@@ -14,7 +14,15 @@ import type pg from "pg";
 import { grepCode, type Root, readCode } from "./code.ts";
 import { type Env, embed } from "./db.ts";
 import { HOST } from "./scope.ts";
-import { type Hit, labelOf, type Polarity, type RecordHit, search, searchRecords } from "./search.ts";
+import {
+  type Hit,
+  labelOf,
+  logSearch,
+  type Polarity,
+  type RecordHit,
+  search,
+  searchRecords,
+} from "./search.ts";
 
 // 引いた記録をそのまま渡すと、答えの根拠がどこから来たか追えない。
 // 出自と番号を付けて、本文では [1] のように指させる。
@@ -327,10 +335,20 @@ export async function* chat(
   // 会議中に聞く用途があるので、ここは削れるだけ削る。
   const [queryVector] = await embed(env, [forSearch], "query");
   if (!queryVector) throw new Error("埋め込みが空で返った");
-  const [{ rows }, records] = await Promise.all([
+  const [found, records] = await Promise.all([
     search(client, env, { question: forSearch, scopeIds: body.scopeIds, limit: 12, queryVector }),
     searchRecords(client, queryVector, body.scopeIds, 3),
   ]);
+  const { rows } = found;
+  // **画面から聞かれたことも残す。**source に 'chat' を用意しておきながら
+  // どこからも書いていなかった。答えを持てなかった問いは、入口を問わず同じ穴である。
+  await logSearch(client, {
+    source: "chat",
+    scopeId: body.scopeIds[0] ?? null,
+    question: forSearch,
+    allScopes: false,
+    result: found,
+  });
 
   const sources: ChatSource[] = rows.map((h, i) => ({
     n: i + 1,
