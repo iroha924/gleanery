@@ -43,7 +43,7 @@ const USAGE = `使い方:
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
                                                  --yes は既に登録済みの場所を入れ替える）
 
-資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
+資格情報: ~/.claude/knowledge.env の KNOWLEDGE_DB_URL と VOYAGE_API_KEY`;
 
 // **引数の解釈を自前で書かない。**手書きのループは知らないフラグと `--name=値` を
 // 黙って捨て、`ingest --cwd=/other/repo` が警告も出さずに別の作業場所へ書いていた（実測）。
@@ -377,7 +377,7 @@ async function main(): Promise<void> {
   const env = loadEnv(cwd);
 
   if (cmd === "doctor") {
-    console.log(`SUPABASE_DB_URL      ${env.SUPABASE_DB_URL ? "あり" : "無い"}`);
+    console.log(`KNOWLEDGE_DB_URL      ${env.KNOWLEDGE_DB_URL ? "あり" : "無い"}`);
     console.log(`VOYAGE_API_KEY       ${env.VOYAGE_API_KEY ? "あり" : "無い"}`);
     console.log(
       `KNOWLEDGE_DB_URL_RO  ${

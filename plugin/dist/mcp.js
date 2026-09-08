@@ -39019,9 +39019,9 @@ async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
     throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
   }
-  const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.SUPABASE_DB_URL;
+  const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.KNOWLEDGE_DB_URL;
   if (!raw) {
-    throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
+    throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
   if (!CERT_DIR)
     throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
@@ -39032,11 +39032,11 @@ async function connect(env, { as = "admin" } = {}) {
   try {
     u = new URL(raw);
   } catch {
-    throw new Error("SUPABASE_DB_URL が URL として読めない（値は伏せる）");
+    throw new Error("KNOWLEDGE_DB_URL が URL として読めない（値は伏せる）");
   }
   const bad = ["ssl", "sslmode", "sslrootcert", "sslcert", "sslkey"].filter((k) => u.searchParams.has(k));
   if (bad.length) {
-    throw new Error(`SUPABASE_DB_URL の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`);
+    throw new Error(`KNOWLEDGE_DB_URL の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`);
   }
   const client = new esm_default.Client({
     host: u.hostname,

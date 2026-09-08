@@ -1,7 +1,7 @@
 ---
 paths:
   - "server/src/**"
-  - "supabase/migrations/**"
+  - "db/migrations/**"
 ---
 
 # ナレッジの形

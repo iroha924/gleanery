@@ -20,7 +20,7 @@ test("接続文字列で TLS を緩められない", async () => {
     "sslkey=/tmp/x",
   ]) {
     await assert.rejects(
-      connect({ SUPABASE_DB_URL: `postgres://u:p@h:5432/db?${q}` }),
+      connect({ KNOWLEDGE_DB_URL: `postgres://u:p@h:5432/db?${q}` }),
       /は使えない/,
       `${q} が素通りした`,
     );
@@ -30,7 +30,7 @@ test("接続文字列で TLS を緩められない", async () => {
 test("壊れた接続文字列の例外に、接続文字列そのものを乗せない", async () => {
   // URL の TypeError は err.input に入力全体を持ち、Node は未捕捉例外でそれも印字する。
   const secret = "postgres://user:ghp_SUPERSECRET@[bad";
-  await assert.rejects(connect({ SUPABASE_DB_URL: secret }), (e: unknown) => {
+  await assert.rejects(connect({ KNOWLEDGE_DB_URL: secret }), (e: unknown) => {
     const dump = `${e instanceof Error ? e.message : ""}${JSON.stringify(e, Object.getOwnPropertyNames(e))}`;
     assert.ok(!dump.includes("ghp_SUPERSECRET"), `例外に資格情報が乗っている: ${dump}`);
     return true;

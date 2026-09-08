@@ -99,7 +99,7 @@ cd server && node src/http.ts          # API（:8787）
 cd dashboard && ./node_modules/.bin/vite   # 画面（:5173）
 ```
 
-**先に Project を選ぶ**（Supabase の org → project と同じ考え方）。選ぶと、質問する・探す・
+**先に Project を選ぶ。**選ぶと、質問する・探す・
 記録のすべてがその Project の範囲だけを見る。
 
 | 画面 | ルート | 何をするところ |
@@ -191,7 +191,7 @@ mitos usage                                     OpenAI の使用量と残り
 server/      取り込み・検索・チャット・MCP・フック（依存は最小、テストは node:test）
 dashboard/   React + Vite + TanStack Router + shadcn
 plugin/      Claude Code / Codex へ配るもの（skills, hooks, bin, dist）
-supabase/    migrations
+db/          migrations（PostgreSQL の移行）
 ```
 
 検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と pgroonga の全文検索を
@@ -207,7 +207,7 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 
 | ロール | 誰が使うか | 書けるもの |
 |---|---|---|
-| `postgres`（`SUPABASE_DB_URL`） | CLI | 全部 |
+| `postgres`（`KNOWLEDGE_DB_URL`） | CLI | 全部 |
 | `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | **`search_log` への追記だけ**（読み戻しも削除もできない）。**未設定なら MCP とフックは繋がらない** |
 | `mitos_cfg`（`KNOWLEDGE_DB_URL_CFG`） | ダッシュボードの設定 | scope / scope_path / group / person / term / chat / search_log |
 
@@ -219,7 +219,7 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 
 ```bash
 bun install
-# supabase/migrations を対象プロジェクトへ適用
+# db/migrations を対象プロジェクトへ適用
 bun run bundle                       # plugin/dist を作る（MCP・フック・CLI）
 mitos doctor                         # 資格情報と接続を確かめる
 mitos import-github --cwd <repo>     # 最初の取り込み
@@ -230,12 +230,12 @@ mitos import-github --cwd <repo>     # 最初の取り込み
 
 ### 新しい PC で使い始める
 
-**ナレッジは Supabase にあるので、引く側は何もしなくても動く**（作業場所は git remote で引くため、
-パスに依存しない）。設定が要るのは**取り込む側**だけ。
+**ナレッジは VPS の PostgreSQL にあるので、引く側は何もしなくても動く**（作業場所は git remote で
+引くため、パスに依存しない）。設定が要るのは**取り込む側**だけ。
 
 ```bash
 # 1. 資格情報。リポジトリには入っていないので手で置く
-#    ~/.claude/knowledge.env に SUPABASE_DB_URL / KNOWLEDGE_DB_URL_RO /
+#    ~/.claude/knowledge.env に KNOWLEDGE_DB_URL / KNOWLEDGE_DB_URL_RO /
 #    KNOWLEDGE_DB_URL_CFG / VOYAGE_API_KEY
 
 # 2. リポジトリを置いて、プラグインを入れる

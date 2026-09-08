@@ -65,7 +65,7 @@ claude plugin update mitos     # 「Restart to apply changes」と出る
 ### 書き込みの境界
 
 **ナレッジを書けるのは CLI だけ。**MCP とフックは `knowledge_ro` で繋ぎ、権限の側で読み取りに限る
-（`supabase/migrations/20260906120000_readonly_role_for_mcp.sql`）。推論する層に資格情報を持たせない。
+（`db/migrations/20260906120000_readonly_role_for_mcp.sql`）。推論する層に資格情報を持たせない。
 
 例外は `search_log` 1 表だけで、**追記しかできず、読み戻せず、消せない**。
 
@@ -91,10 +91,8 @@ bun run dev        # API + ダッシュボード
 
 **`bun run dev` は前面でだけ使う。**背景で起動すると `--parallel` が TTY を取りにいって落ちる。
 
-資格情報は `~/.claude/knowledge.env`（`SUPABASE_DB_URL` / `KNOWLEDGE_DB_URL_RO` /
+資格情報は `~/.claude/knowledge.env`（`KNOWLEDGE_DB_URL` / `KNOWLEDGE_DB_URL_RO` /
 `KNOWLEDGE_DB_URL_CFG` / `VOYAGE_API_KEY`）。**リポジトリには置かない。**
-**`SUPABASE_DB_URL` という名前は Supabase を離れた後も残っている**（書き込み用の鍵という意味）。
-名前の付け替えは移行と分けるために保留した。
 
 ## 記録の置き場所
 
@@ -120,5 +118,9 @@ bun run dev        # API + ダッシュボード
 ## 詳しくは
 
 - `README.md` — 全体像、精度の測り方、新しい PC で使い始める、うまく動かないとき
-- `.claude/rules/knowledge-schema.md` — データの形（`server/src` と `supabase/migrations` で自動ロード）
+- `.claude/rules/knowledge-schema.md` — データの形（`server/src` と `db/migrations` で自動ロード）
+
+**2026-09-08 より前の移行ファイルは Supabase 上で書かれている。**そこに残る
+「Supabase の statement_timeout」「Supabase の公式サンプル」のような記述は**当時の実測の根拠**であって、
+いまの構成の説明ではない。判断の理由なので消していない。
 - `plugin/skills/trace/SKILL.md` — 記録を作る側の契約

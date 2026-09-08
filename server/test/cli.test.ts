@@ -56,7 +56,7 @@ test("知らないコマンドは DB へ繋ぐ前に落ちる", () => {
   assert.notEqual(r.code, 0);
   assert.match(r.out, /知らないコマンド: frobnicate/);
   // connect() が投げるのはこの文言。出ていれば接続を試みたということ。
-  assert.doesNotMatch(r.out, /Session pooler の接続文字列/, "DB へ繋ぎにいっている");
+  assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL が無い/, "DB へ繋ぎにいっている");
 });
 
 test("引数なしと --help は使い方を出して成功する", () => {

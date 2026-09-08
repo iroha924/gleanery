@@ -40,8 +40,8 @@ export function loadEnv(_from?: string): Env {
   return out;
 }
 
-// **公開 CA では検証できない証明書を使う。**Supabase の pooler は Supabase Root 2021 CA が、
-// 自前の PostgreSQL は自己署名の証明書を出す。どちらも公開 CA の連鎖に載っていない。
+// **公開 CA では検証できない証明書を使う。**自前の PostgreSQL は自己署名の証明書を出すので、
+// 公開 CA の連鎖に載っていない。
 // 検証を切ると、経路を握った相手が返した行がそのままフックの additionalContext と MCP の応答になる。
 //
 // **certs にあるものを全部 CA として読む。**接続先を替えるたびにファイル名を書き換えると、
@@ -78,9 +78,9 @@ export async function connect(
   }
   const raw =
     (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ??
-    env.SUPABASE_DB_URL;
+    env.KNOWLEDGE_DB_URL;
   if (!raw) {
-    throw new Error("SUPABASE_DB_URL が無い。~/.claude/knowledge.env に Session pooler の接続文字列を入れる");
+    throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
   if (!CERT_DIR) throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
   ca ??= fs
@@ -95,7 +95,7 @@ export async function connect(
   } catch {
     // **元の文字列を例外へ乗せない。**URL の TypeError は err.input に入力全体を持ち、
     // Node は未捕捉例外でその自前プロパティも印字する。接続文字列にはパスワードが入っている。
-    throw new Error("SUPABASE_DB_URL が URL として読めない（値は伏せる）");
+    throw new Error("KNOWLEDGE_DB_URL が URL として読めない（値は伏せる）");
   }
 
   // 接続文字列側の指定は pg の中で ssl オプションより後に効く。`?ssl=0` の 5 文字で
@@ -105,7 +105,7 @@ export async function connect(
   const bad = ["ssl", "sslmode", "sslrootcert", "sslcert", "sslkey"].filter((k) => u.searchParams.has(k));
   if (bad.length) {
     throw new Error(
-      `SUPABASE_DB_URL の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`,
+      `KNOWLEDGE_DB_URL の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`,
     );
   }
 
@@ -120,8 +120,8 @@ export async function connect(
   await client.connect();
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
   // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
-  // **search_path をロール任せにしない。**Supabase は postgres には extensions を入れるが、
-  // 自分で作ったロールには入らない。`<#>` は extensions にあるので、
+  // **search_path をロール任せにしない。**pgvector と pgroonga は `extensions` スキーマに置いてある。
+  // ロールごとの既定 search_path にそれが入る保証は無いので、`<#>` を使う
   // 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。
   await client.query("set search_path = public, extensions");
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。

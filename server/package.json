@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "作業のナレッジを Supabase(pgvector) へ貯めて、Claude と Codex から MCP で引く",
+  "description": "作業のナレッジを PostgreSQL(pgvector) へ貯めて、Claude と Codex から MCP で引く",
   "bin": {
     "knowledge": "./src/cli.ts"
   },

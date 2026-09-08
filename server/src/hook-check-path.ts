@@ -113,7 +113,7 @@ const timer = setTimeout(() => done(null), TIMEOUT_MS);
 let client: pg.Client | null = null;
 try {
   const env = loadEnv(process.env.KNOWLEDGE_ENV_DIR ?? cwd);
-  if (!env.SUPABASE_DB_URL) done(null);
+  if (!env.KNOWLEDGE_DB_URL) done(null);
   client = await connect(env, { as: "read" });
 
   const me = identify(cwd);

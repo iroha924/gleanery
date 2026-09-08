@@ -6,3 +6,4 @@ dashboard/.tanstack/
 codex-prompt-*.md
 server/migrate-*.ts
 .review-tmp/
+.review-tmp-ir.json

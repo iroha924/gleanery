@@ -8,7 +8,7 @@ create table asset (
   node_id     bigint references node(id) on delete set null,   -- どの決定・発見に紐づくか
 
   kind        text not null check (kind in ('screenshot','diagram','photo','other')),
-  storage_path text not null,        -- Supabase Storage 上のパス
+  storage_path text not null,        -- 画像の実体の置き場所。**取り込む経路はまだ無い**（実データ 0 行）
   mime        text,
   width       int,
   height      int,
