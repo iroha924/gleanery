@@ -1,0 +1,92 @@
+# mitos で作業するとき
+
+過去の作業から「なぜそうしたか」を貯めて、Claude Code と Codex から引けるようにする道具。
+TypeScript / bun、Supabase（pgvector + pgroonga）、埋め込みは Voyage、生成は OpenAI。
+
+**このファイルは Claude と Codex の両方に効く。**Claude 側は `CLAUDE.md` が 1 行で取り込んでいる。
+
+## 触る前に知っておくこと
+
+### MCP を直したら、版を上げないと誰にも届かない
+
+**`bun run bundle` だけでは Claude Code に届かない。**プラグインは
+`~/.claude/plugins/cache/mitos/mitos/<版>/` へ複製されたものから動き、**複製は版が変わったときしか
+起きない。**セッションを張り直しても、`claude plugin marketplace update` を通しても入れ替わらない。
+
+実測（2026-09-08）: `server/src/mcp.ts` に丸 1 日ぶんの変更を入れてビルドし直しても、
+キャッシュは 2 日前のままで、新しいツール（`current_work`）はどのセッションにも見えていなかった。
+
+```bash
+bun run bundle
+# plugin/.claude-plugin/plugin.json と .claude-plugin/marketplace.json の version を上げる
+claude plugin update mitos     # 「Restart to apply changes」と出る
+# セッションを張り直す
+```
+
+**届いたかはツールの一覧で確かめる。**足したツールが見えなければ古いまま。
+
+**CLI は別経路。**`plugin/bin/mitos` は `plugin/dist/cli.js` を直接読むので、この手順は要らない。
+つまり**片方だけ新しくなる。CLI で動いたことは、MCP で動く証拠にならない。**
+
+### 人間向けの面で動いても、AI 向けの面は別に確かめる
+
+このリポジトリで見つかる欠陥は、ほぼ 1 種類に集約する。
+**書いたものが AI 向けの出口に届いておらず、人間向けの出口では動くので気付けない。**
+
+| 人間向け | AI 向け |
+|---|---|
+| ダッシュボード / `mitos search` の標準出力 | `quote()` が返す文字列、MCP のツール応答 |
+| README | `AGENTS.md`、`CLAUDE.md`、`.claude/rules` |
+| `plugin/bin/mitos`（CLI） | `plugin/dist/mcp.js`（プラグインのキャッシュ経由） |
+
+**両方を実際に叩いて確かめる。**片方の成功をもう片方の証拠にしない。
+
+### 書き込みの境界
+
+**ナレッジを書けるのは CLI だけ。**MCP とフックは `knowledge_ro` で繋ぎ、権限の側で読み取りに限る
+（`supabase/migrations/20260906120000_readonly_role_for_mcp.sql`）。推論する層に資格情報を持たせない。
+
+例外は `search_log` 1 表だけで、**追記しかできず、読み戻せず、消せない**。
+MCP は接続時にセッションを read only にしているので、そこへ書くには
+`begin read write` を明示する（`server/src/search.ts` の `logSearch`）。
+
+**ナレッジ本体（`record` / `node`）へ MCP から書く道を作らない。**
+
+## コマンド
+
+```bash
+bun run check      # biome + tsc（server / dashboard）
+bun run test       # node:test
+bun run bundle     # plugin/dist を作り直す（MCP・フック・CLI）
+bun run eval       # 答えの正しさを測る
+bun run dev        # API + ダッシュボード
+```
+
+**`bun run dev` は前面でだけ使う。**背景で起動すると `--parallel` が TTY を取りにいって落ちる。
+
+資格情報は `~/.claude/knowledge.env`（`SUPABASE_DB_URL` / `KNOWLEDGE_DB_URL_RO` /
+`KNOWLEDGE_DB_URL_CFG` / `VOYAGE_API_KEY`）。**リポジトリには置かない。**
+
+## 記録の置き場所
+
+**HTML と Markdown の記録ファイルは廃止済み。**正本は DB で、人が読む面はダッシュボード
+（`/now` が現在地）。`*.progress.html` / `*.progress.md` を作り直さない。
+
+取り込み口は 5 つ。**新しい取り込み元を足すときは、既存のどれかと同じ形にする。**
+
+| 口 | 何が入るか |
+|---|---|
+| `mitos ingest` | `/mitos:trace` が書いた IR（判断そのもの） |
+| `mitos import-github` | PR と issue の本体、レビューと議論 |
+| `mitos import-linear` | Linear の issue とコメント |
+| `mitos import-sessions` | Claude Code の会話（1 往復 = 1 件） |
+| `mitos import-docs` | リポジトリの Markdown（見出しで節に割る） |
+
+`mitos sync` が日次でまとめて回す（launchd。毎日 6:00）。**新しい口を足したら sync にも繋ぐ。**
+繋がないと、人が手で叩いたときしか入らない。
+
+## 詳しくは
+
+- `README.md` — 全体像、精度の測り方、うまく動かないとき
+- `.claude/rules/knowledge-schema.md` — データの形（`server/src` と `supabase/migrations` で自動ロード）
+- `plugin/skills/trace/SKILL.md` — 記録を作る側の契約
