@@ -66,7 +66,9 @@ export function identify(dir: string): Ident {
   // 根まで遡るのに、パスは渡されたディレクトリのままだった。リポジトリの途中で
   // `mitos search` を叩くだけで「この scope の置き場所」がサブディレクトリに書き換わり、
   // 翌朝の同期がそこを根として読んで、根から取った節を全部墓標にする。
-  const top = remote ? git("rev-parse", "--show-toplevel") : null;
+  // **remote の有無で分けない。**remote が無い git リポジトリでは識別子が `path:` になるので、
+  // 基点がずれるとサブディレクトリごとに別の作業場所ができる。
+  const top = git("rev-parse", "--show-toplevel");
   const abs = top || given;
   const rest = remote ? remote.split("/").slice(1) : [];
   return {

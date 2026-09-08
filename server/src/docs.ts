@@ -238,7 +238,16 @@ export async function ingestDocs(
     for (const s of sections(rel, body)) all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
   }
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
-  if (all.length === 0) return `${label} / Markdown なし${skipped}`;
+  // **0 件でも早く返さない。**文書を全部消した（README を廃止して DB へ移した等）ときに
+  // ここで戻ると墓標を立てる処理へ到達せず、撤回した記述が永久に検索で返る。
+  // 「上書きで編集される取り込み元は、消えたものを落とす」の対象がまさにこの場合である。
+  if (all.length === 0) {
+    const gone = await client.query(
+      "update node set deleted_at = now() where record_id = $1 and kind = 'doc' and deleted_at is null",
+      [`docs:${ident}`],
+    );
+    return `${label} / Markdown なし${skipped}${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}`;
+  }
 
   await client.query(
     `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)

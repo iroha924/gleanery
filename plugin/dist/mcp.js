@@ -39135,7 +39135,7 @@ function identify(dir) {
     }
   };
   const remote = normalizeRemote(git("remote", "get-url", "origin"));
-  const top = remote ? git("rev-parse", "--show-toplevel") : null;
+  const top = git("rev-parse", "--show-toplevel");
   const abs = top || given;
   const rest = remote ? remote.split("/").slice(1) : [];
   return {

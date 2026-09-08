@@ -23970,8 +23970,10 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
       all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
   }
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
-  if (all.length === 0)
-    return `${label} / Markdown なし${skipped}`;
+  if (all.length === 0) {
+    const gone = await client.query("update node set deleted_at = now() where record_id = $1 and kind = 'doc' and deleted_at is null", [`docs:${ident}`]);
+    return `${label} / Markdown なし${skipped}${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}`;
+  }
   await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
      values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
      on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${label} の文書`]);
@@ -37834,7 +37836,7 @@ function identify(dir) {
     }
   };
   const remote = normalizeRemote(git("remote", "get-url", "origin"));
-  const top = remote ? git("rev-parse", "--show-toplevel") : null;
+  const top = git("rev-parse", "--show-toplevel");
   const abs = top || given;
   const rest = remote ? remote.split("/").slice(1) : [];
   return {
