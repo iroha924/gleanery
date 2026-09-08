@@ -39023,7 +39023,7 @@ var USAGE = `使い方:
   mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
   mitos import-linear --team <名前> [--group <束>] [--all]
                                                  Linear の issue とコメントを取り込む
-  mitos import-sessions [--cwd <dir>]            Claude Code / Codex の会話をナレッジにする（sync からも呼ばれる）
+  mitos import-sessions [--cwd <dir>]            Claude Code の会話をナレッジにする（sync からも呼ばれる）
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。

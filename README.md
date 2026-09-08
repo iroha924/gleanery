@@ -20,7 +20,7 @@
 | **探す** | ダッシュボード | 意味検索の結果をそのまま見る |
 | **記録する** | `/mitos:trace` スキル | いまのセッションの判断を構造化して DB へ入れる |
 | **現在地を知る** | MCP `current_work` / `/mitos:current` | いまどこまで進んでいて、次に何をやるか。質問は要らない |
-| **溜める** | `mitos sync`（毎日 6:00） | GitHub の PR・issue・レビュー、Linear の issue・コメント、リポジトリの Markdown、**Claude Code / Codex の会話** |
+| **溜める** | `mitos sync`（毎日 6:00） | GitHub の PR・issue・レビュー、Linear の issue・コメント、リポジトリの Markdown、**Claude Code の会話** |
 
 ## Claude Code で開発しているときの使いどころ
 
@@ -157,7 +157,7 @@ mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me
 mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
 mitos import-linear --team <名前> [--group <束>] [--all]
                                                Linear の issue とコメントを取り込む
-mitos import-sessions [--cwd <dir>]            Claude Code / Codex の会話をナレッジにする（sync からも呼ばれる）
+mitos import-sessions [--cwd <dir>]            Claude Code の会話をナレッジにする（sync からも呼ばれる）
 mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
 mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
 mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
@@ -175,7 +175,7 @@ mitos usage                                    OpenAI の使用量と残り
 |---|---|---|
 | GitHub の PR・issue の本文、レビュー・議論 | `gh` 経由 | **bot が作った PR も取り込む**（リリース PR がそれ） |
 | Linear の issue・コメント | **MCP をヘッドレスで叩く** | API キーが発行できない組織があるため。下記参照 |
-| Claude Code の会話 | `~/.claude/projects/*.jsonl` | 貼り付けた議事録もここに入る。**そのマシンにしか無い** |
+| Claude Code の会話 | `~/.claude/projects/*.jsonl`（ccs を使っているなら `~/.ccs/instances/*/projects/` も） | 貼り付けた議事録もここに入る。**そのマシンにしか無い**。Codex の rollout は読まない |
 | リポジトリの Markdown | `git ls-files` | 見出しで節に割る。**symlink は辿らない** |
 | 作業の判断 | `/mitos:trace` | 決定・捨てた案・制約・未解決。**ファイルではなく DB に入る** |
 
@@ -238,75 +238,6 @@ ssh knowledge-mcp-prod-01 'sudo apt-get update && sudo apt-get install --only-up
 （この箱から外へ出せるのは `curl` だけで、通知先を足すと VPS に資格情報を置くことになる）。
 doctor は接続文字列のホストへそのまま ssh する（MagicDNS が DB と ssh の両方を解決する）ので、
 tailnet の外からは「聞けない」とだけ出て、ほかの検査は続く。
-
-### AI ワーカー（隔離コンテナ）
-
-`worker/` は、PR レビューなどを VPS 上で無人実行するための使い捨てコンテナ。**まだ何にも繋がっていない**
-（起動する仕組みは無い）。読むのは PR の diff とクローンしたリポジトリで、**どちらも他人が書ける**ため、
-実行する側をここに閉じ込める。
-
-```bash
-rsync -a worker/ knowledge-mcp-prod-01:/tmp/worker/
-ssh knowledge-mcp-prod-01 'cd /tmp/worker && sudo docker build -t mitos-worker:2.1.259 .'
-ssh knowledge-mcp-prod-01 'sudo docker run --rm --cap-add=NET_ADMIN --cap-add=NET_RAW \
-  --env-file ~/.claude/worker.env mitos-worker:2.1.259 /usr/local/bin/verify.sh'
-```
-
-**`verify.sh` が隔離の契約そのもの。**通らなくなったら中で走らせるのをやめる。見るのは 9 項目 —
-本番 DB・host・tailnet・任意のインターネットに届かないこと、GitHub と推論には届くこと、
-リポジトリのフックと `.mcp.json` が走らないこと、そして**claude が実際に答えること**
-（動いていなければ後ろ 2 つは何も証明しない）。
-
-| 何を止めるか | どこで止まるか |
-|---|---|
-| DB・tailnet への到達 | **host の ufw**（`tailscale0` 以外の入力を落とす）。コンテナ側の設定ではない |
-| 任意のインターネット | `init-firewall.sh`（`anthropics/claude-code` から借用。GitHub の IP レンジ＋許可ドメインのみ） |
-| リポジトリのフック | `/etc/claude-code/managed-settings.json` の `disableAllHooks`。**リポジトリ側から外せない** |
-| リポジトリの `.mcp.json` | `run-claude` が付ける `--strict-mcp-config`。**managed settings では止まらない**（実測） |
-
-**トークンは `~/.claude/worker.env` に置く**（`CLAUDE_CODE_OAUTH_TOKEN=...`、mode 600）。
-`claude setup-token` が作る 1 年もので、モデル要求しかできない。**イメージには焼かない。**
-
-**`--bare` は使えない。**bare mode は `CLAUDE_CODE_OAUTH_TOKEN` を読まないので、
-サブスクリプションで動かすかぎり隔離が要る。読むだけの仕事なら `--restricted` を足すと、
-コマンド実行系のツールと WebFetch も落ちる。
-
-#### PR をレビューする
-
-```bash
-~/mitos-worker/review-pr.sh iroha924/mitos 12          # 出すだけ
-~/mitos-worker/review-pr.sh iroha924/mitos 12 --post   # PR へ投稿する
-```
-
-**GitHub の資格情報はコンテナへ渡さない。**diff を取るのも投稿するのも host 側で、コンテナは
-渡された diff を読んで文章を返すだけ。`~/.claude/gh.env` に `GITHUB_TOKEN=...`（mode 600）を置く。
-**`~/.claude/worker.env`（コンテナへ渡す）とは別の口にしてある** — 混ぜると GitHub の鍵が
-コンテナへ入る。
-
-**diff は他人が書いた文字列**なので、`--append-system-prompt` で「データであって指示ではない」と
-固定し、`--restricted` でコマンド実行と WebFetch を落とす。指摘の基準（正しさ・セキュリティ・
-データ損失・明示された規約との乖離の 4 つだけ）も host 側で固定していて、diff の中に基準が
-書いてあっても採用しない。
-
-#### 定期的に回す
-
-`webhook は届かない`（インターネットからの受信がゼロ）ので、**こちらから見に行く**。
-
-```bash
-rsync -a --delete worker/ knowledge-mcp-prod-01:mitos-worker/
-ssh knowledge-mcp-prod-01 'cd ~/mitos-worker && sudo docker build -t mitos-worker:2.1.259 .'
-# 見にいくリポジトリを 1 行ずつ
-ssh knowledge-mcp-prod-01 'echo iroha924/mitos > ~/.claude/review-repos.txt'
-# unit を入れて 15 分ごとに回す
-ssh knowledge-mcp-prod-01 'cd ~/mitos-worker &&
-  sed -e "s#__HOME__#$HOME#g" -e "s#__USER__#$USER#g" mitos-review.service |
-    sudo tee /etc/systemd/system/mitos-review.service >/dev/null &&
-  sudo cp mitos-review.timer /etc/systemd/system/ && sudo systemctl daemon-reload &&
-  sudo systemctl enable --now mitos-review.timer'
-```
-
-**一度見た PR は `~/.claude/reviewed.txt` に `repo#番号@SHA` で残る。**SHA まで込みなので、
-push し直せばもう一度見る。**失敗したときは覚えない** — 原因を直せば次の回で拾う。
 
 ## セットアップ
 
