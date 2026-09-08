@@ -14,7 +14,16 @@ import type pg from "pg";
 import { z } from "zod";
 import { connect, loadEnv } from "./db.ts";
 import { identify } from "./scope.ts";
-import { outsideScopes, type Polarity, quote, scopeFamily, search, whatAboutPath } from "./search.ts";
+import {
+  outsideScopes,
+  type Polarity,
+  quote,
+  type RecordHit,
+  scopeFamily,
+  search,
+  searchRecords,
+  whatAboutPath,
+} from "./search.ts";
 
 const env = loadEnv(process.env.KNOWLEDGE_ENV_DIR ?? process.cwd());
 // **接続そのものではなく、接続の約束を持つ。**ツール呼び出しは同時に来るので、
@@ -86,6 +95,30 @@ const server = new McpServer(
 // annotations は、このサーバーが読み取りしかしないことをクライアントへ伝えるために付ける。
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
+/**
+ * 検索結果の前に置く「いま何をしているか」。
+ *
+ * **判断の断片からは組み立てられない。**current / next / phases は node にならず
+ * record の列にしか入らないので、node を引く search() では原理的に出てこない。
+ * searchRecords() は前からあったが、呼んでいたのはダッシュボードのチャットだけで、
+ * MCP 越しの Claude と Codex には届いていなかった。
+ */
+const overview = (records: RecordHit[]): string =>
+  records
+    .map((r) => {
+      const next = (r.next ?? [])
+        .filter((n) => n?.text)
+        .map((n) => `  - [${n.who === "human" ? "人" : "AI"}] ${String(n.text).slice(0, 200)}`);
+      return [
+        `## ${r.title}（${r.scope_label} / ${r.status}）`,
+        r.current_text ? `いまの状況: ${r.current_text.slice(0, 700)}` : null,
+        next.length ? `次にやること:\n${next.join("\n")}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+
 server.registerTool(
   "search_knowledge",
   {
@@ -149,8 +182,12 @@ server.registerTool(
           `（${scope?.registered ? "関連付けの設定漏れ" : "未登録のため"}かもしれません）。all_scopes: true で見られます。`,
       );
     }
+    // 検索本体の埋め込みを使い回すので、API 呼び出しは増えない（outside と同じ形）。
+    const records = await searchRecords(c, queryVector, scope ? scope.ids : undefined, 2);
+    const lead = records.length ? `いま進行中の作業:\n\n${overview(records)}` : "";
     const text =
-      (rows.length ? quote(rows) : "該当なし。") + (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
+      (rows.length ? quote(rows, lead) : lead ? `${lead}\n\n該当なし。` : "該当なし。") +
+      (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
     return { content: [{ type: "text" as const, text }] };
   },
 );

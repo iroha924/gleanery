@@ -200,6 +200,10 @@ export function flatten(ir: Ir): Node[] {
   for (const v of arr(ir.verification)) {
     push({
       kind: "verification",
+      // **result を subkind に載せる。**札は subkind からしか決まらないので、
+      // status 列だけに入れていたときは pass も fail も「【検証】」で返っていた。
+      // decision が status を subkind に載せているのと同じ形（上の 158 行）。
+      subkind: v.result ?? null,
       key: v.id,
       text: v.what,
       at: v.at,

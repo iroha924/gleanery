@@ -5215,6 +5215,9 @@ var LABEL = {
   "utterance/meeting": "【会議での発言】",
   "utterance/session": "【作業中のやりとり】",
   "utterance/null": "【発言】",
+  "verification/pass": "【検証・通った】",
+  "verification/fail": "【検証・落ちた。直っていない】",
+  "verification/not-run": "【検証・未実行。確かめていない】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
 };
@@ -5319,9 +5322,13 @@ function quote(rows, lead = "") {
   const parts = [];
   let used = 0;
   for (const x of rows) {
+    const a = x.attrs ?? {};
+    const bad = (a.consequences ?? []).filter((c) => c?.good === false && c.text).map((c) => c.text);
     const one = [
       `${labelOf(x)}${cut(x.text, PER_ROW)}`,
       x.ex ? `  理由: ${cut(x.ex, PER_ROW)}` : null,
+      a.confirmation ? `  確かめ方: ${cut(a.confirmation, PER_ROW)}` : null,
+      bad.length ? `  引き受けた不利: ${cut(bad.join(" / "), PER_ROW)}` : null,
       `  出自: ${x.scope_label} / ${x.record_id} / ${x.key}${x.at ? ` / ${day(x.at)}` : ""}`
     ].filter(Boolean).join(`
 `);

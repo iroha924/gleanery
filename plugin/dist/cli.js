@@ -24073,6 +24073,9 @@ var LABEL = {
   "utterance/meeting": "【会議での発言】",
   "utterance/session": "【作業中のやりとり】",
   "utterance/null": "【発言】",
+  "verification/pass": "【検証・通った】",
+  "verification/fail": "【検証・落ちた。直っていない】",
+  "verification/not-run": "【検証・未実行。確かめていない】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】"
 };
@@ -24130,7 +24133,7 @@ async function search(client, env, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
-    ...kinds?.length ? [] : ["n.kind <> 'utterance'"],
+    ...kinds?.length ? [] : ["n.kind <> 'utterance'", "not (n.kind = 'event' and n.subkind = 'pr')"],
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
   const values = filters.map((f) => f.value);
@@ -24230,9 +24233,13 @@ function quote(rows, lead = "") {
   const parts = [];
   let used = 0;
   for (const x of rows) {
+    const a = x.attrs ?? {};
+    const bad = (a.consequences ?? []).filter((c) => c?.good === false && c.text).map((c) => c.text);
     const one = [
       `${labelOf(x)}${cut(x.text, PER_ROW)}`,
       x.ex ? `  理由: ${cut(x.ex, PER_ROW)}` : null,
+      a.confirmation ? `  確かめ方: ${cut(a.confirmation, PER_ROW)}` : null,
+      bad.length ? `  引き受けた不利: ${cut(bad.join(" / "), PER_ROW)}` : null,
       `  出自: ${x.scope_label} / ${x.record_id} / ${x.key}${x.at ? ` / ${day(x.at)}` : ""}`
     ].filter(Boolean).join(`
 `);
@@ -24358,6 +24365,7 @@ function flatten(ir) {
   for (const v of arr(ir.verification)) {
     push({
       kind: "verification",
+      subkind: v.result ?? null,
       key: v.id,
       text: v.what,
       at: v.at,
@@ -25125,6 +25133,7 @@ AI: ${e.reply}`,
 // server/src/cli.ts
 var USAGE = `使い方:
   mitos ingest <記録.html|ir.json> [--cwd <dir>]  記録を取り込む（未登録なら作業場所も登録）
+  mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す）
   mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
                                                  引けるかを確かめる
   mitos scopes                                   登録済みの作業場所と束
@@ -25288,6 +25297,7 @@ async function main() {
   const polarity = opt.dont ? "dont" : undefined;
   const KNOWN = [
     "ingest",
+    "export",
     "search",
     "scopes",
     "candidates",
@@ -25426,6 +25436,19 @@ ${USAGE}`);
       if (r.keptScope !== null) {
         console.log(`※ この記録は最初に取り込んだ作業場所（id=${r.keptScope}）に留めました。1 つの記録が 2 つに割れるのを防ぐためです。`);
       }
+      return;
+    }
+    if (cmd === "export") {
+      const id = rest[0];
+      if (!id)
+        throw new Error(`書き出す記録の id を指定する
+
+${USAGE}`);
+      const r = await c.query("select raw from record where id = $1", [id]);
+      const row = r.rows[0];
+      if (!row)
+        throw new Error(`記録 ${id} が無い。mitos scopes で登録済みの作業場所を見る`);
+      process.stdout.write(JSON.stringify(row.raw));
       return;
     }
     if (cmd === "import-github") {

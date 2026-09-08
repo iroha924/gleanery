@@ -18,6 +18,7 @@ import { ingestSession, readSession } from "./session.ts";
 
 const USAGE = `使い方:
   mitos ingest <記録.html|ir.json> [--cwd <dir>]  記録を取り込む（未登録なら作業場所も登録）
+  mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す）
   mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
                                                  引けるかを確かめる
   mitos scopes                                   登録済みの作業場所と束
@@ -277,6 +278,7 @@ async function main(): Promise<void> {
   const polarity = opt.dont ? ("dont" as const) : undefined;
   const KNOWN = [
     "ingest",
+    "export",
     "search",
     "scopes",
     "candidates",
@@ -453,6 +455,22 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (cmd === "export") {
+      const id = rest[0];
+      if (!id) throw new Error(`書き出す記録の id を指定する\n\n${USAGE}`);
+      const r = await c.query<{ raw: unknown }>("select raw from record where id = $1", [id]);
+      const row = r.rows[0];
+      if (!row) throw new Error(`記録 ${id} が無い。mitos scopes で登録済みの作業場所を見る`);
+      // **列コメントが宣言している役目を、初めて実行できる形にする。**
+      // `raw jsonb not null, -- 取り込んだ IR 全文。投影の再構築元` と書いてあるのに、
+      // 再構築するコマンドが無かった。これで「DB は下流」が検査になる:
+      //   mitos export <id> > ir.json && progress render ir.json
+      //
+      // **バイト一致はしない。**jsonb はキー順を正規化するので、内蔵 IR の並びが変わる。
+      // 一致するのは中身で、キー順を揃えたハッシュで確かめる（実測で確認済み）。
+      process.stdout.write(JSON.stringify(row.raw));
+      return;
+    }
     if (cmd === "import-github") {
       console.log(`取り込み完了: ${await syncGithub(c, env, cwd)}`);
       return;

@@ -66,6 +66,12 @@ const LABEL: Record<string, string> = {
   // Claude Code の作業中の会話。PR や issue に残らない前提がここにある。
   "utterance/session": "【作業中のやりとり】",
   "utterance/null": "【発言】",
+  // **検証は結果まで札に出す。**ここが "【検証】" 1 種類だったとき、pass 63 件と
+  // fail 3 件が同じ字面で返っていた（実測）。落ちた検証を通った検証と読み違えると、
+  // 直っていないものが「確かめた」として扱われる。
+  "verification/pass": "【検証・通った】",
+  "verification/fail": "【検証・落ちた。直っていない】",
+  "verification/not-run": "【検証・未実行。確かめていない】",
   "verification/null": "【検証】",
   "question/null": "【未解決の問い】",
 };
@@ -167,12 +173,16 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
    * 人の発言にも「@codex review」のような定型が並ぶ。判断を引く道具でこれが上位に来ると、
    * 探しているものが押し出される。**PR は event/pr なので、外しても残る。**
    *
-   * 発言そのものを引きたいときは、種別を指定するか chat の find_utterances を使う。
+   * **PR 本文も同じ理由で外す。**実測: event/pr は 24 件で本文が平均 5,015 バイトあり、
+   * 全件返すと TOTAL 48,000 バイトの大半を占めたうえ、PER_ROW で切られて後半が届かない。
+   * 中身の設計判断は decisions として別に入っているので、外しても判断は残る。
+   *
+   * どちらも、種別を指定すれば出る（kinds: ["utterance"] / ["event"]）。
    */
   const clauses = (from: number): string =>
     [
       "n.deleted_at is null",
-      ...(kinds?.length ? [] : ["n.kind <> 'utterance'"]),
+      ...(kinds?.length ? [] : ["n.kind <> 'utterance'", "not (n.kind = 'event' and n.subkind = 'pr')"]),
       ...filters.map((f, i) => f.sql(from + i)),
     ].join(" and ");
   const values = filters.map((f) => f.value);
@@ -424,6 +434,12 @@ export type Shown = {
   record_id: string;
   key: string;
   at: Date | null;
+  /**
+   * **省略可能にする。**必須にすると、attrs を選んでいない `PathHit`（whatAboutPath）と
+   * `Advice`（adviceForPath）が構造的に代入できなくなり、フックの経路まで巻き込む。
+   * 省略可能なら、attrs を選んでいる search() の結果でだけ中身が出る。
+   */
+  attrs?: Record<string, unknown> | null;
 };
 
 /**
@@ -458,9 +474,20 @@ export function quote(rows: Shown[], lead = ""): string {
   const parts: string[] = [];
   let used = 0;
   for (const x of rows) {
+    // **決定に添えた 2 つは、書かせておいて一度も出していなかった。**
+    // confirmation は「この決定が守られているかの確かめ方」で、レビュー観点そのもの。
+    // consequences の good:false は「承知で引き受けた不利」で、見るべき所の名指しである。
+    // どちらも validate() が必須にしていて、実データは 38/38 件が埋まっている。
+    const a = (x.attrs ?? {}) as {
+      confirmation?: string | null;
+      consequences?: { text?: string; good?: boolean }[] | null;
+    };
+    const bad = (a.consequences ?? []).filter((c) => c?.good === false && c.text).map((c) => c.text);
     const one = [
       `${labelOf(x)}${cut(x.text, PER_ROW)}`,
       x.ex ? `  理由: ${cut(x.ex, PER_ROW)}` : null,
+      a.confirmation ? `  確かめ方: ${cut(a.confirmation, PER_ROW)}` : null,
+      bad.length ? `  引き受けた不利: ${cut(bad.join(" / "), PER_ROW)}` : null,
       `  出自: ${x.scope_label} / ${x.record_id} / ${x.key}${x.at ? ` / ${day(x.at)}` : ""}`,
     ]
       .filter(Boolean)
@@ -487,6 +514,8 @@ export type RecordHit = {
   problem: string;
   goal: string;
   current_text: string | null;
+  /** 次にやること。`[{who: "ai" | "human", text}]` */
+  next: { who?: string; text?: string }[];
   updated_at: Date;
   scope_label: string;
   score: number;
@@ -511,7 +540,7 @@ export async function searchRecords(
   }
   params.push(limit);
   const r = await client.query<RecordHit>(
-    `select r.id, r.title, r.status, r.problem, r.goal, r.current_text, r.updated_at,
+    `select r.id, r.title, r.status, r.problem, r.goal, r.current_text, r.next, r.updated_at,
             s.label as scope_label,
             (r.embedding <#> $1::extensions.vector) * -1 as score
      from record r join scope s on s.id = r.scope_id
