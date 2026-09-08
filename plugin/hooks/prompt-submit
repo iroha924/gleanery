@@ -1,0 +1,22 @@
+#!/bin/sh
+# 毎ターン、プロンプトの直前に置く問い。
+#
+# SessionStart の <mitos> はセッションに 1 回きりで、ターンが進むと文脈の奥へ流れる。
+# 実測（2026-09-08）: 案内が 3 層あっても（SessionStart / skill / MCP の instructions）
+# 「現在地を教えて」で search_knowledge を呼ばなかった。**4 層目の案内では直らない。**
+# 直すべきは文面ではなく、発火する位置である。
+#
+# **本文を短く保つ。**毎ターン載るので、長いと数ターンで壁紙になって読み飛ばされる。
+# 「常に促す」形は d-session-end-hint:2 で一度棄却されており、ここはその形に当たる。
+# 唯一の対抗手段が短さと、毎回答えを迫る書き方（覚えておけ、ではなく、決めろ）。
+#
+# UserPromptSubmit は素の stdout をそのまま文脈へ入れる（公式 hooks リファレンス。
+# SessionStart / UserPromptExpansion / PostModelSwitch と並ぶ例外）。
+# JSON も additionalContext も要らないので、ホスト別の分岐を持たない。
+cat <<'EOF'
+<mitos-turn>
+引くかを決める。方針を決める / 実装に入る / この作業場所の経緯・現在地を答える
+のどれかなら、答える前に search_knowledge を引く（棄却済みの確認は
+only_rejected_or_forbidden: true）。どれでもなければ黙って進む。
+</mitos-turn>
+EOF
