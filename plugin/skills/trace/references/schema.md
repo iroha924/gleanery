@@ -107,7 +107,9 @@
 
 ## verification
 
-`[{ id, at, what, cmd, result, output, whyNotRun }]`
+`[{ id, at, what, cmd, result, output, evidence[], verifies, note, whyNotRun }]`
+
+**`evidence` と `verifies` は散文だけに書かない。**この一覧に無いと、コマンドを持たない検証を書こうとした書き手は証跡の置き場を見つけられず、無い欄を発明する（実測: `how` と書いて 8 件弾かれた）。
 
 `verifies` に**どの決定を確かめたか**を書く（`d-xxx`、別の記録なら `<記録の id>#d-xxx`）。
 これが無いと「守ると決めたのに一度も確かめていない決定」を引けない。

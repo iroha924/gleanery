@@ -240,7 +240,7 @@
       "cmd": "bin/rails runner scripts/bench_pdf.rb",
       "result": "pass",
       "output": "10000 invoices in 723.4s (4 workers)",
-      "verifies": "d-async-worker"
+      "verifies": "まったくの ゴミ !!!#hello world"
     },
     {
       "id": "v-suite",
@@ -255,21 +255,8 @@
       "at": "2026-09-04T19:40:00+09:00",
       "what": "本番の月次バッチが 30 分未満で終わる",
       "result": "not-run",
-      "whyNotRun": "次の月次実行が 10 月 1 日のため、それまで観測できない"
-    },
-    {
-      "id": "v-review-by-agent",
-      "at": "2026-09-03T14:00:00+09:00",
-      "verifies": "d-async-worker",
-      "what": "まっさらなレビュアーが、この記録だけを読んで再開できると判定すること",
-      "evidence": [
-        {
-          "kind": "file",
-          "ref": "examples/example.progress.json"
-        }
-      ],
-      "result": "pass",
-      "note": "**cmd を持たない検証の形。**別のエージェントへのレビュー依頼、ブラウザでの目視、人の確認はどれも実在する検証で、指し先は evidence に置く"
+      "whyNotRun": "次の月次実行が 10 月 1 日のため、それまで観測できない",
+      "verifies": "d-async-worker"
     }
   ],
   "links": {

@@ -101,10 +101,22 @@
       "expect_code": "current/text"
     },
     {
-      "id": "verify-no-how",
+      "id": "verify-unknown-key",
+      "planted_defect": "verification に存在しない欄 how を書いた（黙って捨てられ、下流の症状だけが出ていた）",
+      "expect_exit": 1,
+      "expect_code": "verification/unknown-key"
+    },
+    {
+      "id": "verify-verifies-form",
+      "planted_defect": "verifies に # を含むでたらめな文字列（形式検査が走らず exit 0 で通っていた）",
+      "expect_exit": 1,
+      "expect_code": "verification/verifies-form"
+    },
+    {
+      "id": "verify-no-cmd-or-evidence",
       "planted_defect": "検証にコマンドも証跡も無い",
       "expect_exit": 1,
-      "expect_code": "verification/how"
+      "expect_code": "verification/no-cmd-or-evidence"
     },
     {
       "id": "verify-by-evidence",

@@ -180,6 +180,12 @@ GitHub 以外（Linear / Jira / その他）の手順は [references/trackers.md
 
 ## Step 4 — IR を書く
 
+**先に [examples/example.progress.json](examples/example.progress.json) を開き、そこから形をコピーする。**
+キー名と列挙値を散文から思い出さない。**3 箇所に正しく書いてあっても、思い出して書くと外す**
+（実測: `openQuestions.when` の許容値も `supersededBy` も schema.md・sections.md・検査器の fix 行の
+3 箇所にあったのに、4 件が弾かれた）。例は警告 0 で通り、`cmd` を持つ検証と `evidence` で示す検証の
+両方を含んでいる。
+
 **上書きしてよいのは 3 つだけ。**残りは追記で、過去は書き換えない。
 
 | | 対象 | 追記時の扱い |
@@ -204,7 +210,12 @@ GitHub 以外（Linear / Jira / その他）の手順は [references/trackers.md
 - **確かめ方を書いた決定には、それを確かめた `verification` を `verifies` で結び付ける。**
   結び付いていないと警告が出る（「決めたのに確かめていない決定」がそのまま溜まるのを防ぐ）
 - **参照は記録をまたげる。**別の記録を指すときは `<記録の id>#<要素の id>`。
-  同じ記録を指しているのに id が無ければ落ちる
+  同じ記録を指しているのに id が無ければ落ちる。**記録をまたぐ参照は形しか見ていない** —
+  DB を引かないと実在を確かめられず、ゲートが網に依存すると落ちたときに止まるため（`lib/cover.mjs` と同じ判断）
+- **`verifies` が指せるのは `decisions` の id だけ。**events を指したいなら `evidence` に書く
+- `openQuestions` の `when` は `now` / `during-implementation` / `out-of-scope`、`who` は `human` / `ai`
+- `status: superseded` の決定には **`supersededBy` が要る**
+- **知らない欄を書くと名前を挙げて弾かれる。**黙って捨てられて別の症状が出る、という形にはならない
 
 **結果は良いものだけ書かない。**受け入れた不利な点を `good: false` で残す。
 全部 `good: true` だと警告が出る。

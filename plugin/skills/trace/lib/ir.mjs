@@ -27,22 +27,16 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 const arr = (v) => (Array.isArray(v) ? v : []);
 
-export function emptyIr({ id, title, repo, branch, host }) {
-  const now = new Date().toISOString();
-  return {
-    schema: SCHEMA,
-    meta: { id, title, status: 'planning', repo, branch, created: now, updated: now, hosts: [host] },
-    background: { problem: '', goal: '', constraints: [], nonGoals: [] },
-    current: { at: now, text: '', phases: [] },
-    next: [],
-    openQuestions: [],
-    events: [],
-    decisions: [],
-    verification: [],
-    links: { issues: [], prs: [], commits: [], files: [] },
-    glossary: [],
-  };
-}
+// **知らない欄は名前を挙げて弾く。**黙って捨てると、書き手は「書いたのに効かない」ではなく
+// 「別の欄が足りない」という誤った症状だけを受け取る（実測: verification に `how` と書いた 8 件が、
+// 「コマンドも証跡も無い」としか報告されなかった）。手書きの JSON は検査器にとっての入力なので、
+// ここは信頼境界であり、起こり得ないケースへの防御ではない。
+const KEYS = {
+  events: ['id', 'at', 'kind', 'text', 'confidence', 'evidence', 'phase'],
+  decisions: ['id', 'at', 'status', 'context', 'decision', 'options', 'consequences', 'confirmation', 'evidence', 'supersededBy'],
+  verification: ['id', 'at', 'what', 'cmd', 'result', 'output', 'evidence', 'verifies', 'note', 'whyNotRun'],
+  openQuestions: ['id', 'at', 'q', 'who', 'when', 'blocking'],
+};
 
 /**
  * 契約違反（problems）と、埋まっていない推奨欄（warnings）を分けて返す。
@@ -95,10 +89,15 @@ export function validate(ir) {
   const at = (o, where) => {
     if (!ISO.test(o.at || '')) P(`${where}/at`, `${where} の at が ISO 8601 でない: ${JSON.stringify(o.at)}`, '観測時点を必ず持たせる');
   };
+  const known = (o, where) => {
+    const bad = Object.keys(o).filter((k) => !KEYS[where].includes(k));
+    if (bad.length) P(`${where}/unknown-key`, `${where} "${o.id}" に無い欄がある: ${bad.join(' / ')}`, `使えるのは ${KEYS[where].join(' / ')}`);
+  };
 
   for (const e of arr(ir.events)) {
     uniq(e.id, 'events');
     at(e, 'events');
+    known(e, 'events');
     if (!EVENT_KINDS.includes(e.kind)) P('events/kind', `events.kind が ${EVENT_KINDS.join(' / ')} のどれでもない: ${JSON.stringify(e.kind)}`, 'いずれかにする');
     if (!isStr(e.text)) P('events/text', `events "${e.id}" の text が空。`, '何が起きたかを書く');
     if (e.confidence !== undefined && !CONFIDENCE.includes(e.confidence)) P('events/confidence', `events "${e.id}" の confidence が不正: ${JSON.stringify(e.confidence)}`, `${CONFIDENCE.join(' / ')} のいずれかにする`);
@@ -112,6 +111,7 @@ export function validate(ir) {
   for (const d of arr(ir.decisions)) {
     uniq(d.id, 'decisions');
     at(d, 'decisions');
+    known(d, 'decisions');
     if (!DECISION_STATUS.includes(d.status)) P('decisions/status', `decisions "${d.id}" の status が不正: ${JSON.stringify(d.status)}`, DECISION_STATUS.join(' / '));
     for (const f of ['context', 'decision', 'confirmation']) {
       if (!isStr(d[f])) P(`decisions/${f}`, `decisions "${d.id}" の ${f} が空。`, f === 'confirmation' ? 'この決定が守られていることをどう確かめるかを書く' : '埋める');
@@ -135,6 +135,7 @@ export function validate(ir) {
   for (const q of arr(ir.openQuestions)) {
     uniq(q.id, 'openQuestions');
     at(q, 'openQuestions');
+    known(q, 'openQuestions');
     if (!isStr(q.q)) P('questions/q', `openQuestions "${q.id}" が空。`, '問いを書く');
     if (!['human', 'ai'].includes(q.who)) P('questions/who', `openQuestions "${q.id}" の who が human / ai でない。`, '誰が答えられるかを決める');
     if (!QUESTION_WHEN.includes(q.when)) P('questions/when', `openQuestions "${q.id}" の when が不正。`, QUESTION_WHEN.join(' / '));
@@ -144,14 +145,18 @@ export function validate(ir) {
   for (const v of ver) {
     uniq(v.id, 'verification');
     at(v, 'verification');
+    known(v, 'verification');
     if (!isStr(v.what)) P('verification/what', `verification "${v.id}" の what が空。`, '何を確かめたのかを書く');
     if (!VERIFY_RESULT.includes(v.result)) P('verification/result', `verification "${v.id}" の result が不正。`, VERIFY_RESULT.join(' / '));
     // 検証はコマンドとは限らない。別のエージェントへのレビュー依頼も、ブラウザでの目視も
     // 実在する検証で、結果もある。要るのは「通ったはず」と「通った」を区別できる指し先で、
     // それはコマンドか証跡のどちらかで足りる。cmd を必須にすると、散文がコマンド欄へ入る。
     if (v.result !== 'not-run' && !isStr(v.cmd) && arr(v.evidence).length === 0) {
-      P('verification/how', `verification "${v.id}" に、実行したコマンドも証跡も無い。`, 'コマンドを書くか、レポートやログのパスを evidence に入れる');
+      P('verification/no-cmd-or-evidence', `verification "${v.id}" に、実行したコマンドも証跡も無い。`, '`cmd` に実行したコマンドを書くか、`evidence` にレポートやログのパスを入れる');
     }
+    // **`#` が入っていれば検査が 1 つも走らない状態だった**（実測: `"ゴミ !!!#hello world"` が exit 0）。
+    // 隣の supersededBy は形式と存在の両方を見ている。非対称を対称にする。
+    if (isStr(v.verifies) && !REF.test(v.verifies)) P('verification/verifies-form', `verification "${v.id}" の verifies が参照の形でない: ${JSON.stringify(v.verifies)}`, '同じ記録なら d-xxx、別の記録なら <記録の id>#d-xxx');
     if (v.result === 'not-run' && !isStr(v.whyNotRun)) P('verification/why-not-run', `verification "${v.id}" が not-run だが理由が無い。`, '環境が無い・別 OS が要る等、実行しなかった理由を書く');
   }
   if (ver.length === 0) W('verification/empty', 'verification が空。', '実行した検証と、実行しなかったものを残す');
@@ -170,7 +175,7 @@ export function validate(ir) {
   }
   for (const v of ver) {
     if (isLocalRef(v.verifies) && !decisionIds.has(v.verifies)) {
-      P('verification/verifies-missing', `verification "${v.id}" の verifies "${v.verifies}" がこの記録に無い。`, '別の記録を指すなら <記録の id>#... と書く');
+      P('verification/verifies-missing', `verification "${v.id}" の verifies "${v.verifies}" が、この記録の decisions に無い。`, 'verifies は decisions の id だけを指す。events を指したいなら evidence に書く。別の記録の決定なら <記録の id>#d-xxx');
     }
   }
   // 「守ると決めたのに一度も確かめていない決定」。DB へ入れるとリポジトリ横断で引ける。
