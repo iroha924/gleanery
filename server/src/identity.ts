@@ -12,6 +12,7 @@ import path from "node:path";
 import OpenAI from "openai";
 import type pg from "pg";
 import type { Env } from "./db.ts";
+import { localPath } from "./scope.ts";
 
 /** 読む順。**最初に当たったところで止める。**README の無いリポジトリでも必ず何かは読める。 */
 const SOURCES = ["README.md", "CLAUDE.md", "AGENTS.md", "package.json"];
@@ -76,15 +77,17 @@ export async function inferIdentity(
 /** 取り込みのついでに、まだ空なら埋める。埋めたときだけ人向けの 1 行を返す。 */
 export async function ensureIdentity(c: pg.Client, env: Env, scopeId: number): Promise<string | null> {
   const r = await c.query<{
-    abs_path: string | null;
     role: string | null;
     summary: string | null;
     label: string;
-  }>("select abs_path, role, summary, label from scope where id = $1", [scopeId]);
+  }>("select role, summary, label from scope where id = $1", [scopeId]);
   const s = r.rows[0];
   if (!s || (s.role && s.summary)) return null;
-  if (!s.abs_path || !fs.existsSync(s.abs_path)) return null;
-  const got = await inferIdentity(env, s.abs_path);
+  // **このマシンでの置き場所を引く。**リポジトリを実際に読むので、
+  // 別のマシンで登録されたパスを渡しても開けない。
+  const dir = await localPath(c, scopeId);
+  if (!dir) return null;
+  const got = await inferIdentity(env, dir);
   if (!got) return null;
   // **人が書いた値を上書きしない。**片方だけ埋まっている場合は、空いている側だけ入る。
   await c.query(

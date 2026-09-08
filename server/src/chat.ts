@@ -13,6 +13,7 @@ import OpenAI from "openai";
 import type pg from "pg";
 import { grepCode, type Root, readCode } from "./code.ts";
 import { type Env, embed } from "./db.ts";
+import { HOST } from "./scope.ts";
 import { type Hit, labelOf, type Polarity, type RecordHit, search, searchRecords } from "./search.ts";
 
 // 引いた記録をそのまま渡すと、答えの根拠がどこから来たか追えない。
@@ -358,7 +359,12 @@ export async function* chat(
     role: string | null;
     summary: string | null;
     abs_path: string | null;
-  }>("select label, role, summary, abs_path from scope where id = any($1) order by label", [body.scopeIds]);
+  }>(
+    `select s.label, s.role, s.summary, p.abs_path from scope s
+     left join scope_path p on p.scope_id = s.id and p.host = $2
+     where s.id = any($1) order by s.label`,
+    [body.scopeIds, HOST],
+  );
   // **コードを読みに行ってよいのは、選ばれた範囲のディレクトリだけ。**
   const roots: Root[] = scopes.rows
     .filter(

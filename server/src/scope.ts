@@ -118,3 +118,37 @@ export function candidates(
     markers: MARKERS.filter((m) => fs.existsSync(path.join(d, m))),
   }));
 }
+
+// --- そのホストでの置き場所 ---
+
+import type pg from "pg";
+
+/**
+ * どのマシンから見ているか。
+ * **識別子（git remote）はマシンをまたいで同じで、変わるのはパスだけ。**
+ */
+export const HOST = os.hostname();
+
+/** このホストでの置き場所を覚える。作業したマシンが自分で名乗る形にする。 */
+export async function rememberPath(client: pg.Client, scopeId: number, absPath: string): Promise<void> {
+  await client.query(
+    `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+     on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()`,
+    [scopeId, HOST, absPath],
+  );
+}
+
+/**
+ * このホストで**実在する**置き場所。無ければ null。
+ *
+ * **実在の確認までここでやる。**呼び出し側が忘れると、消したディレクトリを指したまま
+ * 取り込みに入って途中で落ちる。
+ */
+export async function localPath(client: pg.Client, scopeId: number): Promise<string | null> {
+  const r = await client.query<{ abs_path: string }>(
+    "select abs_path from scope_path where scope_id = $1 and host = $2",
+    [scopeId, HOST],
+  );
+  const p = r.rows[0]?.abs_path;
+  return p && fs.existsSync(p) ? p : null;
+}

@@ -41,6 +41,21 @@ claude plugin update mitos     # 「Restart to apply changes」と出る
 
 **両方を実際に叩いて確かめる。**片方の成功をもう片方の証拠にしない。
 
+### 置き場所はマシンごとに違う
+
+**ナレッジは共有、パスは共有しない。**作業場所の識別子は git remote なのでマシンをまたいで同じだが、
+どこに置いてあるかは `scope_path (scope_id, host, abs_path)` がホストごとに持つ。
+
+`mitos sync` はこのホストの行しか見ない。**新しい PC では `mitos adopt` を 1 回叩く**
+（`~/Projects` を走査して、識別子が一致する作業場所へ置き場所を結び付ける）。
+叩かないと 1 件も取り込めず、`sync` は終了コード 1 で止まる。
+`mitos doctor` の「置き場所」行に、このマシンで取り込める件数が出る。
+
+**会話の transcript はそのマシンにしかない**（`~/.claude/projects/`）。
+別のマシンで交わした会話は、そのマシンで `sync` を通すまでナレッジに入らない。
+
+手順は `README.md`「新しい PC で使い始める」。
+
 ### 書き込みの境界
 
 **ナレッジを書けるのは CLI だけ。**MCP とフックは `knowledge_ro` で繋ぎ、権限の側で読み取りに限る
@@ -87,6 +102,6 @@ bun run dev        # API + ダッシュボード
 
 ## 詳しくは
 
-- `README.md` — 全体像、精度の測り方、うまく動かないとき
+- `README.md` — 全体像、精度の測り方、新しい PC で使い始める、うまく動かないとき
 - `.claude/rules/knowledge-schema.md` — データの形（`server/src` と `supabase/migrations` で自動ロード）
 - `plugin/skills/trace/SKILL.md` — 記録を作る側の契約

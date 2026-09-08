@@ -222,6 +222,39 @@ mitos import-github --cwd <repo>     # 最初の取り込み
 日次同期は launchd。`~/Library/LaunchAgents/com.mitos.sync.plist` が毎日 6:00 に `mitos sync` を叩き、
 ログは `~/.claude/mitos-sync.log`。外すときは `launchctl bootout gui/$(id -u)/com.mitos.sync`。
 
+### 新しい PC で使い始める
+
+**ナレッジは Supabase にあるので、引く側は何もしなくても動く**（作業場所は git remote で引くため、
+パスに依存しない）。設定が要るのは**取り込む側**だけ。
+
+```bash
+# 1. 資格情報。リポジトリには入っていないので手で置く
+#    ~/.claude/knowledge.env に SUPABASE_DB_URL / KNOWLEDGE_DB_URL_RO /
+#    KNOWLEDGE_DB_URL_CFG / VOYAGE_API_KEY
+
+# 2. リポジトリを置いて、プラグインを入れる
+git clone https://github.com/iroha924/mitos.git ~/Projects/mitos
+cd ~/Projects/mitos && bun install && bun run bundle
+claude plugin marketplace add ~/Projects/mitos && claude plugin install mitos@mitos
+
+# 3. このマシンでの置き場所を登録する。**これを忘れると 1 件も取り込まれない**
+mitos adopt
+
+# 4. 確かめる
+mitos doctor          # 「置き場所」行が 0 件でないこと
+
+# 5. 日次同期
+cp ~/Projects/mitos/... com.mitos.sync.plist ~/Library/LaunchAgents/   # パスを書き換える
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
+```
+
+**古い PC を手放す前に、そこで `mitos sync` を 1 回通す。**会話の記録
+（`~/.claude/projects/*.jsonl`）はそのマシンにしか無く、他のマシンからは見えない。
+通さずに消すと、そこで交わした会話は永久に入らない。
+
+`mitos adopt` はナレッジにあってこのマシンに無いリポジトリも並べるので、
+**クローンし忘れ**もそこで分かる。
+
 ## 開発
 
 ```bash

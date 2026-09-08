@@ -24278,8 +24278,8 @@ async function writeSlice(client, recordId, repo, scopeId, threads, byKey) {
 }
 
 // server/src/identity.ts
-import fs3 from "node:fs";
-import path4 from "node:path";
+import fs4 from "node:fs";
+import path5 from "node:path";
 
 // server/node_modules/openai/internal/tslib.mjs
 function __classPrivateFieldSet(receiver, state, value, kind, f) {
@@ -37775,20 +37775,113 @@ var brand_privateBedrockClient = Symbol.for("openai.privateBedrockClient");
 // server/node_modules/openai/bedrock.mjs
 var _a6;
 _a6 = brand_privateBedrockClient;
+// server/src/scope.ts
+import { execFileSync as execFileSync3 } from "node:child_process";
+import fs3 from "node:fs";
+import os2 from "node:os";
+import path4 from "node:path";
+var HOME = os2.homedir();
+function normalizeRemote(url2) {
+  if (!url2)
+    return null;
+  const raw = String(url2).trim();
+  if (!raw)
+    return null;
+  const scp = raw.match(/^(?:[^@/]+@)?([^:/]+):(?!\/)(.+?)(?:\.git)?$/);
+  if (scp)
+    return `${scp[1]}/${scp[2]}`;
+  try {
+    const u = new URL(raw);
+    if (!u.hostname)
+      return null;
+    const path5 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
+    return path5 ? `${u.hostname}/${path5}` : u.hostname;
+  } catch {
+    return null;
+  }
+}
+function identify(dir) {
+  const abs = path4.resolve(dir);
+  let remote = null;
+  try {
+    remote = normalizeRemote(execFileSync3("git", ["-C", abs, "remote", "get-url", "origin"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    }).trim());
+  } catch {}
+  const rest = remote ? remote.split("/").slice(1) : [];
+  return {
+    ident: remote ? `git:${remote}` : `path:${abs}`,
+    identKind: remote ? "git-remote" : "abs-path",
+    absPath: abs,
+    hostOrg: rest.length > 1 ? rest[0] ?? null : null,
+    repoName: rest.length ? rest[rest.length - 1] ?? "" : path4.basename(abs),
+    label: remote ? rest.join("/") : path4.basename(abs)
+  };
+}
+var MARKERS = [
+  "package.json",
+  "pyproject.toml",
+  "go.mod",
+  "Cargo.toml",
+  "Gemfile",
+  "dbt_project.yml",
+  "Dockerfile",
+  "docker-compose.yml",
+  "main.tf",
+  "Chart.yaml",
+  "kustomization.yaml",
+  "next.config.js",
+  "requirements.txt",
+  "README.md"
+];
+function candidates(roots = [path4.join(HOME, "Projects")]) {
+  const found = new Set;
+  const add = (d) => {
+    if (!found.has(d) && fs3.existsSync(d) && fs3.statSync(d).isDirectory())
+      found.add(d);
+  };
+  for (const root of roots) {
+    let es = [];
+    try {
+      es = fs3.readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of es)
+      if (e.isDirectory() && !e.name.startsWith("."))
+        add(path4.join(root, e.name));
+  }
+  return [...found].sort().map((d) => ({
+    ...identify(d),
+    markers: MARKERS.filter((m) => fs3.existsSync(path4.join(d, m)))
+  }));
+}
+var HOST = os2.hostname();
+async function rememberPath(client, scopeId, absPath) {
+  await client.query(`insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+     on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()`, [scopeId, HOST, absPath]);
+}
+async function localPath(client, scopeId) {
+  const r = await client.query("select abs_path from scope_path where scope_id = $1 and host = $2", [scopeId, HOST]);
+  const p = r.rows[0]?.abs_path;
+  return p && fs3.existsSync(p) ? p : null;
+}
+
 // server/src/identity.ts
 var SOURCES = ["README.md", "CLAUDE.md", "AGENTS.md", "package.json"];
 var MAX2 = 6000;
 function material(absPath) {
   for (const name of SOURCES) {
     try {
-      const body = fs3.readFileSync(path4.join(absPath, name), "utf8").trim();
+      const body = fs4.readFileSync(path5.join(absPath, name), "utf8").trim();
       if (body)
         return `# ${name}
 ${body.slice(0, MAX2)}`;
     } catch {}
   }
   try {
-    const top = fs3.readdirSync(absPath, { withFileTypes: true }).filter((d) => !d.name.startsWith(".")).map((d) => d.isDirectory() ? `${d.name}/` : d.name).slice(0, 60);
+    const top = fs4.readdirSync(absPath, { withFileTypes: true }).filter((d) => !d.name.startsWith(".")).map((d) => d.isDirectory() ? `${d.name}/` : d.name).slice(0, 60);
     return top.length ? `# 置いてあるもの
 ${top.join(`
 `)}` : null;
@@ -37824,13 +37917,14 @@ async function inferIdentity(env2, absPath) {
   }
 }
 async function ensureIdentity(c, env2, scopeId) {
-  const r = await c.query("select abs_path, role, summary, label from scope where id = $1", [scopeId]);
+  const r = await c.query("select role, summary, label from scope where id = $1", [scopeId]);
   const s = r.rows[0];
   if (!s || s.role && s.summary)
     return null;
-  if (!s.abs_path || !fs3.existsSync(s.abs_path))
+  const dir = await localPath(c, scopeId);
+  if (!dir)
     return null;
-  const got = await inferIdentity(env2, s.abs_path);
+  const got = await inferIdentity(env2, dir);
   if (!got)
     return null;
   await c.query("update scope set role = coalesce(role, $1), summary = coalesce(summary, $2), updated_at = now() where id = $3", [got.role, got.summary, scopeId]);
@@ -38402,18 +38496,18 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
 }
 
 // server/src/linear.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
+import { execFileSync as execFileSync4 } from "node:child_process";
 import crypto6 from "node:crypto";
-import fs4 from "node:fs";
-import os2 from "node:os";
-import path5 from "node:path";
+import fs5 from "node:fs";
+import os3 from "node:os";
+import path6 from "node:path";
 function mcpConfigPath() {
-  const p = path5.join(os2.tmpdir(), "mitos-linear-mcp.json");
-  fs4.writeFileSync(p, JSON.stringify({ mcpServers: { "linear-server": { type: "http", url: "https://mcp.linear.app/mcp" } } }));
+  const p = path6.join(os3.tmpdir(), "mitos-linear-mcp.json");
+  fs5.writeFileSync(p, JSON.stringify({ mcpServers: { "linear-server": { type: "http", url: "https://mcp.linear.app/mcp" } } }));
   return p;
 }
 function runClaude(prompt, tools) {
-  const out = execFileSync3("claude", [
+  const out = execFileSync4("claude", [
     "-p",
     prompt,
     "--mcp-config",
@@ -38457,8 +38551,8 @@ function resultText(content) {
   const raw = Array.isArray(content) ? content.map((x) => typeof x.text === "string" ? x.text : "").join("") : typeof content === "string" ? content : "";
   const saved = raw.match(/Output has been saved to (\S+?\.txt)/);
   const file2 = saved?.[1];
-  if (file2 && fs4.existsSync(file2))
-    return fs4.readFileSync(file2, "utf8");
+  if (file2 && fs5.existsSync(file2))
+    return fs5.readFileSync(file2, "utf8");
   return raw;
 }
 function callOnce(tool, args) {
@@ -38760,89 +38854,6 @@ ${issue2.description}`;
   }
 }
 
-// server/src/scope.ts
-import { execFileSync as execFileSync4 } from "node:child_process";
-import fs5 from "node:fs";
-import os3 from "node:os";
-import path6 from "node:path";
-var HOME = os3.homedir();
-function normalizeRemote(url2) {
-  if (!url2)
-    return null;
-  const raw = String(url2).trim();
-  if (!raw)
-    return null;
-  const scp = raw.match(/^(?:[^@/]+@)?([^:/]+):(?!\/)(.+?)(?:\.git)?$/);
-  if (scp)
-    return `${scp[1]}/${scp[2]}`;
-  try {
-    const u = new URL(raw);
-    if (!u.hostname)
-      return null;
-    const path7 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
-    return path7 ? `${u.hostname}/${path7}` : u.hostname;
-  } catch {
-    return null;
-  }
-}
-function identify(dir) {
-  const abs = path6.resolve(dir);
-  let remote = null;
-  try {
-    remote = normalizeRemote(execFileSync4("git", ["-C", abs, "remote", "get-url", "origin"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim());
-  } catch {}
-  const rest = remote ? remote.split("/").slice(1) : [];
-  return {
-    ident: remote ? `git:${remote}` : `path:${abs}`,
-    identKind: remote ? "git-remote" : "abs-path",
-    absPath: abs,
-    hostOrg: rest.length > 1 ? rest[0] ?? null : null,
-    repoName: rest.length ? rest[rest.length - 1] ?? "" : path6.basename(abs),
-    label: remote ? rest.join("/") : path6.basename(abs)
-  };
-}
-var MARKERS = [
-  "package.json",
-  "pyproject.toml",
-  "go.mod",
-  "Cargo.toml",
-  "Gemfile",
-  "dbt_project.yml",
-  "Dockerfile",
-  "docker-compose.yml",
-  "main.tf",
-  "Chart.yaml",
-  "kustomization.yaml",
-  "next.config.js",
-  "requirements.txt",
-  "README.md"
-];
-function candidates(roots = [path6.join(HOME, "Projects")]) {
-  const found = new Set;
-  const add = (d) => {
-    if (!found.has(d) && fs5.existsSync(d) && fs5.statSync(d).isDirectory())
-      found.add(d);
-  };
-  for (const root of roots) {
-    let es = [];
-    try {
-      es = fs5.readdirSync(root, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of es)
-      if (e.isDirectory() && !e.name.startsWith("."))
-        add(path6.join(root, e.name));
-  }
-  return [...found].sort().map((d) => ({
-    ...identify(d),
-    markers: MARKERS.filter((m) => fs5.existsSync(path6.join(d, m)))
-  }));
-}
-
 // server/src/session.ts
 import crypto7 from "node:crypto";
 import fs6 from "node:fs";
@@ -38994,6 +39005,7 @@ var USAGE = `使い方:
   mitos advice                                   編集時の助言が効いているかを見る
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
   mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
+  mitos adopt                                    このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 var OPTIONS = {
@@ -39044,8 +39056,10 @@ async function scopeIdFor(c, dir, create) {
   const me = identify(dir);
   const found = await c.query("select id::int as id from scope where ident = $1", [me.ident]);
   const hit = found.rows[0];
-  if (hit)
+  if (hit) {
+    await rememberPath(c, hit.id, me.absPath);
     return hit.id;
+  }
   if (!create)
     return null;
   const r = await c.query(`insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label)
@@ -39053,6 +39067,7 @@ async function scopeIdFor(c, dir, create) {
   const created = r.rows[0];
   if (!created)
     throw new Error(`作業場所を作れなかった: ${me.ident}`);
+  await rememberPath(c, created.id, me.absPath);
   return created.id;
 }
 async function trackerScopeId(c, ident, label, hostOrg, group) {
@@ -39193,6 +39208,7 @@ async function main() {
     "import-docs",
     "gaps",
     "forget",
+    "adopt",
     "advice"
   ];
   if (!KNOWN.includes(cmd))
@@ -39216,6 +39232,11 @@ ${USAGE}`);
     }
     {
       const c3 = await connect(env2, { as: "read" });
+      const here = await c3.query(`select count(p.abs_path) as n, count(*) as all from scope s
+         left join scope_path p on p.scope_id = s.id and p.host = $1
+         where s.ident like 'git:%'`, [HOST]);
+      const h = here.rows[0];
+      console.log(`置き場所（${HOST}）  ${h?.n ?? 0} / ${h?.all ?? 0} 件${Number(h?.n ?? 0) === 0 && Number(h?.all ?? 0) > 0 ? " ← mitos adopt を実行する" : ""}`);
       const r = await c3.query(`select s.label, max(r.ingested_at) as last, count(r.id)::int as records
          from scope s left join record r on r.scope_id = s.id
          group by s.label order by s.label`);
@@ -39354,10 +39375,13 @@ ${USAGE}`);
       return;
     }
     if (cmd === "sync") {
-      const targets = await c.query(opt.group ? `select s.ident, s.abs_path, s.label from scope s
+      const targets = await c.query(opt.group ? `select s.ident, p.abs_path, s.label from scope s
              join group_member m on m.scope_id = s.id
              join scope_group g on g.id = m.group_id
-             where g.name = $1 order by s.label` : "select ident, abs_path, label from scope order by label", opt.group ? [opt.group] : []);
+             left join scope_path p on p.scope_id = s.id and p.host = $2
+             where g.name = $1 order by s.label` : `select s.ident, p.abs_path, s.label from scope s
+             left join scope_path p on p.scope_id = s.id and p.host = $1
+             order by s.label`, opt.group ? [opt.group, HOST] : [HOST]);
       const startedAt = new Date;
       console.log(`==== 同期開始 ${startedAt.toLocaleString("sv-SE")} ====`);
       let ok = 0;
@@ -39372,8 +39396,11 @@ ${USAGE}`);
             console.log(`取り込み完了: ${await syncGithub(c, env2, t.abs_path)}`);
             console.log(`取り込み完了: ${await syncSessions(c, env2, t.abs_path, () => {})}`);
             console.log(`取り込み完了: ${await syncDocs(c, env2, t.abs_path, () => {})}`);
+            const said = await ensureIdentity(c, env2, await scopeIdFor(c, t.abs_path, false) ?? 0).catch(() => null);
+            if (said)
+              console.log(said);
           } else {
-            skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
+            skipped.push(`${t.label}（${!t.ident.startsWith("git:") ? "取り込み方が決まっていない" : t.abs_path ? "ディレクトリが無い" : `${HOST} に置き場所が未登録`}）`);
             continue;
           }
           ok++;
@@ -39386,6 +39413,10 @@ ${USAGE}`);
       console.log(`==== 同期おわり ${new Date().toLocaleString("sv-SE")} / ${secs} 秒 / 成功 ${ok} / ${targets.rows.length} 件 ====`);
       if (skipped.length)
         console.log(`飛ばした: ${skipped.join(" / ")}`);
+      if (ok === 0 && targets.rows.length > 0) {
+        console.error(`このマシン（${HOST}）で取り込めた作業場所が 1 件も無い。mitos adopt を実行する`);
+        process.exitCode = 1;
+      }
       if (failed.length) {
         console.error(`失敗: ${failed.join(" / ")}`);
         process.exitCode = 1;
@@ -39436,6 +39467,42 @@ ${USAGE}`);
     }
     if (cmd === "import-sessions") {
       console.log(`取り込み完了: ${await syncSessions(c, env2, cwd, (m) => console.error(`  ${m}`))}`);
+      return;
+    }
+    if (cmd === "adopt") {
+      const here = candidates();
+      const known = new Map((await c.query("select id::int as id, ident, label from scope where ident like 'git:%' or ident_kind = 'abs-path'")).rows.map((r) => [r.ident, r]));
+      const linked = [];
+      const unknown2 = [];
+      for (const cand of here) {
+        const scope = known.get(cand.ident);
+        if (!scope) {
+          unknown2.push(`${cand.label}  ${cand.absPath}`);
+          continue;
+        }
+        await rememberPath(c, scope.id, cand.absPath);
+        linked.push(`${scope.label}  ${cand.absPath}`);
+        known.delete(cand.ident);
+      }
+      console.log(`このマシン: ${HOST}`);
+      console.log(`
+置き場所を登録した作業場所（${linked.length} 件）:`);
+      for (const l of linked)
+        console.log(`  ${l}`);
+      if (known.size) {
+        console.log(`
+ナレッジにはあるが、このマシンに見当たらない（${known.size} 件）:`);
+        for (const k of known.values())
+          console.log(`  ${k.label}`);
+        console.log("  ※ クローンしてから mitos adopt をもう一度叩く。引くだけなら登録は要らない");
+      }
+      if (unknown2.length) {
+        console.log(`
+このマシンにあるが、ナレッジには未登録（${unknown2.length} 件）:`);
+        for (const u of unknown2)
+          console.log(`  ${u}`);
+        console.log("  ※ 取り込むなら mitos import-github --cwd <dir>");
+      }
       return;
     }
     if (cmd === "forget") {

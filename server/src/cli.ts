@@ -14,7 +14,7 @@ import { collect, ingestThreads } from "./github.ts";
 import { ensureIdentity } from "./identity.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
-import { candidates, identify } from "./scope.ts";
+import { candidates, HOST, identify, rememberPath } from "./scope.ts";
 import { logSearch, outsideScopes, quote, scopeFamily, search } from "./search.ts";
 import { ingestSession, readSession } from "./session.ts";
 
@@ -40,6 +40,7 @@ const USAGE = `使い方:
   mitos advice                                   編集時の助言が効いているかを見る
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いを並べる
   mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
+  mitos adopt                                    このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く）
 
 資格情報: ~/.claude/knowledge.env の SUPABASE_DB_URL と VOYAGE_API_KEY`;
 
@@ -119,7 +120,12 @@ async function scopeIdFor(c: pg.Client, dir: string, create: boolean): Promise<n
   const me = identify(dir);
   const found = await c.query<{ id: number }>("select id::int as id from scope where ident = $1", [me.ident]);
   const hit = found.rows[0];
-  if (hit) return hit.id;
+  if (hit) {
+    // **作業したマシンが自分で名乗る。**識別子は git remote なのでマシンをまたいで同じだが、
+    // 置き場所は違う。ここを通るたびに覚え直すので、新しい PC でも一度使えば揃う。
+    await rememberPath(c, hit.id, me.absPath);
+    return hit.id;
+  }
   if (!create) return null;
   const r = await c.query<{ id: number }>(
     `insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label)
@@ -128,6 +134,7 @@ async function scopeIdFor(c: pg.Client, dir: string, create: boolean): Promise<n
   );
   const created = r.rows[0];
   if (!created) throw new Error(`作業場所を作れなかった: ${me.ident}`);
+  await rememberPath(c, created.id, me.absPath);
   return created.id;
 }
 
@@ -353,6 +360,7 @@ async function main(): Promise<void> {
     "import-docs",
     "gaps",
     "forget",
+    "adopt",
     "advice",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
@@ -381,6 +389,20 @@ async function main(): Promise<void> {
     // ここに出しておけば doctor 一発で分かる（record.ingested_at は取り込みのたびに now() が入る）。
     {
       const c = await connect(env, { as: "read" });
+      // **このマシンで取り込めるかを先に出す。**置き場所が登録されていないと、
+      // 日次同期は何も取り込まないまま「成功」で終わる。
+      const here = await c.query<{ n: string; all: string }>(
+        `select count(p.abs_path) as n, count(*) as all from scope s
+         left join scope_path p on p.scope_id = s.id and p.host = $1
+         where s.ident like 'git:%'`,
+        [HOST],
+      );
+      const h = here.rows[0];
+      console.log(
+        `置き場所（${HOST}）  ${h?.n ?? 0} / ${h?.all ?? 0} 件${
+          Number(h?.n ?? 0) === 0 && Number(h?.all ?? 0) > 0 ? " ← mitos adopt を実行する" : ""
+        }`,
+      );
       const r = await c.query<{ label: string; last: Date | null; records: number }>(
         `select s.label, max(r.ingested_at) as last, count(r.id)::int as records
          from scope s left join record r on r.scope_id = s.id
@@ -566,14 +588,19 @@ async function main(): Promise<void> {
     // どのリポジトリと、どの issue の出どころが束に入っているかは画面で設定した通り。
     // ここに一覧を書くと、画面で足したものが日次から漏れる。
     if (cmd === "sync") {
+      // **置き場所はこのホストのものだけ見る。**scope.abs_path は最初に登録した 1 台ぶんしか
+      // 持てず、別のマシンでは全件を飛ばしたまま終了コード 0 を返していた。
       const targets = await c.query<{ ident: string; abs_path: string | null; label: string }>(
         opt.group
-          ? `select s.ident, s.abs_path, s.label from scope s
+          ? `select s.ident, p.abs_path, s.label from scope s
              join group_member m on m.scope_id = s.id
              join scope_group g on g.id = m.group_id
+             left join scope_path p on p.scope_id = s.id and p.host = $2
              where g.name = $1 order by s.label`
-          : "select ident, abs_path, label from scope order by label",
-        opt.group ? [opt.group] : [],
+          : `select s.ident, p.abs_path, s.label from scope s
+             left join scope_path p on p.scope_id = s.id and p.host = $1
+             order by s.label`,
+        opt.group ? [opt.group, HOST] : [HOST],
       );
       // **いつ走ったかを必ず残す。**launchd は StandardOutPath を上書きするので、
       // 日時が無いと「今朝のログか、3 日前のログか」が mtime でしか分からない。
@@ -595,9 +622,23 @@ async function main(): Promise<void> {
             console.log(`取り込み完了: ${await syncSessions(c, env, t.abs_path, () => {})}`);
             // **文書もここで入れる。**設計を書き換えたときに取り込み直す人はいない。
             console.log(`取り込み完了: ${await syncDocs(c, env, t.abs_path, () => {})}`);
+            // **作業場所が何なのかも、まだ空ならここで読む。**ingest からしか呼んでいなかったので、
+            // 会話や PR だけで登録された作業場所は名前の無いまま残っていた（実測: nomophyl）。
+            const said = await ensureIdentity(c, env, (await scopeIdFor(c, t.abs_path, false)) ?? 0).catch(
+              () => null,
+            );
+            if (said) console.log(said);
           } else {
             // **黙って飛ばさない。**「同期したのに古い」の原因がここに集まる。
-            skipped.push(`${t.label}（${t.abs_path ? "ディレクトリが無い" : "取り込み方が決まっていない"}）`);
+            skipped.push(
+              `${t.label}（${
+                !t.ident.startsWith("git:")
+                  ? "取り込み方が決まっていない"
+                  : t.abs_path
+                    ? "ディレクトリが無い"
+                    : `${HOST} に置き場所が未登録`
+              }）`,
+            );
             continue;
           }
           ok++;
@@ -614,6 +655,13 @@ async function main(): Promise<void> {
         `==== 同期おわり ${new Date().toLocaleString("sv-SE")} / ${secs} 秒 / 成功 ${ok} / ${targets.rows.length} 件 ====`,
       );
       if (skipped.length) console.log(`飛ばした: ${skipped.join(" / ")}`);
+      // **1 件も取り込めなかったら、それは成功ではない。**新しい PC で置き場所を
+      // 登録し忘れると、毎朝「成功」と記録されたまま何も入らない状態が続く。
+      // 飛ばした 1 件ずつを失敗にはしない（そのマシンに無いリポジトリは正常に飛ばす）。
+      if (ok === 0 && targets.rows.length > 0) {
+        console.error(`このマシン（${HOST}）で取り込めた作業場所が 1 件も無い。mitos adopt を実行する`);
+        process.exitCode = 1;
+      }
       if (failed.length) {
         console.error(`失敗: ${failed.join(" / ")}`);
         // **失敗を終了コードへ出す。**これが 0 のままだと launchctl list を見ても気付けない。
@@ -672,6 +720,46 @@ async function main(): Promise<void> {
     // Claude Code の会話。**ここにしか無い前提がある**（口頭で伝わった判断など）。
     if (cmd === "import-sessions") {
       console.log(`取り込み完了: ${await syncSessions(c, env, cwd, (m) => console.error(`  ${m}`))}`);
+      return;
+    }
+
+    // **新しい PC でこれ 1 つ。**識別子（git remote）は DB にあるがパスは無いので、
+    // このマシンで実在するディレクトリを探して結び付ける。
+    // クローンし忘れているリポジトリもここで分かる。
+    if (cmd === "adopt") {
+      const here = candidates();
+      const known = new Map(
+        (
+          await c.query<{ id: number; ident: string; label: string }>(
+            "select id::int as id, ident, label from scope where ident like 'git:%' or ident_kind = 'abs-path'",
+          )
+        ).rows.map((r) => [r.ident, r]),
+      );
+      const linked: string[] = [];
+      const unknown: string[] = [];
+      for (const cand of here) {
+        const scope = known.get(cand.ident);
+        if (!scope) {
+          unknown.push(`${cand.label}  ${cand.absPath}`);
+          continue;
+        }
+        await rememberPath(c, scope.id, cand.absPath);
+        linked.push(`${scope.label}  ${cand.absPath}`);
+        known.delete(cand.ident);
+      }
+      console.log(`このマシン: ${HOST}`);
+      console.log(`\n置き場所を登録した作業場所（${linked.length} 件）:`);
+      for (const l of linked) console.log(`  ${l}`);
+      if (known.size) {
+        console.log(`\nナレッジにはあるが、このマシンに見当たらない（${known.size} 件）:`);
+        for (const k of known.values()) console.log(`  ${k.label}`);
+        console.log("  ※ クローンしてから mitos adopt をもう一度叩く。引くだけなら登録は要らない");
+      }
+      if (unknown.length) {
+        console.log(`\nこのマシンにあるが、ナレッジには未登録（${unknown.length} 件）:`);
+        for (const u of unknown) console.log(`  ${u}`);
+        console.log("  ※ 取り込むなら mitos import-github --cwd <dir>");
+      }
       return;
     }
 

@@ -5191,6 +5191,7 @@ function identify(dir) {
     label: remote ? rest.join("/") : path2.basename(abs)
   };
 }
+var HOST = os2.hostname();
 
 // server/src/search.ts
 import crypto from "node:crypto";
