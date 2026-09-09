@@ -284,8 +284,10 @@ app.post("/api/groups", async (c) => {
   // **トランザクションは接続を占有する。**プールへ投げると begin と commit が別の接続へ行き、
   // 借りた側から見て何も囲われないまま、他の要求が掴んだ接続を commit しうる。
   const client = await cfg().connect();
-  await client.query("begin");
+  // **begin も try の中に入れる。**外に置くと、begin が失敗したときに finally へ届かず、
+  // 借りた接続が返らない。プールの上限まで漏らすと、以後の設定書き込みが永久に待つ。
   try {
+    await client.query("begin");
     // **on conflict do update を使わない。**UPDATE 権限を要求するので、
     // 束ねる以外は書けない鍵では通らない（実測: permission denied）。
     const ins = await client.query<{ id: number }>(
@@ -307,12 +309,17 @@ app.post("/api/groups", async (c) => {
       ]);
       let id = found.rows[0]?.id;
       if (id === undefined) {
+        // **同時に同じ ident を作りうる。**先に見て無かったことは、入れる瞬間に無いことを意味しない。
+        // 上の scope_group と同じ形にする（do update は UPDATE 権限を要求するので使わない）。
         const created = await client.query<{ id: number }>(
           `insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label)
-           values ($1,$2,$3,$4,$5,$6) returning id::int as id`,
+           values ($1,$2,$3,$4,$5,$6) on conflict (ident) do nothing returning id::int as id`,
           [me.ident, me.identKind, me.absPath, me.hostOrg, me.repoName, me.label],
         );
-        id = created.rows[0]?.id;
+        id =
+          created.rows[0]?.id ??
+          (await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [me.ident]))
+            .rows[0]?.id;
       }
       if (id !== undefined) {
         // **画面から足した作業場所にも置き場所を書く。**書かないと日次同期が
@@ -391,8 +398,10 @@ app.delete("/api/groups/:id", async (c) => {
   // **トランザクションは接続を占有する。**プールへ投げると begin と commit が別の接続へ行き、
   // 借りた側から見て何も囲われないまま、他の要求が掴んだ接続を commit しうる。
   const client = await cfg().connect();
-  await client.query("begin");
+  // **begin も try の中に入れる。**外に置くと、begin が失敗したときに finally へ届かず、
+  // 借りた接続が返らない。プールの上限まで漏らすと、以後の設定書き込みが永久に待つ。
   try {
+    await client.query("begin");
     await client.query("delete from group_member where group_id = $1", [id]);
     await client.query("delete from scope_group where id = $1", [id]);
     await client.query("commit");
