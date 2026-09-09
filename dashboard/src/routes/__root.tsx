@@ -1,42 +1,26 @@
-import { ClerkLoaded, ClerkLoading, Show, SignIn, UserButton } from "@clerk/react";
-import { useQuery } from "@tanstack/react-query";
+import { ClerkLoaded, ClerkLoading, Show, SignIn } from "@clerk/react";
 import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
-import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppHeader } from "@/components/app-header";
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
 import { ProjectProvider } from "@/lib/project";
-
-const TITLES: [string, string][] = [
-  ["/records", "記録"],
-  ["/settings", "設定"],
-  ["/now", "作業の現在地"],
-  ["/mtg", "会議を聞き取る"],
-  ["/search", "記録を探す"],
-  ["/", "質問する"],
-];
 
 /** 幅。**外からは絞らない。**読む幅は画面ごとに違うので、それぞれが自分で決める。 */
 function Body() {
+  const path = useRouterState({ select: (state) => state.location.pathname });
+  const edgeToEdge = path === "/" || path === "/mtg";
+  const ownsScroll = edgeToEdge || path === "/now" || path === "/search";
+
   return (
-    <div className="w-full flex-1 p-4">
+    <div
+      className={`min-h-0 w-full flex-1 ${ownsScroll ? "overflow-hidden" : "overflow-y-auto"} ${
+        edgeToEdge ? "" : "p-4 md:px-8 md:py-6"
+      }`}
+    >
       <Outlet />
     </div>
   );
-}
-
-function Title() {
-  const path = useRouterState({ select: (s) => s.location.pathname });
-  const chatId = useRouterState({ select: (s) => (s.location.search as { chat?: string }).chat });
-  // サイドバーが引いているのと同じ問い合わせなので、ここで足しても往復は増えない。
-  const chats = useQuery({ queryKey: ["chats"], queryFn: api.chats });
-  const hit = TITLES.find(([p]) => path.startsWith(p) && p !== "/") ?? TITLES[TITLES.length - 1];
-  // **会話を開いているときは会話の題を出す。**どの会話を読んでいるのかが、
-  // 画面のどこにも出ていなかった。
-  const open = chatId ? chats.data?.find((x) => x.id === chatId)?.title : null;
-  return <span className="truncate text-sm font-medium">{open ?? hit?.[1]}</span>;
 }
 
 /** 画面いっぱいの 1 枚。読み込み中とサインインで同じ枠を使う。 */
@@ -72,20 +56,13 @@ export const Route = createRootRoute({
         >
           <TooltipProvider delayDuration={300}>
             <ProjectProvider>
-              <SidebarProvider>
-                <AppSidebar />
-                <SidebarInset>
-                  <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/90 px-3 backdrop-blur md:px-5">
-                    <SidebarTrigger className="md:hidden" aria-label="メニューを開く" />
-                    <Title />
-                    <div className="ml-auto">
-                      <UserButton />
-                    </div>
-                  </header>
+              <div className="app-canvas min-h-svh md:p-3">
+                <main className="dashboard-surface flex h-svh flex-col overflow-hidden md:h-[calc(100svh-1.5rem)] md:rounded-[2.75rem]">
+                  <AppHeader />
                   <Body />
-                </SidebarInset>
+                </main>
                 <Toaster />
-              </SidebarProvider>
+              </div>
             </ProjectProvider>
           </TooltipProvider>
         </Show>

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { BotIcon, ChevronRightIcon, GitBranchIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
+import { MarkdownInline, MarkdownText } from "@/components/answer";
 import { Phases } from "@/components/phases";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -78,7 +79,7 @@ function Refs({ refs }: { refs: Ref[] }) {
                   <code className="font-mono text-[12px]">{r.key}</code>
                 )}
                 {r.failed > 0 && <span className="ml-2 text-dont text-[11px]">失敗 {r.failed}</span>}
-                {r.note && <div className="text-muted-foreground">{r.note}</div>}
+                {r.note && <MarkdownText text={r.note} className="text-[13px] text-muted-foreground" />}
               </li>
             ))}
           </ul>
@@ -129,6 +130,7 @@ function hasDetail(n: Node, options: Node[]): boolean {
 /** 1 件の中身。一覧では畳み、押したときだけ開く。 */
 function Detail({ n, options }: { n: Node; options: Node[] }) {
   const taken = options.filter((o) => o.parent_id === n.id);
+  const detailed = hasDetail(n, options);
   const status = n.status ? (NODE_STATUS[n.status] ?? n.status) : null;
   const meta = [
     status,
@@ -139,7 +141,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
     <>
       <Dot polarity={n.polarity} />
       <span className="min-w-0 flex-1">
-        <span className="block text-[15px] leading-7">{n.text}</span>
+        <MarkdownInline text={n.text} disableLinks={detailed} className="block text-[15px] leading-7" />
         {meta.length > 0 && (
           <span
             className={`mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-xs ${n.attrs.blocking ? "text-dont" : "text-muted-foreground"}`}
@@ -153,7 +155,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
     </>
   );
 
-  if (!hasDetail(n, options)) {
+  if (!detailed) {
     return (
       <div className="flex items-start gap-3 rounded-lg border border-dashed bg-card px-4 py-3.5">
         {summary}
@@ -179,10 +181,12 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
       </DialogTrigger>
       <DialogContent className="gap-5 p-6 sm:max-w-[46rem]">
         <DialogHeader>
-          <DialogTitle className="pr-10 text-[1.05rem] leading-[1.8]">{n.text}</DialogTitle>
+          <DialogTitle className="pr-10 text-[1.05rem] leading-[1.8]">
+            <MarkdownInline text={n.text} />
+          </DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
-          {n.ex && <p className="text-[15px] text-muted-foreground leading-7">{n.ex}</p>}
+          {n.ex && <MarkdownText text={n.ex} className="text-muted-foreground" />}
           {n.attrs.confirmation && (
             <p className="text-[15px] text-muted-foreground leading-7">確かめ方: {n.attrs.confirmation}</p>
           )}
@@ -195,7 +199,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
                   className={`text-[15px] leading-7 ${c.good ? "text-muted-foreground" : "text-dont"}`}
                 >
                   {c.good ? "得たもの: " : "引き受けた不利: "}
-                  {c.text}
+                  <MarkdownInline text={c.text} />
                 </li>
               ))}
             </ul>
@@ -232,7 +236,10 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
                     o.polarity === "dont" ? "border-dont/40" : "border-do/40"
                   }`}
                 >
-                  <span className={o.polarity === "dont" ? "text-muted-foreground" : ""}>{o.text}</span>
+                  <MarkdownInline
+                    text={o.text}
+                    className={o.polarity === "dont" ? "text-muted-foreground" : ""}
+                  />
                   {o.attrs.whyNot && <span className="text-muted-foreground"> — {o.attrs.whyNot}</span>}
                 </li>
               ))}
@@ -282,13 +289,17 @@ function RecordPage() {
             {data.problem && (
               <div className="space-y-1.5">
                 <dt className="text-xs font-semibold tracking-wide text-muted-foreground">課題</dt>
-                <dd className="text-[15px] leading-7">{data.problem}</dd>
+                <dd>
+                  <MarkdownText text={data.problem} />
+                </dd>
               </div>
             )}
             {data.goal && (
               <div className="space-y-1.5">
                 <dt className="text-xs font-semibold tracking-wide text-muted-foreground">目標</dt>
-                <dd className="text-[15px] leading-7">{data.goal}</dd>
+                <dd>
+                  <MarkdownText text={data.goal} />
+                </dd>
               </div>
             )}
           </dl>
@@ -308,7 +319,7 @@ function RecordPage() {
                     </span>
                   )}
                 </div>
-                <p className="max-w-[72ch] text-[15px] leading-7">{data.current_text}</p>
+                <MarkdownText text={data.current_text} className="max-w-[72ch]" />
               </div>
             )}
             <Phases phases={data.phases} />
@@ -326,7 +337,7 @@ function RecordPage() {
                         <BotIcon className="size-3.5" />
                       )}
                     </span>
-                    <span>{item.text}</span>
+                    <MarkdownText text={item.text} className="flex-1" />
                   </li>
                 ))}
               </ul>
@@ -347,7 +358,7 @@ function RecordPage() {
           <ul className="space-y-3.5">
             {walls.map((w) => (
               <li key={w.id} className="max-w-[90ch] border-dont border-l-2 pl-3.5 text-[15px] leading-7">
-                {w.text}
+                <MarkdownText text={w.text} />
               </li>
             ))}
           </ul>

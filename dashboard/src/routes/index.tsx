@@ -402,7 +402,7 @@ function Chat() {
     // **往復として読ませる。**自分の発言は右に寄せた吹き出し、答えは地の文。
     // 質問を見出しにしていたときは、聞いた本人の一言が記事の題に化けて、
     // 続けて聞くほど「誰が書いたのか」が読めなくなっていた。
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)]">
+    <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col">
         <MessageScrollerProvider>
           <MessageScroller className="flex-1">
@@ -483,8 +483,6 @@ function Chat() {
         {/* **候補は横に並べる。**絶対配置で右へ浮かすと、窓が狭いときに画面の外へ出る
             （1400px 幅で溢れる）。列にしておけば、狭ければ本文が縮むだけで崩れない。 */}
         <div className="relative mx-auto w-full max-w-[64rem] flex-none px-6 pb-6">
-          {/* 上の本文が入力欄の縁で断ち切られると、続きがあるのか終わりなのか分からない。 */}
-          <div className="pointer-events-none absolute inset-x-0 -top-10 h-10 bg-gradient-to-t from-background to-transparent" />
           {(polishing || options.length > 0) && (
             <aside className="mb-2.5 space-y-2">
               <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
@@ -545,7 +543,7 @@ function Chat() {
           >
             {/* **入力欄は伸びる。**textarea の field-sizing-content が効くので、
                 長い質問でも 8 行までは全文が見えたまま書ける。 */}
-            <InputGroup className="rounded-xl bg-card shadow-xs">
+            <InputGroup className="rounded-xl bg-card">
               <InputGroupTextarea
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -556,7 +554,7 @@ function Chat() {
                     e.currentTarget.form?.requestSubmit();
                   }
                 }}
-                placeholder={scopeIds.length === 0 ? "左でプロジェクトを選んでください" : "続けて聞く"}
+                placeholder={scopeIds.length === 0 ? "ヘッダーでプロジェクトを選んでください" : "続けて聞く"}
                 disabled={scopeIds.length === 0}
                 className="max-h-64 min-h-14 px-4 pt-3.5 text-[15px] leading-[2.05]"
               />

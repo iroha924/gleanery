@@ -59,15 +59,15 @@ function SearchPage() {
   });
 
   return (
-    <div className="mx-auto flex w-full max-w-[72rem] min-w-0 flex-col gap-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-[-0.02em]">記録を探す</h1>
+    <div className="mx-auto flex h-full w-full max-w-[72rem] min-w-0 flex-col gap-5 overflow-y-auto pr-1 sm:overflow-hidden sm:pr-0">
+      <header className="shrink-0">
+        <h1 className="text-xl font-semibold tracking-[-0.02em]">ナレッジ検索</h1>
         <p className="mt-1 text-sm text-muted-foreground">決定、検証、行き止まりを言葉の意味から探します。</p>
       </header>
 
-      <div className="sticky top-0 z-10 space-y-3 bg-background pb-1">
+      <div className="shrink-0 space-y-3 pb-1">
         <form
-          className="flex gap-2 rounded-lg border bg-card p-2 shadow-sm"
+          className="flex gap-2 rounded-lg border bg-card p-2"
           onSubmit={(e) => {
             e.preventDefault();
             nav({ search: (p) => ({ ...p, q: draft.trim() || undefined }) });
@@ -128,143 +128,147 @@ function SearchPage() {
         </details>
       </div>
 
-      {!q && (
-        <section className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-medium">最近の記録</h2>
-            {recent.data && (
-              <span className="text-xs text-muted-foreground tabular-nums">{recent.data.length} 件</span>
+      <div className="min-h-0 flex-1 space-y-5 overflow-visible pb-2 sm:overflow-y-auto sm:pr-1">
+        {!q && (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-medium">最近の記録</h2>
+              {recent.data && (
+                <span className="text-xs text-muted-foreground tabular-nums">{recent.data.length} 件</span>
+              )}
+            </div>
+            {recent.isPending && (
+              <div className="space-y-3">
+                <Skeleton className="h-24 w-full" />
+                <Skeleton className="h-24 w-full" />
+              </div>
             )}
-          </div>
-          {recent.isPending && (
-            <div className="space-y-3">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
-            </div>
-          )}
-          {recent.isError && (
-            <p className="rounded-lg border border-dont/30 bg-card p-4 text-sm text-dont">
-              {String(recent.error)}
-            </p>
-          )}
-          {recent.data?.length === 0 && (
-            <div className="rounded-lg border border-dashed bg-card py-10">
-              <Empty className="min-h-0 border-0 p-0">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <SearchIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>記録はまだありません</EmptyTitle>
-                  <EmptyDescription>作業を記録すると、ここから一覧で開けるようになります。</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            </div>
-          )}
-          {recent.data && recent.data.length > 0 && (
-            <ol className="divide-y overflow-hidden rounded-lg border bg-card">
-              {recent.data.slice(0, 12).map((record) => (
-                <li key={record.id}>
-                  <Link
-                    to="/records/$id"
-                    params={{ id: record.id }}
-                    className="group block p-4 transition-colors hover:bg-muted/35 md:px-5"
-                  >
-                    <div className="flex items-start gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                          <span>{RECORD_STATUS[record.status] ?? record.status}</span>
-                          <span>{record.scope_label}</span>
-                          <span className="tabular-nums">{record.updated_at.slice(0, 10)}</span>
+            {recent.isError && (
+              <p className="rounded-lg border border-dont/30 bg-card p-4 text-sm text-dont">
+                {String(recent.error)}
+              </p>
+            )}
+            {recent.data?.length === 0 && (
+              <div className="rounded-lg border border-dashed bg-card py-10">
+                <Empty className="min-h-0 border-0 p-0">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <SearchIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>記録はまだありません</EmptyTitle>
+                    <EmptyDescription>
+                      作業を記録すると、ここから一覧で開けるようになります。
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </div>
+            )}
+            {recent.data && recent.data.length > 0 && (
+              <ol className="divide-y overflow-hidden rounded-lg border bg-card">
+                {recent.data.slice(0, 12).map((record) => (
+                  <li key={record.id}>
+                    <Link
+                      to="/records/$id"
+                      params={{ id: record.id }}
+                      className="group block p-4 transition-colors hover:bg-muted/35 md:px-5"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            <span>{RECORD_STATUS[record.status] ?? record.status}</span>
+                            <span>{record.scope_label}</span>
+                            <span className="tabular-nums">{record.updated_at.slice(0, 10)}</span>
+                          </div>
+                          <h3 className="mt-1.5 font-medium leading-snug group-hover:text-link">
+                            {record.title}
+                          </h3>
+                          {(record.current_text || record.goal || record.problem) && (
+                            <p className="mt-1.5 line-clamp-2 max-w-[86ch] text-sm text-muted-foreground leading-6">
+                              {record.current_text || record.goal || record.problem}
+                            </p>
+                          )}
                         </div>
-                        <h3 className="mt-1.5 font-medium leading-snug group-hover:text-link">
-                          {record.title}
-                        </h3>
-                        {(record.current_text || record.goal || record.problem) && (
-                          <p className="mt-1.5 line-clamp-2 max-w-[86ch] text-sm text-muted-foreground leading-6">
-                            {record.current_text || record.goal || record.problem}
-                          </p>
-                        )}
+                        <div className="flex flex-none items-center gap-3 pt-0.5 text-xs text-muted-foreground">
+                          <span className="tabular-nums">{record.nodes} 項目</span>
+                          <ChevronRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
+                        </div>
                       </div>
-                      <div className="flex flex-none items-center gap-3 pt-0.5 text-xs text-muted-foreground">
-                        <span className="tabular-nums">{record.nodes} 項目</span>
-                        <ChevronRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
-                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            )}
+            {recent.data && recent.data.length > 12 && (
+              <p className="px-1 text-xs text-muted-foreground">最新の 12 件を表示しています。</p>
+            )}
+          </section>
+        )}
+
+        {isFetching && (
+          <div className="space-y-3">
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-28 w-full" />
+          </div>
+        )}
+        {error && (
+          <p className="rounded-lg border border-dont/30 bg-card p-4 text-sm text-dont">{String(error)}</p>
+        )}
+        {q && !isFetching && data?.length === 0 && (
+          <Empty className="rounded-lg border border-dashed bg-card py-10">
+            <EmptyHeader>
+              <EmptyTitle>該当なし</EmptyTitle>
+              <EmptyDescription>言い方を変えるか、種類の絞り込みを外してみてください。</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        )}
+
+        {!isFetching && data && data.length > 0 && (
+          <section className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-medium">検索結果</h2>
+              <span className="text-xs text-muted-foreground tabular-nums">{data.length} 件</span>
+            </div>
+            <ol className="divide-y overflow-hidden rounded-lg border bg-card">
+              {data.map((h) => (
+                <li
+                  key={`${h.record_id}:${h.kind}:${h.key}`}
+                  className="p-4 transition-colors hover:bg-muted/35 md:p-5"
+                >
+                  <article className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      <span className={`font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
+                      {/* **誰が言ったかを本文から読ませない。**bot か人かで重みが違う。 */}
+                      {h.actor_name && <span className="font-mono">@{h.actor_name}</span>}
+                      <span>{h.scope_label}</span>
+                      {h.at && <span className="tabular-nums">{h.at.slice(0, 10)}</span>}
                     </div>
-                  </Link>
+                    {/* PR の本文がまるごと入っている件がある。切らないと 1 件で画面が埋まる。 */}
+                    <p className="line-clamp-6 max-w-[86ch] text-[15px] leading-7">
+                      {/* 取り込みが本文の頭にも `@名前:` を入れている。札の隣に出す以上、二重になる。 */}
+                      {h.actor_name ? h.text.replace(/^@[^\s:]+:\s*/, "") : h.text}
+                    </p>
+                    {h.ex && (
+                      <p className="line-clamp-3 max-w-[86ch] border-l-2 pl-3 text-sm text-muted-foreground leading-6">
+                        {h.ex}
+                      </p>
+                    )}
+                    <div>
+                      <Link
+                        to="/records/$id"
+                        params={{ id: h.record_id }}
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-link underline-offset-4 hover:underline"
+                      >
+                        {h.record_title}
+                        <ChevronRightIcon className="size-3.5" />
+                      </Link>
+                    </div>
+                  </article>
                 </li>
               ))}
             </ol>
-          )}
-          {recent.data && recent.data.length > 12 && (
-            <p className="px-1 text-xs text-muted-foreground">最新の 12 件を表示しています。</p>
-          )}
-        </section>
-      )}
-
-      {isFetching && (
-        <div className="space-y-3">
-          <Skeleton className="h-28 w-full" />
-          <Skeleton className="h-28 w-full" />
-        </div>
-      )}
-      {error && (
-        <p className="rounded-lg border border-dont/30 bg-card p-4 text-sm text-dont">{String(error)}</p>
-      )}
-      {q && !isFetching && data?.length === 0 && (
-        <Empty className="rounded-lg border border-dashed bg-card py-10">
-          <EmptyHeader>
-            <EmptyTitle>該当なし</EmptyTitle>
-            <EmptyDescription>言い方を変えるか、種類の絞り込みを外してみてください。</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      )}
-
-      {!isFetching && data && data.length > 0 && (
-        <section className="space-y-2">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-medium">検索結果</h2>
-            <span className="text-xs text-muted-foreground tabular-nums">{data.length} 件</span>
-          </div>
-          <ol className="divide-y overflow-hidden rounded-lg border bg-card">
-            {data.map((h) => (
-              <li
-                key={`${h.record_id}:${h.kind}:${h.key}`}
-                className="p-4 transition-colors hover:bg-muted/35 md:p-5"
-              >
-                <article className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                    <span className={`font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
-                    {/* **誰が言ったかを本文から読ませない。**bot か人かで重みが違う。 */}
-                    {h.actor_name && <span className="font-mono">@{h.actor_name}</span>}
-                    <span>{h.scope_label}</span>
-                    {h.at && <span className="tabular-nums">{h.at.slice(0, 10)}</span>}
-                  </div>
-                  {/* PR の本文がまるごと入っている件がある。切らないと 1 件で画面が埋まる。 */}
-                  <p className="line-clamp-6 max-w-[86ch] text-[15px] leading-7">
-                    {/* 取り込みが本文の頭にも `@名前:` を入れている。札の隣に出す以上、二重になる。 */}
-                    {h.actor_name ? h.text.replace(/^@[^\s:]+:\s*/, "") : h.text}
-                  </p>
-                  {h.ex && (
-                    <p className="line-clamp-3 max-w-[86ch] border-l-2 pl-3 text-sm text-muted-foreground leading-6">
-                      {h.ex}
-                    </p>
-                  )}
-                  <div>
-                    <Link
-                      to="/records/$id"
-                      params={{ id: h.record_id }}
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-link underline-offset-4 hover:underline"
-                    >
-                      {h.record_title}
-                      <ChevronRightIcon className="size-3.5" />
-                    </Link>
-                  </div>
-                </article>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
+          </section>
+        )}
+      </div>
     </div>
   );
 }

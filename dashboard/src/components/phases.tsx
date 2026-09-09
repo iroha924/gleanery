@@ -1,59 +1,50 @@
-import { CheckIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 import type { Phase } from "@/lib/api";
 
-/**
- * 工程。**線でつないだ点にする。**
- * ただ縦に並べると「どこまで来たか」が読めない（前の版がそうだった）。
- * 済み・いま・これから の 3 状態を、形（塗り／輪郭）と太さで分ける。
- */
+/** 済み・いま・これからを、色だけに頼らない 3 種類の面で示す。 */
 export function Phases({ phases }: { phases: Phase[] }) {
   if (!phases?.length) return null;
   const done = phases.filter((p) => p.state === "done").length;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-4">
         <h3 className="text-sm font-medium">進みかた</h3>
         <span className="text-xs text-muted-foreground tabular-nums">
           {phases.length} 工程中 {done} 完了
         </span>
       </div>
 
-      <ol className="flex overflow-x-auto pb-1">
-        {phases.map((p, i) => {
-          const isDone = p.state === "done";
-          const isNow = p.state === "doing";
-          return (
-            <li key={p.id} className="relative flex min-w-0 flex-1 flex-col items-center gap-2">
-              {/* 点と点をつなぐ線。済んだ区間は濃く、これからは薄く。 */}
-              {i > 0 && (
+      <div className="overflow-x-auto pb-1">
+        <ol
+          className="grid min-w-[30rem] grid-cols-[repeat(var(--phase-count),minmax(0,1fr))] gap-1 overflow-hidden rounded-full bg-background/45 p-1 [--phase-count:1] sm:min-w-0"
+          style={{ "--phase-count": phases.length } as CSSProperties}
+        >
+          {phases.map((p, i) => {
+            const isDone = p.state === "done";
+            const isNow = p.state === "doing";
+            return (
+              <li key={p.id} className="min-w-0">
                 <span
-                  className={`absolute right-1/2 top-[11px] h-0.5 w-full ${isDone || isNow ? "bg-foreground" : "bg-border"}`}
-                  aria-hidden
-                />
-              )}
-              <span
-                className={[
-                  "relative z-10 flex size-6 items-center justify-center rounded-full border-2 text-[10px] font-medium",
-                  isDone
-                    ? "border-foreground bg-foreground text-background"
-                    : isNow
-                      ? "border-foreground bg-background text-foreground ring-4 ring-foreground/10"
-                      : "border-border bg-background text-muted-foreground",
-                ].join(" ")}
-              >
-                {isDone ? <CheckIcon className="size-3.5" /> : i + 1}
-              </span>
-              <span
-                className={`text-center text-xs leading-tight ${isNow ? "font-medium" : "text-muted-foreground"}`}
-              >
-                {p.label}
-              </span>
-              {isNow && <span className="text-xs text-muted-foreground">いまここ</span>}
-            </li>
-          );
-        })}
-      </ol>
+                  className={[
+                    "flex h-11 items-center justify-center rounded-full border px-3 text-center text-xs font-medium",
+                    isDone
+                      ? "border-accent bg-accent text-accent-foreground"
+                      : isNow
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "hatch-surface border-foreground/15 bg-card/55 text-muted-foreground",
+                  ].join(" ")}
+                >
+                  <span className="truncate">{p.label}</span>
+                  <span className="sr-only">
+                    {isDone ? "完了" : isNow ? "現在の工程" : `${i + 1} 番目の工程`}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </div>
   );
 }
