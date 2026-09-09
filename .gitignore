@@ -9,3 +9,5 @@ server/migrate-*.ts
 .review-tmp-ir.json
 .neon
 .env.local
+.vercel
+.env*

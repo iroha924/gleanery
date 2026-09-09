@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { identify, normalizeRemote } from "../src/scope.ts";
+import { candidates, identify, normalizeRemote } from "../src/scope.ts";
 
 test("ssh と https の remote が同じ識別子へ揃う", () => {
   const want = "github.com/iroha924/hir4ta-developer";
@@ -89,4 +89,10 @@ test("remote の無いリポジトリでも、識別子はどこから見ても�
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+// **走査する根が無いホストでは、束ねる候補は空になる。**
+// 空を「選ぶものが無い」と読める形にしておかないと、壊れているのか区別が付かない。
+test("走査する根が無ければ、束ねる候補は空", () => {
+  assert.deepEqual(candidates(["/no/such/directory/for/mitos-test"]), []);
 });

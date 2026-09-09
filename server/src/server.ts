@@ -70,12 +70,30 @@ if (!secretKey || !publishableKey || !allowedUser) {
   );
 }
 
-// **azp を空にしない。**authorizedParties が空だと Clerk は発行元の検証をせずに返るので、
-// 同じ instance からトークンを取った別オリジンのページでも通る。
-const authorizedParties = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
+// **azp を空にしない。**authorizedParties が空だと Clerk は発行元の検証をせずに返るので
+// （`assertAuthorizedPartiesClaim` が長さ 0 で即 return する）、同じ instance から
+// トークンを取った別オリジンのページでも通る。
+// **空文字を渡せる形にしない** — 環境変数を空にしただけで検証が落ちるのは、
+// 設定を間違えたことが出力のどこにも出ない種類の緩みになる。
+const configuredOrigins = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+// **設定した側だけを見て弾く。**`ownOrigin` を含めて数えると、デプロイ先では常に 1 件入るので
+// 長さが 0 にならず、空にした間違いがどこにも出なくなる（＝このガードが対象の環境でだけ効かない）。
+if (configuredOrigins.length === 0) {
+  throw new Error("MITOS_ALLOWED_ORIGINS が空。画面を配るオリジンを列挙する（例: https://example.com）");
+}
+// **自分が配られているオリジンは自分で許す。**preview の URL はデプロイごとに変わるので、
+// 環境変数では追いかけられない（入れた瞬間に次のデプロイで古くなる）。どちらも
+// 画面を配っている当人のホスト名でしかない。
+//   VERCEL_URL         そのデプロイ固有の URL
+//   VERCEL_BRANCH_URL  ブランチに紐づく URL。**PR から踏むのはこちら。**
+//                      入れないと、レビューのたびに preview の API が 401 になる。
+const ownOrigin = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL]
+  .filter((h): h is string => Boolean(h))
+  .map((h) => `https://${h}`);
+const authorizedParties = [...configuredOrigins, ...ownOrigin];
 
 // **免除する経路を作らない。**この API を叩くのはダッシュボードだけで、
 // MCP・CLI・編集フックは HTTP を通らず DB へ直結する。
@@ -264,6 +282,23 @@ app.post("/api/groups", async (c) => {
   const paths = Array.isArray(body.paths) ? body.paths.filter((x) => typeof x === "string" && x) : [];
   if (!name) return c.json({ error: "束の名前が空" }, 400);
   if (paths.length < 2) return c.json({ error: "2 つ以上選ぶ" }, 400);
+
+  // **候補に無いパスは受けない。**候補はこのホストを走査した結果なので、
+  // リポジトリを持たないホスト（デプロイ先）では空になり、ここで止まる。
+  // 受けると identify() が git を叩き、rememberPath がそのホスト名で
+  // `scope_path` へ置き場所を書く。**日次同期はホストごとの行を見る**ので、
+  // 実在しない置き場所が 1 行入るだけで、そのマシンの取り込みが狂う。
+  const known = new Set(candidates().map((x) => x.absPath));
+  const unknown = paths.filter((p) => !known.has(p));
+  if (unknown.length > 0) {
+    return c.json(
+      {
+        error:
+          known.size === 0 ? "このホストには束ねられる置き場所が無い" : "候補に無い置き場所は登録できない",
+      },
+      400,
+    );
+  }
 
   const client = await cfg();
   await client.query("begin");
@@ -790,10 +825,17 @@ async function saveTurn(
   return chatId;
 }
 
-const port = Number(process.env.MITOS_API_PORT ?? 8787);
-// **手元だけで待ち受ける。**hostname を省くと Node は全インターフェースへ bind する
-// （実測: `*:8787 (LISTEN)`）。鍵の設定を誤ったときに同じネットワークへ出るかどうかは、
-// この 1 行で決まる。画面は同じマシンの vite から来る。
-serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (i) =>
-  console.log(`mitos API: http://localhost:${i.port}`),
-);
+// **このファイル名と既定の export が、デプロイ先の入口になる。**
+// `src/server.*` は Vercel が Hono の入口として探す名前のひとつで、見つからないと
+// サービスが静的配信へ落ちて `server/` の中身がそのまま公開される（実測で `evals/` まで出た）。
+export default app;
+
+// **手元でだけ待ち受ける。**デプロイ先は上の export を使うので listen しない。
+// hostname を省くと Node は全インターフェースへ bind する（実測: `*:8787 (LISTEN)`）。
+// 鍵の設定を誤ったときに同じネットワークへ出るかどうかは、この 1 行で決まる。
+if (!process.env.VERCEL) {
+  const port = Number(process.env.MITOS_API_PORT ?? 8787);
+  serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (i) =>
+    console.log(`mitos API: http://localhost:${i.port}`),
+  );
+}

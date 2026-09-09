@@ -61,15 +61,20 @@ export async function connect(
   // 「全部書ける鍵」を持つことになり、ロールを分けた意味が消える
   // （20260906120000_readonly_role_for_mcp.sql）。落とさないと決めたので、
   // セッションを読み取り専用にする迂回も要らなくなる。
-  if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
+  // **read だけでなく config も落とさない。**画面の設定書き込みが管理鍵になると、
+  // 「chat / term / group しか書けない」前提が消えて `record` と `node` まで書ける。
+  // 手元は knowledge.env を丸ごと持つので踏まないが、**デプロイ先は 1 変数ずつ手で入れる**ので、
+  // CFG を入れ忘れただけでインターネット向けの API が全部書ける鍵を持つ。
+  const named =
+    as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
+  if (as !== "admin" && !named) {
+    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
     throw new Error(
-      "KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" +
-        "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる",
+      `${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API）。` +
+        "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる",
     );
   }
-  const raw =
-    (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ??
-    env.KNOWLEDGE_DB_URL;
+  const raw = named ?? env.KNOWLEDGE_DB_URL;
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
@@ -103,8 +108,13 @@ export async function connect(
     ssl: { rejectUnauthorized: true },
   });
   await client.connect();
-  // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
-  // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
+  // **繋ぎ先に PgBouncer（Neon の `-pooler` 付きホスト）を使わない。**下の 2 つはセッション変数で、
+  // トランザクションプーリングでは文ごとに別のサーバー接続へ振られて落ちる。
+  // 実測（同時 8 本 x 25 回 = 200 回、2 巡）: pooled は search_path が 19 / 29 回消え、
+  // `<#>` が 24 / 35 回「operator does not exist」で失敗した。direct は 2 巡とも 0 / 200。
+  // 接続数が問題になったら、ここを直すのではなくロールの既定
+  // （`alter role ... set search_path`）へ移すこと。**逐次 1 本では再現しない。**
+  //
   // **search_path をロール任せにしない。**pgvector は `extensions` スキーマに置いてある。
   // ロールごとの既定 search_path にそれが入る保証は無いので、`<#>` を使う
   // 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。

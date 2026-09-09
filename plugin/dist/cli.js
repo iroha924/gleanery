@@ -23741,10 +23741,12 @@ function loadEnv(_from) {
   return out;
 }
 async function connect(env, { as = "admin" } = {}) {
-  if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
-    throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
+  const named = as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
+  if (as !== "admin" && !named) {
+    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
+    throw new Error(`${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API）。` + "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる");
   }
-  const raw = (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ?? env.KNOWLEDGE_DB_URL;
+  const raw = named ?? env.KNOWLEDGE_DB_URL;
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }

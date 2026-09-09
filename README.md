@@ -95,7 +95,7 @@ AI が読むのは MCP である。
 
 ```bash
 # **bun run dev は背景で起動すると落ちる**（--parallel が TTY を取りにいく）。別々に立てる。
-cd server && node src/http.ts          # API（:8787）
+cd server && node src/server.ts        # API（:8787）
 cd dashboard && ./node_modules/.bin/vite   # 画面（:5173）
 ```
 
@@ -224,6 +224,16 @@ db/          migrations（PostgreSQL の移行）
 | `CLERK_SECRET_KEY` | Clerk のシークレット鍵。`clerk env pull` が `dashboard/.env.local` へ書いたものを写す |
 | `CLERK_PUBLISHABLE_KEY` | 同じく公開鍵。API 側でも検証に使う |
 | `MITOS_ALLOWED_USER_ID` | **通す人を 1 人だけ指定する。**`clerk users list --json` の `id` |
+
+**デプロイ先へは 1 変数ずつ入れる。**渡すのは `KNOWLEDGE_DB_URL_RO` / `KNOWLEDGE_DB_URL_CFG` /
+`VOYAGE_API_KEY` / `OPENAI_API_KEY` / Clerk の 3 つ / `MITOS_ALLOWED_ORIGINS` と、画面のビルド用に
+`VITE_CLERK_PUBLISHABLE_KEY`。**`KNOWLEDGE_DB_URL`（管理鍵）は渡さない** — 入れ忘れても
+管理鍵へ落ちないように `db.ts` が弾くので、落ちるのではなく起動しない。
+preview と本番で鍵を分けたいときは、環境ごとにスコープを分けて入れる。
+
+`MITOS_ALLOWED_ORIGINS` は画面を配るオリジン（カンマ区切り、既定 `http://localhost:5173`）。
+トークンの発行元を検証させるためのもので、**空にすると検証ごと落ちる**ので空では起動しない。
+手元以外へ出すときは、そのオリジンを入れる。
 
 画面側の `VITE_CLERK_PUBLISHABLE_KEY` だけは `dashboard/.env.local`（`clerk env pull` が書く）。
 Vite は `VITE_` の付いた変数しかブラウザへ出さないので、シークレット鍵はここに置いても

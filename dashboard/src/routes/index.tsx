@@ -210,7 +210,7 @@ function Chat() {
   const [busy, setBusy] = useState(false);
   // **turn に持たせない。**保存後に会話を読み直すと turns ごと入れ替わって消える。
   // 今月の累計はそもそも会話ごとの値でもない。
-  const [cost, setCost] = useState<{ question: number; month: number } | null>(null);
+  const [cost, setCost] = useState<{ question: number; month: number | null } | null>(null);
   // 範囲はヘッダで選んだものに従う。**送信のたびに選ばせない** —
   // プロジェクトはセッション中ほぼ変わらないので、毎回同じ答えを入力させているだけだった。
   // ただし「すべて」では答えない。混ぜると別の仕事の記録がこの仕事の答えとして返る。
@@ -531,7 +531,9 @@ function Chat() {
                 </InputGroupText>
                 {cost && (
                   <InputGroupText className="font-mono text-[9px] text-muted-foreground tabular-nums">
-                    直前 ${cost.question.toFixed(3)} / 今月 ${cost.month.toFixed(2)}
+                    直前 ${cost.question.toFixed(3)}
+                    {/* 積み上げた log を読めないホストでは月額を出さない。0 と見分けが付かない */}
+                    {cost.month !== null && ` / 今月 $${cost.month.toFixed(2)}`}
                   </InputGroupText>
                 )}
                 <Tooltip>

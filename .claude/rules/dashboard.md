@@ -17,7 +17,7 @@ paths:
 ## API に免除する経路を作らない
 
 `/api/*` は全経路が Clerk の認証を通り、`MITOS_ALLOWED_USER_ID` と一致する 1 人しか通さない
-（`server/src/http.ts`）。**新しい画面を足すときに「この 1 本だけ認証なし」を作らない。**
+（`server/src/server.ts`）。**新しい画面を足すときに「この 1 本だけ認証なし」を作らない。**
 
 画面から API を叩く口は `dashboard/src/lib/api.ts` の 1 ファイルに閉じている。
 `fetch` を直に書かず、そこの `authed()` を通す。**通さないと 401 になるだけなので気付けるが、
@@ -41,6 +41,6 @@ Clerk 自体は Cookie 経路も持っているので、そこに寄りかから
 
 ## Next.js へ移さない
 
-`server/src` には入口が 4 つあり（`http.ts` / `mcp.ts` / `cli.ts` / `hook-check-path.ts`）、
+`server/src` には入口が 4 つあり（`server.ts` / `mcp.ts` / `cli.ts` / `hook-check-path.ts`）、
 ダッシュボードはそのうち 1 つでしかない（`d-stay-on-vite-react`）。
 画面の都合で枠組みを替えると、残り 3 つが巻き込まれる。

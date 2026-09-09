@@ -1,0 +1,70 @@
+# pre-commit が見ていないものを見る。
+#
+# **いちばんの価値は `bun run test`** — pre-commit は走らせていない（AGENTS.md「コマンド」）。
+# 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。
+#
+# **シークレットを置かない。**テストは資格情報なしで通る（DB が要る 2 件は自分で skip する）。
+# 実測: `env -i` で 68 pass / 0 fail / 2 skipped。
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 推論も外部への書き込みもしないので、読み取りだけ渡す。
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      # third-party action は full commit SHA で pin する（タグは後から中身を差し替えられる）。
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # **bun の版を固定する。**浮かせると lockfile を読めない版が選ばれる
+      # （Vercel で実際に踏んだ: 1.3.14 が lockfileVersion 2 を読めず落ちた）。
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+
+      # テストは node の test runner で走る。server/package.json の engines は >=22.18。
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      # **`code.ts` は rg を叩く。**ランナーには入っていない（実測: 無い状態で
+      # `code.test.ts` が 5 件落ちた）。しかも `rg()` は失敗を握り潰して null を返すので、
+      # **「rg が無い」と「一致が無い」が区別されないまま 0 件になる。**
+      - name: ripgrep を入れる
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: 依存を入れる
+        run: |
+          set -e
+          cd server && bun install --frozen-lockfile
+          cd ../dashboard && bun install --frozen-lockfile
+
+      - name: biome と tsc
+        run: bun run check
+
+      - name: テスト
+        run: bun run test
+
+      # **バンドルし直して差分が出たら、dist が古い。**配布物はソースと一緒にコミットされるので、
+      # 忘れると Codex 側が古いコードで動き続ける（AGENTS.md「MCP を直したら、版を上げないと届かない」）。
+      - name: 配布物が最新か
+        run: |
+          set -e
+          bun run bundle
+          bun run scripts/check-mcp-version.mjs
+          git diff --exit-code -- plugin/dist
+
+      # 同じ知識が複数の出口に写されている場所の突き合わせ。
+      - name: 対の突き合わせ
+        run: node scripts/check-pairs.mjs

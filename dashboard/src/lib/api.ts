@@ -68,7 +68,8 @@ export async function askStream(
     text: (t: string) => void;
     error: (m: string) => void;
     saved?: (chatId: string) => void;
-    cost?: (question: number, month: number) => void;
+    /** month は積み上げた log から出す。**書けないホストでは null** — 0 と区別する。 */
+    cost?: (question: number, month: number | null) => void;
   },
   signal?: AbortSignal,
 ): Promise<void> {
