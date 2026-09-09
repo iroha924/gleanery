@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "bun run --parallel --no-orphans api dashboard",
-    "api": "cd server && node src/http.ts",
+    "api": "cd server && node src/server.ts",
     "dashboard": "cd dashboard && ./node_modules/.bin/vite",
     "build": "cd dashboard && ./node_modules/.bin/vite build",
     "check": "bunx --bun @biomejs/biome@2.5.12 check . && cd server && bunx tsc --noEmit && cd ../dashboard && bunx tsc -b",

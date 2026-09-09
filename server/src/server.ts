@@ -813,10 +813,17 @@ async function saveTurn(
   return chatId;
 }
 
-const port = Number(process.env.MITOS_API_PORT ?? 8787);
-// **手元だけで待ち受ける。**hostname を省くと Node は全インターフェースへ bind する
-// （実測: `*:8787 (LISTEN)`）。鍵の設定を誤ったときに同じネットワークへ出るかどうかは、
-// この 1 行で決まる。画面は同じマシンの vite から来る。
-serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (i) =>
-  console.log(`mitos API: http://localhost:${i.port}`),
-);
+// **このファイル名と既定の export が、デプロイ先の入口になる。**
+// `src/server.*` は Vercel が Hono の入口として探す名前のひとつで、見つからないと
+// サービスが静的配信へ落ちて `server/` の中身がそのまま公開される（実測で `evals/` まで出た）。
+export default app;
+
+// **手元でだけ待ち受ける。**デプロイ先は上の export を使うので listen しない。
+// hostname を省くと Node は全インターフェースへ bind する（実測: `*:8787 (LISTEN)`）。
+// 鍵の設定を誤ったときに同じネットワークへ出るかどうかは、この 1 行で決まる。
+if (!process.env.VERCEL) {
+  const port = Number(process.env.MITOS_API_PORT ?? 8787);
+  serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (i) =>
+    console.log(`mitos API: http://localhost:${i.port}`),
+  );
+}

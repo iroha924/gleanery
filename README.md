@@ -95,7 +95,7 @@ AI が読むのは MCP である。
 
 ```bash
 # **bun run dev は背景で起動すると落ちる**（--parallel が TTY を取りにいく）。別々に立てる。
-cd server && node src/http.ts          # API（:8787）
+cd server && node src/server.ts        # API（:8787）
 cd dashboard && ./node_modules/.bin/vite   # 画面（:5173）
 ```
 
