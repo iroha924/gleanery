@@ -196,7 +196,7 @@ plugin/      Claude Code / Codex へ配るもの（skills, hooks, bin, dist）
 db/          migrations（PostgreSQL の移行）
 ```
 
-検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と pgroonga の全文検索を
+検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と pg_trgm の語彙検索を
 RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞（PR 番号、テーブル名）を
 落とし、全文だけだと言い換えを落とす。
 
@@ -226,7 +226,7 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 03:00〜03:30 に当て、カーネル更新などで再起動が要る状態になっていれば 04:00 に再起動する
 （`/etc/apt/apt.conf.d/52unattended-upgrades-local`）。Mac の日次同期は 06:00 なので、復帰後に当たる。
 
-**PostgreSQL は自動では上がらない。**`postgresql-17` / `pgvector` / `pgroonga` は PGDG のリポジトリから
+**PostgreSQL は自動では上がらない。**`postgresql-17` / `pgvector` は PGDG のリポジトリから
 入れており、そこは `Unattended-Upgrade::Allowed-Origins` に入れていない。当てると DB が止まるので、
 **時機は人が選ぶ**。
 

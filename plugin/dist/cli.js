@@ -23745,7 +23745,10 @@ function loadEnv(_from) {
 }
 var HERE = path.dirname(fileURLToPath(import.meta.url));
 var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
-var ca = null;
+var caFor = (host) => {
+  const own2 = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
+  return own2 && fs.existsSync(own2) ? [fs.readFileSync(own2, "utf8")] : [...tls.rootCertificates];
+};
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
     throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
@@ -23754,10 +23757,6 @@ async function connect(env, { as = "admin" } = {}) {
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  ca ??= [
-    ...CERT_DIR ? fs.readdirSync(CERT_DIR).filter((f) => f.endsWith(".crt")).map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8")) : [],
-    ...tls.rootCertificates
-  ];
   let u;
   try {
     u = new URL(raw);
@@ -23774,7 +23773,7 @@ async function connect(env, { as = "admin" } = {}) {
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca, rejectUnauthorized: true }
+    ssl: { ca: caFor(u.hostname), rejectUnauthorized: true }
   });
   await client.connect();
   await client.query("set search_path = public, extensions");
@@ -38072,16 +38071,13 @@ async function search(client, env2, o) {
      order by n.embedding <#> $1::extensions.vector
      limit $${values2.length + 2}`, [vec(qv), ...values2, pool]);
   const words = lexicalTerms(question);
-  const lex = words.length ? await client.query(`select ${COLS}, (
-           select max(extensions.similarity(n.text, w))
-           from unnest($${values2.length + 1}::text[]) as w
-         ) as score
+  const lex = words.length ? await client.query(`select ${COLS}, 1::float8 as score
          ${JOINS}
          where ${clauses(1)} and exists (
-           select 1 from unnest($${values2.length + 1}::text[]) as w
-           where n.text ilike '%' || w || '%'
+           select 1 from unnest($${values2.length + 1}::text[]) as t
+           where n.text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
          )
-         order by score desc nulls last, n.id
+         order by n.id
          limit $${values2.length + 2}`, [...values2, words, pool]) : { rows: [] };
   const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0)

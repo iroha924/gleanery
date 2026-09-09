@@ -7,8 +7,8 @@
 // 文字面は近いが意味は真逆で、再ランクにはそれを見分ける手がかりが無い。だから札を前置きする。
 //
 // **語彙側との融合は入れてある。**理由と実測は search() の中（lex を引く箇所）にある。
-// **語彙側の索引を落とさない。**落とすと出荷経路の recall@5 が 95% → 85% になる
-// （実測 2026-09-09、20 問）。GIN + gin_trgm_ops で 12 MB。
+// **語彙側を落とさない。**落とすと出荷経路の recall@5 が 95% → 85% になる
+// （実測 2026-09-09、20 問）。索引は張っていない — このクエリ形では選ばれないため。
 // **それでも落とさない** — ID を含む質問の recall@5 が 2/6 から 5/6 へ変わる経路である。
 
 import crypto from "node:crypto";
@@ -243,22 +243,24 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   // （最近傍が別の番号になる）。実測（2026-09-09、20 問）: 出荷経路の recall@5 は
   // 語彙側ありで 95%、外すと 85%。
   //
-  // **順位ではなく候補入りが仕事。**得点は付けるが、順位を決めるのは後段の再ランクである。
-  // pgroonga も同じ性質で（一致行すべてに 1 を返していた）、pg_trgm へ替えても
-  // 出荷経路の数字は動かなかった（どちらも 95%）。
+  // **得点を付けない。**trigram の類似度はどちらも順位にならない — `similarity` は
+  // 本文の長さの逆数に近づき（8 字 1.00 / 8,539 字 0.001）、`word_similarity` は同点が
+  // 大量に出る（1 語で 26 行が 1.000）。**順位は後段の再ランクが付ける**ので、
+  // ここは `n.id` 順で長さにも語順にも中立にしておく。実測: 出荷経路の recall@5 は
+  // `similarity` / `word_similarity` / 得点なし のどれでも 95%。
+  //
+  // **`_` を潰す。**`lexicalTerms` は `search_path` のような語を返し、`ilike` では
+  // `_` が任意の 1 文字として効く。
   const words = lexicalTerms(question);
   const lex = words.length
     ? await client.query<Hit>(
-        `select ${COLS}, (
-           select max(extensions.similarity(n.text, w))
-           from unnest($${values.length + 1}::text[]) as w
-         ) as score
+        `select ${COLS}, 1::float8 as score
          ${JOINS}
          where ${clauses(1)} and exists (
-           select 1 from unnest($${values.length + 1}::text[]) as w
-           where n.text ilike '%' || w || '%'
+           select 1 from unnest($${values.length + 1}::text[]) as t
+           where n.text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
          )
-         order by score desc nulls last, n.id
+         order by n.id
          limit $${values.length + 2}`,
         [...values, words, pool],
       )

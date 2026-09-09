@@ -41,16 +41,16 @@ export function loadEnv(_from?: string): Env {
   return out;
 }
 
-// **接続先で CA の出どころが変わる。**自前の PostgreSQL は自己署名なので公開 CA の連鎖に
-// 載っておらず、同梱した証明書を渡さないと検証できない。マネージド（Neon など）は逆で、
-// 公開 CA で出ているので同梱の証明書だけでは `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` になる（実測）。
+// **接続先ごとに CA を選ぶ。束ねない。**自前の PostgreSQL は自己署名なので、同梱した
+// 証明書を渡さないと検証できない。マネージド（Neon など）は公開 CA で出ている。
 //
-// **両方を信頼する。**Node の ca は配列を取るので、同梱の .crt とシステムの CA を束ねる。
+// **両方を渡すと、同梱の CA が全ホストの信頼アンカーになる。**`plugin/certs` の証明書は
+// `CA:TRUE` で nameConstraints を持たないので、その鍵を握った相手が任意のホストを詐称できる。
+// certs はプラグインに同梱して配るので、影響は自分だけで済まない。
+// **ファイル名をホスト名にしておき、接続先のものだけを使う。**
+//
 // **`rejectUnauthorized` は切らない** — 検証を切ると、経路を握った相手が返した行が
 // そのままフックの additionalContext と MCP の応答になる。
-//
-// **certs にあるものを全部読む。**接続先を替えるたびにファイル名を書き換えると、
-// 移行の途中で片方が繋がらなくなる。
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // 正本は plugin/certs。バンドル（plugin/dist/*.js）からは ../certs、
 // 素のソース（server/src/db.ts）からは ../../plugin/certs で着く。
@@ -58,7 +58,11 @@ const CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "p
   fs.existsSync(d),
 );
 
-let ca: string[] | null = null;
+/** そのホスト専用の証明書があればそれだけを、無ければ公開 CA を返す。 */
+const caFor = (host: string): string[] => {
+  const own = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
+  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : [...tls.rootCertificates];
+};
 
 /**
  * @param as どの鍵で繋ぐか。
@@ -87,16 +91,6 @@ export async function connect(
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  // 同梱の証明書は「あれば足す」。マネージドへ移した環境では 1 つも無くてよい。
-  ca ??= [
-    ...(CERT_DIR
-      ? fs
-          .readdirSync(CERT_DIR)
-          .filter((f) => f.endsWith(".crt"))
-          .map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"))
-      : []),
-    ...tls.rootCertificates,
-  ];
 
   let u: URL;
   try {
@@ -124,7 +118,7 @@ export async function connect(
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca, rejectUnauthorized: true },
+    ssl: { ca: caFor(u.hostname), rejectUnauthorized: true },
   });
   await client.connect();
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。

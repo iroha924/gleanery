@@ -86,12 +86,13 @@ async function lexicalSearch(q: string, limit: number): Promise<Row[]> {
   if (ts.length === 0) return [];
   const r = await c.query<Row>(
     `select key, kind, subkind, polarity, text, record_id,
-            coalesce(attrs->>'whyNot', attrs->>'context','') ex,
-            (select max(extensions.similarity(text, w)) from unnest($1::text[]) as w) as score
+            coalesce(attrs->>'whyNot', attrs->>'context','') ex, 1::float8 as score
      from node
-     where deleted_at is null
-       and exists (select 1 from unnest($1::text[]) as w where text ilike '%' || w || '%')
-     order by score desc nulls last, key limit $2`,
+     where deleted_at is null and exists (
+       select 1 from unnest($1::text[]) as t
+       where text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
+     )
+     order by key limit $2`,
     [ts, limit],
   );
   return r.rows;

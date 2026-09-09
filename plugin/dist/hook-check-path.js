@@ -5115,7 +5115,10 @@ function loadEnv(_from) {
 }
 var HERE = path.dirname(fileURLToPath(import.meta.url));
 var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
-var ca = null;
+var caFor = (host) => {
+  const own = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
+  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : [...tls.rootCertificates];
+};
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
     throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
@@ -5124,10 +5127,6 @@ async function connect(env, { as = "admin" } = {}) {
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  ca ??= [
-    ...CERT_DIR ? fs.readdirSync(CERT_DIR).filter((f) => f.endsWith(".crt")).map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8")) : [],
-    ...tls.rootCertificates
-  ];
   let u;
   try {
     u = new URL(raw);
@@ -5144,7 +5143,7 @@ async function connect(env, { as = "admin" } = {}) {
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca, rejectUnauthorized: true }
+    ssl: { ca: caFor(u.hostname), rejectUnauthorized: true }
   });
   await client.connect();
   await client.query("set search_path = public, extensions");

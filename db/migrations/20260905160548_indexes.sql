@@ -15,5 +15,10 @@ create index record_embedding on record
 create index asset_embedding on asset
   using hnsw (embedding extensions.vector_ip_ops);
 
--- 語彙検索の索引は 20260905160815 で張る（拡張を extensions スキーマへ入れた後）。
+-- 日本語の語彙検索。pgroonga は分かち書きを持つので、trigram より精度が高い。
+-- 「認証」のような語での完全一致は、ベクトルが苦手とする領域を埋める。
+create index node_text_pgroonga  on node  using pgroonga (text);
+create index record_text_pgroonga on record using pgroonga (title, problem, goal);
+create index asset_text_pgroonga on asset using pgroonga (caption, ocr_text);
+create index term_pgroonga on term using pgroonga (term, meaning);
 ;
