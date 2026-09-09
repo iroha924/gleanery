@@ -39011,7 +39011,7 @@ function loadEnv(_from) {
   readInto(out, GLOBAL_ENV);
   return out;
 }
-async function connect(env, { as = "admin" } = {}) {
+function settings(env, as) {
   const named = as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
   if (as !== "admin" && !named) {
     const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
@@ -39031,19 +39031,28 @@ async function connect(env, { as = "admin" } = {}) {
   if (bad.length) {
     throw new Error(`KNOWLEDGE_DB_URL の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`);
   }
-  const client = new esm_default.Client({
+  return {
     host: u.hostname,
     port: u.port ? Number(u.port) : 5432,
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
     ssl: { rejectUnauthorized: true }
+  };
+}
+var SESSION = "set search_path = public, extensions; set hnsw.iterative_scan = relaxed_order";
+function pool(env, { as = "admin" } = {}) {
+  const p = new esm_default.Pool({
+    ...settings(env, as),
+    max: 5,
+    idleTimeoutMillis: 30000,
+    allowExitOnIdle: true,
+    verify: (client, done) => {
+      client.query(SESSION).then(() => done(), done);
+    }
   });
-  await client.connect();
-  await client.query("set search_path = public, extensions");
-  await client.query("set hnsw.iterative_scan = relaxed_order");
-  client.on("error", () => {});
-  return client;
+  p.on("error", () => {});
+  return p;
 }
 var VOYAGE = "https://api.voyageai.com/v1/embeddings";
 var EMBED_MODEL = "voyage-4-large";
@@ -39224,7 +39233,7 @@ function fuse(lists, k = 60) {
   return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
 }
 async function search(client, env, o) {
-  const { question, scopeIds, polarity, kinds, limit = 5, pool = 30, rerankModel = "rerank-3" } = o;
+  const { question, scopeIds, polarity, kinds, limit = 5, pool: pool2 = 30, rerankModel = "rerank-3" } = o;
   const qv = o.queryVector ?? (await embed(env, [question], "query"))[0];
   if (!qv)
     throw new Error("埋め込みが空で返った");
@@ -39250,7 +39259,7 @@ async function search(client, env, o) {
      ${JOINS}
      where ${clauses(2)}
      order by n.embedding <#> $1::extensions.vector
-     limit $${values.length + 2}`, [vec(qv), ...values, pool]);
+     limit $${values.length + 2}`, [vec(qv), ...values, pool2]);
   const words = lexicalTerms(question);
   const lex = words.length ? await client.query(`select ${COLS}, m.hits::float8 as score
          ${JOINS}
@@ -39260,7 +39269,7 @@ async function search(client, env, o) {
          ) m
          where ${clauses(1)} and m.hits > 0
          order by m.hits desc, length(n.text), n.id desc
-         limit $${values.length + 2}`, [...values, words, pool]) : { rows: [] };
+         limit $${values.length + 2}`, [...values, words, pool2]) : { rows: [] };
   const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0)
     return { rows: [], queryVector: qv, topScore: null };
@@ -39442,27 +39451,13 @@ async function searchRecords(client, queryVector, scopeIds, limit = 3) {
 
 // server/src/mcp.ts
 var env = loadEnv(process.env.KNOWLEDGE_ENV_DIR ?? process.cwd());
-var pending = null;
+var readPool = null;
 function db() {
-  if (pending)
-    return pending;
-  const p = connect(env, { as: "read" }).then(async (c) => {
-    c.on("error", () => {
-      if (pending === p)
-        pending = null;
-      c.end().catch(() => {});
-    });
-    return c;
-  });
-  p.catch(() => {
-    if (pending === p)
-      pending = null;
-  });
-  pending = p;
-  return p;
+  readPool ??= pool(env, { as: "read" });
+  return readPool;
 }
 async function currentScopeIds(cwd) {
-  const c = await db();
+  const c = db();
   const me = identify(cwd ?? process.cwd());
   const r = await c.query("select id::int as id from scope where ident = $1", [me.ident]);
   const row = r.rows[0];
@@ -39516,7 +39511,7 @@ server.registerTool("search_knowledge", {
   },
   annotations: READ_ONLY
 }, async ({ question, only_rejected_or_forbidden: onlyDont, kinds, all_scopes, cwd, limit }) => {
-  const c = await db();
+  const c = db();
   const scope = all_scopes ? null : await currentScopeIds(cwd);
   const polarity = onlyDont ? "dont" : undefined;
   const { rows, queryVector, topScore } = await search(c, env, {
@@ -39558,7 +39553,7 @@ server.registerTool("current_work", {
   },
   annotations: READ_ONLY
 }, async ({ cwd }) => {
-  const c = await db();
+  const c = db();
   const scope = await currentScopeIds(cwd);
   if (scope.own === null) {
     return {
@@ -39622,7 +39617,7 @@ server.registerTool("check_path", {
   },
   annotations: READ_ONLY
 }, async ({ path: p, cwd }) => {
-  const c = await db();
+  const c = db();
   const scope = await currentScopeIds(cwd);
   const rows = await whatAboutPath(c, p, scope.ids);
   return {
@@ -39640,7 +39635,7 @@ server.registerTool("list_scopes", {
   inputSchema: {},
   annotations: READ_ONLY
 }, async () => {
-  const c = await db();
+  const c = db();
   const r = await c.query(`select s.id, s.label, s.role, s.summary,
               coalesce(string_agg(g.name, ', ' order by g.name), '(束なし)') as groups,
               (select count(*) from record where scope_id = s.id)::int as records

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
 import type pg from "pg";
-import type { Env } from "./db.ts";
+import type { Db, Env } from "./db.ts";
 import { HOST } from "./scope.ts";
 
 /** 読む順。**最初に当たったところで止める。**README の無いリポジトリでも必ず何かは読める。 */
@@ -75,7 +75,7 @@ export async function inferIdentity(
 }
 
 /** 取り込みのついでに、まだ空なら埋める。埋めたときだけ人向けの 1 行を返す。 */
-export async function ensureIdentity(c: pg.Client, env: Env, scopeId: number): Promise<string | null> {
+export async function ensureIdentity(c: Db, env: Env, scopeId: number): Promise<string | null> {
   // **置き場所はこのホストのものを引く。**リポジトリを実際に読むので、
   // 別のマシンで登録されたパスを渡しても開けない。
   const r = await c.query<{

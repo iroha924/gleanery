@@ -23740,7 +23740,7 @@ function loadEnv(_from) {
   readInto(out, GLOBAL_ENV);
   return out;
 }
-async function connect(env, { as = "admin" } = {}) {
+function settings(env, as) {
   const named = as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
   if (as !== "admin" && !named) {
     const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
@@ -23760,17 +23760,20 @@ async function connect(env, { as = "admin" } = {}) {
   if (bad.length) {
     throw new Error(`KNOWLEDGE_DB_URL の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`);
   }
-  const client = new esm_default.Client({
+  return {
     host: u.hostname,
     port: u.port ? Number(u.port) : 5432,
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
     ssl: { rejectUnauthorized: true }
-  });
+  };
+}
+var SESSION = "set search_path = public, extensions; set hnsw.iterative_scan = relaxed_order";
+async function connect(env, { as = "admin" } = {}) {
+  const client = new esm_default.Client(settings(env, as));
   await client.connect();
-  await client.query("set search_path = public, extensions");
-  await client.query("set hnsw.iterative_scan = relaxed_order");
+  await client.query(SESSION);
   client.on("error", () => {});
   return client;
 }

@@ -12,45 +12,26 @@ import { streamSSE } from "hono/streaming";
 import OpenAI from "openai";
 import type pg from "pg";
 import { type ChatBody, chat, type Learn } from "./chat.ts";
-import { connect, loadEnv } from "./db.ts";
+import { loadEnv, pool } from "./db.ts";
 import { candidates, identify, rememberPath } from "./scope.ts";
 import { currentWork, labelOf, logSearch, type Polarity, scopeFamily, search } from "./search.ts";
 
 const env = loadEnv(process.cwd());
-let pending: Promise<pg.Client> | null = null;
-function db(): Promise<pg.Client> {
-  if (pending) return pending;
-  const p = connect(env, { as: "read" }).then((c) => {
-    c.on("error", () => {
-      if (pending === p) pending = null;
-      c.end().catch(() => {});
-    });
-    return c;
-  });
-  p.catch(() => {
-    if (pending === p) pending = null;
-  });
-  pending = p;
-  return p;
+// **接続を 1 本共有しない。**画面は読み込みで複数の API を同時に叩くので、
+// 1 本だと 2 本目以降が pg のキューへ積まれる（pg@9 で無くなる挙動）。
+// プールは要るときに張り、アイドルで返す。
+let readPool: pg.Pool | null = null;
+function db(): pg.Pool {
+  readPool ??= pool(env, { as: "read" });
+  return readPool;
 }
 
 // 束ねる設定だけを書ける鍵。record / node / ref には触れないので、
 // 画面が壊れてもナレッジ本体は書き換わらない。
-let cfgPending: Promise<pg.Client> | null = null;
-function cfg(): Promise<pg.Client> {
-  if (cfgPending) return cfgPending;
-  const p = connect(env, { as: "config" }).then((c) => {
-    c.on("error", () => {
-      if (cfgPending === p) cfgPending = null;
-      c.end().catch(() => {});
-    });
-    return c;
-  });
-  p.catch(() => {
-    if (cfgPending === p) cfgPending = null;
-  });
-  cfgPending = p;
-  return p;
+let cfgPool: pg.Pool | null = null;
+function cfg(): pg.Pool {
+  cfgPool ??= pool(env, { as: "config" });
+  return cfgPool;
 }
 
 const app = new Hono();
@@ -136,7 +117,7 @@ function scopesOf(c: { req: { query: (k: string) => string | undefined } }): num
 // 前回どこで止まって、次に誰が何をするのか。record にあるのに画面が出していなかった。
 app.get("/api/now", async (c) => {
   // 判定の規則は search.ts の currentWork に置いてある（MCP の current_work と共有する）。
-  return c.json(await currentWork(await db(), scopesOf(c)));
+  return c.json(await currentWork(db(), scopesOf(c)));
 });
 
 // 保存した直後に人が見る画面。**機械が付けた分類を人が確かめるためのもの。**
@@ -144,7 +125,7 @@ app.get("/api/now", async (c) => {
 // ここで直しても次の保存で黙って戻る（ingest.ts の upsert が polarity=excluded.polarity）。
 // おかしければ記録の側（/mitos:trace）を直す。
 app.get("/api/scopes", async (c) => {
-  const q = await (await db()).query(
+  const q = await db().query(
     `select s.id::int, s.label, s.role, s.summary,
             coalesce(string_agg(distinct g.name, ', '), null) as groups,
             (select count(*) from record where scope_id = s.id)::int as records,
@@ -158,7 +139,7 @@ app.get("/api/scopes", async (c) => {
 });
 
 app.get("/api/records", async (c) => {
-  const q = await (await db()).query(
+  const q = await db().query(
     `select r.id, r.title, r.status, r.branch, r.problem, r.goal, r.current_at, r.current_text,
             r.updated_at, s.label as scope_label,
             (select count(*) from node where record_id = r.id and deleted_at is null)::int as nodes
@@ -178,7 +159,7 @@ app.get("/api/records", async (c) => {
 });
 
 app.get("/api/records/:id", async (c) => {
-  const client = await db();
+  const client = db();
   // **列を並べる。`r.*` にしない。**IR 全文（101 KB）と 1024 次元のベクトル（12 KB）が
   // 詳細を開くたびに流れていた（実測: 166 KB のうち 114 KB が画面の使わない 2 列）。
   const rec = await client.query(
@@ -230,7 +211,7 @@ app.post("/api/search", async (c) => {
   if (!question) return c.json({ error: "質問が空" }, 400);
   const limit = Math.min(Math.max(Number(body.limit ?? 10), 1), 20);
 
-  const client = await db();
+  const client = db();
   // 範囲はヘッダで選んだものが来る。**未指定は「すべて」**（絞らない）。
   const scopeIds = Array.isArray(body.scopeIds) ? body.scopeIds : undefined;
   const polarity: Polarity | undefined = body.onlyDont ? "dont" : undefined;
@@ -245,7 +226,7 @@ app.post("/api/search", async (c) => {
 
 // 束ねる候補。~/Projects 配下と、実際に作業した場所（transcript から拾う）の和。
 app.get("/api/candidates", async (c) => {
-  const client = await db();
+  const client = db();
   const known = await client.query<{ ident: string; id: number }>("select ident, id::int as id from scope");
   const byIdent = new Map(known.rows.map((r) => [r.ident, r.id]));
   return c.json(
@@ -261,7 +242,7 @@ app.get("/api/candidates", async (c) => {
 });
 
 app.get("/api/groups", async (c) => {
-  const r = await (await db()).query(
+  const r = await db().query(
     `select g.id::int, g.name,
             coalesce(json_agg(json_build_object('id', s.id::int, 'label', s.label,
                               'identKind', s.ident_kind, 'ident', s.ident)
@@ -300,7 +281,7 @@ app.post("/api/groups", async (c) => {
     );
   }
 
-  const client = await cfg();
+  const client = cfg();
   await client.query("begin");
   try {
     // **on conflict do update を使わない。**UPDATE 権限を要求するので、
@@ -355,7 +336,7 @@ app.post("/api/groups", async (c) => {
 // meaning が null の行として積み、人が答えたら埋まる。
 app.get("/api/terms", async (c) => {
   const ids = scopesOf(c);
-  const r = await (await db()).query(
+  const r = await db().query(
     `select t.id::int, t.word, t.aliases, t.meaning, t.asked_why, t.asked_at, g.name as project
      from term t left join scope_group g on g.id = t.group_id
      where $1::int[] is null or t.group_id is null or t.group_id in (
@@ -376,7 +357,7 @@ app.post("/api/terms", async (c) => {
   const word = (body.word ?? "").trim();
   if (!word) return c.json({ error: "言葉が空" }, 400);
   try {
-    await (await cfg()).query(
+    await cfg().query(
       `insert into term (group_id, word, meaning, aliases) values ($1,$2,$3,$4)
        on conflict (coalesce(group_id, 0), word) do update set
          meaning = coalesce(excluded.meaning, term.meaning),
@@ -393,7 +374,7 @@ app.delete("/api/terms/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "id が不正" }, 400);
   try {
-    await (await cfg()).query("delete from term where id = $1", [id]);
+    await cfg().query("delete from term where id = $1", [id]);
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
@@ -403,7 +384,7 @@ app.delete("/api/terms/:id", async (c) => {
 app.delete("/api/groups/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "id が不正" }, 400);
-  const client = await cfg();
+  const client = cfg();
   await client.query("begin");
   try {
     await client.query("delete from group_member where group_id = $1", [id]);
@@ -422,7 +403,7 @@ app.delete("/api/groups/:id", async (c) => {
 // **ナレッジとは別の表に置く。**生成した答えを record / node へ書き戻すと、
 // 誤りが「記録」に化けて次の答えがそれを引用する（自分の出力を自分の根拠にする輪）。
 app.get("/api/chats", async (c) => {
-  const r = await (await db()).query(
+  const r = await db().query(
     `select c.id, c.title, c.scope_name, c.updated_at,
             (select count(*) from chat_message m where m.chat_id = c.id)::int as messages
      from chat c order by c.updated_at desc limit 100`,
@@ -431,7 +412,7 @@ app.get("/api/chats", async (c) => {
 });
 
 app.get("/api/chats/:id", async (c) => {
-  const client = await db();
+  const client = db();
   const head = await client.query("select id, title, scope_ids, scope_name from chat where id = $1", [
     c.req.param("id"),
   ]);
@@ -445,7 +426,7 @@ app.get("/api/chats/:id", async (c) => {
 
 app.delete("/api/chats/:id", async (c) => {
   try {
-    await (await cfg()).query("delete from chat where id = $1", [c.req.param("id")]);
+    await cfg().query("delete from chat where id = $1", [c.req.param("id")]);
     return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
@@ -576,7 +557,7 @@ app.post("/api/reply", async (c) => {
   if (!env.OPENAI_API_KEY) return c.json({ error: "OPENAI_API_KEY が無い" }, 500);
 
   try {
-    const client = await db();
+    const client = db();
     const ids = Array.isArray(body.scopeIds) ? body.scopeIds : undefined;
     const { rows } = await search(client, env, { question: heard, scopeIds: ids, limit: 8 });
     // 番号は 1 始まり。**LLM が指す番号と画面の番号を一致させる。**
@@ -697,7 +678,7 @@ app.post("/api/polish", async (c) => {
 
 app.post("/api/chat", async (c) => {
   const body = (await c.req.json()) as ChatBody & { chatId?: string; scopeName?: string };
-  const client = await db();
+  const client = db();
   // 選ばれたプロジェクトがまとめに属していれば、その相手も範囲に入れる。
   const ids = Array.isArray(body.scopeIds) ? body.scopeIds : [];
   const family = [...new Set((await Promise.all(ids.map((id) => scopeFamily(client, id)))).flat())];
@@ -712,7 +693,7 @@ app.post("/api/chat", async (c) => {
       ).rows[0]?.id
     : undefined;
   const learn: Learn = async (t) => {
-    const w = await cfg();
+    const w = cfg();
     await w.query(
       `insert into term (group_id, word, meaning, aliases, asked_why, asked_at)
        values ($1,$2,$3,$4,$5, case when $3::text is null then now() else null end)
@@ -803,7 +784,7 @@ async function saveTurn(
   answer: string,
   sources: unknown[],
 ): Promise<string> {
-  const w = await cfg();
+  const w = cfg();
   let chatId = body.chatId;
   if (!chatId) {
     const question = body.question ?? "";

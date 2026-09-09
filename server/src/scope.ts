@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { Db } from "./db.ts";
 
 const HOME = os.homedir();
 
@@ -130,8 +131,6 @@ export function candidates(
 
 // --- そのホストでの置き場所 ---
 
-import type pg from "pg";
-
 /**
  * どのマシンから見ているか。
  * **識別子（git remote）はマシンをまたいで同じで、変わるのはパスだけ。**
@@ -148,7 +147,7 @@ export const HOST = os.hostname();
  * 変えなかったときは false を返す。
  */
 export async function rememberPath(
-  client: pg.Client,
+  client: Db,
   scopeId: number,
   absPath: string,
   { replace = false } = {},

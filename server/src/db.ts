@@ -52,10 +52,17 @@ export function loadEnv(_from?: string): Env {
  *   config = 画面の束ね設定（scope / scope_group / group_member だけ書ける）
  *   admin  = 取り込み CLI（全部）
  */
-export async function connect(
-  env: Env,
-  { as = "admin" }: { as?: "admin" | "read" | "config" } = {},
-): Promise<pg.Client> {
+/** クエリを投げられるもの。**接続 1 本を占有する必要がある処理は `pg.Client` のままにする** — トランザクションはプール越しには張れない。 */
+export type Db = Pick<pg.Client, "query">;
+
+/** どの鍵で繋ぐか。 */
+type As = "admin" | "read" | "config";
+
+/**
+ * 接続の設定を 1 つにまとめる。**`connect()` と `pool()` の両方がここを通る。**
+ * 分けて書くと、TLS の固定と接続文字列の検査が片方だけ緩む。
+ */
+function settings(env: Env, as: As): pg.ClientConfig {
   // 鍵を用途で分ける。用意されていない環境では管理側へ落ちる（設定していなくても動くように）。
   // **推論する層は、管理側の鍵へ落とさない。**落ちると MCP・フック・画面の API が
   // 「全部書ける鍵」を持つことになり、ロールを分けた意味が消える
@@ -99,33 +106,66 @@ export async function connect(
     );
   }
 
-  const client = new pg.Client({
+  return {
     host: u.hostname,
     port: u.port ? Number(u.port) : 5432,
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
     ssl: { rejectUnauthorized: true },
-  });
+  };
+}
+
+// **繋ぎ先に PgBouncer（Neon の `-pooler` 付きホスト）を使わない。**下の 2 つはセッション変数で、
+// トランザクションプーリングでは文ごとに別のサーバー接続へ振られて落ちる。
+// 実測（同時 8 本 x 25 回 = 200 回、2 巡）: pooled は search_path が 19 / 29 回消え、
+// `<#>` が 24 / 35 回「operator does not exist」で失敗した。direct は 2 巡とも 0 / 200。
+// **ここでプールするのはクライアント側で、接続 1 本 = セッション 1 つは保たれる。**
+//
+// **search_path をロール任せにしない。**pgvector は `extensions` スキーマに置いてある。
+// ロールごとの既定 search_path にそれが入る保証は無いので、`<#>` を使う
+// 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。
+//
+// HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
+// set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
+const SESSION = "set search_path = public, extensions; set hnsw.iterative_scan = relaxed_order";
+
+export async function connect(env: Env, { as = "admin" }: { as?: As } = {}): Promise<pg.Client> {
+  const client = new pg.Client(settings(env, as));
   await client.connect();
-  // **繋ぎ先に PgBouncer（Neon の `-pooler` 付きホスト）を使わない。**下の 2 つはセッション変数で、
-  // トランザクションプーリングでは文ごとに別のサーバー接続へ振られて落ちる。
-  // 実測（同時 8 本 x 25 回 = 200 回、2 巡）: pooled は search_path が 19 / 29 回消え、
-  // `<#>` が 24 / 35 回「operator does not exist」で失敗した。direct は 2 巡とも 0 / 200。
-  // 接続数が問題になったら、ここを直すのではなくロールの既定
-  // （`alter role ... set search_path`）へ移すこと。**逐次 1 本では再現しない。**
-  //
-  // **search_path をロール任せにしない。**pgvector は `extensions` スキーマに置いてある。
-  // ロールごとの既定 search_path にそれが入る保証は無いので、`<#>` を使う
-  // 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。
-  await client.query("set search_path = public, extensions");
-  // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
-  // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
-  await client.query("set hnsw.iterative_scan = relaxed_order");
+  await client.query(SESSION);
   // アイドル中の切断は 'error' として飛んでくる。リスナが無いと uncaughtException になり、
   // クエリを投げていなくても長命のサーバーが落ちる。
   client.on("error", () => {});
   return client;
+}
+
+/**
+ * 長命のプロセス（画面の API と MCP）が使う接続。
+ *
+ * **1 本を共有しない。**同時に来た 2 本目以降は pg が 1 本のキューへ積み、
+ * その挙動は pg@9 で無くなる（実測: 8.23 が DeprecationWarning を出す）。
+ * ツール呼び出しも画面の読み込みも同時に来るので、重なるのは例外ではなく普通の状態である。
+ *
+ * **セッション変数は `verify` で張る。**`on("connect")` だと `set` がキューに残ったまま
+ * 借り手へ渡り、同じ警告を踏む。`verify` は新しい接続にだけ走り、
+ * `done` を呼ぶまで借り手へ渡さない（`pg-pool/index.js` の `_acquireClient`）。
+ */
+export function pool(env: Env, { as = "admin" }: { as?: As } = {}): pg.Pool {
+  const p = new pg.Pool({
+    ...settings(env, as),
+    // **Neon の接続枠を食い潰さない。**Vercel は実体を複数持つので、1 実体あたりの上限が要る。
+    max: 5,
+    idleTimeoutMillis: 30_000,
+    allowExitOnIdle: true,
+    verify: (client, done) => {
+      client.query(SESSION).then(() => done(), done);
+    },
+  });
+  // アイドル中に切られた接続は 'error' で飛ぶ。プールはその 1 本を捨てて次を張るので、
+  // ここで受けないと uncaughtException になる。
+  p.on("error", () => {});
+  return p;
 }
 
 const VOYAGE = "https://api.voyageai.com/v1/embeddings";
