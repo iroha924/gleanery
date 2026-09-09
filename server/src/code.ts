@@ -46,6 +46,20 @@ const globs = (extra?: string): string[] =>
 type Failures = Map<string, string>;
 
 /**
+ * rg の stderr を、そのままは載せない。
+ *
+ * **読めなかったファイルの名前が出る。**素通しすると、`SECRET` で弾いているはずの
+ * 資格情報のパスが、結果の枠を回避してモデルの文脈へ入る。
+ */
+const scrub = (stderr: string): string =>
+  stderr
+    .trim()
+    .split(/\s+/)
+    .map((t) => (SECRET.test(t.replace(/[:,]+$/, "")) ? "«伏せた»" : t))
+    .join(" ")
+    .slice(0, 200);
+
+/**
  * rg を 1 回走らせる。
  *
  * **1 件も無い（終了コード 1）と、探せなかったを分ける。**まとめて null にすると、
@@ -61,16 +75,25 @@ function rg(root: Root, args: string[], failed: Failures): string | null {
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
+      // **PATH の零長要素を落とす。**POSIX ではカレントディレクトリを指すので、
+      // 探索対象のリポジトリに置かれた `rg` が実行される（cwd がそのリポジトリ）。
+      env: {
+        ...process.env,
+        PATH: (process.env.PATH ?? "").split(path.delimiter).filter(Boolean).join(path.delimiter),
+      },
     });
   } catch (e) {
     const r = e as { status?: number; code?: string; stdout?: string; stderr?: string };
     if (r.status === 1) return null;
-    // **ENOENT を「rg が無い」と断定しない。**根のディレクトリが消えたときも同じ code になる。
+    // **起動できなかった理由を落とさない。**rg が無いのか、置き場所が消えたのか、
+    // 権限で弾かれたのかで打つ手が違う。ENOENT を「rg が無い」と断定もしない。
     failed.set(
       root.label,
       r.code === "ENOENT"
-        ? `rg を起動できない（rg が入っていないか ${root.dir} が無い）`
-        : `rg が終了コード ${r.status}: ${(r.stderr ?? "").trim().replace(/\s+/g, " ").slice(0, 200)}`,
+        ? "rg を起動できない（rg が入っていないか、置き場所が無い）"
+        : r.code
+          ? `rg を起動できない（${r.code}）`
+          : `rg が終了コード ${r.status}: ${scrub(r.stderr ?? "")}`,
     );
     return r.stdout || null;
   }
@@ -120,28 +143,33 @@ function countMatches(
 export function grepCode(
   roots: Root[],
   q: { query: string; repo?: string; glob?: string; limit?: number },
-):
-  | {
-      hits: { repo: string; path: string; line: number; text: string }[];
-      /**
-       * 名前が一致したファイル。**本文一致とは別の枠にする。**
-       * 同じ枠に入れると、名前だけ一致したファイルが limit を食い潰し、
-       * 実装を持つファイルが返らないことがある（実測: limit 2 で本文一致 0 件）。
-       */
-      names: string[];
-      /** 上限を掛けずに数えた本文一致の総数と、その全ファイル。ファイル名だけの一致は含まない。 */
-      matched: { files: number; lines: number; paths: string[] };
-      /** 探せなかった作業場所。**空でないなら、返っている結果は全部ではない。** */
-      unsearched: string[];
-    }
-  | {
-      // **探せなかったことを、0 件と同じ形で返さない。**同じにすると
-      // 「その語はコードに無い」と答えることになり、探せていないことが誰にも見えない。
-      error: string;
-    } {
+): {
+  hits: { repo: string; path: string; line: number; text: string }[];
+  /**
+   * 名前が一致したファイル。**本文一致とは別の枠にする。**
+   * 同じ枠に入れると、名前だけ一致したファイルが limit を食い潰し、
+   * 実装を持つファイルが返らないことがある（実測: limit 2 で本文一致 0 件）。
+   */
+  names: string[];
+  /** 上限を掛けずに数えた本文一致の総数と、その全ファイル。ファイル名だけの一致は含まない。 */
+  matched: { files: number; lines: number; paths: string[] };
+  /**
+   * 探せなかった場所と理由。**空でないなら、返っているものは全部ではない。**
+   *
+   * **「探せなかった」を表す道を 1 本にする。**別に error を持たせると、
+   * 「無い」と答えてよいかの判定が呼び出し側とここの 2 箇所に分かれる。
+   */
+  unsearched: string[];
+} {
   const want = roots.filter((r) => !q.repo || r.label.includes(q.repo) || r.dir.includes(q.repo));
-  // **1 つも当たらないなら探していない。**0 件で返すと「コードに無い」と読まれる（readCode と同じ形）。
-  if (want.length === 0) return { error: `${q.repo ?? "見ている範囲"} に当たるリポジトリが無い` };
+  // **1 つも当たらないなら探していない。**0 件で返すと「コードに無い」と読まれる。
+  if (want.length === 0)
+    return {
+      hits: [],
+      names: [],
+      matched: { files: 0, lines: 0, paths: [] },
+      unsearched: [q.repo ? `${q.repo}: 見ている範囲に無い` : "見ている範囲にリポジトリが無い"],
+    };
   const limit = Math.min(Math.max(Math.trunc(Number(q.limit ?? 30)) || 30, 1), 100);
   const failed: Failures = new Map();
   const out: { repo: string; path: string; line: number; text: string }[] = [];
@@ -193,11 +221,12 @@ export function grepCode(
     }
   }
   const matched = countMatches(want, q, failed);
-  const unsearched = [...failed].map(([label, why]) => `${label}: ${why}`);
-  // **1 件も見つからず、どこかで失敗しているなら「無い」とは言えない。**
-  if (unsearched.length > 0 && out.length === 0 && names.length === 0 && matched.lines === 0)
-    return { error: `コードを探せなかった: ${unsearched.join(" / ")}` };
-  return { hits: out, names, matched, unsearched };
+  return {
+    hits: out,
+    names,
+    matched,
+    unsearched: [...failed].map(([label, why]) => `${label}: ${why}`),
+  };
 }
 
 /** 1 ファイルの一部を読む。**全文は返さない** — 大きいファイルで文脈が埋まる。 */

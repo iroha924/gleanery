@@ -40,15 +40,11 @@ fs.writeFileSync(path.join(tmp, "outside.txt"), "この中身は返してはい�
 fs.symlinkSync(path.join(tmp, "outside.txt"), path.join(repo, "escape.txt"));
 
 const roots: Root[] = [{ label: "test/repo", dir: repo }];
-
-/** 探せた前提の検査で使う。**探せなかったらそこで落とす** — 0 件と読み違えない。 */
-function found(r: ReturnType<typeof grepCode>) {
-  assert.ok(!("error" in r), `探索に失敗した: ${"error" in r ? r.error : ""}`);
-  return r;
-}
+// root は chmod 000 を無視して読めてしまうので、権限に依存する検査を飛ばす。
+const root = process.getuid?.() === 0;
 
 test("語で探せる", () => {
-  const { hits } = found(grepCode(roots, { query: "呼称" }));
+  const { hits } = grepCode(roots, { query: "呼称" });
   assert.equal(hits.length, 1);
   assert.equal(hits[0]?.path, "src/billing.ts");
   assert.equal(hits[0]?.line, 2);
@@ -56,7 +52,7 @@ test("語で探せる", () => {
 
 // **切ったことが見えないと、返った分が全部として読まれる。**
 test("上限で切っても一致の総数は返る", () => {
-  const r = found(grepCode(roots, { query: "反復する語", limit: 3 }));
+  const r = grepCode(roots, { query: "反復する語", limit: 3 });
   assert.equal(r.hits.length, 3, "limit までしか返さない");
   assert.equal(r.matched.lines, 12, "総数は上限を掛けずに数える");
   assert.equal(r.matched.files, 2, "またがったファイルも数える");
@@ -66,7 +62,7 @@ test("上限で切っても一致の総数は返る", () => {
 
 // **名前だけの一致が枠を食うと、実装を持つファイルが返らない**（実測: limit 2 で本文一致 0 件）。
 test("名前だけの一致は、本文一致の枠を食わない", () => {
-  const r = found(grepCode(roots, { query: "auth", limit: 2 }));
+  const r = grepCode(roots, { query: "auth", limit: 2 });
   assert.equal(r.names.length, 3, "名前一致は limit と別枠で全部返る");
   assert.ok(
     r.hits.some((h) => h.path === "src/impl.ts"),
@@ -76,27 +72,27 @@ test("名前だけの一致は、本文一致の枠を食わない", () => {
 
 // 名前の一致は本文検索と別の経路なので、**そちらにも同じ除外が要る。**
 test("資格情報はファイル名の一致でも出ない", () => {
-  const r = found(grepCode(roots, { query: "credentials" }));
+  const r = grepCode(roots, { query: "credentials" });
   assert.equal(r.names.length, 0);
 });
 
 // 生成物は source と同じ実装を二度見せる。
 test("生成物は探索に出ない", () => {
-  const r = found(grepCode(roots, { query: "反復する語" }));
+  const r = grepCode(roots, { query: "反復する語" });
   assert.equal(r.matched.files, 2, "dist の写しは数えない");
   assert.ok(!r.hits.some((h) => h.path.includes("dist/")), "本文にも出さない");
 });
 
 // **除外より呼び出し側の指定が勝つ。**生成物そのものを見たいときに見られなくなる。
 test("glob を明示すれば生成物も見られる", () => {
-  const r = found(grepCode(roots, { query: "反復する語", glob: "dist/*.js" }));
+  const r = grepCode(roots, { query: "反復する語", glob: "dist/*.js" });
   assert.equal(r.matched.files, 1);
   assert.deepEqual(r.matched.paths, ["test/repo/dist/many-a.js"]);
 });
 
 // 総数は別の rg 呼び出しで数えるので、**そちらにも同じ除外が要る。**
 test("資格情報のファイルは総数にも入らない", () => {
-  const r = found(grepCode(roots, { query: "absolutely" }));
+  const r = grepCode(roots, { query: "absolutely" });
   assert.equal(r.hits.length, 0, "本文にも出さない");
   assert.equal(r.matched.lines, 0, "総数にも数えない");
   assert.equal(r.matched.files, 0);
@@ -144,26 +140,63 @@ test("rg を起動できないときは 0 件ではなく、探せないこと�
   process.env.PATH = "/nonexistent-dir";
   try {
     const r = grepCode(roots, { query: "呼称" });
-    assert.ok("error" in r, "rg を起動できないのに結果の形で返っている");
-    assert.match(r.error, /rg を起動できない/);
+    assert.equal(r.hits.length, 0);
+    assert.equal(r.unsearched.length, 1, "探せなかったことが出ていない");
+    assert.match(r.unsearched[0] ?? "", /rg を起動できない/);
   } finally {
     if (before === undefined) delete process.env.PATH;
     else process.env.PATH = before;
   }
 });
 
+// **PATH の零長要素で、探索対象のリポジトリに置かれた rg が走らないこと。**
+test("PATH に空要素があっても、リポジトリ内の rg は実行しない", () => {
+  const planted = path.join(repo, "rg");
+  fs.writeFileSync(planted, "#!/bin/sh\nexit 0\n");
+  fs.chmodSync(planted, 0o755);
+  const before = process.env.PATH;
+  process.env.PATH = `/nonexistent-dir${path.delimiter}`;
+  try {
+    const r = grepCode(roots, { query: "呼称" });
+    assert.match(r.unsearched[0] ?? "", /rg を起動できない/, "リポジトリ内の rg が走っている");
+  } finally {
+    if (before === undefined) delete process.env.PATH;
+    else process.env.PATH = before;
+    fs.rmSync(planted);
+  }
+});
+
 // **rg はあるが弾かれた、を切り分ける。**理由まで見ないと、rg が無い環境でも通ってしまう。
 test("正規表現が壊れているときは、その理由ごと返す", () => {
   const r = grepCode(roots, { query: "unclosed(" });
-  assert.ok("error" in r, "rg が弾いたのに結果の形で返っている");
-  assert.match(r.error, /終了コード 2/);
-  assert.match(r.error, /regex parse error/);
+  assert.equal(r.unsearched.length, 1);
+  assert.match(r.unsearched[0] ?? "", /終了コード 2/);
+  assert.match(r.unsearched[0] ?? "", /regex parse error/);
 });
 
-// **範囲に無いリポジトリを指定されたら、探していないと言う。**readCode と同じ形。
+// **資格情報のパスは、rg の stderr 経由でも出さない。**結果の枠だけを塞いでも回り込まれる。
+// rg は読めなかったファイルを名指しで stderr へ書く（実測: `rg: ./src/gcp-credentials.json:
+// Permission denied`）ので、読めない状態を作らないと検査にならない。
+test("探せなかった理由に、資格情報のファイル名を載せない", {
+  skip: root ? "root では chmod が効かない" : false,
+}, () => {
+  const secret = path.join(repo, "src", "gcp-credentials.json");
+  fs.chmodSync(secret, 0o000);
+  try {
+    const r = grepCode(roots, { query: "呼称" });
+    assert.equal(r.unsearched.length, 1, "読めないファイルがあったのに理由が出ていない");
+    assert.ok(!(r.unsearched[0] ?? "").includes("gcp-credentials"), "資格情報のパスが理由に出ている");
+    assert.equal(r.hits.length, 1, "読めた分は返る");
+  } finally {
+    fs.chmodSync(secret, 0o644);
+  }
+});
+
+// **範囲に無いリポジトリを指定されたら、探していないと言う。**
 test("repo がどの作業場所にも当たらないときは、探していないと返す", () => {
   const r = grepCode(roots, { query: "呼称", repo: "存在しないリポジトリ" });
-  assert.ok("error" in r, "1 つも探していないのに結果の形で返っている");
+  assert.equal(r.hits.length, 0);
+  assert.match(r.unsearched[0] ?? "", /見ている範囲に無い/);
 });
 
 // **片方が読めなくても、もう片方で見つかったものは返す。**捨てると、直前の版より悪くなる。
@@ -172,7 +205,6 @@ test("探せなかった作業場所があっても、探せた分は返し、�
   const r = grepCode([...roots, { label: "消えた/repo", dir: path.join(tmp, "no-such-dir") }], {
     query: "呼称",
   });
-  assert.ok(!("error" in r), "探せた分まで捨てている");
   assert.equal(r.hits.length, 1, "生きている作業場所の結果は返る");
   assert.equal(r.unsearched.length, 1, "探せなかった作業場所が出る");
   assert.match(r.unsearched[0] ?? "", /消えた\/repo/);
