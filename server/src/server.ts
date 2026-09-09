@@ -75,10 +75,17 @@ if (!secretKey || !publishableKey || !allowedUser) {
 // トークンを取った別オリジンのページでも通る。
 // **空文字を渡せる形にしない** — 環境変数を空にしただけで検証が落ちるのは、
 // 設定を間違えたことが出力のどこにも出ない種類の緩みになる。
-const authorizedParties = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// **自分が配られているオリジンは自分で許す。**Vercel の preview はデプロイごとに URL が
+// 変わるので、環境変数では追いかけられない（入れた瞬間に次のデプロイで古くなる）。
+// `VERCEL_URL` はそのデプロイ自身のホスト名なので、画面を配っている当人でしかない。
+const ownOrigin = process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [];
+const authorizedParties = [
+  ...(env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+  ...ownOrigin,
+];
 if (authorizedParties.length === 0) {
   throw new Error("MITOS_ALLOWED_ORIGINS が空。画面を配るオリジンを列挙する（例: https://example.com）");
 }
