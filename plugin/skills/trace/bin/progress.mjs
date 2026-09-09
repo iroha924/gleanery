@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { validate } from '../lib/ir.mjs';
 import { collect, findTranscript } from '../lib/collect.mjs';
 import { cover, refsExist } from '../lib/cover.mjs';
+import { applyPatch } from '../lib/patch.mjs';
 
 // 要約に埋め込む呼び出し方は、実際に走っている自分のパスにする。
 // 相対パスを書くと、cwd がプロジェクト側の Claude Code では当たらない。
@@ -26,10 +27,14 @@ const usage = () => `使い方:
   progress collect [--cwd <path>] [--transcript <path>] [--out <file>]
                                         いまのセッションから検証できる値だけを取り出す
   progress cover <digest.json> <ir.json>  材料にあったのに記録へ入らなかったものを探す
+  progress patch <ir.json> <patch.json> 記録へ変更を当てる（追記・上書き・覆した印）
   progress validate <ir.json>           契約を検査する
   progress doctor                       同梱ファイルと、記録の行き先を確かめる
 
 共通: --json で機械可読に出す
+
+**IR を直すのに書き捨てのスクリプトを作らない。**patch は JSON を受け取り、
+追記できる欄・上書きできる欄・id の再利用を、当てる側で拒否する。
 
 **記録はファイルではなく DB に置く。**書くのは \`mitos ingest <ir.json>\`、
 読むのは MCP の \`current_work\`（現在地）と \`search_knowledge\`（過去の判断）。
@@ -92,6 +97,24 @@ if (cmd === 'cover') {
   if (r.note) console.error(`! ${r.note}`);
   console.error(r.ok ? '\n人が選んだ決定は全部入っている' : '\n人が選んだ決定が記録に無い。これは落としてはいけない');
   process.exit(r.ok ? 0 : 1);
+}
+
+if (cmd === 'patch') {
+  const irPath = args[1];
+  const ir = readIrFile(irPath);
+  const patch = readIrFile(args[2]);
+  const r = applyPatch(ir, patch);
+  if (jsonOut) { console.log(JSON.stringify({ ok: r.ok, changes: r.changes, problems: r.problems }, null, 2)); }
+  else {
+    for (const p of r.problems) console.error(`違反 [${p.code}] ${p.message}\n      → ${p.fix}`);
+    for (const c of r.changes) console.error(`  ${c}`);
+  }
+  // **1 つでも違反があれば書かない。**半分だけ当たった IR が残ると、
+  // 何が入って何が入らなかったかを後から判定できない。
+  if (!r.ok) { console.error(`違反 ${r.problems.length} 件。書き込んでいない`); process.exit(1); }
+  fs.writeFileSync(irPath, `${JSON.stringify(r.ir, null, 2)}\n`);
+  console.error(`${irPath} へ ${r.changes.length} 件を当てた`);
+  process.exit(0);
 }
 
 if (cmd === 'validate') {

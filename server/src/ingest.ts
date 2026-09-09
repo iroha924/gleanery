@@ -66,7 +66,7 @@ export type Ir = {
   }[];
   openQuestions?: { id: string; q: string; at: string; who?: string; when?: string; blocking?: boolean }[];
   links?: {
-    issues?: { key?: string; url?: string; title?: string; state?: string; fetched?: string }[];
+    issues?: { key?: string; url?: string; title?: string; state?: string; fetched?: boolean }[];
     prs?: { number: number; title?: string; state?: string; url?: string }[];
     commits?: { sha: string; subject?: string }[];
     files?: string[];
@@ -111,6 +111,13 @@ function polarityOf(kind: string, subkind?: string | null): Polarity {
   // not-run は「まだ確かめていない」で、駄目だったという主張ではないので na のまま。
   if (kind === "verification") return subkind === "fail" ? "dont" : "na";
   return "na";
+}
+
+/** 配列を n 件ずつに割る。**1 文の引数が大きくなりすぎるのを避けるためだけ**にある。 */
+function chunks<T>(xs: T[], n: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n));
+  return out;
 }
 
 /** 埋め込みに渡す本文。**周りの文脈を前置きする。**
@@ -346,13 +353,28 @@ export async function ingest(
       : [];
     const byKey = new Map(need.map((n, i) => [`${n.kind}|${n.key}`, vectors[i]]));
 
+    // **1 件ずつ upsert しない。**往復数がそのまま時間になる。
+    // 実測（2026-09-09、Neon / Singapore）: node 746 件を 1 件ずつ投げると取り込み全体で 77 秒。
+    // 往復は片道 100ms 前後あるので、件数が増えるほど線形に伸びる。
+    // **配列を 1 つ渡して unnest で展開する。**`vector[]` は null 混じりでも通る（実測）。
+    //
+    // **バッチの中で同じキーが 2 回出ると `ON CONFLICT DO UPDATE` が落ちる**
+    // （cannot affect row a second time）ので、投げる前に畳む。1 件ずつのときは
+    // 2 回 upsert されて後勝ちになっていたので、同じ結果になるよう後を残す。
+    const uniq = new Map(nodes.map((n) => [`${n.kind}|${n.key}`, n]));
+    const rows = [...uniq.values()];
     const idOf = new Map<string, number>();
-    for (const n of nodes) {
-      const v = byKey.get(`${n.kind}|${n.key}`);
-      const r = await client.query<{ id: number }>(
+    for (const part of chunks(rows, 500)) {
+      const r = await client.query<{ id: number; kind: string; key: string }>(
         `insert into node (record_id, scope_id, kind, key, ordinal, at, text, subkind, status,
                            polarity, confidence, attrs, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         select $1, $2, t.kind, t.key, t.ordinal, t.at, t.text, t.subkind, t.status,
+                t.polarity, t.confidence, t.attrs, t.content_hash, t.embed_text, t.embed_model, t.embedded_at, t.embedding
+         from unnest($3::text[], $4::text[], $5::int[], $6::timestamptz[], $7::text[], $8::text[], $9::text[],
+                     $10::text[], $11::text[], $12::jsonb[], $13::text[], $14::text[], $15::text[],
+                     $16::timestamptz[], $17::extensions.vector[])
+              as t(kind, key, ordinal, at, text, subkind, status, polarity, confidence, attrs,
+                   content_hash, embed_text, embed_model, embedded_at, embedding)
          on conflict (record_id, kind, key) do update set
            scope_id=excluded.scope_id, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, subkind=excluded.subkind,
            status=excluded.status, polarity=excluded.polarity, confidence=excluded.confidence,
@@ -361,121 +383,197 @@ export async function ingest(
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
            embedding=coalesce(excluded.embedding, node.embedding)
-         returning id`,
+         returning id, kind, key`,
         [
           ir.meta.id,
           effectiveScope,
-          n.kind,
-          n.key,
-          n.ordinal ?? 0,
-          n.at ?? null,
-          n.text,
-          n.subkind ?? null,
-          n.status ?? null,
-          n.polarity,
-          n.confidence ?? null,
-          JSON.stringify(n.attrs ?? {}),
-          n.contentHash,
-          v ? embedText(ir, n) : null,
-          v ? EMBED_MODEL : null,
-          v ? new Date().toISOString() : null,
-          vec(v),
+          part.map((n) => n.kind),
+          part.map((n) => n.key),
+          part.map((n) => n.ordinal ?? 0),
+          part.map((n) => n.at ?? null),
+          part.map((n) => n.text),
+          part.map((n) => n.subkind ?? null),
+          part.map((n) => n.status ?? null),
+          part.map((n) => n.polarity),
+          part.map((n) => n.confidence ?? null),
+          part.map((n) => JSON.stringify(n.attrs ?? {})),
+          part.map((n) => n.contentHash),
+          part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? embedText(ir, n) : null)),
+          part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? EMBED_MODEL : null)),
+          part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? new Date().toISOString() : null)),
+          part.map((n) => vec(byKey.get(`${n.kind}|${n.key}`))),
         ],
       );
-      const id = r.rows[0]?.id;
-      if (id === undefined) throw new Error(`node の upsert が id を返さなかった: ${n.kind}|${n.key}`);
-      idOf.set(`${n.kind}|${n.key}`, id);
+      for (const x of r.rows) idOf.set(`${x.kind}|${x.key}`, x.id);
+    }
+    for (const n of rows) {
+      if (!idOf.has(`${n.kind}|${n.key}`)) {
+        throw new Error(`node の upsert が id を返さなかった: ${n.kind}|${n.key}`);
+      }
     }
 
     // 外部の実体（issue / PR / commit / file / url）を登録して node へ結ぶ。
     // ここが埋まらないと、パスの完全一致で「このファイルは触らないと決めた」を引けない。
-    const putRef = async (
+    //
+    // **集めてから 1 回で入れる。**1 件ずつだと ref と ref_link で 2 往復ずつ掛かり、
+    // evidence の数だけ線形に伸びる（node の upsert と同じ理由）。
+    type RefRow = {
+      kind: string;
+      key: string;
+      repo?: string;
+      title?: string;
+      state?: string;
+      url?: string;
+      fetched?: boolean;
+    };
+    type LinkRow = {
+      kind: string;
+      key: string;
+      repo?: string;
+      role: string;
+      nodeId: number | null;
+      note: string | null;
+      exit: number | null;
+    };
+    const refs = new Map<string, RefRow>();
+    const links: LinkRow[] = [];
+    const refKey = (kind: string, key: string, repo?: string) => `${kind}|${repo ?? ""}|${key}`;
+    const putRef = (
       kind: string,
       key: string | null | undefined,
-      extra: { repo?: string; title?: string; state?: string; url?: string; fetched?: string } = {},
-    ): Promise<number | null> => {
-      if (!key) return null;
-      const r = await client.query<{ id: number }>(
-        `insert into ref (kind, repo, key, title, state, url, fetched)
-         values ($1,$2,$3,$4,$5,$6,$7)
-         on conflict (kind, coalesce(repo,''), key) do update set
-           title=coalesce(excluded.title, ref.title), state=coalesce(excluded.state, ref.state),
-           url=coalesce(excluded.url, ref.url), fetched=coalesce(excluded.fetched, ref.fetched)
-         returning id`,
-        [
-          kind,
-          extra.repo ?? null,
-          String(key),
-          extra.title ?? null,
-          extra.state ?? null,
-          extra.url ?? null,
-          extra.fetched ?? null,
-        ],
-      );
-      return r.rows[0]?.id ?? null;
+      extra: Omit<RefRow, "kind" | "key"> = {},
+    ): void => {
+      if (!key) return;
+      const k = refKey(kind, String(key), extra.repo);
+      const prev = refs.get(k);
+      // 同じ ref が 2 回出たときは、後から来た非 null で上書きする
+      // （1 件ずつ upsert していたときの coalesce と同じ結果になる）。
+      refs.set(k, {
+        ...(prev ?? { kind, key: String(key) }),
+        ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v != null)),
+      } as RefRow);
     };
-    const linkRef = async (
-      refId: number | null,
+    // **repo も運ぶ。**引き当てのキーは `putRef` と同じ形でないと、repo を持つ ref だけ
+    // 辺が張られなくなる（いまは repo を渡す呼び出し元が無いので表に出ていない）。
+    const linkRef = (
+      kind: string,
+      key: string | null | undefined,
       role: string,
       nodeId: number | null = null,
       note: string | null = null,
       exit: number | null = null,
-    ): Promise<void> => {
-      if (!refId) return;
-      await client.query(
-        `insert into ref_link (ref_id, record_id, node_id, role, note, exit_code)
-         values ($1,$2,$3,$4,$5,$6)
-         on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`,
-        [refId, ir.meta.id, nodeId, role, note, exit],
-      );
+      repo?: string,
+    ): void => {
+      if (!key) return;
+      links.push({ kind, key: String(key), repo, role, nodeId, note, exit });
     };
 
-    for (const n of nodes) {
+    for (const n of rows) {
       const nodeId = idOf.get(`${n.kind}|${n.key}`) ?? null;
       for (const e of arr(n.evidence)) {
         if (!["file", "commit", "url", "issue", "command"].includes(e.kind)) continue;
         // ファイルは行番号を落として登録する。行が違っても同じファイルとして引きたい。
         const key = e.kind === "file" ? String(e.ref).split(":")[0] : String(e.ref);
-        await linkRef(await putRef(e.kind, key), "evidence", nodeId, e.note ?? null, e.exit ?? null);
+        putRef(e.kind, key);
+        linkRef(e.kind, key, "evidence", nodeId, e.note ?? null, e.exit ?? null);
       }
     }
     for (const i of arr(ir.links?.issues)) {
-      await linkRef(
-        await putRef("issue", i.key ?? i.url, {
-          title: i.title,
-          state: i.state,
-          url: i.url,
-          fetched: i.fetched,
-        }),
-        "link",
-      );
+      const key = i.key ?? i.url;
+      putRef("issue", key, { title: i.title, state: i.state, url: i.url, fetched: i.fetched });
+      linkRef("issue", key, "link");
     }
     for (const p of arr(ir.links?.prs)) {
-      await linkRef(
-        await putRef("pr", String(p.number), { title: p.title, state: p.state, url: p.url }),
-        "link",
-      );
+      putRef("pr", String(p.number), { title: p.title, state: p.state, url: p.url });
+      linkRef("pr", String(p.number), "link");
     }
     for (const cm of arr(ir.links?.commits)) {
-      await linkRef(await putRef("commit", cm.sha, { title: cm.subject }), "link");
+      putRef("commit", cm.sha, { title: cm.subject });
+      linkRef("commit", cm.sha, "link");
     }
     for (const f of arr(ir.links?.files)) {
-      await linkRef(await putRef("file", String(f).split(":")[0]), "touched");
+      const key = String(f).split(":")[0];
+      putRef("file", key);
+      linkRef("file", key, "touched");
     }
     // **URL も入れる。**ここにループが無かったので、IR に書いた参照が黙って落ちていた
     // （実測: personal-rebuild に 3 件。`raw` には残るが、どこからも引けない状態だった）。
     for (const u of arr(ir.links?.urls)) {
       if (!u?.url) continue;
-      await linkRef(await putRef("url", u.url, { url: u.url }), "link", null, u.note ?? null);
+      putRef("url", u.url, { url: u.url });
+      linkRef("url", u.url, "link", null, u.note ?? null);
     }
 
-    // 親子（option → decision）
-    for (const n of nodes) {
-      if (!n.parentKey) continue;
-      await client.query("update node set parent_id=$1 where id=$2", [
-        idOf.get(`decision|${n.parentKey}`) ?? null,
-        idOf.get(`${n.kind}|${n.key}`),
-      ]);
+    const refId = new Map<string, number>();
+    for (const part of chunks([...refs.values()], 500)) {
+      const r = await client.query<{ id: number; kind: string; repo: string | null; key: string }>(
+        `insert into ref (kind, repo, key, title, state, url, fetched)
+         select t.kind, t.repo, t.key, t.title, t.state, t.url, t.fetched
+         from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[])
+              as t(kind, repo, key, title, state, url, fetched)
+         on conflict (kind, coalesce(repo,''), key) do update set
+           title=coalesce(excluded.title, ref.title), state=coalesce(excluded.state, ref.state),
+           url=coalesce(excluded.url, ref.url), fetched=coalesce(excluded.fetched, ref.fetched)
+         returning id, kind, repo, key`,
+        [
+          part.map((x) => x.kind),
+          part.map((x) => x.repo ?? null),
+          part.map((x) => x.key),
+          part.map((x) => x.title ?? null),
+          part.map((x) => x.state ?? null),
+          part.map((x) => x.url ?? null),
+          part.map((x) => x.fetched ?? null),
+        ],
+      );
+      for (const x of r.rows) refId.set(refKey(x.kind, x.key, x.repo ?? undefined), x.id);
+    }
+
+    // **辺も畳んでから入れる。**同じ (ref, role, node) が 2 回出ると
+    // `ON CONFLICT DO NOTHING` でも 1 文の中では弾かれない代わりに無駄な行を運ぶ。
+    const linkRows = new Map<string, LinkRow & { id: number }>();
+    for (const l of links) {
+      const id = refId.get(refKey(l.kind, l.key, l.repo));
+      // **引けなかったら止める。**node 側は id が返らなければ投げるのに、ここだけ黙って
+      // 捨てると、`ref` の upsert を `DO NOTHING` に変えた瞬間に辺が丸ごと落ちても気付けない。
+      if (id === undefined) throw new Error(`ref の id を引けなかった: ${l.kind}|${l.key}`);
+      // **先に来たものを残す。**1 件ずつ `on conflict do nothing` で投げていたときと
+      // 同じ結果にする（同じ (ref, role, node) が 2 回出たら note と exit_code は先勝ち）。
+      const k = `${id}|${l.role}|${l.nodeId ?? 0}`;
+      if (!linkRows.has(k)) linkRows.set(k, { ...l, id });
+    }
+    for (const part of chunks([...linkRows.values()], 500)) {
+      await client.query(
+        `insert into ref_link (ref_id, record_id, node_id, role, note, exit_code)
+         select t.ref_id, $1, t.node_id, t.role, t.note, t.exit_code
+         from unnest($2::bigint[], $3::bigint[], $4::text[], $5::text[], $6::int[])
+              as t(ref_id, node_id, role, note, exit_code)
+         on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`,
+        [
+          ir.meta.id,
+          part.map((x) => x.id),
+          part.map((x) => x.nodeId),
+          part.map((x) => x.role),
+          part.map((x) => x.note),
+          part.map((x) => x.exit),
+        ],
+      );
+    }
+
+    // 親子（option → decision）。**1 件ずつ update しない** — 決定の数だけ往復が増える。
+    const parents = rows
+      .filter((n) => n.parentKey)
+      .map((n) => ({
+        child: idOf.get(`${n.kind}|${n.key}`),
+        parent: idOf.get(`decision|${n.parentKey}`) ?? null,
+      }))
+      .filter((x): x is { child: number; parent: number | null } => x.child !== undefined);
+    for (const part of chunks(parents, 500)) {
+      await client.query(
+        `update node set parent_id = t.parent
+         from unnest($1::bigint[], $2::bigint[]) as t(child, parent)
+         where node.id = t.child`,
+        [part.map((x) => x.child), part.map((x) => x.parent)],
+      );
     }
 
     // **辺を作る。**IR は「この検証がどの決定を確かめたか」「どの決定がどれを覆したか」を
@@ -490,6 +588,7 @@ export async function ingest(
        where r.from_node = n.id and n.record_id = $1 and r.source = 'record'`,
       [ir.meta.id],
     );
+    const edges = new Map<string, { from: number; to: number; kind: string }>();
     for (const [fromKind, fromKey, toKey, kind] of [
       ...arr(ir.verification).flatMap((v) =>
         v.verifies ? ([["verification", v.id, v.verifies, "verifies"]] as const) : [],
@@ -504,10 +603,15 @@ export async function ingest(
       // **別の記録を指す参照はここでは結ばない。**この記録の node しか手元に無い。
       // 結べなかったことは attrs に文字列として残るので、失われはしない。
       if (from === undefined || to === undefined || from === to) continue;
+      edges.set(`${from}|${to}|${kind}`, { from, to, kind });
+    }
+    for (const part of chunks([...edges.values()], 500)) {
       await client.query(
-        `insert into relation (from_node, to_node, kind, source) values ($1,$2,$3,'record')
+        `insert into relation (from_node, to_node, kind, source)
+         select t.from_node, t.to_node, t.kind, 'record'
+         from unnest($1::bigint[], $2::bigint[], $3::text[]) as t(from_node, to_node, kind)
          on conflict (from_node, to_node, kind) do nothing`,
-        [from, to, kind],
+        [part.map((x) => x.from), part.map((x) => x.to), part.map((x) => x.kind)],
       );
     }
 

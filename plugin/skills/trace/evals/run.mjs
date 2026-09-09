@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { validate } from '../lib/ir.mjs';
 import { collect } from '../lib/collect.mjs';
 import { cover, refsExist } from '../lib/cover.mjs';
+import { applyPatch } from '../lib/patch.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { cases } = JSON.parse(fs.readFileSync(path.join(HERE, 'cases.json'), 'utf8'));
@@ -46,6 +47,77 @@ console.log('参照と検証の接続:');
   else ng('unverified-warned', '結び付けが無いのに警告が出ない');
   if (!validate(base()).warnings.some((w) => w.code === 'decisions/unverified')) ok('unverified-clears');
   else ng('unverified-clears', '結び付けたのに警告が残る');
+}
+
+// patch: 契約を当てる側で拒否できること。**散文で書いてあるだけの規約は守られなかった**ので、
+// 「追記だけ」「id は再利用しない」「上書きは 3 つだけ」をここで機構にしてある。
+console.log('patch:');
+{
+  const base = () => JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
+  const el = (id) => ({ id, at: '2026-09-09T00:00:00+09:00', kind: 'finding', text: 'x' });
+
+  let r = applyPatch(base(), { append: { events: [el('e-brand-new')] } });
+  if (r.ok && r.ir.events.length === base().events.length + 1) ok('patch-append');
+  else ng('patch-append', `追記できていない: ${JSON.stringify(r.problems)}`);
+
+  // 既にある id への追記は、過去の要素を黙って書き換える道になる
+  const existing = base().events[0].id;
+  r = applyPatch(base(), { append: { events: [{ ...el(existing) }] } });
+  if (r.problems.some((p) => p.code === 'patch/append-duplicate-id')) ok('patch-duplicate-id');
+  else ng('patch-duplicate-id', 'id の再利用を拒否できていない');
+
+  r = applyPatch(base(), { append: { events: [{ id: 'e-no-at', kind: 'finding', text: 'x' }] } });
+  if (r.problems.some((p) => p.code === 'patch/append-no-at')) ok('patch-no-at');
+  else ng('patch-no-at', '観測時点の無い要素を通してしまう');
+
+  // **上書きしてよいのは 3 つだけ。**events を set できると追記だけの契約が消える
+  r = applyPatch(base(), { set: { events: [] } });
+  if (r.problems.some((p) => p.code === 'patch/not-settable')) ok('patch-not-settable');
+  else ng('patch-not-settable', '過去の要素を上書きできてしまう');
+
+  r = applyPatch(base(), { set: { meta: { id: 'other' } } });
+  if (r.problems.some((p) => p.code === 'patch/meta-locked')) ok('patch-meta-locked');
+  else ng('patch-meta-locked', 'meta.id を書き換えられてしまう');
+
+  const b = base();
+  r = applyPatch(b, { supersede: { [b.decisions[0].id]: b.decisions[1].id } });
+  const t = r.ir.decisions.find((d) => d.id === b.decisions[0].id);
+  if (r.ok && t.status === 'superseded' && t.supersededBy === b.decisions[1].id) ok('patch-supersede');
+  else ng('patch-supersede', `覆した印が付いていない: ${JSON.stringify(r.problems)}`);
+
+  r = applyPatch(base(), { supersede: { 'd-nope': base().decisions[0].id } });
+  if (r.problems.some((p) => p.code === 'patch/supersede-missing')) ok('patch-supersede-missing');
+  else ng('patch-supersede-missing', '存在しない決定を覆せてしまう');
+
+  // **append と set が同じ欄に来ると、set が丸ごと置き換えて append が消える。**
+  // しかも「当てた」と報告される — このコマンドが無くすために作られた失敗の形そのもの。
+  r = applyPatch(base(), { append: { openQuestions: [{ id: 'q-x', at: '2026-01-01' }] }, set: { openQuestions: [] } });
+  if (r.problems.some((p) => p.code === 'patch/append-and-set')) ok('patch-append-and-set');
+  else ng('patch-append-and-set', 'append が黙って捨てられる');
+
+  // 自分で自分を覆すと、何にも置き換わっていないのに status だけ superseded になる
+  r = applyPatch(base(), { supersede: { [base().decisions[0].id]: base().decisions[0].id } });
+  if (r.problems.some((p) => p.code === 'patch/supersede-self')) ok('patch-supersede-self');
+  else ng('patch-supersede-self', '自分自身を覆せてしまう');
+
+  // 現在地が消えた記録は current_work から見えなくなる
+  r = applyPatch(base(), { set: { current: null } });
+  if (r.problems.some((p) => p.code === 'patch/set-empty')) ok('patch-set-empty');
+  else ng('patch-set-empty', '空の値を書き込んでしまう');
+
+  r = applyPatch(base(), { set: { next: {} } });
+  if (r.problems.some((p) => p.code === 'patch/set-not-array')) ok('patch-set-shape');
+  else ng('patch-set-shape', '配列でない next を通してしまう');
+
+  r = applyPatch(base(), { nope: {} });
+  if (r.problems.some((p) => p.code === 'patch/unknown-key')) ok('patch-unknown-key');
+  else ng('patch-unknown-key', '知らない欄が黙って捨てられる');
+
+  // **違反があったら元の IR を変えない。**半分だけ当たると何が入ったか判定できない
+  const before = base();
+  r = applyPatch(before, { append: { events: [el('e-ok')] }, set: { decisions: [] } });
+  if (!r.ok && before.events.length === base().events.length) ok('patch-no-mutation');
+  else ng('patch-no-mutation', '渡した IR を壊している');
 }
 
 console.log('採掘:');

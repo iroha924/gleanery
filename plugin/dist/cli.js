@@ -38220,6 +38220,12 @@ function polarityOf(kind, subkind) {
     return subkind === "fail" ? "dont" : "na";
   return "na";
 }
+function chunks(xs, n) {
+  const out = [];
+  for (let i = 0;i < xs.length; i += n)
+    out.push(xs.slice(i, i + n));
+  return out;
+}
 function embedText(ir, n) {
   const head = [ir.meta.title, n.kindLabel].filter(Boolean).join(" / ");
   return `${head}
@@ -38385,12 +38391,19 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
     say(`node ${nodes.length} 件 / 埋め込みを取り直す ${need.length} 件`);
     const vectors = need.length ? await embed(env2, need.map((n) => embedText(ir, n)), "document") : [];
     const byKey = new Map(need.map((n, i) => [`${n.kind}|${n.key}`, vectors[i]]));
+    const uniq = new Map(nodes.map((n) => [`${n.kind}|${n.key}`, n]));
+    const rows = [...uniq.values()];
     const idOf = new Map;
-    for (const n of nodes) {
-      const v = byKey.get(`${n.kind}|${n.key}`);
+    for (const part of chunks(rows, 500)) {
       const r = await client.query(`insert into node (record_id, scope_id, kind, key, ordinal, at, text, subkind, status,
                            polarity, confidence, attrs, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+         select $1, $2, t.kind, t.key, t.ordinal, t.at, t.text, t.subkind, t.status,
+                t.polarity, t.confidence, t.attrs, t.content_hash, t.embed_text, t.embed_model, t.embedded_at, t.embedding
+         from unnest($3::text[], $4::text[], $5::int[], $6::timestamptz[], $7::text[], $8::text[], $9::text[],
+                     $10::text[], $11::text[], $12::jsonb[], $13::text[], $14::text[], $15::text[],
+                     $16::timestamptz[], $17::extensions.vector[])
+              as t(kind, key, ordinal, at, text, subkind, status, polarity, confidence, attrs,
+                   content_hash, embed_text, embed_model, embedded_at, embedding)
          on conflict (record_id, kind, key) do update set
            scope_id=excluded.scope_id, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, subkind=excluded.subkind,
            status=excluded.status, polarity=excluded.polarity, confidence=excluded.confidence,
@@ -38399,97 +38412,141 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
            embedding=coalesce(excluded.embedding, node.embedding)
-         returning id`, [
+         returning id, kind, key`, [
         ir.meta.id,
         effectiveScope,
-        n.kind,
-        n.key,
-        n.ordinal ?? 0,
-        n.at ?? null,
-        n.text,
-        n.subkind ?? null,
-        n.status ?? null,
-        n.polarity,
-        n.confidence ?? null,
-        JSON.stringify(n.attrs ?? {}),
-        n.contentHash,
-        v ? embedText(ir, n) : null,
-        v ? EMBED_MODEL : null,
-        v ? new Date().toISOString() : null,
-        vec(v)
+        part.map((n) => n.kind),
+        part.map((n) => n.key),
+        part.map((n) => n.ordinal ?? 0),
+        part.map((n) => n.at ?? null),
+        part.map((n) => n.text),
+        part.map((n) => n.subkind ?? null),
+        part.map((n) => n.status ?? null),
+        part.map((n) => n.polarity),
+        part.map((n) => n.confidence ?? null),
+        part.map((n) => JSON.stringify(n.attrs ?? {})),
+        part.map((n) => n.contentHash),
+        part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? embedText(ir, n) : null),
+        part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? EMBED_MODEL : null),
+        part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? new Date().toISOString() : null),
+        part.map((n) => vec(byKey.get(`${n.kind}|${n.key}`)))
       ]);
-      const id = r.rows[0]?.id;
-      if (id === undefined)
-        throw new Error(`node の upsert が id を返さなかった: ${n.kind}|${n.key}`);
-      idOf.set(`${n.kind}|${n.key}`, id);
+      for (const x of r.rows)
+        idOf.set(`${x.kind}|${x.key}`, x.id);
     }
-    const putRef = async (kind, key, extra = {}) => {
+    for (const n of rows) {
+      if (!idOf.has(`${n.kind}|${n.key}`)) {
+        throw new Error(`node の upsert が id を返さなかった: ${n.kind}|${n.key}`);
+      }
+    }
+    const refs = new Map;
+    const links = [];
+    const refKey = (kind, key, repo) => `${kind}|${repo ?? ""}|${key}`;
+    const putRef = (kind, key, extra = {}) => {
       if (!key)
-        return null;
-      const r = await client.query(`insert into ref (kind, repo, key, title, state, url, fetched)
-         values ($1,$2,$3,$4,$5,$6,$7)
-         on conflict (kind, coalesce(repo,''), key) do update set
-           title=coalesce(excluded.title, ref.title), state=coalesce(excluded.state, ref.state),
-           url=coalesce(excluded.url, ref.url), fetched=coalesce(excluded.fetched, ref.fetched)
-         returning id`, [
-        kind,
-        extra.repo ?? null,
-        String(key),
-        extra.title ?? null,
-        extra.state ?? null,
-        extra.url ?? null,
-        extra.fetched ?? null
-      ]);
-      return r.rows[0]?.id ?? null;
-    };
-    const linkRef = async (refId, role, nodeId = null, note = null, exit = null) => {
-      if (!refId)
         return;
-      await client.query(`insert into ref_link (ref_id, record_id, node_id, role, note, exit_code)
-         values ($1,$2,$3,$4,$5,$6)
-         on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`, [refId, ir.meta.id, nodeId, role, note, exit]);
+      const k = refKey(kind, String(key), extra.repo);
+      const prev = refs.get(k);
+      refs.set(k, {
+        ...prev ?? { kind, key: String(key) },
+        ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v != null))
+      });
     };
-    for (const n of nodes) {
+    const linkRef = (kind, key, role, nodeId = null, note = null, exit = null, repo) => {
+      if (!key)
+        return;
+      links.push({ kind, key: String(key), repo, role, nodeId, note, exit });
+    };
+    for (const n of rows) {
       const nodeId = idOf.get(`${n.kind}|${n.key}`) ?? null;
       for (const e of arr(n.evidence)) {
         if (!["file", "commit", "url", "issue", "command"].includes(e.kind))
           continue;
         const key = e.kind === "file" ? String(e.ref).split(":")[0] : String(e.ref);
-        await linkRef(await putRef(e.kind, key), "evidence", nodeId, e.note ?? null, e.exit ?? null);
+        putRef(e.kind, key);
+        linkRef(e.kind, key, "evidence", nodeId, e.note ?? null, e.exit ?? null);
       }
     }
     for (const i of arr(ir.links?.issues)) {
-      await linkRef(await putRef("issue", i.key ?? i.url, {
-        title: i.title,
-        state: i.state,
-        url: i.url,
-        fetched: i.fetched
-      }), "link");
+      const key = i.key ?? i.url;
+      putRef("issue", key, { title: i.title, state: i.state, url: i.url, fetched: i.fetched });
+      linkRef("issue", key, "link");
     }
     for (const p of arr(ir.links?.prs)) {
-      await linkRef(await putRef("pr", String(p.number), { title: p.title, state: p.state, url: p.url }), "link");
+      putRef("pr", String(p.number), { title: p.title, state: p.state, url: p.url });
+      linkRef("pr", String(p.number), "link");
     }
     for (const cm of arr(ir.links?.commits)) {
-      await linkRef(await putRef("commit", cm.sha, { title: cm.subject }), "link");
+      putRef("commit", cm.sha, { title: cm.subject });
+      linkRef("commit", cm.sha, "link");
     }
     for (const f of arr(ir.links?.files)) {
-      await linkRef(await putRef("file", String(f).split(":")[0]), "touched");
+      const key = String(f).split(":")[0];
+      putRef("file", key);
+      linkRef("file", key, "touched");
     }
     for (const u of arr(ir.links?.urls)) {
       if (!u?.url)
         continue;
-      await linkRef(await putRef("url", u.url, { url: u.url }), "link", null, u.note ?? null);
+      putRef("url", u.url, { url: u.url });
+      linkRef("url", u.url, "link", null, u.note ?? null);
     }
-    for (const n of nodes) {
-      if (!n.parentKey)
-        continue;
-      await client.query("update node set parent_id=$1 where id=$2", [
-        idOf.get(`decision|${n.parentKey}`) ?? null,
-        idOf.get(`${n.kind}|${n.key}`)
+    const refId = new Map;
+    for (const part of chunks([...refs.values()], 500)) {
+      const r = await client.query(`insert into ref (kind, repo, key, title, state, url, fetched)
+         select t.kind, t.repo, t.key, t.title, t.state, t.url, t.fetched
+         from unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[])
+              as t(kind, repo, key, title, state, url, fetched)
+         on conflict (kind, coalesce(repo,''), key) do update set
+           title=coalesce(excluded.title, ref.title), state=coalesce(excluded.state, ref.state),
+           url=coalesce(excluded.url, ref.url), fetched=coalesce(excluded.fetched, ref.fetched)
+         returning id, kind, repo, key`, [
+        part.map((x) => x.kind),
+        part.map((x) => x.repo ?? null),
+        part.map((x) => x.key),
+        part.map((x) => x.title ?? null),
+        part.map((x) => x.state ?? null),
+        part.map((x) => x.url ?? null),
+        part.map((x) => x.fetched ?? null)
       ]);
+      for (const x of r.rows)
+        refId.set(refKey(x.kind, x.key, x.repo ?? undefined), x.id);
+    }
+    const linkRows = new Map;
+    for (const l of links) {
+      const id = refId.get(refKey(l.kind, l.key, l.repo));
+      if (id === undefined)
+        throw new Error(`ref の id を引けなかった: ${l.kind}|${l.key}`);
+      const k = `${id}|${l.role}|${l.nodeId ?? 0}`;
+      if (!linkRows.has(k))
+        linkRows.set(k, { ...l, id });
+    }
+    for (const part of chunks([...linkRows.values()], 500)) {
+      await client.query(`insert into ref_link (ref_id, record_id, node_id, role, note, exit_code)
+         select t.ref_id, $1, t.node_id, t.role, t.note, t.exit_code
+         from unnest($2::bigint[], $3::bigint[], $4::text[], $5::text[], $6::int[])
+              as t(ref_id, node_id, role, note, exit_code)
+         on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`, [
+        ir.meta.id,
+        part.map((x) => x.id),
+        part.map((x) => x.nodeId),
+        part.map((x) => x.role),
+        part.map((x) => x.note),
+        part.map((x) => x.exit)
+      ]);
+    }
+    const parents = rows.filter((n) => n.parentKey).map((n) => ({
+      child: idOf.get(`${n.kind}|${n.key}`),
+      parent: idOf.get(`decision|${n.parentKey}`) ?? null
+    })).filter((x) => x.child !== undefined);
+    for (const part of chunks(parents, 500)) {
+      await client.query(`update node set parent_id = t.parent
+         from unnest($1::bigint[], $2::bigint[]) as t(child, parent)
+         where node.id = t.child`, [part.map((x) => x.child), part.map((x) => x.parent)]);
     }
     await client.query(`delete from relation r using node n
        where r.from_node = n.id and n.record_id = $1 and r.source = 'record'`, [ir.meta.id]);
+    const edges = new Map;
     for (const [fromKind, fromKey, toKey, kind] of [
       ...arr(ir.verification).flatMap((v) => v.verifies ? [["verification", v.id, v.verifies, "verifies"]] : []),
       ...arr(ir.decisions).flatMap((d) => d.supersededBy ? [["decision", d.supersededBy, d.id, "supersedes"]] : [])
@@ -38498,8 +38555,13 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
       const to = idOf.get(`decision|${toKey}`);
       if (from === undefined || to === undefined || from === to)
         continue;
-      await client.query(`insert into relation (from_node, to_node, kind, source) values ($1,$2,$3,'record')
-         on conflict (from_node, to_node, kind) do nothing`, [from, to, kind]);
+      edges.set(`${from}|${to}|${kind}`, { from, to, kind });
+    }
+    for (const part of chunks([...edges.values()], 500)) {
+      await client.query(`insert into relation (from_node, to_node, kind, source)
+         select t.from_node, t.to_node, t.kind, 'record'
+         from unnest($1::bigint[], $2::bigint[], $3::text[]) as t(from_node, to_node, kind)
+         on conflict (from_node, to_node, kind) do nothing`, [part.map((x) => x.from), part.map((x) => x.to), part.map((x) => x.kind)]);
     }
     if (nodes.length > 0) {
       await client.query(`update node set deleted_at=now() where record_id=$1 and deleted_at is null

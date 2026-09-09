@@ -60,7 +60,7 @@ Google の Design Docs の基準がそのまま当たる。トレードオフも
 1. 会話を採掘する  → verify: progress collect が exit 0、digest ができる
 2. issue と PR     → verify: 取得できた件数と、できなかったものが両方記録される
 3. 追加素材を聞く  → verify: 提供されたか「未提供」が記録される
-4. IR を書く       → verify: progress validate が exit 0
+4. IR を書く       → verify: progress validate が exit 0（直すのは progress patch）
 5. 漏れを検査する  → verify: progress cover が exit 0
 6. レビューする    → verify: 新規レビュアーの指摘を全件裁定し終える
 7. ナレッジへ入れる → verify: mitos ingest が exit 0
@@ -185,6 +185,32 @@ GitHub 以外（Linear / Jira / その他）の手順は [references/trackers.md
 （実測: `openQuestions.when` の許容値も `supersededBy` も schema.md・sections.md・検査器の fix 行の
 3 箇所にあったのに、4 件が弾かれた）。例は警告 0 で通り、`cmd` を持つ検証と `evidence` で示す検証の
 両方を含んでいる。
+
+**書き捨てのスクリプトで IR を直さない。**`progress patch` に JSON を渡す。
+
+```bash
+node "$PG" patch ir.json patch.json
+```
+
+```json
+{
+  "append": { "events": [ { "id": "e-...", "at": "2026-..." } ] },
+  "set":    { "current": { "at": "2026-...", "text": "..." }, "meta": { "updated": "2026-..." } },
+  "supersede": { "d-覆される": "d-覆した" }
+}
+```
+
+**当てる側が契約を拒否する。**追記できるのは `events` / `decisions` / `verification` / `openQuestions`、
+上書きできるのは `current` / `next` / `openQuestions` / `meta.updated` だけ。既にある id への追記、
+自分自身を覆す指定、同じ欄への `append` と `set` の同居は弾く。
+**違反が 1 つでもあれば書き込まない**ので、半分だけ当たった IR が残らない。
+
+**なぜコマンドにしたか。**その場で書いたスクリプトは毎回まっさらで、テストが無く、失敗が
+終了コードに出ない。実測（2026-09-09）: 書き捨ての 1 本が `SyntaxError` で落ちてファイルを
+書かず、後続の `validate` と `ingest` は古い内容に対して走り、**成功と報告された。**
+
+**既に足した要素の本文は patch では直せない**（追記しかできない）。直すなら
+`mitos export <id> > ir.json` で取り込み済みの状態を取り直し、当て直す。
 
 **上書きしてよいのは 3 つだけ。**残りは追記で、過去は書き換えない。
 
