@@ -459,6 +459,9 @@ export async function* chat(
       (r): r is typeof r & { abs_path: string } => Boolean(r.abs_path) && fs.existsSync(r.abs_path ?? ""),
     )
     .map((r) => ({ label: r.label, dir: r.abs_path }));
+  // **このホストに無い作業場所を黙って落とさない。**選ばれているのに探していないので、
+  // 出さないと「その語はコードに無い」が、探していない範囲まで含んだ答えになる。
+  const offHost = scopes.rows.filter((r) => !roots.some((x) => x.label === r.label)).map((r) => r.label);
   // **指示と道具は同じ値で切り替える。**別々に書くと片方だけ直したときに
   // 「read_code で読め」と指示されているのに道具が無い状態になり、
   // 読んでいないものを読んだように答える。
@@ -529,7 +532,7 @@ export async function* chat(
       input.push({
         type: "function_call_output",
         call_id: call.call_id,
-        output: await runTool(client, body.scopeIds, roots, call, sources, body.learn),
+        output: await runTool(client, body.scopeIds, roots, offHost, call, sources, body.learn),
       });
     }
   }
@@ -728,10 +731,14 @@ export const CODE_TOOLS: OpenAI.Responses.Tool[] = [
 const JST_FROM = (i: number) => `($${i}::date)::timestamp at time zone 'Asia/Tokyo'`;
 const JST_TO = (i: number) => `(($${i}::date) + 1)::timestamp at time zone 'Asia/Tokyo'`;
 
-async function runTool(
+// **AI 向けの出口なので、テストから直接叩けるようにしてある。**
+// 関数が正しくても、ここで組み立てる JSON が違えばモデルには届かない。
+export async function runTool(
   client: pg.Client,
   scopeIds: number[],
   roots: Root[],
+  /** 選ばれているが、このホストに置かれていない作業場所。探せていない側に数える。 */
+  offHost: string[],
   call: OpenAI.Responses.ResponseFunctionToolCall,
   sources: ChatSource[],
   learn: Learn | undefined,
@@ -927,14 +934,23 @@ async function runTool(
 
   if (call.name === "grep_code") {
     if (!a.query) return JSON.stringify({ error: "query が空" });
-    const { hits, names, matched } = grepCode(roots, {
-      query: a.query,
+    const found = grepCode(roots, {
+      // **文字列に固める。**道具の引数は strict: false なので、数値や配列が来ることがある。
+      query: String(a.query),
       repo: a.repo,
       glob: a.glob,
       limit: a.limit,
     });
+    const { hits, names, matched } = found;
+    const unsearched = [...found.unsearched, ...offHost.map((l) => `${l}: このホストに置かれていない`)];
+    // **探せなかったことは、探して無かったことと別に返す。**同じ形にすると
+    // 「その語はコードに無い」と答え、探せていないことが誰にも見えない。
     if (hits.length === 0 && matched.lines === 0 && names.length === 0)
-      return JSON.stringify({ found: 0, note: "その語はコードに無い" });
+      return JSON.stringify(
+        unsearched.length
+          ? { found: 0, unsearched, note: "**ここは探せていない。**この範囲について「無い」と答えない" }
+          : { found: 0, note: "その語はコードに無い" },
+      );
     return JSON.stringify({
       // 名前は find_prs などに合わせる。**指示が total と rows で書かれているので、
       // ここだけ別名にすると「件数は total で答える」が grep_code に効かない。**
@@ -944,11 +960,21 @@ async function runTool(
       paths: matched.paths,
       // 名前だけが一致したファイル。本文には無いので、行番号は付かない。
       nameMatches: names.length ? names : undefined,
+      // **探せなかった場所は結果と一緒に返す。**返った分を全部として読ませない。
+      unsearched: unsearched.length ? unsearched : undefined,
       note:
-        hits.length < matched.lines
-          ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +
-            "**どのファイルかを聞かれているなら paths が全部**（行まで要るなら glob で絞って数回に分ける）"
-          : undefined,
+        [
+          hits.length < matched.lines
+            ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +
+              (matched.paths.length < matched.files
+                ? `**paths も ${matched.paths.length} 件で切れている。**`
+                : "**どのファイルかを聞かれているなら paths が全部**") +
+              "（行まで要るなら glob で絞って数回に分ける）"
+            : "",
+          unsearched.length ? "**unsearched の場所は探せていない。**そこについて「無い」と答えない" : "",
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined,
       hits: hits.map((h) => ({
         ...h,
         n: cite("【コード】", `${h.path}:${h.line} ${h.text}`, h.repo, null, `code:${h.repo}`),

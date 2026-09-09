@@ -4,7 +4,7 @@
 # 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。
 #
 # **シークレットを置かない。**テストは資格情報なしで通る（DB が要る 2 件は自分で skip する）。
-# 実測: `env -i` で 68 pass / 0 fail / 2 skipped。
+# 実測: `env -i` で 76 pass / 0 fail / 2 skipped。
 name: check
 
 on:
@@ -39,8 +39,9 @@ jobs:
           node-version: 24
 
       # **`code.ts` は rg を叩く。**ランナーには入っていない（実測: 無い状態で
-      # `code.test.ts` が 5 件落ちた）。しかも `rg()` は失敗を握り潰して null を返すので、
-      # **「rg が無い」と「一致が無い」が区別されないまま 0 件になる。**
+      # `code.test.ts` が 18 件中 8 件落ちる）。**探索そのものを確かめるテストなので、
+      # 偽物では代われない。**rg を起動できないことは結果に出るが、
+      # 出たところでその 8 件は確かめられない。
       - name: ripgrep を入れる
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 

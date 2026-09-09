@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 import type OpenAI from "openai";
-import { CODE_TOOLS, jstMonth, SYSTEM, TOOLS } from "../src/chat.ts";
+import { CODE_TOOLS, jstMonth, runTool, SYSTEM, TOOLS } from "../src/chat.ts";
 
 // **UTC で切ると、月初 9 時間の利用が前月に落ちる。**
 // 同じ取り違えを日付の集計で踏んでいる（chat.ts の JST_FROM の上に実測がある）。
@@ -34,4 +37,49 @@ test("コードの道具は本体の道具と分かれている", () => {
   for (const n of ["grep_code", "read_code"]) {
     assert.ok(!names(TOOLS).includes(n), `${n} は本体側に残っていない`);
   }
+});
+
+// **AI 向けの出口を叩く。**`grepCode` が正しくても、ここで組み立てる JSON が違えば
+// モデルには届かない（AGENTS.md「片方の成功をもう片方の証拠にしない」）。
+const codeCall = (args: Record<string, unknown>): OpenAI.Responses.ResponseFunctionToolCall => ({
+  type: "function_call",
+  call_id: "c1",
+  name: "grep_code",
+  arguments: JSON.stringify(args),
+});
+
+const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-chat-"));
+fs.writeFileSync(path.join(fixture, "billing.ts"), "// 呼称は Cube 側で解決する\n");
+const here = [{ label: "test/repo", dir: fixture }];
+
+test("探せていない場所があるとき、モデルへ「無いと答えるな」を渡す", async () => {
+  const out = await runTool(
+    null as never,
+    [],
+    here,
+    ["iroha924/mitos"],
+    codeCall({ query: "どこにも書かれていない語句xyzzy" }),
+    [],
+    undefined,
+  );
+  const r = JSON.parse(out) as { found: number; unsearched?: string[]; note?: string };
+  assert.equal(r.found, 0);
+  assert.deepEqual(r.unsearched, ["iroha924/mitos: このホストに置かれていない"]);
+  assert.match(r.note ?? "", /「無い」と答えない/);
+});
+
+test("探せていて 0 件のときだけ、コードに無いと言う", async () => {
+  const out = await runTool(
+    null as never,
+    [],
+    here,
+    [],
+    codeCall({ query: "どこにも書かれていない語句xyzzy" }),
+    [],
+    undefined,
+  );
+  const r = JSON.parse(out) as { found: number; unsearched?: string[]; note?: string };
+  assert.equal(r.found, 0);
+  assert.equal(r.unsearched, undefined);
+  assert.match(r.note ?? "", /その語はコードに無い/);
 });

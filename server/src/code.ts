@@ -42,17 +42,60 @@ const GENERATED = ["!**/dist/**", "!**/build/**", "!**/*.min.js", "!**/*.bundle.
 const globs = (extra?: string): string[] =>
   [...GENERATED, ...(extra ? [extra] : [])].flatMap((g) => ["--glob", g]);
 
-/** rg は 1 件も無いと終了コード 1 を返す。見つからないのは失敗ではない。 */
-function rg(dir: string, args: string[]): string | null {
+/** 探せなかった場所と、その理由。**作業場所の札 → 理由。** */
+type Failures = Map<string, string>;
+
+/**
+ * rg の stderr を、そのままは載せない。
+ *
+ * **読めなかったファイルの名前が出る。**素通しすると、`SECRET` で弾いているはずの
+ * 資格情報のパスが、結果の枠を回避してモデルの文脈へ入る。
+ */
+const scrub = (stderr: string): string =>
+  stderr
+    .trim()
+    .split(/\s+/)
+    .map((t) => (SECRET.test(t.replace(/[:,]+$/, "")) ? "«伏せた»" : t))
+    .join(" ")
+    .slice(0, 200);
+
+/**
+ * rg を 1 回走らせる。
+ *
+ * **1 件も無い（終了コード 1）と、探せなかったを分ける。**まとめて null にすると、
+ * rg の入っていないホストで「探したが無い」と同じ答えになり、無言で嘘をつく。
+ *
+ * **見つかった分は返し、失敗は `failed` へ出す。**読めないパスが 1 つあるだけで rg は 2 を返すので、
+ * 失敗にすると他で見つかったものまで捨てる。黙って返すと欠けた結果が全部として読まれる。
+ */
+function rg(root: Root, args: string[], failed: Failures): string | null {
   try {
     return execFileSync("rg", args, {
-      cwd: dir,
+      cwd: root.dir,
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
+      // **PATH の零長要素を落とす。**POSIX ではカレントディレクトリを指すので、
+      // 探索対象のリポジトリに置かれた `rg` が実行される（cwd がそのリポジトリ）。
+      env: {
+        ...process.env,
+        PATH: (process.env.PATH ?? "").split(path.delimiter).filter(Boolean).join(path.delimiter),
+      },
     });
-  } catch {
-    return null;
+  } catch (e) {
+    const r = e as { status?: number; code?: string; stdout?: string; stderr?: string };
+    if (r.status === 1) return null;
+    // **起動できなかった理由を落とさない。**rg が無いのか、置き場所が消えたのか、
+    // 権限で弾かれたのかで打つ手が違う。ENOENT を「rg が無い」と断定もしない。
+    failed.set(
+      root.label,
+      r.code === "ENOENT"
+        ? "rg を起動できない（rg が入っていないか、置き場所が無い）"
+        : r.code
+          ? `rg を起動できない（${r.code}）`
+          : `rg が終了コード ${r.status}: ${scrub(r.stderr ?? "")}`,
+    );
+    return r.stdout || null;
   }
 }
 
@@ -65,6 +108,7 @@ function rg(dir: string, args: string[]): string | null {
 function countMatches(
   roots: Root[],
   q: { query: string; glob?: string },
+  failed: Failures,
 ): {
   files: number;
   lines: number;
@@ -76,7 +120,7 @@ function countMatches(
   for (const root of roots) {
     const args = ["--count", "--max-filesize", "1M", "-i", "-e", q.query, ...globs(q.glob)];
     args.push(".");
-    const raw = rg(root.dir, args);
+    const raw = rg(root, args, failed);
     if (!raw) continue;
     for (const row of raw.split("\n")) {
       // rg --count の 1 行は `path:件数`。パスに `:` が入りうるので後ろから割る。
@@ -109,9 +153,25 @@ export function grepCode(
   names: string[];
   /** 上限を掛けずに数えた本文一致の総数と、その全ファイル。ファイル名だけの一致は含まない。 */
   matched: { files: number; lines: number; paths: string[] };
+  /**
+   * 探せなかった場所と理由。**空でないなら、返っているものは全部ではない。**
+   *
+   * **「探せなかった」を表す道を 1 本にする。**別に error を持たせると、
+   * 「無い」と答えてよいかの判定が呼び出し側とここの 2 箇所に分かれる。
+   */
+  unsearched: string[];
 } {
   const want = roots.filter((r) => !q.repo || r.label.includes(q.repo) || r.dir.includes(q.repo));
+  // **1 つも当たらないなら探していない。**0 件で返すと「コードに無い」と読まれる。
+  if (want.length === 0)
+    return {
+      hits: [],
+      names: [],
+      matched: { files: 0, lines: 0, paths: [] },
+      unsearched: [q.repo ? `${q.repo}: 見ている範囲に無い` : "見ている範囲にリポジトリが無い"],
+    };
   const limit = Math.min(Math.max(Math.trunc(Number(q.limit ?? 30)) || 30, 1), 100);
+  const failed: Failures = new Map();
   const out: { repo: string; path: string; line: number; text: string }[] = [];
 
   // **名前がファイル名にしか無いことがある。**dbt のモデルは `.sql` の中に自分の名前を
@@ -119,7 +179,7 @@ export function grepCode(
   // 同じことが React のコンポーネント、Terraform のモジュール、テストの対象名でも起きる。
   const names: string[] = [];
   for (const root of want) {
-    const listed = rg(root.dir, ["--files", ...globs(q.glob)]);
+    const listed = rg(root, ["--files", ...globs(q.glob)], failed);
     if (!listed) continue;
     const needle = q.query.toLowerCase();
     for (const f of listed.split("\n")) {
@@ -136,7 +196,7 @@ export function grepCode(
     // **引数として渡す。**シェルを挟まないので、query に何が入っていても語のまま扱われる。
     const args = ["--json", "--max-count", "5", "--max-filesize", "1M", "-i", "-e", q.query];
     args.push(...globs(q.glob), ".");
-    const raw = rg(root.dir, args);
+    const raw = rg(root, args, failed);
     if (!raw) continue;
     for (const line of raw.split("\n")) {
       if (out.length >= limit) break;
@@ -160,7 +220,13 @@ export function grepCode(
       });
     }
   }
-  return { hits: out, names, matched: countMatches(want, q) };
+  const matched = countMatches(want, q, failed);
+  return {
+    hits: out,
+    names,
+    matched,
+    unsearched: [...failed].map(([label, why]) => `${label}: ${why}`),
+  };
 }
 
 /** 1 ファイルの一部を読む。**全文は返さない** — 大きいファイルで文脈が埋まる。 */
