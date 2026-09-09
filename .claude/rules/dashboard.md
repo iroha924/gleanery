@@ -14,6 +14,18 @@ paths:
 触る場所の一覧は `.claude/rules/knowledge-schema.md` にある。あれは `server/src` と
 `db/migrations` でしか自動ロードされないので、画面から先に触った回は載らない。ここから辿る。
 
+## API に免除する経路を作らない
+
+`/api/*` は全経路が Clerk の認証を通り、`MITOS_ALLOWED_USER_ID` と一致する 1 人しか通さない
+（`server/src/http.ts`）。**新しい画面を足すときに「この 1 本だけ認証なし」を作らない。**
+
+画面から API を叩く口は `dashboard/src/lib/api.ts` の 1 ファイルに閉じている。
+`fetch` を直に書かず、そこの `authed()` を通す。**通さないと 401 になるだけなので気付けるが、
+逆に「なぜか動かない」の原因がここだと分からない**ことのほうが多い。
+
+**Cookie では通らない。**Authorization ヘッダが無い要求は API 側が先に落とす。
+Clerk 自体は Cookie 経路も持っているので、そこに寄りかからず自分で落としている。
+
 ## ブラウザへ鍵を出さない
 
 画面は HTTP しか知らない。設定画面が使う `mitos_cfg` ロールには **`record` と `node` への

@@ -4,7 +4,7 @@
 // **資格情報はブラウザへ出さない。**DB と Voyage を触るのはここだけで、
 // 画面は HTTP しか知らない。接続は読み取り専用ロールで張る（書き込み経路を作らない）。
 
-import { clerkMiddleware, getAuth } from "@hono/clerk-auth";
+import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -54,36 +54,46 @@ function cfg(): Promise<pg.Client> {
 }
 
 const app = new Hono();
-// 開発中は Vite が別ポートで動く。読み取りしかしないので localhost に限って許す。
+// 開発中は Vite が別ポートで動く。書き込む経路もあるので localhost に限って許す。
 app.use("/api/*", cors({ origin: (o) => (/^http:\/\/localhost:\d+$/.test(o) ? o : null) }));
 
-// **鍵が無いなら起動しない。**開いたまま待ち受けるほうが、繋がらないより悪い
+// **3 つ揃わないなら起動しない。**開いたまま待ち受けるほうが、繋がらないより悪い
 // （`KNOWLEDGE_DB_URL_RO` と同じ扱い。db.ts を参照）。
-if (!env.CLERK_SECRET_KEY) {
-  throw new Error(
-    "CLERK_SECRET_KEY が無い。~/.claude/knowledge.env に入れる（`clerk env pull` が dashboard/.env.local へ書いたもの）",
-  );
-}
-if (!env.MITOS_ALLOWED_USER_ID) {
-  throw new Error(
-    "MITOS_ALLOWED_USER_ID が無い。この API を使ってよい Clerk の user id を 1 つ入れる（`clerk users list --json`）",
-  );
-}
+// **publishableKey も要る** — 欠けたまま起動すると、最初の要求で 401 ではなく 500 になる。
+const secretKey = env.CLERK_SECRET_KEY;
+const publishableKey = env.CLERK_PUBLISHABLE_KEY;
 const allowedUser = env.MITOS_ALLOWED_USER_ID;
+if (!secretKey || !publishableKey || !allowedUser) {
+  throw new Error(
+    "CLERK_SECRET_KEY / CLERK_PUBLISHABLE_KEY / MITOS_ALLOWED_USER_ID が要る。" +
+      "~/.claude/knowledge.env へ入れる（通す user id は `clerk users list --json`）",
+  );
+}
+
+// **azp を空にしない。**authorizedParties が空だと Clerk は発行元の検証をせずに返るので、
+// 同じ instance からトークンを取った別オリジンのページでも通る。
+const authorizedParties = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // **免除する経路を作らない。**この API を叩くのはダッシュボードだけで、
 // MCP・CLI・編集フックは HTTP を通らず DB へ直結する。
-//
-// **Cookie では通さない。**画面は Authorization: Bearer でセッション JWT を送る。
-// Cookie を受けると、各 DELETE と OpenAI を叩く POST が他所のページから叩ける。
-app.use(
-  "/api/*",
-  clerkMiddleware({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY }),
-);
+app.use("/api/*", clerkMiddleware({ secretKey, publishableKey, authorizedParties }));
 app.use("/api/*", async (c, next) => {
-  // **サインイン済みでは足りない。**Clerk 側でサインアップが開いた設定に戻ったとき、
+  // **Authorization が無い要求はここで落とす。**Clerk は Cookie 経路も持っていて、
+  // そちらを通すと各 DELETE と OpenAI を叩く POST が他所のページから叩ける。
+  // 実測では Cookie だけの要求は Clerk 側で 401 になるが、それは向こうの実装の性質であって
+  // ここの保証ではない。画面は Authorization: Bearer でしか送らないので、これで足りる。
+  if (!c.req.header("authorization")) return c.json({ error: "未認証" }, 401);
+  const auth = getAuth(c);
+  // **user id だけでは足りない。**同じ人へ発行された API キーと OAuth トークンにも
+  // 同じ user id が入るので、種別を見ないと画面以外の経路が通る。
+  // **サインイン済みでも足りない。**Clerk 側でサインアップが開いた設定に戻ったとき、
   // ここが「誰でも」になる。通すのは 1 人だけにする。
-  if (getAuth(c)?.userId !== allowedUser) return c.json({ error: "未認証" }, 401);
+  if (auth.tokenType !== "session_token" || auth.userId !== allowedUser) {
+    return c.json({ error: "未認証" }, 401);
+  }
   await next();
 });
 
@@ -782,8 +792,8 @@ async function saveTurn(
 
 const port = Number(process.env.MITOS_API_PORT ?? 8787);
 // **手元だけで待ち受ける。**hostname を省くと Node は全インターフェースへ bind する
-// （実測: `*:8787 (LISTEN)`）。認証を掛けたあとも残す — 鍵の設定を間違えたときに
-// 同じネットワークへ出るかどうかは、この 1 行で決まる。画面は同じマシンの vite から来る。
+// （実測: `*:8787 (LISTEN)`）。鍵の設定を誤ったときに同じネットワークへ出るかどうかは、
+// この 1 行で決まる。画面は同じマシンの vite から来る。
 serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (i) =>
   console.log(`mitos API: http://localhost:${i.port}`),
 );

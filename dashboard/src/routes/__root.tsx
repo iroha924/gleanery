@@ -1,9 +1,10 @@
-import { Show, SignIn, UserButton } from "@clerk/react";
+import { ClerkLoaded, ClerkLoading, Show, SignIn, UserButton } from "@clerk/react";
 import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { api } from "@/lib/api";
 import { ProjectProvider } from "@/lib/project";
@@ -38,39 +39,56 @@ function Title() {
   return <span className="truncate text-sm font-medium">{open ?? hit?.[1]}</span>;
 }
 
+/** 画面いっぱいの 1 枚。読み込み中とサインインで同じ枠を使う。 */
+function Sheet({ children }: { children: React.ReactNode }) {
+  return <div className="flex min-h-svh items-center justify-center p-6">{children}</div>;
+}
+
 /**
  * サインインするまで画面を出さない。
  *
  * **画面を通しても中身は出ない** — API は 1 経路も認証を免除していないので、
  * ここは体裁の問題であって境界ではない。境界は `server/src/http.ts` にある。
+ *
+ * **`Show` だけにしない。**あれは読み込み中に null を返すので、Clerk が立ち上がるまで
+ * 白い画面になる（実測 1〜3 秒）。壊れて見えるので、その間は `ClerkLoading` が受ける。
  */
 export const Route = createRootRoute({
   component: () => (
-    <Show
-      when="signed-in"
-      fallback={
-        <div className="flex min-h-svh items-center justify-center p-6">
-          <SignIn />
-        </div>
-      }
-    >
-      <TooltipProvider delayDuration={300}>
-        <ProjectProvider>
-          <SidebarProvider>
-            <AppSidebar />
-            <SidebarInset>
-              <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-                <Title />
-                <div className="ml-auto">
-                  <UserButton />
-                </div>
-              </header>
-              <Body />
-            </SidebarInset>
-            <Toaster />
-          </SidebarProvider>
-        </ProjectProvider>
-      </TooltipProvider>
-    </Show>
+    <>
+      <ClerkLoading>
+        <Sheet>
+          <Spinner className="size-6 text-muted-foreground" />
+        </Sheet>
+      </ClerkLoading>
+      <ClerkLoaded>
+        <Show
+          when="signed-in"
+          fallback={
+            <Sheet>
+              <SignIn />
+            </Sheet>
+          }
+        >
+          <TooltipProvider delayDuration={300}>
+            <ProjectProvider>
+              <SidebarProvider>
+                <AppSidebar />
+                <SidebarInset>
+                  <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+                    <Title />
+                    <div className="ml-auto">
+                      <UserButton />
+                    </div>
+                  </header>
+                  <Body />
+                </SidebarInset>
+                <Toaster />
+              </SidebarProvider>
+            </ProjectProvider>
+          </TooltipProvider>
+        </Show>
+      </ClerkLoaded>
+    </>
   ),
 });
