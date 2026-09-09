@@ -19,7 +19,7 @@ export function Phases({ phases }: { phases: Phase[] }) {
         </span>
       </div>
 
-      <ol className="flex">
+      <ol className="flex overflow-x-auto pb-1">
         {phases.map((p, i) => {
           const isDone = p.state === "done";
           const isNow = p.state === "doing";
@@ -45,11 +45,11 @@ export function Phases({ phases }: { phases: Phase[] }) {
                 {isDone ? <CheckIcon className="size-3.5" /> : i + 1}
               </span>
               <span
-                className={`text-center text-[11px] leading-tight ${isNow ? "font-medium" : "text-muted-foreground"}`}
+                className={`text-center text-xs leading-tight ${isNow ? "font-medium" : "text-muted-foreground"}`}
               >
                 {p.label}
               </span>
-              {isNow && <span className="text-[10px] text-muted-foreground">いまここ</span>}
+              {isNow && <span className="text-xs text-muted-foreground">いまここ</span>}
             </li>
           );
         })}

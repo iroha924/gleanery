@@ -2,7 +2,7 @@ import { ClerkLoaded, ClerkLoading, Show, SignIn, UserButton } from "@clerk/reac
 import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -75,7 +75,8 @@ export const Route = createRootRoute({
               <SidebarProvider>
                 <AppSidebar />
                 <SidebarInset>
-                  <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+                  <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/90 px-3 backdrop-blur md:px-5">
+                    <SidebarTrigger className="md:hidden" aria-label="メニューを開く" />
                     <Title />
                     <div className="ml-auto">
                       <UserButton />
