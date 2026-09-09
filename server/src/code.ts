@@ -42,17 +42,30 @@ const GENERATED = ["!**/dist/**", "!**/build/**", "!**/*.min.js", "!**/*.bundle.
 const globs = (extra?: string): string[] =>
   [...GENERATED, ...(extra ? [extra] : [])].flatMap((g) => ["--glob", g]);
 
-/** rg は 1 件も無いと終了コード 1 を返す。見つからないのは失敗ではない。 */
+/**
+ * rg を 1 回走らせる。
+ *
+ * **1 件も無い（終了コード 1）と、探せなかったを分ける。**まとめて null にすると、
+ * rg の入っていないホストで「探したが無い」と同じ答えになり、無言で嘘をつく。
+ *
+ * 一部のパスが読めないだけでも rg は 2 を返すが、そのとき見つかった分は stdout に入る。
+ * **あるものは返す** — 読めないディレクトリ 1 つで探索ごと失敗にしない。
+ */
 function rg(dir: string, args: string[]): string | null {
   try {
     return execFileSync("rg", args, {
       cwd: dir,
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
-  } catch {
-    return null;
+  } catch (e) {
+    const r = e as { status?: number; code?: string; stdout?: string; stderr?: string };
+    if (r.status === 1) return null;
+    if (r.stdout) return r.stdout;
+    if (r.code === "ENOENT") throw new Error("このホストに ripgrep(rg) が入っていない");
+    const why = (r.stderr ?? "").trim().split("\n")[0];
+    throw new Error(`rg が終了コード ${r.status} で失敗した${why ? `: ${why}` : ""}`);
   }
 }
 
@@ -99,68 +112,76 @@ function countMatches(
 export function grepCode(
   roots: Root[],
   q: { query: string; repo?: string; glob?: string; limit?: number },
-): {
-  hits: { repo: string; path: string; line: number; text: string }[];
-  /**
-   * 名前が一致したファイル。**本文一致とは別の枠にする。**
-   * 同じ枠に入れると、名前だけ一致したファイルが limit を食い潰し、
-   * 実装を持つファイルが返らないことがある（実測: limit 2 で本文一致 0 件）。
-   */
-  names: string[];
-  /** 上限を掛けずに数えた本文一致の総数と、その全ファイル。ファイル名だけの一致は含まない。 */
-  matched: { files: number; lines: number; paths: string[] };
-} {
+):
+  | {
+      hits: { repo: string; path: string; line: number; text: string }[];
+      /**
+       * 名前が一致したファイル。**本文一致とは別の枠にする。**
+       * 同じ枠に入れると、名前だけ一致したファイルが limit を食い潰し、
+       * 実装を持つファイルが返らないことがある（実測: limit 2 で本文一致 0 件）。
+       */
+      names: string[];
+      /** 上限を掛けずに数えた本文一致の総数と、その全ファイル。ファイル名だけの一致は含まない。 */
+      matched: { files: number; lines: number; paths: string[] };
+    }
+  // **探せなかったことを、0 件と同じ形で返さない。**同じにすると
+  // 「その語はコードに無い」と答えることになり、探せていないことが誰にも見えない。
+  | { error: string } {
   const want = roots.filter((r) => !q.repo || r.label.includes(q.repo) || r.dir.includes(q.repo));
   const limit = Math.min(Math.max(Math.trunc(Number(q.limit ?? 30)) || 30, 1), 100);
-  const out: { repo: string; path: string; line: number; text: string }[] = [];
+  try {
+    const out: { repo: string; path: string; line: number; text: string }[] = [];
 
-  // **名前がファイル名にしか無いことがある。**dbt のモデルは `.sql` の中に自分の名前を
-  // 書かない（ファイル名がモデル名）ので、中身だけ探すと当たらない（実測で踏んだ）。
-  // 同じことが React のコンポーネント、Terraform のモジュール、テストの対象名でも起きる。
-  const names: string[] = [];
-  for (const root of want) {
-    const listed = rg(root.dir, ["--files", ...globs(q.glob)]);
-    if (!listed) continue;
-    const needle = q.query.toLowerCase();
-    for (const f of listed.split("\n")) {
-      if (names.length >= 200) break;
-      const file = f.replace(/^\.\//, "");
-      if (!file || SECRET.test(file)) continue;
-      if (!file.toLowerCase().includes(needle)) continue;
-      names.push(`${root.label}/${file}`);
-    }
-  }
-
-  for (const root of want) {
-    if (out.length >= limit) break;
-    // **引数として渡す。**シェルを挟まないので、query に何が入っていても語のまま扱われる。
-    const args = ["--json", "--max-count", "5", "--max-filesize", "1M", "-i", "-e", q.query];
-    args.push(...globs(q.glob), ".");
-    const raw = rg(root.dir, args);
-    if (!raw) continue;
-    for (const line of raw.split("\n")) {
-      if (out.length >= limit) break;
-      if (!line.startsWith("{")) continue;
-      let m: { type?: string; data?: Record<string, unknown> };
-      try {
-        m = JSON.parse(line);
-      } catch {
-        continue;
+    // **名前がファイル名にしか無いことがある。**dbt のモデルは `.sql` の中に自分の名前を
+    // 書かない（ファイル名がモデル名）ので、中身だけ探すと当たらない（実測で踏んだ）。
+    // 同じことが React のコンポーネント、Terraform のモジュール、テストの対象名でも起きる。
+    const names: string[] = [];
+    for (const root of want) {
+      const listed = rg(root.dir, ["--files", ...globs(q.glob)]);
+      if (!listed) continue;
+      const needle = q.query.toLowerCase();
+      for (const f of listed.split("\n")) {
+        if (names.length >= 200) break;
+        const file = f.replace(/^\.\//, "");
+        if (!file || SECRET.test(file)) continue;
+        if (!file.toLowerCase().includes(needle)) continue;
+        names.push(`${root.label}/${file}`);
       }
-      if (m.type !== "match" || !m.data) continue;
-      const file = String((m.data.path as { text?: string })?.text ?? "");
-      if (!file || SECRET.test(file)) continue;
-      out.push({
-        repo: root.label,
-        path: file.replace(/^\.\//, ""),
-        line: Number(m.data.line_number ?? 0),
-        text: String((m.data.lines as { text?: string })?.text ?? "")
-          .trim()
-          .slice(0, 300),
-      });
     }
+
+    for (const root of want) {
+      if (out.length >= limit) break;
+      // **引数として渡す。**シェルを挟まないので、query に何が入っていても語のまま扱われる。
+      const args = ["--json", "--max-count", "5", "--max-filesize", "1M", "-i", "-e", q.query];
+      args.push(...globs(q.glob), ".");
+      const raw = rg(root.dir, args);
+      if (!raw) continue;
+      for (const line of raw.split("\n")) {
+        if (out.length >= limit) break;
+        if (!line.startsWith("{")) continue;
+        let m: { type?: string; data?: Record<string, unknown> };
+        try {
+          m = JSON.parse(line);
+        } catch {
+          continue;
+        }
+        if (m.type !== "match" || !m.data) continue;
+        const file = String((m.data.path as { text?: string })?.text ?? "");
+        if (!file || SECRET.test(file)) continue;
+        out.push({
+          repo: root.label,
+          path: file.replace(/^\.\//, ""),
+          line: Number(m.data.line_number ?? 0),
+          text: String((m.data.lines as { text?: string })?.text ?? "")
+            .trim()
+            .slice(0, 300),
+        });
+      }
+    }
+    return { hits: out, names, matched: countMatches(want, q) };
+  } catch (e) {
+    return { error: `コードを探せなかった: ${(e as Error).message}` };
   }
-  return { hits: out, names, matched: countMatches(want, q) };
 }
 
 /** 1 ファイルの一部を読む。**全文は返さない** — 大きいファイルで文脈が埋まる。 */

@@ -927,12 +927,16 @@ async function runTool(
 
   if (call.name === "grep_code") {
     if (!a.query) return JSON.stringify({ error: "query が空" });
-    const { hits, names, matched } = grepCode(roots, {
+    const found = grepCode(roots, {
       query: a.query,
       repo: a.repo,
       glob: a.glob,
       limit: a.limit,
     });
+    // **探せなかったことは、探して無かったことと別に返す。**同じ形にすると
+    // 「その語はコードに無い」と答え、探せていないことが誰にも見えない。
+    if ("error" in found) return JSON.stringify(found);
+    const { hits, names, matched } = found;
     if (hits.length === 0 && matched.lines === 0 && names.length === 0)
       return JSON.stringify({ found: 0, note: "その語はコードに無い" });
     return JSON.stringify({

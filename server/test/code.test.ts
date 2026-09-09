@@ -41,8 +41,14 @@ fs.symlinkSync(path.join(tmp, "outside.txt"), path.join(repo, "escape.txt"));
 
 const roots: Root[] = [{ label: "test/repo", dir: repo }];
 
+/** 探せた前提の検査で使う。**探せなかったらそこで落とす** — 0 件と読み違えない。 */
+function found(r: ReturnType<typeof grepCode>) {
+  assert.ok(!("error" in r), `探索に失敗した: ${"error" in r ? r.error : ""}`);
+  return r;
+}
+
 test("語で探せる", () => {
-  const { hits } = grepCode(roots, { query: "呼称" });
+  const { hits } = found(grepCode(roots, { query: "呼称" }));
   assert.equal(hits.length, 1);
   assert.equal(hits[0]?.path, "src/billing.ts");
   assert.equal(hits[0]?.line, 2);
@@ -50,7 +56,7 @@ test("語で探せる", () => {
 
 // **切ったことが見えないと、返った分が全部として読まれる。**
 test("上限で切っても一致の総数は返る", () => {
-  const r = grepCode(roots, { query: "反復する語", limit: 3 });
+  const r = found(grepCode(roots, { query: "反復する語", limit: 3 }));
   assert.equal(r.hits.length, 3, "limit までしか返さない");
   assert.equal(r.matched.lines, 12, "総数は上限を掛けずに数える");
   assert.equal(r.matched.files, 2, "またがったファイルも数える");
@@ -60,7 +66,7 @@ test("上限で切っても一致の総数は返る", () => {
 
 // **名前だけの一致が枠を食うと、実装を持つファイルが返らない**（実測: limit 2 で本文一致 0 件）。
 test("名前だけの一致は、本文一致の枠を食わない", () => {
-  const r = grepCode(roots, { query: "auth", limit: 2 });
+  const r = found(grepCode(roots, { query: "auth", limit: 2 }));
   assert.equal(r.names.length, 3, "名前一致は limit と別枠で全部返る");
   assert.ok(
     r.hits.some((h) => h.path === "src/impl.ts"),
@@ -70,27 +76,27 @@ test("名前だけの一致は、本文一致の枠を食わない", () => {
 
 // 名前の一致は本文検索と別の経路なので、**そちらにも同じ除外が要る。**
 test("資格情報はファイル名の一致でも出ない", () => {
-  const r = grepCode(roots, { query: "credentials" });
+  const r = found(grepCode(roots, { query: "credentials" }));
   assert.equal(r.names.length, 0);
 });
 
 // 生成物は source と同じ実装を二度見せる。
 test("生成物は探索に出ない", () => {
-  const r = grepCode(roots, { query: "反復する語" });
+  const r = found(grepCode(roots, { query: "反復する語" }));
   assert.equal(r.matched.files, 2, "dist の写しは数えない");
   assert.ok(!r.hits.some((h) => h.path.includes("dist/")), "本文にも出さない");
 });
 
 // **除外より呼び出し側の指定が勝つ。**生成物そのものを見たいときに見られなくなる。
 test("glob を明示すれば生成物も見られる", () => {
-  const r = grepCode(roots, { query: "反復する語", glob: "dist/*.js" });
+  const r = found(grepCode(roots, { query: "反復する語", glob: "dist/*.js" }));
   assert.equal(r.matched.files, 1);
   assert.deepEqual(r.matched.paths, ["test/repo/dist/many-a.js"]);
 });
 
 // 総数は別の rg 呼び出しで数えるので、**そちらにも同じ除外が要る。**
 test("資格情報のファイルは総数にも入らない", () => {
-  const r = grepCode(roots, { query: "absolutely" });
+  const r = found(grepCode(roots, { query: "absolutely" }));
   assert.equal(r.hits.length, 0, "本文にも出さない");
   assert.equal(r.matched.lines, 0, "総数にも数えない");
   assert.equal(r.matched.files, 0);
@@ -125,4 +131,23 @@ test("資格情報の入りうるファイルは読まない", () => {
 test("見ていない範囲のリポジトリは読めない", () => {
   const r = readCode(roots, { repo: "べつのリポジトリ", path: "src/billing.ts" });
   assert.ok("error" in r);
+});
+
+// **探せなかったことは、0 件と同じ形で返してはいけない。**同じにすると
+// 「その語はコードに無い」と答え、探せていないことが誰にも見えない。
+test("rg が無いときは 0 件ではなく、探せないことを返す", () => {
+  const before = process.env.PATH;
+  process.env.PATH = "";
+  try {
+    const r = grepCode(roots, { query: "呼称" });
+    assert.ok("error" in r, "rg が無いのに結果の形で返っている");
+    assert.match(r.error, /ripgrep/);
+  } finally {
+    process.env.PATH = before;
+  }
+});
+
+test("正規表現が壊れているときも、探せないことを返す", () => {
+  const r = grepCode(roots, { query: "unclosed(" });
+  assert.ok("error" in r, "rg が弾いたのに結果の形で返っている");
 });
