@@ -217,6 +217,18 @@ db/          migrations（PostgreSQL の移行）
 取り込み時に作業場所の役割・説明を読み取るのに使う）。
 モデルは `MITOS_CHAT_MODEL`（既定 `gpt-5.6-terra`）と `MITOS_CHAT_EFFORT`（既定 `high`）で差し替えられる。
 
+**ダッシュボードの API は Clerk で認証する。**次の 3 つが揃わないと `bun run api` は起動しない。
+
+| 変数 | 何を入れるか |
+|---|---|
+| `CLERK_SECRET_KEY` | Clerk のシークレット鍵。`clerk env pull` が `dashboard/.env.local` へ書いたものを写す |
+| `CLERK_PUBLISHABLE_KEY` | 同じく公開鍵。API 側でも検証に使う |
+| `MITOS_ALLOWED_USER_ID` | **通す人を 1 人だけ指定する。**`clerk users list --json` の `id` |
+
+画面側の `VITE_CLERK_PUBLISHABLE_KEY` だけは `dashboard/.env.local`（`clerk env pull` が書く）。
+Vite は `VITE_` の付いた変数しかブラウザへ出さないので、シークレット鍵はここに置いても
+バンドルへは入らないが、**API が読むのは `~/.claude/knowledge.env` のほう**である。
+
 ### DB を置いている先
 
 Neon（`aws-ap-southeast-1` / PostgreSQL 18）。マネージドなので、OS の更新も再起動も

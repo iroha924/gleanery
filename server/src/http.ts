@@ -4,6 +4,7 @@
 // **資格情報はブラウザへ出さない。**DB と Voyage を触るのはここだけで、
 // 画面は HTTP しか知らない。接続は読み取り専用ロールで張る（書き込み経路を作らない）。
 
+import { clerkMiddleware, getAuth } from "@hono/clerk-auth";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -55,6 +56,36 @@ function cfg(): Promise<pg.Client> {
 const app = new Hono();
 // 開発中は Vite が別ポートで動く。読み取りしかしないので localhost に限って許す。
 app.use("/api/*", cors({ origin: (o) => (/^http:\/\/localhost:\d+$/.test(o) ? o : null) }));
+
+// **鍵が無いなら起動しない。**開いたまま待ち受けるほうが、繋がらないより悪い
+// （`KNOWLEDGE_DB_URL_RO` と同じ扱い。db.ts を参照）。
+if (!env.CLERK_SECRET_KEY) {
+  throw new Error(
+    "CLERK_SECRET_KEY が無い。~/.claude/knowledge.env に入れる（`clerk env pull` が dashboard/.env.local へ書いたもの）",
+  );
+}
+if (!env.MITOS_ALLOWED_USER_ID) {
+  throw new Error(
+    "MITOS_ALLOWED_USER_ID が無い。この API を使ってよい Clerk の user id を 1 つ入れる（`clerk users list --json`）",
+  );
+}
+const allowedUser = env.MITOS_ALLOWED_USER_ID;
+
+// **免除する経路を作らない。**この API を叩くのはダッシュボードだけで、
+// MCP・CLI・編集フックは HTTP を通らず DB へ直結する。
+//
+// **Cookie では通さない。**画面は Authorization: Bearer でセッション JWT を送る。
+// Cookie を受けると、各 DELETE と OpenAI を叩く POST が他所のページから叩ける。
+app.use(
+  "/api/*",
+  clerkMiddleware({ secretKey: env.CLERK_SECRET_KEY, publishableKey: env.CLERK_PUBLISHABLE_KEY }),
+);
+app.use("/api/*", async (c, next) => {
+  // **サインイン済みでは足りない。**Clerk 側でサインアップが開いた設定に戻ったとき、
+  // ここが「誰でも」になる。通すのは 1 人だけにする。
+  if (getAuth(c)?.userId !== allowedUser) return c.json({ error: "未認証" }, 401);
+  await next();
+});
 
 /**
  * 画面がいま開いているプロジェクトの範囲。
@@ -750,9 +781,9 @@ async function saveTurn(
 }
 
 const port = Number(process.env.MITOS_API_PORT ?? 8787);
-// **手元だけで待ち受ける。**この API に認証は無い。hostname を省くと Node は
-// 全インターフェースへ bind するので（実測: `*:8787 (LISTEN)`）、同じネットワークから
-// /api/chat の read_code も各 DELETE も叩ける。画面は同じマシンの vite から来る。
+// **手元だけで待ち受ける。**hostname を省くと Node は全インターフェースへ bind する
+// （実測: `*:8787 (LISTEN)`）。認証を掛けたあとも残す — 鍵の設定を間違えたときに
+// 同じネットワークへ出るかどうかは、この 1 行で決まる。画面は同じマシンの vite から来る。
 serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (i) =>
   console.log(`mitos API: http://localhost:${i.port}`),
 );

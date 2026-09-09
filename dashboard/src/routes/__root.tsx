@@ -1,3 +1,4 @@
+import { Show, SignIn, UserButton } from "@clerk/react";
 import { useQuery } from "@tanstack/react-query";
 import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -37,21 +38,39 @@ function Title() {
   return <span className="truncate text-sm font-medium">{open ?? hit?.[1]}</span>;
 }
 
+/**
+ * サインインするまで画面を出さない。
+ *
+ * **画面を通しても中身は出ない** — API は 1 経路も認証を免除していないので、
+ * ここは体裁の問題であって境界ではない。境界は `server/src/http.ts` にある。
+ */
 export const Route = createRootRoute({
   component: () => (
-    <TooltipProvider delayDuration={300}>
-      <ProjectProvider>
-        <SidebarProvider>
-          <AppSidebar />
-          <SidebarInset>
-            <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-              <Title />
-            </header>
-            <Body />
-          </SidebarInset>
-          <Toaster />
-        </SidebarProvider>
-      </ProjectProvider>
-    </TooltipProvider>
+    <Show
+      when="signed-in"
+      fallback={
+        <div className="flex min-h-svh items-center justify-center p-6">
+          <SignIn />
+        </div>
+      }
+    >
+      <TooltipProvider delayDuration={300}>
+        <ProjectProvider>
+          <SidebarProvider>
+            <AppSidebar />
+            <SidebarInset>
+              <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+                <Title />
+                <div className="ml-auto">
+                  <UserButton />
+                </div>
+              </header>
+              <Body />
+            </SidebarInset>
+            <Toaster />
+          </SidebarProvider>
+        </ProjectProvider>
+      </TooltipProvider>
+    </Show>
   ),
 });

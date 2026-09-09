@@ -1,6 +1,21 @@
 // API の型。**サーバーの戻り値をここで 1 回だけ書く。**
 // 画面ごとに書くと、片方だけ直したときに気付けない。
 
+import { getToken } from "@clerk/react";
+
+/**
+ * Clerk のセッション JWT を載せる。**すべての要求に付ける** — API は 1 経路も免除していない。
+ *
+ * **Cookie に頼らない。**Authorization しか見ない API にしておくと、各 DELETE と
+ * OpenAI を叩く POST が他所のページから叩けない。
+ * `getToken` は React の外から呼んでよい（@clerk/shared が「API interceptor や
+ * データ取得層から安全に呼べる」と型定義に明記している）。
+ */
+async function authed(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const token = await getToken();
+  return token ? { ...extra, authorization: `Bearer ${token}` } : { ...extra };
+}
+
 export type Phase = { id: string; label: string; state: "done" | "doing" | "todo"; from: string };
 export type NextItem = { who: "ai" | "human"; text: string };
 export type Wall = { record_id: string; subkind: "constraint" | "non-goal"; text: string; key: string };
@@ -59,7 +74,7 @@ export async function askStream(
 ): Promise<void> {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: await authed({ "content-type": "application/json" }),
     body: JSON.stringify(body),
     signal,
   });
@@ -190,7 +205,7 @@ const q = (scopes: number[] | undefined): string =>
   scopes === undefined ? "" : `?scopes=${scopes.join(",")}`;
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const res = await fetch(path, { headers: await authed() });
   if (!res.ok) throw new Error(`${path} が ${res.status}`);
   return res.json() as Promise<T>;
 }
@@ -221,7 +236,7 @@ export type Term = {
 async function send<T>(path: string, method: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
     method,
-    headers: body ? { "content-type": "application/json" } : undefined,
+    headers: await authed(body ? { "content-type": "application/json" } : undefined),
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = (await res.json()) as T & { error?: string };
@@ -253,7 +268,7 @@ export const api = {
   polish: async (text: string): Promise<PolishOption[]> => {
     const res = await fetch("/api/polish", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: await authed({ "content-type": "application/json" }),
       body: JSON.stringify({ text }),
     });
     const json = (await res.json()) as { options?: PolishOption[]; error?: string };
@@ -264,7 +279,7 @@ export const api = {
   reply: async (heard: string, scopeIds: number[]): Promise<Reply> => {
     const res = await fetch("/api/reply", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: await authed({ "content-type": "application/json" }),
       body: JSON.stringify({ heard, scopeIds }),
     });
     const json = (await res.json()) as Reply & { error?: string };
@@ -273,7 +288,7 @@ export const api = {
   },
   /** 会議を聞き取るための一時鍵。**本物の API キーはここへ来ない。**10 分で切れる。 */
   realtimeToken: async (): Promise<string> => {
-    const res = await fetch("/api/realtime-token", { method: "POST" });
+    const res = await fetch("/api/realtime-token", { method: "POST", headers: await authed() });
     const json = (await res.json()) as { token?: string; error?: string };
     if (!res.ok || !json.token) throw new Error(json.error ?? `一時鍵が ${res.status}`);
     return json.token;
@@ -282,7 +297,8 @@ export const api = {
   transcribe: async (audio: Blob): Promise<string> => {
     const form = new FormData();
     form.append("audio", audio, "a.webm");
-    const res = await fetch("/api/transcribe", { method: "POST", body: form });
+    // **content-type を付けない。**FormData は境界文字列を自分で決めるので、手で書くと壊れる。
+    const res = await fetch("/api/transcribe", { method: "POST", body: form, headers: await authed() });
     const json = (await res.json()) as { text?: string; error?: string };
     if (!res.ok) throw new Error(json.error ?? `文字起こしが ${res.status}`);
     return json.text ?? "";
@@ -312,7 +328,7 @@ export const api = {
   }): Promise<Hit[]> => {
     const res = await fetch("/api/search", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: await authed({ "content-type": "application/json" }),
       body: JSON.stringify(body),
     });
     if (!res.ok) throw new Error(`検索が ${res.status}`);
