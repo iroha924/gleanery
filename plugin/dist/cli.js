@@ -23704,7 +23704,6 @@ function date4(params) {
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 
 // server/node_modules/pg/esm/index.mjs
@@ -23747,7 +23746,7 @@ var HERE = path.dirname(fileURLToPath(import.meta.url));
 var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
 var caFor = (host) => {
   const own2 = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
-  return own2 && fs.existsSync(own2) ? [fs.readFileSync(own2, "utf8")] : [...tls.rootCertificates];
+  return own2 && fs.existsSync(own2) ? [fs.readFileSync(own2, "utf8")] : undefined;
 };
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
@@ -38029,6 +38028,7 @@ var STOP = new Set([
   "使う",
   "教えて"
 ]);
+var ILIKE_PATTERN = `'%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'`;
 var lexicalTerms = (q) => (q.match(/[A-Za-z][A-Za-z0-9_.#-]{2,}|[ァ-ヴー]{2,}|[一-龠]{2,}|OT-\d+|#\d+/g) ?? []).filter((t) => !STOP.has(t)).slice(0, 8);
 function fuse(lists, k = 60) {
   const acc = new Map;
@@ -38071,13 +38071,14 @@ async function search(client, env2, o) {
      order by n.embedding <#> $1::extensions.vector
      limit $${values2.length + 2}`, [vec(qv), ...values2, pool]);
   const words = lexicalTerms(question);
-  const lex = words.length ? await client.query(`select ${COLS}, 1::float8 as score
+  const lex = words.length ? await client.query(`select ${COLS}, m.hits::float8 as score
          ${JOINS}
-         where ${clauses(1)} and exists (
-           select 1 from unnest($${values2.length + 1}::text[]) as t
-           where n.text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
-         )
-         order by n.id
+         cross join lateral (
+           select count(*) as hits from unnest($${values2.length + 1}::text[]) as t
+           where n.text ilike ${ILIKE_PATTERN}
+         ) m
+         where ${clauses(1)} and m.hits > 0
+         order by m.hits desc, n.id desc
          limit $${values2.length + 2}`, [...values2, words, pool]) : { rows: [] };
   const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0)

@@ -6,7 +6,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
@@ -58,10 +57,15 @@ const CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "p
   fs.existsSync(d),
 );
 
-/** そのホスト専用の証明書があればそれだけを、無ければ公開 CA を返す。 */
-const caFor = (host: string): string[] => {
+/**
+ * そのホスト専用の証明書があればそれだけを CA にする。無ければ `undefined` を返し、
+ * Node の既定の信頼ストアへ委ねる。**`tls.rootCertificates` を明示しない** —
+ * あれは固定の公開 CA 一覧で `NODE_EXTRA_CA_CERTS` の追加を含まないので、
+ * 渡すと社内 CA を足している環境が繋がらなくなる（実測: 120 件のまま増えない）。
+ */
+const caFor = (host: string): string[] | undefined => {
   const own = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
-  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : [...tls.rootCertificates];
+  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : undefined;
 };
 
 /**

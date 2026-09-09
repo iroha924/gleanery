@@ -5074,7 +5074,6 @@ import path3 from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 
 // server/node_modules/pg/esm/index.mjs
@@ -5117,7 +5116,7 @@ var HERE = path.dirname(fileURLToPath(import.meta.url));
 var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
 var caFor = (host) => {
   const own = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
-  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : [...tls.rootCertificates];
+  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : undefined;
 };
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {

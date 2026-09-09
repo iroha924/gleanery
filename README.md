@@ -196,9 +196,9 @@ plugin/      Claude Code / Codex へ配るもの（skills, hooks, bin, dist）
 db/          migrations（PostgreSQL の移行）
 ```
 
-検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と pg_trgm の語彙検索を
-RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞（PR 番号、テーブル名）を
-落とし、全文だけだと言い換えを落とす。
+検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と、質問を語に割った部分一致
+（`ilike`）を RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞
+（PR 番号、テーブル名）を落とし、語の一致だけだと言い換えを落とす。
 
 記録は `record`（1 件の作業）と `node`（その中の判断・発言・出来事）の 2 層。`node` は多相 1 表で、
 種別を足してもベクトル索引が割れないようにしてある。
@@ -243,11 +243,17 @@ tailnet の外からは「聞けない」とだけ出て、ほかの検査は続
 
 ```bash
 bun install
-# db/migrations を対象プロジェクトへ適用
+# db/migrations を対象プロジェクトへ適用（下の注意を先に読む）
 bun run bundle                       # plugin/dist を作る（MCP・フック・CLI）
 mitos doctor                         # 資格情報と接続、VPS の状態を確かめる
 mitos import-github --cwd <repo>     # 最初の取り込み
 ```
+
+**migrations は素の DB へそのままは流せない。**先に `create schema extensions;` が要り
+（`with schema extensions` を使う移行があるのに、スキーマを作る移行が無い）、
+1 本目の `create extension pgroonga` は pgroonga を持たない DB では落ちる。
+**語彙検索はもう pgroonga を使っていない**ので、その行は飛ばしてよい。
+Neon のようなマネージドでは pgroonga を入れられないため、飛ばすのが唯一の道になる。
 
 日次同期は launchd。`~/Library/LaunchAgents/com.mitos.sync.plist` が毎日 6:00 に `mitos sync` を叩き、
 ログは `~/.claude/mitos-sync.log`。外すときは `launchctl bootout gui/$(id -u)/com.mitos.sync`。
@@ -312,7 +318,7 @@ bun run bundle     # plugin/dist を作り直す
 
 ## 精度をどう測っているか
 
-`server/evals/` に 5 種類ある。**LLM を審判にしていない** — 人間との一致は 90% と報告されているが
+`server/evals/` に 6 種類ある。**LLM を審判にしていない** — 人間との一致は 90% と報告されているが
 審判自体の校正が要り、実行のたびに揺れる。答えには PR 番号・日付・状態という検証可能な語が
 必ず入るので、突き合わせで足りる。
 
@@ -327,6 +333,7 @@ bun run bundle     # plugin/dist を作り直す
 | `answers-auto.json` | `evals/generate.ts` が DB から機械生成（複合条件、近い番号の干渉、過去と現在） |
 | `answers-judgment.json` | 正解が 1 つに決まらない判断の問い |
 | `answers-multi.json` | 多ターン会話（指示語の解決、訂正の持続、話題の切り替え） |
+| `chat.json` | 画面のチャットの応答（引用の帰属、範囲外の扱い） |
 
 期待値は `must` / `mustNot` の突き合わせ。`re:` で始めると正規表現になり、**実体と述語を束縛できる**。
 

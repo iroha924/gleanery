@@ -85,14 +85,15 @@ async function lexicalSearch(q: string, limit: number): Promise<Row[]> {
   const ts = terms(q);
   if (ts.length === 0) return [];
   const r = await c.query<Row>(
-    `select key, kind, subkind, polarity, text, record_id,
-            coalesce(attrs->>'whyNot', attrs->>'context','') ex, 1::float8 as score
-     from node
-     where deleted_at is null and exists (
-       select 1 from unnest($1::text[]) as t
-       where text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
-     )
-     order by key limit $2`,
+    `select n.key, n.kind, n.subkind, n.polarity, n.text, n.record_id,
+            coalesce(n.attrs->>'whyNot', n.attrs->>'context','') ex, m.hits::float8 as score
+     from node n
+     cross join lateral (
+       select count(*) as hits from unnest($1::text[]) as t
+       where n.text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
+     ) m
+     where n.deleted_at is null and m.hits > 0
+     order by m.hits desc, n.id desc limit $2`,
     [ts, limit],
   );
   return r.rows;
@@ -132,7 +133,7 @@ async function rerank(q: string, rows: Row[], topK: number, model = "rerank-3"):
 
 const strategies: Record<string, (q: string, qv: number[], cs: Case) => Promise<{ key: string }[]>> = {
   ベクトルのみ: async (_q, qv) => vectorSearch(qv, K),
-  "語彙のみ(pg_trgm)": async (q) => lexicalSearch(q, K),
+  "語彙のみ(部分一致)": async (q) => lexicalSearch(q, K),
   "ハイブリッド(RRF)": async (q, qv) =>
     rrf([await vectorSearch(qv, POOL), await lexicalSearch(q, POOL)]).slice(0, K),
   "ベクトル+rerank-3": async (q, qv) => rerank(q, await vectorSearch(qv, POOL), K),
@@ -197,7 +198,7 @@ for (const [name, fn] of Object.entries(strategies)) {
 const total = await c.query<{ n: number }>("select count(*)::int n from node where deleted_at is null");
 console.log(`質問 ${cases.length} 件 / node ${total.rows[0]?.n ?? 0} 件\n`);
 console.table(results);
-console.log("※ 「語彙のみ(pg_trgm)」と「ハイブリッド」の top1 / MRR は順位として読めない。");
+console.log("※ 「語彙のみ(部分一致)」と「ハイブリッド」の top1 / MRR は順位として読めない。");
 console.log("   語彙側は候補集合を作るのが仕事で、順位は後段の再ランクが付ける。読めるのは recall@5 だけ。");
 
 console.log("\n=== 種別ごとの recall@5 ===");

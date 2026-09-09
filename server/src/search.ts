@@ -130,8 +130,8 @@ export type SearchOpts = {
 
 export type SearchResult = { rows: Hit[]; queryVector: number[]; topScore: number | null };
 
-// **質問文をそのまま `&@~` へ渡さない。**文全体を 1 つのクエリ式として扱うので
-// 「ドキュメントに使ってはいけない記号は？」が 0 件になる（実測）。語に割って OR で繋ぐ。
+// **質問文を丸ごと 1 つのパターンにしない。**「ドキュメントに使ってはいけない記号は？」が
+// そのままでは 0 件になる（実測）。語に割って、どれかに当たった行を候補にする。
 const STOP = new Set([
   "ため",
   "こと",
@@ -151,6 +151,14 @@ const STOP = new Set([
   "使う",
   "教えて",
 ]);
+/**
+ * `unnest(...) as t` の語を `ilike` のパターンにする式。**SQL を組み立てる側と、
+ * それを検証するテストで同じ文字列を使う**ため定数にしてある。
+ * `_` は `ilike` で任意の 1 文字として効くので潰す。`\` を先に二重化しないと、
+ * 後から足す `\_` のエスケープ自体が壊れる。
+ */
+export const ILIKE_PATTERN = `'%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'`;
+
 export const lexicalTerms = (q: string): string[] =>
   (q.match(/[A-Za-z][A-Za-z0-9_.#-]{2,}|[ァ-ヴー]{2,}|[一-龠]{2,}|OT-\d+|#\d+/g) ?? [])
     .filter((t) => !STOP.has(t))
@@ -243,24 +251,26 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   // （最近傍が別の番号になる）。実測（2026-09-09、20 問）: 出荷経路の recall@5 は
   // 語彙側ありで 95%、外すと 85%。
   //
-  // **得点を付けない。**trigram の類似度はどちらも順位にならない — `similarity` は
-  // 本文の長さの逆数に近づき（8 字 1.00 / 8,539 字 0.001）、`word_similarity` は同点が
-  // 大量に出る（1 語で 26 行が 1.000）。**順位は後段の再ランクが付ける**ので、
-  // ここは `n.id` 順で長さにも語順にも中立にしておく。実測: 出荷経路の recall@5 は
-  // `similarity` / `word_similarity` / 得点なし のどれでも 95%。
+  // **一致した語数で選ぶ。**候補は `pool` 件で切るので、切り方が「どの行が再ランクまで
+  // 届くか」を決める。`n.id` 昇順だと、一致が `pool` を超える語では常に最も古い行が採られ、
+  // 新しく取り込んだ記録は語彙側から永久に候補入りしない。
+  // trigram の類似度は順位にならない — `similarity` は本文の長さの逆数に近づき
+  // （8 字 1.00 / 8,539 字 0.001）、`word_similarity` は同点が大量に出る（1 語で 26 行が
+  // 1.000）。順位そのものは後段の再ランクが付ける。
   //
   // **`_` を潰す。**`lexicalTerms` は `search_path` のような語を返し、`ilike` では
-  // `_` が任意の 1 文字として効く。
+  // `_` が任意の 1 文字として効く。`\\` を先に二重化しないとエスケープ自体が壊れる。
   const words = lexicalTerms(question);
   const lex = words.length
     ? await client.query<Hit>(
-        `select ${COLS}, 1::float8 as score
+        `select ${COLS}, m.hits::float8 as score
          ${JOINS}
-         where ${clauses(1)} and exists (
-           select 1 from unnest($${values.length + 1}::text[]) as t
-           where n.text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
-         )
-         order by n.id
+         cross join lateral (
+           select count(*) as hits from unnest($${values.length + 1}::text[]) as t
+           where n.text ilike ${ILIKE_PATTERN}
+         ) m
+         where ${clauses(1)} and m.hits > 0
+         order by m.hits desc, n.id desc
          limit $${values.length + 2}`,
         [...values, words, pool],
       )
