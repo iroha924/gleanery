@@ -75,9 +75,6 @@ if (!secretKey || !publishableKey || !allowedUser) {
 // トークンを取った別オリジンのページでも通る。
 // **空文字を渡せる形にしない** — 環境変数を空にしただけで検証が落ちるのは、
 // 設定を間違えたことが出力のどこにも出ない種類の緩みになる。
-// **自分が配られているオリジンは自分で許す。**Vercel の preview はデプロイごとに URL が
-// 変わるので、環境変数では追いかけられない（入れた瞬間に次のデプロイで古くなる）。
-// `VERCEL_URL` はそのデプロイ自身のホスト名なので、画面を配っている当人でしかない。
 const configuredOrigins = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
   .split(",")
   .map((s) => s.trim())
@@ -87,7 +84,15 @@ const configuredOrigins = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
 if (configuredOrigins.length === 0) {
   throw new Error("MITOS_ALLOWED_ORIGINS が空。画面を配るオリジンを列挙する（例: https://example.com）");
 }
-const ownOrigin = process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [];
+// **自分が配られているオリジンは自分で許す。**preview の URL はデプロイごとに変わるので、
+// 環境変数では追いかけられない（入れた瞬間に次のデプロイで古くなる）。どちらも
+// 画面を配っている当人のホスト名でしかない。
+//   VERCEL_URL         そのデプロイ固有の URL
+//   VERCEL_BRANCH_URL  ブランチに紐づく URL。**PR から踏むのはこちら。**
+//                      入れないと、レビューのたびに preview の API が 401 になる。
+const ownOrigin = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL]
+  .filter((h): h is string => Boolean(h))
+  .map((h) => `https://${h}`);
 const authorizedParties = [...configuredOrigins, ...ownOrigin];
 
 // **免除する経路を作らない。**この API を叩くのはダッシュボードだけで、
