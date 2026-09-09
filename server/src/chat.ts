@@ -604,7 +604,12 @@ const TOOLS: OpenAI.Responses.Tool[] = [
         query: { type: "string", description: "探す語。正規表現も使える" },
         repo: { type: "string", description: "リポジトリ名の一部。省くと範囲の全部を探す" },
         glob: { type: "string", description: "対象を絞る。例: *.ts / **/*.sql" },
-        limit: { type: "number", description: "何件返すか。既定 30、最大 100" },
+        limit: {
+          type: "number",
+          description:
+            "何件返すか。既定 30、最大 100。**一致の総数は matched で別に返る**ので、" +
+            "「全部」を聞かれたら returned と matched.lines を比べ、足りなければ絞って引き直す",
+        },
       },
       required: ["query"],
       additionalProperties: false,
@@ -840,14 +845,28 @@ async function runTool(
 
   if (call.name === "grep_code") {
     if (!a.query) return JSON.stringify({ error: "query が空" });
-    const hits = grepCode(roots, { query: a.query, repo: a.repo, glob: a.glob, limit: a.limit });
-    if (hits.length === 0) return JSON.stringify({ found: 0, note: "その語はコードに無い" });
-    return JSON.stringify(
-      hits.map((h) => ({
+    const { hits, matched } = grepCode(roots, {
+      query: a.query,
+      repo: a.repo,
+      glob: a.glob,
+      limit: a.limit,
+    });
+    if (hits.length === 0 && matched.lines === 0)
+      return JSON.stringify({ found: 0, note: "その語はコードに無い" });
+    return JSON.stringify({
+      matched,
+      returned: hits.length,
+      // **切ったことを言葉でも返す。**数字だけ並べると、返った分を全部として答えられる。
+      note:
+        hits.length < matched.lines
+          ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +
+            "全部を挙げるなら limit を上げる（最大 100）か、glob で絞って数回に分ける"
+          : undefined,
+      hits: hits.map((h) => ({
         ...h,
         n: cite("【コード】", `${h.path}:${h.line} ${h.text}`, h.repo, null, `code:${h.repo}`),
       })),
-    );
+    });
   }
   if (call.name === "read_code") {
     if (!a.repo || !a.path) return JSON.stringify({ error: "repo と path が要る" });

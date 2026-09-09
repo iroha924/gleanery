@@ -36,11 +36,64 @@ function inside(root: Root, rel: string): string | null {
 // 資格情報は返さない。**探索の結果に混ざるのが一番危ない**（読んだ本人は探していない）。
 const SECRET = /(^|\/)(\.env(\..*)?|.*\.pem|.*\.key|.*credentials.*\.json|\.netrc)$/i;
 
+/** rg は 1 件も無いと終了コード 1 を返す。見つからないのは失敗ではない。 */
+function rg(dir: string, args: string[]): string | null {
+  try {
+    return execFileSync("rg", args, {
+      cwd: dir,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 上限を掛けずに一致を数える。
+ *
+ * **返す件数とは別に走らせる。**候補の収集は `--max-count` と limit で切っているので、
+ * その結果を数えても総数は出ない。総数が無いと、返った 30 件が全部だと読まれる。
+ */
+function countMatches(
+  roots: Root[],
+  q: { query: string; glob?: string },
+): {
+  files: number;
+  lines: number;
+} {
+  let files = 0;
+  let lines = 0;
+  for (const root of roots) {
+    const args = ["--count", "--max-filesize", "1M", "-i", "-e", q.query];
+    if (q.glob) args.push("--glob", q.glob);
+    args.push(".");
+    const raw = rg(root.dir, args);
+    if (!raw) continue;
+    for (const row of raw.split("\n")) {
+      // rg --count の 1 行は `path:件数`。パスに `:` が入りうるので後ろから割る。
+      const i = row.lastIndexOf(":");
+      if (i < 0) continue;
+      const file = row.slice(0, i).replace(/^\.\//, "");
+      const n = Number(row.slice(i + 1));
+      if (!file || SECRET.test(file) || !Number.isFinite(n)) continue;
+      files += 1;
+      lines += n;
+    }
+  }
+  return { files, lines };
+}
+
 /** 語で探す。返すのはファイル・行番号・その行だけで、周辺は read_code で読ませる。 */
 export function grepCode(
   roots: Root[],
   q: { query: string; repo?: string; glob?: string; limit?: number },
-): { repo: string; path: string; line: number; text: string }[] {
+): {
+  hits: { repo: string; path: string; line: number; text: string }[];
+  /** 上限を掛けずに数えた本文一致の総数。ファイル名だけの一致は含まない。 */
+  matched: { files: number; lines: number };
+} {
   const want = roots.filter((r) => !q.repo || r.label.includes(q.repo) || r.dir.includes(q.repo));
   const limit = Math.min(Math.max(Math.trunc(Number(q.limit ?? 30)) || 30, 1), 100);
   const out: { repo: string; path: string; line: number; text: string }[] = [];
@@ -50,23 +103,15 @@ export function grepCode(
   // 同じことが React のコンポーネント、Terraform のモジュール、テストの対象名でも起きる。
   for (const root of want) {
     if (out.length >= limit) break;
-    try {
-      const names = execFileSync("rg", ["--files"], {
-        cwd: root.dir,
-        encoding: "utf8",
-        maxBuffer: 32 * 1024 * 1024,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      const needle = q.query.toLowerCase();
-      for (const f of names.split("\n")) {
-        if (out.length >= limit) break;
-        const file = f.replace(/^\.\//, "");
-        if (!file || SECRET.test(file)) continue;
-        if (!file.toLowerCase().includes(needle)) continue;
-        out.push({ repo: root.label, path: file, line: 0, text: "（ファイル名が一致）" });
-      }
-    } catch {
-      // 一覧が取れなくても、下の本文検索は動かす
+    const names = rg(root.dir, ["--files"]);
+    if (!names) continue;
+    const needle = q.query.toLowerCase();
+    for (const f of names.split("\n")) {
+      if (out.length >= limit) break;
+      const file = f.replace(/^\.\//, "");
+      if (!file || SECRET.test(file)) continue;
+      if (!file.toLowerCase().includes(needle)) continue;
+      out.push({ repo: root.label, path: file, line: 0, text: "（ファイル名が一致）" });
     }
   }
 
@@ -76,18 +121,8 @@ export function grepCode(
     const args = ["--json", "--max-count", "5", "--max-filesize", "1M", "-i", "-e", q.query];
     if (q.glob) args.push("--glob", q.glob);
     args.push(".");
-    let raw: string;
-    try {
-      raw = execFileSync("rg", args, {
-        cwd: root.dir,
-        encoding: "utf8",
-        maxBuffer: 32 * 1024 * 1024,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-    } catch {
-      // rg は 1 件も無いと終了コード 1。見つからないのは失敗ではない。
-      continue;
-    }
+    const raw = rg(root.dir, args);
+    if (!raw) continue;
     for (const line of raw.split("\n")) {
       if (out.length >= limit) break;
       if (!line.startsWith("{")) continue;
@@ -110,7 +145,7 @@ export function grepCode(
       });
     }
   }
-  return out;
+  return { hits: out, matched: countMatches(want, q) };
 }
 
 /** 1 ファイルの一部を読む。**全文は返さない** — 大きいファイルで文脈が埋まる。 */
