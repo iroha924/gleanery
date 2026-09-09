@@ -244,11 +244,19 @@ mitos doctor                         # 資格情報と接続、DB の大きさ�
 mitos import-github --cwd <repo>     # 最初の取り込み
 ```
 
-**migrations は素の DB へそのままは流せない。**先に `create schema extensions;` が要り
-（`with schema extensions` を使う移行があるのに、スキーマを作る移行が無い）、
-1 本目の `create extension pgroonga` は pgroonga を持たない DB では落ちる。
-**語彙検索はもう pgroonga を使っていない**ので、その行は飛ばしてよい。
-Neon のようなマネージドでは pgroonga を入れられないため、飛ばすのが唯一の道になる。
+**migrations は素の DB へそのままは流せない。**先に `create schema extensions;` が要る
+（`with schema extensions` を使う移行があるのに、スキーマを作る移行が無い）。
+そのうえで 1 本目の `create extension pgroonga` の行を飛ばすと、**pgroonga を前提にした
+3 本が途中で止まる。止まってよい。**マネージドでは pgroonga を入れられないので、これが唯一の道になる。
+
+| 止まる migration | そこで作られないもの |
+|---|---|
+| `20260905160548_indexes` | pgroonga の索引 4 本。**語彙検索はもう使っていない** |
+| `20260905160815_move_pgroonga_and_rls_policies` | 同じ索引と、Supabase 時代のポリシー（`20260908170000` が後で落とすもの） |
+| `20260908170000_drop_supabase_roles` | `anon` などの後始末。そもそも存在しない |
+
+実測（2026-09-09、`pgvector/pgvector:pg18` の素のコンテナ）: この形で 26 本を流すと、
+**表・列・ポリシー・索引の 276 項目が本番と差分 0 で一致した。**
 
 日次同期は launchd。`~/Library/LaunchAgents/com.mitos.sync.plist` が毎日 6:00 に `mitos sync` を叩き、
 ログは `~/.claude/mitos-sync.log`。外すときは `launchctl bootout gui/$(id -u)/com.mitos.sync`。
