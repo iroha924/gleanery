@@ -10,7 +10,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import OpenAI from "openai";
-import type pg from "pg";
 import type { Db, Env } from "./db.ts";
 import { HOST } from "./scope.ts";
 

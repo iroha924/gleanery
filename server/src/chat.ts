@@ -10,7 +10,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import OpenAI from "openai";
-import type pg from "pg";
 import { grepCode, type Root, readCode } from "./code.ts";
 import { type Db, type Env, embed } from "./db.ts";
 import { HOST } from "./scope.ts";

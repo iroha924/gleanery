@@ -12,7 +12,6 @@
 // **それでも落とさない** — ID を含む質問の recall@5 が 2/6 から 5/6 へ変わる経路である。
 
 import crypto from "node:crypto";
-import type pg from "pg";
 import { type Db, type Env, embed, vec } from "./db.ts";
 
 export type Polarity = "do" | "dont" | "na";
