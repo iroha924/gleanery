@@ -164,7 +164,7 @@ mitos adopt [--yes]                            このマシンの ~/Projects を
                                                --yes は既に登録済みの場所を入れ替える）
 mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
 mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+mitos doctor                                   資格情報と接続、Linear MCP の疎通、DB の大きさ
 mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
 mitos usage                                    OpenAI の使用量と残り
 ```
@@ -217,27 +217,22 @@ db/          migrations（PostgreSQL の移行）
 取り込み時に作業場所の役割・説明を読み取るのに使う）。
 モデルは `MITOS_CHAT_MODEL`（既定 `gpt-5.6-terra`）と `MITOS_CHAT_EFFORT`（既定 `high`）で差し替えられる。
 
-### DB を載せている VPS
+### DB を置いている先
 
-`knowledge-mcp-prod-01`（ConoHa VPS / Ubuntu 24.04）。**インターネットからの受信は 1 つも開けていない**
-ので、DB も ssh も Tailscale の中からしか届かない。
+Neon（`aws-ap-southeast-1` / PostgreSQL 18）。マネージドなので、OS の更新も再起動も
+PostgreSQL の版上げも自分では触らない。**代わりに見るのは容量**で、`mitos doctor` の
+「DB の大きさ」行に出る。
 
-**OS の更新と再起動は人が触らなくてよい。**`unattended-upgrades` が Ubuntu のセキュリティ更新を
-03:00〜03:30 に当て、カーネル更新などで再起動が要る状態になっていれば 04:00 に再起動する
-（`/etc/apt/apt.conf.d/52unattended-upgrades-local`）。Mac の日次同期は 06:00 なので、復帰後に当たる。
+**上限に当たると書き込みが止まる。**Neon は branch の論理サイズを `neon.max_cluster_size`
+で切っている（Free では 512 MB）。doctor はその値を DB 自身に聞くので、プランを変えても
+表示は追随する。**一度これで移設している** — Supabase の 500 MB を 501 MB で超えた。
 
-**PostgreSQL は自動では上がらない。**`postgresql-17` / `pgvector` は PGDG のリポジトリから
-入れており、そこは `Unattended-Upgrade::Allowed-Origins` に入れていない。当てると DB が止まるので、
-**時機は人が選ぶ**。
+**接続は公開 CA で検証する。**同梱の証明書は無く、`db.ts` が Node の既定の信頼ストアを使う。
+`rejectUnauthorized` は切らないので、経路を握られた相手の応答が MCP に混ざることはない。
+接続文字列に `ssl` / `sslmode` / `sslrootcert` を書くと弾く（TLS はコード側で固定している）。
 
-```bash
-ssh knowledge-mcp-prod-01 'sudo apt-get update && sudo apt-get install --only-upgrade postgresql-17'
-```
-
-**更新が出たことに気付く経路は `mitos doctor` の 2 行だけ。**メールも通知も無い
-（この箱から外へ出せるのは `curl` だけで、通知先を足すと VPS に資格情報を置くことになる）。
-doctor は接続文字列のホストへそのまま ssh する（MagicDNS が DB と ssh の両方を解決する）ので、
-tailnet の外からは「聞けない」とだけ出て、ほかの検査は続く。
+**scale-to-zero がある。**Free では一定時間で compute が止まり、次のクエリで起き直す。
+**その cold start は未計測。**
 
 ## セットアップ
 
@@ -245,7 +240,7 @@ tailnet の外からは「聞けない」とだけ出て、ほかの検査は続
 bun install
 # db/migrations を対象プロジェクトへ適用（下の注意を先に読む）
 bun run bundle                       # plugin/dist を作る（MCP・フック・CLI）
-mitos doctor                         # 資格情報と接続、VPS の状態を確かめる
+mitos doctor                         # 資格情報と接続、DB の大きさを確かめる
 mitos import-github --cwd <repo>     # 最初の取り込み
 ```
 
@@ -260,22 +255,16 @@ Neon のようなマネージドでは pgroonga を入れられないため、�
 
 ### 新しい PC で使い始める
 
-**ナレッジは VPS の PostgreSQL にあるので、引く側は何もしなくても動く**（作業場所は git remote で
-引くため、パスに依存しない）。設定が要るのは**取り込む側**だけ。
-
-**DB は Tailscale の中にしかいない。**`knowledge-mcp-prod-01` はインターネットからの受信を
-1 つも開けていないので、**tailnet に入っていないマシンからは到達できない**。
+**ナレッジはマネージドの PostgreSQL にあるので、引く側は何もしなくても動く**（作業場所は
+git remote で引くため、パスに依存しない）。設定が要るのは**取り込む側**だけ。
 
 ```bash
-# 1. Tailscale に入る。これが無いと 5 の doctor が繋がらない
-tailscale status | grep knowledge-mcp-prod-01   # 見えることを確かめる
-
-# 2. 資格情報。リポジトリには入っていないので手で置く
+# 1. 資格情報。リポジトリには入っていないので手で置く
 #    ~/.claude/knowledge.env に KNOWLEDGE_DB_URL / KNOWLEDGE_DB_URL_RO /
 #    KNOWLEDGE_DB_URL_CFG / VOYAGE_API_KEY
-#    サーバーの証明書は plugin/certs/ に入っているので、クローンすれば揃う
+#    接続は公開 CA で検証するので、証明書を配る必要は無い
 
-# 3. リポジトリを置いて、プラグインを入れる
+# 2. リポジトリを置いて、プラグインを入れる
 git clone https://github.com/iroha924/mitos.git ~/Projects/mitos
 cd ~/Projects/mitos && bun install && bun run bundle
 claude plugin marketplace add ~/Projects/mitos && claude plugin install mitos@mitos
@@ -354,6 +343,6 @@ bun run bundle     # plugin/dist を作り直す
 | `mitos search` が何も返さない | `mitos scopes` にその作業場所が登録されているか |
 | チャットが「どのプロジェクトを選んで」と言う | 画面上部で Project を選ぶ。**範囲の無指定は許していない**（別の仕事の決定が混ざるため） |
 | 資格情報・接続・Linear MCP の疎通 | `mitos doctor` |
-| PostgreSQL の更新が出ていないか | `mitos doctor` の「PostgreSQL の更新」行。**自動では当たらない**（「DB を載せている VPS」） |
+| DB の容量が上限に近くないか | `mitos doctor` の「DB の大きさ」行。**超えると書き込みが止まる**（「DB を置いている先」） |
 | 日次同期が走っていない | `~/.claude/mitos-sync.log` |
 | チャットの費用が気になる | `mitos usage`（キャッシュ済み入力は 10% で計上される） |

@@ -5074,7 +5074,6 @@ import path3 from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 // server/node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -5112,12 +5111,6 @@ function loadEnv(_from) {
   readInto(out, GLOBAL_ENV);
   return out;
 }
-var HERE = path.dirname(fileURLToPath(import.meta.url));
-var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
-var caFor = (host) => {
-  const own = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
-  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : undefined;
-};
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
     throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
@@ -5142,7 +5135,7 @@ async function connect(env, { as = "admin" } = {}) {
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca: caFor(u.hostname), rejectUnauthorized: true }
+    ssl: { rejectUnauthorized: true }
   });
   await client.connect();
   await client.query("set search_path = public, extensions");

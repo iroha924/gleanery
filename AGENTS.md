@@ -2,12 +2,11 @@
 
 過去の作業から「なぜそうしたか」を貯めて、Claude Code と Codex から引けるようにする道具。
 TypeScript / bun、PostgreSQL（pgvector）、埋め込みは Voyage、生成は OpenAI。
-DB は ConoHa VPS の `knowledge-mcp-prod-01` で、Tailscale 経由でのみ待ち受ける。
-自己署名の証明書は `plugin/certs/<ホスト名>.crt` に置く。**束ねない** — `db.ts` は接続先の
-ホスト名と同じ名前のものだけを CA にし、無ければ公開 CA を使う。
-**OS の更新と再起動は無人で当たり、PostgreSQL の更新は人が当てる**（PGDG を自動更新の対象に
-入れていないため）。どちらも `mitos doctor` の「VPS」「PostgreSQL の更新」の 2 行に出る。
-詳しくは `README.md`「DB を載せている VPS」。
+DB は Neon（`aws-ap-southeast-1` / PostgreSQL 18）。マネージドなので OS も版も触らない。
+**代わりに容量を見る** — 上限（Free で 512 MB）を超えると書き込みが止まり、
+一度これで移設している。`mitos doctor` の「DB の大きさ」行に出る。
+証明書は同梱しない。公開 CA で検証し、接続文字列で TLS を緩めさせない。
+詳しくは `README.md`「DB を置いている先」。
 
 このファイルは Claude と Codex の両方に効く（Claude 側は `CLAUDE.md` が 1 行で取り込んでいる）。
 ただし**開発の大半が Claude Code で回るので、壊れても気付かないのは Codex 側になる。**

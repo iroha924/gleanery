@@ -6,7 +6,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 export type Env = Record<string, string | undefined>;
@@ -40,34 +39,13 @@ export function loadEnv(_from?: string): Env {
   return out;
 }
 
-// **接続先ごとに CA を選ぶ。束ねない。**自前の PostgreSQL は自己署名なので、同梱した
-// 証明書を渡さないと検証できない。マネージド（Neon など）は公開 CA で出ている。
-//
-// **両方を渡すと、同梱の CA が全ホストの信頼アンカーになる。**`plugin/certs` の証明書は
-// `CA:TRUE` で nameConstraints を持たないので、その鍵を握った相手が任意のホストを詐称できる。
-// certs はプラグインに同梱して配るので、影響は自分だけで済まない。
-// **ファイル名をホスト名にしておき、接続先のものだけを使う。**
+// **CA を同梱しない。**繋ぎ先はマネージドの PostgreSQL で、公開 CA の証明書を出す。
+// Node の既定の信頼ストアをそのまま使うと `NODE_EXTRA_CA_CERTS` も効く
+// （`tls.rootCertificates` を明示すると、あれは固定の一覧なので追加が落ちる。
+// 実測: 120 件のまま増えない）。
 //
 // **`rejectUnauthorized` は切らない** — 検証を切ると、経路を握った相手が返した行が
 // そのままフックの additionalContext と MCP の応答になる。
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-// 正本は plugin/certs。バンドル（plugin/dist/*.js）からは ../certs、
-// 素のソース（server/src/db.ts）からは ../../plugin/certs で着く。
-const CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) =>
-  fs.existsSync(d),
-);
-
-/**
- * そのホスト専用の証明書があればそれだけを CA にする。無ければ `undefined` を返し、
- * Node の既定の信頼ストアへ委ねる。**`tls.rootCertificates` を明示しない** —
- * あれは固定の公開 CA 一覧で `NODE_EXTRA_CA_CERTS` の追加を含まないので、
- * 渡すと社内 CA を足している環境が繋がらなくなる（実測: 120 件のまま増えない）。
- */
-const caFor = (host: string): string[] | undefined => {
-  const own = CERT_DIR ? path.join(CERT_DIR, `${host}.crt`) : null;
-  return own && fs.existsSync(own) ? [fs.readFileSync(own, "utf8")] : undefined;
-};
-
 /**
  * @param as どの鍵で繋ぐか。
  *   read   = MCP・フック・画面の読み取り（SELECT だけ）
@@ -122,7 +100,7 @@ export async function connect(
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca: caFor(u.hostname), rejectUnauthorized: true },
+    ssl: { rejectUnauthorized: true },
   });
   await client.connect();
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
