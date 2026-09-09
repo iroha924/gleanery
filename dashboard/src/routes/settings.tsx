@@ -17,12 +17,16 @@ function Settings() {
   const nav = useNavigate({ from: Route.fullPath });
 
   return (
-    <div className="mx-auto w-full max-w-[83rem]">
+    <div className="mx-auto w-full max-w-[76rem] space-y-5">
+      <header>
+        <h1 className="text-xl font-semibold tracking-[-0.02em]">設定</h1>
+        <p className="mt-1 text-sm text-muted-foreground">記録をまとめる単位と、固有の言葉を管理します。</p>
+      </header>
       <Tabs
         value={tab ?? "projects"}
         onValueChange={(v) => nav({ search: v === "terms" ? { tab: "terms" } : {} })}
       >
-        <TabsList className="mb-6">
+        <TabsList variant="line" className="mb-6">
           <TabsTrigger value="projects">プロジェクト</TabsTrigger>
           <TabsTrigger value="terms">社内語の辞書</TabsTrigger>
         </TabsList>

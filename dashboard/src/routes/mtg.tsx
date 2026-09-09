@@ -120,7 +120,7 @@ function Mtg() {
   };
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)]">
+    <div className="flex h-full min-h-0">
       {/* かんぺが主。**会議中に読むのはこちらで、文字起こしは確認用。** */}
       <div className="flex min-w-0 flex-1 flex-col gap-4 px-8 py-5">
         <header className="flex flex-none items-center gap-3">
@@ -203,7 +203,7 @@ function Mtg() {
                     を出します。記録に無ければ、無いと言います。
                   </>
                 ) : scopeIds.length === 0 ? (
-                  "左でプロジェクトを選んでください"
+                  "ヘッダーでプロジェクトを選んでください"
                 ) : (
                   <>
                     共有を選ぶとき、

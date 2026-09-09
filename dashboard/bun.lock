@@ -7,9 +7,7 @@
       "dependencies": {
         "@clerk/react": "^6.15.1",
         "@clerk/ui": "^1.32.2",
-        "@fontsource-variable/geist": "^5.3.0",
-        "@fontsource-variable/geist-mono": "^5.3.0",
-        "@fontsource-variable/murecho": "^5.3.1",
+        "@fontsource-variable/m-plus-1": "^5.3.0",
         "@shadcn/react": "^0.3.1",
         "@tanstack/react-query": "5.102.8",
         "@tanstack/react-router": "1.170.32",
@@ -144,11 +142,7 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
 
-    "@fontsource-variable/geist": ["@fontsource-variable/geist@5.3.0", "", {}, "sha512-j0m+vLQuG5XAYoHtGCVu0spvlGreR3EzpECUVzkFmI1mTVnAO38l/NEPDCFgZ177JxzYJCLSmTQibIiYPilGrA=="],
-
-    "@fontsource-variable/geist-mono": ["@fontsource-variable/geist-mono@5.3.0", "", {}, "sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw=="],
-
-    "@fontsource-variable/murecho": ["@fontsource-variable/murecho@5.3.1", "", {}, "sha512-wjIOewtCBmJrniMLnc5f+IFPSkZWukwaGyeRTUabl5VF4lkevkWkRurvUstaxSG8FxHHFGHaz2oTwD0R9dUceg=="],
+    "@fontsource-variable/m-plus-1": ["@fontsource-variable/m-plus-1@5.3.0", "", {}, "sha512-wdwb24i6/ilXMurTMZpY6qlF4Hjqzfgmn/W+jeLeH3VeR6ycEIiBdULghYV+7hhHCg3izebGTANUC3q0ichRsQ=="],
 
     "@formkit/auto-animate": ["@formkit/auto-animate@0.8.4", "", {}, "sha512-DHHC01EJ1p70Q0z/ZFRBIY8NDnmfKccQoyoM84Tgb6omLMat6jivCdf272Y8k3nf4Lzdin/Y4R9q8uFtU0GbnA=="],
 

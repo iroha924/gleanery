@@ -190,7 +190,7 @@ export type Ref = {
   failed: number;
 };
 
-export type RecordDetail = RecordRow & { nodes: Node[]; refs: Ref[] };
+export type RecordDetail = RecordRow & { phases: Phase[]; next: NextItem[]; nodes: Node[]; refs: Ref[] };
 
 export type Hit = Node & {
   record_id: string;
