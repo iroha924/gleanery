@@ -10,7 +10,7 @@
     {
       "name": "mitos",
       "description": "作業の判断を記録し、過去の決定・行き止まり・制約を横断して引く",
-      "version": "0.10.14",
+      "version": "0.10.15",
       "source": "./plugin",
       "author": {
         "name": "iroha924",
