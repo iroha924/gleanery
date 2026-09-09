@@ -208,6 +208,9 @@ function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  // **turn に持たせない。**保存後に会話を読み直すと turns ごと入れ替わって消える。
+  // 今月の累計はそもそも会話ごとの値でもない。
+  const [cost, setCost] = useState<{ question: number; month: number } | null>(null);
   // 範囲はヘッダで選んだものに従う。**送信のたびに選ばせない** —
   // プロジェクトはセッション中ほぼ変わらないので、毎回同じ答えを入力させているだけだった。
   // ただし「すべて」では答えない。混ぜると別の仕事の記録がこの仕事の答えとして返る。
@@ -346,6 +349,7 @@ function Chat() {
           sources: (s) => patch((t) => ({ ...t, sources: s })),
           text: (x) => patch((t) => ({ ...t, content: t.content + x })),
           error: (m) => patch((t) => ({ ...t, error: m })),
+          cost: (question, month) => setCost({ question, month }),
           saved: (id) => {
             setChatId(id);
             qc.invalidateQueries({ queryKey: ["chats"] });
@@ -525,6 +529,11 @@ function Chat() {
                 <InputGroupText className="rounded-md border px-2 py-0.5 font-mono text-[9px]">
                   {projectLabel}
                 </InputGroupText>
+                {cost && (
+                  <InputGroupText className="font-mono text-[9px] text-muted-foreground tabular-nums">
+                    直前 ${cost.question.toFixed(3)} / 今月 ${cost.month.toFixed(2)}
+                  </InputGroupText>
+                )}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <InputGroupButton

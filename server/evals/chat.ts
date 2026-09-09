@@ -38,6 +38,7 @@ type Row = {
 
 const rows: Row[] = [];
 let bad = 0;
+let cost = 0;
 let soft = 0;
 
 for (const cs of cases) {
@@ -46,7 +47,8 @@ for (const cs of cases) {
   let sourceCount = 0;
   for await (const chunk of chat(client, env, { question: cs.q, scopeIds })) {
     if (chunk.type === "sources") sourceCount = chunk.sources.length;
-    else answer += chunk.text;
+    else if (chunk.type === "text") answer += chunk.text;
+    else cost += chunk.question;
   }
   const ms = Date.now() - t0;
 
@@ -86,7 +88,7 @@ console.table(rows);
 const t = rows.length;
 console.log(`\n引用の健全性: ${t - bad} / ${t} 件が通過（これが合否）`);
 console.log(`語句の目印  : ${t - soft} / ${t} 件が一致（揺れるので合否にしない）`);
-console.log(`平均 ${Math.round(rows.reduce((a, r) => a + r.ms, 0) / t)} ms`);
+console.log(`平均 ${Math.round(rows.reduce((a, r) => a + r.ms, 0) / t)} ms / 費用 $${cost.toFixed(4)}`);
 console.log("\n※ 合否にしているのは引用の健全性だけ — 本文の [n] が根拠に実在するか。");
 console.log("   これは決定的に測れる。答えが正しいかは測っていない。");
 console.log("   n=8 では方式の差も検出できない（19/20 の 95% 信頼区間は [0.76, 0.99]）。");

@@ -273,8 +273,8 @@ function recordUsage(
   usage:
     | { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } }
     | undefined,
-) {
-  if (!usage) return;
+): number {
+  if (!usage) return 0;
   const p = PRICE[model.replace(/-\d{4}-\d{2}-\d{2}$/, "")] ?? { in: 0, out: 0 };
   const input = usage.input_tokens ?? 0;
   const cached = Math.min(usage.input_tokens_details?.cached_tokens ?? 0, input);
@@ -288,6 +288,31 @@ function recordUsage(
   } catch {
     // 記録できなくても答えは返す
   }
+  return cost;
+}
+
+// **月の境目は日本時間で見る。**UTC で切ると月初 9 時間の利用が前月に落ちる
+// （同じ取り違えを日付の集計で踏んだ。JST_FROM の上に実測がある）。日本に夏時間は無い。
+export const jstMonth = (t: number) => new Date(t + 9 * 3_600_000).toISOString().slice(0, 7);
+
+/** 今月の合計。**別に集計を持たない** — 書き手と読み手で二重に古くなる。 */
+function monthlyCost(): number {
+  const ym = jstMonth(Date.now());
+  let total = 0;
+  try {
+    for (const line of fs.readFileSync(USAGE_LOG, "utf8").split("\n")) {
+      if (!line) continue;
+      try {
+        const r = JSON.parse(line) as { at?: string; cost?: number };
+        if (r.at && jstMonth(Date.parse(r.at)) === ym) total += r.cost ?? 0;
+      } catch {
+        // 書き込みの途中で切れた行は飛ばす
+      }
+    }
+  } catch {
+    // まだ 1 回も使っていない
+  }
+  return total;
 }
 
 export type ChatSource = {
@@ -314,7 +339,11 @@ export async function* chat(
   client: pg.Client,
   env: Env,
   body: ChatBody,
-): AsyncGenerator<{ type: "sources"; sources: ChatSource[] } | { type: "text"; text: string }> {
+): AsyncGenerator<
+  | { type: "sources"; sources: ChatSource[] }
+  | { type: "text"; text: string }
+  | { type: "cost"; question: number; month: number }
+> {
   const question = (body.question ?? "").trim();
   if (!question) throw new Error("質問が空");
   // **範囲を必須にする。**無指定で全プロジェクトを混ぜると、別の仕事の決定が
@@ -422,6 +451,7 @@ export async function* chat(
   // 打ち切られることがある（実測: コードを探し回って回数を使い切り、空の応答になった）。
   const ROUNDS = 4;
   let answer = "";
+  let spent = 0;
   for (let round = 0; round < ROUNDS; round++) {
     const last = round === ROUNDS - 1;
     const stream = await openai.responses.create({
@@ -448,7 +478,7 @@ export async function* chat(
         if (event.item.type === "function_call") calls.push(event.item);
       } else if (event.type === "response.completed") {
         // **実測で費用を追う。**推定だと上限に当たるまで気付けない。
-        recordUsage(event.response.model, event.response.usage);
+        spent += recordUsage(event.response.model, event.response.usage);
       }
     }
     if (calls.length === 0) break;
@@ -467,6 +497,7 @@ export async function* chat(
   // 並べると嘘になる（実測: 道具から答えたのに、無関係な「マージします！」が 12 件並んだ）。
   const cited = new Set([...answer.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])));
   yield { type: "sources", sources: sources.filter((x) => cited.has(x.n)) };
+  yield { type: "cost", question: spent, month: monthlyCost() };
 }
 
 const TOOLS: OpenAI.Responses.Tool[] = [

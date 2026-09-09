@@ -53,6 +53,7 @@ export async function askStream(
     text: (t: string) => void;
     error: (m: string) => void;
     saved?: (chatId: string) => void;
+    cost?: (question: number, month: number) => void;
   },
   signal?: AbortSignal,
 ): Promise<void> {
@@ -82,6 +83,7 @@ export async function askStream(
       if (ev === "sources") on.sources(data.sources);
       else if (ev === "text") on.text(data.text);
       else if (ev === "saved") on.saved?.(data.chatId);
+      else if (ev === "cost") on.cost?.(data.question, data.month);
       else if (ev === "error") on.error(data.message);
     }
   }
