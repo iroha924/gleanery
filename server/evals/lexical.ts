@@ -3,7 +3,7 @@
 //
 // **recall@5 では見えない壊れ方があるから作った。**出荷経路の recall@5 は 20 問しか無く、
 // 1 問が 5% を動かす。2026-09-09 に「並び順を変えたら 95% → 90%」を追ったところ、
-// 落ちた 1 問の正解は `node.id` = 84（DB で 2 番目に古い行）で、質問から取れる語は
+// 落ちた 1 問の正解は `node.id` = 84 で、**一致した 233 行のうちそれより古いのは 1 行だけ**だった。質問から取れる語は
 // 「意図」「箇所」の 2 つ、一致したのは 3,176 行中 233 行だった。
 // **当たっていたのは順位付けではなく、正解がたまたま最古の側にあったからである。**
 //
@@ -64,6 +64,7 @@ const rankOf = (rows: Row[], cmp: (a: Row, b: Row) => number, want: string[]): n
 
 const orders = Object.entries(ORDERS);
 const inPool = new Map(orders.map(([n]) => [n, 0]));
+const rankSum = new Map(orders.map(([n]) => [n, 0]));
 let reachable = 0;
 const noise: string[] = [];
 
@@ -101,7 +102,11 @@ for (const cs of cases) {
   const pct = Math.round((older / Math.max(rows.length - 1, 1)) * 100);
   const cells = orders.map(([n, cmp]) => {
     const rank = rankOf(rows, cmp, cs.expect);
-    if (rank !== null && rank <= POOL) inPool.set(n, (inPool.get(n) ?? 0) + 1);
+    if (rank !== null && rank <= POOL) {
+      inPool.set(n, (inPool.get(n) ?? 0) + 1);
+      // **残存数だけでは同点になる。**同数のときは pool 内の順位で比べる（低いほど余裕がある）。
+      rankSum.set(n, (rankSum.get(n) ?? 0) + rank);
+    }
     return `${rank === null ? "—" : `${rank}位${rank <= POOL ? "" : " ✗"}`}`.padStart(16);
   });
   console.log(
@@ -111,7 +116,10 @@ for (const cs of cases) {
 
 console.log(`\n語彙側に正解が一致した問い: ${reachable} / ${cases.length}`);
 for (const [n, k] of inPool) {
-  console.log(`  ${n.padEnd(18)} pool に残った ${k} / ${reachable}`);
+  const avg = k > 0 ? ((rankSum.get(n) ?? 0) / k).toFixed(1) : "—";
+  console.log(
+    `  ${n.padEnd(18)} pool に残った ${String(k).padStart(2)} / ${reachable}   残った分の平均順位 ${avg}`,
+  );
 }
 console.log(`
 「正解の古さ」は、一致した行のうち正解より古いものの割合。
