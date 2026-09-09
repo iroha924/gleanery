@@ -12,8 +12,7 @@
 // **それでも落とさない** — ID を含む質問の recall@5 が 2/6 から 5/6 へ変わる経路である。
 
 import crypto from "node:crypto";
-import type pg from "pg";
-import { type Env, embed, vec } from "./db.ts";
+import { type Db, type Env, embed, vec } from "./db.ts";
 
 export type Polarity = "do" | "dont" | "na";
 
@@ -104,7 +103,7 @@ export const DEFAULT_EXCLUDED = [
 ];
 
 /** そのスコープが属する束の全スコープ。束ねられていなければ自分だけ。 */
-export async function scopeFamily(client: pg.Client, scopeId: number): Promise<number[]> {
+export async function scopeFamily(client: Db, scopeId: number): Promise<number[]> {
   const r = await client.query<{ scope_id: number }>(
     `select distinct m2.scope_id::int as scope_id from group_member m1
      join group_member m2 on m2.group_id = m1.group_id
@@ -181,7 +180,7 @@ export function fuse(lists: Hit[][], k = 60): Hit[] {
   return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
 }
 
-export async function search(client: pg.Client, env: Env, o: SearchOpts): Promise<SearchResult> {
+export async function search(client: Db, env: Env, o: SearchOpts): Promise<SearchResult> {
   const { question, scopeIds, polarity, kinds, limit = 5, pool = 30, rerankModel = "rerank-3" } = o;
 
   const qv = o.queryVector ?? (await embed(env, [question], "query"))[0];
@@ -338,7 +337,7 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
  * 読み取り専用が外れる（実測: 割り込んだクエリから `transaction_read_only: off` が見えた）。
  */
 export async function logSearch(
-  client: pg.Client,
+  client: Db,
   o: {
     source: "mcp" | "cli" | "chat" | "dashboard";
     /** cwd 自身の作業場所。**束の代表を渡さない** — 引いた側の帰属が変わる */
@@ -368,7 +367,7 @@ export async function logSearch(
  * 範囲内が空で比べる相手が無いときだけ、最も近い数件の場所をそのまま示す。
  */
 export async function outsideScopes(
-  client: pg.Client,
+  client: Db,
   queryVector: number[],
   scopeIds: number[] | undefined,
   {
@@ -428,7 +427,7 @@ export type PathHit = {
  * 判定対象が有限で、塞がずに情報を足すだけなので、フックに置ける形になっている。
  */
 export async function whatAboutPath(
-  client: pg.Client,
+  client: Db,
   filePath: string,
   scopeIds: number[] | undefined,
 ): Promise<PathHit[]> {
@@ -481,7 +480,7 @@ export type Advice = Shown & { pr: number | null; line: number | null; url: stri
 const NO_LINE_PENALTY = 400;
 
 export async function adviceForPath(
-  client: pg.Client,
+  client: Db,
   filePath: string,
   scopeIds: number[] | undefined,
   editedLine: number | null,
@@ -718,11 +717,7 @@ export const CURRENT_WORK_WHERE = `($1::int[] is null or r.scope_id = any($1)) a
  * **画面（/api/now）と MCP（current_work）で共有する。**同じ規則を 2 箇所に書くと、
  * 片方だけ直したときに黙ってずれる。
  */
-export async function currentWork(
-  client: pg.Client,
-  scopeIds: number[] | null,
-  limit = 5,
-): Promise<WorkNow[]> {
+export async function currentWork(client: Db, scopeIds: number[] | null, limit = 5): Promise<WorkNow[]> {
   const r = await client.query<Omit<WorkNow, "walls">>(
     `select r.id, r.title, r.status, r.branch, r.goal, r.current_at, r.current_text,
             r.phases, r.next, r.updated_at, s.label as project
@@ -748,7 +743,7 @@ export async function currentWork(
  * 判断を何件集めても答えられないので、record の埋め込みを別に引く。
  */
 export async function searchRecords(
-  client: pg.Client,
+  client: Db,
   queryVector: number[],
   scopeIds: number[] | undefined,
   limit = 3,

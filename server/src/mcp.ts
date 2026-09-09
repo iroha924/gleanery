@@ -12,7 +12,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type pg from "pg";
 import { z } from "zod";
-import { connect, loadEnv } from "./db.ts";
+import { loadEnv, pool } from "./db.ts";
 import { identify } from "./scope.ts";
 import {
   currentWork,
@@ -31,25 +31,13 @@ import {
 } from "./search.ts";
 
 const env = loadEnv(process.env.KNOWLEDGE_ENV_DIR ?? process.cwd());
-// **接続そのものではなく、接続の約束を持つ。**ツール呼び出しは同時に来るので、
-// 実体を待ってから代入すると 2 本張られ、片方が誰にも閉じられずに残る。
-let pending: Promise<pg.Client> | null = null;
-function db(): Promise<pg.Client> {
-  if (pending) return pending;
-  const p = connect(env, { as: "read" }).then(async (c) => {
-    // アイドル中に切られた接続を握り続けると、次のツール呼び出しが必ず失敗する。
-    c.on("error", () => {
-      if (pending === p) pending = null;
-      c.end().catch(() => {});
-    });
-    return c;
-  });
-  // 失敗を握り続けると、DB が戻っても永久に同じ失敗を返す。
-  p.catch(() => {
-    if (pending === p) pending = null;
-  });
-  pending = p;
-  return p;
+// **接続を 1 本共有しない。**ツール呼び出しは同時に来るので、1 本だと 2 本目以降が
+// pg のキューへ積まれる（pg@9 で無くなる挙動）。プールなら同時に来た分だけ張り、
+// アイドルで返す。切られた接続を掴み続ける問題もプール側が引き受ける。
+let readPool: pg.Pool | null = null;
+function db(): pg.Pool {
+  readPool ??= pool(env, { as: "read" });
+  return readPool;
 }
 
 type Scope = {
@@ -70,7 +58,7 @@ type Scope = {
  * 決めた方針は「未選択のものは完全に独立、ただし場所だけ通知」なので、それに揃える。
  */
 async function currentScopeIds(cwd?: string): Promise<Scope> {
-  const c = await db();
+  const c = db();
   const me = identify(cwd ?? process.cwd());
   const r = await c.query<{ id: number }>("select id::int as id from scope where ident = $1", [me.ident]);
   const row = r.rows[0];
@@ -167,7 +155,7 @@ server.registerTool(
     annotations: READ_ONLY,
   },
   async ({ question, only_rejected_or_forbidden: onlyDont, kinds, all_scopes, cwd, limit }) => {
-    const c = await db();
+    const c = db();
     const scope = all_scopes ? null : await currentScopeIds(cwd);
     const polarity: Polarity | undefined = onlyDont ? "dont" : undefined;
 
@@ -238,7 +226,7 @@ server.registerTool(
     annotations: READ_ONLY,
   },
   async ({ cwd }) => {
-    const c = await db();
+    const c = db();
     const scope = await currentScopeIds(cwd);
     if (scope.own === null) {
       return {
@@ -321,7 +309,7 @@ server.registerTool(
     annotations: READ_ONLY,
   },
   async ({ path: p, cwd }) => {
-    const c = await db();
+    const c = db();
     const scope = await currentScopeIds(cwd);
     const rows = await whatAboutPath(c, p, scope.ids);
     return {
@@ -346,7 +334,7 @@ server.registerTool(
     annotations: READ_ONLY,
   },
   async () => {
-    const c = await db();
+    const c = db();
     const r = await c.query<{
       label: string;
       role: string | null;

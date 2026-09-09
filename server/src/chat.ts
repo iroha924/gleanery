@@ -10,9 +10,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import OpenAI from "openai";
-import type pg from "pg";
 import { grepCode, type Root, readCode } from "./code.ts";
-import { type Env, embed } from "./db.ts";
+import { type Db, type Env, embed } from "./db.ts";
 import { HOST } from "./scope.ts";
 import {
   type Hit,
@@ -77,7 +76,7 @@ function asContext(records: RecordHit[], hits: Hit[], nonce: string): string {
 export type Term = { word: string; aliases: string[]; meaning: string | null };
 
 /** そのプロジェクトの用語。**推測しない** — 人が答えたものだけ。 */
-export async function glossary(client: pg.Client, scopeIds: number[]): Promise<Term[]> {
+export async function glossary(client: Db, scopeIds: number[]): Promise<Term[]> {
   const r = await client.query<Term>(
     `select distinct t.word, t.aliases, t.meaning from term t
      where t.meaning is not null
@@ -93,7 +92,7 @@ export async function glossary(client: pg.Client, scopeIds: number[]): Promise<T
 export type Person = { display: string; handles: string[]; is_me: boolean };
 
 /** 呼び名とハンドルの対応。**推論しない** — 人が person 表へ入れたものだけを使う。 */
-export async function directory(client: pg.Client): Promise<Person[]> {
+export async function directory(client: Db): Promise<Person[]> {
   const r = await client.query<Person>(
     "select display, handles, is_me from person order by is_me desc, display",
   );
@@ -371,7 +370,7 @@ export type ChatSource = {
  * 何も引けなかったときに生成へ進まないため。
  */
 export async function* chat(
-  client: pg.Client,
+  client: Db,
   env: Env,
   body: ChatBody,
 ): AsyncGenerator<
@@ -734,7 +733,7 @@ const JST_TO = (i: number) => `(($${i}::date) + 1)::timestamp at time zone 'Asia
 // **AI 向けの出口なので、テストから直接叩けるようにしてある。**
 // 関数が正しくても、ここで組み立てる JSON が違えばモデルには届かない。
 export async function runTool(
-  client: pg.Client,
+  client: Db,
   scopeIds: number[],
   roots: Root[],
   /** 選ばれているが、このホストに置かれていない作業場所。探せていない側に数える。 */
