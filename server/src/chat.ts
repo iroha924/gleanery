@@ -845,13 +845,13 @@ async function runTool(
 
   if (call.name === "grep_code") {
     if (!a.query) return JSON.stringify({ error: "query が空" });
-    const { hits, matched } = grepCode(roots, {
+    const { hits, names, matched } = grepCode(roots, {
       query: a.query,
       repo: a.repo,
       glob: a.glob,
       limit: a.limit,
     });
-    if (hits.length === 0 && matched.lines === 0)
+    if (hits.length === 0 && matched.lines === 0 && names.length === 0)
       return JSON.stringify({ found: 0, note: "その語はコードに無い" });
     return JSON.stringify({
       // 名前は find_prs などに合わせる。**指示が total と rows で書かれているので、
@@ -860,6 +860,8 @@ async function runTool(
       totalFiles: matched.files,
       returned: hits.length,
       paths: matched.paths,
+      // 名前だけが一致したファイル。本文には無いので、行番号は付かない。
+      nameMatches: names.length ? names : undefined,
       note:
         hits.length < matched.lines
           ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +

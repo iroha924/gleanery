@@ -101,6 +101,12 @@ export function grepCode(
   q: { query: string; repo?: string; glob?: string; limit?: number },
 ): {
   hits: { repo: string; path: string; line: number; text: string }[];
+  /**
+   * 名前が一致したファイル。**本文一致とは別の枠にする。**
+   * 同じ枠に入れると、名前だけ一致したファイルが limit を食い潰し、
+   * 実装を持つファイルが返らないことがある（実測: limit 2 で本文一致 0 件）。
+   */
+  names: string[];
   /** 上限を掛けずに数えた本文一致の総数と、その全ファイル。ファイル名だけの一致は含まない。 */
   matched: { files: number; lines: number; paths: string[] };
 } {
@@ -111,17 +117,17 @@ export function grepCode(
   // **名前がファイル名にしか無いことがある。**dbt のモデルは `.sql` の中に自分の名前を
   // 書かない（ファイル名がモデル名）ので、中身だけ探すと当たらない（実測で踏んだ）。
   // 同じことが React のコンポーネント、Terraform のモジュール、テストの対象名でも起きる。
+  const names: string[] = [];
   for (const root of want) {
-    if (out.length >= limit) break;
-    const names = rg(root.dir, ["--files", ...globs(q.glob)]);
-    if (!names) continue;
+    const listed = rg(root.dir, ["--files", ...globs(q.glob)]);
+    if (!listed) continue;
     const needle = q.query.toLowerCase();
-    for (const f of names.split("\n")) {
-      if (out.length >= limit) break;
+    for (const f of listed.split("\n")) {
+      if (names.length >= 200) break;
       const file = f.replace(/^\.\//, "");
       if (!file || SECRET.test(file)) continue;
       if (!file.toLowerCase().includes(needle)) continue;
-      out.push({ repo: root.label, path: file, line: 0, text: "（ファイル名が一致）" });
+      names.push(`${root.label}/${file}`);
     }
   }
 
@@ -154,7 +160,7 @@ export function grepCode(
       });
     }
   }
-  return { hits: out, matched: countMatches(want, q) };
+  return { hits: out, names, matched: countMatches(want, q) };
 }
 
 /** 1 ファイルの一部を読む。**全文は返さない** — 大きいファイルで文脈が埋まる。 */
