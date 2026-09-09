@@ -27,6 +27,11 @@ fs.writeFileSync(
   path.join(repo, "src", "many-b.ts"),
   `${Array.from({ length: 5 }, (_, i) => `// 反復する語 ${i}`).join("\n")}\n`,
 );
+fs.mkdirSync(path.join(repo, "dist"), { recursive: true });
+fs.writeFileSync(
+  path.join(repo, "dist", "many-a.js"),
+  `${Array.from({ length: 7 }, (_, i) => `// 反復する語 ${i}`).join("\n")}\n`,
+);
 fs.writeFileSync(path.join(tmp, "outside.txt"), "この中身は返してはいけない\n");
 fs.symlinkSync(path.join(tmp, "outside.txt"), path.join(repo, "escape.txt"));
 
@@ -45,6 +50,22 @@ test("上限で切っても一致の総数は返る", () => {
   assert.equal(r.hits.length, 3, "limit までしか返さない");
   assert.equal(r.matched.lines, 12, "総数は上限を掛けずに数える");
   assert.equal(r.matched.files, 2, "またがったファイルも数える");
+  // 行は返しきれなくても、**どのファイルかは全部返せる。**
+  assert.deepEqual(r.matched.paths.toSorted(), ["test/repo/src/many-a.ts", "test/repo/src/many-b.ts"]);
+});
+
+// 生成物は source と同じ実装を二度見せる。
+test("生成物は探索に出ない", () => {
+  const r = grepCode(roots, { query: "反復する語" });
+  assert.equal(r.matched.files, 2, "dist の写しは数えない");
+  assert.ok(!r.hits.some((h) => h.path.includes("dist/")), "本文にも出さない");
+});
+
+// **除外より呼び出し側の指定が勝つ。**生成物そのものを見たいときに見られなくなる。
+test("glob を明示すれば生成物も見られる", () => {
+  const r = grepCode(roots, { query: "反復する語", glob: "dist/*.js" });
+  assert.equal(r.matched.files, 1);
+  assert.deepEqual(r.matched.paths, ["test/repo/dist/many-a.js"]);
 });
 
 // 総数は別の rg 呼び出しで数えるので、**そちらにも同じ除外が要る。**

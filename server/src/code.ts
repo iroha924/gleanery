@@ -36,6 +36,12 @@ function inside(root: Root, rel: string): string | null {
 // 資格情報は返さない。**探索の結果に混ざるのが一番危ない**（読んだ本人は探していない）。
 const SECRET = /(^|\/)(\.env(\..*)?|.*\.pem|.*\.key|.*credentials.*\.json|\.netrc)$/i;
 
+// 生成物は source と同じ実装を二度見せる。**呼び出し先の glob より先に置く** — rg の glob は
+// 後勝ちなので、`plugin/dist/*` を明示した呼び出しはこの除外を上書きできる。
+const GENERATED = ["!**/dist/**", "!**/build/**", "!**/*.min.js", "!**/*.bundle.js"];
+const globs = (extra?: string): string[] =>
+  [...GENERATED, ...(extra ? [extra] : [])].flatMap((g) => ["--glob", g]);
+
 /** rg は 1 件も無いと終了コード 1 を返す。見つからないのは失敗ではない。 */
 function rg(dir: string, args: string[]): string | null {
   try {
@@ -62,12 +68,13 @@ function countMatches(
 ): {
   files: number;
   lines: number;
+  paths: string[];
 } {
   let files = 0;
   let lines = 0;
+  const paths: string[] = [];
   for (const root of roots) {
-    const args = ["--count", "--max-filesize", "1M", "-i", "-e", q.query];
-    if (q.glob) args.push("--glob", q.glob);
+    const args = ["--count", "--max-filesize", "1M", "-i", "-e", q.query, ...globs(q.glob)];
     args.push(".");
     const raw = rg(root.dir, args);
     if (!raw) continue;
@@ -80,9 +87,12 @@ function countMatches(
       if (!file || SECRET.test(file) || !Number.isFinite(n)) continue;
       files += 1;
       lines += n;
+      // 「どのファイル？」には行を全部返せなくても答えられる（実測: 141 行 / 31 ファイル）。
+      // 上限は付ける。当たらない語で数千ファイル並ぶと、それ自体が文脈を埋める。
+      if (paths.length < 200) paths.push(`${root.label}/${file}`);
     }
   }
-  return { files, lines };
+  return { files, lines, paths };
 }
 
 /** 語で探す。返すのはファイル・行番号・その行だけで、周辺は read_code で読ませる。 */
@@ -91,8 +101,8 @@ export function grepCode(
   q: { query: string; repo?: string; glob?: string; limit?: number },
 ): {
   hits: { repo: string; path: string; line: number; text: string }[];
-  /** 上限を掛けずに数えた本文一致の総数。ファイル名だけの一致は含まない。 */
-  matched: { files: number; lines: number };
+  /** 上限を掛けずに数えた本文一致の総数と、その全ファイル。ファイル名だけの一致は含まない。 */
+  matched: { files: number; lines: number; paths: string[] };
 } {
   const want = roots.filter((r) => !q.repo || r.label.includes(q.repo) || r.dir.includes(q.repo));
   const limit = Math.min(Math.max(Math.trunc(Number(q.limit ?? 30)) || 30, 1), 100);
@@ -103,7 +113,7 @@ export function grepCode(
   // 同じことが React のコンポーネント、Terraform のモジュール、テストの対象名でも起きる。
   for (const root of want) {
     if (out.length >= limit) break;
-    const names = rg(root.dir, ["--files"]);
+    const names = rg(root.dir, ["--files", ...globs(q.glob)]);
     if (!names) continue;
     const needle = q.query.toLowerCase();
     for (const f of names.split("\n")) {
@@ -119,8 +129,7 @@ export function grepCode(
     if (out.length >= limit) break;
     // **引数として渡す。**シェルを挟まないので、query に何が入っていても語のまま扱われる。
     const args = ["--json", "--max-count", "5", "--max-filesize", "1M", "-i", "-e", q.query];
-    if (q.glob) args.push("--glob", q.glob);
-    args.push(".");
+    args.push(...globs(q.glob), ".");
     const raw = rg(root.dir, args);
     if (!raw) continue;
     for (const line of raw.split("\n")) {

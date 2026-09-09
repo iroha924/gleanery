@@ -860,7 +860,7 @@ async function runTool(
       note:
         hits.length < matched.lines
           ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +
-            "全部を挙げるなら limit を上げる（最大 100）か、glob で絞って数回に分ける"
+            "**どのファイルかを聞かれているなら matched.paths が全部**（行まで要るなら glob で絞って数回に分ける）"
           : undefined,
       hits: hits.map((h) => ({
         ...h,
