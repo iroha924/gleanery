@@ -97,7 +97,7 @@ export const labelOf = (r: { kind: string; subkind: string | null }): string =>
  * search() の clauses() の上にある。**範囲内と範囲外で同じものを使う** —
  * 片方だけに効かせると、母集団の違う 2 つを 1 つの閾値で比べることになる。
  */
-const DEFAULT_EXCLUDED = [
+export const DEFAULT_EXCLUDED = [
   "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
   "not (n.kind = 'event' and n.subkind = 'pr')",
   "not (n.kind = 'doc')",
@@ -251,10 +251,18 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   // （最近傍が別の番号になる）。実測（2026-09-09、20 問）: 出荷経路の recall@5 は
   // 語彙側ありで 95%、外すと 85%。
   //
-  // **一致した語数で選ぶ。**候補は `pool` 件で切るので、切り方が「どの行が再ランクまで
-  // 届くか」を決める。`n.id` 昇順だと、一致が `pool` を超える語では常に最も古い行が採られ、
-  // 新しく取り込んだ記録は語彙側から永久に候補入りしない。
-  // trigram の類似度は順位にならない — `similarity` は本文の長さの逆数に近づき
+  // **一致した語数が多く、短い行から採る。**候補は `pool` 件で切るので、切り方が
+  // 「どの行が再ランクまで届くか」を決める。候補を埋めるのは会話の往復で、あれは長く、
+  // 汎用語を全部含む（実測: 一致 345 件のうち 262 件が `utterance`）。
+  // 探している記録のほうは短い（実測 20 問で 19〜154 字）ので、
+  // **単位長あたりの一致語数**が「その話題について書かれている」の代理になる。
+  //
+  // **`n.id` で並べない。**昇順は最も古い行に、降順は最も新しい行に固定され、
+  // どちらもコーパスが伸びると片側が候補から落ち続ける。実測（`server/evals/lexical.ts`、
+  // 20 問、pool=30）: 正解が pool に残るのは id 昇順 19/19・id 降順 7/19・
+  // 一致語数のみ 12/19 に対して、この形は 17/19。**id 昇順の 19/19 は artifact で、
+  // eval の正解が全部このコーパスの最古 0〜3% にあることによる。**
+  // trigram の類似度は使えない — `similarity` は本文の長さの逆数に近づき
   // （8 字 1.00 / 8,539 字 0.001）、`word_similarity` は同点が大量に出る（1 語で 26 行が
   // 1.000）。順位そのものは後段の再ランクが付ける。
   //
@@ -270,7 +278,7 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
            where n.text ilike ${ILIKE_PATTERN}
          ) m
          where ${clauses(1)} and m.hits > 0
-         order by m.hits desc, n.id desc
+         order by m.hits desc, length(n.text), n.id desc
          limit $${values.length + 2}`,
         [...values, words, pool],
       )

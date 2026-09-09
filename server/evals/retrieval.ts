@@ -93,7 +93,7 @@ async function lexicalSearch(q: string, limit: number): Promise<Row[]> {
        where n.text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
      ) m
      where n.deleted_at is null and m.hits > 0
-     order by m.hits desc, n.id desc limit $2`,
+     order by m.hits desc, length(n.text), n.id desc limit $2`,
     [ts, limit],
   );
   return r.rows;

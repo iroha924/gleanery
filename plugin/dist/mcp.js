@@ -39257,7 +39257,7 @@ async function search(client, env, o) {
            where n.text ilike ${ILIKE_PATTERN}
          ) m
          where ${clauses(1)} and m.hits > 0
-         order by m.hits desc, n.id desc
+         order by m.hits desc, length(n.text), n.id desc
          limit $${values.length + 2}`, [...values, words, pool]) : { rows: [] };
   const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0)
