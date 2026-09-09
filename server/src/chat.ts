@@ -607,8 +607,8 @@ const TOOLS: OpenAI.Responses.Tool[] = [
         limit: {
           type: "number",
           description:
-            "何件返すか。既定 30、最大 100。**一致の総数は matched で別に返る**ので、" +
-            "「全部」を聞かれたら returned と matched.lines を比べ、足りなければ絞って引き直す",
+            "何件行を返すか。既定 30、最大 100。**総数は total、一致した全ファイルは paths で別に返る**ので、" +
+            "「どのファイル」を聞かれたら paths で答えられる。行まで要るなら glob で絞って数回に分ける",
         },
       },
       required: ["query"],
@@ -854,13 +854,16 @@ async function runTool(
     if (hits.length === 0 && matched.lines === 0)
       return JSON.stringify({ found: 0, note: "その語はコードに無い" });
     return JSON.stringify({
-      matched,
+      // 名前は find_prs などに合わせる。**指示が total と rows で書かれているので、
+      // ここだけ別名にすると「件数は total で答える」が grep_code に効かない。**
+      total: matched.lines,
+      totalFiles: matched.files,
       returned: hits.length,
-      // **切ったことを言葉でも返す。**数字だけ並べると、返った分を全部として答えられる。
+      paths: matched.paths,
       note:
         hits.length < matched.lines
           ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +
-            "**どのファイルかを聞かれているなら matched.paths が全部**（行まで要るなら glob で絞って数回に分ける）"
+            "**どのファイルかを聞かれているなら paths が全部**（行まで要るなら glob で絞って数回に分ける）"
           : undefined,
       hits: hits.map((h) => ({
         ...h,
