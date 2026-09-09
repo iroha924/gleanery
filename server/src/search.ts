@@ -7,8 +7,8 @@
 // 文字面は近いが意味は真逆で、再ランクにはそれを見分ける手がかりが無い。だから札を前置きする。
 //
 // **語彙側との融合は入れてある。**理由と実測は search() の中（lex を引く箇所）にある。
-// **pgroonga の索引を落とさない。**pg_relation_size が 0 bytes と報告するので軽く見えるが、
-// 実体は別ファイルにあり、落として pgroonga_vacuum() を叩くと 342 MB 戻る（実測）。
+// **語彙側の索引を落とさない。**落とすと出荷経路の recall@5 が 95% → 85% になる
+// （実測 2026-09-09、20 問）。GIN + gin_trgm_ops で 12 MB。
 // **それでも落とさない** — ID を含む質問の recall@5 が 2/6 から 5/6 へ変わる経路である。
 
 import crypto from "node:crypto";
@@ -240,17 +240,27 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   );
 
   // **語彙側も引いて融合する。**ベクトルは「ABC-123」と「ABC-456」を見分けられない
-  // （最近傍が別の番号になる）。実測 30 問: ID を含む質問の recall@5 は
-  // ベクトル+再ランクで 2/6、融合+再ランクで 5/6。全体でも 80% → 93%。
+  // （最近傍が別の番号になる）。実測（2026-09-09、20 問）: 出荷経路の recall@5 は
+  // 語彙側ありで 95%、外すと 85%。
+  //
+  // **順位ではなく候補入りが仕事。**得点は付けるが、順位を決めるのは後段の再ランクである。
+  // pgroonga も同じ性質で（一致行すべてに 1 を返していた）、pg_trgm へ替えても
+  // 出荷経路の数字は動かなかった（どちらも 95%）。
   const words = lexicalTerms(question);
   const lex = words.length
     ? await client.query<Hit>(
-        `select ${COLS}, pgroonga_score(n.tableoid, n.ctid) as score
+        `select ${COLS}, (
+           select max(extensions.similarity(n.text, w))
+           from unnest($${values.length + 1}::text[]) as w
+         ) as score
          ${JOINS}
-         where ${clauses(1)} and n.text &@~ $${values.length + 1}
-         order by score desc, n.id
+         where ${clauses(1)} and exists (
+           select 1 from unnest($${values.length + 1}::text[]) as w
+           where n.text ilike '%' || w || '%'
+         )
+         order by score desc nulls last, n.id
          limit $${values.length + 2}`,
-        [...values, words.map((t) => JSON.stringify(t)).join(" OR "), pool],
+        [...values, words, pool],
       )
     : { rows: [] as Hit[] };
 

@@ -1,11 +1,11 @@
--- pgroonga は SET SCHEMA に対応していないので作り直す。データがまだ無いので安全。
-drop extension pgroonga cascade;
-create extension pgroonga with schema extensions;
-
-create index node_text_pgroonga   on node   using pgroonga (text);
-create index record_text_pgroonga on record using pgroonga (title, problem, goal);
-create index asset_text_pgroonga  on asset  using pgroonga (caption, ocr_text);
-create index term_pgroonga        on term   using pgroonga (term, meaning);
+-- 語彙検索の索引。**GIN + gin_trgm_ops。**`ilike '%語%'` を索引で解く。
+-- 複数列は 1 本にまとめられないので、列ごとに張る。
+create index node_text_trgm   on node   using gin (text extensions.gin_trgm_ops);
+create index record_title_trgm on record using gin (title extensions.gin_trgm_ops);
+create index record_problem_trgm on record using gin (problem extensions.gin_trgm_ops);
+create index record_goal_trgm on record using gin (goal extensions.gin_trgm_ops);
+create index term_term_trgm   on term   using gin (term extensions.gin_trgm_ops);
+create index term_meaning_trgm on term  using gin (meaning extensions.gin_trgm_ops);
 
 -- ポリシー。**1 人運用でも書く。**
 -- 読み取りは authenticated だけ。anon には一切出さない。

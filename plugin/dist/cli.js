@@ -38072,11 +38072,17 @@ async function search(client, env2, o) {
      order by n.embedding <#> $1::extensions.vector
      limit $${values2.length + 2}`, [vec(qv), ...values2, pool]);
   const words = lexicalTerms(question);
-  const lex = words.length ? await client.query(`select ${COLS}, pgroonga_score(n.tableoid, n.ctid) as score
+  const lex = words.length ? await client.query(`select ${COLS}, (
+           select max(extensions.similarity(n.text, w))
+           from unnest($${values2.length + 1}::text[]) as w
+         ) as score
          ${JOINS}
-         where ${clauses(1)} and n.text &@~ $${values2.length + 1}
-         order by score desc, n.id
-         limit $${values2.length + 2}`, [...values2, words.map((t) => JSON.stringify(t)).join(" OR "), pool]) : { rows: [] };
+         where ${clauses(1)} and exists (
+           select 1 from unnest($${values2.length + 1}::text[]) as w
+           where n.text ilike '%' || w || '%'
+         )
+         order by score desc nulls last, n.id
+         limit $${values2.length + 2}`, [...values2, words, pool]) : { rows: [] };
   const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0)
     return { rows: [], queryVector: qv, topScore: null };

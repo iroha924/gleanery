@@ -120,7 +120,7 @@ export async function connect(
   await client.connect();
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
   // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
-  // **search_path をロール任せにしない。**pgvector と pgroonga は `extensions` スキーマに置いてある。
+  // **search_path をロール任せにしない。**pgvector と pg_trgm は `extensions` スキーマに置いてある。
   // ロールごとの既定 search_path にそれが入る保証は無いので、`<#>` を使う
   // 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。
   await client.query("set search_path = public, extensions");
