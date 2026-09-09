@@ -205,7 +205,7 @@ db/          migrations（PostgreSQL の移行）
 
 ### 資格情報
 
-`~/.claude/knowledge.env` に置く。**鍵は 3 つに分かれている。**
+`~/.claude/knowledge.env` に置く。**DB の鍵は用途で 3 つに分かれている**（ほかに Voyage・OpenAI・Clerk の鍵が要る）。
 
 | ロール | 誰が使うか | 書けるもの |
 |---|---|---|
@@ -216,6 +216,18 @@ db/          migrations（PostgreSQL の移行）
 ほかに `VOYAGE_API_KEY`（埋め込みと rerank）と `OPENAI_API_KEY`（チャットの生成と、
 取り込み時に作業場所の役割・説明を読み取るのに使う）。
 モデルは `MITOS_CHAT_MODEL`（既定 `gpt-5.6-terra`）と `MITOS_CHAT_EFFORT`（既定 `high`）で差し替えられる。
+
+ダッシュボードの API は Clerk で認証する。次の 3 つが揃わないと `bun run api` は起動しない。
+
+| 変数 | 何を入れるか |
+|---|---|
+| `CLERK_SECRET_KEY` | Clerk のシークレット鍵。`clerk env pull` が `dashboard/.env.local` へ書いたものを写す |
+| `CLERK_PUBLISHABLE_KEY` | 同じく公開鍵。API 側でも検証に使う |
+| `MITOS_ALLOWED_USER_ID` | **通す人を 1 人だけ指定する。**`clerk users list --json` の `id` |
+
+画面側の `VITE_CLERK_PUBLISHABLE_KEY` だけは `dashboard/.env.local`（`clerk env pull` が書く）。
+Vite は `VITE_` の付いた変数しかブラウザへ出さないので、シークレット鍵はここに置いても
+バンドルへは入らないが、**API が読むのは `~/.claude/knowledge.env` のほう**である。
 
 ### DB を置いている先
 
@@ -270,6 +282,8 @@ git remote で引くため、パスに依存しない）。設定が要るのは
 # 1. 資格情報。リポジトリには入っていないので手で置く
 #    ~/.claude/knowledge.env に KNOWLEDGE_DB_URL / KNOWLEDGE_DB_URL_RO /
 #    KNOWLEDGE_DB_URL_CFG / VOYAGE_API_KEY
+#    ダッシュボードも使うなら CLERK_SECRET_KEY / CLERK_PUBLISHABLE_KEY /
+#    MITOS_ALLOWED_USER_ID も要る（無いと bun run api が起動しない）
 #    接続は公開 CA で検証するので、証明書を配る必要は無い
 
 # 2. リポジトリを置いて、プラグインを入れる

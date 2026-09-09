@@ -17,6 +17,7 @@
     "api": "node src/http.ts"
   },
   "dependencies": {
+    "@clerk/hono": "^0.1.76",
     "@hono/node-server": "^2.1.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/pg-copy-streams": "^1.2.5",

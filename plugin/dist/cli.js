@@ -39312,6 +39312,9 @@ ${USAGE}`);
     console.log(`KNOWLEDGE_DB_URL      ${env2.KNOWLEDGE_DB_URL ? "あり" : "無い"}`);
     console.log(`VOYAGE_API_KEY       ${env2.VOYAGE_API_KEY ? "あり" : "無い"}`);
     console.log(`KNOWLEDGE_DB_URL_RO  ${env2.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP・フック・画面の API はここで止まる）"}`);
+    const clerk = ["CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY", "MITOS_ALLOWED_USER_ID"];
+    const missing = clerk.filter((k) => !env2[k]);
+    console.log(`Clerk の 3 つ        ${missing.length === 0 ? "あり" : `無い: ${missing.join(" / ")}（画面の API が起動しない）`}`);
     for (const [label, readOnly] of [
       ["書き込み(CLI)", false],
       ["読み取り(MCP/フック)", true]

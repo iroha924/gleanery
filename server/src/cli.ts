@@ -385,6 +385,13 @@ async function main(): Promise<void> {
         env.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP・フック・画面の API はここで止まる）"
       }`,
     );
+    // 画面の API は Clerk が 3 つ揃わないと起動しない。RO 鍵と同じく、
+    // 無いことがここに出ないと「なぜ画面が動かないか」がどこにも出ない。
+    const clerk = ["CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY", "MITOS_ALLOWED_USER_ID"] as const;
+    const missing = clerk.filter((k) => !env[k]);
+    console.log(
+      `Clerk の 3 つ        ${missing.length === 0 ? "あり" : `無い: ${missing.join(" / ")}（画面の API が起動しない）`}`,
+    );
     // **両方の経路を叩く。**MCP とフックは読み取り専用ロールで繋ぐので、
     // 管理側だけ確かめても意味が無い。実際にベクトル検索まで通す
     // （search_path にロール差があり、読み取り側だけ落ちたことがある）。
