@@ -5074,6 +5074,7 @@ import path3 from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 
 // server/node_modules/pg/esm/index.mjs
@@ -5123,11 +5124,10 @@ async function connect(env, { as = "admin" } = {}) {
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  if (!CERT_DIR)
-    throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
-  ca ??= fs.readdirSync(CERT_DIR).filter((f) => f.endsWith(".crt")).map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"));
-  if (ca.length === 0)
-    throw new Error(`${CERT_DIR} に .crt が 1 つも無い`);
+  ca ??= [
+    ...CERT_DIR ? fs.readdirSync(CERT_DIR).filter((f) => f.endsWith(".crt")).map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8")) : [],
+    ...tls.rootCertificates
+  ];
   let u;
   try {
     u = new URL(raw);

@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import tls from "node:tls";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
@@ -40,12 +41,16 @@ export function loadEnv(_from?: string): Env {
   return out;
 }
 
-// **公開 CA では検証できない証明書を使う。**自前の PostgreSQL は自己署名の証明書を出すので、
-// 公開 CA の連鎖に載っていない。
-// 検証を切ると、経路を握った相手が返した行がそのままフックの additionalContext と MCP の応答になる。
+// **接続先で CA の出どころが変わる。**自前の PostgreSQL は自己署名なので公開 CA の連鎖に
+// 載っておらず、同梱した証明書を渡さないと検証できない。マネージド（Neon など）は逆で、
+// 公開 CA で出ているので同梱の証明書だけでは `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` になる（実測）。
 //
-// **certs にあるものを全部 CA として読む。**接続先を替えるたびにファイル名を書き換えると、
-// 移行の途中で片方が繋がらなくなる。Node の ca は配列を取るので、束ねて渡せば両方通る。
+// **両方を信頼する。**Node の ca は配列を取るので、同梱の .crt とシステムの CA を束ねる。
+// **`rejectUnauthorized` は切らない** — 検証を切ると、経路を握った相手が返した行が
+// そのままフックの additionalContext と MCP の応答になる。
+//
+// **certs にあるものを全部読む。**接続先を替えるたびにファイル名を書き換えると、
+// 移行の途中で片方が繋がらなくなる。
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // 正本は plugin/certs。バンドル（plugin/dist/*.js）からは ../certs、
 // 素のソース（server/src/db.ts）からは ../../plugin/certs で着く。
@@ -82,12 +87,16 @@ export async function connect(
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  if (!CERT_DIR) throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
-  ca ??= fs
-    .readdirSync(CERT_DIR)
-    .filter((f) => f.endsWith(".crt"))
-    .map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"));
-  if (ca.length === 0) throw new Error(`${CERT_DIR} に .crt が 1 つも無い`);
+  // 同梱の証明書は「あれば足す」。マネージドへ移した環境では 1 つも無くてよい。
+  ca ??= [
+    ...(CERT_DIR
+      ? fs
+          .readdirSync(CERT_DIR)
+          .filter((f) => f.endsWith(".crt"))
+          .map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"))
+      : []),
+    ...tls.rootCertificates,
+  ];
 
   let u: URL;
   try {

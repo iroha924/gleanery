@@ -4,7 +4,9 @@ create index node_text_trgm   on node   using gin (text extensions.gin_trgm_ops)
 create index record_title_trgm on record using gin (title extensions.gin_trgm_ops);
 create index record_problem_trgm on record using gin (problem extensions.gin_trgm_ops);
 create index record_goal_trgm on record using gin (goal extensions.gin_trgm_ops);
-create index term_term_trgm   on term   using gin (term extensions.gin_trgm_ops);
+-- **列は word。**旧 pgroonga 索引は term という存在しない列を指しており、
+-- 4 本のうち 1 本が実在しなかった（実測 2026-09-09）。
+create index term_word_trgm   on term   using gin (word extensions.gin_trgm_ops);
 create index term_meaning_trgm on term  using gin (meaning extensions.gin_trgm_ops);
 
 -- ポリシー。**1 人運用でも書く。**
