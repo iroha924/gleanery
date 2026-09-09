@@ -61,15 +61,20 @@ export async function connect(
   // 「全部書ける鍵」を持つことになり、ロールを分けた意味が消える
   // （20260906120000_readonly_role_for_mcp.sql）。落とさないと決めたので、
   // セッションを読み取り専用にする迂回も要らなくなる。
-  if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
+  // **read だけでなく config も落とさない。**画面の設定書き込みが管理鍵になると、
+  // 「chat / term / group しか書けない」前提が消えて `record` と `node` まで書ける。
+  // 手元は knowledge.env を丸ごと持つので踏まないが、**デプロイ先は 1 変数ずつ手で入れる**ので、
+  // CFG を入れ忘れただけでインターネット向けの API が全部書ける鍵を持つ。
+  const named =
+    as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
+  if (as !== "admin" && !named) {
+    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
     throw new Error(
-      "KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" +
-        "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる",
+      `${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API）。` +
+        "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる",
     );
   }
-  const raw =
-    (as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined) ??
-    env.KNOWLEDGE_DB_URL;
+  const raw = named ?? env.KNOWLEDGE_DB_URL;
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }

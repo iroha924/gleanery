@@ -48,7 +48,7 @@ function Sheet({ children }: { children: React.ReactNode }) {
  * サインインするまで画面を出さない。
  *
  * **画面を通しても中身は出ない** — API は 1 経路も認証を免除していないので、
- * ここは体裁の問題であって境界ではない。境界は `server/src/http.ts` にある。
+ * ここは体裁の問題であって境界ではない。境界は `server/src/server.ts` にある。
  *
  * **`Show` だけにしない。**あれは読み込み中に null を返すので、Clerk が立ち上がるまで
  * 白い画面になる（実測 1〜3 秒）。壊れて見えるので、その間は `ClerkLoading` が受ける。

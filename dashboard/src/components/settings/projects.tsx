@@ -64,9 +64,14 @@ export function ProjectsPanel() {
         </CardHeader>
         <CardContent className="space-y-4">
           {candidates.isPending && <Skeleton className="h-56 w-full" />}
-          {/* **0 件と「読めなかった」を区別する。**候補はこのホストの ~/Projects を
+          {/* **「0 件」と「読めなかった」を別々に出す。**候補はこのホストの ~/Projects を
               走査した結果なので、リポジトリを持たないホストでは必ず空になる。
-              空の枠だけ出すと、選ぶものが無いのか壊れているのか読み取れない。 */}
+              どちらも空の枠になると、選ぶものが無いのか壊れているのか読み取れない。 */}
+          {candidates.isError && (
+            <p className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
+              候補を取れませんでした。API に届いていないか、認証が切れています。
+            </p>
+          )}
           {candidates.data?.length === 0 && (
             <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
               このホストには束ねられる置き場所がありません。候補は API が動いているマシンの{" "}

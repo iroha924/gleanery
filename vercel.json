@@ -13,6 +13,7 @@
     },
     "api": {
       "root": "server/",
+      "framework": "hono",
       "entrypoint": "src/server.ts",
       "buildCommand": "echo 'Vercel の型検査は飛ばす（@vercel/backends が TypeScript 7 で落ちる）。tsc は pre-commit と bun run check で通している'"
     }

@@ -78,17 +78,17 @@ if (!secretKey || !publishableKey || !allowedUser) {
 // **自分が配られているオリジンは自分で許す。**Vercel の preview はデプロイごとに URL が
 // 変わるので、環境変数では追いかけられない（入れた瞬間に次のデプロイで古くなる）。
 // `VERCEL_URL` はそのデプロイ自身のホスト名なので、画面を配っている当人でしかない。
-const ownOrigin = process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [];
-const authorizedParties = [
-  ...(env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean),
-  ...ownOrigin,
-];
-if (authorizedParties.length === 0) {
+const configuredOrigins = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+// **設定した側だけを見て弾く。**`ownOrigin` を含めて数えると、デプロイ先では常に 1 件入るので
+// 長さが 0 にならず、空にした間違いがどこにも出なくなる（＝このガードが対象の環境でだけ効かない）。
+if (configuredOrigins.length === 0) {
   throw new Error("MITOS_ALLOWED_ORIGINS が空。画面を配るオリジンを列挙する（例: https://example.com）");
 }
+const ownOrigin = process.env.VERCEL_URL ? [`https://${process.env.VERCEL_URL}`] : [];
+const authorizedParties = [...configuredOrigins, ...ownOrigin];
 
 // **免除する経路を作らない。**この API を叩くのはダッシュボードだけで、
 // MCP・CLI・編集フックは HTTP を通らず DB へ直結する。

@@ -459,6 +459,10 @@ export async function* chat(
       (r): r is typeof r & { abs_path: string } => Boolean(r.abs_path) && fs.existsSync(r.abs_path ?? ""),
     )
     .map((r) => ({ label: r.label, dir: r.abs_path }));
+  // **指示と道具は同じ値で切り替える。**別々に書くと片方だけ直したときに
+  // 「read_code で読め」と指示されているのに道具が無い状態になり、
+  // 読んでいないものを読んだように答える。
+  const canReadCode = roots.length > 0;
   const inRange = scopes.rows
     .map((r) => `- ${r.label}${r.role ? `（${r.role}）` : ""}${r.summary ? `: ${r.summary}` : ""}`)
     .join("\n");
@@ -494,10 +498,10 @@ export async function* chat(
       model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
       // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
       reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "high") as "none" | "low" | "medium" | "high" },
-      instructions: SYSTEM(people, terms, roots.length > 0),
+      instructions: SYSTEM(people, terms, canReadCode),
       input,
       // **到達できない道具は渡さない。**渡すと 0 件が「探したが無い」と読まれる。
-      tools: last ? [] : roots.length > 0 ? [...TOOLS, ...CODE_TOOLS] : TOOLS,
+      tools: last ? [] : canReadCode ? [...TOOLS, ...CODE_TOOLS] : TOOLS,
       stream: true,
     });
 
