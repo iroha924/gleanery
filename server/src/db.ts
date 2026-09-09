@@ -103,8 +103,13 @@ export async function connect(
     ssl: { rejectUnauthorized: true },
   });
   await client.connect();
-  // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
-  // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
+  // **繋ぎ先に PgBouncer（Neon の `-pooler` 付きホスト）を使わない。**下の 2 つはセッション変数で、
+  // トランザクションプーリングでは文ごとに別のサーバー接続へ振られて落ちる。
+  // 実測（同時 8 本 x 25 回 = 200 回、2 巡）: pooled は search_path が 19 / 29 回消え、
+  // `<#>` が 24 / 35 回「operator does not exist」で失敗した。direct は 2 巡とも 0 / 200。
+  // 接続数が問題になったら、ここを直すのではなくロールの既定
+  // （`alter role ... set search_path`）へ移すこと。**逐次 1 本では再現しない。**
+  //
   // **search_path をロール任せにしない。**pgvector は `extensions` スキーマに置いてある。
   // ロールごとの既定 search_path にそれが入る保証は無いので、`<#>` を使う
   // 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。
