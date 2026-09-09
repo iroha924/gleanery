@@ -5105,7 +5105,6 @@ var require_x509_transport_state = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
-import { execFileSync as execFileSync5 } from "node:child_process";
 import fs7 from "node:fs";
 import os4 from "node:os";
 import path8 from "node:path";
@@ -23704,7 +23703,6 @@ function date4(params) {
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 // server/node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -23742,9 +23740,6 @@ function loadEnv(_from) {
   readInto(out, GLOBAL_ENV);
   return out;
 }
-var HERE = path.dirname(fileURLToPath(import.meta.url));
-var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
-var ca = null;
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
     throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
@@ -23753,11 +23748,6 @@ async function connect(env, { as = "admin" } = {}) {
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  if (!CERT_DIR)
-    throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
-  ca ??= fs.readdirSync(CERT_DIR).filter((f) => f.endsWith(".crt")).map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"));
-  if (ca.length === 0)
-    throw new Error(`${CERT_DIR} に .crt が 1 つも無い`);
   let u;
   try {
     u = new URL(raw);
@@ -23774,7 +23764,7 @@ async function connect(env, { as = "admin" } = {}) {
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca, rejectUnauthorized: true }
+    ssl: { rejectUnauthorized: true }
   });
   await client.connect();
   await client.query("set search_path = public, extensions");
@@ -38030,6 +38020,7 @@ var STOP = new Set([
   "使う",
   "教えて"
 ]);
+var ILIKE_PATTERN = `'%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'`;
 var lexicalTerms = (q) => (q.match(/[A-Za-z][A-Za-z0-9_.#-]{2,}|[ァ-ヴー]{2,}|[一-龠]{2,}|OT-\d+|#\d+/g) ?? []).filter((t) => !STOP.has(t)).slice(0, 8);
 function fuse(lists, k = 60) {
   const acc = new Map;
@@ -38072,11 +38063,15 @@ async function search(client, env2, o) {
      order by n.embedding <#> $1::extensions.vector
      limit $${values2.length + 2}`, [vec(qv), ...values2, pool]);
   const words = lexicalTerms(question);
-  const lex = words.length ? await client.query(`select ${COLS}, pgroonga_score(n.tableoid, n.ctid) as score
+  const lex = words.length ? await client.query(`select ${COLS}, m.hits::float8 as score
          ${JOINS}
-         where ${clauses(1)} and n.text &@~ $${values2.length + 1}
-         order by score desc, n.id
-         limit $${values2.length + 2}`, [...values2, words.map((t) => JSON.stringify(t)).join(" OR "), pool]) : { rows: [] };
+         cross join lateral (
+           select count(*) as hits from unnest($${values2.length + 1}::text[]) as t
+           where n.text ilike ${ILIKE_PATTERN}
+         ) m
+         where ${clauses(1)} and m.hits > 0
+         order by m.hits desc, length(n.text), n.id desc
+         limit $${values2.length + 2}`, [...values2, words, pool]) : { rows: [] };
   const r = { rows: fuse([dense.rows, lex.rows]) };
   if (r.rows.length === 0)
     return { rows: [], queryVector: qv, topScore: null };
@@ -39035,7 +39030,7 @@ var USAGE = `使い方:
                                                  --yes は既に登録済みの場所を入れ替える）
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
   mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-  mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+  mitos doctor                                   資格情報と接続、Linear MCP の疎通、DB の大きさ
   mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
   mitos usage                                    OpenAI の使用量と残り
 
@@ -39060,29 +39055,6 @@ function readIr(file2) {
   if (!m?.[1])
     throw new Error(`${file2} に progress-ir の埋め込みが無い。progress render で書いたものを渡す`);
   return JSON.parse(m[1]);
-}
-var HOST_PROBE = [
-  `printf 'reboot=%s\\n' "$(cat /var/run/reboot-required.pkgs 2>/dev/null | tr '\\n' ' ')"`,
-  `printf 'when=%s\\n' "$(shutdown --show 2>&1 | grep -o 'scheduled for [^,]*' || true)"`,
-  `printf 'pgdg=%s\\n' "$(apt list --upgradable 2>/dev/null | grep pgdg | cut -d/ -f1 | tr '\\n' ' ')"`,
-  `printf 'other=%s\\n' "$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -cv pgdg || true)"`
-].join("; ");
-function hostStatus(dbUrl) {
-  const host = new URL(dbUrl).hostname;
-  const out = execFileSync5("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, HOST_PROBE], {
-    encoding: "utf8",
-    timeout: 30000,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  const v = new Map(out.split(`
-`).filter((l) => l.includes("=")).map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()]));
-  const pending = v.get("reboot");
-  const when = v.get("when")?.replace("scheduled for ", "");
-  const pgdg = v.get("pgdg");
-  return [
-    `VPS（${host}）  再起動 ${pending ? `保留: ${pending}${when ? ` → ${when} に自動で当たる` : " ← 予約が無い。自動再起動の設定を確かめる"}` : "保留なし"}`,
-    `PostgreSQL の更新      ${pgdg ? `${pgdg}← 人が当てる（DB が止まる）` : "なし"} / ほかの更新 ${v.get("other") ?? "?"} 件`
-  ];
 }
 var text = exports_external.string();
 var evidence = exports_external.array(exports_external.object({ kind: exports_external.string(), ref: exports_external.string() }).loose()).optional();
@@ -39286,6 +39258,15 @@ ${USAGE}`);
       const who = await c3.query("select current_user as u");
       const v = await c3.query("select count(*)::int n from (select 1 from node where embedding is not null order by embedding <#> (select embedding from node where embedding is not null limit 1) limit 3) t");
       console.log(`${label.padEnd(22)} ${who.rows[0]?.u} / ベクトル検索 OK（${v.rows[0]?.n} 件返った）`);
+      const cap = await c3.query(`select pg_size_pretty(pg_database_size(current_database())) as used,
+                pg_database_size(current_database())::text as bytes,
+                (select setting from pg_settings where name = 'neon.max_cluster_size') as cap_mb`);
+      const g = cap.rows[0];
+      if (g && !readOnly) {
+        const capMb = g.cap_mb ? Number(g.cap_mb) : null;
+        const pct = capMb ? Math.round(Number(g.bytes) / (capMb * 1024 * 1024) * 100) : null;
+        console.log(`DB の大きさ            ${g.used}${capMb === null ? "" : ` / ${capMb} MB（${pct}%）${pct !== null && pct >= 80 ? " ← 超えると書き込みが止まる" : ""}`}`);
+      }
       await c3.end();
     }
     {
@@ -39304,14 +39285,6 @@ ${USAGE}`);
         console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
       }
       await c3.end();
-    }
-    try {
-      for (const line of hostStatus(env2.KNOWLEDGE_DB_URL ?? ""))
-        console.log(line);
-    } catch (e) {
-      const why = e.stderr?.trim().split(`
-`)[0] || (e instanceof Error ? e.message : `${e}`);
-      console.log(`VPS の状態             聞けない: ${why}`);
     }
     try {
       console.log(`Linear(MCP 経由)       ${whoAmI()} として届いた`);

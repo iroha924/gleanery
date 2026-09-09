@@ -5074,7 +5074,6 @@ import path3 from "node:path";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 // server/node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -5112,9 +5111,6 @@ function loadEnv(_from) {
   readInto(out, GLOBAL_ENV);
   return out;
 }
-var HERE = path.dirname(fileURLToPath(import.meta.url));
-var CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) => fs.existsSync(d));
-var ca = null;
 async function connect(env, { as = "admin" } = {}) {
   if (as === "read" && !env.KNOWLEDGE_DB_URL_RO) {
     throw new Error("KNOWLEDGE_DB_URL_RO が無い。読み取りは読み取り専用のロールでしか繋がない" + "（MCP・編集フック・画面の API）。~/.claude/knowledge.env に knowledge_ro の接続文字列を入れる");
@@ -5123,11 +5119,6 @@ async function connect(env, { as = "admin" } = {}) {
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  if (!CERT_DIR)
-    throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
-  ca ??= fs.readdirSync(CERT_DIR).filter((f) => f.endsWith(".crt")).map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"));
-  if (ca.length === 0)
-    throw new Error(`${CERT_DIR} に .crt が 1 つも無い`);
   let u;
   try {
     u = new URL(raw);
@@ -5144,7 +5135,7 @@ async function connect(env, { as = "admin" } = {}) {
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca, rejectUnauthorized: true }
+    ssl: { rejectUnauthorized: true }
   });
   await client.connect();
   await client.query("set search_path = public, extensions");

@@ -164,7 +164,7 @@ mitos adopt [--yes]                            このマシンの ~/Projects を
                                                --yes は既に登録済みの場所を入れ替える）
 mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
 mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+mitos doctor                                   資格情報と接続、Linear MCP の疎通、DB の大きさ
 mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
 mitos usage                                    OpenAI の使用量と残り
 ```
@@ -196,9 +196,9 @@ plugin/      Claude Code / Codex へ配るもの（skills, hooks, bin, dist）
 db/          migrations（PostgreSQL の移行）
 ```
 
-検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と pgroonga の全文検索を
-RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞（PR 番号、テーブル名）を
-落とし、全文だけだと言い換えを落とす。
+検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と、質問を語に割った部分一致
+（`ilike`）を RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞
+（PR 番号、テーブル名）を落とし、語の一致だけだと言い換えを落とす。
 
 記録は `record`（1 件の作業）と `node`（その中の判断・発言・出来事）の 2 層。`node` は多相 1 表で、
 種別を足してもベクトル索引が割れないようにしてある。
@@ -217,59 +217,62 @@ RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと�
 取り込み時に作業場所の役割・説明を読み取るのに使う）。
 モデルは `MITOS_CHAT_MODEL`（既定 `gpt-5.6-terra`）と `MITOS_CHAT_EFFORT`（既定 `high`）で差し替えられる。
 
-### DB を載せている VPS
+### DB を置いている先
 
-`knowledge-mcp-prod-01`（ConoHa VPS / Ubuntu 24.04）。**インターネットからの受信は 1 つも開けていない**
-ので、DB も ssh も Tailscale の中からしか届かない。
+Neon（`aws-ap-southeast-1` / PostgreSQL 18）。マネージドなので、OS の更新も再起動も
+PostgreSQL の版上げも自分では触らない。**代わりに見るのは容量**で、`mitos doctor` の
+「DB の大きさ」行に出る。
 
-**OS の更新と再起動は人が触らなくてよい。**`unattended-upgrades` が Ubuntu のセキュリティ更新を
-03:00〜03:30 に当て、カーネル更新などで再起動が要る状態になっていれば 04:00 に再起動する
-（`/etc/apt/apt.conf.d/52unattended-upgrades-local`）。Mac の日次同期は 06:00 なので、復帰後に当たる。
+**上限に当たると書き込みが止まる。**Neon は branch の論理サイズを `neon.max_cluster_size`
+で切っている（Free では 512 MB）。doctor はその値を DB 自身に聞くので、プランを変えても
+表示は追随する。**一度これで移設している** — Supabase の 500 MB を 501 MB で超えた。
 
-**PostgreSQL は自動では上がらない。**`postgresql-17` / `pgvector` / `pgroonga` は PGDG のリポジトリから
-入れており、そこは `Unattended-Upgrade::Allowed-Origins` に入れていない。当てると DB が止まるので、
-**時機は人が選ぶ**。
+**接続は公開 CA で検証する。**同梱の証明書は無く、`db.ts` が Node の既定の信頼ストアを使う。
+`rejectUnauthorized` は切らないので、経路を握られた相手の応答が MCP に混ざることはない。
+接続文字列に `ssl` / `sslmode` / `sslrootcert` を書くと弾く（TLS はコード側で固定している）。
 
-```bash
-ssh knowledge-mcp-prod-01 'sudo apt-get update && sudo apt-get install --only-upgrade postgresql-17'
-```
-
-**更新が出たことに気付く経路は `mitos doctor` の 2 行だけ。**メールも通知も無い
-（この箱から外へ出せるのは `curl` だけで、通知先を足すと VPS に資格情報を置くことになる）。
-doctor は接続文字列のホストへそのまま ssh する（MagicDNS が DB と ssh の両方を解決する）ので、
-tailnet の外からは「聞けない」とだけ出て、ほかの検査は続く。
+**scale-to-zero がある。**Free では一定時間で compute が止まり、次のクエリで起き直す。
+**その cold start は未計測。**
 
 ## セットアップ
 
 ```bash
 bun install
-# db/migrations を対象プロジェクトへ適用
+# db/migrations を対象プロジェクトへ適用（下の注意を先に読む）
 bun run bundle                       # plugin/dist を作る（MCP・フック・CLI）
-mitos doctor                         # 資格情報と接続、VPS の状態を確かめる
+mitos doctor                         # 資格情報と接続、DB の大きさを確かめる
 mitos import-github --cwd <repo>     # 最初の取り込み
 ```
+
+**migrations は素の DB へそのままは流せない。**先に `create schema extensions;` が要る
+（`with schema extensions` を使う移行があるのに、スキーマを作る移行が無い）。
+そのうえで 1 本目の `create extension pgroonga` の行を飛ばすと、**pgroonga を前提にした
+3 本が途中で止まる。止まってよい。**マネージドでは pgroonga を入れられないので、これが唯一の道になる。
+
+| 止まる migration | そこで作られないもの |
+|---|---|
+| `20260905160548_indexes` | pgroonga の索引 4 本。**語彙検索はもう使っていない** |
+| `20260905160815_move_pgroonga_and_rls_policies` | 同じ索引と、Supabase 時代のポリシー（`20260908170000` が後で落とすもの） |
+| `20260908170000_drop_supabase_roles` | `anon` などの後始末。そもそも存在しない |
+
+実測（2026-09-09、`pgvector/pgvector:pg18` の素のコンテナ）: この形で 26 本を流すと、
+**表・列・ポリシー・索引の 276 項目が本番と差分 0 で一致した。**
 
 日次同期は launchd。`~/Library/LaunchAgents/com.mitos.sync.plist` が毎日 6:00 に `mitos sync` を叩き、
 ログは `~/.claude/mitos-sync.log`。外すときは `launchctl bootout gui/$(id -u)/com.mitos.sync`。
 
 ### 新しい PC で使い始める
 
-**ナレッジは VPS の PostgreSQL にあるので、引く側は何もしなくても動く**（作業場所は git remote で
-引くため、パスに依存しない）。設定が要るのは**取り込む側**だけ。
-
-**DB は Tailscale の中にしかいない。**`knowledge-mcp-prod-01` はインターネットからの受信を
-1 つも開けていないので、**tailnet に入っていないマシンからは到達できない**。
+**ナレッジはマネージドの PostgreSQL にあるので、引く側は何もしなくても動く**（作業場所は
+git remote で引くため、パスに依存しない）。設定が要るのは**取り込む側**だけ。
 
 ```bash
-# 1. Tailscale に入る。これが無いと 5 の doctor が繋がらない
-tailscale status | grep knowledge-mcp-prod-01   # 見えることを確かめる
-
-# 2. 資格情報。リポジトリには入っていないので手で置く
+# 1. 資格情報。リポジトリには入っていないので手で置く
 #    ~/.claude/knowledge.env に KNOWLEDGE_DB_URL / KNOWLEDGE_DB_URL_RO /
 #    KNOWLEDGE_DB_URL_CFG / VOYAGE_API_KEY
-#    サーバーの証明書は plugin/certs/ に入っているので、クローンすれば揃う
+#    接続は公開 CA で検証するので、証明書を配る必要は無い
 
-# 3. リポジトリを置いて、プラグインを入れる
+# 2. リポジトリを置いて、プラグインを入れる
 git clone https://github.com/iroha924/mitos.git ~/Projects/mitos
 cd ~/Projects/mitos && bun install && bun run bundle
 claude plugin marketplace add ~/Projects/mitos && claude plugin install mitos@mitos
@@ -312,19 +315,28 @@ bun run bundle     # plugin/dist を作り直す
 
 ## 精度をどう測っているか
 
-`server/evals/` に 5 種類ある。**LLM を審判にしていない** — 人間との一致は 90% と報告されているが
+`server/evals/` に 6 種類ある。**LLM を審判にしていない** — 人間との一致は 90% と報告されているが
 審判自体の校正が要り、実行のたびに揺れる。答えには PR 番号・日付・状態という検証可能な語が
 必ず入るので、突き合わせで足りる。
 
-**問いは空で配っている**（`{"cases": []}`）。取り込んだコーパスに合わせて自分で書く。
+**recall@5 だけで並び順を決めない。**`server/evals/lexical.ts` を回すと、語彙側の候補集合の
+中で正解が何位にいるかが並び順ごとに出る。20 問では 1 問が 5% を動かすので、
+recall@5 は**機構の差と偶然の差を区別できない**（実測 2026-09-09: `id` 昇順が 19/19 で
+最良に見えるが、それはこの eval の正解が全部コーパスの最古 0〜3% にあるからで、
+コーパスが伸びれば新しい記録から順に落ちる）。
+
+**答えの束は空で配っている**（`{"cases": []}`）。取り込んだコーパスに合わせて自分で書く。
+**`retrieval.json`（20 問）と `chat.json`（8 問）は入ったまま配る** — どちらもこのリポジトリ
+自身の記録を正解にしているので、他所のコーパスでは当たらない。使う前に書き換える。
 
 | 束 | 中身 |
 |---|---|
-| `hybrid.json` | 検索の recall |
+| `retrieval.json` | 検索の recall。方式（ベクトル / 語彙 / 融合 / 再ランク / 出荷経路）を並べて比べる |
 | `answers.json` | 手書きの事実（GitHub / Linear / DB で裏を取ったもの） |
 | `answers-auto.json` | `evals/generate.ts` が DB から機械生成（複合条件、近い番号の干渉、過去と現在） |
 | `answers-judgment.json` | 正解が 1 つに決まらない判断の問い |
 | `answers-multi.json` | 多ターン会話（指示語の解決、訂正の持続、話題の切り替え） |
+| `chat.json` | 画面のチャットの応答（引用の帰属、範囲外の扱い） |
 
 期待値は `must` / `mustNot` の突き合わせ。`re:` で始めると正規表現になり、**実体と述語を束縛できる**。
 
@@ -345,6 +357,6 @@ bun run bundle     # plugin/dist を作り直す
 | `mitos search` が何も返さない | `mitos scopes` にその作業場所が登録されているか |
 | チャットが「どのプロジェクトを選んで」と言う | 画面上部で Project を選ぶ。**範囲の無指定は許していない**（別の仕事の決定が混ざるため） |
 | 資格情報・接続・Linear MCP の疎通 | `mitos doctor` |
-| PostgreSQL の更新が出ていないか | `mitos doctor` の「PostgreSQL の更新」行。**自動では当たらない**（「DB を載せている VPS」） |
+| DB の容量が上限に近くないか | `mitos doctor` の「DB の大きさ」行。**超えると書き込みが止まる**（「DB を置いている先」） |
 | 日次同期が走っていない | `~/.claude/mitos-sync.log` |
 | チャットの費用が気になる | `mitos usage`（キャッシュ済み入力は 10% で計上される） |

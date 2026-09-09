@@ -46,14 +46,12 @@ async function vectorSearch(qv: number[], limit: number): Promise<Row[]> {
 
 // 日本語の語彙検索。ベクトルが苦手な「固有の語の完全一致」を埋める。
 //
-// **この行の top1 と MRR は読めない。**pgroonga_score は一致した全行へ 1 を返すので
-// （索引は使われている。Index Scan を確認済み）、score での並べ替えは順位を付けていない。
-// 実行ごとに top1 が 55% と 35% の間で振れていたのはこれが原因。
-// key で決定的に割って再現できるようにはしたが、意味のある順位ではない。
-// この行から読めるのは recall@5、つまり**一致集合に正解が入るか**だけである。
+// **この行の top1 と MRR は読めない。**語彙側は候補集合を作るのが仕事で、順位は
+// 後段の再ランクが付ける。ここから読めるのは recall@5、つまり
+// **一致集合に正解が入るか**だけである。
 //
-// **質問文をそのまま渡してはいけない。**`&@~` は文全体を 1 つのクエリ式として扱うので、
-// 「ドキュメントに使ってはいけない記号は？」を投げると 0 件になる（実測）。
+// **質問文をそのまま渡してはいけない。**語ごとに分けて当てる。
+// 「ドキュメントに使ってはいけない記号は？」を 1 つの式として投げると 0 件になる（実測）。
 // 語に割ってから OR で繋ぐ。
 const STOP = [
   "ため",
@@ -86,14 +84,17 @@ function terms(q: string): string[] {
 async function lexicalSearch(q: string, limit: number): Promise<Row[]> {
   const ts = terms(q);
   if (ts.length === 0) return [];
-  const expr = ts.map((t) => JSON.stringify(t)).join(" OR ");
   const r = await c.query<Row>(
-    `select key, kind, subkind, polarity, text, record_id,
-            coalesce(attrs->>'whyNot', attrs->>'context','') ex,
-            pgroonga_score(tableoid, ctid) as score
-     from node where deleted_at is null and text &@~ $1
-     order by score desc, key limit $2`,
-    [expr, limit],
+    `select n.key, n.kind, n.subkind, n.polarity, n.text, n.record_id,
+            coalesce(n.attrs->>'whyNot', n.attrs->>'context','') ex, m.hits::float8 as score
+     from node n
+     cross join lateral (
+       select count(*) as hits from unnest($1::text[]) as t
+       where n.text ilike '%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'
+     ) m
+     where n.deleted_at is null and m.hits > 0
+     order by m.hits desc, length(n.text), n.id desc limit $2`,
+    [ts, limit],
   );
   return r.rows;
 }
@@ -132,7 +133,7 @@ async function rerank(q: string, rows: Row[], topK: number, model = "rerank-3"):
 
 const strategies: Record<string, (q: string, qv: number[], cs: Case) => Promise<{ key: string }[]>> = {
   ベクトルのみ: async (_q, qv) => vectorSearch(qv, K),
-  "語彙のみ(pgroonga)": async (q) => lexicalSearch(q, K),
+  "語彙のみ(部分一致)": async (q) => lexicalSearch(q, K),
   "ハイブリッド(RRF)": async (q, qv) =>
     rrf([await vectorSearch(qv, POOL), await lexicalSearch(q, POOL)]).slice(0, K),
   "ベクトル+rerank-3": async (q, qv) => rerank(q, await vectorSearch(qv, POOL), K),
@@ -197,10 +198,8 @@ for (const [name, fn] of Object.entries(strategies)) {
 const total = await c.query<{ n: number }>("select count(*)::int n from node where deleted_at is null");
 console.log(`質問 ${cases.length} 件 / node ${total.rows[0]?.n ?? 0} 件\n`);
 console.table(results);
-console.log("※ 「語彙のみ(pgroonga)」と「ハイブリッド」の top1 / MRR は順位として読めない。");
-console.log(
-  "   pgroonga_score が一致行すべてに 1 を返すため、語彙側の順位は任意。読めるのは recall@5 だけ。",
-);
+console.log("※ 「語彙のみ(部分一致)」と「ハイブリッド」の top1 / MRR は順位として読めない。");
+console.log("   語彙側は候補集合を作るのが仕事で、順位は後段の再ランクが付ける。読めるのは recall@5 だけ。");
 
 console.log("\n=== 種別ごとの recall@5 ===");
 const byKind: Record<string, Record<string, { hit: number; n: number }>> = {};

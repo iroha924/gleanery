@@ -7,8 +7,8 @@
 // 文字面は近いが意味は真逆で、再ランクにはそれを見分ける手がかりが無い。だから札を前置きする。
 //
 // **語彙側との融合は入れてある。**理由と実測は search() の中（lex を引く箇所）にある。
-// **pgroonga の索引を落とさない。**pg_relation_size が 0 bytes と報告するので軽く見えるが、
-// 実体は別ファイルにあり、落として pgroonga_vacuum() を叩くと 342 MB 戻る（実測）。
+// **語彙側を落とさない。**落とすと出荷経路の recall@5 が 95% → 85% になる
+// （実測 2026-09-09、20 問）。索引は張っていない — このクエリ形では選ばれないため。
 // **それでも落とさない** — ID を含む質問の recall@5 が 2/6 から 5/6 へ変わる経路である。
 
 import crypto from "node:crypto";
@@ -97,7 +97,7 @@ export const labelOf = (r: { kind: string; subkind: string | null }): string =>
  * search() の clauses() の上にある。**範囲内と範囲外で同じものを使う** —
  * 片方だけに効かせると、母集団の違う 2 つを 1 つの閾値で比べることになる。
  */
-const DEFAULT_EXCLUDED = [
+export const DEFAULT_EXCLUDED = [
   "not (n.kind = 'utterance' and n.subkind = 'issue' and n.actor_kind = 'ai')",
   "not (n.kind = 'event' and n.subkind = 'pr')",
   "not (n.kind = 'doc')",
@@ -130,8 +130,8 @@ export type SearchOpts = {
 
 export type SearchResult = { rows: Hit[]; queryVector: number[]; topScore: number | null };
 
-// **質問文をそのまま `&@~` へ渡さない。**文全体を 1 つのクエリ式として扱うので
-// 「ドキュメントに使ってはいけない記号は？」が 0 件になる（実測）。語に割って OR で繋ぐ。
+// **質問文を丸ごと 1 つのパターンにしない。**「ドキュメントに使ってはいけない記号は？」が
+// そのままでは 0 件になる（実測）。語に割って、どれかに当たった行を候補にする。
 const STOP = new Set([
   "ため",
   "こと",
@@ -151,6 +151,14 @@ const STOP = new Set([
   "使う",
   "教えて",
 ]);
+/**
+ * `unnest(...) as t` の語を `ilike` のパターンにする式。**SQL を組み立てる側と、
+ * それを検証するテストで同じ文字列を使う**ため定数にしてある。
+ * `_` は `ilike` で任意の 1 文字として効くので潰す。`\` を先に二重化しないと、
+ * 後から足す `\_` のエスケープ自体が壊れる。
+ */
+export const ILIKE_PATTERN = `'%' || replace(replace(t, '\\', '\\\\'), '_', '\\_') || '%'`;
+
 export const lexicalTerms = (q: string): string[] =>
   (q.match(/[A-Za-z][A-Za-z0-9_.#-]{2,}|[ァ-ヴー]{2,}|[一-龠]{2,}|OT-\d+|#\d+/g) ?? [])
     .filter((t) => !STOP.has(t))
@@ -240,17 +248,39 @@ export async function search(client: pg.Client, env: Env, o: SearchOpts): Promis
   );
 
   // **語彙側も引いて融合する。**ベクトルは「ABC-123」と「ABC-456」を見分けられない
-  // （最近傍が別の番号になる）。実測 30 問: ID を含む質問の recall@5 は
-  // ベクトル+再ランクで 2/6、融合+再ランクで 5/6。全体でも 80% → 93%。
+  // （最近傍が別の番号になる）。実測（2026-09-09、20 問）: 出荷経路の recall@5 は
+  // 語彙側ありで 95%、外すと 85%。
+  //
+  // **一致した語数が多く、短い行から採る。**候補は `pool` 件で切るので、切り方が
+  // 「どの行が再ランクまで届くか」を決める。候補を埋めるのは会話の往復で、あれは長く、
+  // 汎用語を全部含む（実測: 一致 345 件のうち 262 件が `utterance`）。
+  // 探している記録のほうは短い（実測 20 問で 19〜154 字）ので、
+  // **単位長あたりの一致語数**が「その話題について書かれている」の代理になる。
+  //
+  // **`n.id` で並べない。**昇順は最も古い行に、降順は最も新しい行に固定され、
+  // どちらもコーパスが伸びると片側が候補から落ち続ける。実測（`server/evals/lexical.ts`、
+  // 20 問、pool=30）: 正解が pool に残るのは id 昇順 19/19・id 降順 7/19・
+  // 一致語数のみ 12/19 に対して、この形は 17/19。**id 昇順の 19/19 は artifact で、
+  // eval の正解が全部このコーパスの最古 0〜3% にあることによる。**
+  // trigram の類似度は使えない — `similarity` は本文の長さの逆数に近づき
+  // （8 字 1.00 / 8,539 字 0.001）、`word_similarity` は同点が大量に出る（1 語で 26 行が
+  // 1.000）。順位そのものは後段の再ランクが付ける。
+  //
+  // **`_` を潰す。**`lexicalTerms` は `search_path` のような語を返し、`ilike` では
+  // `_` が任意の 1 文字として効く。`\\` を先に二重化しないとエスケープ自体が壊れる。
   const words = lexicalTerms(question);
   const lex = words.length
     ? await client.query<Hit>(
-        `select ${COLS}, pgroonga_score(n.tableoid, n.ctid) as score
+        `select ${COLS}, m.hits::float8 as score
          ${JOINS}
-         where ${clauses(1)} and n.text &@~ $${values.length + 1}
-         order by score desc, n.id
+         cross join lateral (
+           select count(*) as hits from unnest($${values.length + 1}::text[]) as t
+           where n.text ilike ${ILIKE_PATTERN}
+         ) m
+         where ${clauses(1)} and m.hits > 0
+         order by m.hits desc, length(n.text), n.id desc
          limit $${values.length + 2}`,
-        [...values, words.map((t) => JSON.stringify(t)).join(" OR "), pool],
+        [...values, words, pool],
       )
     : { rows: [] as Hit[] };
 

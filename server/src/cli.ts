@@ -2,7 +2,6 @@
 // ナレッジ DB への書き込み口。**資格情報を持つのはこちらだけで、MCP は読み取り専用。**
 // progress-log スキルはこのコマンドを呼ぶだけで、DB のことを知らない。
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -41,7 +40,7 @@ const USAGE = `使い方:
                                                  --yes は既に登録済みの場所を入れ替える）
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
   mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-  mitos doctor                                   資格情報と接続、Linear MCP の疎通、VPS の更新と再起動
+  mitos doctor                                   資格情報と接続、Linear MCP の疎通、DB の大きさ
   mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
   mitos usage                                    OpenAI の使用量と残り
 
@@ -73,49 +72,6 @@ function readIr(file: string): unknown {
   const m = body.match(IR_TAG);
   if (!m?.[1]) throw new Error(`${file} に progress-ir の埋め込みが無い。progress render で書いたものを渡す`);
   return JSON.parse(m[1]);
-}
-
-// DB を載せている 1 台の OS の状態。**Tailscale の先にしか無いので、古くなっても気付く経路が無い。**
-// ssh の宛先は接続文字列のホストと同じ（MagicDNS が両方を解決する）ので、設定は増えない。
-//
-// 見るのは 2 つだけ。**Ubuntu のセキュリティ更新と再起動は自動で当たる**ので出さない
-// （unattended-upgrades が 03:00 台に当て、保留があれば 04:00 に再起動する）。
-// **PostgreSQL は自動では上がらない** — PGDG を Allowed-Origins に入れていないため。
-// 当てると DB が止まるので、人が時機を選ぶ。
-const HOST_PROBE = [
-  `printf 'reboot=%s\\n' "$(cat /var/run/reboot-required.pkgs 2>/dev/null | tr '\\n' ' ')"`,
-  `printf 'when=%s\\n' "$(shutdown --show 2>&1 | grep -o 'scheduled for [^,]*' || true)"`,
-  `printf 'pgdg=%s\\n' "$(apt list --upgradable 2>/dev/null | grep pgdg | cut -d/ -f1 | tr '\\n' ' ')"`,
-  `printf 'other=%s\\n' "$(apt list --upgradable 2>/dev/null | tail -n +2 | grep -cv pgdg || true)"`,
-].join("; ");
-
-function hostStatus(dbUrl: string): string[] {
-  const host = new URL(dbUrl).hostname;
-  // **stderr は捨てずに掴む。**継承したままだと ssh の理由（名前が引けない／届かない）が
-  // 端末へ素通りし、例外の message には「Command failed」しか残らない。
-  const out = execFileSync("ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, HOST_PROBE], {
-    encoding: "utf8",
-    timeout: 30_000,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const v = new Map(
-    out
-      .split("\n")
-      .filter((l) => l.includes("="))
-      .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1).trim()] as const),
-  );
-  const pending = v.get("reboot");
-  const when = v.get("when")?.replace("scheduled for ", "");
-  const pgdg = v.get("pgdg");
-  return [
-    `VPS（${host}）  再起動 ${
-      pending
-        ? // 予約が空なら、当てる側（unattended-upgrades）が止まっている。
-          `保留: ${pending}${when ? ` → ${when} に自動で当たる` : " ← 予約が無い。自動再起動の設定を確かめる"}`
-        : "保留なし"
-    }`,
-    `PostgreSQL の更新      ${pgdg ? `${pgdg}← 人が当てる（DB が止まる）` : "なし"} / ほかの更新 ${v.get("other") ?? "?"} 件`,
-  ];
 }
 
 // ingest が実際に読む形。中身の契約（棄却理由の有無など）は progress-log の validate が見ている。
@@ -442,6 +398,30 @@ async function main(): Promise<void> {
         "select count(*)::int n from (select 1 from node where embedding is not null order by embedding <#> (select embedding from node where embedding is not null limit 1) limit 3) t",
       );
       console.log(`${label.padEnd(22)} ${who.rows[0]?.u} / ベクトル検索 OK（${v.rows[0]?.n} 件返った）`);
+      // **上限に当たると書き込みが止まる。**Neon は branch の論理サイズを
+      // `neon.max_cluster_size` で切っていて、超えると insert が失敗する。
+      // 一度これで移設している（Supabase の 500 MB を 501 MB で超えた）ので、気付く経路を置く。
+      // **上限は DB 自身に聞く。**プランで変わる数字を焼き込むと、変わったときに黙って古くなる。
+      // **`pg_database_size` は下限である。**上限が掛かるのは branch 全体の論理サイズで、
+      // 履歴（point-in-time 用）とほかの DB も数えるため、ここに出るより実際は大きい。
+      const cap = await c.query<{ used: string; bytes: string; cap_mb: string | null }>(
+        `select pg_size_pretty(pg_database_size(current_database())) as used,
+                pg_database_size(current_database())::text as bytes,
+                (select setting from pg_settings where name = 'neon.max_cluster_size') as cap_mb`,
+      );
+      const g = cap.rows[0];
+      // 2 つの鍵で同じ DB へ繋ぐので、容量は片方でだけ出す。
+      if (g && !readOnly) {
+        const capMb = g.cap_mb ? Number(g.cap_mb) : null;
+        const pct = capMb ? Math.round((Number(g.bytes) / (capMb * 1024 * 1024)) * 100) : null;
+        console.log(
+          `DB の大きさ            ${g.used}${
+            capMb === null
+              ? ""
+              : ` / ${capMb} MB（${pct}%）${pct !== null && pct >= 80 ? " ← 超えると書き込みが止まる" : ""}`
+          }`,
+        );
+      }
       await c.end();
     }
     // **最後にいつ入ったかを出す。**日次同期が黙って止まっても、ログを目で見るまで気付けない。
@@ -476,17 +456,6 @@ async function main(): Promise<void> {
         console.log(`最後の取り込み         ${x.label}: ${when} / 記録 ${x.records} 件`);
       }
       await c.end();
-    }
-
-    // **DB が繋がることと、それが載っている箱が健全なことは別。**カーネルが更新されても
-    // 再起動しなければ当たらず、PostgreSQL 本体は自動更新の対象に入れていない。
-    // どちらも見に行かないと分からないので、ここで 1 回聞く。
-    try {
-      for (const line of hostStatus(env.KNOWLEDGE_DB_URL ?? "")) console.log(line);
-    } catch (e) {
-      const why =
-        (e as { stderr?: string }).stderr?.trim().split("\n")[0] || (e instanceof Error ? e.message : `${e}`);
-      console.log(`VPS の状態             聞けない: ${why}`);
     }
 
     // Linear は API キーではなく OAuth 済みの MCP 越しに取る。**壊れ方が DB と違う** —

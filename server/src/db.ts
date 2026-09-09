@@ -6,7 +6,6 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import pg from "pg";
 
 export type Env = Record<string, string | undefined>;
@@ -40,21 +39,13 @@ export function loadEnv(_from?: string): Env {
   return out;
 }
 
-// **公開 CA では検証できない証明書を使う。**自前の PostgreSQL は自己署名の証明書を出すので、
-// 公開 CA の連鎖に載っていない。
-// 検証を切ると、経路を握った相手が返した行がそのままフックの additionalContext と MCP の応答になる。
+// **CA を同梱しない。**繋ぎ先はマネージドの PostgreSQL で、公開 CA の証明書を出す。
+// Node の既定の信頼ストアをそのまま使うと `NODE_EXTRA_CA_CERTS` も効く
+// （`tls.rootCertificates` を明示すると、あれは固定の一覧なので追加が落ちる。
+// 実測: 120 件のまま増えない）。
 //
-// **certs にあるものを全部 CA として読む。**接続先を替えるたびにファイル名を書き換えると、
-// 移行の途中で片方が繋がらなくなる。Node の ca は配列を取るので、束ねて渡せば両方通る。
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-// 正本は plugin/certs。バンドル（plugin/dist/*.js）からは ../certs、
-// 素のソース（server/src/db.ts）からは ../../plugin/certs で着く。
-const CERT_DIR = [path.join(HERE, "..", "certs"), path.join(HERE, "..", "..", "plugin", "certs")].find((d) =>
-  fs.existsSync(d),
-);
-
-let ca: string[] | null = null;
-
+// **`rejectUnauthorized` は切らない** — 検証を切ると、経路を握った相手が返した行が
+// そのままフックの additionalContext と MCP の応答になる。
 /**
  * @param as どの鍵で繋ぐか。
  *   read   = MCP・フック・画面の読み取り（SELECT だけ）
@@ -82,12 +73,6 @@ export async function connect(
   if (!raw) {
     throw new Error("KNOWLEDGE_DB_URL が無い。~/.claude/knowledge.env に接続文字列を入れる");
   }
-  if (!CERT_DIR) throw new Error("CA の置き場所が見つからない。plugin/certs を置く");
-  ca ??= fs
-    .readdirSync(CERT_DIR)
-    .filter((f) => f.endsWith(".crt"))
-    .map((f) => fs.readFileSync(path.join(CERT_DIR, f), "utf8"));
-  if (ca.length === 0) throw new Error(`${CERT_DIR} に .crt が 1 つも無い`);
 
   let u: URL;
   try {
@@ -115,12 +100,12 @@ export async function connect(
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { ca, rejectUnauthorized: true },
+    ssl: { rejectUnauthorized: true },
   });
   await client.connect();
   // HNSW の既定は絞り込みを効かせると結果が LIMIT を下回る。
   // set local はトランザクションの外では次の文へ残らないので、セッションで 1 回入れる。
-  // **search_path をロール任せにしない。**pgvector と pgroonga は `extensions` スキーマに置いてある。
+  // **search_path をロール任せにしない。**pgvector と pg_trgm は `extensions` スキーマに置いてある。
   // ロールごとの既定 search_path にそれが入る保証は無いので、`<#>` を使う
   // 読み取り専用ロールだけ「operator does not exist」で落ちる（実測）。
   await client.query("set search_path = public, extensions");
