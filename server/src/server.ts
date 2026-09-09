@@ -281,7 +281,9 @@ app.post("/api/groups", async (c) => {
     );
   }
 
-  const client = cfg();
+  // **トランザクションは接続を占有する。**プールへ投げると begin と commit が別の接続へ行き、
+  // 借りた側から見て何も囲われないまま、他の要求が掴んだ接続を commit しうる。
+  const client = await cfg().connect();
   await client.query("begin");
   try {
     // **on conflict do update を使わない。**UPDATE 権限を要求するので、
@@ -327,6 +329,8 @@ app.post("/api/groups", async (c) => {
   } catch (e) {
     await client.query("rollback").catch(() => {});
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  } finally {
+    client.release();
   }
 });
 
@@ -384,7 +388,9 @@ app.delete("/api/terms/:id", async (c) => {
 app.delete("/api/groups/:id", async (c) => {
   const id = Number(c.req.param("id"));
   if (!Number.isInteger(id)) return c.json({ error: "id が不正" }, 400);
-  const client = cfg();
+  // **トランザクションは接続を占有する。**プールへ投げると begin と commit が別の接続へ行き、
+  // 借りた側から見て何も囲われないまま、他の要求が掴んだ接続を commit しうる。
+  const client = await cfg().connect();
   await client.query("begin");
   try {
     await client.query("delete from group_member where group_id = $1", [id]);
@@ -394,6 +400,8 @@ app.delete("/api/groups/:id", async (c) => {
   } catch (e) {
     await client.query("rollback").catch(() => {});
     return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
+  } finally {
+    client.release();
   }
 });
 

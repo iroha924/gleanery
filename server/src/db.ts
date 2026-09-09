@@ -159,6 +159,11 @@ export function pool(env: Env, { as = "admin" }: { as?: As } = {}): pg.Pool {
     idleTimeoutMillis: 30_000,
     allowExitOnIdle: true,
     verify: (client, done) => {
+      // **借りている間の切断を、プロセスごと落とさない。**pg は切断でクエリを reject した
+      // 後に `emit("error")` まで行う（`pg/lib/client.js` の `_handleErrorEvent`）。
+      // プールは貸し出しの前にアイドル用のリスナを外すので、受け手が 1 つも居なくなり
+      // uncaughtException になる（実測: 借りた接続を reset して再現した）。
+      client.on("error", () => {});
       client.query(SESSION).then(() => done(), done);
     },
   });

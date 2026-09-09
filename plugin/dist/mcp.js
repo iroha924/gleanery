@@ -39048,6 +39048,7 @@ function pool(env, { as = "admin" } = {}) {
     idleTimeoutMillis: 30000,
     allowExitOnIdle: true,
     verify: (client, done) => {
+      client.on("error", () => {});
       client.query(SESSION).then(() => done(), done);
     }
   });
