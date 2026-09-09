@@ -724,8 +724,12 @@ app.post("/api/chat", async (c) => {
   };
 
   return streamSSE(c, async (stream) => {
+    const disconnected = new AbortController();
+    stream.onAbort(() => disconnected.abort());
+    const signal = AbortSignal.any([c.req.raw.signal, disconnected.signal]);
     let answer = "";
     let sources: unknown[] = [];
+    let completed = false;
     try {
       // **帰属は画面が選んだ側。**family は検索の範囲で、`scopeFamily` は order by を
       // 持たないので先頭は任意の兄弟になる（MCP 側で同じ欠陥を直した）。
@@ -734,24 +738,29 @@ app.post("/api/chat", async (c) => {
         scopeIds: family,
         ownScope: ids[0] ?? null,
         learn,
+        signal,
       })) {
         if (chunk.type === "text") answer += chunk.text;
         else if (chunk.type === "sources") sources = chunk.sources;
         await stream.writeSSE({ event: chunk.type, data: JSON.stringify(chunk) });
       }
+      completed = true;
     } catch (e) {
+      if (signal.aborted) return;
       // 失敗も画面へ届ける。無言で止まると原因が分からない。
       await stream.writeSSE({
         event: "error",
         data: JSON.stringify({ message: e instanceof Error ? e.message : String(e) }),
       });
     }
+    if (signal.aborted) return;
     // **答えが出てから残す。**途中で切れたものを履歴に積むと、読み返せない断片が増える。
-    if (answer) {
+    if (completed && answer) {
       try {
-        const chatId = await saveTurn(body, ids, answer, sources);
+        const chatId = await saveTurn(body, ids, answer, sources, signal);
         await stream.writeSSE({ event: "saved", data: JSON.stringify({ chatId }) });
       } catch {
+        if (signal.aborted) return;
         // 残せなくても答えは返す
       }
     }
@@ -773,22 +782,26 @@ const TITLE = `会話の題を 1 つ作る。出力は題だけで、前置き�
  * 話し言葉の質問（「今どこまで進んでて、次何する?」）がそのまま並ぶと、
  * 一覧で何の話だったかが読み取れない。答えの中身まで見て名前を付ける。
  */
-async function titleFor(question: string, answer: string): Promise<string | null> {
+async function titleFor(question: string, answer: string, signal: AbortSignal): Promise<string | null> {
   if (!env.OPENAI_API_KEY) return null;
   try {
     const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
-    const r = await openai.responses.create({
-      model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
-      reasoning: { effort: "none" },
-      instructions: TITLE,
-      input: `質問: ${question}\n\n答え: ${answer.slice(0, 2000)}`,
-    });
+    const r = await openai.responses.create(
+      {
+        model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+        reasoning: { effort: "none" },
+        instructions: TITLE,
+        input: `質問: ${question}\n\n答え: ${answer.slice(0, 2000)}`,
+      },
+      { signal },
+    );
     const t = r.output_text
       .trim()
       .replace(/^["「『]|["」』]$/g, "")
       .trim();
     return t ? t.slice(0, 60) : null;
   } catch (e) {
+    if (signal.aborted) throw e;
     console.error("title:", e instanceof Error ? e.message : String(e));
     return null;
   }
@@ -800,13 +813,15 @@ async function saveTurn(
   ids: number[],
   answer: string,
   sources: unknown[],
+  signal: AbortSignal,
 ): Promise<string> {
   const w = cfg();
   let chatId = body.chatId;
   if (!chatId) {
     const question = body.question ?? "";
     // 付けられなければ質問で代用する。**題が無くて履歴から消えるより、粗い題のほうがいい。**
-    const title = (await titleFor(question, answer)) ?? question.slice(0, 120);
+    const title = (await titleFor(question, answer, signal)) ?? question.slice(0, 120);
+    signal.throwIfAborted();
     const r = await w.query<{ id: string }>(
       "insert into chat (title, scope_ids, scope_name) values ($1,$2,$3) returning id",
       [title, ids, body.scopeName ?? null],
@@ -814,8 +829,10 @@ async function saveTurn(
     chatId = r.rows[0]?.id;
     if (!chatId) throw new Error("会話を作れなかった");
   } else {
+    signal.throwIfAborted();
     await w.query("update chat set updated_at = now() where id = $1", [chatId]);
   }
+  signal.throwIfAborted();
   await w.query(
     `insert into chat_message (chat_id, role, content, sources) values ($1,'user',$2,'[]'), ($1,'assistant',$3,$4)`,
     [chatId, body.question ?? "", answer, JSON.stringify(sources)],

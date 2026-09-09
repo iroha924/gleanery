@@ -75,6 +75,7 @@ type Turn = {
   content: string;
   sources?: ChatSource[];
   error?: string;
+  stopped?: boolean;
 };
 
 const EXAMPLES = [
@@ -217,6 +218,7 @@ function Chat() {
   const { scopeIds: picked, label: projectLabel } = useProject();
   const scopeIds = picked ?? [];
   const abort = useRef<AbortController | null>(null);
+  const pendingQuestion = useRef<string | null>(null);
   // 話して入れる。**録った音は手元の whisper.cpp へ行くだけで、外へは出ない。**
   const [rec, setRec] = useState<MediaRecorder | null>(null);
   const [hearing, setHearing] = useState(false);
@@ -230,6 +232,20 @@ function Chat() {
   const nav = useNavigate({ from: Route.fullPath });
   const setChatId = (id: string | undefined) => nav({ search: id ? { chat: id } : {} });
   const qc = useQueryClient();
+
+  const stop = () => {
+    const controller = abort.current;
+    if (!controller || controller.signal.aborted) return;
+    controller.abort();
+    const question = pendingQuestion.current;
+    if (question !== null) {
+      setDraft((current) => current || question);
+      pendingQuestion.current = null;
+    }
+    setTurns((prev) =>
+      prev.map((turn, index) => (index >= prev.length - 2 ? { ...turn, stopped: true } : turn)),
+    );
+  };
 
   /** 押すと録り始め、もう一度押すと止めて文字にする。 */
   const listen = async () => {
@@ -289,6 +305,11 @@ function Chat() {
   // （⌘⇧M はプロファイル切替、⌘⇧V は書式なしペースト、⌘⇧Q は macOS のログアウト）。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && abort.current && !abort.current.signal.aborted) {
+        e.preventDefault();
+        stop();
+        return;
+      }
       if (e.key.toLowerCase() === "k" && e.shiftKey && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
         listen();
@@ -330,7 +351,8 @@ function Chat() {
     if (!question.trim() || busy || scopeIds.length === 0) return;
     setDraft("");
     setBusy(true);
-    const past = turns.map((t) => ({ role: t.role, content: t.content }));
+    pendingQuestion.current = question;
+    const past = turns.filter((t) => !t.stopped).map((t) => ({ role: t.role, content: t.content }));
     const id = crypto.randomUUID();
     setTurns((t) => [
       ...t,
@@ -338,7 +360,8 @@ function Chat() {
       { id: `${id}-a`, role: "assistant", content: "" },
     ]);
 
-    abort.current = new AbortController();
+    const controller = new AbortController();
+    abort.current = controller;
     const patch = (fn: (t: Turn) => Turn) =>
       setTurns((prev) => prev.map((t, i) => (i === prev.length - 1 ? fn(t) : t)));
 
@@ -351,18 +374,27 @@ function Chat() {
           error: (m) => patch((t) => ({ ...t, error: m })),
           cost: (question, month) => setCost({ question, month }),
           saved: (id) => {
+            if (abort.current === controller) {
+              abort.current = null;
+              pendingQuestion.current = null;
+              setBusy(false);
+            }
             setChatId(id);
             qc.invalidateQueries({ queryKey: ["chats"] });
           },
         },
-        abort.current.signal,
+        controller.signal,
       );
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         patch((t) => ({ ...t, error: e instanceof Error ? e.message : String(e) }));
       }
     } finally {
-      setBusy(false);
+      if (abort.current === controller) {
+        abort.current = null;
+        pendingQuestion.current = null;
+        setBusy(false);
+      }
     }
   };
 
@@ -421,15 +453,18 @@ function Chat() {
                       <Message className="pt-4">
                         <MessageContent className="gap-5">
                           {t.content && <Answer text={t.content} />}
-                          {!t.content && !t.error && busy && (
+                          {!t.content && !t.error && !t.stopped && busy && (
                             <p className="flex items-center gap-2 text-muted-foreground text-sm">
                               <Spinner /> 記録を探しています
                             </p>
                           )}
+                          {t.stopped && <p className="text-muted-foreground text-sm">生成を中断しました</p>}
                           {t.error && <p className="text-dont text-sm">{t.error}</p>}
-                          {t.sources && <Sources sources={t.sources} busy={busy && !t.content} />}
+                          {t.sources && (
+                            <Sources sources={t.sources} busy={busy && !t.content && !t.stopped} />
+                          )}
                           {/* 流し終えるまで出さない。**途中の本文を写しても使えない。** */}
-                          {t.content && !busy && (
+                          {t.content && !busy && !t.stopped && (
                             <MessageFooter className="px-0">
                               <Copy text={t.content} label="答えを写す" />
                             </MessageFooter>
@@ -515,10 +550,10 @@ function Chat() {
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
-                  // **Enter では送らない。**日本語入力では変換の確定に使われるため。
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  // 変換確定の Enter は送信にしない。Shift + Enter は textarea の改行へ渡す。
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
-                    ask(draft);
+                    e.currentTarget.form?.requestSubmit();
                   }
                 }}
                 placeholder={scopeIds.length === 0 ? "左でプロジェクトを選んでください" : "続けて聞く"}
@@ -571,14 +606,22 @@ function Chat() {
                   </TooltipContent>
                 </Tooltip>
                 {busy ? (
-                  <InputGroupButton
-                    size="icon-sm"
-                    variant="outline"
-                    onClick={() => abort.current?.abort()}
-                    aria-label="止める"
-                  >
-                    <SquareIcon className="size-3" />
-                  </InputGroupButton>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <InputGroupButton
+                        size="icon-sm"
+                        variant="destructive"
+                        onClick={stop}
+                        aria-label="生成を中断"
+                      >
+                        <SquareIcon className="size-3" />
+                      </InputGroupButton>
+                    </TooltipTrigger>
+                    <TooltipContent className="flex items-center gap-2">
+                      生成を中断
+                      <Kbd>Esc</Kbd>
+                    </TooltipContent>
+                  </Tooltip>
                 ) : (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -598,10 +641,7 @@ function Chat() {
                     </TooltipTrigger>
                     <TooltipContent className="flex items-center gap-2">
                       送る
-                      <KbdGroup>
-                        <Kbd>⌘</Kbd>
-                        <Kbd>⏎</Kbd>
-                      </KbdGroup>
+                      <Kbd>⏎</Kbd>
                     </TooltipContent>
                   </Tooltip>
                 )}

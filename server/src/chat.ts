@@ -275,6 +275,8 @@ export type ChatBody = {
   ownScope?: number | null;
   /** 用語を覚えるときに呼ぶ。渡されなければ覚えられない */
   learn?: Learn;
+  /** 呼び出し元が閉じたら、外部 API の生成も止める。 */
+  signal?: AbortSignal;
 };
 
 /** モデルごとの単価（$/1M）。表にない版は 0 として合計に足さない。 */
@@ -379,6 +381,7 @@ export async function* chat(
   // month は積み上げた log から出す。**書けないホストでは null** — 0 と区別する。
   | { type: "cost"; question: number; month: number | null }
 > {
+  body.signal?.throwIfAborted();
   const question = (body.question ?? "").trim();
   if (!question) throw new Error("質問が空");
   // **範囲を必須にする。**無指定で全プロジェクトを混ぜると、別の仕事の決定が
@@ -410,6 +413,7 @@ export async function* chat(
     search(client, env, { question: forSearch, scopeIds: body.scopeIds, limit: 12, queryVector }),
     searchRecords(client, queryVector, body.scopeIds, 3),
   ]);
+  body.signal?.throwIfAborted();
   const { rows } = found;
   // **画面から聞かれたことも残す。**答えを持てなかった問いは、入口を問わず同じ穴である。
   await logSearch(client, {
@@ -495,17 +499,21 @@ export async function* chat(
   let answer = "";
   let spent = 0;
   for (let round = 0; round < ROUNDS; round++) {
+    body.signal?.throwIfAborted();
     const last = round === ROUNDS - 1;
-    const stream = await openai.responses.create({
-      model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
-      // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
-      reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "high") as "none" | "low" | "medium" | "high" },
-      instructions: SYSTEM(people, terms, canReadCode),
-      input,
-      // **到達できない道具は渡さない。**渡すと 0 件が「探したが無い」と読まれる。
-      tools: last ? [] : canReadCode ? [...TOOLS, ...CODE_TOOLS] : TOOLS,
-      stream: true,
-    });
+    const stream = await openai.responses.create(
+      {
+        model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+        // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
+        reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "high") as "none" | "low" | "medium" | "high" },
+        instructions: SYSTEM(people, terms, canReadCode),
+        input,
+        // **到達できない道具は渡さない。**渡すと 0 件が「探したが無い」と読まれる。
+        tools: last ? [] : canReadCode ? [...TOOLS, ...CODE_TOOLS] : TOOLS,
+        stream: true,
+      },
+      { signal: body.signal },
+    );
 
     // **出た項目は全部そのまま積み直す。**function_call だけ返すと弾かれる —
     // 「'function_call' was provided without its required 'reasoning' item」（実測）。
@@ -528,6 +536,7 @@ export async function* chat(
 
     input.push(...(items as OpenAI.Responses.ResponseInput));
     for (const call of calls) {
+      body.signal?.throwIfAborted();
       input.push({
         type: "function_call_output",
         call_id: call.call_id,
