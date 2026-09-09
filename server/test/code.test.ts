@@ -135,19 +135,45 @@ test("見ていない範囲のリポジトリは読めない", () => {
 
 // **探せなかったことは、0 件と同じ形で返してはいけない。**同じにすると
 // 「その語はコードに無い」と答え、探せていないことが誰にも見えない。
-test("rg が無いときは 0 件ではなく、探せないことを返す", () => {
+//
+// **PATH を空文字にしない。**POSIX では零長要素がカレントディレクトリを意味するので、
+// 探索対象のリポジトリに `rg` という実行ファイルがあるとそれが走る（実測で走った）。
+// 実在しないディレクトリだけを置けば、rg は必ず見つからない。
+test("rg を起動できないときは 0 件ではなく、探せないことを返す", () => {
   const before = process.env.PATH;
-  process.env.PATH = "";
+  process.env.PATH = "/nonexistent-dir";
   try {
     const r = grepCode(roots, { query: "呼称" });
-    assert.ok("error" in r, "rg が無いのに結果の形で返っている");
-    assert.match(r.error, /ripgrep/);
+    assert.ok("error" in r, "rg を起動できないのに結果の形で返っている");
+    assert.match(r.error, /rg を起動できない/);
   } finally {
-    process.env.PATH = before;
+    if (before === undefined) delete process.env.PATH;
+    else process.env.PATH = before;
   }
 });
 
-test("正規表現が壊れているときも、探せないことを返す", () => {
+// **rg はあるが弾かれた、を切り分ける。**理由まで見ないと、rg が無い環境でも通ってしまう。
+test("正規表現が壊れているときは、その理由ごと返す", () => {
   const r = grepCode(roots, { query: "unclosed(" });
   assert.ok("error" in r, "rg が弾いたのに結果の形で返っている");
+  assert.match(r.error, /終了コード 2/);
+  assert.match(r.error, /regex parse error/);
+});
+
+// **範囲に無いリポジトリを指定されたら、探していないと言う。**readCode と同じ形。
+test("repo がどの作業場所にも当たらないときは、探していないと返す", () => {
+  const r = grepCode(roots, { query: "呼称", repo: "存在しないリポジトリ" });
+  assert.ok("error" in r, "1 つも探していないのに結果の形で返っている");
+});
+
+// **片方が読めなくても、もう片方で見つかったものは返す。**捨てると、直前の版より悪くなる。
+// 消えたディレクトリで確かめる（chmod 000 は root で走ると効かず、実行ユーザーに依存する）。
+test("探せなかった作業場所があっても、探せた分は返し、探せなかったことも返す", () => {
+  const r = grepCode([...roots, { label: "消えた/repo", dir: path.join(tmp, "no-such-dir") }], {
+    query: "呼称",
+  });
+  assert.ok(!("error" in r), "探せた分まで捨てている");
+  assert.equal(r.hits.length, 1, "生きている作業場所の結果は返る");
+  assert.equal(r.unsearched.length, 1, "探せなかった作業場所が出る");
+  assert.match(r.unsearched[0] ?? "", /消えた\/repo/);
 });

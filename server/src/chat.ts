@@ -936,7 +936,7 @@ async function runTool(
     // **探せなかったことは、探して無かったことと別に返す。**同じ形にすると
     // 「その語はコードに無い」と答え、探せていないことが誰にも見えない。
     if ("error" in found) return JSON.stringify(found);
-    const { hits, names, matched } = found;
+    const { hits, names, matched, unsearched } = found;
     if (hits.length === 0 && matched.lines === 0 && names.length === 0)
       return JSON.stringify({ found: 0, note: "その語はコードに無い" });
     return JSON.stringify({
@@ -948,11 +948,20 @@ async function runTool(
       paths: matched.paths,
       // 名前だけが一致したファイル。本文には無いので、行番号は付かない。
       nameMatches: names.length ? names : undefined,
+      // **探せなかった場所は結果と一緒に返す。**返った分を全部として読ませない。
+      unsearched: unsearched.length ? unsearched : undefined,
       note:
-        hits.length < matched.lines
-          ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +
-            "**どのファイルかを聞かれているなら paths が全部**（行まで要るなら glob で絞って数回に分ける）"
-          : undefined,
+        [
+          hits.length < matched.lines
+            ? `一致は ${matched.files} ファイル / ${matched.lines} 行。うち ${hits.length} 件だけ返した。` +
+              "**どのファイルかを聞かれているなら paths が全部**（行まで要るなら glob で絞って数回に分ける）"
+            : "",
+          unsearched.length
+            ? "**unsearched の場所は探せていない。**ここに挙がった範囲について「無い」と答えない"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ") || undefined,
       hits: hits.map((h) => ({
         ...h,
         n: cite("【コード】", `${h.path}:${h.line} ${h.text}`, h.repo, null, `code:${h.repo}`),
