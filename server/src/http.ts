@@ -70,12 +70,18 @@ if (!secretKey || !publishableKey || !allowedUser) {
   );
 }
 
-// **azp を空にしない。**authorizedParties が空だと Clerk は発行元の検証をせずに返るので、
-// 同じ instance からトークンを取った別オリジンのページでも通る。
+// **azp を空にしない。**authorizedParties が空だと Clerk は発行元の検証をせずに返るので
+// （`assertAuthorizedPartiesClaim` が長さ 0 で即 return する）、同じ instance から
+// トークンを取った別オリジンのページでも通る。
+// **空文字を渡せる形にしない** — 環境変数を空にしただけで検証が落ちるのは、
+// 設定を間違えたことが出力のどこにも出ない種類の緩みになる。
 const authorizedParties = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+if (authorizedParties.length === 0) {
+  throw new Error("MITOS_ALLOWED_ORIGINS が空。画面を配るオリジンを列挙する（例: https://example.com）");
+}
 
 // **免除する経路を作らない。**この API を叩くのはダッシュボードだけで、
 // MCP・CLI・編集フックは HTTP を通らず DB へ直結する。
@@ -264,6 +270,23 @@ app.post("/api/groups", async (c) => {
   const paths = Array.isArray(body.paths) ? body.paths.filter((x) => typeof x === "string" && x) : [];
   if (!name) return c.json({ error: "束の名前が空" }, 400);
   if (paths.length < 2) return c.json({ error: "2 つ以上選ぶ" }, 400);
+
+  // **候補に無いパスは受けない。**候補はこのホストを走査した結果なので、
+  // リポジトリを持たないホスト（デプロイ先）では空になり、ここで止まる。
+  // 受けると identify() が git を叩き、rememberPath がそのホスト名で
+  // `scope_path` へ置き場所を書く。**日次同期はホストごとの行を見る**ので、
+  // 実在しない置き場所が 1 行入るだけで、そのマシンの取り込みが狂う。
+  const known = new Set(candidates().map((x) => x.absPath));
+  const unknown = paths.filter((p) => !known.has(p));
+  if (unknown.length > 0) {
+    return c.json(
+      {
+        error:
+          known.size === 0 ? "このホストには束ねられる置き場所が無い" : "候補に無い置き場所は登録できない",
+      },
+      400,
+    );
+  }
 
   const client = await cfg();
   await client.query("begin");

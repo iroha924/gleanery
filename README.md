@@ -225,6 +225,10 @@ db/          migrations（PostgreSQL の移行）
 | `CLERK_PUBLISHABLE_KEY` | 同じく公開鍵。API 側でも検証に使う |
 | `MITOS_ALLOWED_USER_ID` | **通す人を 1 人だけ指定する。**`clerk users list --json` の `id` |
 
+`MITOS_ALLOWED_ORIGINS` は画面を配るオリジン（カンマ区切り、既定 `http://localhost:5173`）。
+トークンの発行元を検証させるためのもので、**空にすると検証ごと落ちる**ので空では起動しない。
+手元以外へ出すときは、そのオリジンを入れる。
+
 画面側の `VITE_CLERK_PUBLISHABLE_KEY` だけは `dashboard/.env.local`（`clerk env pull` が書く）。
 Vite は `VITE_` の付いた変数しかブラウザへ出さないので、シークレット鍵はここに置いても
 バンドルへは入らないが、**API が読むのは `~/.claude/knowledge.env` のほう**である。

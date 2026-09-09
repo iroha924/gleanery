@@ -115,11 +115,40 @@ export function expandNames(question: string, people: Person[]): string {
   return `${question}\n（${hit.map((p) => `${p.display} = ${p.handles.join(" / ")}`).join("、")}）`;
 }
 
+/** コードへ到達できるときの指示。**到達できないホストでは渡さない。** */
+const CODE_RULES = [
+  "**「いまどうなっているか」は記録ではなくコードを見る。**記録が持っているのは",
+  "「なぜそうしたか」だけで、実装は変わっている。どのファイルにあるか・どう実装されているかを",
+  "聞かれたら grep_code で探し、read_code で読む。**記録とコードが食い違ったらコードが正しい。**",
+  "答えるときは、記録から言っているのかコードを見て言っているのかを分けて書く。",
+  "",
+  "**「このプロジェクトは何か」も記録ではなくリポジトリに聞く。**記録が持っているのは",
+  "作業の経緯（何を決めた、何を直した）であって、その道具が何のためにあるかではない。",
+  "何をする道具か・何を解くためのものか・誰がどう使うのかを聞かれたら、**答える前に",
+  "read_code で README.md を読む**（無ければ CLAUDE.md / AGENTS.md / docs/ / package.json）。",
+  "実測: 「このプロジェクトについて 2 行で教えて」に、直近のセッション記録だけを読んで",
+  "「退職に伴い個人用へ戻し、画面を作り替えた作業」と答えた。道具の定義は README の 3 行目に",
+  "書かれていた。**記録は作業の記録であって、プロジェクトの定義ではない。**",
+];
+
+/**
+ * コードへ到達できないときの指示。
+ *
+ * **上を渡したまま道具だけ外さない。**「read_code で読む」と書いてあるのに道具が無いと、
+ * 読んでいないものを読んだように答える。到達できない事実そのものを渡す。
+ */
+const NO_CODE_RULES = [
+  "**このホストからはリポジトリのコードを読めない。**探す道具も読む道具も渡していない。",
+  "実装がいまどうなっているかを聞かれたら、記録から言えることだけを答え、",
+  "**コードは見ていないと明示する。**「読みます」「確認します」と書いて読まない、をしない。",
+  "記録とコードが食い違う可能性は残るので、断定するときはそう断る。",
+];
+
 // **「私」が誰かは推論できない。**記録に載っているのはハンドル名（GitHub の login、
 // Linear の表示名）だけで、それが質問者と同一人物だという情報はどこにも無い。
 // 実測: 「最新の私の PR は」と聞かれて「あなたがどの GitHub ユーザーかは書かれていません」
 // と返し、他人の PR を最新として挙げた。名乗りは名簿として渡す。
-const SYSTEM = (people: Person[], terms: Term[]): string =>
+export const SYSTEM = (people: Person[], terms: Term[], canReadCode: boolean): string =>
   [
     "あなたは、選ばれたプロジェクトについて答える助手である。",
     "そのプロジェクトで書き残されたもの（何を解こうとしているか、どこを目指すか、いまどこか、",
@@ -155,18 +184,7 @@ const SYSTEM = (people: Person[], terms: Term[]): string =>
     "author にはハンドル名を渡す（呼び名ではなく、上の対応表で変換する）。",
     "repo は「いま見ている範囲」に挙がっているものから選ぶ。",
     "",
-    "**「いまどうなっているか」は記録ではなくコードを見る。**記録が持っているのは",
-    "「なぜそうしたか」だけで、実装は変わっている。どのファイルにあるか・どう実装されているかを",
-    "聞かれたら grep_code で探し、read_code で読む。**記録とコードが食い違ったらコードが正しい。**",
-    "答えるときは、記録から言っているのかコードを見て言っているのかを分けて書く。",
-    "",
-    "**「このプロジェクトは何か」も記録ではなくリポジトリに聞く。**記録が持っているのは",
-    "作業の経緯（何を決めた、何を直した）であって、その道具が何のためにあるかではない。",
-    "何をする道具か・何を解くためのものか・誰がどう使うのかを聞かれたら、**答える前に",
-    "read_code で README.md を読む**（無ければ CLAUDE.md / AGENTS.md / docs/ / package.json）。",
-    "実測: 「このプロジェクトについて 2 行で教えて」に、直近のセッション記録だけを読んで",
-    "「退職に伴い個人用へ戻し、画面を作り替えた作業」と答えた。道具の定義は README の 3 行目に",
-    "書かれていた。**記録は作業の記録であって、プロジェクトの定義ではない。**",
+    ...(canReadCode ? CODE_RULES : NO_CODE_RULES),
     "",
     "**「その項目は無い」で止めない。**PR の本文には、番号が書かれていなくても",
     "「なぜこの変更が必要になったか」が書かれていることが多い。issue 番号が無いときは、",
@@ -174,10 +192,17 @@ const SYSTEM = (people: Person[], terms: Term[]): string =>
     "拾って伝える。**そこがいちばん価値がある。**",
     "",
     "**「実装内容は」「何を変えたのか」を聞かれたら、題だけで答えない。**",
-    "手は 2 つある。(1) find_prs に number を渡すと本文が返る。(2) 題や本文に出てくる",
-    "テーブル名・モデル名・関数名を grep_code で探し、read_code で実物を読む。",
-    "**どちらも試さずに「記録にありません」と答えない。**実測で 2 回やった —",
-    "dbt のモデルがリポジトリに実在するのに「詳細は記録にありません」と答えた。",
+    ...(canReadCode
+      ? [
+          "手は 2 つある。(1) find_prs に number を渡すと本文が返る。(2) 題や本文に出てくる",
+          "テーブル名・モデル名・関数名を grep_code で探し、read_code で実物を読む。",
+          "**どちらも試さずに「記録にありません」と答えない。**実測で 2 回やった —",
+          "dbt のモデルがリポジトリに実在するのに「詳細は記録にありません」と答えた。",
+        ]
+      : [
+          "find_prs に number を渡すと本文が返る。**試さずに「記録にありません」と答えない。**",
+          "実測で 2 回やった — 実在するものを「詳細は記録にありません」と答えた。",
+        ]),
     "",
     "**日付は何の日付かを書く。**PR には merged_or_opened_at（マージ済みならマージ日、",
     "それ以外は作成日）と created_at（作った日）がある。**混ぜない。**",
@@ -286,10 +311,20 @@ function recordUsage(
       `${JSON.stringify({ at: new Date().toISOString(), model, in: input, cached, out: usage.output_tokens, cost })}\n`,
     );
   } catch {
-    // 記録できなくても答えは返す
+    // 記録できなくても答えは返す。**書けなかったことは覚えておく** —
+    // 書けないホストでは合計が積み上がらないので、月額を出すと 0 に見える。
+    usageLogWritable = false;
   }
   return cost;
 }
+
+/**
+ * 費用ログを書けたか。
+ *
+ * **書けないホストで月額を出さないため。**読めない合計は 0 になり、「今月 $0」と嘘をつく。
+ * ホームディレクトリへ書けない実行環境（読み取り専用のファイルシステム）がある。
+ */
+let usageLogWritable = true;
 
 // **月の境目は日本時間で見る。**UTC で切ると月初 9 時間の利用が前月に落ちる
 // （同じ取り違えを日付の集計で踏んだ。JST_FROM の上に実測がある）。日本に夏時間は無い。
@@ -342,7 +377,8 @@ export async function* chat(
 ): AsyncGenerator<
   | { type: "sources"; sources: ChatSource[] }
   | { type: "text"; text: string }
-  | { type: "cost"; question: number; month: number }
+  // month は積み上げた log から出す。**書けないホストでは null** — 0 と区別する。
+  | { type: "cost"; question: number; month: number | null }
 > {
   const question = (body.question ?? "").trim();
   if (!question) throw new Error("質問が空");
@@ -458,9 +494,10 @@ export async function* chat(
       model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
       // 速さが要る場面（会議中に聞く）があるので、環境変数で切り替えて測れるようにする。
       reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "high") as "none" | "low" | "medium" | "high" },
-      instructions: SYSTEM(people, terms),
+      instructions: SYSTEM(people, terms, roots.length > 0),
       input,
-      tools: last ? [] : TOOLS,
+      // **到達できない道具は渡さない。**渡すと 0 件が「探したが無い」と読まれる。
+      tools: last ? [] : roots.length > 0 ? [...TOOLS, ...CODE_TOOLS] : TOOLS,
       stream: true,
     });
 
@@ -497,10 +534,10 @@ export async function* chat(
   // 並べると嘘になる（実測: 道具から答えたのに、無関係な「マージします！」が 12 件並んだ）。
   const cited = new Set([...answer.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])));
   yield { type: "sources", sources: sources.filter((x) => cited.has(x.n)) };
-  yield { type: "cost", question: spent, month: monthlyCost() };
+  yield { type: "cost", question: spent, month: usageLogWritable ? monthlyCost() : null };
 }
 
-const TOOLS: OpenAI.Responses.Tool[] = [
+export const TOOLS: OpenAI.Responses.Tool[] = [
   {
     type: "function",
     name: "find_prs",
@@ -621,6 +658,16 @@ const TOOLS: OpenAI.Responses.Tool[] = [
       additionalProperties: false,
     },
   },
+];
+
+/**
+ * コードを読みに行く道具。**このホストに作業場所のディレクトリが無いときは渡さない。**
+ *
+ * 渡すと、モデルは呼んで 0 件を受け取り、探したのに無いのか到達できないのかを区別できないまま
+ * 「記録にありません」と答える。置き場所は `scope_path (scope_id, host, abs_path)` が
+ * ホストごとに持つので、リポジトリを持たないホスト（デプロイ先など）では常に空になる。
+ */
+export const CODE_TOOLS: OpenAI.Responses.Tool[] = [
   {
     type: "function",
     name: "grep_code",
