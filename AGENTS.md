@@ -111,6 +111,35 @@ Codex で進めた回の判断は `/mitos:trace` を通さないと残らない�
 `vercel.json` の `services` で、画面（`dashboard/`）と API（`server/`）を 1 プロジェクトに載せている。
 `/api/*` が API、それ以外が画面。
 
+画面は `dashboard/` の Next.js App Router、API は `server/src/server.ts` の Hono とする。
+Next.js の Route Handler や Server Action に API を写さず、画面は同一オリジンの `/api/*` を
+Hono へ送る。`server/src` の MCP・CLI・フックを Next.js のビルドへ巻き込まない。
+
+Next.js は入っている版の `dashboard/node_modules/next/dist/docs/` を一次情報にする。
+Page と Layout は Server Component のまま始め、状態・イベント・ブラウザ API・Clerk のブラウザ用
+token が必要な境界だけを Client Component にする。内部遷移は `next/link`、画面内の検索条件だけを
+変えるときは Next.js が対応している native History API を使う。`proxy.ts` は Clerk のセッション情報を
+Server Component へ渡す入口であり、認可の正本にはしない。画面はデータを読む場所に近い Layout、
+データは全 `/api/*` に先行する Hono middleware で守る。
+
+Hono は method と path の直後に handler を置き、型推論を失う controller 層を作らない。
+分割が必要になったときだけ Hono の app を route 単位で compose する。新しく外から受ける
+JSON・query・param・multipart は handler の入口で検査し、型 assertion だけを検証の代わりにしない。
+
+DB の正本は `db/migrations/` と手書き SQL で、Prisma / Drizzle の schema をもう 1 つの正本として
+足さない。RLS、用途別 role、extension、部分索引、pgvector の SQL を migration から分離すると、
+「片方だけ直る」経路が増えるためである。DB の結果型だけが問題になった場合は、ORM 導入ではなく
+現在の schema から型を生成する案を別に検討する。
+
+2026-09-11 に、過去の Vite 継続判断を承知したうえで Next.js + Hono への全面移行が選ばれた。
+今回はダッシュボードの routing・Clerk 統合・Vercel build を Next.js の公式経路へ一本化することが
+移行の目的である。Hono を独立した service のまま保つことで、以前の棄却理由だった
+「画面のために MCP・CLI・フックまで Next.js のビルドへ巻き込む」構成にはしない。
+
+Vercel Services は 1 プロジェクトの環境変数をサービス間で共有する。Next.js のサーバーコードから
+DB や生成 API の変数を読まず、この境界は依存と呼び出し経路でも保つ。管理鍵は Vercel
+プロジェクト自体へ置かない。
+
 **リポジトリを持たないホストで動く**ので、ローカルのファイルシステムに触る機能はそこで死ぬ。
 黙って 0 件を返さず、到達できないことを出す形にしてある（チャットのコード探索は道具ごと外す、
 束ねる候補は空だと理由を出す、費用の月額は `null`）。**新しく FS を触る機能を足すときは同じ形にする。**
@@ -152,12 +181,17 @@ Hono として認識されず、`server/` が丸ごと静的配信される（�
 
 入口は `package.json` の scripts にある。
 
+最初に `bun run setup` を使う。`server/` と `dashboard/` は Vercel の独立した service で、
+それぞれが lockfile を持つため、ルートの `bun install` だけでは依存が揃わない。setup は両方を
+`--frozen-lockfile` で入れ、server の postinstall を通して Lefthook も導入する。
+
 **`bun run test` は pre-commit が走らせていない**（見ているのは biome・tsc・bundle・版・対）。
-コミット前に自分で通す。
+pre-push と CI の `bun run verify` が、テストと Next.js の本番ビルドまで通す。
 
 `bun run dev` は前面でだけ使う。背景で起動すると `--parallel` が TTY を取りにいって落ちる。
 
-資格情報は `~/.claude/knowledge.env`。**リポジトリには置かない。**
+API と CLI の資格情報は `~/.claude/knowledge.env`、Next.js の Clerk 資格情報は
+`dashboard/.env.local` に置く。どちらも git の対象外で、**追跡されるファイルには置かない。**
 DB の鍵は用途で 3 つに分かれていて（管理・読み取り専用・画面の設定）、どれを使うかが
 「書き込みの境界」の実体になる。ダッシュボードの API はこれに加えて Clerk の 3 つ
 （`CLERK_SECRET_KEY` / `CLERK_PUBLISHABLE_KEY` / `MITOS_ALLOWED_USER_ID`）が無いと起動しない。

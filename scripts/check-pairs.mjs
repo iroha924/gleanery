@@ -42,8 +42,8 @@ const kindSets = {
     /const LABEL[^{]*\{(.*?)^\};/ms,
     "search.ts の LABEL",
   )?.match(/^\s*"([a-z_]+)\//gm),
-  "dashboard/src/routes/search.tsx（画面の絞り込み）": grab(
-    "dashboard/src/routes/search.tsx",
+  "dashboard/src/app/(dashboard)/search/page.tsx（画面の絞り込み）": grab(
+    "dashboard/src/app/(dashboard)/search/page.tsx",
     /const KINDS = \[(.*?)\] as const;/s,
     "画面の KINDS",
   )?.match(/\["[a-z_]+"/g),

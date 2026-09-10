@@ -11,8 +11,10 @@
       "server/test/**",
       "server/evals/**",
       "dashboard/src/**",
+      "dashboard/*.ts",
+      "dashboard/*.mjs",
+      "scripts/**/*.mjs",
       "*.json",
-      "!dashboard/src/routeTree.gen.ts",
       "!dashboard/src/components/ui"
     ]
   },

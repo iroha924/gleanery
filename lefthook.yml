@@ -2,17 +2,18 @@ pre-commit:
   parallel: true
   jobs:
     - name: biome
-      glob: "*.{ts,tsx,json,css}"
+      glob: "*.{ts,tsx,js,mjs,cjs,json,jsonc,css}"
       run: bunx --bun @biomejs/biome@2.5.12 check --write --no-errors-on-unmatched {staged_files}
       stage_fixed: true
     - name: typecheck-server
       root: server/
       glob: "*.ts"
-      run: bunx tsc --noEmit
+      run: bun run typecheck
     - name: typecheck-dashboard
       root: dashboard/
       glob: "*.{ts,tsx}"
-      run: bunx tsc -b
+      # next typegen を先に通し、App Router の PageProps・LayoutProps・Route 型も検査する。
+      run: bun run typecheck
     # dist は配布物。ソースだけ直して bundle を忘れると、
     # Codex 側（依存を自動インストールしない）で古いコードが動き続ける。
     # **版の判定は bundle の後でなければ意味が無い。**parallel なので別ジョブにすると
@@ -32,7 +33,14 @@ pre-commit:
     # 理由は AGENTS.md「片方を直したら対を探す」。README の CLI 一覧は
     # 突き合わせではなく USAGE から書き出すので、書き直した分を staged へ戻す。
     - name: pairs
-      glob: "{server/src/*.ts,dashboard/src/routes/search.tsx,README.md}"
+      glob: "{server/src/*.ts,dashboard/src/app/(dashboard)/search/page.tsx,README.md}"
       # **`git add` はここに書かない。**無条件に走ると、README に残っていた別件の編集まで
       # コミットへ巻き込む。書き換えたときだけ check-pairs.mjs 自身が staged へ戻す。
       run: node scripts/check-pairs.mjs
+
+# pre-commit は速い静的検査に限る。push 前にサーバーのテストと Next.js の本番ビルドまで通し、
+# Hono 側のロジックと App Router のバンドル・prerender の両方をローカルで確かめる。
+pre-push:
+  jobs:
+    - name: verify
+      run: bun run verify

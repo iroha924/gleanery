@@ -7,7 +7,6 @@
 import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import OpenAI from "openai";
 import type pg from "pg";
@@ -35,8 +34,6 @@ function cfg(): pg.Pool {
 }
 
 const app = new Hono();
-// 開発中は Vite が別ポートで動く。書き込む経路もあるので localhost に限って許す。
-app.use("/api/*", cors({ origin: (o) => (/^http:\/\/localhost:\d+$/.test(o) ? o : null) }));
 
 // **3 つ揃わないなら起動しない。**開いたまま待ち受けるほうが、繋がらないより悪い
 // （`KNOWLEDGE_DB_URL_RO` と同じ扱い。db.ts を参照）。
@@ -56,7 +53,7 @@ if (!secretKey || !publishableKey || !allowedUser) {
 // トークンを取った別オリジンのページでも通る。
 // **空文字を渡せる形にしない** — 環境変数を空にしただけで検証が落ちるのは、
 // 設定を間違えたことが出力のどこにも出ない種類の緩みになる。
-const configuredOrigins = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:5173")
+const configuredOrigins = (env.MITOS_ALLOWED_ORIGINS ?? "http://localhost:3000")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);

@@ -1,6 +1,9 @@
+"use client";
+
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRightIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,22 +29,14 @@ const KINDS = [
   // リポジトリの Markdown。既定から外れているので、**選べないと「設計文書だけ」に絞れない**。
   ["doc", "文書・ADR"],
 ] as const;
+const KIND_VALUES = new Set<string>(KINDS.map(([kind]) => kind));
 
-type Search = { q?: string; dont?: boolean; kinds?: string[] };
-
-export const Route = createFileRoute("/search")({
-  // 絞り込みは URL に持つ。共有もブックマークも戻るボタンも、これで全部効く。
-  validateSearch: (s: Record<string, unknown>): Search => ({
-    q: typeof s.q === "string" && s.q ? s.q : undefined,
-    dont: s.dont === true || s.dont === "true" ? true : undefined,
-    kinds: Array.isArray(s.kinds) ? (s.kinds as string[]) : undefined,
-  }),
-  component: SearchPage,
-});
-
-function SearchPage() {
-  const nav = useNavigate({ from: "/search" });
-  const { q, dont, kinds } = Route.useSearch();
+export default function SearchPage() {
+  const searchParams = useSearchParams();
+  const q = searchParams.get("q") || undefined;
+  const dont = searchParams.get("dont") === "true" || undefined;
+  const selectedKinds = searchParams.getAll("kinds").filter((value) => KIND_VALUES.has(value));
+  const kinds = selectedKinds.length > 0 ? selectedKinds : undefined;
   const [draft, setDraft] = useState(q ?? "");
   const { scopeIds } = useProject();
   const activeFilters = (dont ? 1 : 0) + (kinds?.length ?? 0);
@@ -57,6 +52,24 @@ function SearchPage() {
     queryFn: () => api.records(scopeIds),
     enabled: !q,
   });
+  // 絞り込みは URL に持つ。共有もブックマークも戻るボタンも、これで全部効く。
+  const updateSearch = (update: { q?: string; dont?: boolean; kinds?: string[] }) => {
+    const next = new URLSearchParams(window.location.search);
+    if ("q" in update) {
+      if (update.q) next.set("q", update.q);
+      else next.delete("q");
+    }
+    if ("dont" in update) {
+      if (update.dont) next.set("dont", "true");
+      else next.delete("dont");
+    }
+    if ("kinds" in update) {
+      next.delete("kinds");
+      for (const kind of update.kinds ?? []) next.append("kinds", kind);
+    }
+    const query = next.toString();
+    window.history.pushState(null, "", query ? `/search?${query}` : "/search");
+  };
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[72rem] min-w-0 flex-col gap-5 overflow-y-auto pr-1 sm:overflow-hidden sm:pr-0">
@@ -70,7 +83,7 @@ function SearchPage() {
           className="flex gap-2 rounded-lg border bg-card p-2"
           onSubmit={(e) => {
             e.preventDefault();
-            nav({ search: (p) => ({ ...p, q: draft.trim() || undefined }) });
+            updateSearch({ q: draft.trim() || undefined });
           }}
         >
           <Input
@@ -102,7 +115,7 @@ function SearchPage() {
             <ToggleGroup
               type="single"
               value={dont ? "dont" : ""}
-              onValueChange={(v) => nav({ search: (p) => ({ ...p, dont: v === "dont" ? true : undefined }) })}
+              onValueChange={(v) => updateSearch({ dont: v === "dont" || undefined })}
               variant="outline"
             >
               <ToggleGroupItem value="dont" className="data-[state=on]:bg-dont data-[state=on]:text-white">
@@ -112,9 +125,7 @@ function SearchPage() {
             <ToggleGroup
               type="multiple"
               value={kinds ?? []}
-              onValueChange={(v: string[]) =>
-                nav({ search: (p) => ({ ...p, kinds: v.length ? v : undefined }) })
-              }
+              onValueChange={(v: string[]) => updateSearch({ kinds: v.length ? v : undefined })}
               variant="outline"
               className="flex-wrap justify-start"
             >
@@ -168,8 +179,7 @@ function SearchPage() {
                 {recent.data.slice(0, 12).map((record) => (
                   <li key={record.id}>
                     <Link
-                      to="/records/$id"
-                      params={{ id: record.id }}
+                      href={`/records/${encodeURIComponent(record.id)}`}
                       className="group block p-4 transition-colors hover:bg-muted/35 md:px-5"
                     >
                       <div className="flex items-start gap-4">
@@ -254,8 +264,7 @@ function SearchPage() {
                     )}
                     <div>
                       <Link
-                        to="/records/$id"
-                        params={{ id: h.record_id }}
+                        href={`/records/${encodeURIComponent(h.record_id)}`}
                         className="inline-flex items-center gap-1.5 text-sm font-medium text-link underline-offset-4 hover:underline"
                       >
                         {h.record_title}

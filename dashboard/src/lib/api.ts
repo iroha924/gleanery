@@ -1,15 +1,14 @@
+import { getToken } from "@clerk/nextjs";
+
 // API の型。**サーバーの戻り値をここで 1 回だけ書く。**
 // 画面ごとに書くと、片方だけ直したときに気付けない。
-
-import { getToken } from "@clerk/react";
 
 /**
  * Clerk のセッション JWT を載せる。**すべての要求に付ける** — API は 1 経路も免除していない。
  *
  * **Cookie に頼らない。**Authorization しか見ない API にしておくと、各 DELETE と
  * OpenAI を叩く POST が他所のページから叩けない。
- * `getToken` は React の外から呼んでよい（@clerk/shared が「API interceptor や
- * データ取得層から安全に呼べる」と型定義に明記している）。
+ * Clerk のブラウザ用 `getToken()` は、初期化前に呼んでも準備が終わるまで待つ。
  */
 async function authed(extra?: Record<string, string>): Promise<Record<string, string>> {
   const token = await getToken();
@@ -311,8 +310,8 @@ export const api = {
     send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, paths }),
   deleteGroup: (id: number) => send<{ ok: true }>(`/api/groups/${id}`, "DELETE"),
   chats: () => get<ChatRow[]>("/api/chats"),
-  chat: (id: string) => get<ChatDetail>(`/api/chats/${id}`),
-  deleteChat: (id: string) => send<{ ok: true }>(`/api/chats/${id}`, "DELETE"),
+  chat: (id: string) => get<ChatDetail>(`/api/chats/${encodeURIComponent(id)}`),
+  deleteChat: (id: string) => send<{ ok: true }>(`/api/chats/${encodeURIComponent(id)}`, "DELETE"),
   terms: (scopes?: number[]) => get<Term[]>(`/api/terms${q(scopes)}`),
   saveTerm: (t: { word: string; meaning: string; aliases: string[]; groupId?: number }) =>
     send<{ ok: true }>("/api/terms", "POST", t),

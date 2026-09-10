@@ -1,6 +1,8 @@
+"use client";
+
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
 import { BotIcon, ChevronRightIcon, GitBranchIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
+import { use } from "react";
 import { MarkdownInline, MarkdownText } from "@/components/answer";
 import { Phases } from "@/components/phases";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -88,8 +90,6 @@ function Refs({ refs }: { refs: Ref[] }) {
     </section>
   );
 }
-
-export const Route = createFileRoute("/records/$id")({ component: RecordPage });
 
 // 流れの中に置くもの。制約とやらないことは流れの外（上）に固定する。
 const FLOW = [
@@ -251,8 +251,9 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
   );
 }
 
-function RecordPage() {
-  const { id } = Route.useParams();
+export default function RecordPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: encodedId } = use(params);
+  const id = decodeURIComponent(encodedId);
   const { data, isPending, error } = useQuery({ queryKey: ["record", id], queryFn: () => api.record(id) });
   if (isPending) return <Skeleton className="h-96 w-full" />;
   if (error) return <p className="text-sm text-dont">{String(error)}</p>;

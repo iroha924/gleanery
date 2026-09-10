@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 
 // いま何を見ているか。**1 箇所で決めて全画面が従う。**
@@ -23,15 +23,21 @@ type Ctx = {
 const ProjectContext = createContext<Ctx | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
-  const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
-  const [target, setTarget] = useState<string>(() => localStorage.getItem(KEY) ?? "");
+  const [target, setTargetState] = useState<string | null>(null);
+  const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups, enabled: target !== null });
+  const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes, enabled: target !== null });
 
   useEffect(() => {
-    localStorage.setItem(KEY, target);
-  }, [target]);
+    setTargetState(localStorage.getItem(KEY) ?? "");
+  }, []);
 
-  const value = useMemo<Ctx>(() => {
+  const setTarget = useCallback((next: string) => {
+    localStorage.setItem(KEY, next);
+    setTargetState(next);
+  }, []);
+
+  const value = useMemo<Ctx | null>(() => {
+    if (target === null) return null;
     if (target.startsWith("g:")) {
       const g = groups.data?.find((x) => `g:${x.id}` === target);
       return {
@@ -48,8 +54,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       return { target, setTarget, scopeIds: [Number(target)], label: s?.label ?? "…" };
     }
     return { target, setTarget, scopeIds: undefined, label: "すべて" };
-  }, [target, groups.data, scopes.data]);
+  }, [target, setTarget, groups.data, scopes.data]);
 
+  // 保存済みの範囲を読む前に子を出すと、一瞬だけ「すべて」で検索が走る。
+  if (value === null) return null;
   return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
 }
 

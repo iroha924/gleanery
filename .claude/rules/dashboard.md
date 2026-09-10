@@ -39,8 +39,18 @@ Clerk 自体は Cookie 経路も持っているので、そこに寄りかから
 表を足すときの扱いは `.claude/rules/knowledge-schema.md`「移行を書くとき」にある。
 **そちらは `db/migrations/**` で載るので、migration を書く回はここを読まなくてよい。**
 
-## Next.js へ移さない
+## Next.js と Hono の境界を保つ
 
-`server/src` には入口が 4 つあり（`server.ts` / `mcp.ts` / `cli.ts` / `hook-check-path.ts`）、
-ダッシュボードはそのうち 1 つでしかない（`d-stay-on-vite-react`）。
-画面の都合で枠組みを替えると、残り 3 つが巻き込まれる。
+共有する境界と過去の Vite 継続判断を上書きした記録は、Codex からも読める `AGENTS.md`
+「ダッシュボードは Vercel でも動く」を正本とする。
+
+`dashboard/AGENTS.md` は Next.js 自身が生成する現行版の注意書きである。画面を触る前に、対象の
+API を `dashboard/node_modules/next/dist/docs/` で確認する。Page / Layout を初めから Client Component
+にせず、状態・イベント・ブラウザ API・Clerk token が必要な最小の境界にだけ `"use client"` を置く。
+
+認証は資源の近くで重ねる。`proxy.ts` は Clerk の情報を Server Component へ渡すために必要だが、
+そこだけを認可の境界にしない。画面は `(dashboard)/layout.tsx`、データは Hono の全 `/api/*`
+middleware が守る。静的ファイルと `/api/*` は Proxy の matcher から外す。
+
+内部リンクは `next/link` を使う。検索条件など同じ Client Component の状態だけを URL に残す場合は、
+RSC の再取得を増やさない native History API を使う。API 呼び出しは引き続き `src/lib/api.ts` に閉じる。
