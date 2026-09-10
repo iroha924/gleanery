@@ -42,8 +42,13 @@ preview と production へ別々に入れる。**値をコマンドの引数に�
 プロセス一覧に残る。ファイルから流し込む。
 
 ```bash
-vercel env add <名前> production --sensitive --force < <値だけを書いた一時ファイル>
+vercel env add <秘密の名前> production --sensitive --force < <値だけを書いた一時ファイル>
+vercel env add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY production --type config --force \
+  < <値だけを書いた一時ファイル>
 ```
+
+`NEXT_PUBLIC_` はブラウザへ公開されるため、Vercel は Secret 型を受け付けない。Clerk の公開鍵だけを
+Config 型にし、残りは Secret 型にする。
 
 入れるのは次の 9 つ。**`KNOWLEDGE_DB_URL`（管理鍵）は入れない** — 推論する層に
 全部書ける鍵を持たせない境界がここで決まる（入れ忘れても `db.ts` が管理鍵へ落ちるのを弾く）。
