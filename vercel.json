@@ -4,12 +4,7 @@
   "services": {
     "dashboard": {
       "root": "dashboard/",
-      "rewrites": [
-        {
-          "source": "/(.*)",
-          "destination": "/index.html"
-        }
-      ]
+      "framework": "nextjs"
     },
     "api": {
       "root": "server/",

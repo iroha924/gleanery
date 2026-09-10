@@ -28,7 +28,7 @@ clerk deploy status      # Clerk の本番構築の進捗（dns / ssl / mail / o
 **`buildCommand` は型検査を飛ばすために置いてある。**`@vercel/backends` が TypeScript 7 で
 落ちる（`doTypeCheck` が `readFile` を読めない）。`buildCommand` があるだけで
 `Typecheck skipped (Build Command is configured)` になる。tsc は pre-commit と
-`bun run check` が通しているので失うものは無い。
+`bun run check`、本番ビルドは pre-push と CI の `bun run verify` が通しているので失うものは無い。
 
 **手元で `vercel build` を試すときは `server/node_modules/typescript` を退ける。**
 退けないと上と同じ所で落ちる。ビルドマシンは fresh clone なので影響しない。
@@ -42,8 +42,13 @@ preview と production へ別々に入れる。**値をコマンドの引数に�
 プロセス一覧に残る。ファイルから流し込む。
 
 ```bash
-vercel env add <名前> production --sensitive --force < <値だけを書いた一時ファイル>
+vercel env add <秘密の名前> production --sensitive --force < <値だけを書いた一時ファイル>
+vercel env add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY production --type config --force \
+  < <値だけを書いた一時ファイル>
 ```
+
+`NEXT_PUBLIC_` はブラウザへ公開されるため、Vercel は Secret 型を受け付けない。Clerk の公開鍵だけを
+Config 型にし、残りは Secret 型にする。
 
 入れるのは次の 9 つ。**`KNOWLEDGE_DB_URL`（管理鍵）は入れない** — 推論する層に
 全部書ける鍵を持たせない境界がここで決まる（入れ忘れても `db.ts` が管理鍵へ落ちるのを弾く）。
@@ -51,7 +56,7 @@ vercel env add <名前> production --sensitive --force < <値だけを書いた�
 ```
 KNOWLEDGE_DB_URL_RO  KNOWLEDGE_DB_URL_CFG  VOYAGE_API_KEY  OPENAI_API_KEY
 CLERK_SECRET_KEY  CLERK_PUBLISHABLE_KEY  MITOS_ALLOWED_USER_ID  MITOS_ALLOWED_ORIGINS
-VITE_CLERK_PUBLISHABLE_KEY   ← 画面のビルド用。これだけ VITE_ が要る
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY   ← 画面のビルド用。これだけ NEXT_PUBLIC_ が要る
 ```
 
 ## Clerk の本番は別インスタンス
@@ -86,8 +91,8 @@ dig @nse1.squarespacedns.com +short clerk.mitos.iroh4.com CNAME
 ## 出したあとに確かめる
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com        # 200
-curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com/now    # 200（deep link）
+curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com        # 200（HTML 内の Next redirect でサインインへ）
+curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com/now    # 200（deep link も同じ）
 curl -s https://mitos.iroh4.com/api/now                                  # {"error":"未認証"}
 ```
 

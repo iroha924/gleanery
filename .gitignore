@@ -1,8 +1,9 @@
 node_modules/
 .env
 *.log
-dashboard/dist/
-dashboard/.tanstack/
+dashboard/.next/
+dashboard/next-env.d.ts
+*.tsbuildinfo
 codex-prompt-*.md
 server/migrate-*.ts
 .review-tmp/

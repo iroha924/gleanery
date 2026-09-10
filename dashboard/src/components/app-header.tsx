@@ -1,7 +1,10 @@
-import { UserButton } from "@clerk/react";
+"use client";
+
+import { UserButton } from "@clerk/nextjs";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { HistoryIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type * as React from "react";
 import { useState } from "react";
 import { ConfirmDelete } from "@/components/confirm-delete";
@@ -23,12 +26,10 @@ const navClass =
 
 export function AppHeader() {
   const qc = useQueryClient();
-  const navigate = useNavigate();
+  const router = useRouter();
   const chats = useQuery({ queryKey: ["chats"], queryFn: api.chats });
-  const openChat = useRouterState({
-    select: (s) => (s.location.search as { chat?: string }).chat,
-  });
-  const path = useRouterState({ select: (s) => s.location.pathname });
+  const openChat = useSearchParams().get("chat") || undefined;
+  const path = usePathname();
   const [showAll, setShowAll] = useState(false);
   const [historyOpen, setHistoryOpen] = useState("");
   const openTitle = openChat ? chats.data?.find((chat) => chat.id === openChat)?.title : null;
@@ -37,8 +38,7 @@ export function AppHeader() {
     <header className="relative z-30 shrink-0 p-3 md:px-5">
       <div className="flex min-h-14 w-full flex-wrap items-center gap-2 rounded-[2rem] p-1.5">
         <Link
-          to="/"
-          search={{}}
+          href="/"
           className="flex h-11 shrink-0 items-center gap-2.5 rounded-full px-4 text-lg font-semibold tracking-[-0.025em]"
         >
           <svg viewBox="0 0 16 16" className="size-5" fill="none" aria-hidden="true">
@@ -57,20 +57,20 @@ export function AppHeader() {
 
         <nav className="order-last w-full overflow-x-auto md:order-none md:mx-auto md:w-auto md:overflow-visible">
           <div className="flex w-max items-center gap-0.5 rounded-full bg-white/60 p-1 text-[var(--brand-black)] backdrop-blur-xl">
-            <Link to="/now" className={navClass} data-active={path === "/now" || undefined}>
+            <Link href="/now" className={navClass} data-active={path === "/now" || undefined}>
               現在地
             </Link>
-            <Link to="/" search={{}} className={navClass} data-active={path === "/" || undefined}>
+            <Link href="/" className={navClass} data-active={path === "/" || undefined}>
               チャット
             </Link>
             <Link
-              to="/search"
+              href="/search"
               className={navClass}
               data-active={path === "/search" || path.startsWith("/records") || undefined}
             >
               ナレッジ検索
             </Link>
-            <Link to="/mtg" className={navClass} data-active={path === "/mtg" || undefined}>
+            <Link href="/mtg" className={navClass} data-active={path === "/mtg" || undefined}>
               MTG録音
             </Link>
           </div>
@@ -95,8 +95,7 @@ export function AppHeader() {
                         <div key={chat.id} className="group/history relative">
                           <NavigationMenuLink asChild active={path === "/" && openChat === chat.id}>
                             <Link
-                              to="/"
-                              search={{ chat: chat.id }}
+                              href={`/?chat=${encodeURIComponent(chat.id)}`}
                               onClick={() => setHistoryOpen("")}
                               className="block min-w-0 pr-9"
                             >
@@ -115,7 +114,7 @@ export function AppHeader() {
                             onConfirm={() => {
                               api.deleteChat(chat.id).then(() => {
                                 qc.invalidateQueries({ queryKey: ["chats"] });
-                                if (openChat === chat.id) navigate({ to: "/", search: {} });
+                                if (openChat === chat.id) router.push("/");
                               });
                             }}
                           >
@@ -146,7 +145,7 @@ export function AppHeader() {
           )}
 
           <Link
-            to="/settings"
+            href="/settings"
             aria-label="設定"
             className={`flex size-10 shrink-0 items-center justify-center rounded-full backdrop-blur-xl transition ${
               path.startsWith("/settings")

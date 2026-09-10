@@ -94,9 +94,7 @@ AI が読むのは MCP である。
 ## ダッシュボード
 
 ```bash
-# **bun run dev は背景で起動すると落ちる**（--parallel が TTY を取りにいく）。別々に立てる。
-cd server && node src/server.ts        # API（:8787）
-cd dashboard && ./node_modules/.bin/vite   # 画面（:5173）
+bun run dev        # Hono API（:8787）+ Next.js（:3000）。**前面でだけ使う**
 ```
 
 **先に Project を選ぶ。**選ぶと、質問する・探す・
@@ -107,7 +105,7 @@ cd dashboard && ./node_modules/.bin/vite   # 画面（:5173）
 | **質問する** | `/` | チャット。履歴は残り、リンクは新規タブで開く |
 | **作業の現在地** | `/now` | 未完の工程と次にやること、触ってはいけないもの |
 | **記録を探す** | `/search` | 意味検索の生の結果。**種別で絞れる**（発言を出すのもここ） |
-| **記録** | `/records/$id` | 1 件の中身。決定 / 分かったこと / 確かめたこと / 未解決の問いをタブで、参照を末尾に |
+| **記録** | `/records/:id` | 1 件の中身。決定 / 分かったこと / 確かめたこと / 未解決の問いをタブで、参照を末尾に |
 | **会議を聞き取る** | `/mtg` | 2 系統の音声を Realtime へ流して文字起こし |
 | **設定** | `/settings` | プロジェクト（作業場所の束ね方と issue の出どころ）と、社内語の辞書 |
 
@@ -191,7 +189,7 @@ mitos usage                                    OpenAI の使用量と残り
 
 ```
 server/      取り込み・検索・チャット・MCP・フック（依存は最小、テストは node:test）
-dashboard/   React + Vite + TanStack Router + shadcn
+dashboard/   Next.js App Router + React + shadcn
 plugin/      Claude Code / Codex へ配るもの（skills, hooks, bin, dist）
 db/          migrations（PostgreSQL の移行）
 ```
@@ -225,19 +223,19 @@ db/          migrations（PostgreSQL の移行）
 | `CLERK_PUBLISHABLE_KEY` | 同じく公開鍵。API 側でも検証に使う |
 | `MITOS_ALLOWED_USER_ID` | **通す人を 1 人だけ指定する。**`clerk users list --json` の `id` |
 
-**デプロイ先へは 1 変数ずつ入れる。**渡すのは `KNOWLEDGE_DB_URL_RO` / `KNOWLEDGE_DB_URL_CFG` /
-`VOYAGE_API_KEY` / `OPENAI_API_KEY` / Clerk の 3 つ / `MITOS_ALLOWED_ORIGINS` と、画面のビルド用に
-`VITE_CLERK_PUBLISHABLE_KEY`。**`KNOWLEDGE_DB_URL`（管理鍵）は渡さない** — 入れ忘れても
-管理鍵へ落ちないように `db.ts` が弾くので、落ちるのではなく起動しない。
-preview と本番で鍵を分けたいときは、環境ごとにスコープを分けて入れる。
+デプロイ先へ入れる変数の正確な一覧と手順は `.claude/skills/deploy/SKILL.md` にだけ置く。
+**`KNOWLEDGE_DB_URL`（管理鍵）は渡さない。**入れ忘れても管理鍵へ落ちないように `db.ts` が弾くので、
+落ちるのではなく起動しない。preview と本番で鍵を分けたいときは、環境ごとにスコープを分けて入れる。
 
-`MITOS_ALLOWED_ORIGINS` は画面を配るオリジン（カンマ区切り、既定 `http://localhost:5173`）。
+`MITOS_ALLOWED_ORIGINS` は画面を配るオリジン（カンマ区切り、既定 `http://localhost:3000`）。
 トークンの発行元を検証させるためのもので、**空にすると検証ごと落ちる**ので空では起動しない。
 手元以外へ出すときは、そのオリジンを入れる。
 
-画面側の `VITE_CLERK_PUBLISHABLE_KEY` だけは `dashboard/.env.local`（`clerk env pull` が書く）。
-Vite は `VITE_` の付いた変数しかブラウザへ出さないので、シークレット鍵はここに置いても
-バンドルへは入らないが、**API が読むのは `~/.claude/knowledge.env` のほう**である。
+Next.js 側は `dashboard/.env.local` の `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` と
+`CLERK_SECRET_KEY` を使う（`clerk env pull` が書く）。Next.js は `NEXT_PUBLIC_` の付いた変数だけを
+ブラウザへ出し、シークレット鍵は Proxy と Server Component からのみ参照する。
+Hono API は `~/.claude/knowledge.env` に置いた `CLERK_SECRET_KEY` を読む。ローカルでは Clerk の
+同じシークレット鍵を両方の実行環境へ設定する。
 
 ### DB を置いている先
 
@@ -259,7 +257,7 @@ PostgreSQL の版上げも自分では触らない。**代わりに見るのは�
 ## セットアップ
 
 ```bash
-bun install
+bun run setup                         # server / dashboard の依存を各 lockfile から入れる
 # db/migrations を対象プロジェクトへ適用（下の注意を先に読む）
 bun run bundle                       # plugin/dist を作る（MCP・フック・CLI）
 mitos doctor                         # 資格情報と接続、DB の大きさを確かめる
@@ -298,8 +296,11 @@ git remote で引くため、パスに依存しない）。設定が要るのは
 
 # 2. リポジトリを置いて、プラグインを入れる
 git clone https://github.com/iroha924/mitos.git ~/Projects/mitos
-cd ~/Projects/mitos && bun install && bun run bundle
+cd ~/Projects/mitos && bun run setup && bun run bundle
 claude plugin marketplace add ~/Projects/mitos && claude plugin install mitos@mitos
+
+# 3. ダッシュボードを使うなら、Next.js 側の Clerk 資格情報を置く
+cd ~/Projects/mitos/dashboard && clerk env pull
 
 # 4. このマシンでの置き場所を登録する。**これを忘れると 1 件も取り込まれない**
 mitos adopt
@@ -323,9 +324,11 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
 ## 開発
 
 ```bash
+bun run setup      # server / dashboard の依存を固定 lockfile から入れる（Lefthook も導入する）
 bun run dev        # API + ダッシュボード（**前面でだけ使う。**背景では TTY を取りにいって落ちる）
 bun run check      # biome + tsc（server / dashboard）
 bun run test       # node:test
+bun run verify     # check + test + Next.js の本番ビルド（pre-push / CI と同じ）
 bun run eval       # 答えの正しさを測る
 bun run bundle     # plugin/dist を作り直す
 ```

@@ -1,6 +1,8 @@
+"use client";
+
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
 import { BotIcon, GitBranchIcon, OrbitIcon, ShieldAlertIcon, SquareIcon, UserIcon } from "lucide-react";
+import Link from "next/link";
 import { MarkdownText } from "@/components/answer";
 import { Phases } from "@/components/phases";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -13,8 +15,6 @@ import type { NextItem, Now } from "@/lib/api";
 import { api } from "@/lib/api";
 import { useProject } from "@/lib/project";
 import { RECORD_STATUS } from "@/lib/record";
-
-export const Route = createFileRoute("/now")({ component: Home });
 
 /** 終わったことになっている値。**この画面に出たら、記録の側が古い。** */
 const DONEISH = new Set(["done", "abandoned"]);
@@ -90,8 +90,7 @@ function WorkCard({ w }: { w: Now }) {
           <span className="ml-auto tabular-nums">{w.updated_at.slice(0, 10)} 更新</span>
         </div>
         <Link
-          to="/records/$id"
-          params={{ id: w.id }}
+          href={`/records/${encodeURIComponent(w.id)}`}
           className="w-fit max-w-[44rem] text-xl leading-snug font-medium tracking-[-0.025em] underline-offset-4 hover:text-link hover:underline md:text-2xl"
         >
           {w.title}
@@ -175,7 +174,7 @@ function WorkCard({ w }: { w: Now }) {
   );
 }
 
-function Home() {
+export default function NowPage() {
   const { scopeIds } = useProject();
   const { data, isPending, error } = useQuery({
     queryKey: ["now", scopeIds],

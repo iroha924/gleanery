@@ -1,20 +1,14 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+"use client";
+
+import { useSearchParams } from "next/navigation";
 import { ProjectsPanel } from "@/components/settings/projects";
 import { TermsPanel } from "@/components/settings/terms";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type Search = { tab?: "projects" | "terms" };
-
-export const Route = createFileRoute("/settings")({
-  component: Settings,
-  // **どのタブを見ていたかを URL に持たせる。**再読み込みで先頭へ戻ると、
-  // 辞書を直している途中に毎回プロジェクトへ飛ばされる。
-  validateSearch: (s: Record<string, unknown>): Search => (s.tab === "terms" ? { tab: "terms" } : {}),
-});
-
-function Settings() {
-  const { tab } = Route.useSearch();
-  const nav = useNavigate({ from: Route.fullPath });
+export default function SettingsPage() {
+  const searchParams = useSearchParams();
+  // どのタブを見ていたかを URL に持たせる。再読み込みでも編集中の場所を保つ。
+  const tab = searchParams.get("tab") === "terms" ? "terms" : "projects";
 
   return (
     <div className="mx-auto w-full max-w-[76rem] space-y-5">
@@ -23,8 +17,10 @@ function Settings() {
         <p className="mt-1 text-sm text-muted-foreground">記録をまとめる単位と、固有の言葉を管理します。</p>
       </header>
       <Tabs
-        value={tab ?? "projects"}
-        onValueChange={(v) => nav({ search: v === "terms" ? { tab: "terms" } : {} })}
+        value={tab}
+        onValueChange={(v) =>
+          window.history.pushState(null, "", v === "terms" ? "/settings?tab=terms" : "/settings")
+        }
       >
         <TabsList variant="line" className="mb-6">
           <TabsTrigger value="projects">プロジェクト</TabsTrigger>

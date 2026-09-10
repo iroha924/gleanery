@@ -1,6 +1,9 @@
+"use client";
+
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowUpIcon, CheckIcon, CopyIcon, MicIcon, SquareIcon } from "lucide-react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Answer } from "@/components/answer";
@@ -57,16 +60,6 @@ function Marked({ text, marks }: { text: string; marks: string[] }) {
     ),
   );
 }
-
-type Search = { chat?: string };
-
-export const Route = createFileRoute("/")({
-  component: Chat,
-  // **開いている会話は URL に持つ。**サイドバーから開けるようにするには状態を共有する必要があり、
-  // Context を足すより URL のほうが素直（再読み込みと戻るがそのまま効く）。
-  validateSearch: (s: Record<string, unknown>): Search =>
-    typeof s.chat === "string" && s.chat ? { chat: s.chat } : {},
-});
 
 type Turn = {
   /** 本文は流れながら伸びるので、内容はキーにできない。追加時に固定の id を振る。 */
@@ -130,9 +123,7 @@ function Source({ s }: { s: ChatSource }) {
         </p>
         <DialogFooter className="-mx-6 -mb-6 p-5 sm:justify-start">
           <Button asChild variant="outline" size="sm">
-            <Link to="/records/$id" params={{ id: s.recordId }}>
-              記録を開く
-            </Link>
+            <Link href={`/records/${encodeURIComponent(s.recordId)}`}>記録を開く</Link>
           </Button>
           {s.url && (
             <Button asChild variant="ghost" size="sm">
@@ -205,7 +196,7 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
   );
 }
 
-function Chat() {
+export default function ChatPage() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -228,9 +219,16 @@ function Chat() {
   const [options, setOptions] = useState<PolishOption[]>([]);
   const [polishing, setPolishing] = useState(false);
   // 開いている会話。**新しい会話は最初の答えが返ってからサーバー側で作られる。**
-  const { chat: chatId } = Route.useSearch();
-  const nav = useNavigate({ from: Route.fullPath });
-  const setChatId = (id: string | undefined) => nav({ search: id ? { chat: id } : {} });
+  const searchParams = useSearchParams();
+  const chatId = searchParams.get("chat") || undefined;
+  const loaded = useRef<string | undefined>(undefined);
+  const activeChatId = useRef(chatId);
+  // **開いている会話は URL に持つ。**サイドバーから開けるようにするには状態を共有する必要があり、
+  // Context を足すより URL のほうが素直（再読み込みと戻るがそのまま効く）。
+  const setChatId = (id: string | undefined) => {
+    activeChatId.current = id;
+    window.history.pushState(null, "", id ? `/?chat=${encodeURIComponent(id)}` : "/");
+  };
   const qc = useQueryClient();
 
   const stop = () => {
@@ -320,8 +318,9 @@ function Chat() {
   });
 
   // **URL の会話を読み込む。**サイドバーから開いたときも、再読み込みしたときも同じ経路を通る。
-  const loaded = useRef<string | undefined>(undefined);
   useEffect(() => {
+    if (abort.current && activeChatId.current !== chatId) abort.current.abort();
+    activeChatId.current = chatId;
     if (!chatId) {
       if (loaded.current) {
         loaded.current = undefined;
@@ -346,6 +345,8 @@ function Chat() {
       .catch(() => toast.error("会話を開けなかった"));
   }, [chatId]);
 
+  useEffect(() => () => abort.current?.abort(), []);
+
   const ask = async (question: string) => {
     setOptions([]);
     if (!question.trim() || busy || scopeIds.length === 0) return;
@@ -361,13 +362,14 @@ function Chat() {
     ]);
 
     const controller = new AbortController();
+    const requestChatId = activeChatId.current;
     abort.current = controller;
     const patch = (fn: (t: Turn) => Turn) =>
       setTurns((prev) => prev.map((t, i) => (i === prev.length - 1 ? fn(t) : t)));
 
     try {
       await askStream(
-        { question, history: past, scopeIds, chatId, scopeName: projectLabel },
+        { question, history: past, scopeIds, chatId: activeChatId.current, scopeName: projectLabel },
         {
           sources: (s) => patch((t) => ({ ...t, sources: s })),
           text: (x) => patch((t) => ({ ...t, content: t.content + x })),
@@ -379,7 +381,10 @@ function Chat() {
               pendingQuestion.current = null;
               setBusy(false);
             }
-            setChatId(id);
+            if (window.location.pathname === "/" && activeChatId.current === requestChatId) {
+              loaded.current = id;
+              if (id !== requestChatId) setChatId(id);
+            }
             qc.invalidateQueries({ queryKey: ["chats"] });
           },
         },

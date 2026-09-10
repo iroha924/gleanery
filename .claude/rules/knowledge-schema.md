@@ -26,7 +26,7 @@ paths:
 - [ ] `server/src/search.ts` の `LABEL` に札を足す。**無札のまま再ランクへ渡すと意味を見分けられない**
       （実測: 札を足して recall@5 が 95% → 100%）
 - [ ] `server/src/mcp.ts` の `kinds` enum と、その `describe` に足す
-- [ ] `dashboard/src/routes/search.tsx` の `KINDS` に足す。**出ているのに絞れない**状態になる
+- [ ] `dashboard/src/app/(dashboard)/search/page.tsx` の `KINDS` に足す。**出ているのに絞れない**状態になる
 - [ ] 既定の検索から外すなら `search()` の `clauses()` に条件を足し、**理由をコメントに残す**
 
 **量の多い種別は既定から外す。**`utterance` の bot 定型文・`event/pr`・`doc` がそれで、

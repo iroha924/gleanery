@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+"use client";
+
 import { MicIcon, SquareIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -8,8 +9,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { api, type Reply } from "@/lib/api";
 import { type Heard, listen } from "@/lib/listen";
 import { useProject } from "@/lib/project";
-
-export const Route = createFileRoute("/mtg")({ component: Mtg });
 
 /** `systemAudio` はまだ TS の DOM 型に無い。Chrome 141 以降・macOS 14.2 以降で効く。 */
 type ShareOptions = DisplayMediaStreamOptions & { systemAudio?: "include" | "exclude" };
@@ -30,7 +29,7 @@ const clock = (s: number) =>
  * 返信案は記録にあることだけで作る。**無いときは「無い」と出す** — その場しのぎの案は、
  * 会議のあとで訂正する羽目になるので価値が負になる。
  */
-function Mtg() {
+export default function MeetingPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [on, setOn] = useState(false);
   const [reply, setReply] = useState<Reply | null>(null);
