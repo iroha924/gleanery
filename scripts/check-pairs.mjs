@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // 同じ知識が複数の出口に写されている場所を突き合わせる。
 //
-// **理由は AGENTS.md「片方を直したら対を探す」。**1 日で 6 回踏んだ形で、
+// 対を探す理由と過去の事例は docs/ai-development.md が正本。
 // 片方の出口だけ直しても、もう片方が動いてしまうので気付けない。
 //
 // **扱えるのは集合として列挙できる対だけ。**説明文が一致しているかは表現の揺れで
@@ -30,7 +30,7 @@ const grab = (file, re, what) => {
 //
 // 正本は DB の check 制約だが、広げる移行が複数ファイルに散るので、出口どうしを突き合わせる。
 // **片方に足してもう片方を忘れた**を捕まえられれば足りる。
-// 漏れると何が起きるかは .claude/rules/knowledge-schema.md「種別を足したら、出口にも足す」。
+// 漏れると何が起きるかは .agents/skills/knowledge-schema/SKILL.md「nodeと検索の出口」。
 const kindSets = {
   "server/src/mcp.ts（MCP の kinds）": grab(
     "server/src/mcp.ts",
@@ -65,7 +65,7 @@ for (const [where, set] of Object.entries(kinds)) {
   if (missing.length) {
     fail.push(
       `kind の ${missing.join(" / ")} が ${where} に無い。` +
-        "足し方は .claude/rules/knowledge-schema.md「種別を足したら、出口にも足す」",
+        "足し方は .agents/skills/knowledge-schema/SKILL.md「nodeと検索の出口」",
     );
   }
 }

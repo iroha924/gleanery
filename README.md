@@ -89,7 +89,7 @@ AI が読むのは MCP である。
 - **会話も既定で引ける。**外しているのは bot の定型文だけ（使用量の通知と
   "Didn't find any major issues."）。PR のレビューの具体的な指摘は出る
 - **MCP を直したら、版を上げてプラグインを更新する。**セッションを張り直すだけでは届かない
-  （`AGENTS.md`「MCP を直したら、版を上げないと誰にも届かない」）
+  （手順は`.agents/skills/plugin-release/SKILL.md`）
 
 ## ダッシュボード
 
@@ -259,7 +259,7 @@ dashboardが宣言していないHono依存で検査に失敗した。採用に�
 | `CLERK_PUBLISHABLE_KEY` | 同じく公開鍵。API 側でも検証に使う |
 | `MITOS_ALLOWED_USER_ID` | **通す人を 1 人だけ指定する。**`clerk users list --json` の `id` |
 
-デプロイ先へ入れる変数の正確な一覧と手順は `.claude/skills/deploy/SKILL.md` にだけ置く。
+デプロイ先へ入れる変数の正確な一覧と手順は `.agents/skills/deploy/SKILL.md` にだけ置く。
 **`KNOWLEDGE_DB_URL`（管理鍵）は渡さない。**入れ忘れても管理鍵へ落ちないように `db.ts` が弾くので、
 落ちるのではなく起動しない。preview と本番で鍵を分けたいときは、環境ごとにスコープを分けて入れる。
 
@@ -366,16 +366,27 @@ bun run check      # biome + tsc（server / dashboard）
 bun run architecture # ダッシュボードのroute-local境界
 bun run test       # node:test
 bun run verify     # check + test + Next.js の本番ビルド（pre-push / CI と同じ）
+bun run verify:ai  # AGENTS、repository開発Skill、plugin Agentの設定
 bun run eval       # 答えの正しさを測る
 bun run bundle     # plugin/dist を作り直す
 ```
 
 **`bun run bundle` を忘れると、plugin 側（MCP・フック・CLI）は古いままになる。**
 
+### AI開発環境
+
+全作業で必要な不変条件だけを`AGENTS.md`へ置き、Claude Codeは`CLAUDE.md`から同じfileを読む。作業別の
+手順は`.agents/skills/`が正本で、`.claude/skills/`は同じSkillへのsymlinkである。ここはmitos自身の
+開発用であり、利用者へ配る`plugin/skills/`とは別に保つ。Skill・Agent・ruleの一般的な作成方法は、
+Claude Codeでは既存の`docs-author`、Codexでは組み込みの`skill-creator`を使う。
+
+配置理由、常時contextから移した履歴、Agentを増やさなかった理由、smoke testの観点は
+[`docs/ai-development.md`](docs/ai-development.md)に残している。
+
 ### MCP の変更を届ける
 
-`bun run bundle` だけでは Claude Code に届かない。**版を上げて `claude plugin update mitos` が要る。**
-手順と、そう分かった実測は `AGENTS.md`「MCP を直したら、版を上げないと誰にも届かない」にある。
+`bun run bundle` だけでは Claude CodeやCodexに届かない。版更新、install済みpluginのrefresh、
+新しいsessionでの確認までが必要になる。手順は`.agents/skills/plugin-release/SKILL.md`に置く。
 
 ## 精度をどう測っているか
 
