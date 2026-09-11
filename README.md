@@ -194,6 +194,28 @@ plugin/      Claude Code / Codex へ配るもの（skills, hooks, bin, dist）
 db/          migrations（PostgreSQL の移行）
 ```
 
+### ダッシュボードの置き方
+
+Next.js App Router の route-local private folder を使う。FSD の全レイヤーは持ち込まず、route entry と
+その画面だけの実装を近くに置く。チャット画面は次の形が基準になる。
+
+```text
+dashboard/src/app/(dashboard)/
+├── page.tsx                 URL と画面を結ぶ Server Component
+└── _chat/                   Next.js が route として公開しない画面実装
+    ├── ui/chat-page.tsx     表示とイベントの接続
+    ├── model/use-chat.ts    状態、履歴復元、送信・停止・録音
+    └── api/chat.ts          Hono の /api/* との型と通信
+```
+
+画面内の依存は `ui → model → api` の一方向で、各層から共有UIと `lib` は参照できる。`_chat` の外からは
+隣接する `page.tsx` だけが `ui` を参照できる。共通化は3画面で同じ責務が現れてから行い、それまでは
+`features`・`entities`・`widgets` を作らない。この境界は `bun run architecture` が検査し、
+pre-commit・pre-push・CIで走る。
+
+FSDのpages-first方針は「最初からレイヤーを増やさない」という判断にだけ採用した。FSD向けの
+SteigerとAgent Skillは、このNext.js固有のprivate folder境界を直接検査しないため導入していない。
+
 検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と、質問を語に割った部分一致
 （`ilike`）を RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞
 （PR 番号、テーブル名）を落とし、語の一致だけだと言い換えを落とす。
@@ -327,6 +349,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
 bun run setup      # server / dashboard の依存を固定 lockfile から入れる（Lefthook も導入する）
 bun run dev        # API + ダッシュボード（**前面でだけ使う。**背景では TTY を取りにいって落ちる）
 bun run check      # biome + tsc（server / dashboard）
+bun run architecture # ダッシュボードのroute-local境界
 bun run test       # node:test
 bun run verify     # check + test + Next.js の本番ビルド（pre-push / CI と同じ）
 bun run eval       # 答えの正しさを測る

@@ -14,6 +14,9 @@ pre-commit:
       glob: "*.{ts,tsx}"
       # next typegen を先に通し、App Router の PageProps・LayoutProps・Route 型も検査する。
       run: bun run typecheck
+    - name: dashboard-architecture
+      glob: "{dashboard/src/**/*.ts,dashboard/src/**/*.tsx,scripts/check-dashboard-boundaries.mjs,package.json}"
+      run: bun run architecture
     # dist は配布物。ソースだけ直して bundle を忘れると、
     # Codex 側（依存を自動インストールしない）で古いコードが動き続ける。
     # **版の判定は bundle の後でなければ意味が無い。**parallel なので別ジョブにすると

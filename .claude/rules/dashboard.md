@@ -19,9 +19,10 @@ paths:
 `/api/*` は全経路が Clerk の認証を通り、`MITOS_ALLOWED_USER_ID` と一致する 1 人しか通さない
 （`server/src/server.ts`）。**新しい画面を足すときに「この 1 本だけ認証なし」を作らない。**
 
-画面から API を叩く口は `dashboard/src/lib/api.ts` の 1 ファイルに閉じている。
-`fetch` を直に書かず、そこの `authed()` を通す。**通さないと 401 になるだけなので気付けるが、
-逆に「なぜか動かない」の原因がここだと分からない**ことのほうが多い。
+画面から API を叩くときは `dashboard/src/lib/api-client.ts` の `authed()` を通す。route-localへ移した
+画面は `_画面名/api/` にその画面固有の通信を置き、共有の認証処理だけを `api-client.ts` から使う。
+**通さないと 401 になるだけなので気付けるが、逆に「なぜか動かない」の原因がここだと分からない**
+ことのほうが多い。
 
 **Cookie では通らない。**Authorization ヘッダが無い要求は API 側が先に落とす。
 Clerk 自体は Cookie 経路も持っているので、そこに寄りかからず自分で落としている。
@@ -53,4 +54,9 @@ API を `dashboard/node_modules/next/dist/docs/` で確認する。Page / Layout
 middleware が守る。静的ファイルと `/api/*` は Proxy の matcher から外す。
 
 内部リンクは `next/link` を使う。検索条件など同じ Client Component の状態だけを URL に残す場合は、
-RSC の再取得を増やさない native History API を使う。API 呼び出しは引き続き `src/lib/api.ts` に閉じる。
+RSC の再取得を増やさない native History API を使う。
+
+画面を分けるときは route と同じ場所の private folder に `ui / model / api` を置く。依存は
+`ui → model → api` だけを許し、隣接する `page.tsx` 以外から private folder を参照しない。
+`bun run architecture` が pre-commit・pre-push・CI で検査する。全体像と配置例は README
+「ダッシュボードの置き方」を正本とする。
