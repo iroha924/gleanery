@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitPullRequestIcon, RefreshCwIcon, UnplugIcon } from "lucide-react";
+import { ArrowUpRightIcon, GitPullRequestIcon, RefreshCwIcon, UnplugIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -139,20 +139,25 @@ export function GithubPanel() {
   }
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="bg-card/90 shadow-sm backdrop-blur-sm">
+      <CardHeader className="gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <GitPullRequestIcon />
-              GitHub
-            </CardTitle>
-            <CardDescription className="mt-1">
-              {connection.accountLogin}から、許可されたリポジトリだけをデータソースとして同期します。
-            </CardDescription>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+              <GitPullRequestIcon className="size-5" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle>GitHub</CardTitle>
+                <Badge variant="secondary">{connection.accountLogin}</Badge>
+              </div>
+              <CardDescription className="mt-1">
+                許可されたリポジトリだけをデータソースとして同期します。
+              </CardDescription>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+          <div className="flex flex-wrap items-center gap-1 rounded-lg bg-muted/70 p-1">
+            <Button variant="ghost" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
               {refresh.isPending ? <Spinner /> : <RefreshCwIcon />}選択を再取得
             </Button>
             <Button
@@ -189,9 +194,12 @@ export function GithubPanel() {
             許可されたリポジトリがありません。GitHubでリポジトリを選び、選択を再取得してください。
           </p>
         ) : (
-          <div className="divide-y rounded-md border">
+          <div className="space-y-2">
             {connection.repositories.map((repository) => (
-              <div key={repository.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
+              <div
+                key={repository.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/45 p-3 ring-1 ring-foreground/8"
+              >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium">{repository.fullName}</span>
@@ -220,8 +228,11 @@ export function GithubPanel() {
             ))}
           </div>
         )}
-        <Button variant="link" className="h-auto px-0" asChild>
-          <a href={status.data.installUrl ?? "#"}>GitHubで対象リポジトリを変更</a>
+        <Button variant="link" className="h-auto gap-1 px-0" asChild>
+          <a href={status.data.installUrl ?? "#"}>
+            GitHubで対象リポジトリを変更
+            <ArrowUpRightIcon />
+          </a>
         </Button>
       </CardContent>
     </Card>

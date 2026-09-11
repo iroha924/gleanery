@@ -1,5 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LinkIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  DatabaseIcon,
+  FolderKanbanIcon,
+  FolderPlusIcon,
+  LinkIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDelete } from "@/components/confirm-delete";
@@ -10,7 +17,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
@@ -59,20 +65,33 @@ export function ProjectsPanel() {
     <div className="space-y-6">
       <GithubPanel />
 
-      <div className="rounded-xl border bg-muted/30 p-4">
-        <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-          <div>
-            <p className="font-medium">データソース</p>
+      <div className="rounded-xl bg-card/80 p-4 shadow-sm ring-1 ring-foreground/10 backdrop-blur-sm">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-stretch">
+          <div className="rounded-lg bg-background/55 p-3">
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-lg bg-primary text-primary-foreground">
+                <DatabaseIcon className="size-4" />
+              </span>
+              <p className="font-medium">データソース</p>
+            </div>
             <p className="mt-1 text-sm text-muted-foreground">
               リポジトリやissueの出どころ。一つずつ独立しています。
             </p>
           </div>
-          <span className="text-sm text-muted-foreground" aria-hidden="true">
-            複数を束ねる <span className="sm:hidden">↓</span>
-            <span className="hidden sm:inline">→</span>
+          <span
+            className="flex items-center justify-center gap-1 text-xs font-medium text-muted-foreground"
+            aria-hidden="true"
+          >
+            複数を束ねる
+            <ArrowRightIcon className="size-3.5 rotate-90 sm:rotate-0" />
           </span>
-          <div>
-            <p className="font-medium">プロジェクト</p>
+          <div className="rounded-lg bg-secondary/70 p-3">
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-lg bg-accent text-accent-foreground">
+                <FolderKanbanIcon className="size-4" />
+              </span>
+              <p className="font-medium">プロジェクト</p>
+            </div>
             <p className="mt-1 text-sm text-muted-foreground">
               関連するデータソースをまとめた、画面の閲覧範囲です。
             </p>
@@ -90,9 +109,17 @@ export function ProjectsPanel() {
         </div>
         {groups.isPending && <Skeleton className="h-20 w-full" />}
         {groups.data?.length === 0 && (
-          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-            まだプロジェクトがありません。下のフォームでデータソースを2つ以上選んで作成できます。
-          </p>
+          <div className="flex items-center gap-3 rounded-xl border border-dashed bg-card/60 p-4 shadow-sm">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground">
+              <FolderPlusIcon className="size-4" />
+            </span>
+            <p className="text-sm">
+              <span className="font-medium">まだプロジェクトがありません</span>
+              <span className="mt-0.5 block text-muted-foreground">
+                下のフォームでデータソースを2つ以上選んで作成できます。
+              </span>
+            </p>
+          </div>
         )}
         {groups.data?.map((group) => (
           <Card key={group.id}>
@@ -152,19 +179,18 @@ export function ProjectsPanel() {
             </p>
           )}
           {scopes.data && scopes.data.length > 0 && (
-            <ScrollArea className="h-72 rounded-md border">
+            <div className="max-h-72 overflow-y-auto rounded-md border">
               <div className="divide-y">
                 {scopes.data.map((scope) => (
                   <Label
                     key={scope.id}
                     htmlFor={`scope-${scope.id}`}
-                    className="flex cursor-pointer items-start gap-3 p-3 hover:bg-muted/50"
+                    className="flex cursor-pointer items-center gap-3 p-3 hover:bg-muted/50"
                   >
                     <Checkbox
                       id={`scope-${scope.id}`}
                       checked={picked.has(scope.id)}
                       onCheckedChange={() => toggle(scope.id)}
-                      className="mt-0.5"
                     />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
@@ -185,7 +211,7 @@ export function ProjectsPanel() {
                   </Label>
                 ))}
               </div>
-            </ScrollArea>
+            </div>
           )}
           <div className="flex gap-2">
             <Input
