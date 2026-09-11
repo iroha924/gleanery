@@ -14,14 +14,20 @@ pre-commit:
       glob: "*.{ts,tsx}"
       # next typegen を先に通し、App Router の PageProps・LayoutProps・Route 型も検査する。
       run: bun run typecheck
+    - name: dashboard-architecture
+      glob: "{dashboard/src/**/*.ts,dashboard/src/**/*.tsx,scripts/check-dashboard-boundaries.mjs,package.json}"
+      run: bun run architecture
+    - name: ai-config
+      glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,plugin/agents/**,scripts/check-ai-config.mjs,package.json}"
+      run: bun run verify:ai
     # dist は配布物。ソースだけ直して bundle を忘れると、
     # Codex 側（依存を自動インストールしない）で古いコードが動き続ける。
     # **版の判定は bundle の後でなければ意味が無い。**parallel なので別ジョブにすると
     # 作り直す前のバンドルを読んで素通りする（実測: 4/4 で通った）。同じジョブで順に走らせる。
-    # 理由は AGENTS.md「MCP を直したら、版を上げないと誰にも届かない」。
+    # 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
     - name: bundle
       # **マーケットプレースのマニフェストも見る。**版はそこにもあり、揃っていないと届かない。
-      glob: "{server/src/*.ts,plugin/**,.claude-plugin/**}"
+      glob: "{server/src/**/*.ts,plugin/**,.claude-plugin/**}"
       # **`set -e` を置く。**複数行の run は最後のコマンドの終了コードだけが結果になるので、
       # これが無いと bundle が失敗しても後ろの検査が 0 を返して打ち消す。
       run: |
@@ -30,7 +36,7 @@ pre-commit:
         git add plugin/dist/
         bun run scripts/check-mcp-version.mjs
     # 同じ知識が複数の出口に写されている場所を突き合わせる。
-    # 理由は AGENTS.md「片方を直したら対を探す」。README の CLI 一覧は
+    # 理由と過去の事例は docs/ai-development.md。README の CLI 一覧は
     # 突き合わせではなく USAGE から書き出すので、書き直した分を staged へ戻す。
     - name: pairs
       glob: "{server/src/*.ts,dashboard/src/app/(dashboard)/search/page.tsx,README.md}"

@@ -40,7 +40,7 @@ test("コードの道具は本体の道具と分かれている", () => {
 });
 
 // **AI 向けの出口を叩く。**`grepCode` が正しくても、ここで組み立てる JSON が違えば
-// モデルには届かない（AGENTS.md「片方の成功をもう片方の証拠にしない」）。
+// モデルには届かない（AGENTS.md「変更時の不変条件」）。
 const codeCall = (args: Record<string, unknown>): OpenAI.Responses.ResponseFunctionToolCall => ({
   type: "function_call",
   call_id: "c1",

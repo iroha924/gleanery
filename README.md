@@ -89,7 +89,7 @@ AI が読むのは MCP である。
 - **会話も既定で引ける。**外しているのは bot の定型文だけ（使用量の通知と
   "Didn't find any major issues."）。PR のレビューの具体的な指摘は出る
 - **MCP を直したら、版を上げてプラグインを更新する。**セッションを張り直すだけでは届かない
-  （`AGENTS.md`「MCP を直したら、版を上げないと誰にも届かない」）
+  （手順は`.agents/skills/plugin-release/SKILL.md`）
 
 ## ダッシュボード
 
@@ -194,6 +194,42 @@ plugin/      Claude Code / Codex へ配るもの（skills, hooks, bin, dist）
 db/          migrations（PostgreSQL の移行）
 ```
 
+### ダッシュボードの置き方
+
+Next.js App Router の route-local private folder を使う。FSD の全レイヤーは持ち込まず、route entry と
+その画面だけの実装を近くに置く。チャット画面は次の形が基準になる。
+
+```text
+dashboard/src/app/(dashboard)/
+├── page.tsx                 URL と画面を結ぶ Server Component
+└── _chat/                   Next.js が route として公開しない画面実装
+    ├── ui/chat-page.tsx     表示とイベントの接続
+    ├── model/use-chat.ts    状態、履歴復元、送信・停止・録音
+    └── api/chat.ts          Hono の /api/* との型と通信
+```
+
+画面内の依存は `ui → model → api` の一方向で、各層から共有UIと `lib` は参照できる。`_chat` の外からは
+隣接する `page.tsx` だけが `ui` を参照できる。共通化は3画面で同じ責務が現れてから行い、それまでは
+`features`・`entities`・`widgets` を作らない。この境界は `bun run architecture` が検査し、
+pre-commit・pre-push・CIで走る。
+
+FSDのpages-first方針は「最初からレイヤーを増やさない」という判断にだけ採用した。FSD向けの
+SteigerとAgent Skillは、このNext.js固有のprivate folder境界を直接検査しないため導入していない。
+
+### API の置き方
+
+Hono は `server/src/server.ts` を認証とroute登録だけの入口にし、機能ごとのappを
+`server/src/http/routes/` から `app.route("/api", ...)` で合成する。routeファイルではmethodとpathの
+直後にhandlerを置き、controller層は作らない。JSON・query・param・multipartは
+`@hono/zod-validator` とZodでhandlerより前に検査し、検査後の値だけを `c.req.valid()` から読む。
+
+Hono RPCは導入しない。2026-09-11に、画面からHono clientとサーバーapp型を直接importする最小構成を
+実測したところ、TypeScriptが読むファイルは1,137から1,445、型のinstantiationは312,715から
+672,220、使用メモリは266 MBから376 MBへ増えた。さらに、独立したtsconfig間の `.ts` importと、
+dashboardが宣言していないHono依存で検査に失敗した。採用には型宣言の生成か共有contract packageが
+必要になるが、20本の内部APIのために新しい正本とmonorepo管理を増やす利得はまだ無い。境界の正本は
+サーバーのZod schemaとし、必要性が出た時点で同じ測定をやり直す。
+
 検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と、質問を語に割った部分一致
 （`ilike`）を RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞
 （PR 番号、テーブル名）を落とし、語の一致だけだと言い換えを落とす。
@@ -223,7 +259,7 @@ db/          migrations（PostgreSQL の移行）
 | `CLERK_PUBLISHABLE_KEY` | 同じく公開鍵。API 側でも検証に使う |
 | `MITOS_ALLOWED_USER_ID` | **通す人を 1 人だけ指定する。**`clerk users list --json` の `id` |
 
-デプロイ先へ入れる変数の正確な一覧と手順は `.claude/skills/deploy/SKILL.md` にだけ置く。
+デプロイ先へ入れる変数の正確な一覧と手順は `.agents/skills/deploy/SKILL.md` にだけ置く。
 **`KNOWLEDGE_DB_URL`（管理鍵）は渡さない。**入れ忘れても管理鍵へ落ちないように `db.ts` が弾くので、
 落ちるのではなく起動しない。preview と本番で鍵を分けたいときは、環境ごとにスコープを分けて入れる。
 
@@ -327,18 +363,30 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
 bun run setup      # server / dashboard の依存を固定 lockfile から入れる（Lefthook も導入する）
 bun run dev        # API + ダッシュボード（**前面でだけ使う。**背景では TTY を取りにいって落ちる）
 bun run check      # biome + tsc（server / dashboard）
+bun run architecture # ダッシュボードのroute-local境界
 bun run test       # node:test
 bun run verify     # check + test + Next.js の本番ビルド（pre-push / CI と同じ）
+bun run verify:ai  # AGENTS、repository開発Skill、plugin Agentの設定
 bun run eval       # 答えの正しさを測る
 bun run bundle     # plugin/dist を作り直す
 ```
 
 **`bun run bundle` を忘れると、plugin 側（MCP・フック・CLI）は古いままになる。**
 
+### AI開発環境
+
+全作業で必要な不変条件だけを`AGENTS.md`へ置き、Claude Codeは`CLAUDE.md`から同じfileを読む。作業別の
+手順は`.agents/skills/`が正本で、`.claude/skills/`は同じSkillへのsymlinkである。ここはmitos自身の
+開発用であり、利用者へ配る`plugin/skills/`とは別に保つ。Skill・Agent・ruleの一般的な作成方法は、
+Claude Codeでは既存の`docs-author`、Codexでは組み込みの`skill-creator`を使う。
+
+配置理由、常時contextから移した履歴、Agentを増やさなかった理由、smoke testの観点は
+[`docs/ai-development.md`](docs/ai-development.md)に残している。
+
 ### MCP の変更を届ける
 
-`bun run bundle` だけでは Claude Code に届かない。**版を上げて `claude plugin update mitos` が要る。**
-手順と、そう分かった実測は `AGENTS.md`「MCP を直したら、版を上げないと誰にも届かない」にある。
+`bun run bundle` だけでは Claude CodeやCodexに届かない。版更新、install済みpluginのrefresh、
+新しいsessionでの確認までが必要になる。手順は`.agents/skills/plugin-release/SKILL.md`に置く。
 
 ## 精度をどう測っているか
 

@@ -1,242 +1,66 @@
-# mitos で作業するとき
+# mitosで作業するとき
 
-過去の作業から「なぜそうしたか」を貯めて、Claude Code と Codex から引けるようにする道具。
-TypeScript / bun、PostgreSQL（pgvector）、埋め込みは Voyage、生成は OpenAI。
-DB は Neon（`aws-ap-southeast-1` / PostgreSQL 18）。マネージドなので OS も版も触らない。
-**代わりに容量を見る** — 上限（Free で 512 MB）を超えると書き込みが止まり、
-一度これで移設している。`mitos doctor` の「DB の大きさ」行に出る。
-証明書は同梱しない。公開 CA で検証し、接続文字列で TLS を緩めさせない。
-詳しくは `README.md`「DB を置いている先」。
+過去の作業から「なぜそうしたか」を貯め、Claude CodeとCodexから引けるようにする道具。
+TypeScript / bun、PostgreSQL 18 + pgvector、Next.js、Honoを使う。埋め込みはVoyage、生成はOpenAI、
+DBはNeon、画面とAPIはVercelで動く。
 
-このファイルは Claude と Codex の両方に効く（Claude 側は `CLAUDE.md` が 1 行で取り込んでいる）。
-ただし**開発の大半が Claude Code で回るので、壊れても気付かないのは Codex 側になる。**
-Codex にしか関係しない主張は、書いた側が実際に叩いて確かめる。
-`.claude/rules/` は Claude だけの機構で、そこへ移した内容は Codex から消える。
+Claude Codeはrootの`CLAUDE.md`からこのfileをimportする。両AIに共通する常時規約はここだけを正本にし、
+mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は同じSkillへのsymlinkである。
+利用者へ配るSkillは`plugin/skills/`が別の正本であり、開発用Skillをpluginへ含めない。
 
-## 触る前に知っておくこと
+## 実行境界
 
-### MCP を直したら、版を上げないと誰にも届かない
+- DBの正本は`db/migrations/`と手書きSQLだけ。Prisma・Drizzleのschemaを別の正本として足さない
+- ナレッジ本体の`record`と`node`を書けるのはCLIだけ。MCP、hook、HTTP APIへ管理鍵を渡さない
+- MCPとhookは`knowledge_ro`、dashboard設定は`mitos_cfg`を使い、管理鍵へfallbackしない
+- Next.jsは画面、Honoは全`/api/*`を担当する。Route HandlerやServer ActionへAPIを複製しない
+- Honoの全APIはClerk認証middlewareを先に通す。`server/src/server.ts`のdefault exportをVercelの入口に保つ
+- DBや生成APIの資格情報をNext.jsのserver codeとbrowserへ渡さない。画面は同一originの`/api/*`だけを呼ぶ
+- HTML / Markdownの進捗fileを作らない。記録の正本はDB、現在地の表示はdashboardの`/now`
 
-`bun run bundle` だけでは Claude Code に届かない。プラグインは
-`~/.claude/plugins/cache/mitos/mitos/<版>/` へ複製されたものから動き、**複製は版が変わったときしか
-起きない。**セッションを張り直しても、`claude plugin marketplace update` を通しても入れ替わらない。
+## 変更時の不変条件
 
-実測（2026-09-08）: `server/src/mcp.ts` に丸 1 日ぶんの変更を入れてビルドし直しても、
-キャッシュは 2 日前のままで、新しいツール（`current_work`）はどのセッションにも見えていなかった。
+- 人向けとAI向けの出口は別々に動かす。CLIやdashboardの成功をMCP応答の成功とみなさない
+- 同じ値・分類・判断を変更したら`rg`で全参照を引き、対になる出口を探す。列挙できる対は検査へ足す
+- 新しい取り込み元は`mitos sync`にも接続する。手動commandだけを追加して完了にしない
+- plugin配布物を変更したらbundleと3 manifestのversion更新を同じcommitに含める
+- 新しい外部入力はsystem境界で検査する。資格情報を追跡file、command引数、logへ書かない
+
+## 作業別Skill
+
+該当する作業では、実装前に次のSkillを最後まで読む。
+
+- Next.js、Hono、Clerk、画面のAPI通信: `next-hono`
+- migration、role、RLS、node kind、取り込み: `knowledge-schema`
+- MCP、CLI、hook、plugin Skill・Agentの配布: `plugin-release`
+- `plugin/agents/`とreview Agent: `plugin-agent-authoring`
+- Vercel、Clerk本番、環境変数、domain、DNS: `deploy`
+
+Skill・Agent・rule自体を新規作成するときは、Claude Codeでは既存の`docs-author`、Codexでは組み込みの
+`skill-creator`を使う。一般的なexplorer / workerと重なるrepo Agentは作らず、独立contextや固定modelが
+結果を変える専門検査だけをAgentにする。
+
+## 最小command索引
 
 ```bash
-bun run bundle
-# 版を上げる。3 箇所すべてを同じ版にする（pre-commit が揃っているかを見る）
-#   .claude-plugin/marketplace.json
-#   plugin/.claude-plugin/plugin.json
-#   plugin/.codex-plugin/plugin.json  ← 配る先ごとにマニフェストがある
-claude plugin update mitos     # 「Restart to apply changes」と出る
-# セッションを張り直す
+bun run setup       # server / dashboardの依存とLefthookを固定lockfileから入れる
+bun run dev         # Hono + Next.js。TTYが要るため前面でだけ実行する
+bun run verify      # lint、architecture、型、AI設定、test、Next.js production build
+bun run verify:ai   # AGENTS、repository開発Skill、plugin Agentの静的検査
+bun run bundle      # MCP、CLI、hookのplugin配布物を更新する
 ```
 
-忘れても止まる。`plugin/dist/mcp.js` が変わったのに版が同じコミットは、pre-commit の
-`mcp-version`（`scripts/check-mcp-version.mjs`）が弾く。規約では守れなかったので機構にした —
-これを書いた当日に、書いた本人が 8 コミット続けて踏んだ。
+個別command、setup、運用、障害対応はREADMEを読む。pre-commitは変更対象の軽い検査、pre-pushとCIは
+`bun run verify`を実行する。
 
-届いたかはツールの一覧で確かめる。足したツールが見えなければ古いまま。
+## 外へ出す文章
 
-CLI は別経路で、`plugin/bin/mitos` は `plugin/dist/cli.js` を直接読むのでこの手順は要らない。
-つまり片方だけ新しくなる。**CLI で動いたことは、MCP で動く証拠にならない。**
+PRは`.github/pull_request_template.md`、issueは`.github/ISSUE_TEMPLATE/`を先に読み、埋まらない節を
+削除する。確認できない事実を補わない。PRとissueの本文はそのままナレッジへ取り込まれる。
 
-### 人間向けの面で動いても、AI 向けの面は別に確かめる
+## 参照先
 
-このリポジトリで見つかる欠陥は、ほぼ 1 種類に集約する。
-書いたものが AI 向けの出口に届いておらず、人間向けの出口では動くので気付けない。
-
-| 人間向け | AI 向け |
-|---|---|
-| ダッシュボード / `mitos search` の標準出力 | `quote()` が返す文字列、MCP のツール応答 |
-| README | `AGENTS.md`、`CLAUDE.md`、`.claude/rules` |
-| `plugin/bin/mitos`（CLI） | `plugin/dist/mcp.js`（プラグインのキャッシュ経由） |
-
-**両方を実際に叩いて確かめる。**片方の成功をもう片方の証拠にしない。
-
-### 片方を直したら、対を探す
-
-同じ判断が 2 箇所以上に現れる形が多い。直す側は 1 箇所しか見ていないので、もう片方が
-古いまま残り、そちらはそちらで動くので気付けない。上の「人間向け / AI 向け」はこの特殊形で、
-対はその 2 面に限らない。
-
-実測（2026-09-08 から）。件数はここに書かない — 表が増えるたびに数字だけ古くなる。
-
-| 直した場所 | 見落とした対 |
-|---|---|
-| symlink の末端を lstat で弾く | 途中のディレクトリ自体が symlink のとき（realpath の前方一致へ） |
-| `identify()` が見る基点 | `syncDocs` へ渡す引数 |
-| `search()` の既定の除外 | `outsideScopes()` が持つ同じリスト |
-| MCP が返す記録の帰属 | 画面のチャットが出す帰属 |
-| 引用の枠へ入れる `node.text` | 枠の外へ漏れていた `record` の列 |
-| README の `mitos doctor` の説明 | `cli.ts` の `USAGE` |
-| pre-commit の `pairs` が終了コードを落としていた | 同じ形の `bundle`（この表を書いた直後に踏んだ） |
-| Claude のプラグインの版（13 回上げた） | Codex のプラグインの版（作られたときの `0.1.0` のまま。版のゲート自身が Claude 側しか見ていなかった） |
-| レビュアーの `effort` を固定した | 同じ理由が当たる `model`（`inherit` のまま残り、その日のセッションのモデルで深さが変わっていた） |
-| `USAGE` を README の正本にした | その `USAGE` に書いた「Codex の会話も入る」（`syncSessions` は Codex を読まない。正本にした当のコミットで混入した） |
-
-**探し方は 1 つ。直した関数と定数の参照を全部引く。**同じ判断が要る呼び出し元が 2 つ以上
-あれば、それが対である。同じ値を読む場所が複数あるなら、括り出して 1 つにする —
-`DEFAULT_EXCLUDED` と `framed()` はそうして対そのものを消した。
-
-機構で止まるのは一部だけ。pre-commit の `pairs`（`scripts/check-pairs.mjs`）が見るのは、
-集合として列挙できる対に限る — `kind` の一覧が 3 つの出口で揃っているか、と README の CLI 一覧
-（突き合わせず `USAGE` から書き出すので、写しが 1 つになる）。
-経路の各段で同じ検査が要る形と、同じデータを別々に組み立てる 2 つの出口は捕まらない。
-そこは上の探し方でやる。
-
-### 置き場所はマシンごとに違う
-
-ナレッジは共有、パスは共有しない。作業場所の識別子は git remote なのでマシンをまたいで同じだが、
-どこに置いてあるかは `scope_path (scope_id, host, abs_path)` がホストごとに持つ。
-
-`mitos sync` はこのホストの行しか見ない。**新しい PC では `mitos adopt` を 1 回叩く**
-（`~/Projects` を走査して、識別子が一致する作業場所へ置き場所を結び付ける）。
-叩かないと 1 件も取り込めず、`sync` は終了コード 1 で止まる。
-`mitos doctor` の「置き場所」行に、このマシンで取り込める件数が出る。
-
-会話の transcript はそのマシンにしかない（`~/.claude/projects/` と、ccs を使っているなら
-`~/.ccs/instances/*/projects/`）。別のマシンで交わした会話は、そのマシンで `sync` を通すまで
-ナレッジに入らない。
-
-入るのは Claude Code の会話だけで、Codex の rollout は読んでいない。
-Codex で進めた回の判断は `/mitos:trace` を通さないと残らない。
-
-手順は `README.md`「新しい PC で使い始める」。
-
-### ダッシュボードは Vercel でも動く
-
-`vercel.json` の `services` で、画面（`dashboard/`）と API（`server/`）を 1 プロジェクトに載せている。
-`/api/*` が API、それ以外が画面。
-
-画面は `dashboard/` の Next.js App Router、API は `server/src/server.ts` の Hono とする。
-Next.js の Route Handler や Server Action に API を写さず、画面は同一オリジンの `/api/*` を
-Hono へ送る。`server/src` の MCP・CLI・フックを Next.js のビルドへ巻き込まない。
-
-Next.js は入っている版の `dashboard/node_modules/next/dist/docs/` を一次情報にする。
-Page と Layout は Server Component のまま始め、状態・イベント・ブラウザ API・Clerk のブラウザ用
-token が必要な境界だけを Client Component にする。内部遷移は `next/link`、画面内の検索条件だけを
-変えるときは Next.js が対応している native History API を使う。`proxy.ts` は Clerk のセッション情報を
-Server Component へ渡す入口であり、認可の正本にはしない。画面はデータを読む場所に近い Layout、
-データは全 `/api/*` に先行する Hono middleware で守る。
-
-Hono は method と path の直後に handler を置き、型推論を失う controller 層を作らない。
-分割が必要になったときだけ Hono の app を route 単位で compose する。新しく外から受ける
-JSON・query・param・multipart は handler の入口で検査し、型 assertion だけを検証の代わりにしない。
-
-DB の正本は `db/migrations/` と手書き SQL で、Prisma / Drizzle の schema をもう 1 つの正本として
-足さない。RLS、用途別 role、extension、部分索引、pgvector の SQL を migration から分離すると、
-「片方だけ直る」経路が増えるためである。DB の結果型だけが問題になった場合は、ORM 導入ではなく
-現在の schema から型を生成する案を別に検討する。
-
-2026-09-11 に、過去の Vite 継続判断を承知したうえで Next.js + Hono への全面移行が選ばれた。
-今回はダッシュボードの routing・Clerk 統合・Vercel build を Next.js の公式経路へ一本化することが
-移行の目的である。Hono を独立した service のまま保つことで、以前の棄却理由だった
-「画面のために MCP・CLI・フックまで Next.js のビルドへ巻き込む」構成にはしない。
-
-Vercel Services は 1 プロジェクトの環境変数をサービス間で共有する。Next.js のサーバーコードから
-DB や生成 API の変数を読まず、この境界は依存と呼び出し経路でも保つ。管理鍵は Vercel
-プロジェクト自体へ置かない。
-
-**リポジトリを持たないホストで動く**ので、ローカルのファイルシステムに触る機能はそこで死ぬ。
-黙って 0 件を返さず、到達できないことを出す形にしてある（チャットのコード探索は道具ごと外す、
-束ねる候補は空だと理由を出す、費用の月額は `null`）。**新しく FS を触る機能を足すときは同じ形にする。**
-
-**`server/src/server.ts` のファイル名と既定の export が入口になっている。**外れると
-Hono として認識されず、`server/` が丸ごと静的配信される（実測で `evals/` まで出た）。
-`vercel.json` が `framework` と `entrypoint` を明示しているのはそのため。
-
-**`installCommand` を書かない。**上書きするとコンテナ内で最も古い bun が選ばれ
-（公式に明記）、いまの `bun.lock` を読めずに落ちる。型検査は `buildCommand` があるだけで
-飛ぶので、そちらで回避している（`@vercel/backends` が TypeScript 7 で落ちるため）。
-
-**資格情報はデプロイ先へ 1 変数ずつ入れる。管理鍵（`KNOWLEDGE_DB_URL`）は渡さない。**
-入れ忘れても管理鍵へ落ちないよう `db.ts` が弾く。**何を入れるかはここに書かない** —
-数え違いが本番を壊すので、正本は `.claude/skills/deploy/SKILL.md` の 1 箇所に置く。
-
-手順とコマンド（bun の版が落ちる、Squarespace の名前欄が相対、Clerk の本番は
-ユーザーストアが別）も同じスキルにある。**Claude だけの機構なので、Codex で作業するときは
-そのファイルを直接開く。**
-
-### 書き込みの境界
-
-**ナレッジを書けるのは CLI だけ。**MCP とフックは `knowledge_ro` で繋ぎ、権限の側で読み取りに限る
-（`db/migrations/20260906120000_readonly_role_for_mcp.sql`）。推論する層に資格情報を持たせない。
-
-例外は `search_log` 1 表だけで、追記しかできず、読み戻せず、消せない。
-
-境界を決めるのはロールの権限だけにする。**セッションの状態を境界にしない** —
-読み取り専用にしたセッションは書き込みトランザクションを開けば外れ、それはどの経路からでも
-開ける（迂回を実装して確認し、撤去した）。
-代わりに `KNOWLEDGE_DB_URL_RO` が無いときは繋がずに落とす — 管理側の鍵へ落ちると、
-推論する層が「全部書ける鍵」を持つ。
-
-**ナレッジ本体（`record` / `node`）へ MCP から書く道を作らない。**
-実測で確かめる手順は `mitos doctor` と、`knowledge_ro` で繋いで
-`insert into node` が `permission denied` になることの確認。
-
-## コマンド
-
-入口は `package.json` の scripts にある。
-
-最初に `bun run setup` を使う。`server/` と `dashboard/` は Vercel の独立した service で、
-それぞれが lockfile を持つため、ルートの `bun install` だけでは依存が揃わない。setup は両方を
-`--frozen-lockfile` で入れ、server の postinstall を通して Lefthook も導入する。
-
-**`bun run test` は pre-commit が走らせていない**（見ているのは biome・tsc・bundle・版・対）。
-pre-push と CI の `bun run verify` が、テストと Next.js の本番ビルドまで通す。
-
-`bun run dev` は前面でだけ使う。背景で起動すると `--parallel` が TTY を取りにいって落ちる。
-
-API と CLI の資格情報は `~/.claude/knowledge.env`、Next.js の Clerk 資格情報は
-`dashboard/.env.local` に置く。どちらも git の対象外で、**追跡されるファイルには置かない。**
-DB の鍵は用途で 3 つに分かれていて（管理・読み取り専用・画面の設定）、どれを使うかが
-「書き込みの境界」の実体になる。ダッシュボードの API はこれに加えて Clerk の 3 つ
-（`CLERK_SECRET_KEY` / `CLERK_PUBLISHABLE_KEY` / `MITOS_ALLOWED_USER_ID`）が無いと起動しない。
-
-## 記録の置き場所
-
-**HTML と Markdown の記録ファイルは廃止済み。**正本は DB で、人が読む面はダッシュボード
-（`/now` が現在地）。`*.progress.html` / `*.progress.md` を作り直さない。
-
-取り込み口は次で全部。新しい取り込み元を足すときは、既存のどれかと同じ形にする。
-
-| 口 | 何が入るか |
-|---|---|
-| `mitos ingest` | `/mitos:trace` が書いた IR（判断そのもの） |
-| `mitos import-github` | PR と issue の本体、レビューと議論 |
-| `mitos import-linear` | Linear の issue とコメント |
-| `mitos import-sessions` | Claude Code の会話（1 往復 = 1 件） |
-| `mitos import-docs` | リポジトリの Markdown（見出しで節に割る）。既定の検索には出ない |
-
-`mitos ingest` 以外を `mitos sync` が日次で回す（launchd。毎日 6:00）。
-判断の構造化（`/mitos:trace` → `ingest`）だけは人が明示的に頼んだときに走る
-（機械が書くと未完成の記録になる、という棄却理由が生きている）。
-
-**新しい取り込み口を足したら sync にも繋ぐ。**繋がないと、人が手で叩いたときしか入らない。
-
-### PR と issue の本文は、そのまま記録になる
-
-`import-github` が本文を丸ごと埋め込む（`server/src/github.ts` の `prText`。12,000 字まで、
-差分は入れない）。つまり本文だけが、その変更の説明として残る。
-
-**引かれ方は 2 つで違う。**issue の本文は既定の検索に出る。**PR の本文は既定から外してある**
-（`search.ts` の `DEFAULT_EXCLUDED`。実測で 24 件・平均 5,015 バイトが結果を埋めたため）ので、
-`kinds` を明示したときだけ返る。**したがって定型が直に効くのは issue 側**だが、PR 側も
-「引いたときに出てくる唯一の説明」であることは変わらない。
-
-書く前に `.github/pull_request_template.md`（issue は `.github/ISSUE_TEMPLATE/`）を読み、
-その節に沿って書く。`gh` の `--template` は `--body` / `--body-file` と併用できないので、
-**本文を渡す経路で雛形が自動で入る道は無い。**テンプレートは雛形ではなく、読んで埋める契約である。
-
-埋まらない節は消す。定型だけの節は、埋め込みに入って何も足さない。
-
-## 詳しくは
-
-- `README.md` — 全体像、精度の測り方、新しい PC で使い始める、うまく動かないとき
-- `plugin/skills/trace/SKILL.md` — 記録を作る側の契約
-- `plugin/skills/review/SKILL.md` — `/mitos:review` の手順と、レビュアーの分担
-- `.claude/rules/` — データの形は `knowledge-schema.md`、画面は `dashboard.md`、
-  レビュアーの定義を触るときは `plugin-agents.md`
+- `README.md`: 全体像、DB、setup、全command、新しいPC、Vercel運用、troubleshooting
+- `dashboard/AGENTS.md`: installed Next.js版が生成した規約
+- `plugin/skills/trace/SKILL.md`: 記録を作る契約
+- `plugin/skills/review/SKILL.md`: reviewの実行と担当分け

@@ -1,0 +1,96 @@
+# AI開発環境の設計
+
+Claude CodeとCodexが同じ不変条件を読み、作業に必要な手順だけを遅延loadするための配置記録。
+規約そのものではなく、なぜ現在の配置にしたかと、変更時の評価方法を残す。
+
+## 配置
+
+| 種類 | 正本 | loadされる時点 |
+|---|---|---|
+| 全作業の不変条件 | `AGENTS.md` | 毎session |
+| 人向け説明・command・troubleshooting | `README.md` | 必要時に読む |
+| mitos自身の開発手順 | `.agents/skills/` | repository内でSkillが選ばれた時 |
+| Claude CodeのSkill discovery | `.claude/skills/`のsymlink | Skill metadataは起動時、本文は選択時 |
+| plugin利用者へ配るSkill | `plugin/skills/` | pluginをinstallした環境 |
+| installed Next.js固有の注意 | `dashboard/AGENTS.md` | dashboardで作業する時 |
+| 必須の静的検査 | Lefthookと`bun run verify:ai` | commit、push、CI |
+
+Claude Codeは`CLAUDE.md`の`@AGENTS.md`で共通規約を読む。import先を分割しても起動時contextは減らない
+ため、rootは短くし、複数手順をSkillへ移した。
+
+repo Skillの正本を`.agents/skills/`にしたのは、Codexがこの場所をrepository scopeとして探索するため。
+Claude Codeもsymlink先のSkillを読めるので、`.claude/skills/`には同じdirectoryへのlinkだけを置く。
+これらはmitos自身を変更する開発者向けで、marketplaceのsourceは`plugin/`だけを指す。利用者向けの
+`plugin/skills/`とは正本も配布経路も共有しない。
+
+## 何をどこへ移したか
+
+| 元の内容 | 分類 | 現在の場所 |
+|---|---|---|
+| runtime、権限、Next/Honoの境界 | 常時必要 | `AGENTS.md` |
+| setup、全command、新しいPC、DB運用 | 人向け | `README.md` |
+| Vercel、Clerk本番、DNS、環境変数 | 手順 | `deploy` Skill |
+| MCP bundle、manifest version、到達確認 | 手順 | `plugin-release` Skill |
+| Next.js、Hono、Clerkの実装規約 | 手順 | `next-hono` Skill |
+| migration、role、kind、取り込み | 手順 | `knowledge-schema` Skill |
+| plugin review Agent固有の配布と解決 | 手順 | `plugin-agent-authoring` Skill |
+| 過去に片側だけ直した事例 | 履歴 | このdocument |
+
+Skill・Agent・ruleを作る一般手順はrepositoryに複製しない。Claude Codeではuser scopeの`docs-author`、
+Codexでは組み込みの`skill-creator`を使う。
+
+## Agentを増やさなかった理由
+
+通常の探索と実装は組み込みのexplorer / workerで足りる。repository固有Agentを増やしても、同じ役割の
+選択肢と保守箇所が増えるだけである。独立contextと固定modelが結果を変えるreviewは既に
+`plugin/agents/`に分離されているため、今回は新しいAgentを追加せず、そのfrontmatterを
+`verify:ai`の検査対象にした。
+
+## 過去の観測
+
+常時contextから外したが、配置判断の根拠として残す。
+
+| 片側の変更 | 後から見つかった対 |
+|---|---|
+| symlink末端の`lstat` | 途中directoryのsymlink |
+| `identify()`の基点 | `syncDocs`へ渡す基点 |
+| 検索の既定除外 | `outsideScopes()`の同じ一覧 |
+| MCPが返す記録の帰属 | dashboard chatの帰属 |
+| 引用枠の`node.text` | 枠外へ出ていたrecord列 |
+| READMEのdoctor説明 | CLIの`USAGE` |
+| pre-commitの`pairs`終了code | 同じ複数command形式の`bundle` |
+| Claude plugin manifestのversion | Codex plugin manifestのversion |
+| reviewerの`effort`固定 | 同じ理由が必要な`model`固定 |
+| CLI一覧を`USAGE`から生成 | `USAGE`自体の未検証な説明 |
+
+2026-09-08にはMCP sourceを変更してbundleしただけのcommitが8回続き、versioned plugin cacheへ届いて
+いなかった。このためplugin配布は注意書きだけでなくLefthookのversion検査でも止める。
+
+## 公式仕様から採った判断
+
+- Claude CodeはCLAUDE.mdを起動時contextへ入れるため、200行未満が目安。path ruleやSkillで条件付きにする
+- Claude Opus 5は自己検証を既定で行うため、一般的な「最後に再検証せよ」は置かない
+- Codexはrootからcurrent directoryまでのAGENTS.mdを読み、既定の合計上限は32 KiB
+- Claude CodeとCodexはSkill本文を選択時に読む。descriptionがimplicit triggerの判定材料になる
+- Codexの`.rules`はcommand権限制御用であり、architecture規約の置き場所にしない
+
+一次情報:
+
+- [Claude Code: memory](https://code.claude.com/docs/en/memory)
+- [Claude Code: skills](https://code.claude.com/docs/en/skills)
+- [Claude Opus 5 prompting](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5)
+- [OpenAI: AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
+- [OpenAI: Build skills](https://learn.chatgpt.com/docs/build-skills)
+
+## 評価
+
+`bun run verify:ai`はroot指示の行数・bytes、repository開発Skillのfrontmatter・trigger例・参照先・
+symlink、plugin利用者へ配るSkillのmanifest入口、plugin Agentの必須設定を検査する。文言の一致は
+評価しない。
+
+新しいsessionのsmoke testでは、Hono endpoint、dashboard、DB migration、MCP、deployの各依頼に対し、
+正しいSkill、禁止境界、実行する検証を答えられるかを見る。実装や外部変更はさせず、不要な質問や
+subagent起動も失敗として扱う。
+
+2026-09-11にClaude CodeとCodexの新しい読み取り専用sessionで上の5依頼とplugin Agent変更を確認し、
+両方がrepository開発用Skillとplugin利用者向け配布物を区別して、正しいSkillと境界を選んだ。

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // バンドルが変わったコミットで版が上がっているかを見る。
 //
-// **理由は AGENTS.md「MCP を直したら、版を上げないと誰にも届かない」。**
+// 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
 // 見るのはソースではなくバンドルそのもの — `mcp.js` には search.ts も db.ts も
 // 畳み込まれるので、`mcp.ts` を触ったかだけで判定すると穴が開く（実際に開いた）。
 
@@ -72,7 +72,7 @@ console.error(
     "  Claude Code は ~/.claude/plugins/cache/mitos/mitos/<版>/ の複製から動く。",
     "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
     "",
-    "  plugin/.claude-plugin/plugin.json と .claude-plugin/marketplace.json の version を上げて、",
+    "  3つのmanifest（Claude、Codex、marketplace）のversionを同じ値へ上げて、",
     "  コミットの後に `claude plugin update mitos` を叩き、セッションを張り直す。",
   ].join("\n"),
 );

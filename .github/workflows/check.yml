@@ -1,6 +1,6 @@
 # pre-commit が見ていないものを見る。
 #
-# **いちばんの価値は `bun run test`** — pre-commit は走らせていない（AGENTS.md「コマンド」）。
+# **いちばんの価値は `bun run test`** — pre-commit は走らせず、pre-pushとCIで実行する。
 # 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。
 #
 # **シークレットを置かない。**テストは資格情報なしで通る（DB が要る 2 件は自分で skip する）。
@@ -59,7 +59,7 @@ jobs:
         run: bun run verify
 
       # **バンドルし直して差分が出たら、dist が古い。**配布物はソースと一緒にコミットされるので、
-      # 忘れると Codex 側が古いコードで動き続ける（AGENTS.md「MCP を直したら、版を上げないと届かない」）。
+      # 忘れると Codex 側が古いコードで動き続ける（.agents/skills/plugin-release/SKILL.md）。
       - name: 配布物が最新か
         run: |
           set -e
