@@ -122,9 +122,15 @@ token が必要な境界だけを Client Component にする。内部遷移は `
 Server Component へ渡す入口であり、認可の正本にはしない。画面はデータを読む場所に近い Layout、
 データは全 `/api/*` に先行する Hono middleware で守る。
 
-Hono は method と path の直後に handler を置き、型推論を失う controller 層を作らない。
-分割が必要になったときだけ Hono の app を route 単位で compose する。新しく外から受ける
-JSON・query・param・multipart は handler の入口で検査し、型 assertion だけを検証の代わりにしない。
+Hono の入口 `server/src/server.ts` は認証 middleware と route 登録だけにする。機能ごとの app は
+`server/src/http/routes/` に置き、`app.route("/api", ...)` で compose する。route 内は method と path の
+直後に handler を置き、型推論を失う controller 層を作らない。新しく外から受ける
+JSON・query・param・multipart は `@hono/zod-validator` と Zod で検査し、`c.req.valid()` だけを読む。
+型 assertion を検証の代わりにしない。
+
+Hono RPC は採用していない。画面からサーバーの app 型を直接読む方式は、独立 service の依存と
+tsconfig をまたぎ、型検査のファイル数・instantiation・メモリを実測で増やした。採否と数値の正本は
+README「API の置き方」。再検討するときは、共有 contract package を先に作らず同じ probe を測る。
 
 DB の正本は `db/migrations/` と手書き SQL で、Prisma / Drizzle の schema をもう 1 つの正本として
 足さない。RLS、用途別 role、extension、部分索引、pgvector の SQL を migration から分離すると、

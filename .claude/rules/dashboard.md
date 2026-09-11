@@ -60,3 +60,7 @@ RSC の再取得を増やさない native History API を使う。
 `ui → model → api` だけを許し、隣接する `page.tsx` 以外から private folder を参照しない。
 `bun run architecture` が pre-commit・pre-push・CI で検査する。全体像と配置例は README
 「ダッシュボードの置き方」を正本とする。
+
+Hono RPCは使わず、画面から `server/src` の型を直接importしない。独立serviceの型検査を結合した
+実測と採否はREADME「API の置き方」が正本である。APIを足すときはサーバー側のZod schemaを境界の
+正本にし、画面のroute-local `api` には、その画面が実際に使う応答型だけを置く。

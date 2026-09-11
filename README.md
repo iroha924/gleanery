@@ -216,6 +216,20 @@ pre-commit・pre-push・CIで走る。
 FSDのpages-first方針は「最初からレイヤーを増やさない」という判断にだけ採用した。FSD向けの
 SteigerとAgent Skillは、このNext.js固有のprivate folder境界を直接検査しないため導入していない。
 
+### API の置き方
+
+Hono は `server/src/server.ts` を認証とroute登録だけの入口にし、機能ごとのappを
+`server/src/http/routes/` から `app.route("/api", ...)` で合成する。routeファイルではmethodとpathの
+直後にhandlerを置き、controller層は作らない。JSON・query・param・multipartは
+`@hono/zod-validator` とZodでhandlerより前に検査し、検査後の値だけを `c.req.valid()` から読む。
+
+Hono RPCは導入しない。2026-09-11に、画面からHono clientとサーバーapp型を直接importする最小構成を
+実測したところ、TypeScriptが読むファイルは1,137から1,445、型のinstantiationは312,715から
+672,220、使用メモリは266 MBから376 MBへ増えた。さらに、独立したtsconfig間の `.ts` importと、
+dashboardが宣言していないHono依存で検査に失敗した。採用には型宣言の生成か共有contract packageが
+必要になるが、20本の内部APIのために新しい正本とmonorepo管理を増やす利得はまだ無い。境界の正本は
+サーバーのZod schemaとし、必要性が出た時点で同じ測定をやり直す。
+
 検索は**ハイブリッド**。pgvector（HNSW, `voyage-4-large`）と、質問を語に割った部分一致
 （`ilike`）を RRF（k=60）で束ね、`rerank-3` で並べ直す。ベクトルだけだと固有名詞
 （PR 番号、テーブル名）を落とし、語の一致だけだと言い換えを落とす。
