@@ -1,7 +1,7 @@
 {
-  "schema": "progress/1",
+  "schema": "session/2",
   "meta": {
-    "id": "invoice-pdf-export",
+    "id": "session-claude-code-550e8400-e29b-41d4-a716-446655440000",
     "title": "請求書の PDF 出力を月次バッチから切り離す",
     "status": "in-progress",
     "repo": "billing",
@@ -12,6 +12,26 @@
       "claude-code"
     ]
   },
+  "session": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "host": "claude-code"
+  },
+  "utterances": [
+    {
+      "key": "u-932608de3d451b42",
+      "ordinal": 0,
+      "at": "2026-08-28T10:12:00+09:00",
+      "role": "human",
+      "text": "月次バッチから PDF 生成を切り離したい。"
+    },
+    {
+      "key": "u-0b7c50e01c350253",
+      "ordinal": 1,
+      "at": "2026-08-28T10:13:00+09:00",
+      "role": "ai",
+      "text": "現状を調査し、分離案を比較します。"
+    }
+  ],
   "background": {
     "problem": "月次バッチが請求書 PDF の生成まで抱えているため、PDF の生成が遅いと締め処理全体が遅れる。8 月は 3 時間 40 分かかり、経理の作業開始が翌営業日にずれた。",
     "goal": "月次バッチが PDF の生成完了を待たずに終わること。バッチの所要時間が 30 分未満で、PDF は生成後 15 分以内に管理画面からダウンロードできる。",

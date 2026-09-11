@@ -17,7 +17,6 @@ import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
 import { observe, ROOT, report, versionAt } from "./plugin.ts";
 import { candidates, HOST, identify, rememberPath } from "./scope.ts";
 import { framed, logSearch, outsideScopes, quote, scopeFamily, search } from "./search.ts";
-import { ingestSession, readSession } from "./session.ts";
 
 const USAGE = `使い方:
   mitos ingest <ir.json> [--cwd <dir>]           記録を取り込む（未登録なら作業場所も登録し、
@@ -34,7 +33,6 @@ const USAGE = `使い方:
   mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
   mitos import-linear --team <名前> [--group <束>] [--all]
                                                  Linear の issue とコメントを取り込む
-  mitos import-sessions [--cwd <dir>]            Claude Code の会話をナレッジにする（sync からも呼ばれる）
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
@@ -117,8 +115,33 @@ const IR_SHAPE = z
     events: z.array(z.object({ id: text, kind: text, text, at: text, evidence }).loose()).optional(),
     verification: z.array(z.object({ id: text, what: text, at: text, evidence }).loose()).optional(),
     openQuestions: z.array(z.object({ id: text, q: text, at: text }).loose()).optional(),
+    session: z
+      .object({ id: text, host: z.enum(["claude-code", "codex"]) })
+      .strict()
+      .optional(),
+    utterances: z
+      .array(
+        z
+          .object({
+            key: text,
+            ordinal: z.number().int().nonnegative(),
+            at: text,
+            role: z.enum(["human", "ai"]),
+            text,
+          })
+          .strict(),
+      )
+      .optional(),
   })
-  .loose();
+  .loose()
+  .superRefine((ir, ctx) => {
+    if (ir.schema !== "session/2") return;
+    if (!ir.session)
+      ctx.addIssue({ code: "custom", message: "session/2 には session が要る", path: ["session"] });
+    if (!ir.utterances?.length) {
+      ctx.addIssue({ code: "custom", message: "session/2 には utterances が要る", path: ["utterances"] });
+    }
+  });
 
 /** 作業場所を引く。無ければ作る（取り込みと束ね以外では作らない）。 */
 async function scopeIdFor(c: pg.Client, dir: string, create: boolean): Promise<number | null> {
@@ -178,53 +201,6 @@ async function trackerScopeId(
 }
 
 /** リポジトリ 1 つぶん。**import-github と sync が同じ道を通る。** */
-/**
- * その作業場所の Claude Code の会話を取り込む。
- * **sync からも呼ぶ。**手で叩く前提にすると、記録し忘れたセッションが永久に入らない。
- */
-async function syncSessions(c: pg.Client, env: Env, dir: string, say: (m: string) => void): Promise<string> {
-  const scopeId = await scopeIdFor(c, dir, true);
-  if (scopeId === null) throw new Error("作業場所を決められなかった");
-  const me =
-    (await c.query<{ display: string }>("select display from person where is_me limit 1")).rows[0]?.display ??
-    "私";
-
-  // ccs（複数インスタンス）と素の Claude Code の両方を見る。
-  // **slug はリポジトリの根から作る。**サブディレクトリで叩くと別の slug になり、
-  // 「セッション記録なし」で黙って 0 件になる。
-  const slug = identify(dir).absPath.replace(/\//g, "-");
-  const dirs = [
-    ...(fs.existsSync(path.join(os.homedir(), ".ccs", "instances"))
-      ? fs
-          .readdirSync(path.join(os.homedir(), ".ccs", "instances"), { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => path.join(os.homedir(), ".ccs", "instances", d.name, "projects", slug))
-      : []),
-    path.join(os.homedir(), ".claude", "projects", slug),
-  ].filter((d) => fs.existsSync(d));
-  if (dirs.length === 0) return `${identify(dir).label} / セッション記録なし`;
-
-  const files = dirs.flatMap((d) =>
-    fs
-      .readdirSync(d)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((f) => path.join(d, f)),
-  );
-  let nodes = 0;
-  let embedded = 0;
-  let done = 0;
-  for (const file of files) {
-    const s = readSession(file);
-    if (!s) continue;
-    const r = await ingestSession(c, env, scopeId, s, me);
-    nodes += r.nodes;
-    embedded += r.embedded;
-    done++;
-    say(`[${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
-  }
-  return `${identify(dir).label} / セッション ${done} 本・往復 ${nodes} 件（埋め込み ${embedded} 件）`;
-}
-
 /** その作業場所の Markdown。**sync からも呼ぶ** — 文書は書いた本人が取り込みを覚えていない。 */
 async function syncDocs(c: pg.Client, env: Env, dir: string, say: (m: string) => void): Promise<string> {
   const me = identify(dir);
@@ -374,7 +350,6 @@ async function main(): Promise<void> {
     "import-linear",
     "who",
     "sync",
-    "import-sessions",
     "import-docs",
     "gaps",
     "forget",
@@ -672,10 +647,6 @@ async function main(): Promise<void> {
             console.log(`取り込み完了: ${await syncLinear(c, env, team, opt.all === true, undefined)}`);
           } else if (t.ident.startsWith("git:") && t.abs_path && fs.existsSync(t.abs_path)) {
             console.log(`取り込み完了: ${await syncGithub(c, env, t.abs_path)}`);
-            // **会話もここで入れる。**手で叩く前提だと、記録し忘れたセッションが永久に入らない。
-            // 保存を忘れて痛いのは「何も残らない」ことなので、判断の構造化（/mitos:trace）は
-            // 人に任せたまま、会話だけは自動で残す。
-            console.log(`取り込み完了: ${await syncSessions(c, env, t.abs_path, () => {})}`);
             // **文書もここで入れる。**設計を書き換えたときに取り込み直す人はいない。
             console.log(`取り込み完了: ${await syncDocs(c, env, t.abs_path, () => {})}`);
             // **作業場所が何なのかも、まだ空ならここで読む。**ingest からしか呼んでいなかったので、
@@ -769,12 +740,6 @@ async function main(): Promise<void> {
     // リポジトリの設計文書と ADR。**リポジトリが消えると一緒に消える。**
     if (cmd === "import-docs") {
       console.log(`取り込み完了: ${await syncDocs(c, env, cwd, (m) => console.error(`  ${m}`))}`);
-      return;
-    }
-
-    // Claude Code の会話。**ここにしか無い前提がある**（口頭で伝わった判断など）。
-    if (cmd === "import-sessions") {
-      console.log(`取り込み完了: ${await syncSessions(c, env, cwd, (m) => console.error(`  ${m}`))}`);
       return;
     }
 

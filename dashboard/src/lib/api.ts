@@ -7,20 +7,6 @@ export type Phase = { id: string; label: string; state: "done" | "doing" | "todo
 export type NextItem = { who: "ai" | "human"; text: string };
 export type Wall = { record_id: string; subkind: "constraint" | "non-goal"; text: string; key: string };
 
-export type Now = {
-  id: string;
-  title: string;
-  status: string;
-  branch: string | null;
-  current_at: string | null;
-  current_text: string | null;
-  phases: Phase[];
-  next: NextItem[];
-  updated_at: string;
-  project: string;
-  walls: Wall[];
-};
-
 /** 会話の一覧。**ナレッジとは別物**で、記録には混ざらない。 */
 export type ChatRow = {
   id: string;
@@ -182,7 +168,6 @@ export const api = {
     if (!res.ok || !json.token) throw new Error(json.error ?? `一時鍵が ${res.status}`);
     return json.token;
   },
-  now: (scopes?: number[]) => get<Now[]>(`/api/now${q(scopes)}`),
   groups: () => get<Group[]>("/api/groups"),
   saveGroup: (name: string, scopeIds: number[]) =>
     send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, scopeIds }),

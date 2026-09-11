@@ -5105,9 +5105,9 @@ var require_x509_transport_state = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
-import fs8 from "node:fs";
+import fs7 from "node:fs";
 import os5 from "node:os";
-import path9 from "node:path";
+import path8 from "node:path";
 import { parseArgs } from "node:util";
 
 // server/node_modules/zod/v4/classic/external.js
@@ -38059,6 +38059,7 @@ async function search(client, env2, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
+    "r.schema_ver <> 'session/1'",
     ...kinds?.length ? [] : DEFAULT_EXCLUDED,
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
@@ -38133,6 +38134,7 @@ async function outsideScopes(client, queryVector, scopeIds, {
   const params = [vec(queryVector), scopeIds];
   const where = [
     "n.deleted_at is null",
+    "r.schema_ver <> 'session/1'",
     "not (n.scope_id = any($2))",
     ...kinds?.length ? [] : DEFAULT_EXCLUDED
   ];
@@ -38145,7 +38147,7 @@ async function outsideScopes(client, queryVector, scopeIds, {
     where.push(`n.kind = any($${params.length})`);
   }
   const r = await client.query(`select s.label, (n.embedding <#> $1::extensions.vector) * -1 as score
-     from node n join scope s on s.id = n.scope_id
+     from node n join record r on r.id = n.record_id join scope s on s.id = n.scope_id
      where ${where.join(" and ")}
      order by n.embedding <#> $1::extensions.vector
      limit 30`, params);
@@ -38249,7 +38251,8 @@ var KIND_LABEL = {
   event: "経過",
   verification: "検証",
   question: "未解決の問い",
-  boundary: "境界"
+  boundary: "境界",
+  utterance: "作業中のやりとり"
 };
 function flatten(ir) {
   const out = [];
@@ -38257,6 +38260,19 @@ function flatten(ir) {
     const base = { ...o, kindLabel: KIND_LABEL[o.kind], polarity: polarityOf(o.kind, o.subkind) };
     out.push({ ...base, contentHash: sha(embedText(ir, base)) });
   };
+  for (const u of arr(ir.utterances)) {
+    push({
+      kind: "utterance",
+      subkind: "session",
+      key: u.key,
+      ordinal: u.ordinal,
+      at: u.at,
+      text: u.text,
+      actorKind: u.role,
+      actorName: u.role === "ai" ? ir.session?.host ?? null : null,
+      attrs: { session: ir.session?.id ?? null, role: u.role }
+    });
+  }
   for (const b of arr(ir.background?.nonGoals)) {
     push({
       kind: "boundary",
@@ -38365,6 +38381,7 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
       }
     }
     const effectiveScope = existingScope ?? scopeId;
+    const humanActor = nodes.some((node2) => node2.actorKind === "human") ? (await client.query("select display from person where is_me limit 1")).rows[0]?.display ?? null : null;
     await client.query(`insert into record (id, scope_id, schema_ver, title, status, branch, hosts, problem, goal,
                            current_at, current_text, phases, next, created_at, updated_at, raw, raw_hash, embedding)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
@@ -38407,18 +38424,21 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
     const idOf = new Map;
     for (const part of chunks(rows, 500)) {
       const r = await client.query(`insert into node (record_id, scope_id, kind, key, ordinal, at, text, subkind, status,
-                           polarity, confidence, attrs, content_hash, embed_text, embed_model, embedded_at, embedding)
+                           polarity, confidence, attrs, actor_kind, actor_name, content_hash,
+                           embed_text, embed_model, embedded_at, embedding)
          select $1, $2, t.kind, t.key, t.ordinal, t.at, t.text, t.subkind, t.status,
-                t.polarity, t.confidence, t.attrs, t.content_hash, t.embed_text, t.embed_model, t.embedded_at, t.embedding
+                t.polarity, t.confidence, t.attrs, t.actor_kind, t.actor_name, t.content_hash,
+                t.embed_text, t.embed_model, t.embedded_at, t.embedding
          from unnest($3::text[], $4::text[], $5::int[], $6::timestamptz[], $7::text[], $8::text[], $9::text[],
                      $10::text[], $11::text[], $12::jsonb[], $13::text[], $14::text[], $15::text[],
-                     $16::timestamptz[], $17::extensions.vector[])
+                     $16::text[], $17::text[], $18::timestamptz[], $19::extensions.vector[])
               as t(kind, key, ordinal, at, text, subkind, status, polarity, confidence, attrs,
-                   content_hash, embed_text, embed_model, embedded_at, embedding)
+                   actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
          on conflict (record_id, kind, key) do update set
            scope_id=excluded.scope_id, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, subkind=excluded.subkind,
            status=excluded.status, polarity=excluded.polarity, confidence=excluded.confidence,
-           attrs=excluded.attrs, content_hash=excluded.content_hash, deleted_at=null,
+           attrs=excluded.attrs, actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+           content_hash=excluded.content_hash, deleted_at=null,
            embed_text=coalesce(excluded.embed_text, node.embed_text),
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
@@ -38436,6 +38456,8 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
         part.map((n) => n.polarity),
         part.map((n) => n.confidence ?? null),
         part.map((n) => JSON.stringify(n.attrs ?? {})),
+        part.map((n) => n.actorKind ?? null),
+        part.map((n) => n.actorName ?? (n.actorKind === "human" ? humanActor : null)),
         part.map((n) => n.contentHash),
         part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? embedText(ir, n) : null),
         part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? EMBED_MODEL : null),
@@ -39224,134 +39246,6 @@ function report(s, now = new Date) {
   return lines;
 }
 
-// server/src/session.ts
-import crypto7 from "node:crypto";
-import fs7 from "node:fs";
-import path8 from "node:path";
-var BOILERPLATE = /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below|Another Claude session sent a message|# Claude in Chrome|\(Re-invocation of|\[Image: source:|mcp__[a-z0-9_]+__ ?を呼ん)/;
-var textOf = (m) => {
-  const c = m?.content;
-  if (typeof c === "string")
-    return c.trim();
-  if (!Array.isArray(c))
-    return "";
-  return c.filter((x) => {
-    const o = x;
-    return o?.type === "text" && typeof o.text === "string";
-  }).map((x) => x.text).join(" ").trim();
-};
-function readSession(file2) {
-  const id = path8.basename(file2, ".jsonl");
-  const exchanges = [];
-  let cwd = "";
-  let branch = "";
-  let pending = null;
-  for (const line of fs7.readFileSync(file2, "utf8").split(`
-`)) {
-    if (!line.startsWith("{"))
-      continue;
-    let d;
-    try {
-      d = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (d.isSidechain)
-      continue;
-    if (typeof d.cwd === "string" && !cwd)
-      cwd = d.cwd;
-    if (typeof d.gitBranch === "string" && d.gitBranch)
-      branch = d.gitBranch;
-    const body = textOf(d.message);
-    if (d.type === "user") {
-      if (!body || body.length < 15 || BOILERPLATE.test(body))
-        continue;
-      pending = { ask: body, at: String(d.timestamp ?? ""), branch };
-    } else if (d.type === "assistant" && body && pending) {
-      const ask = pending.ask.slice(0, 12000);
-      const reply = body.slice(0, 2000);
-      exchanges.push({
-        key: `${id}:${hash4(`${ask}
-${reply}`).slice(0, 12)}`,
-        at: pending.at,
-        branch: pending.branch,
-        ask,
-        reply
-      });
-      pending = null;
-    }
-  }
-  return exchanges.length ? { id, file: file2, cwd, exchanges } : null;
-}
-var exchangeText = (e) => `${e.branch || "main"} / ${e.at.slice(0, 10)}
-指示: ${e.ask}
-応答: ${e.reply}`;
-var hash4 = (s) => crypto7.createHash("sha256").update(s).digest("hex");
-async function ingestSession(client, env2, scopeId, s, me) {
-  const recordId = `session:${s.id}`;
-  const first = s.exchanges[0];
-  const last = s.exchanges[s.exchanges.length - 1];
-  if (!first || !last)
-    return { nodes: 0, embedded: 0 };
-  await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal,
-                         created_at, updated_at, raw, raw_hash)
-     values ($1,$2,'session/1',$3,'done',$4,'',$5,$6,'{}'::jsonb,$7)
-     on conflict (id) do update set
-       title=excluded.title, problem=excluded.problem, updated_at=excluded.updated_at,
-       raw_hash=excluded.raw_hash, ingested_at=now()`, [
-    recordId,
-    scopeId,
-    `${first.branch || "main"}: ${first.ask.slice(0, 80).replace(/\n/g, " ")}`,
-    first.ask.slice(0, 2000),
-    first.at || new Date().toISOString(),
-    last.at || new Date().toISOString(),
-    hash4(s.exchanges.map((e) => e.key).join())
-  ]);
-  const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
-  const need = s.exchanges.filter((e) => {
-    const old = existing.get(e.key);
-    return !old || old.content_hash !== hash4(exchangeText(e)) || !old.has_emb;
-  });
-  const vectors = need.length ? await embed(env2, need.map((e) => exchangeText(e)), "document") : [];
-  const byKey = new Map(need.map((e, i) => [e.key, vectors[i]]));
-  await client.query("begin");
-  try {
-    for (const [ordinal, e] of s.exchanges.entries()) {
-      const v = byKey.get(e.key);
-      await client.query(`insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
-                           actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'utterance','session',$3,$4,$5,$6,'na',$7,'human',$8,$9,$10,$11,$12,$13)
-         on conflict (record_id, kind, key) do update set
-           ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
-           content_hash=excluded.content_hash, deleted_at=null,
-           embed_text=coalesce(excluded.embed_text, node.embed_text),
-           embed_model=coalesce(excluded.embed_model, node.embed_model),
-           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
-           embedding=coalesce(excluded.embedding, node.embedding)`, [
-        recordId,
-        scopeId,
-        e.key,
-        ordinal,
-        e.at || null,
-        `${me}: ${e.ask}
-AI: ${e.reply}`,
-        JSON.stringify({ branch: e.branch, session: s.id }),
-        me,
-        hash4(exchangeText(e)),
-        v ? exchangeText(e) : null,
-        v ? EMBED_MODEL : null,
-        v ? new Date().toISOString() : null,
-        vec(v)
-      ]);
-    }
-    await client.query("commit");
-  } catch (err) {
-    await client.query("rollback").catch(() => {});
-    throw err;
-  }
-  return { nodes: s.exchanges.length, embedded: need.length };
-}
-
 // server/src/cli.ts
 var USAGE = `使い方:
   mitos ingest <ir.json> [--cwd <dir>]           記録を取り込む（未登録なら作業場所も登録し、
@@ -39368,7 +39262,6 @@ var USAGE = `使い方:
   mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
   mitos import-linear --team <名前> [--group <束>] [--all]
                                                  Linear の issue とコメントを取り込む
-  mitos import-sessions [--cwd <dir>]            Claude Code の会話をナレッジにする（sync からも呼ばれる）
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
@@ -39395,7 +39288,7 @@ var OPTIONS = {
 };
 var IR_TAG = /<script type="application\/json" id="progress-ir">([\s\S]*?)<\/script>/;
 function readIr(file2) {
-  const body = fs8.readFileSync(file2, "utf8");
+  const body = fs7.readFileSync(file2, "utf8");
   if (!file2.endsWith(".html"))
     return JSON.parse(body);
   const m = body.match(IR_TAG);
@@ -39424,8 +39317,24 @@ var IR_SHAPE = exports_external.object({
   }).loose()).optional(),
   events: exports_external.array(exports_external.object({ id: text, kind: text, text, at: text, evidence }).loose()).optional(),
   verification: exports_external.array(exports_external.object({ id: text, what: text, at: text, evidence }).loose()).optional(),
-  openQuestions: exports_external.array(exports_external.object({ id: text, q: text, at: text }).loose()).optional()
-}).loose();
+  openQuestions: exports_external.array(exports_external.object({ id: text, q: text, at: text }).loose()).optional(),
+  session: exports_external.object({ id: text, host: exports_external.enum(["claude-code", "codex"]) }).strict().optional(),
+  utterances: exports_external.array(exports_external.object({
+    key: text,
+    ordinal: exports_external.number().int().nonnegative(),
+    at: text,
+    role: exports_external.enum(["human", "ai"]),
+    text
+  }).strict()).optional()
+}).loose().superRefine((ir, ctx) => {
+  if (ir.schema !== "session/2")
+    return;
+  if (!ir.session)
+    ctx.addIssue({ code: "custom", message: "session/2 には session が要る", path: ["session"] });
+  if (!ir.utterances?.length) {
+    ctx.addIssue({ code: "custom", message: "session/2 には utterances が要る", path: ["utterances"] });
+  }
+});
 async function scopeIdFor(c, dir, create) {
   const me = identify(dir);
   const found = await c.query("select id::int as id from scope where ident = $1", [me.ident]);
@@ -39458,37 +39367,9 @@ async function trackerScopeId(c, ident, label, hostOrg, group) {
   }
   return id;
 }
-async function syncSessions(c, env2, dir, say) {
-  const scopeId = await scopeIdFor(c, dir, true);
-  if (scopeId === null)
-    throw new Error("作業場所を決められなかった");
-  const me = (await c.query("select display from person where is_me limit 1")).rows[0]?.display ?? "私";
-  const slug2 = identify(dir).absPath.replace(/\//g, "-");
-  const dirs = [
-    ...fs8.existsSync(path9.join(os5.homedir(), ".ccs", "instances")) ? fs8.readdirSync(path9.join(os5.homedir(), ".ccs", "instances"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path9.join(os5.homedir(), ".ccs", "instances", d.name, "projects", slug2)) : [],
-    path9.join(os5.homedir(), ".claude", "projects", slug2)
-  ].filter((d) => fs8.existsSync(d));
-  if (dirs.length === 0)
-    return `${identify(dir).label} / セッション記録なし`;
-  const files = dirs.flatMap((d) => fs8.readdirSync(d).filter((f) => f.endsWith(".jsonl")).map((f) => path9.join(d, f)));
-  let nodes = 0;
-  let embedded = 0;
-  let done = 0;
-  for (const file2 of files) {
-    const s = readSession(file2);
-    if (!s)
-      continue;
-    const r = await ingestSession(c, env2, scopeId, s, me);
-    nodes += r.nodes;
-    embedded += r.embedded;
-    done++;
-    say(`[${done}/${files.length}] ${s.id.slice(0, 8)} 往復 ${r.nodes} 件`);
-  }
-  return `${identify(dir).label} / セッション ${done} 本・往復 ${nodes} 件（埋め込み ${embedded} 件）`;
-}
 async function syncDocs(c, env2, dir, say) {
   const me = identify(dir);
-  if (!fs8.existsSync(path9.join(me.absPath, ".git"))) {
+  if (!fs7.existsSync(path8.join(me.absPath, ".git"))) {
     throw new Error(`${dir} は git 管理下に無い。取り込む対象は git が追っている Markdown`);
   }
   const scopeId = await scopeIdFor(c, dir, true);
@@ -39585,7 +39466,6 @@ async function main() {
     "import-linear",
     "who",
     "sync",
-    "import-sessions",
     "import-docs",
     "gaps",
     "forget",
@@ -39658,12 +39538,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "advice") {
-    const log2 = path9.join(os5.homedir(), ".claude", "mitos-advice.jsonl");
-    if (!fs8.existsSync(log2)) {
+    const log2 = path8.join(os5.homedir(), ".claude", "mitos-advice.jsonl");
+    if (!fs7.existsSync(log2)) {
       console.log("まだ記録がありません（編集フックが一度も走っていない）。");
       return;
     }
-    const rows = fs8.readFileSync(log2, "utf8").split(`
+    const rows = fs7.readFileSync(log2, "utf8").split(`
 `).filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
     const shownRows = rows.filter((r) => r.shown.length > 0);
     const all = shownRows.flatMap((r) => r.shown);
@@ -39685,12 +39565,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "usage") {
-    const log2 = path9.join(os5.homedir(), ".claude", "mitos-usage.jsonl");
-    if (!fs8.existsSync(log2)) {
+    const log2 = path8.join(os5.homedir(), ".claude", "mitos-usage.jsonl");
+    if (!fs7.existsSync(log2)) {
       console.log("まだ記録がありません。");
       return;
     }
-    const rows = fs8.readFileSync(log2, "utf8").split(`
+    const rows = fs7.readFileSync(log2, "utf8").split(`
 `).filter(Boolean).map((l) => JSON.parse(l));
     const limit3 = Number(env2.MITOS_USAGE_LIMIT ?? 10);
     const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
@@ -39788,9 +39668,8 @@ ${USAGE}`);
           if (t.ident.startsWith("linear:")) {
             const team = t.ident.replace(/^linear:[^/]*\//, "");
             console.log(`取り込み完了: ${await syncLinear(c, env2, team, opt.all === true, undefined)}`);
-          } else if (t.ident.startsWith("git:") && t.abs_path && fs8.existsSync(t.abs_path)) {
+          } else if (t.ident.startsWith("git:") && t.abs_path && fs7.existsSync(t.abs_path)) {
             console.log(`取り込み完了: ${await syncGithub(c, env2, t.abs_path)}`);
-            console.log(`取り込み完了: ${await syncSessions(c, env2, t.abs_path, () => {})}`);
             console.log(`取り込み完了: ${await syncDocs(c, env2, t.abs_path, () => {})}`);
             const scopeId = await scopeIdFor(c, t.abs_path, false);
             const said = scopeId === null ? null : await ensureIdentity(c, env2, scopeId);
@@ -39860,10 +39739,6 @@ ${USAGE}`);
     }
     if (cmd === "import-docs") {
       console.log(`取り込み完了: ${await syncDocs(c, env2, cwd, (m) => console.error(`  ${m}`))}`);
-      return;
-    }
-    if (cmd === "import-sessions") {
-      console.log(`取り込み完了: ${await syncSessions(c, env2, cwd, (m) => console.error(`  ${m}`))}`);
       return;
     }
     if (cmd === "adopt") {
@@ -39943,11 +39818,11 @@ ${USAGE}`);
         throw new Error(`消す作業場所をディレクトリかラベルで指定する
 
 ${USAGE}`);
-      const abs = path9.resolve(target);
+      const abs = path8.resolve(target);
       const here2 = identify(abs);
       const same = (a, b) => {
         try {
-          return fs8.realpathSync(a) === fs8.realpathSync(b);
+          return fs7.realpathSync(a) === fs7.realpathSync(b);
         } catch {
           return false;
         }

@@ -1,7 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { currentWork, labelOf, logSearch, type Polarity, search } from "../../search.ts";
+import { labelOf, logSearch, type Polarity, search } from "../../search.ts";
 import { db, env } from "../runtime.ts";
 import { positiveIds, scopesQuerySchema, textIdParamSchema } from "../validation.ts";
 
@@ -15,9 +15,71 @@ const searchSchema = z
   })
   .strict();
 
+const sessionsQuerySchema = scopesQuerySchema.extend({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 const app = new Hono()
-  .get("/now", zValidator("query", scopesQuerySchema), async (c) => {
-    return c.json(await currentWork(db(), c.req.valid("query").scopes ?? null));
+  .get("/sessions", zValidator("query", sessionsQuerySchema), async (c) => {
+    const { scopes, page, pageSize } = c.req.valid("query");
+    const client = db();
+    const total = Number(
+      (
+        await client.query<{ total: string }>(
+          `select count(*) as total from record r
+           where ($1::int[] is null or r.scope_id = any($1)) and r.schema_ver = 'session/2'`,
+          [scopes ?? null],
+        )
+      ).rows[0]?.total ?? 0,
+    );
+    const result = await client.query(
+      `select r.id, r.raw #>> '{session,id}' as session_id, r.title, r.status, r.branch,
+              r.created_at, r.updated_at,
+              s.label as scope_label,
+              r.raw #>> '{session,host}' as host,
+              (select count(*) from node
+               where record_id = r.id and kind = 'utterance' and actor_kind = 'human'
+                 and deleted_at is null)::int as exchanges
+       from record r join scope s on s.id = r.scope_id
+       where ($1::int[] is null or r.scope_id = any($1))
+         and r.schema_ver = 'session/2'
+       order by r.updated_at desc, r.id
+       limit $2 offset $3`,
+      [scopes ?? null, pageSize, (page - 1) * pageSize],
+    );
+    return c.json({
+      items: result.rows,
+      total,
+      page,
+      page_size: pageSize,
+      pages: Math.ceil(total / pageSize),
+    });
+  })
+  .get("/sessions/:id", zValidator("param", textIdParamSchema), async (c) => {
+    const client = db();
+    const { id } = c.req.valid("param");
+    const record = await client.query(
+      `select r.id, r.raw #>> '{session,id}' as session_id, r.title, r.status, r.branch,
+              r.created_at, r.updated_at,
+              s.label as scope_label,
+              r.raw #>> '{session,host}' as host,
+              (select count(*) from node
+               where record_id = r.id and kind = 'utterance' and actor_kind = 'human'
+                 and deleted_at is null)::int as exchanges
+       from record r join scope s on s.id = r.scope_id
+       where r.id = $1 and r.schema_ver = 'session/2'`,
+      [id],
+    );
+    if (record.rows.length === 0) return c.json({ error: "そのセッションは無い" }, 404);
+    const exchanges = await client.query(
+      `select id::int, key, at, text, actor_kind as role, actor_name
+       from node
+       where record_id = $1 and deleted_at is null and kind = 'utterance'
+       order by ordinal, at nulls last`,
+      [id],
+    );
+    return c.json({ ...record.rows[0], entries: exchanges.rows });
   })
   .get("/scopes", async (c) => {
     const result = await db().query(
@@ -33,14 +95,14 @@ const app = new Hono()
     return c.json(result.rows);
   })
   .get("/records", zValidator("query", scopesQuerySchema), async (c) => {
-    // Session imports lack the phases and next action needed by this work map; search still reaches them.
+    // trace したセッションは /sessions、その他の記録はここに分ける。
     const result = await db().query(
       `select r.id, r.title, r.status, r.branch, r.problem, r.goal, r.current_at, r.current_text,
               r.updated_at, s.label as scope_label,
               (select count(*) from node where record_id = r.id and deleted_at is null)::int as nodes
        from record r join scope s on s.id = r.scope_id
        where ($1::int[] is null or r.scope_id = any($1))
-         and r.schema_ver <> 'session/1'
+         and r.schema_ver not like 'session/%'
        order by r.updated_at desc nulls last`,
       [c.req.valid("query").scopes ?? null],
     );
@@ -54,7 +116,8 @@ const app = new Hono()
       `select r.id, r.title, r.status, r.branch, r.problem, r.goal, r.current_at, r.current_text,
               r.phases, r.next, r.created_at, r.updated_at, r.ended_at, r.ingested_at,
               s.label as scope_label
-       from record r join scope s on s.id = r.scope_id where r.id = $1`,
+       from record r join scope s on s.id = r.scope_id
+       where r.id = $1 and r.schema_ver not like 'session/%'`,
       [id],
     );
     if (record.rows.length === 0) return c.json({ error: "その記録は無い" }, 404);

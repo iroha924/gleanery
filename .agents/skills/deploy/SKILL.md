@@ -83,8 +83,8 @@ deploy前に`bun run verify`を通す。deploy後は`vercel inspect`で成功と
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com
-curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com/now
-curl -s https://mitos.iroh4.com/api/now
+curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com/sessions
+curl -s https://mitos.iroh4.com/api/sessions
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://mitos.iroh4.com/webhooks/github
 ```
 

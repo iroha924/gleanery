@@ -1,6 +1,6 @@
 "use client";
 
-import { MicIcon, SquareIcon } from "lucide-react";
+import { MicIcon, SquareIcon } from "lucide-react-motion";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -133,12 +133,12 @@ export default function MeetingPage() {
             {on ? "終了" : "会議を録る"}
           </Button>
           {on && (
-            <span className="flex items-center gap-2 text-muted-foreground text-xs">
+            <span className="flex items-center gap-2 text-muted-foreground text-sm">
               <span className="size-1.5 animate-pulse rounded-full bg-dont" />
               聞いています
             </span>
           )}
-          <span className="ml-auto rounded-md border px-2 py-1 font-mono text-[9px] text-muted-foreground">
+          <span className="ml-auto rounded-md border px-2 py-1 font-mono text-xs text-muted-foreground">
             {projectLabel}
           </span>
         </header>
@@ -147,10 +147,10 @@ export default function MeetingPage() {
           {reply?.asked ? (
             <div className="space-y-5">
               <div>
-                <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
+                <Marker className="font-mono text-xs uppercase tracking-[0.14em]">
                   <MarkerContent>いま聞かれています</MarkerContent>
                 </Marker>
-                <h2 className="mt-1.5 font-semibold text-[1.4rem] leading-[1.6] tracking-[-0.01em]">
+                <h2 className="mt-1.5 font-semibold text-lg leading-[1.6] tracking-[-0.01em]">
                   {reply.asked}
                 </h2>
               </div>
@@ -158,8 +158,8 @@ export default function MeetingPage() {
               {reply.missing || reply.replies.length === 0 ? (
                 // **無いことを隠さない。**ここで曖昧に埋めると、会議のあとで訂正することになる。
                 <div className="rounded-md border border-dont/40 border-dashed p-4">
-                  <p className="font-medium text-[15px] text-dont">記録にありません</p>
-                  <p className="mt-1.5 text-[13px] text-muted-foreground leading-[1.9]">
+                  <p className="font-medium text-base text-dont">記録にありません</p>
+                  <p className="mt-1.5 text-sm text-muted-foreground leading-[1.9]">
                     その場で作らず、「確認して後で返します」と言うほうが安全です。
                   </p>
                 </div>
@@ -167,13 +167,13 @@ export default function MeetingPage() {
                 <ol className="space-y-3">
                   {reply.replies.map((r) => (
                     <li key={r.text} className="rounded-md border bg-card p-4">
-                      <p className="text-[15px] leading-[1.95]">{r.text}</p>
+                      <p className="text-base leading-[1.95]">{r.text}</p>
                       {r.sources.length > 0 && (
                         <ul className="mt-3 space-y-1.5 border-t pt-2.5">
                           {r.sources.map((n) => {
                             const f = reply.facts.find((x) => x.n === n);
                             return f ? (
-                              <li key={n} className="flex gap-2 text-[11.5px] leading-[1.8]">
+                              <li key={n} className="flex gap-2 text-sm leading-[1.8]">
                                 <span className="flex-none font-mono text-muted-foreground">{n}</span>
                                 <span className="min-w-0 text-muted-foreground">
                                   <span className="text-foreground/70">{f.label}</span>
@@ -191,10 +191,10 @@ export default function MeetingPage() {
             </div>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <h1 className="font-semibold text-2xl tracking-[-0.01em]">
+              <h1 className="font-semibold text-lg tracking-[-0.01em]">
                 {on ? "聞いています" : "会議を聞き取る"}
               </h1>
-              <p className="max-w-[30rem] text-muted-foreground text-sm leading-[2]">
+              <p className="max-w-[30rem] text-muted-foreground text-base leading-[2]">
                 {on ? (
                   <>
                     相手に何か聞かれると、ここに
@@ -218,19 +218,19 @@ export default function MeetingPage() {
 
       {/* 文字起こしは従。**合っているかを目の端で確かめるためのもの。** */}
       <aside className="flex w-[22rem] flex-none flex-col gap-3 border-l bg-secondary/25 px-5 py-5">
-        <Marker className="flex-none font-mono text-[9px] uppercase tracking-[0.14em]">
+        <Marker className="flex-none font-mono text-xs uppercase tracking-[0.14em]">
           <MarkerContent>聞こえたこと</MarkerContent>
           {thinking && <Spinner className="size-3" />}
-          <span className="ml-auto font-mono text-[10px] tabular-nums">{lines.length}</span>
+          <span className="ml-auto font-mono text-xs tabular-nums">{lines.length}</span>
         </Marker>
         <ol className="min-h-0 flex-1 space-y-2.5 overflow-y-auto">
           {lines.map((l) => (
             <li key={l.key} className="flex gap-2">
-              <span className="w-8 flex-none pt-0.5 text-right font-mono text-[9px] text-muted-foreground tabular-nums">
+              <span className="w-8 flex-none pt-0.5 text-right font-mono text-xs text-muted-foreground tabular-nums">
                 {clock(l.at)}
               </span>
               <p
-                className={`min-w-0 text-[12px] leading-[1.85] ${
+                className={`min-w-0 text-sm leading-[1.85] ${
                   l.who === "them" ? "text-foreground" : "text-muted-foreground"
                 } ${l.done ? "" : "opacity-55"}`}
               >

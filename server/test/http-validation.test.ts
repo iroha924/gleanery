@@ -37,7 +37,9 @@ test("query・param・multipart の外部入力も拒否する", async () => {
   const form = new FormData();
   form.set("other", "missing audio");
   const requests = [
-    knowledgeRoutes.request("/now?scopes=1,no"),
+    knowledgeRoutes.request("/sessions?scopes=1,no"),
+    knowledgeRoutes.request("/sessions?page=0"),
+    knowledgeRoutes.request("/sessions?pageSize=101"),
     settingsRoutes.request("/terms/not-a-number", { method: "DELETE" }),
     chatRoutes.request("/chats/not-a-uuid"),
     speechRoutes.request("/transcribe", { method: "POST", body: form }),

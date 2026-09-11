@@ -39280,6 +39280,7 @@ async function search(client, env, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
+    "r.schema_ver <> 'session/1'",
     ...kinds?.length ? [] : DEFAULT_EXCLUDED,
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
@@ -39354,6 +39355,7 @@ async function outsideScopes(client, queryVector, scopeIds, {
   const params = [vec(queryVector), scopeIds];
   const where = [
     "n.deleted_at is null",
+    "r.schema_ver <> 'session/1'",
     "not (n.scope_id = any($2))",
     ...kinds?.length ? [] : DEFAULT_EXCLUDED
   ];
@@ -39366,7 +39368,7 @@ async function outsideScopes(client, queryVector, scopeIds, {
     where.push(`n.kind = any($${params.length})`);
   }
   const r = await client.query(`select s.label, (n.embedding <#> $1::extensions.vector) * -1 as score
-     from node n join scope s on s.id = n.scope_id
+     from node n join record r on r.id = n.record_id join scope s on s.id = n.scope_id
      where ${where.join(" and ")}
      order by n.embedding <#> $1::extensions.vector
      limit 30`, params);

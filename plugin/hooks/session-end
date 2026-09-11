@@ -62,7 +62,7 @@ try {
   const cwd = input.cwd;
   if (!file || !cwd || !fs.existsSync(file)) process.exit(0);
 
-  /** 人が打った発言。**貼り付けと通知は数えない。**session.ts の BOILERPLATE と同じ線。 */
+  /** 人が打った発言。貼り付けと通知は数えない。 */
   const BOILERPLATE =
     /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below|Another Claude session sent a message|# Claude in Chrome|\(Re-invocation of|\[Image: source:)/;
   const SAID = 5;

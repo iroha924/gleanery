@@ -50,14 +50,14 @@ Google の Design Docs の基準がそのまま当たる。トレードオフも
 `check_path`（パスの完全一致）を使う。どれも読み取り専用である。
 
 **記録はファイルではなく DB にある。**`d-drop-record-files` で `<id>.progress.html` と `.md` を
-廃止した — AI が読む面は MCP、人が読む面はダッシュボードの `/now` と `/records/$id` が担う。
+廃止した — AI が読む面は MCP、人が読む面はダッシュボードの `/sessions` と `/records/$id` が担う。
 `mitos` が入っていない環境では、このスキルは記録できない（IR を作るところまでは動く）。
 
 ## 0 〜 7 — 記録する
 
 ```
-0. 既存を探す      → verify: 追記先の記録が 1 件に確定する
-1. 会話を採掘する  → verify: progress collect が exit 0、digest ができる
+0. セッションを採掘する → verify: 元ツール・セッション ID・会話が digest にある
+1. 同じセッションを引く → verify: 追記先が同じセッションの記録だけに確定する
 2. issue と PR     → verify: 取得できた件数と、できなかったものが両方記録される
 3. 追加素材を聞く  → verify: 提供されたか「未提供」が記録される
 4. IR を書く       → verify: progress validate が exit 0（直すのは progress patch）
@@ -77,35 +77,14 @@ PG="${CLAUDE_SKILL_DIR}/bin/progress.mjs"
 PG="bin/progress.mjs"
 ```
 
-## Step 0 — 既存を探す
-
-**必ず最初にこれを叩く。**同じ作業に 2 枚目を作ると、経緯が分断されて横断が効かなくなる。
-
-```bash
-mitos scopes                       # この作業場所が登録されているか
-```
-
-いまの作業場所の記録は MCP の `current_work` が返す。過去の記録を語で探すなら
-`mitos search "<語>"`、id で引くなら `search_knowledge` を使う。
-
-| 結果 | すること |
-|---|---|
-| 0 件 | 新規に作る。`meta.id` は内容が分かる語にする（`issue-412` ではなく `invoice-pdf-export`） |
-| 1 件 | **その記録へ追記する。**`mitos export <id> > ir.json` で IR を取り出す |
-| 複数件 | どれへ追記するかをユーザーに聞く。**推測で選ばない** |
-
-id を意味のある語にするのは、連番や UUID が retrieval の精度を落とすため。
-
-**`mitos export` は `record.raw` をそのまま返す。**中身は取り込んだ IR 全文なので、
-取り出して直し、`mitos ingest` で戻す往復がそのまま追記になる。
-
-## Step 1 — 会話を採掘する
+## Step 0 — セッションを採掘する
 
 ```bash
 node "$PG" collect --out digest.json
+node "$PG" record-id digest.json
 ```
 
-期間・cwd・branch・**人が打った発言の全文**・実行コマンドと exit code・失敗したコマンド・
+元ツール・セッション ID・期間・cwd・branch・**人と AI の発言全文**・実行コマンドと exit code・失敗したコマンド・
 参照 URL・サブエージェントの起動を transcript から、**変更されたファイルとコミットを git から**取る。
 **会話が compact で消えていても、transcript には残っている。**
 
@@ -134,6 +113,10 @@ transcript が見つからないと exit 2 で止まる（cwd を変えた後や
 
 **ホストで取れるものが違う。**`collect` の出力の `limitations` に、取れなかったものが並ぶ。
 
+**同じ cwd の最新ファイルを現在のセッションだと決めない。**並列作業では別セッションを拾う。
+Claude Code の `CLAUDE_CODE_SESSION_ID`、Codex の `CODEX_THREAD_ID` / `CODEX_SESSION_ID` と transcript 内の
+ID を一致させる。環境から ID を得られない古いホストだけ、最終更新時刻へフォールバックする。
+
 | | Claude Code | Codex |
 |---|---|---|
 | ユーザー発話 / コマンドと出力 | ○ | ○ |
@@ -154,6 +137,15 @@ Codex では失敗したコマンドが 0 件になるが、**それは「失敗
 
 **ここで取れる値だけを事実として扱う。**「なぜそうしたか」「何が重要か」は採掘結果に無い。
 それは自分で書き、`confidence` を `inference` にする。
+
+## Step 1 — 同じセッションの記録を引く
+
+`record-id` が返した ID だけを追記先にする。テーマや issue が同じでも、別セッションの記録へは追記しない。
+これにより、Claude Code と Codex が同時に作業しても互いの現在状態を上書きしない。
+
+`mitos export <record-id>` が見つかれば、その IR を読み直して追記する。見つからなければ
+[examples/example.progress.json](examples/example.progress.json) を土台に新規作成する。元のセッション ID は
+`sessionize` が機械的に設定するので、モデルが転記しない。
 
 ## Step 2 — issue と PR を引く
 
@@ -185,6 +177,16 @@ GitHub 以外（Linear / Jira / その他）の手順は [references/trackers.md
 （実測: `openQuestions.when` の許容値も `supersededBy` も schema.md・sections.md・検査器の fix 行の
 3 箇所にあったのに、4 件が弾かれた）。例は警告 0 で通り、`cmd` を持つ検証と `evidence` で示す検証の
 両方を含んでいる。
+
+意味のある欄を書き終えたら、検査より先に現在のセッションを結び付ける。
+
+```bash
+node "$PG" sessionize digest.json ir.json
+```
+
+このコマンドが `schema: session/2`、元ツール、セッション ID、会話、開始・最終記録時刻、branch、
+DB 上の record ID を決定する。**これらを手で書き換えない。**同じセッションなら同じ record ID、
+別セッションなら必ず別の record ID になる。
 
 **書き捨てのスクリプトで IR を直さない。**`progress patch` に JSON を渡す。
 
@@ -335,6 +337,7 @@ mitos ingest ir.json              # 作業ディレクトリが未登録なら�
 ```
 
 **IR をそのまま渡す。**描く工程は無い — 記録の置き場所は DB で、ファイルは作らない。
+取り込まれて初めてダッシュボードの `/sessions` と検索に現れる。セッションを終了しただけでは入らない。
 
 **`mitos` が入っていない環境では記録できない。**`d-drop-record-files` でファイルを廃止したので、
 DB は任意の層ではなく唯一の行き先になった。IR を作って検査するところまでは動くので、
@@ -381,7 +384,7 @@ XSS の境界・往復の一致・要約・折りたたみは、対象そのも�
 
 ## 原則
 
-- **既存を先に探す。** 同じ issue に 2 枚目を作らない
+- **1 セッションを 1 記録にする。**同じテーマでも別セッションなら分け、同じセッションの再 trace だけ追記する
 - **決定は捨てた案で残す。** 棄却理由の無い決定は決定ではない
 - **良い結果だけ書かない。** 受け入れた不利な点も並べる
 - **fact を名乗るなら証拠を出す。** 出せないなら inference と書く

@@ -6,7 +6,10 @@
 // 持っていない検査を閾値付きで入れない。代わりに構造で強制する
 // （棄却理由が無ければ decisions は通らない、など）。
 
-export const SCHEMA = 'progress/1';
+import { SESSION_SCHEMA, sessionRecordId } from './session.mjs';
+
+export const SCHEMA = SESSION_SCHEMA;
+const LEGACY_SCHEMA = 'progress/1';
 
 export const STATUS = ['planning', 'in-progress', 'blocked', 'paused', 'done'];
 export const EVENT_KINDS = ['work', 'finding', 'dead_end', 'debt', 'state_transition'];
@@ -49,7 +52,7 @@ export function validate(ir) {
   const P = (code, message, fix) => problems.push({ code, message, fix });
   const W = (code, message, fix) => warnings.push({ code, message, fix });
 
-  if (ir?.schema !== SCHEMA) {
+  if (ir?.schema !== SCHEMA && ir?.schema !== LEGACY_SCHEMA) {
     P('schema/unknown', `schema が "${SCHEMA}" でない: ${JSON.stringify(ir?.schema)}`, `schema を "${SCHEMA}" にする`);
     return { ok: false, problems, warnings };
   }
@@ -60,6 +63,28 @@ export function validate(ir) {
   if (!STATUS.includes(m.status)) P('meta/status', `meta.status が ${STATUS.join(' / ')} のどれでもない: ${JSON.stringify(m.status)}`, 'いずれかにする');
   for (const f of ['created', 'updated']) {
     if (!ISO.test(m[f] || '')) P(`meta/${f}`, `meta.${f} が ISO 8601 でない: ${JSON.stringify(m[f])}`, '観測時点が無いと、いつ真だった話か分からなくなる');
+  }
+
+  if (ir.schema === SCHEMA) {
+    const s = ir.session || {};
+    if (!isStr(s.id)) P('session/id', 'session.id が空。', '元ツールのセッション ID を残す');
+    if (!['claude-code', 'codex'].includes(s.host)) {
+      P('session/host', `session.host が claude-code / codex のどちらでもない: ${JSON.stringify(s.host)}`, '元ツールを指定する');
+    }
+    if (isStr(s.id) && isStr(s.host) && m.id !== sessionRecordId(s.host, s.id)) {
+      P('session/record-id', `meta.id がセッション ID から決まる値ではない: ${JSON.stringify(m.id)}`, `meta.id を ${sessionRecordId(s.host, s.id)} にする`);
+    }
+    const utterances = arr(ir.utterances);
+    if (utterances.length === 0) P('session/utterances', 'utterances が空。', 'collect と sessionize をやり直す');
+    const utteranceKeys = new Set();
+    for (const u of utterances) {
+      if (!ID.test(u.key || '')) P('session/utterance-key', `発言の key が不正: ${JSON.stringify(u.key)}`, 'sessionize で作り直す');
+      else if (utteranceKeys.has(u.key)) P('session/utterance-duplicate', `発言の key が重複している: ${u.key}`, 'sessionize で作り直す');
+      else utteranceKeys.add(u.key);
+      if (!ISO.test(u.at || '')) P('session/utterance-at', `発言の at が ISO 8601 でない: ${JSON.stringify(u.at)}`, 'sessionize で作り直す');
+      if (!['human', 'ai'].includes(u.role)) P('session/utterance-role', `発言の role が human / ai でない: ${JSON.stringify(u.role)}`, 'sessionize で作り直す');
+      if (!isStr(u.text)) P('session/utterance-text', `発言 ${JSON.stringify(u.key)} の text が空。`, 'sessionize で作り直す');
+    }
   }
 
   const b = ir.background || {};

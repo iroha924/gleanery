@@ -11,13 +11,7 @@ export default function SettingsPage() {
   const tab = searchParams.get("tab") === "terms" ? "terms" : "projects";
 
   return (
-    <div className="mx-auto w-full max-w-[76rem] space-y-5">
-      <header>
-        <h1 className="text-xl font-semibold tracking-[-0.02em]">設定</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          ダッシュボードの閲覧範囲と、固有の言葉を管理します。
-        </p>
-      </header>
+    <div className="mx-auto w-full max-w-[76rem]">
       <Tabs
         value={tab}
         onValueChange={(v) =>

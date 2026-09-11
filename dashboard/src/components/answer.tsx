@@ -109,32 +109,30 @@ const COMPONENTS: Components = {
     </a>
   ),
   // 記事として読ませる。**和文の長文は行間を広く取らないと目が滑る。**
-  p: ({ children }) => <p className="text-[1rem] leading-[2.15] tracking-[0.015em]">{children}</p>,
-  ul: ({ children }) => <ul className="list-disc space-y-2 pl-5 text-[1rem] leading-[2.05]">{children}</ul>,
-  ol: ({ children }) => (
-    <ol className="list-decimal space-y-2 pl-5 text-[1rem] leading-[2.05]">{children}</ol>
-  ),
+  p: ({ children }) => <p className="text-base leading-7 tracking-[0.01em]">{children}</p>,
+  ul: ({ children }) => <ul className="list-disc space-y-1.5 pl-5 text-base leading-7">{children}</ul>,
+  ol: ({ children }) => <ol className="list-decimal space-y-1.5 pl-5 text-base leading-7">{children}</ol>,
   code: ({ children, className }) =>
     className ? (
       <code className={className}>{children}</code>
     ) : (
-      <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">{children}</code>
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-sm">{children}</code>
     ),
   pre: ({ children }) => (
     // 長い行で画面が横に伸びないよう、ここだけ横スクロールさせる。
-    <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-xs">{children}</pre>
+    <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-sm">{children}</pre>
   ),
   // 表は幅が読めないので、はみ出す分はこの中でスクロールさせる。
   table: ({ children }) => (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-sm">{children}</table>
+      <table className="w-full border-collapse text-base">{children}</table>
     </div>
   ),
   th: ({ children }) => <th className="border-b px-2 py-1 text-left font-medium">{children}</th>,
   td: ({ children }) => <td className="border-b px-2 py-1 align-top">{children}</td>,
-  h1: ({ children }) => <h1 className="font-semibold text-base">{children}</h1>,
-  h2: ({ children }) => <h2 className="font-semibold text-base">{children}</h2>,
-  h3: ({ children }) => <h3 className="font-medium text-sm">{children}</h3>,
+  h1: ({ children }) => <h1 className="text-base font-semibold">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-base font-semibold">{children}</h2>,
+  h3: ({ children }) => <h3 className="font-medium text-base">{children}</h3>,
 };
 
 const COMPACT_COMPONENTS: Components = {
@@ -142,9 +140,9 @@ const COMPACT_COMPONENTS: Components = {
   p: ({ children }) => <p className="leading-7">{children}</p>,
   ul: ({ children }) => <ul className="list-disc space-y-1.5 pl-5 leading-7">{children}</ul>,
   ol: ({ children }) => <ol className="list-decimal space-y-1.5 pl-5 leading-7">{children}</ol>,
-  h1: ({ children }) => <h1 className="text-base font-semibold">{children}</h1>,
-  h2: ({ children }) => <h2 className="text-[15px] font-semibold">{children}</h2>,
-  h3: ({ children }) => <h3 className="text-[15px] font-medium">{children}</h3>,
+  h1: ({ children }) => <h1 className="text-lg font-semibold">{children}</h1>,
+  h2: ({ children }) => <h2 className="text-base font-semibold">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-base font-medium">{children}</h3>,
 };
 
 const INLINE_COMPONENTS: Components = {
@@ -159,7 +157,7 @@ const INLINE_TEXT_COMPONENTS: Components = {
 
 export function MarkdownText({ text, className }: { text: string; className?: string }) {
   return (
-    <div className={cn("min-w-0 space-y-3 break-words text-[15px] leading-7", className)}>
+    <div className={cn("min-w-0 space-y-3 break-words text-base leading-7", className)}>
       <Markdown remarkPlugins={[remarkGfm, remarkStoredMarkdown]} components={COMPACT_COMPONENTS}>
         {text}
       </Markdown>
@@ -192,7 +190,7 @@ export function MarkdownInline({
 
 export function Answer({ text }: { text: string }) {
   return (
-    <div className="space-y-3 text-sm">
+    <div className="space-y-3 text-base">
       <Markdown remarkPlugins={[remarkGfm, remarkStoredMarkdown]} components={COMPONENTS}>
         {text}
       </Markdown>

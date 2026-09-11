@@ -20,7 +20,7 @@
 | **探す** | ダッシュボード | 意味検索の結果をそのまま見る |
 | **記録する** | `/mitos:trace` スキル | いまのセッションの判断を構造化して DB へ入れる |
 | **現在地を知る** | MCP `current_work` / `/mitos:current` | いまどこまで進んでいて、次に何をやるか。質問は要らない |
-| **溜める** | `mitos sync`（毎日 6:00） | GitHub の PR・issue・レビュー、Linear の issue・コメント、リポジトリの Markdown、**Claude Code の会話** |
+| **溜める** | `mitos sync`（毎日 6:00）と `/mitos:trace` | GitHub・Linear・Markdown は同期し、Claude Code / Codex の作業セッションは trace したものだけを残す |
 
 ## Claude Code で開発しているときの使いどころ
 
@@ -103,7 +103,7 @@ bun run dev        # Hono API（:8787）+ Next.js（:3000）。**前面でだけ
 | 画面 | ルート | 何をするところ |
 |---|---|---|
 | **質問する** | `/` | チャット。履歴は残り、リンクは新規タブで開く |
-| **作業の現在地** | `/now` | 未完の工程と次にやること、触ってはいけないもの |
+| **セッション** | `/sessions` | trace 済みのセッションをページ単位で一覧し、会話・状態・元のセッション ID・再開コマンドを確認する |
 | **記録を探す** | `/search` | 意味検索の生の結果。**種別で絞れる**（発言を出すのもここ） |
 | **記録** | `/records/:id` | 1 件の中身。決定 / 分かったこと / 確かめたこと / 未解決の問いをタブで、参照を末尾に |
 | **会議を聞き取る** | `/mtg` | 2 系統の音声を Realtime へ流して文字起こし |
@@ -155,7 +155,6 @@ mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me
 mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
 mitos import-linear --team <名前> [--group <束>] [--all]
                                                Linear の issue とコメントを取り込む
-mitos import-sessions [--cwd <dir>]            Claude Code の会話をナレッジにする（sync からも呼ばれる）
 mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
 mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
 mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
@@ -175,7 +174,7 @@ mitos usage                                    OpenAI の使用量と残り
 |---|---|---|
 | GitHub の PR・issue の本文、レビュー・議論 | GitHub App（dashboard）または`gh`（CLI） | **bot が作った PR も取り込む**（リリース PR がそれ） |
 | Linear の issue・コメント | **MCP をヘッドレスで叩く** | API キーが発行できない組織があるため。下記参照 |
-| Claude Code の会話 | `~/.claude/projects/*.jsonl`（ccs を使っているなら `~/.ccs/instances/*/projects/` も） | 貼り付けた議事録もここに入る。**そのマシンにしか無い**。Codex の rollout は読まない |
+| Claude Code / Codex の作業セッション | `/mitos:trace` | trace を実行したセッションだけを、元のセッション ID と会話付きで取り込む |
 | リポジトリの Markdown | `git ls-files` | 見出しで節に割る。**symlink は辿らない** |
 | 作業の判断 | `/mitos:trace` | 決定・捨てた案・制約・未解決。**ファイルではなく DB に入る** |
 
