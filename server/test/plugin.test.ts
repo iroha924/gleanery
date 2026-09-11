@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +13,7 @@ import {
   differingFiles,
   type Install,
   mcpNote,
+  observe,
   parsePs,
   report,
   rootState,
@@ -96,7 +97,24 @@ test("中身の比較はホストが cache に足す印と .DS_Store を無視�
   fs.writeFileSync(path.join(b.root, "dist", "mcp.js"), "y");
   fs.mkdirSync(path.join(a.root, "skills", "new"), { recursive: true });
   fs.writeFileSync(path.join(a.root, "skills", "new", "SKILL.md"), "s");
-  assert.deepEqual(differingFiles(a.root, b.root), ["dist/mcp.js", "skills/new/SKILL.md"]);
+  // root 直下のドットで始まる配布物は、印と違って差に数える。
+  fs.writeFileSync(path.join(a.root, ".mcp.json"), "{}");
+  assert.deepEqual(differingFiles(a.root, b.root), [".mcp.json", "dist/mcp.js", "skills/new/SKILL.md"]);
+});
+
+test("repository 側は git が追跡しているファイルだけを配布物として比べる", () => {
+  // 実物と同じく、git の root の下に plugin/ を置く。
+  const repo = plugin("git-repo/plugin", "0.1.0");
+  const cache = plugin("git-cache", "0.1.0");
+  const git = (...a: string[]) =>
+    execFileSync("git", ["-C", path.dirname(repo.root), ...a], { stdio: "ignore" });
+  git("init", "-q");
+  git("add", ".");
+  // 追跡していないファイル（ignore 対象や editor の一時ファイル）は配られない。
+  fs.writeFileSync(path.join(repo.root, "debug.log"), "");
+  fs.writeFileSync(path.join(repo.root, "dist", ".mcp.js.swp"), "");
+  assert.deepEqual(differingFiles(repo.root, cache.root, { tracked: true }), []);
+  assert.deepEqual(differingFiles(repo.root, cache.root), ["debug.log", "dist/.mcp.js.swp"]);
 });
 
 test("ps の出力から node …/dist/mcp.js だけを拾う", () => {
@@ -235,6 +253,26 @@ test("実行中の MCP は起動元の状態と導入済みの版で判定する
   );
 });
 
+test("実行中の MCP を起動元から特定し、同じ場所に作り直された cache を見分ける", async () => {
+  // Codex と同じく、root を cwd にして相対パスで起動する。
+  const where = "obs/plugins/cache/mitos/mitos/0.0.1";
+  const idle = "setInterval(() => {}, 1000);";
+  const { root } = plugin(where, "0.0.1", idle);
+  const child = spawn(process.execPath, ["./dist/mcp.js"], { cwd: root, stdio: "ignore" });
+  try {
+    await new Promise((r) => setTimeout(r, 500));
+    const mine = () => observe(tmp).running?.find((r) => r.pid === child.pid);
+    assert.equal(mine()?.version, "0.0.1");
+    assert.equal(mine()?.replaced, false);
+    // 同じ版を入れ直すと Codex は同じパスに作り直す。プロセスは消えた旧ディレクトリを握ったまま。
+    fs.rmSync(root, { recursive: true });
+    plugin(where, "0.0.1", idle);
+    assert.equal(mine()?.replaced, true);
+  } finally {
+    child.kill();
+  }
+});
+
 test("導入先が消えていれば repository が見えなくても出す", () => {
   const out = report(
     seen({ claude: { version: "0.10.18", root: path.join(tmp, "claude3", "missing") } }),
@@ -298,12 +336,12 @@ test("current_work の応答は記録の枠の外に実行版を添える", {
     }),
   );
   try {
-    // 未登録の場所で返す早期の応答と、記録を quote() の枠に入れて返す応答の両方を通す。
+    // 未登録の場所の早期の応答と、登録済みの場所の応答を通す。記録の枠は「ここまで」の行で閉じるので、
+    // 最後の行が版の行なら枠の外にある。
     for (const cwd of [os.tmpdir(), path.join(SRC, "..", "..")]) {
       const r = await client.callTool({ name: "current_work", arguments: { cwd } });
       const text = (r.content as { text: string }[])[0]?.text ?? "";
       assert.equal(text.split("\n").at(-1), `mitos MCP ${versionAt(REPO_PLUGIN)}`, cwd);
-      assert.ok(text.lastIndexOf("ここまで") < text.lastIndexOf("mitos MCP"), `枠の中に入っている: ${cwd}`);
     }
   } finally {
     await client.close();

@@ -68,27 +68,45 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** 2 つの root で中身が違うファイル。**mtime は見ない** — 同じ中身の再 bundle で誤検知する。 */
-export function differingFiles(a: string, b: string): string[] {
-  const list = (root: string) =>
-    new Map(
-      fs
-        .readdirSync(root, { recursive: true, withFileTypes: true })
-        .filter((e) => e.isFile())
-        .map((e) => {
-          const abs = path.join(e.parentPath, e.name);
-          return [path.relative(root, abs), abs] as const;
-        })
-        // ホストが cache に書き足す印（Claude Code の `.orphaned_at` と `.in_use/<pid>`）と `.DS_Store` は
-        // 配布物ではない。root 直下でドットから始まる配布物は manifest の 2 つだけ。
-        .filter(([rel]) => {
-          const top = rel.split(path.sep)[0] ?? "";
-          const mark = top.startsWith(".") && top !== ".claude-plugin" && top !== ".codex-plugin";
-          return !mark && path.basename(rel) !== ".DS_Store";
-        }),
-    );
-  const x = list(a);
-  const y = list(b);
+// Claude Code が cache の root に書き足す印（置き換えた版の `.orphaned_at`、使っている版の `.in_use/<pid>`）。
+// **名前で挙げる。**ドットで始まるものをまとめて外すと、`.mcp.json` のような配布物の差まで黙って消える。
+const HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
+
+/** root 以下の配布物。印のディレクトリへは降りない（走査中に session が終わると消える）。 */
+function distributed(root: string, tracked: boolean): Map<string, string> {
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      if (dir === root && HOST_MARKS.has(e.name)) return [];
+      const abs = path.join(dir, e.name);
+      return e.isDirectory() ? walk(abs) : e.isFile() ? [path.relative(root, abs)] : [];
+    });
+  // repository は git が追跡しているものだけが配られる。ignore 対象や editor の一時ファイルを差に数えない。
+  let rels: string[] | undefined;
+  if (tracked) {
+    try {
+      rels = execFileSync("git", ["-C", root, "ls-files", "-z"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .split("\0")
+        .filter((rel) => rel && fs.existsSync(path.join(root, rel)));
+    } catch {
+      // git の外（tarball で取った repository など）は全部を数える。
+    }
+  }
+  rels ??= walk(root);
+  return new Map(
+    rels.filter((rel) => path.basename(rel) !== ".DS_Store").map((rel) => [rel, path.join(root, rel)]),
+  );
+}
+
+/**
+ * 2 つの root で中身が違うファイル。**mtime は見ない** — 同じ中身の再 bundle で誤検知する。
+ * `tracked` は a が repository の作業ツリーのときに立てる。
+ */
+export function differingFiles(a: string, b: string, { tracked = false } = {}): string[] {
+  const x = distributed(a, tracked);
+  const y = distributed(b, false);
   return [...new Set([...x.keys(), ...y.keys()])]
     .filter((rel) => {
       const p = x.get(rel);
@@ -191,17 +209,10 @@ export function observe(cwdRoot: string): Seen {
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 30_000,
       }),
-    ) as {
-      id: string;
-      version?: string;
-      installPath?: string;
-      scope?: string;
-      enabled?: boolean;
-      projectPath?: string;
-    }[];
-    // 同じ id が scope ごとに並ぶ。project と local は別の場所の導入なので、この場所のものか user を採る。
-    const mine = list.filter((p) => p.id.startsWith("mitos@") && p.enabled !== false);
-    const m = mine.find((p) => p.projectPath === cwdRoot) ?? mine.find((p) => p.scope === "user");
+    ) as { id: string; version?: string; installPath?: string; scope?: string }[];
+    // 同じ id が scope ごとに並ぶ。README の導入手順と、下で案内する `claude plugin update`（既定は
+    // user scope）に揃えて user の導入だけを見る。project / local は別の場所の session にしか効かない。
+    const m = list.find((p) => p.id.startsWith("mitos@") && p.scope === "user");
     claude = m?.installPath ? { version: m.version ?? null, root: m.installPath } : null;
   } catch {
     claude = "unknown";
@@ -209,14 +220,15 @@ export function observe(cwdRoot: string): Seen {
 
   // `codex plugin list --json` は 7 秒かかり、返る version が cache のものか source のものか
   // 区別できない。cache の置き場所を直接読む。
-  const codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
   // lsof は symlink を解いたパスを返すので、実行中の MCP と突き合わせる側も解いておく。
-  let codexCache = path.join(codexHome, "plugins", "cache");
+  // cache が丸ごと消えていても解けるよう、CODEX_HOME の側で解く。
+  let codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
   try {
-    codexCache = fs.realpathSync(codexCache);
+    codexHome = fs.realpathSync(codexHome);
   } catch {
     // 無ければ下の走査が空になり、「見つからない」と出る。
   }
+  const codexCache = path.join(codexHome, "plugins", "cache");
   const codex: Install[] = [];
   for (const market of safeDirs(codexCache)) {
     for (const v of safeDirs(path.join(codexCache, market, "mitos"))) {
@@ -241,11 +253,14 @@ export function observe(cwdRoot: string): Seen {
       // 別の plugin の dist/mcp.js を除く。消えた cache は manifest を読めないので置き場所の形で見分ける。
       if (now === null && !cached) return [];
       // 表示するのは起動時の版。消えた・作り直された cache はディレクトリ名がそれにあたる。作業ツリーは
-      // 起動後も書き換わるので、bundle が起動より新しければ今の manifest の版で動いているとは言えない。
+      // 起動後も書き換わるので、bundle か manifest が起動より新しければ今の版で動いているとは言えない。
       let version = cwd.replaced || now === null ? (cached ? path.basename(root) : null) : now;
       if (!cached && version !== null) {
         try {
-          if (fs.statSync(path.join(root, "dist", "mcp.js")).mtimeMs > p.started.getTime()) version = null;
+          const touched = Math.max(
+            ...[path.join("dist", "mcp.js"), MANIFEST].map((f) => fs.statSync(path.join(root, f)).mtimeMs),
+          );
+          if (touched > p.started.getTime()) version = null;
         } catch {
           version = null;
         }
@@ -309,7 +324,8 @@ export function report(s: Seen, now = new Date()): string[] {
     const c = compareVersions(i.version, base.version);
     if (c < 0) return { note: `repository（${base.version}）より古い`, update: true };
     if (c > 0) return { note: `repository（${base.version}）より新しい。repository の checkout が古い` };
-    const diff = differingFiles(base.root, i.root);
+    if (path.resolve(i.root) === path.resolve(base.root)) return {};
+    const diff = differingFiles(base.root, i.root, { tracked: true });
     if (!diff.length) return {};
     const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
     return {

@@ -38986,17 +38986,29 @@ function compareVersions(a, b) {
   }
   return 0;
 }
-function differingFiles(a, b) {
-  const list = (root) => new Map(fs6.readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => {
-    const abs = path7.join(e.parentPath, e.name);
-    return [path7.relative(root, abs), abs];
-  }).filter(([rel]) => {
-    const top = rel.split(path7.sep)[0] ?? "";
-    const mark = top.startsWith(".") && top !== ".claude-plugin" && top !== ".codex-plugin";
-    return !mark && path7.basename(rel) !== ".DS_Store";
-  }));
-  const x = list(a);
-  const y = list(b);
+var HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
+function distributed(root, tracked) {
+  const walk = (dir) => fs6.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (dir === root && HOST_MARKS.has(e.name))
+      return [];
+    const abs = path7.join(dir, e.name);
+    return e.isDirectory() ? walk(abs) : e.isFile() ? [path7.relative(root, abs)] : [];
+  });
+  let rels;
+  if (tracked) {
+    try {
+      rels = execFileSync5("git", ["-C", root, "ls-files", "-z"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"]
+      }).split("\x00").filter((rel) => rel && fs6.existsSync(path7.join(root, rel)));
+    } catch {}
+  }
+  rels ??= walk(root);
+  return new Map(rels.filter((rel) => path7.basename(rel) !== ".DS_Store").map((rel) => [rel, path7.join(root, rel)]));
+}
+function differingFiles(a, b, { tracked = false } = {}) {
+  const x = distributed(a, tracked);
+  const y = distributed(b, false);
   return [...new Set([...x.keys(), ...y.keys()])].filter((rel) => {
     const p = x.get(rel);
     const q = y.get(rel);
@@ -39051,17 +39063,16 @@ function observe(cwdRoot) {
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 30000
     }));
-    const mine = list.filter((p) => p.id.startsWith("mitos@") && p.enabled !== false);
-    const m = mine.find((p) => p.projectPath === cwdRoot) ?? mine.find((p) => p.scope === "user");
+    const m = list.find((p) => p.id.startsWith("mitos@") && p.scope === "user");
     claude = m?.installPath ? { version: m.version ?? null, root: m.installPath } : null;
   } catch {
     claude = "unknown";
   }
-  const codexHome = process.env.CODEX_HOME ?? path7.join(os4.homedir(), ".codex");
-  let codexCache = path7.join(codexHome, "plugins", "cache");
+  let codexHome = process.env.CODEX_HOME ?? path7.join(os4.homedir(), ".codex");
   try {
-    codexCache = fs6.realpathSync(codexCache);
+    codexHome = fs6.realpathSync(codexHome);
   } catch {}
+  const codexCache = path7.join(codexHome, "plugins", "cache");
   const codex = [];
   for (const market of safeDirs(codexCache)) {
     for (const v of safeDirs(path7.join(codexCache, market, "mitos"))) {
@@ -39088,7 +39099,8 @@ function observe(cwdRoot) {
       let version2 = cwd.replaced || now === null ? cached2 ? path7.basename(root) : null : now;
       if (!cached2 && version2 !== null) {
         try {
-          if (fs6.statSync(path7.join(root, "dist", "mcp.js")).mtimeMs > p.started.getTime())
+          const touched = Math.max(...[path7.join("dist", "mcp.js"), MANIFEST].map((f) => fs6.statSync(path7.join(root, f)).mtimeMs));
+          if (touched > p.started.getTime())
             version2 = null;
         } catch {
           version2 = null;
@@ -39132,7 +39144,9 @@ function report(s, now = new Date) {
       return { note: `repository（${base.version}）より古い`, update: true };
     if (c > 0)
       return { note: `repository（${base.version}）より新しい。repository の checkout が古い` };
-    const diff = differingFiles(base.root, i.root);
+    if (path7.resolve(i.root) === path7.resolve(base.root))
+      return {};
+    const diff = differingFiles(base.root, i.root, { tracked: true });
     if (!diff.length)
       return {};
     const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;

@@ -39134,6 +39134,7 @@ function mcpNote(version2, root) {
     return `${v}。Claude Code がこの版を更新で置き換えた。/reload-plugins か session の張り直しで新しい版になる`;
   return v;
 }
+var HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
 
 // server/src/scope.ts
 import { execFileSync } from "node:child_process";
