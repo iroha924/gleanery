@@ -17,7 +17,8 @@ function jsonRequest(body: unknown): RequestInit {
 test("JSON の外部入力は handler より前に拒否する", async () => {
   const requests = [
     knowledgeRoutes.request("/search", jsonRequest({ question: "", extra: true })),
-    settingsRoutes.request("/groups", jsonRequest({ name: "team", paths: ["/one"] })),
+    settingsRoutes.request("/groups", jsonRequest({ name: "team", scopeIds: [1] })),
+    settingsRoutes.request("/groups", jsonRequest({ name: "team", scopeIds: [1, 1] })),
     settingsRoutes.request("/terms", jsonRequest({ word: "", aliases: [] })),
     speechRoutes.request("/reply", jsonRequest({ heard: "", scopeIds: [1] })),
     speechRoutes.request("/polish", jsonRequest({ text: "" })),

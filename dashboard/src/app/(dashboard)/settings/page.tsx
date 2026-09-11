@@ -14,7 +14,9 @@ export default function SettingsPage() {
     <div className="mx-auto w-full max-w-[76rem] space-y-5">
       <header>
         <h1 className="text-xl font-semibold tracking-[-0.02em]">設定</h1>
-        <p className="mt-1 text-sm text-muted-foreground">記録をまとめる単位と、固有の言葉を管理します。</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          ダッシュボードの閲覧範囲と、固有の言葉を管理します。
+        </p>
       </header>
       <Tabs
         value={tab}

@@ -1,14 +1,15 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { candidates, identify, rememberPath } from "../../scope.ts";
 import { cfg, db } from "../runtime.ts";
-import { idParamSchema, positiveId, scopesQuerySchema } from "../validation.ts";
+import { idParamSchema, positiveId, positiveIds, scopesQuerySchema } from "../validation.ts";
 
 const groupSchema = z
   .object({
     name: z.string().trim().min(1).max(200),
-    paths: z.array(z.string().trim().min(1).max(4096)).min(2).max(100),
+    scopeIds: positiveIds
+      .min(2)
+      .refine((ids) => new Set(ids).size === ids.length, { message: "置き場所が重複している" }),
   })
   .strict();
 
@@ -22,20 +23,6 @@ const termSchema = z
   .strict();
 
 const app = new Hono()
-  .get("/candidates", async (c) => {
-    const known = await db().query<{ ident: string; id: number }>("select ident, id::int as id from scope");
-    const byIdent = new Map(known.rows.map((row) => [row.ident, row.id]));
-    return c.json(
-      candidates().map((candidate) => ({
-        ident: candidate.ident,
-        label: candidate.label,
-        absPath: candidate.absPath,
-        hostOrg: candidate.hostOrg,
-        markers: candidate.markers,
-        scopeId: byIdent.get(candidate.ident) ?? null,
-      })),
-    );
-  })
   .get("/groups", async (c) => {
     const result = await db().query(
       `select g.id::int, g.name,
@@ -50,23 +37,19 @@ const app = new Hono()
     return c.json(result.rows);
   })
   .post("/groups", zValidator("json", groupSchema), async (c) => {
-    const { name, paths } = c.req.valid("json");
-    // Only paths discovered on this host may be persisted as this host's locations.
-    const known = new Set(candidates().map((candidate) => candidate.absPath));
-    const unknown = paths.filter((path) => !known.has(path));
-    if (unknown.length > 0) {
-      return c.json(
-        {
-          error:
-            known.size === 0 ? "このホストには束ねられる置き場所が無い" : "候補に無い置き場所は登録できない",
-        },
-        400,
-      );
-    }
-
+    const { name, scopeIds } = c.req.valid("json");
     const client = await cfg().connect();
     try {
       await client.query("begin");
+      const scopes = await client.query<{ id: number }>(
+        "select id::int as id from scope where id = any($1::bigint[])",
+        [scopeIds],
+      );
+      if (scopes.rows.length !== scopeIds.length) {
+        await client.query("rollback");
+        return c.json({ error: "存在しない置き場所は登録できない" }, 400);
+      }
+
       // The config role cannot UPDATE scope_group, so resolve conflicts with INSERT then SELECT.
       const inserted = await client.query<{ id: number }>(
         "insert into scope_group (name) values ($1) on conflict (name) do nothing returning id::int as id",
@@ -79,43 +62,14 @@ const app = new Hono()
       if (groupId === undefined) throw new Error("束を作れなかった");
 
       await client.query("delete from group_member where group_id = $1", [groupId]);
-      for (const path of paths) {
-        const identified = identify(path);
-        const found = await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [
-          identified.ident,
-        ]);
-        let scopeId = found.rows[0]?.id;
-        if (scopeId === undefined) {
-          const created = await client.query<{ id: number }>(
-            `insert into scope (ident, ident_kind, abs_path, host_org, repo_name, label)
-             values ($1,$2,$3,$4,$5,$6) on conflict (ident) do nothing returning id::int as id`,
-            [
-              identified.ident,
-              identified.identKind,
-              identified.absPath,
-              identified.hostOrg,
-              identified.repoName,
-              identified.label,
-            ],
-          );
-          scopeId =
-            created.rows[0]?.id ??
-            (
-              await client.query<{ id: number }>("select id::int as id from scope where ident = $1", [
-                identified.ident,
-              ])
-            ).rows[0]?.id;
-        }
-        if (scopeId !== undefined) {
-          await rememberPath(client, scopeId, identified.absPath);
-          await client.query(
-            "insert into group_member (group_id, scope_id) values ($1,$2) on conflict do nothing",
-            [groupId, scopeId],
-          );
-        }
-      }
+      await client.query(
+        `insert into group_member (group_id, scope_id)
+         select $1, unnest($2::bigint[])
+         on conflict do nothing`,
+        [groupId, scopeIds],
+      );
       await client.query("commit");
-      return c.json({ ok: true, groupId, members: paths.length });
+      return c.json({ ok: true, groupId, members: scopeIds.length });
     } catch (error) {
       await client.query("rollback").catch(() => {});
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);

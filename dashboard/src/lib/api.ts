@@ -33,6 +33,7 @@ export type ChatRow = {
 export type Scope = {
   id: number;
   label: string;
+  identKind: string;
   role: string | null;
   summary: string | null;
   groups: string | null;
@@ -114,15 +115,6 @@ export type Hit = Node & {
 const q = (scopes: number[] | undefined): string =>
   scopes === undefined ? "" : `?scopes=${scopes.join(",")}`;
 
-export type Candidate = {
-  ident: string;
-  label: string;
-  absPath: string;
-  hostOrg: string | null;
-  markers: string[];
-  scopeId: number | null;
-};
-
 export type GroupMember = { id: number; label: string; identKind: string; ident: string };
 export type Group = { id: number; name: string; members: GroupMember[] };
 
@@ -168,10 +160,9 @@ export const api = {
     return json.token;
   },
   now: (scopes?: number[]) => get<Now[]>(`/api/now${q(scopes)}`),
-  candidates: () => get<Candidate[]>("/api/candidates"),
   groups: () => get<Group[]>("/api/groups"),
-  saveGroup: (name: string, paths: string[]) =>
-    send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, paths }),
+  saveGroup: (name: string, scopeIds: number[]) =>
+    send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, scopeIds }),
   deleteGroup: (id: number) => send<{ ok: true }>(`/api/groups/${id}`, "DELETE"),
   chats: () => get<ChatRow[]>("/api/chats"),
   deleteChat: (id: string) => send<{ ok: true }>(`/api/chats/${encodeURIComponent(id)}`, "DELETE"),

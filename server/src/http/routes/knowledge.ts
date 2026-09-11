@@ -21,7 +21,7 @@ const app = new Hono()
   })
   .get("/scopes", async (c) => {
     const result = await db().query(
-      `select s.id::int, s.label, s.role, s.summary,
+      `select s.id::int, s.label, s.ident_kind as "identKind", s.role, s.summary,
               coalesce(string_agg(distinct g.name, ', '), null) as groups,
               (select count(*) from record where scope_id = s.id)::int as records,
               (select count(*) from node where scope_id = s.id and deleted_at is null)::int as nodes
