@@ -65,7 +65,7 @@ export function ProjectsPanel() {
     <div className="space-y-6">
       <GithubPanel />
 
-      <div className="rounded-xl bg-card/80 p-4 shadow-sm ring-1 ring-foreground/10 backdrop-blur-sm">
+      <div className="rounded-md bg-card/80 p-4 shadow-sm ring-1 ring-foreground/10 backdrop-blur-sm">
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-stretch">
           <div className="rounded-lg bg-background/55 p-3">
             <div className="flex items-center gap-2">
@@ -109,7 +109,7 @@ export function ProjectsPanel() {
         </div>
         {groups.isPending && <Skeleton className="h-20 w-full" />}
         {groups.data?.length === 0 && (
-          <div className="flex items-center gap-3 rounded-xl border border-dashed bg-card/60 p-4 shadow-sm">
+          <div className="flex items-center gap-3 rounded-md border border-dashed bg-card/60 p-4 shadow-sm">
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-secondary text-secondary-foreground">
               <FolderPlusIcon className="size-4" />
             </span>
