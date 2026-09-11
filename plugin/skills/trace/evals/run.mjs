@@ -11,6 +11,7 @@ import { validate } from '../lib/ir.mjs';
 import { collect } from '../lib/collect.mjs';
 import { cover, refsExist } from '../lib/cover.mjs';
 import { applyPatch } from '../lib/patch.mjs';
+import { sessionRecordId, sessionize } from '../lib/session.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { cases } = JSON.parse(fs.readFileSync(path.join(HERE, 'cases.json'), 'utf8'));
@@ -142,6 +143,15 @@ console.log('採掘:');
   if (c0.answer === 'ルート直下') ok('collect-choice-answer'); else ng('collect-choice-answer', `回答が ${JSON.stringify(c0.answer)}`);
   if (d.failedCommands.length === 1 && d.failedCommands[0].exit === 1) ok('collect-failed-exit'); else ng('collect-failed-exit', `失敗コマンドの取り方が違う: ${JSON.stringify(d.failedCommands)}`);
   if (d.commands.length === 2) ok('collect-command-count'); else ng('collect-command-count', `コマンドが ${d.commands.length} 件（期待 2）`);
+  if (d.messages.some((m) => m.role === 'ai' && m.text.includes('実装を完了'))) ok('collect-assistant');
+  else ng('collect-assistant', 'AI の応答が会話から落ちている');
+
+  const ir = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
+  const attached = sessionize(d, ir);
+  if (attached.meta.id === sessionRecordId('claude-code', 's1') && attached.schema === 'session/2') ok('sessionize-identity');
+  else ng('sessionize-identity', `セッションの識別が違う: ${attached.meta.id}`);
+  if (attached.utterances.length === d.messages.length && validate(attached).ok) ok('sessionize-valid');
+  else ng('sessionize-valid', `会話を結び付けた IR が不正: ${JSON.stringify(validate(attached).problems)}`);
 }
 
 // 網羅: 材料にあったのに記録へ入らなかったものを、識別子の突き合わせだけで拾えること。

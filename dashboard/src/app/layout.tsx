@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 
 export const metadata: Metadata = {
   title: "mitos",
-  description: "過去の判断と現在地を引くダッシュボード",
+  description: "過去の判断とAIセッションを引くダッシュボード",
   icons: {
     icon: "/favicon.svg",
     apple: "/apple-touch-icon.png",

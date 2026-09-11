@@ -873,7 +873,12 @@ export async function runTool(
 
   if (call.name === "find_utterances") {
     if (!a.person) return JSON.stringify({ error: "person が空" });
-    const w = ["n.kind = 'utterance'", "n.deleted_at is null", "n.scope_id = any($1)"];
+    const w = [
+      "n.kind = 'utterance'",
+      "n.deleted_at is null",
+      "r.schema_ver <> 'session/1'",
+      "n.scope_id = any($1)",
+    ];
     const ps: unknown[] = [scopeIds];
     const push = (v: unknown, f: (i: number) => string) => {
       ps.push(v);
@@ -882,9 +887,8 @@ export async function runTool(
     // **返信だけで参加した発言も拾う。**口を開いた順の 1 人目しか actor_name に入っていないので、
     // ここを落とすと「返事でそう言った」が全部消える。
     // **名簿を展開して照合する。**渡されるのは呼び名かハンドルのどちらかで、
-    // 書かれている値は経路で違う（実測: import-sessions は person.display の「平田」を書き、
-    // GitHub 由来は handle の「iroha924」を書く）。片方だけで照合すると、
-    // ハンドルを渡した瞬間にセッション由来の 118 件が全部落ちる。
+    // 書かれている値は経路で違う（記録によって呼び名、GitHub 由来は handle）。
+    // 片方だけで照合すると、ハンドルを渡した瞬間に呼び名で書かれた発言が全部落ちる。
     push(
       a.person,
       (i) => `(
@@ -904,7 +908,8 @@ export async function runTool(
     const lim = Math.min(Math.max(Math.trunc(Number(a.limit ?? 10)) || 10, 1), 50);
     const utotal = (
       await client.query<{ n: number }>(
-        `select count(*)::int n from node n join scope s on s.id = n.scope_id where ${w.join(" and ")}`,
+        `select count(*)::int n from node n join record r on r.id = n.record_id
+         join scope s on s.id = n.scope_id where ${w.join(" and ")}`,
         ps,
       )
     ).rows[0]?.n;
@@ -918,7 +923,7 @@ export async function runTool(
     }>(
       `select n.actor_name as author, to_char(n.at, 'YYYY-MM-DD') as at, s.label as repo,
               (n.attrs->>'pr')::int as pr, left(n.text, 1200) as text, n.attrs->>'url' as url
-       from node n join scope s on s.id = n.scope_id
+       from node n join record r on r.id = n.record_id join scope s on s.id = n.scope_id
        where ${w.join(" and ")}
        order by n.at desc nulls last limit ${lim}`,
       ps,

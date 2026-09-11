@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BotIcon, ChevronRightIcon, GitBranchIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
+import { BotIcon, ChevronRightIcon, GitBranchIcon, ShieldAlertIcon, UserIcon } from "lucide-react-motion";
 import { use } from "react";
 import { MarkdownInline, MarkdownText } from "@/components/answer";
 import { Phases } from "@/components/phases";
@@ -55,18 +55,16 @@ function Refs({ refs }: { refs: Ref[] }) {
   if (groups.length === 0) return null;
   return (
     <section className="space-y-2">
-      <h2 className="font-medium text-muted-foreground text-sm">参照</h2>
+      <h2 className="font-medium text-muted-foreground text-base">参照</h2>
       {groups.map((g) => (
         <details key={g.kind} className="border-border/60 border-t py-2">
-          <summary className="cursor-pointer list-none text-[13px] marker:content-none">
+          <summary className="cursor-pointer list-none text-sm marker:content-none">
             {g.label}
-            <span className="ml-2 font-mono text-[10px] text-muted-foreground tabular-nums">
-              {g.rows.length}
-            </span>
+            <span className="ml-2 font-mono text-xs text-muted-foreground tabular-nums">{g.rows.length}</span>
           </summary>
           <ul className="mt-2 space-y-2">
             {g.rows.map((r) => (
-              <li key={`${r.kind}:${r.key}`} className="max-w-[110ch] text-[13px] leading-[1.85]">
+              <li key={`${r.kind}:${r.key}`} className="max-w-[110ch] text-sm leading-[1.85]">
                 <span className="text-muted-foreground">
                   {r.roles
                     .split(",")
@@ -78,10 +76,10 @@ function Refs({ refs }: { refs: Ref[] }) {
                     {r.title || r.key}
                   </a>
                 ) : (
-                  <code className="font-mono text-[12px]">{r.key}</code>
+                  <code className="font-mono text-sm">{r.key}</code>
                 )}
-                {r.failed > 0 && <span className="ml-2 text-dont text-[11px]">失敗 {r.failed}</span>}
-                {r.note && <MarkdownText text={r.note} className="text-[13px] text-muted-foreground" />}
+                {r.failed > 0 && <span className="ml-2 text-dont text-sm">失敗 {r.failed}</span>}
+                {r.note && <MarkdownText text={r.note} className="text-sm text-muted-foreground" />}
               </li>
             ))}
           </ul>
@@ -141,10 +139,10 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
     <>
       <Dot polarity={n.polarity} />
       <span className="min-w-0 flex-1">
-        <MarkdownInline text={n.text} disableLinks={detailed} className="block text-[15px] leading-7" />
+        <MarkdownInline text={n.text} disableLinks={detailed} className="block text-base leading-7" />
         {meta.length > 0 && (
           <span
-            className={`mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-xs ${n.attrs.blocking ? "text-dont" : "text-muted-foreground"}`}
+            className={`mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-sm ${n.attrs.blocking ? "text-dont" : "text-muted-foreground"}`}
           >
             {meta.map((value) => (
               <span key={String(value)}>{value}</span>
@@ -157,10 +155,10 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
 
   if (!detailed) {
     return (
-      <div className="flex items-start gap-3 rounded-lg border border-dashed bg-card px-4 py-3.5">
+      <div className="flex items-start gap-3 rounded-md border border-dashed bg-card px-4 py-3.5">
         {summary}
         {n.at && (
-          <span className="flex-none text-xs text-muted-foreground tabular-nums">{n.at.slice(0, 10)}</span>
+          <span className="flex-none text-sm text-muted-foreground tabular-nums">{n.at.slice(0, 10)}</span>
         )}
       </div>
     );
@@ -170,25 +168,26 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="group flex w-full items-start gap-3 rounded-lg border bg-card px-4 py-3.5 text-left transition-colors hover:border-sidebar-primary/35 hover:bg-accent/35"
+          data-motion-icon-group=""
+          className="group flex w-full items-start gap-3 rounded-md border bg-card px-4 py-3.5 text-left transition-colors hover:border-sidebar-primary/35 hover:bg-accent/35"
         >
           {summary}
           <span className="flex flex-none items-center gap-2 pt-0.5">
-            {n.at && <span className="text-xs text-muted-foreground tabular-nums">{n.at.slice(0, 10)}</span>}
-            <ChevronRightIcon className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+            {n.at && <span className="text-sm text-muted-foreground tabular-nums">{n.at.slice(0, 10)}</span>}
+            <ChevronRightIcon className="size-4 text-muted-foreground" />
           </span>
         </button>
       </DialogTrigger>
       <DialogContent className="gap-5 p-6 sm:max-w-[46rem]">
         <DialogHeader>
-          <DialogTitle className="pr-10 text-[1.05rem] leading-[1.8]">
+          <DialogTitle className="pr-10 text-lg leading-[1.8]">
             <MarkdownInline text={n.text} />
           </DialogTitle>
         </DialogHeader>
         <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
           {n.ex && <MarkdownText text={n.ex} className="text-muted-foreground" />}
           {n.attrs.confirmation && (
-            <p className="text-[15px] text-muted-foreground leading-7">確かめ方: {n.attrs.confirmation}</p>
+            <p className="text-base text-muted-foreground leading-7">確かめ方: {n.attrs.confirmation}</p>
           )}
           {/* 良かった点だけ並べると「都合のいいところだけ書いた記録」になるので、不利も同じ重さで出す。 */}
           {n.attrs.consequences && n.attrs.consequences.length > 0 && (
@@ -196,7 +195,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
               {n.attrs.consequences.map((c) => (
                 <li
                   key={c.text}
-                  className={`text-[15px] leading-7 ${c.good ? "text-muted-foreground" : "text-dont"}`}
+                  className={`text-base leading-7 ${c.good ? "text-muted-foreground" : "text-dont"}`}
                 >
                   {c.good ? "得たもの: " : "引き受けた不利: "}
                   <MarkdownInline text={c.text} />
@@ -206,7 +205,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
           )}
           {/* 検証は、何を実行して何が返ったかが本体 */}
           {n.attrs.cmd && (
-            <pre className="overflow-x-auto rounded bg-muted px-3 py-2 text-xs leading-relaxed">
+            <pre className="overflow-x-auto rounded bg-muted px-3 py-2 text-sm leading-relaxed">
               <code>
                 $ {n.attrs.cmd}
                 {n.attrs.output ? `\n${n.attrs.output}` : ""}
@@ -214,16 +213,16 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
             </pre>
           )}
           {n.attrs.whyNotRun && (
-            <p className="text-[15px] text-dont leading-7">実行していない: {n.attrs.whyNotRun}</p>
+            <p className="text-base text-dont leading-7">実行していない: {n.attrs.whyNotRun}</p>
           )}
           {n.attrs.supersededBy && (
-            <p className="text-[15px] text-muted-foreground leading-7">
-              後の決定: <code className="font-mono text-sm">{n.attrs.supersededBy}</code>
+            <p className="text-base text-muted-foreground leading-7">
+              後の決定: <code className="font-mono text-base">{n.attrs.supersededBy}</code>
             </p>
           )}
           {n.attrs.verifies && (
-            <p className="text-[15px] text-muted-foreground leading-7">
-              確かめた決定: <code className="font-mono text-sm">{n.attrs.verifies}</code>
+            <p className="text-base text-muted-foreground leading-7">
+              確かめた決定: <code className="font-mono text-base">{n.attrs.verifies}</code>
             </p>
           )}
           {/* 採った案は、捨てた案と並べないと「なぜそれか」が読めない */}
@@ -232,7 +231,7 @@ function Detail({ n, options }: { n: Node; options: Node[] }) {
               {taken.map((o) => (
                 <li
                   key={o.id}
-                  className={`border-l-2 pl-3 text-[15px] leading-7 ${
+                  className={`border-l-2 pl-3 text-base leading-7 ${
                     o.polarity === "dont" ? "border-dont/40" : "border-do/40"
                   }`}
                 >
@@ -256,7 +255,7 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
   const id = decodeURIComponent(encodedId);
   const { data, isPending, error } = useQuery({ queryKey: ["record", id], queryFn: () => api.record(id) });
   if (isPending) return <Skeleton className="h-96 w-full" />;
-  if (error) return <p className="text-sm text-dont">{String(error)}</p>;
+  if (error) return <p className="text-base text-dont">{String(error)}</p>;
 
   const options = data.nodes.filter((n) => n.kind === "option");
   const walls = data.nodes.filter((n) => n.kind === "boundary");
@@ -269,8 +268,8 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
   return (
     <article className="mx-auto w-full max-w-[76rem] space-y-8 pb-8">
       <header className="space-y-5 border-b pb-6">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full border bg-card px-2 py-0.5 font-medium text-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          <span className="rounded-md border bg-card px-2 py-0.5 font-medium text-foreground">
             {RECORD_STATUS[data.status] ?? data.status}
           </span>
           <span>{data.scope_label}</span>
@@ -282,14 +281,14 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
           )}
           <span className="tabular-nums">{data.updated_at.slice(0, 10)} 更新</span>
         </div>
-        <h1 className="max-w-[42ch] text-2xl font-semibold leading-tight tracking-[-0.025em] md:text-3xl">
+        <h1 className="max-w-[42ch] text-lg font-semibold leading-tight tracking-[-0.025em] md:text-lg">
           {data.title}
         </h1>
         {(data.problem || data.goal) && (
           <dl className="grid max-w-[90ch] gap-5 md:grid-cols-2">
             {data.problem && (
               <div className="space-y-1.5">
-                <dt className="text-xs font-semibold tracking-wide text-muted-foreground">課題</dt>
+                <dt className="text-sm font-semibold tracking-wide text-muted-foreground">課題</dt>
                 <dd>
                   <MarkdownText text={data.problem} />
                 </dd>
@@ -297,7 +296,7 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
             )}
             {data.goal && (
               <div className="space-y-1.5">
-                <dt className="text-xs font-semibold tracking-wide text-muted-foreground">目標</dt>
+                <dt className="text-sm font-semibold tracking-wide text-muted-foreground">目標</dt>
                 <dd>
                   <MarkdownText text={data.goal} />
                 </dd>
@@ -308,14 +307,14 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
       </header>
 
       {(data.current_text || data.phases.length > 0 || next.length > 0) && (
-        <section className="grid gap-7 rounded-lg border bg-card p-5 md:p-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.75fr)]">
+        <section className="grid gap-7 rounded-md border bg-card p-5 md:p-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.75fr)]">
           <div className="min-w-0 space-y-7">
             {data.current_text && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xs font-semibold tracking-wide text-muted-foreground">現在</h2>
+                  <h2 className="text-sm font-semibold tracking-wide text-muted-foreground">現在</h2>
                   {data.current_at && (
-                    <span className="text-xs text-muted-foreground tabular-nums">
+                    <span className="text-sm text-muted-foreground tabular-nums">
                       {data.current_at.slice(0, 10)}
                     </span>
                   )}
@@ -327,10 +326,10 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
           </div>
           {next.length > 0 && (
             <aside className="space-y-3 border-t pt-6 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
-              <h2 className="text-sm font-medium">次の一手</h2>
+              <h2 className="text-base font-medium">次の一手</h2>
               <ul className="space-y-3">
                 {next.map((item) => (
-                  <li key={`${item.who}:${item.text}`} className="flex gap-2.5 text-[15px] leading-7">
+                  <li key={`${item.who}:${item.text}`} className="flex gap-2.5 text-base leading-7">
                     <span className="mt-1.5 flex size-5 flex-none items-center justify-center rounded-md bg-muted text-muted-foreground">
                       {item.who === "human" ? (
                         <UserIcon className="size-3.5" />
@@ -348,17 +347,17 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
       )}
 
       {walls.length > 0 && (
-        <section className="rounded-lg border border-dont/25 bg-card p-5 md:p-6">
-          <h2 className="mb-4 flex items-center gap-2 text-sm font-medium text-dont">
+        <section className="rounded-md border border-dont/25 bg-card p-5 md:p-6">
+          <h2 className="mb-4 flex items-center gap-2 text-base font-medium text-dont">
             <ShieldAlertIcon className="size-4" />
             制約と、やらないこと
-            <span className="text-xs font-normal tabular-nums">{walls.length}</span>
+            <span className="text-sm font-normal tabular-nums">{walls.length}</span>
           </h2>
           {/* **項目の間を、折り返しの行間より広く取る。**同じだと、2 行に折り返した 1 件と
               1 行ずつの 2 件が見分けられない。 */}
           <ul className="space-y-3.5">
             {walls.map((w) => (
-              <li key={w.id} className="max-w-[90ch] border-dont border-l-2 pl-3.5 text-[15px] leading-7">
+              <li key={w.id} className="max-w-[90ch] border-dont border-l-2 pl-3.5 text-base leading-7">
                 <MarkdownText text={w.text} />
               </li>
             ))}
@@ -376,7 +375,7 @@ export default function RecordPage({ params }: { params: Promise<{ id: string }>
               {flow.map(({ label, rows }) => (
                 <TabsTrigger key={label} value={label} className="gap-2">
                   {label}
-                  <span className="text-xs text-muted-foreground tabular-nums">{rows.length}</span>
+                  <span className="text-sm text-muted-foreground tabular-nums">{rows.length}</span>
                 </TabsTrigger>
               ))}
             </TabsList>

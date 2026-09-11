@@ -33,16 +33,16 @@ export function ConfirmDelete({
       <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>「{what}」を消しますか</AlertDialogTitle>
+          <AlertDialogTitle>「{what}」を削除しますか？</AlertDialogTitle>
           <AlertDialogDescription>{note ?? "戻せません。"}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>やめる</AlertDialogCancel>
+          <AlertDialogCancel>キャンセル</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
             className="bg-dont text-white hover:bg-dont/90 focus-visible:ring-dont/40"
           >
-            消す
+            削除する
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

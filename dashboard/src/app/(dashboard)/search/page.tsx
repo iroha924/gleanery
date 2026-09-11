@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRightIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react";
+import { ChevronRightIcon, SearchIcon, SlidersHorizontalIcon } from "lucide-react-motion";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
@@ -74,13 +74,15 @@ export default function SearchPage() {
   return (
     <div className="mx-auto flex h-full w-full max-w-[72rem] min-w-0 flex-col gap-5 overflow-y-auto pr-1 sm:overflow-hidden sm:pr-0">
       <header className="shrink-0">
-        <h1 className="text-xl font-semibold tracking-[-0.02em]">ナレッジ検索</h1>
-        <p className="mt-1 text-sm text-muted-foreground">決定、検証、行き止まりを言葉の意味から探します。</p>
+        <h1 className="text-lg font-semibold tracking-[-0.02em]">ナレッジ検索</h1>
+        <p className="mt-1 text-base text-muted-foreground">
+          決定、検証、行き止まりを言葉の意味から探します。
+        </p>
       </header>
 
       <div className="shrink-0 space-y-3 pb-1">
         <form
-          className="flex gap-2 rounded-lg border bg-card p-2"
+          className="flex gap-2 rounded-md border bg-card p-2"
           onSubmit={(e) => {
             e.preventDefault();
             updateSearch({ q: draft.trim() || undefined });
@@ -97,16 +99,16 @@ export default function SearchPage() {
           </Button>
         </form>
 
-        <details className="group rounded-lg border bg-card">
-          <summary className="flex h-10 list-none items-center gap-2 px-3 text-sm font-medium marker:content-none">
+        <details className="group rounded-md border bg-card">
+          <summary className="flex h-10 list-none items-center gap-2 px-3 text-base font-medium marker:content-none">
             <SlidersHorizontalIcon className="size-4 text-muted-foreground" />
             絞り込み
             {activeFilters > 0 && (
-              <Badge variant="secondary" className="ml-1 min-w-5 justify-center px-1.5 tabular-nums">
+              <Badge variant="warning" className="ml-1 min-w-5 justify-center px-1.5 tabular-nums">
                 {activeFilters}
               </Badge>
             )}
-            <span className="ml-auto text-xs font-normal text-muted-foreground">
+            <span className="ml-auto text-sm font-normal text-muted-foreground">
               {activeFilters > 0 ? "条件あり" : "すべての種類"}
             </span>
           </summary>
@@ -143,9 +145,9 @@ export default function SearchPage() {
         {!q && (
           <section className="space-y-2">
             <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-medium">最近の記録</h2>
+              <h2 className="text-base font-medium">最近の記録</h2>
               {recent.data && (
-                <span className="text-xs text-muted-foreground tabular-nums">{recent.data.length} 件</span>
+                <span className="text-sm text-muted-foreground tabular-nums">{recent.data.length} 件</span>
               )}
             </div>
             {recent.isPending && (
@@ -155,12 +157,12 @@ export default function SearchPage() {
               </div>
             )}
             {recent.isError && (
-              <p className="rounded-lg border border-dont/30 bg-card p-4 text-sm text-dont">
+              <p className="rounded-md border border-dont/30 bg-card p-4 text-base text-dont">
                 {String(recent.error)}
               </p>
             )}
             {recent.data?.length === 0 && (
-              <div className="rounded-lg border border-dashed bg-card py-10">
+              <div className="rounded-md border border-dashed bg-card py-10">
                 <Empty className="min-h-0 border-0 p-0">
                   <EmptyHeader>
                     <EmptyMedia variant="icon">
@@ -175,16 +177,17 @@ export default function SearchPage() {
               </div>
             )}
             {recent.data && recent.data.length > 0 && (
-              <ol className="divide-y overflow-hidden rounded-lg border bg-card">
+              <ol className="divide-y overflow-hidden rounded-md border bg-card">
                 {recent.data.slice(0, 12).map((record) => (
                   <li key={record.id}>
                     <Link
                       href={`/records/${encodeURIComponent(record.id)}`}
+                      data-motion-icon-group=""
                       className="group block p-4 transition-colors hover:bg-muted/35 md:px-5"
                     >
                       <div className="flex items-start gap-4">
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                             <span>{RECORD_STATUS[record.status] ?? record.status}</span>
                             <span>{record.scope_label}</span>
                             <span className="tabular-nums">{record.updated_at.slice(0, 10)}</span>
@@ -193,14 +196,14 @@ export default function SearchPage() {
                             {record.title}
                           </h3>
                           {(record.current_text || record.goal || record.problem) && (
-                            <p className="mt-1.5 line-clamp-2 max-w-[86ch] text-sm text-muted-foreground leading-6">
+                            <p className="mt-1.5 line-clamp-2 max-w-[86ch] text-base text-muted-foreground leading-6">
                               {record.current_text || record.goal || record.problem}
                             </p>
                           )}
                         </div>
-                        <div className="flex flex-none items-center gap-3 pt-0.5 text-xs text-muted-foreground">
+                        <div className="flex flex-none items-center gap-3 pt-0.5 text-sm text-muted-foreground">
                           <span className="tabular-nums">{record.nodes} 項目</span>
-                          <ChevronRightIcon className="size-4 transition-transform group-hover:translate-x-0.5" />
+                          <ChevronRightIcon className="size-4" />
                         </div>
                       </div>
                     </Link>
@@ -209,7 +212,7 @@ export default function SearchPage() {
               </ol>
             )}
             {recent.data && recent.data.length > 12 && (
-              <p className="px-1 text-xs text-muted-foreground">最新の 12 件を表示しています。</p>
+              <p className="px-1 text-sm text-muted-foreground">最新の 12 件を表示しています。</p>
             )}
           </section>
         )}
@@ -221,10 +224,10 @@ export default function SearchPage() {
           </div>
         )}
         {error && (
-          <p className="rounded-lg border border-dont/30 bg-card p-4 text-sm text-dont">{String(error)}</p>
+          <p className="rounded-md border border-dont/30 bg-card p-4 text-base text-dont">{String(error)}</p>
         )}
         {q && !isFetching && data?.length === 0 && (
-          <Empty className="rounded-lg border border-dashed bg-card py-10">
+          <Empty className="rounded-md border border-dashed bg-card py-10">
             <EmptyHeader>
               <EmptyTitle>該当なし</EmptyTitle>
               <EmptyDescription>言い方を変えるか、種類の絞り込みを外してみてください。</EmptyDescription>
@@ -235,17 +238,17 @@ export default function SearchPage() {
         {!isFetching && data && data.length > 0 && (
           <section className="space-y-2">
             <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-medium">検索結果</h2>
-              <span className="text-xs text-muted-foreground tabular-nums">{data.length} 件</span>
+              <h2 className="text-base font-medium">検索結果</h2>
+              <span className="text-sm text-muted-foreground tabular-nums">{data.length} 件</span>
             </div>
-            <ol className="divide-y overflow-hidden rounded-lg border bg-card">
+            <ol className="divide-y overflow-hidden rounded-md border bg-card">
               {data.map((h) => (
                 <li
                   key={`${h.record_id}:${h.kind}:${h.key}`}
                   className="p-4 transition-colors hover:bg-muted/35 md:p-5"
                 >
                   <article className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
                       <span className={`font-medium ${polarityClass(h.polarity)}`}>{h.label}</span>
                       {/* **誰が言ったかを本文から読ませない。**bot か人かで重みが違う。 */}
                       {h.actor_name && <span className="font-mono">@{h.actor_name}</span>}
@@ -253,19 +256,20 @@ export default function SearchPage() {
                       {h.at && <span className="tabular-nums">{h.at.slice(0, 10)}</span>}
                     </div>
                     {/* PR の本文がまるごと入っている件がある。切らないと 1 件で画面が埋まる。 */}
-                    <p className="line-clamp-6 max-w-[86ch] text-[15px] leading-7">
+                    <p className="line-clamp-6 max-w-[86ch] text-base leading-7">
                       {/* 取り込みが本文の頭にも `@名前:` を入れている。札の隣に出す以上、二重になる。 */}
                       {h.actor_name ? h.text.replace(/^@[^\s:]+:\s*/, "") : h.text}
                     </p>
                     {h.ex && (
-                      <p className="line-clamp-3 max-w-[86ch] border-l-2 pl-3 text-sm text-muted-foreground leading-6">
+                      <p className="line-clamp-3 max-w-[86ch] border-l-2 pl-3 text-base text-muted-foreground leading-6">
                         {h.ex}
                       </p>
                     )}
                     <div>
                       <Link
                         href={`/records/${encodeURIComponent(h.record_id)}`}
-                        className="inline-flex items-center gap-1.5 text-sm font-medium text-link underline-offset-4 hover:underline"
+                        data-motion-icon-group=""
+                        className="inline-flex items-center gap-1.5 text-base font-medium text-link underline-offset-4 hover:underline"
                       >
                         {h.record_title}
                         <ChevronRightIcon className="size-3.5" />

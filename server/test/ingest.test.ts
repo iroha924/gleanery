@@ -64,6 +64,27 @@ test("空の IR でも落ちない", () => {
   assert.deepEqual(flatten(base), []);
 });
 
+test("trace 済みセッションの会話は発言者と元セッション ID を保つ", () => {
+  const ir: Ir = {
+    ...base,
+    schema: "session/2",
+    session: { id: "550e8400-e29b-41d4-a716-446655440000", host: "codex" },
+    utterances: [
+      { key: "u-human", ordinal: 0, at: "2026-01-01T00:00:00Z", role: "human", text: "依頼" },
+      { key: "u-ai", ordinal: 1, at: "2026-01-01T00:00:01Z", role: "ai", text: "回答" },
+    ],
+  };
+  const nodes = flatten(ir);
+  assert.deepEqual(
+    nodes.map((node) => ({ key: node.key, actorKind: node.actorKind, actorName: node.actorName })),
+    [
+      { key: "u-human", actorKind: "human", actorName: null },
+      { key: "u-ai", actorKind: "ai", actorName: "codex" },
+    ],
+  );
+  assert.equal(nodes[0]?.attrs?.session, "550e8400-e29b-41d4-a716-446655440000");
+});
+
 test("記録の題を変えると再取得されるように、ハッシュが埋め込み文を覆う", () => {
   // ハッシュが embed_text の一部を見落とすと、古い題で作った埋め込みが残り続ける。
   const withTitle = (title: string): Ir => ({

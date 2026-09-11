@@ -32,24 +32,52 @@ const walk = (dir, out = []) => {
 
 /** cwd に合う transcript のうち、最後に書かれたものを返す。走っている session がそれ。 */
 export function findTranscript(cwd) {
-  const claudeRoot = path.join(HOME, '.claude', 'projects');
+  const claudeRoots = [path.join(HOME, '.claude', 'projects')];
+  const ccs = path.join(HOME, '.ccs', 'instances');
+  try {
+    claudeRoots.push(...fs.readdirSync(ccs, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(ccs, entry.name, 'projects')));
+  } catch { /* ccs を使っていなければ既定の置き場所だけを見る */ }
   const codexRoot = path.join(HOME, '.codex', 'sessions');
   const candidates = [];
 
-  for (const f of walk(claudeRoot)) {
-    if (f.includes(`${path.sep}subagents${path.sep}`)) continue;
-    for (const o of readLines(f)) {
+  for (const root of claudeRoots) {
+    for (const f of walk(root)) {
+      if (f.includes(`${path.sep}subagents${path.sep}`)) continue;
+      let foundCwd = null;
+      let sessionId = null;
+      for (const o of readLines(f)) {
+        foundCwd ||= o.cwd;
+        sessionId ||= o.sessionId;
+        if (foundCwd && sessionId) break;
+      }
       // slug の作り方はホストの実装詳細なので、パスからは推測しない。中の cwd を見る。
-      if (o.cwd) { if (o.cwd === cwd) candidates.push({ host: 'claude-code', file: f }); break; }
+      if (foundCwd === cwd) candidates.push({ host: 'claude-code', sessionId, file: f });
     }
   }
   for (const f of walk(codexRoot)) {
     for (const o of readLines(f)) {
-      if (o.type === 'session_meta') { if (o.payload?.cwd === cwd) candidates.push({ host: 'codex', file: f }); break; }
+      if (o.type === 'session_meta') {
+        if (o.payload?.cwd === cwd) candidates.push({ host: 'codex', sessionId: o.payload?.id, file: f });
+        break;
+      }
     }
   }
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => fs.statSync(b.file).mtimeMs - fs.statSync(a.file).mtimeMs);
+
+  // 同じ cwd で複数セッションが並列に動くため、更新時刻だけで選ばない。
+  // Claude Code / Codex は Bash の子プロセスへ現在のセッション ID を渡す。
+  const current = process.env.CLAUDE_CODE_SESSION_ID
+    ? { host: 'claude-code', id: process.env.CLAUDE_CODE_SESSION_ID }
+    : process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID
+      ? { host: 'codex', id: process.env.CODEX_THREAD_ID || process.env.CODEX_SESSION_ID }
+      : null;
+  if (current) {
+    const exact = candidates.find((candidate) => candidate.host === current.host && candidate.sessionId === current.id);
+    if (exact) return exact;
+  }
   return candidates[0];
 }
 
@@ -91,9 +119,16 @@ function collectClaude(file) {
     if (o.type === 'queue-operation' && o.operation === 'enqueue') { addUserText(d, o, o.content); continue; }
     if (o.type !== 'user' && o.type !== 'assistant') continue;
     const c = o.message?.content;
-    if (typeof c === 'string') { if (o.type === 'user') addUserText(d, o, c); continue; }
+    if (typeof c === 'string') {
+      if (o.type === 'user') addUserText(d, o, c);
+      else addAssistantText(d, o, c);
+      continue;
+    }
     for (const b of c || []) {
-      if (b.type === 'text' && o.type === 'user') addUserText(d, o, b.text);
+      if (b.type === 'text') {
+        if (o.type === 'user') addUserText(d, o, b.text);
+        else addAssistantText(d, o, b.text);
+      }
       if (b.type === 'tool_use') {
         // AskUserQuestion は、選択肢と各案のトレードオフを示したうえで人が選んだ記録である。
         // decisions がまさに欲しい形（文脈・検討した案・採った案）がそのまま残っているのに、
@@ -166,9 +201,10 @@ function collectCodex(file) {
     if (o.type === 'session_meta') { d.cwd = o.payload?.cwd || d.cwd; d.sessionId = o.payload?.id || d.sessionId; }
     const p = o.payload || {};
     if (o.type === 'response_item') {
-      if (p.type === 'message' && p.role === 'user') {
+      if (p.type === 'message' && (p.role === 'user' || p.role === 'assistant')) {
         const text = (p.content || []).map((x) => x.text || '').join('').trim();
-        if (text) d.userMessages.push({ at: o.timestamp, text });
+        if (text && p.role === 'user') addUserText(d, o, text);
+        if (text && p.role === 'assistant') addAssistantText(d, o, text);
       }
       // Codex のシェル実行は custom_tool_call（name: "exec"）で、input は
       // tools.exec_command(...) を呼ぶ JavaScript のコード片。**これを解析しない。**
@@ -206,13 +242,21 @@ function collectCodex(file) {
 
 const blank = (host, file) => ({
   host, transcript: file, sessionId: null, cwd: null, branch: null, from: null, to: null,
-  userMessages: [], notifications: 0, compactions: 0, choices: [], commands: [], files: {}, urls: [], agents: [], toolCounts: {},
+  messages: [], userMessages: [], notifications: 0, compactions: 0, choices: [], commands: [], files: {}, urls: [], agents: [], toolCounts: {},
 });
 const push = (a, v) => { if (v && !a.includes(v)) a.push(v); };
 const addUserText = (d, entry, text) => {
   if (!String(text || '').trim()) return;
-  if (fromHuman(entry, text)) d.userMessages.push({ at: entry.timestamp, text });
+  if (fromHuman(entry, text)) {
+    const message = { at: entry.timestamp, role: 'human', text };
+    d.userMessages.push({ at: message.at, text: message.text });
+    d.messages.push(message);
+  }
   else d.notifications += 1;
+};
+const addAssistantText = (d, entry, text) => {
+  if (!String(text || '').trim()) return;
+  d.messages.push({ at: entry.timestamp, role: 'ai', text });
 };
 const touch = (d, p, how, edits = 0) => {
   const f = (d.files[p] ||= { path: p, reads: 0, writes: 0, hunks: 0 });

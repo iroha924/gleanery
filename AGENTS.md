@@ -16,7 +16,7 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 - Next.jsは画面、Honoは全`/api/*`を担当する。Route HandlerやServer ActionへAPIを複製しない
 - Honoの全`/api/*`はClerk認証を先に通す。`/webhooks/github`だけはGitHub署名を検証し、公開例外を増やさない
 - DBや生成APIの資格情報をNext.jsのserver codeとbrowserへ渡さない。画面は同一originの`/api/*`だけを呼ぶ
-- HTML / Markdownの進捗fileを作らない。記録の正本はDB、現在地の表示はdashboardの`/now`
+- HTML / Markdownの進捗fileを作らない。記録の正本はDB、セッションの表示はdashboardの`/sessions`
 
 ## 変更時の不変条件
 

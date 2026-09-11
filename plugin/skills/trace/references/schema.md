@@ -19,8 +19,9 @@
 
 ```json
 {
-  "schema": "progress/1",
+  "schema": "session/2",
   "meta": {}, "background": {},
+  "session": {}, "utterances": [],
   "current": {}, "next": [], "openQuestions": [],
   "events": [], "decisions": [], "verification": [],
   "links": { "issues": [], "prs": [], "commits": [], "files": [] },
@@ -28,20 +29,28 @@
 }
 ```
 
-**id はすべて `[a-z0-9][a-z0-9-]*` で、意味のある語にする。**連番や UUID にしない。
+要素の **id はすべて `[a-z0-9][a-z0-9-]*` で、意味のある語にする。**連番や UUID にしない。
 記録全体で重複させず、一度使った id は再利用しない（削除した要素の id も戻さない）。
 
 ## meta
 
 | 欄 | 必須 | 内容 |
 |---|---|---|
-| `id` | ○ | ファイル名になる。`invoice-pdf-export` のように内容が分かる語 |
+| `id` | ○ | `sessionize` が元ツールとセッション ID から決める。手で変更しない |
 | `title` | ○ | 何の作業かが 1 行で分かる題 |
 | `status` | ○ | `planning` / `in-progress` / `blocked` / `paused` / `done` |
 | `repo` | | 保管先のディレクトリ名になる |
 | `branch` | | 記録した時点のブランチ |
 | `created` / `updated` | ○ | ISO 8601。オフセット付きで書く |
 | `hosts` | | 記録に関わったホスト。`claude-code` / `codex` |
+
+## session / utterances
+
+`session` は `{ id, host }`。`id` は Claude Code / Codex が保存した元のセッション ID、`host` は
+`claude-code` / `codex`。ダッシュボードはこの ID から再開コマンドを表示する。
+
+`utterances` は `{ key, ordinal, at, role, text }[]`。`role` は `human` / `ai`。
+どちらも `progress sessionize` が digest から作る表示用データで、モデルは要約・転記しない。
 
 ## background
 

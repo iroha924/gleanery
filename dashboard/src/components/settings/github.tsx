@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRightIcon, GitPullRequestIcon, RefreshCwIcon, UnplugIcon } from "lucide-react";
+import { ArrowUpRightIcon, GitPullRequestIcon, RefreshCwIcon, UnplugIcon } from "lucide-react-motion";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api, type GithubRepository } from "@/lib/api";
 
 const syncLabels: Record<GithubRepository["syncStatus"], string> = {
@@ -18,6 +19,13 @@ const syncLabels: Record<GithubRepository["syncStatus"], string> = {
   syncing: "同期中",
   synced: "同期済み",
   error: "同期エラー",
+};
+
+const syncVariants: Record<GithubRepository["syncStatus"], "warning" | "info" | "success" | "destructive"> = {
+  queued: "warning",
+  syncing: "info",
+  synced: "success",
+  error: "destructive",
 };
 
 function time(value: string | null) {
@@ -91,7 +99,7 @@ export function GithubPanel() {
   if (status.isPending) return <Skeleton className="h-40 w-full" />;
   if (status.isError) {
     return (
-      <p className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
+      <p className="rounded-md border border-destructive/50 p-4 text-base text-destructive">
         GitHubの接続状態を取得できませんでした。APIの設定とデータベース移行を確認してください。
       </p>
     );
@@ -128,7 +136,7 @@ export function GithubPanel() {
             </a>
           </Button>
           {connect.isPending && (
-            <p className="mt-3 text-sm text-muted-foreground">
+            <p className="mt-3 text-base text-muted-foreground">
               <Spinner />
               接続を確認しています
             </p>
@@ -139,58 +147,65 @@ export function GithubPanel() {
   }
 
   return (
-    <Card className="bg-card/90 shadow-sm backdrop-blur-sm">
+    <Card>
       <CardHeader className="gap-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <span className="grid size-10 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground">
               <GitPullRequestIcon className="size-5" />
             </span>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <CardTitle>GitHub</CardTitle>
-                <Badge variant="secondary">{connection.accountLogin}</Badge>
+                <Badge variant="info">{connection.accountLogin}</Badge>
               </div>
               <CardDescription className="mt-1">
                 許可されたリポジトリだけをデータソースとして同期します。
               </CardDescription>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-1 rounded-lg bg-muted/70 p-1">
-            <Button variant="ghost" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
-              {refresh.isPending ? <Spinner /> : <RefreshCwIcon />}選択を再取得
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+              {refresh.isPending ? <Spinner /> : <RefreshCwIcon />}選択を更新
             </Button>
             <Button
+              size="sm"
               onClick={() => sync.mutate(undefined)}
               disabled={sync.isPending || connection.status !== "active"}
             >
               {sync.isPending ? <Spinner /> : <RefreshCwIcon />}すべて同期
             </Button>
-            <ConfirmDelete
-              what="GitHub Appの接続"
-              note="GitHubからAppをアンインストールします。取り込み済みの記録は残ります。"
-              onConfirm={() => disconnect.mutate()}
-            >
-              <Button
-                variant="ghost"
-                size="icon"
-                disabled={disconnect.isPending}
-                aria-label="GitHub Appの接続を解除"
+            <span className="mx-0.5 h-5 w-px bg-border" aria-hidden="true" />
+            <Tooltip>
+              <ConfirmDelete
+                what="GitHub Appの接続"
+                note="GitHubからAppをアンインストールします。取り込み済みの記録は残ります。"
+                onConfirm={() => disconnect.mutate()}
               >
-                <UnplugIcon />
-              </Button>
-            </ConfirmDelete>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={disconnect.isPending}
+                    aria-label="GitHub Appの接続を解除"
+                  >
+                    <UnplugIcon />
+                  </Button>
+                </TooltipTrigger>
+              </ConfirmDelete>
+              <TooltipContent side="bottom">接続を解除</TooltipContent>
+            </Tooltip>
           </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {connection.status === "suspended" && (
-          <p className="rounded-md border border-destructive/50 p-3 text-sm text-destructive">
+          <p className="rounded-md border border-destructive/50 p-3 text-base text-destructive">
             GitHub Appが停止されています。GitHub側で再開してから選択を再取得してください。
           </p>
         )}
         {connection.repositories.length === 0 ? (
-          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+          <p className="rounded-md border border-dashed p-4 text-base text-muted-foreground">
             許可されたリポジトリがありません。GitHubでリポジトリを選び、選択を再取得してください。
           </p>
         ) : (
@@ -198,21 +213,21 @@ export function GithubPanel() {
             {connection.repositories.map((repository) => (
               <div
                 key={repository.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/45 p-3 ring-1 ring-foreground/8"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/45 p-3"
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium">{repository.fullName}</span>
                     {repository.private && <Badge variant="outline">private</Badge>}
-                    <Badge variant={repository.syncStatus === "error" ? "destructive" : "secondary"}>
+                    <Badge variant={syncVariants[repository.syncStatus]}>
                       {syncLabels[repository.syncStatus]}
                     </Badge>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
+                  <p className="mt-1 text-sm text-muted-foreground">
                     最終同期: {time(repository.lastSyncedAt)}
                   </p>
                   {repository.lastError && (
-                    <p className="mt-1 text-xs text-destructive">{repository.lastError}</p>
+                    <p className="mt-1 text-sm text-destructive">{repository.lastError}</p>
                   )}
                 </div>
                 <Button

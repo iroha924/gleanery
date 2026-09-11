@@ -52,7 +52,10 @@ export function refsExist(ir, repoRoot, run) {
 }
 
 export function cover(digest, ir) {
-  const blob = JSON.stringify(ir);
+  // 元会話は表示用に丸ごと入る。そこまで照合対象にすると、構造化していない決定も
+  // 「会話に書いてある」だけで通るため、意味を付けた欄だけを検査する。
+  const { utterances: _utterances, session: _session, ...knowledge } = ir;
+  const blob = JSON.stringify(knowledge);
   // **正規化は両側に当てる。**針だけ `key()` を通して記録側を生のまま照合すると、
   // 句読点や鉤括弧が 1 つ入っただけで当たらない（実測: 回答「生きている。進めて良い」を
   // そのまま書いた記録が、針「生きている進めて」に当たらず未記録と報告された）。

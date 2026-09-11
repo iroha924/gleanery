@@ -72,6 +72,8 @@ export type Ir = {
     files?: string[];
     urls?: { url?: string; note?: string }[];
   };
+  session?: { id: string; host: "claude-code" | "codex" };
+  utterances?: { key: string; ordinal: number; at: string; role: "human" | "ai"; text: string }[];
 };
 
 type Node = {
@@ -87,6 +89,8 @@ type Node = {
   ordinal?: number | undefined;
   attrs?: Record<string, unknown> | undefined;
   evidence?: Evidence[] | undefined;
+  actorKind?: "human" | "ai" | "ci" | "unknown" | undefined;
+  actorName?: string | null | undefined;
   kindLabel?: string | undefined;
   polarity: Polarity;
   contentHash: string;
@@ -135,6 +139,7 @@ const KIND_LABEL: Record<string, string> = {
   verification: "検証",
   question: "未解決の問い",
   boundary: "境界",
+  utterance: "作業中のやりとり",
 };
 
 /** IR を node の平たい配列へ落とす。 */
@@ -147,6 +152,20 @@ export function flatten(ir: Ir): Node[] {
     // 実測: 記録の題だけを変えたとき、embed_text は変わるのにハッシュが一致して再取得されなかった。
     out.push({ ...base, contentHash: sha(embedText(ir, base)) });
   };
+
+  for (const u of arr(ir.utterances)) {
+    push({
+      kind: "utterance",
+      subkind: "session",
+      key: u.key,
+      ordinal: u.ordinal,
+      at: u.at,
+      text: u.text,
+      actorKind: u.role,
+      actorName: u.role === "ai" ? (ir.session?.host ?? null) : null,
+      attrs: { session: ir.session?.id ?? null, role: u.role },
+    });
+  }
 
   for (const b of arr(ir.background?.nonGoals)) {
     push({
@@ -297,6 +316,10 @@ export async function ingest(
       }
     }
     const effectiveScope = existingScope ?? scopeId;
+    const humanActor = nodes.some((node) => node.actorKind === "human")
+      ? ((await client.query<{ display: string }>("select display from person where is_me limit 1")).rows[0]
+          ?.display ?? null)
+      : null;
     await client.query(
       `insert into record (id, scope_id, schema_ver, title, status, branch, hosts, problem, goal,
                            current_at, current_text, phases, next, created_at, updated_at, raw, raw_hash, embedding)
@@ -367,18 +390,21 @@ export async function ingest(
     for (const part of chunks(rows, 500)) {
       const r = await client.query<{ id: number; kind: string; key: string }>(
         `insert into node (record_id, scope_id, kind, key, ordinal, at, text, subkind, status,
-                           polarity, confidence, attrs, content_hash, embed_text, embed_model, embedded_at, embedding)
+                           polarity, confidence, attrs, actor_kind, actor_name, content_hash,
+                           embed_text, embed_model, embedded_at, embedding)
          select $1, $2, t.kind, t.key, t.ordinal, t.at, t.text, t.subkind, t.status,
-                t.polarity, t.confidence, t.attrs, t.content_hash, t.embed_text, t.embed_model, t.embedded_at, t.embedding
+                t.polarity, t.confidence, t.attrs, t.actor_kind, t.actor_name, t.content_hash,
+                t.embed_text, t.embed_model, t.embedded_at, t.embedding
          from unnest($3::text[], $4::text[], $5::int[], $6::timestamptz[], $7::text[], $8::text[], $9::text[],
                      $10::text[], $11::text[], $12::jsonb[], $13::text[], $14::text[], $15::text[],
-                     $16::timestamptz[], $17::extensions.vector[])
+                     $16::text[], $17::text[], $18::timestamptz[], $19::extensions.vector[])
               as t(kind, key, ordinal, at, text, subkind, status, polarity, confidence, attrs,
-                   content_hash, embed_text, embed_model, embedded_at, embedding)
+                   actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
          on conflict (record_id, kind, key) do update set
            scope_id=excluded.scope_id, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, subkind=excluded.subkind,
            status=excluded.status, polarity=excluded.polarity, confidence=excluded.confidence,
-           attrs=excluded.attrs, content_hash=excluded.content_hash, deleted_at=null,
+           attrs=excluded.attrs, actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
+           content_hash=excluded.content_hash, deleted_at=null,
            embed_text=coalesce(excluded.embed_text, node.embed_text),
            embed_model=coalesce(excluded.embed_model, node.embed_model),
            embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
@@ -397,6 +423,8 @@ export async function ingest(
           part.map((n) => n.polarity),
           part.map((n) => n.confidence ?? null),
           part.map((n) => JSON.stringify(n.attrs ?? {})),
+          part.map((n) => n.actorKind ?? null),
+          part.map((n) => n.actorName ?? (n.actorKind === "human" ? humanActor : null)),
           part.map((n) => n.contentHash),
           part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? embedText(ir, n) : null)),
           part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? EMBED_MODEL : null)),

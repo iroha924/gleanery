@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpenIcon, HelpCircleIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { BookOpenIcon, CircleQuestionMarkIcon, PlusIcon, Trash2Icon } from "lucide-react-motion";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDelete } from "@/components/confirm-delete";
@@ -75,9 +75,9 @@ export function TermsPanel() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <HelpCircleIcon className="size-4" />
+              <CircleQuestionMarkIcon className="size-4" />
               教えてほしい言葉
-              {pending.length > 0 && <Badge variant="secondary">{pending.length}</Badge>}
+              {pending.length > 0 && <Badge variant="warning">{pending.length}</Badge>}
             </CardTitle>
             <CardDescription>
               チャットで答えられなかった社内語です。推測では埋めません —
@@ -87,12 +87,12 @@ export function TermsPanel() {
           <CardContent className="space-y-3">
             {terms.isPending && <Skeleton className="h-20 w-full" />}
             {!terms.isPending && pending.length === 0 && (
-              <p className="text-muted-foreground text-sm">いま聞きたい言葉はありません。</p>
+              <p className="text-muted-foreground text-base">いま聞きたい言葉はありません。</p>
             )}
             {pending.map((t) => (
               <Item key={t.id} variant="outline">
                 <ItemMedia>
-                  <HelpCircleIcon className="size-4" />
+                  <CircleQuestionMarkIcon className="size-4" />
                 </ItemMedia>
                 <ItemContent>
                   <ItemTitle>{t.word}</ItemTitle>
@@ -141,7 +141,7 @@ export function TermsPanel() {
                 onChange={(e) => setAliases(e.target.value)}
                 placeholder="移行 基盤移行"
               />
-              <p className="text-muted-foreground text-xs">
+              <p className="text-muted-foreground text-sm">
                 空白かカンマで区切る。記録の中でこの書き方をされていても引けるようになる。
               </p>
             </div>
@@ -164,7 +164,7 @@ export function TermsPanel() {
           <CardDescription>{known.length} 語</CardDescription>
         </CardHeader>
         <CardContent>
-          {known.length === 0 && <p className="text-muted-foreground text-sm">まだありません。</p>}
+          {known.length === 0 && <p className="text-muted-foreground text-base">まだありません。</p>}
           <ItemGroup>
             {known.map((t) => (
               <Item key={t.id} variant="muted" className="items-start">
@@ -174,7 +174,7 @@ export function TermsPanel() {
                   {t.aliases.length > 0 && (
                     <div className="flex flex-wrap gap-1 pt-1.5">
                       {t.aliases.map((a) => (
-                        <Badge key={a} variant="secondary" className="text-xs">
+                        <Badge key={a} variant="secondary" className="text-sm">
                           {a}
                         </Badge>
                       ))}

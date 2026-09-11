@@ -1,6 +1,14 @@
 "use client";
 
-import { ArrowUpIcon, CheckIcon, CopyIcon, MicIcon, SquareIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  BotIcon,
+  CheckIcon,
+  CopyIcon,
+  MicIcon,
+  SquareIcon,
+  UserRoundIcon,
+} from "lucide-react-motion";
 import Link from "next/link";
 import { useState } from "react";
 import { Answer } from "@/components/answer";
@@ -26,7 +34,7 @@ import {
 } from "@/components/ui/input-group";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { Marker, MarkerContent } from "@/components/ui/marker";
-import { Message, MessageContent, MessageFooter } from "@/components/ui/message";
+import { Message, MessageAvatar, MessageContent, MessageFooter } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -73,9 +81,11 @@ function Source({ source }: { source: ChatSource }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="flex w-full gap-3 rounded-md px-3 py-2.5 text-left text-[13px] leading-[1.95] transition-colors hover:bg-secondary/70"
+          className="flex w-full items-center gap-2 rounded-md px-0 py-1 text-left text-sm leading-5 transition-colors hover:bg-secondary/70"
         >
-          <span className="flex-none pt-0.5 font-mono text-[10.5px] text-muted-foreground">{source.n}</span>
+          <span className="w-4 flex-none text-right font-mono text-xs leading-5 text-muted-foreground">
+            {source.n}
+          </span>
           <span className="line-clamp-2 min-w-0 text-foreground/85">
             <span className={`mr-1 ${polarityClass(source.polarity)}`}>{source.label}</span>
             {source.text}
@@ -84,17 +94,17 @@ function Source({ source }: { source: ChatSource }) {
       </DialogTrigger>
       <DialogContent className="gap-5 p-6 sm:max-w-[42rem]">
         <DialogHeader>
-          <DialogTitle className="pr-10 text-[1.15rem] leading-[1.7]">
+          <DialogTitle className="pr-10 text-lg leading-[1.7]">
             <span className={`mr-1.5 ${polarityClass(source.polarity)}`}>{source.label}</span>
             {source.recordTitle}
           </DialogTitle>
-          <DialogDescription className="font-mono text-[10px] uppercase tracking-[0.12em]">
+          <DialogDescription className="font-mono text-xs uppercase tracking-[0.12em]">
             {source.actor && `@${source.actor} / `}
             {source.scope}
             {source.at && ` / ${source.at}`}
           </DialogDescription>
         </DialogHeader>
-        <p className="max-h-[50vh] overflow-y-auto pr-1 text-[14px] leading-[2.1]">
+        <p className="max-h-[50vh] overflow-y-auto pr-1 text-base leading-[2.1]">
           {source.actor ? source.text.replace(/^@[^\s:]+:\s*/, "") : source.text}
         </p>
         <DialogFooter className="-mx-6 -mb-6 p-5 sm:justify-start">
@@ -142,19 +152,19 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
     <div className="space-y-4">
       {busy && top && (
         <div className="rounded-md bg-secondary/70 p-4">
-          <p className="text-muted-foreground text-xs">まとめています。いちばん近い記録:</p>
-          <p className="mt-1.5 text-sm leading-relaxed">
+          <p className="text-muted-foreground text-sm">まとめています。いちばん近い記録:</p>
+          <p className="mt-1.5 text-base leading-relaxed">
             <span className={`mr-1 font-medium ${polarityClass(top.polarity)}`}>{top.label}</span>
             {top.text}
           </p>
         </div>
       )}
       {!busy && (
-        <div className="space-y-2 border-t pt-5">
-          <Marker className="px-3 font-mono text-[8.5px] uppercase tracking-[0.14em]">
+        <div className="space-y-1.5 border-t pt-4 pl-4">
+          <Marker className="font-mono text-xs uppercase tracking-[0.14em]">
             <MarkerContent>Sources</MarkerContent>
           </Marker>
-          <ol className="-mx-3 space-y-0.5">
+          <ol>
             {sources.map((source) => (
               <li key={source.n}>
                 <Source source={source} />
@@ -181,12 +191,12 @@ function PolishOptions({
   if (!polishing && options.length === 0) return null;
   return (
     <aside className="mb-2.5 space-y-2">
-      <Marker className="font-mono text-[9px] uppercase tracking-[0.14em]">
+      <Marker className="font-mono text-xs uppercase tracking-[0.14em]">
         <MarkerContent>書き直しの候補</MarkerContent>
         {options.length > 0 && (
           <button
             type="button"
-            className="ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline"
+            className="ml-auto text-sm text-muted-foreground underline-offset-2 hover:underline"
             onClick={dismiss}
           >
             このままでいい
@@ -194,7 +204,7 @@ function PolishOptions({
         )}
       </Marker>
       {polishing ? (
-        <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-[12px] text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-sm text-muted-foreground">
           <Spinner className="size-3" />
           読める文に直しています
         </div>
@@ -207,17 +217,16 @@ function PolishOptions({
               onClick={() => choose(option.text)}
               className="group flex flex-col overflow-hidden rounded-md border bg-card text-left transition-colors hover:border-foreground/25 hover:bg-accent/40"
             >
-              <span className="flex flex-none items-baseline gap-2 border-b bg-secondary/40 px-3 py-1.5 font-mono text-[9px] text-muted-foreground uppercase tracking-[0.14em] transition-colors group-hover:text-foreground">
+              <span className="flex flex-none items-baseline gap-2 border-b bg-secondary/40 px-3 py-1.5 font-mono text-xs text-muted-foreground uppercase tracking-[0.14em] transition-colors group-hover:text-foreground">
                 {option.label}
                 {option.changed.length > 0 && (
                   <span className="ml-auto normal-case tracking-normal">{option.changed.length} 箇所</span>
                 )}
               </span>
               <span className="relative min-h-0">
-                <span className="block max-h-36 overflow-y-auto px-3 py-2.5 text-[12.5px] leading-[1.9]">
+                <span className="block max-h-36 overflow-y-auto px-3 py-2.5 text-sm leading-[1.9]">
                   <Marked text={option.text} marks={option.changed} />
                 </span>
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 h-7 bg-gradient-to-t from-card to-transparent" />
               </span>
             </button>
           ))}
@@ -238,12 +247,12 @@ export function ChatPage() {
             <MessageScrollerViewport>
               <MessageScrollerContent
                 aria-busy={chat.busy}
-                className="mx-auto w-full max-w-[64rem] px-6 pb-10"
+                className="mx-auto w-full max-w-[48rem] px-6 pb-10"
               >
                 {chat.turns.length === 0 && (
                   <Empty className="min-h-[55vh] border-none">
                     <EmptyHeader className="max-w-md">
-                      <EmptyTitle className="text-2xl leading-[1.5] tracking-[-0.01em]">
+                      <EmptyTitle className="text-lg leading-[1.5] tracking-[-0.01em]">
                         記録について聞く
                       </EmptyTitle>
                       <EmptyDescription className="text-pretty leading-loose">
@@ -266,9 +275,12 @@ export function ChatPage() {
                   turn.role === "user" ? (
                     <MessageScrollerItem key={turn.id} messageId={turn.id} scrollAnchor>
                       <Message align="end" className="pt-9">
+                        <MessageAvatar aria-hidden="true" className="mb-1 size-8 border bg-card">
+                          <UserRoundIcon className="size-4" />
+                        </MessageAvatar>
                         <MessageContent>
                           <Bubble align="end" variant="secondary">
-                            <BubbleContent className="whitespace-pre-wrap px-4 py-2.5 text-[14px] leading-[1.9]">
+                            <BubbleContent className="whitespace-pre-wrap rounded-br-[2px] border-border px-4 py-2.5 text-base leading-[1.9]">
                               {turn.content}
                             </BubbleContent>
                           </Bubble>
@@ -281,17 +293,23 @@ export function ChatPage() {
                   ) : (
                     <MessageScrollerItem key={turn.id} messageId={turn.id}>
                       <Message className="pt-4">
+                        <MessageAvatar
+                          aria-hidden="true"
+                          className="mt-1 size-8 self-start border bg-card group-has-data-[slot=message-footer]/message:translate-y-0"
+                        >
+                          <BotIcon className="size-4" />
+                        </MessageAvatar>
                         <MessageContent className="gap-5">
                           {turn.content && <Answer text={turn.content} />}
                           {!turn.content && !turn.error && !turn.stopped && chat.busy && (
-                            <p className="flex items-center gap-2 text-muted-foreground text-sm">
+                            <p className="flex items-center gap-2 text-muted-foreground text-base">
                               <Spinner /> 記録を探しています
                             </p>
                           )}
                           {turn.stopped && (
-                            <p className="text-muted-foreground text-sm">生成を中断しました</p>
+                            <p className="text-muted-foreground text-base">生成を中断しました</p>
                           )}
-                          {turn.error && <p className="text-dont text-sm">{turn.error}</p>}
+                          {turn.error && <p className="text-dont text-base">{turn.error}</p>}
                           {turn.sources && (
                             <Sources
                               sources={turn.sources}
@@ -314,7 +332,7 @@ export function ChatPage() {
           </MessageScroller>
         </MessageScrollerProvider>
 
-        <div className="relative mx-auto w-full max-w-[64rem] flex-none px-6 pb-6">
+        <div className="relative mx-auto w-full max-w-[48rem] flex-none px-6 pb-6">
           <PolishOptions
             options={chat.options}
             polishing={chat.polishing}
@@ -331,7 +349,7 @@ export function ChatPage() {
               chat.ask(chat.draft);
             }}
           >
-            <InputGroup className="rounded-xl bg-card">
+            <InputGroup className="rounded-md bg-card">
               <InputGroupTextarea
                 value={chat.draft}
                 onChange={(event) => chat.setDraft(event.target.value)}
@@ -345,14 +363,14 @@ export function ChatPage() {
                   chat.scopeIds.length === 0 ? "ヘッダーでプロジェクトを選んでください" : "続けて聞く"
                 }
                 disabled={chat.scopeIds.length === 0}
-                className="max-h-64 min-h-14 px-4 pt-3.5 text-[15px] leading-[2.05]"
+                className="max-h-64 min-h-14 px-4 pt-3.5 text-base leading-[2.05]"
               />
               <InputGroupAddon align="block-end" className="gap-1.5 px-3 pb-2.5">
-                <InputGroupText className="rounded-md border px-2 py-0.5 font-mono text-[9px]">
+                <InputGroupText className="rounded-md border px-2 py-0.5 font-mono text-xs">
                   {chat.projectLabel}
                 </InputGroupText>
                 {chat.cost && (
-                  <InputGroupText className="font-mono text-[9px] text-muted-foreground tabular-nums">
+                  <InputGroupText className="font-mono text-xs text-muted-foreground tabular-nums">
                     直前 ${chat.cost.question.toFixed(3)}
                     {chat.cost.month !== null && ` / 今月 $${chat.cost.month.toFixed(2)}`}
                   </InputGroupText>

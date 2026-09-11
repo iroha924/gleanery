@@ -1,8 +1,10 @@
 "use client";
 
+import { MotionIconConfig } from "lucide-react-motion";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { AppHeader } from "@/components/app-header";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ProjectProvider } from "@/lib/project";
@@ -11,12 +13,12 @@ import { ProjectProvider } from "@/lib/project";
 function Body({ children }: { children: ReactNode }) {
   const path = usePathname();
   const edgeToEdge = path === "/" || path === "/mtg";
-  const ownsScroll = edgeToEdge || path === "/now" || path === "/search";
+  const ownsScroll = edgeToEdge || path === "/sessions" || path === "/search";
 
   return (
     <div
-      className={`min-h-0 w-full flex-1 ${ownsScroll ? "overflow-hidden" : "overflow-y-auto"} ${
-        edgeToEdge ? "" : "p-4 md:px-8 md:py-6"
+      className={`min-h-0 w-full flex-1 bg-card ${ownsScroll ? "overflow-hidden" : "overflow-y-auto"} ${
+        edgeToEdge ? "" : "px-4 pt-14 pb-4 md:p-6 lg:p-8"
       }`}
     >
       {children}
@@ -24,18 +26,27 @@ function Body({ children }: { children: ReactNode }) {
   );
 }
 
-export function DashboardShell({ children }: { children: ReactNode }) {
+export function DashboardShell({
+  children,
+  defaultSidebarOpen,
+}: {
+  children: ReactNode;
+  defaultSidebarOpen: boolean;
+}) {
   return (
-    <TooltipProvider delayDuration={300}>
-      <ProjectProvider>
-        <div className="app-canvas min-h-svh md:p-3">
-          <main className="dashboard-surface flex h-svh flex-col overflow-hidden md:h-[calc(100svh-1.5rem)] md:rounded-[2.75rem]">
-            <AppHeader />
-            <Body>{children}</Body>
-          </main>
-          <Toaster />
-        </div>
-      </ProjectProvider>
-    </TooltipProvider>
+    <MotionIconConfig mode="signature" trigger="parent-hover" onLeave="snap" duration={0.4} stagger={0.08}>
+      <TooltipProvider delayDuration={300}>
+        <ProjectProvider>
+          <SidebarProvider defaultOpen={defaultSidebarOpen} className="app-canvas min-h-svh">
+            <AppSidebar />
+            <SidebarInset className="h-svh min-w-0 overflow-hidden bg-card">
+              <SidebarTrigger className="absolute top-3 left-3 z-30 rounded-md border bg-card/85 backdrop-blur-xl md:hidden" />
+              <Body>{children}</Body>
+            </SidebarInset>
+            <Toaster />
+          </SidebarProvider>
+        </ProjectProvider>
+      </TooltipProvider>
+    </MotionIconConfig>
   );
 }

@@ -8,6 +8,7 @@ import { validate } from '../lib/ir.mjs';
 import { collect, findTranscript } from '../lib/collect.mjs';
 import { cover, refsExist } from '../lib/cover.mjs';
 import { applyPatch } from '../lib/patch.mjs';
+import { sessionRecordId, sessionize } from '../lib/session.mjs';
 
 // 要約に埋め込む呼び出し方は、実際に走っている自分のパスにする。
 // 相対パスを書くと、cwd がプロジェクト側の Claude Code では当たらない。
@@ -26,6 +27,9 @@ const REPO = projectRoot(process.cwd());
 const usage = () => `使い方:
   progress collect [--cwd <path>] [--transcript <path>] [--out <file>]
                                         いまのセッションから検証できる値だけを取り出す
+  progress sessionize <digest.json> <ir.json>
+                                        元セッションの ID と会話を IR に結び付ける
+  progress record-id <digest.json>       DB 上のセッション記録 ID を表示する
   progress cover <digest.json> <ir.json>  材料にあったのに記録へ入らなかったものを探す
   progress patch <ir.json> <patch.json> 記録へ変更を当てる（追記・上書き・覆した印）
   progress validate <ir.json>           契約を検査する
@@ -66,6 +70,25 @@ if (cmd === 'collect') {
   const text = JSON.stringify(digest, null, 2);
   if (out) { fs.writeFileSync(out, text); console.log(`${out}  ${digest.host}  人の発話 ${digest.userMessages.length}（通知 ${digest.notifications} 件は除外）${digest.compactions ? ` / compact ${digest.compactions} 回` : ''} / 選択 ${digest.choices.length} / コマンド ${digest.commands.length}（失敗 ${digest.failedCommands.length}） / ツール経由のファイル ${digest.files.length} / git の変更 ${digest.git?.changed.length ?? '-'} / コミット ${digest.git?.commits.length ?? '-'}`); }
   else console.log(text);
+  process.exit(0);
+}
+
+if (cmd === 'sessionize') {
+  const digest = readIrFile(args[1]);
+  const irPath = args[2];
+  const ir = readIrFile(irPath);
+  let out;
+  try { out = sessionize(digest, ir); }
+  catch (e) { die(e.message); }
+  fs.writeFileSync(irPath, `${JSON.stringify(out, null, 2)}\n`);
+  console.error(`${irPath} を ${out.session.host} ${out.session.id} に結び付けた（会話 ${out.utterances.length} 件）`);
+  process.exit(0);
+}
+
+if (cmd === 'record-id') {
+  const digest = readIrFile(args[1]);
+  try { console.log(sessionRecordId(digest.host, digest.sessionId)); }
+  catch (e) { die(e.message); }
   process.exit(0);
 }
 

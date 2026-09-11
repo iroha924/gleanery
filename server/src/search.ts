@@ -224,6 +224,7 @@ export async function search(client: Db, env: Env, o: SearchOpts): Promise<Searc
   const clauses = (from: number): string =>
     [
       "n.deleted_at is null",
+      "r.schema_ver <> 'session/1'",
       ...(kinds?.length ? [] : DEFAULT_EXCLUDED),
       ...filters.map((f, i) => f.sql(from + i)),
     ].join(" and ");
@@ -386,6 +387,7 @@ export async function outsideScopes(
   // 言われた通り all_scopes で見にいっても既定の検索が外すので何も出てこない。
   const where = [
     "n.deleted_at is null",
+    "r.schema_ver <> 'session/1'",
     "not (n.scope_id = any($2))",
     ...(kinds?.length ? [] : DEFAULT_EXCLUDED),
   ];
@@ -399,7 +401,7 @@ export async function outsideScopes(
   }
   const r = await client.query<{ label: string; score: number }>(
     `select s.label, (n.embedding <#> $1::extensions.vector) * -1 as score
-     from node n join scope s on s.id = n.scope_id
+     from node n join record r on r.id = n.record_id join scope s on s.id = n.scope_id
      where ${where.join(" and ")}
      order by n.embedding <#> $1::extensions.vector
      limit 30`,
@@ -714,8 +716,7 @@ export const CURRENT_WORK_WHERE = `($1::int[] is null or r.scope_id = any($1)) a
 /**
  * いま進行中の作業と、その外枠。判定は `IN_PROGRESS`。
  *
- * **画面（/api/now）と MCP（current_work）で共有する。**同じ規則を 2 箇所に書くと、
- * 片方だけ直したときに黙ってずれる。
+ * MCP の `current_work` が使う。進行中の判定を呼び出し側へ複製しない。
  */
 export async function currentWork(client: Db, scopeIds: number[] | null, limit = 5): Promise<WorkNow[]> {
   const r = await client.query<Omit<WorkNow, "walls">>(
