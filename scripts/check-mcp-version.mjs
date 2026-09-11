@@ -69,11 +69,11 @@ console.error(
   [
     `plugin/ の ${changed.length} 個が変わったのに版が ${now} のままになっている（${changed[0]} など）。`,
     "",
-    "  Claude Code は ~/.claude/plugins/cache/mitos/mitos/<版>/ の複製から動く。",
+    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/mitos/mitos/<版>/ の複製から動く。",
     "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
     "",
-    "  3つのmanifest（Claude、Codex、marketplace）のversionを同じ値へ上げて、",
-    "  コミットの後に `claude plugin update mitos` を叩き、セッションを張り直す。",
+    "  3つのmanifest（Claude、Codex、marketplace）のversionを同じ値へ上げる。",
+    "  marketplace の取得元へ入れた後、`mitos doctor` の「plugin の版」が出す更新手順を叩き、セッションを張り直す。",
   ].join("\n"),
 );
 process.exit(1);

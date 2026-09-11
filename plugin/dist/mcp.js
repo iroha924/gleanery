@@ -39103,10 +39103,43 @@ async function embed(env, texts, inputType) {
 }
 var vec = (a) => a ? `[${a.join(",")}]` : null;
 
+// server/src/plugin.ts
+import fs2 from "node:fs";
+import path2 from "node:path";
+import { fileURLToPath } from "node:url";
+var MANIFEST = path2.join(".claude-plugin", "plugin.json");
+function versionAt(root) {
+  try {
+    const m = JSON.parse(fs2.readFileSync(path2.join(root, MANIFEST), "utf8"));
+    return m.name === "mitos" && typeof m.version === "string" ? m.version : null;
+  } catch {
+    return null;
+  }
+}
+var here = path2.dirname(fileURLToPath(import.meta.url));
+var ROOT = [path2.join(here, ".."), path2.join(here, "..", "..", "plugin")].find((r) => versionAt(r) !== null) ?? path2.join(here, "..");
+function rootState(root) {
+  if (!fs2.existsSync(path2.join(root, MANIFEST)))
+    return "gone";
+  if (fs2.existsSync(path2.join(root, ".orphaned_at")))
+    return "orphaned";
+  return "ok";
+}
+function mcpNote(version2, root) {
+  const v = `mitos MCP ${version2 ?? "（版不明）"}`;
+  const state = rootState(root);
+  if (state === "gone")
+    return `${v}。起動元 ${root} が消えている。Skill のパスも無効なので、Claude Code は /reload-plugins、Codex は開き直すと新しい版になる`;
+  if (state === "orphaned")
+    return `${v}。Claude Code がこの版を更新で置き換えた。/reload-plugins か session の張り直しで新しい版になる`;
+  return v;
+}
+var HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
+
 // server/src/scope.ts
 import { execFileSync } from "node:child_process";
 import os2 from "node:os";
-import path2 from "node:path";
+import path3 from "node:path";
 var HOME = os2.homedir();
 function normalizeRemote(url2) {
   if (!url2)
@@ -39121,14 +39154,14 @@ function normalizeRemote(url2) {
     const u = new URL(raw);
     if (!u.hostname)
       return null;
-    const path3 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
-    return path3 ? `${u.hostname}/${path3}` : u.hostname;
+    const path4 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
+    return path4 ? `${u.hostname}/${path4}` : u.hostname;
   } catch {
     return null;
   }
 }
 function identify(dir) {
-  const given = path2.resolve(dir);
+  const given = path3.resolve(dir);
   const git = (...args) => {
     try {
       return execFileSync("git", ["-C", given, ...args], {
@@ -39148,8 +39181,8 @@ function identify(dir) {
     identKind: remote ? "git-remote" : "abs-path",
     absPath: abs,
     hostOrg: rest.length > 1 ? rest[0] ?? null : null,
-    repoName: rest.length ? rest[rest.length - 1] ?? "" : path2.basename(abs),
-    label: remote ? rest.join("/") : path2.basename(abs)
+    repoName: rest.length ? rest[rest.length - 1] ?? "" : path3.basename(abs),
+    label: remote ? rest.join("/") : path3.basename(abs)
   };
 }
 var HOST = os2.hostname();
@@ -39466,7 +39499,11 @@ async function currentScopeIds(cwd) {
     return { ids: [], own: null, label: me.label, ident: me.ident };
   return { ids: await scopeFamily(c, row.id), own: row.id, label: me.label, ident: me.ident };
 }
-var server = new McpServer({ name: "knowledge", version: "0.1.0" }, {
+var VERSION = versionAt(ROOT);
+var signed = (text) => `${text}
+
+${mcpNote(VERSION, ROOT)}`;
+var server = new McpServer({ name: "knowledge", version: VERSION ?? "unknown" }, {
   instructions: [
     "過去の作業から貯めたナレッジを引くサーバー。読み取りしかしない。",
     "",
@@ -39544,7 +39581,7 @@ ${overview(records)}` : "";
 
 ※ ${notes.join(`
 ※ `)}` : "");
-  return { content: [{ type: "text", text }] };
+  return { content: [{ type: "text", text: signed(text) }] };
 });
 server.registerTool("current_work", {
   title: "作業の現在地",
@@ -39561,7 +39598,7 @@ server.registerTool("current_work", {
       content: [
         {
           type: "text",
-          text: `このディレクトリ（${scope.label}）はナレッジ DB に未登録です。記録がまだ 1 件もありません。`
+          text: signed(`このディレクトリ（${scope.label}）はナレッジ DB に未登録です。記録がまだ 1 件もありません。`)
         }
       ]
     };
@@ -39572,7 +39609,7 @@ server.registerTool("current_work", {
       content: [
         {
           type: "text",
-          text: "進行中の作業はありません（工程が全部 done か、記録がまだありません）。"
+          text: signed("進行中の作業はありません（工程が全部 done か、記録がまだありません）。")
         }
       ]
     };
@@ -39604,9 +39641,9 @@ ${next.join(`
                 n.at desc nulls last
        limit 40`, [ids]);
   return {
-    content: [{ type: "text", text: quote(rows.rows, `いまの作業:
+    content: [{ type: "text", text: signed(quote(rows.rows, `いまの作業:
 
-${lead}`) }]
+${lead}`)) }]
   };
 });
 server.registerTool("check_path", {

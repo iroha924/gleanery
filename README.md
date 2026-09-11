@@ -162,7 +162,9 @@ mitos adopt [--yes]                            このマシンの ~/Projects を
                                                --yes は既に登録済みの場所を入れ替える）
 mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
 mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos doctor                                   資格情報と接続、Linear MCP の疎通、DB の大きさ
+mitos doctor                                   plugin の版（repository・CLI・Claude Code・Codex・実行中 MCP）、
+                                               資格情報と接続、Linear MCP の疎通、DB の大きさ
+mitos --version                                この CLI の版と置き場所
 mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
 mitos usage                                    OpenAI の使用量と残り
 ```
@@ -339,7 +341,10 @@ git remote で引くため、パスに依存しない）。設定が要るのは
 # 2. リポジトリを置いて、プラグインを入れる
 git clone https://github.com/iroha924/mitos.git ~/Projects/mitos
 cd ~/Projects/mitos && bun run setup && bun run bundle
-claude plugin marketplace add ~/Projects/mitos && claude plugin install mitos@mitos
+#    plugin は GitHub から入れる。ローカルの directory を marketplace にすると、Claude Code は
+#    cache へ複製せず作業ツリーを直接読み、配布されたものと違う中身で動く
+claude plugin marketplace add iroha924/mitos && claude plugin install mitos@mitos
+codex plugin marketplace add iroha924/mitos --ref main && codex plugin add mitos@mitos
 
 # 3. ダッシュボードを使うなら、Next.js 側の Clerk 資格情報を置く
 cd ~/Projects/mitos/dashboard && clerk env pull
@@ -377,7 +382,8 @@ bun run eval       # 答えの正しさを測る
 bun run bundle     # plugin/dist を作り直す
 ```
 
-**`bun run bundle` を忘れると、plugin 側（MCP・フック・CLI）は古いままになる。**
+**`bun run bundle` を忘れると、repository の `plugin/bin/mitos`（日次同期もこれを叩く）は古い `dist` のまま動く。**
+Claude Code と Codex へは、commit に入った `dist` が GitHub 経由で届く（pre-commit が bundle する）。
 
 ### AI開発環境
 
@@ -391,8 +397,8 @@ Claude Codeでは既存の`docs-author`、Codexでは組み込みの`skill-creat
 
 ### MCP の変更を届ける
 
-`bun run bundle` だけでは Claude CodeやCodexに届かない。版更新、install済みpluginのrefresh、
-新しいsessionでの確認までが必要になる。手順は`.agents/skills/plugin-release/SKILL.md`に置く。
+`bun run bundle` だけでは Claude CodeやCodexに届かない。版更新、`main`へのmerge、install済みpluginの更新、
+`/reload-plugins`か新しいsessionでの確認までが必要になる。手順は`.agents/skills/plugin-release/SKILL.md`に置く。
 
 ## 精度をどう測っているか
 
@@ -432,8 +438,8 @@ recall@5 は**機構の差と偶然の差を区別できない**（実測 2026-0
 
 | 症状 | 見るところ |
 |---|---|
-| MCP の結果やフックが古い | **`bun run bundle` を忘れていないか**（`plugin/dist` を作り直さないと反映されない）。**作り直した後はセッションを張り直す** — MCP サーバーはプロセス起動時にバンドルを読むので、動いているセッションは古いものを握ったままになる |
-| 新しく足した MCP ツールが見えない | 同上。`ps` で `plugin/dist/mcp.js` の起動時刻を見ると、バンドルより古ければそれが原因 |
+| MCP の結果やフックが古い | `mitos doctor` の「plugin の版」。repository・この CLI・Claude Code と Codex の導入済み cache・実行中の MCP の版と起動元を並べ、食い違いには更新手順か session の張り直しを添える。**MCP はプロセス起動時にバンドルを読む**ので、更新後も動いているセッションは古いものを握ったままになる |
+| 新しく足した MCP ツールが見えない | 同上。`current_work` と `search_knowledge` の応答の末尾にある `mitos MCP <版>` が、その session で動いている版 |
 | 会話が検索に出ない | `mitos sync` が回っているか（`~/.claude/mitos-sync.log`）。既定で外しているのは bot の定型文だけなので、人のやりとりは出るはず |
 | `mitos search` が何も返さない | `mitos scopes` にその作業場所が登録されているか |
 | チャットが「どのプロジェクトを選んで」と言う | 画面上部で Project を選ぶ。**範囲の無指定は許していない**（別の仕事の決定が混ざるため） |
