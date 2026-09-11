@@ -15,7 +15,7 @@ pre-commit:
       # next typegen を先に通し、App Router の PageProps・LayoutProps・Route 型も検査する。
       run: bun run typecheck
     - name: dashboard-architecture
-      glob: "{dashboard/src/**/*.ts,dashboard/src/**/*.tsx,scripts/check-dashboard-boundaries.mjs,package.json}"
+      glob: "{dashboard/src/**/*.ts,dashboard/src/**/*.tsx,server/src/db.ts,server/src/github-worker.ts,server/src/server.ts,scripts/check-dashboard-boundaries.mjs,scripts/check-github-boundaries.mjs,vercel.json,package.json}"
       run: bun run architecture
     - name: ai-config
       glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,plugin/agents/**,scripts/check-ai-config.mjs,package.json}"

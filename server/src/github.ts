@@ -32,6 +32,20 @@ const gh = (repo: string, endpoint: string): unknown[] => {
   return (JSON.parse(out) as unknown[][]).flat();
 };
 
+export type GithubSource = {
+  pulls: () => Promise<Pull[]>;
+  issues: () => Promise<RawIssue[]>;
+  reviewComments: () => Promise<ReviewComment[]>;
+  issueComments: () => Promise<IssueComment[]>;
+};
+
+const cliSource = (repo: string): GithubSource => ({
+  pulls: async () => gh(repo, "pulls?state=all&per_page=100") as Pull[],
+  issues: async () => gh(repo, "issues?state=all&per_page=100") as RawIssue[],
+  reviewComments: async () => gh(repo, "pulls/comments?per_page=100") as ReviewComment[],
+  issueComments: async () => gh(repo, "issues/comments?per_page=100") as IssueComment[],
+});
+
 // 相槌はナレッジではない。**短さだけで落とさない** — 「これは DBT 側で」は 10 字でも中身がある。
 const FILLER =
   /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:|:eyes:|:pray:)[!！。.\s]*$/i;
@@ -41,7 +55,7 @@ const isFiller = (body: string): boolean => {
   return t.length === 0 || FILLER.test(t) || /^!?\[[^\]]*\]\([^)]*\)$/.test(t);
 };
 
-type ReviewComment = {
+export type ReviewComment = {
   id: number;
   in_reply_to_id?: number;
   user: { login: string } | null;
@@ -53,7 +67,7 @@ type ReviewComment = {
   pull_request_url: string;
 };
 
-type IssueComment = {
+export type IssueComment = {
   id: number;
   user: { login: string } | null;
   body: string;
@@ -62,7 +76,7 @@ type IssueComment = {
   issue_url: string;
 };
 
-type RawIssue = {
+export type RawIssue = {
   number: number;
   title: string;
   body: string | null;
@@ -74,7 +88,7 @@ type RawIssue = {
   pull_request?: unknown;
 };
 
-type Pull = {
+export type Pull = {
   number: number;
   title: string;
   body: string | null;
@@ -134,10 +148,13 @@ export const prText = (p: Pr): string =>
   `${p.kind === "pr" ? "PR" : "issue"} #${p.number} ${p.title}${p.body ? `\n${p.body.slice(0, 12_000)}` : ""}`;
 
 /** repo は "owner/name"。PR と issue の本体、レビュー / issue のコメントを返す。 */
-export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
+export async function collect(
+  repo: string,
+  source: GithubSource = cliSource(repo),
+): Promise<{ prs: Pr[]; threads: Thread[] }> {
   const titles = new Map<number, string>();
   const prs: Pr[] = [];
-  for (const p of gh(repo, "pulls?state=all&per_page=100") as Pull[]) {
+  for (const p of await source.pulls()) {
     titles.set(p.number, p.title);
     // **PR は bot が作ったものも入れる。**isNoise はコメント用の判定で、
     // 「Terraform の plan 結果」のような推論を含まない通知を落とすためのもの。
@@ -154,7 +171,7 @@ export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
   // レポートが同じ形で並ぶだけになる（実測: monopoly-source は非 PR issue 68 件のうち
   // 62 件が bot 作で、本文の 96% にあたる 531,741 字を占める。人が書いたのは 18,999 字）。
   // isNoise は推論を含まない通知だけを落とすので、AI が書いた issue は残る。
-  for (const i of gh(repo, "issues?state=all&per_page=100") as RawIssue[]) {
+  for (const i of await source.issues()) {
     if (i.pull_request || isNoise(i.user?.login ?? "")) continue;
     titles.set(i.number, i.title);
     prs.push({
@@ -175,7 +192,7 @@ export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
   const threads = new Map<string, Thread>();
 
   // レビューコメント。in_reply_to_id で親子が取れるので、スレッドに束ねられる。
-  const reviews = gh(repo, "pulls/comments?per_page=100") as ReviewComment[];
+  const reviews = await source.reviewComments();
   const byId = new Map(reviews.map((r) => [r.id, r]));
   for (const r of reviews) {
     if (isFiller(r.body) || isNoise(r.user?.login ?? "")) continue;
@@ -197,7 +214,7 @@ export function collect(repo: string): { prs: Pr[]; threads: Thread[] } {
   }
 
   // issue / PR 本体のコメント。親子が無いので 1 件 = 1 スレッド。
-  for (const c of gh(repo, "issues/comments?per_page=100") as IssueComment[]) {
+  for (const c of await source.issueComments()) {
     if (isFiller(c.body) || isNoise(c.user?.login ?? "")) continue;
     const num = Number(c.issue_url.split("/").pop());
     const key = `issue:${repo}#${num}:${c.id}`;
@@ -233,8 +250,7 @@ export const threadHash = (t: Thread): string =>
 
 // --- DB へ入れる ---
 
-import type pg from "pg";
-import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
+import { type Db, EMBED_MODEL, type Env, embed, vec } from "./db.ts";
 
 // 1 トランザクションで扱う件数。
 //
@@ -251,7 +267,7 @@ const CHUNK = 500;
  * 毎回全件を埋め込むと費用と時間が線形に増える。
  */
 export async function ingestThreads(
-  client: pg.Client,
+  client: Db,
   env: Env,
   repo: string,
   scopeId: number,
@@ -378,7 +394,7 @@ export async function ingestThreads(
 
 /** 1 チャンクぶんを書く。呼び出し側がトランザクションを持つ。 */
 async function writeSlice(
-  client: pg.Client,
+  client: Db,
   recordId: string,
   repo: string,
   scopeId: number,

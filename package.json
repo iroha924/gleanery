@@ -9,7 +9,7 @@
     "dashboard": "bun run --cwd dashboard dev",
     "build": "bun run --cwd dashboard build",
     "lint": "bunx --bun @biomejs/biome@2.5.12 check .",
-    "architecture": "node scripts/check-dashboard-boundaries.mjs",
+    "architecture": "node scripts/check-dashboard-boundaries.mjs && node scripts/check-github-boundaries.mjs",
     "verify:ai": "node scripts/check-ai-config.mjs",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd dashboard typecheck",
     "check": "bun run lint && bun run architecture && bun run verify:ai && bun run typecheck",

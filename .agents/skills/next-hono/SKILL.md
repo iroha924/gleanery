@@ -27,6 +27,8 @@ Next.jsは `dashboard/node_modules/next/dist/docs/` の対象ガイドを読む�
 - `server/src`のMCP・CLI・hookをNext.js buildへ取り込まない
 - 画面は同一originの`/api/*`だけを呼び、共有認証は`dashboard/src/lib/api-client.ts`を使う
 - `proxy.ts`はClerk情報をServer Componentへ渡す入口で、認可の正本ではない
+- browserが呼ぶ`/api/*`はClerk session tokenで守る。外部webhookは個別pathに分け、raw bodyの署名を
+  handlerの入口で検証する。公開例外を汎用middlewareやprefixへ広げない
 
 ## Next.js
 

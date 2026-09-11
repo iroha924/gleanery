@@ -3,6 +3,7 @@ import { LinkIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { GithubPanel } from "@/components/settings/github";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +57,8 @@ export function ProjectsPanel() {
 
   return (
     <div className="space-y-6">
+      <GithubPanel />
+
       <div className="rounded-xl border bg-muted/30 p-4">
         <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
           <div>

@@ -244,7 +244,7 @@ async function syncGithub(c: pg.Client, env: Env, dir: string): Promise<string> 
   const scopeId = await scopeIdFor(c, dir, true);
   if (scopeId === null) throw new Error("作業場所を決められなかった");
   console.error(`  ${repo} から集めています…`);
-  const { prs, threads } = collect(repo);
+  const { prs, threads } = await collect(repo);
   const r = await ingestThreads(c, env, repo, scopeId, prs, threads, (m) => console.error(`  ${m}`));
   return `${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`;
 }

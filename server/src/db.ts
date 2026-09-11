@@ -1,6 +1,6 @@
 // DB と Voyage への接続。**資格情報はここでしか読まない。**
 //
-// 書き込みは CLI だけが行い、MCP は読み取り専用で繋ぐ。
+// ナレッジの書き込みは CLI と GitHub worker だけが行い、MCP は読み取り専用で繋ぐ。
 // 推論する層と資格情報を持つ層を分けるため（rules/ai-agent-security.md）。
 
 import fs from "node:fs";
@@ -49,14 +49,15 @@ export function loadEnv(_from?: string): Env {
 /**
  * @param as どの鍵で繋ぐか。
  *   read   = MCP・フック・画面の読み取り（SELECT だけ）
- *   config = 画面の束ね設定（scope / scope_group / group_member だけ書ける）
+ *   config = 画面の設定（scope / group / GitHub App の接続だけ書ける）
+ *   github = GitHub worker（GitHub由来の記録と同期状態だけ書ける）
  *   admin  = 取り込み CLI（全部）
  */
 /** クエリを投げられるもの。**接続 1 本を占有する必要がある処理は `pg.Client` のままにする** — トランザクションはプール越しには張れない。 */
 export type Db = Pick<pg.Client, "query">;
 
 /** どの鍵で繋ぐか。 */
-type As = "admin" | "read" | "config";
+type As = "admin" | "read" | "config" | "github";
 
 /**
  * 接続の設定を 1 つにまとめる。**`connect()` と `pool()` の両方がここを通る。**
@@ -73,11 +74,22 @@ function settings(env: Env, as: As): pg.ClientConfig {
   // 手元は knowledge.env を丸ごと持つので踏まないが、**デプロイ先は 1 変数ずつ手で入れる**ので、
   // CFG を入れ忘れただけでインターネット向けの API が全部書ける鍵を持つ。
   const named =
-    as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
+    as === "read"
+      ? env.KNOWLEDGE_DB_URL_RO
+      : as === "config"
+        ? env.KNOWLEDGE_DB_URL_CFG
+        : as === "github"
+          ? env.KNOWLEDGE_DB_URL_GITHUB
+          : undefined;
   if (as !== "admin" && !named) {
-    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
+    const key =
+      as === "read"
+        ? "KNOWLEDGE_DB_URL_RO"
+        : as === "config"
+          ? "KNOWLEDGE_DB_URL_CFG"
+          : "KNOWLEDGE_DB_URL_GITHUB";
     throw new Error(
-      `${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API）。` +
+      `${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API・GitHub worker）。` +
         "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる",
     );
   }

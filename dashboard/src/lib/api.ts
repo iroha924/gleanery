@@ -118,6 +118,29 @@ const q = (scopes: number[] | undefined): string =>
 export type GroupMember = { id: number; label: string; identKind: string; ident: string };
 export type Group = { id: number; name: string; members: GroupMember[] };
 
+export type GithubRepository = {
+  id: string;
+  scopeId: number;
+  fullName: string;
+  private: boolean;
+  syncStatus: "queued" | "syncing" | "synced" | "error";
+  syncRequestedAt: string | null;
+  lastSyncedAt: string | null;
+  lastError: string | null;
+};
+
+export type GithubStatus = {
+  configured: boolean;
+  installUrl: string | null;
+  connection: {
+    id: number;
+    accountLogin: string;
+    repositorySelection: "all" | "selected";
+    status: "active" | "suspended";
+    repositories: GithubRepository[];
+  } | null;
+};
+
 /** プロジェクトの言葉。meaning が null なら「AI が聞きたがっている語」。 */
 export type Term = {
   id: number;
@@ -171,6 +194,13 @@ export const api = {
     send<{ ok: true }>("/api/terms", "POST", t),
   deleteTerm: (id: number) => send<{ ok: true }>(`/api/terms/${id}`, "DELETE"),
   scopes: () => get<Scope[]>("/api/scopes"),
+  github: () => get<GithubStatus>("/api/github"),
+  connectGithub: (installationId: number) =>
+    send<GithubStatus>("/api/github/installations", "POST", { installationId }),
+  refreshGithub: () => send<GithubStatus>("/api/github/refresh", "POST"),
+  syncGithub: (repositoryId?: string) =>
+    send<{ ok: true; queued: number }>("/api/github/sync", "POST", { repositoryId }),
+  disconnectGithub: () => send<{ ok: true }>("/api/github/installation", "DELETE"),
   records: (scopes?: number[]) => get<RecordRow[]>(`/api/records${q(scopes)}`),
   record: (id: string) => get<RecordDetail>(`/api/records/${encodeURIComponent(id)}`),
   search: async (body: {
