@@ -1,20 +1,10 @@
 import { handleCallback } from "@vercel/queue";
 import { Hono } from "hono";
-import { z } from "zod";
 import { loadEnv, pool } from "./db.ts";
 import { collect, ingestThreads } from "./github.ts";
 import { githubApp, installationSource } from "./github-app.ts";
 import { messageOf } from "./github-connections.ts";
-import { GITHUB_SYNC_TOPIC, type GithubSyncMessage } from "./github-queue.ts";
-
-const messageSchema = z
-  .object({
-    installationId: z.number().int().positive(),
-    repositoryId: z.string().regex(/^[1-9]\d*$/),
-    fullName: z.string().regex(/^[^/]+\/[^/]+$/),
-    scopeId: z.number().int().positive(),
-  })
-  .strict();
+import { GITHUB_SYNC_TOPIC, type GithubSyncMessage, githubSyncMessageSchema } from "./github-queue.ts";
 
 const env = loadEnv(process.cwd());
 let workerPool: ReturnType<typeof pool> | null = null;
@@ -24,7 +14,7 @@ const app = () => (workerApp ??= githubApp(env));
 
 const callback = handleCallback<GithubSyncMessage>(
   async (raw) => {
-    const message = messageSchema.parse(raw);
+    const message = githubSyncMessageSchema.parse(raw);
     const selected = await database().query<{ scopeId: number }>(
       `select scope_id::int as "scopeId" from github_repository
        where id=$1 and installation_id=$2 and full_name=$3 and selected`,
