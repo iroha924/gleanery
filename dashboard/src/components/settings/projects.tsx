@@ -8,12 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Item, ItemContent, ItemDescription, ItemTitle } from "@/components/ui/item";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { api } from "@/lib/api";
+
+function sourceKind(identKind: string) {
+  return identKind === "tracker" ? "issue" : "リポジトリ";
+}
 
 export function ProjectsPanel() {
   const qc = useQueryClient();
@@ -53,12 +56,84 @@ export function ProjectsPanel() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-xl border bg-muted/30 p-4">
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+          <div>
+            <p className="font-medium">データソース</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              リポジトリやissueの出どころ。一つずつ独立しています。
+            </p>
+          </div>
+          <span className="text-sm text-muted-foreground" aria-hidden="true">
+            複数を束ねる <span className="sm:hidden">↓</span>
+            <span className="hidden sm:inline">→</span>
+          </span>
+          <div>
+            <p className="font-medium">プロジェクト</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              関連するデータソースをまとめた、画面の閲覧範囲です。
+            </p>
+          </div>
+        </div>
+        <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
+          プロジェクトを作成・削除しても、元のデータソースと記録は変わりません。
+        </p>
+      </div>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-sm font-medium">プロジェクト</h2>
+          <p className="mt-1 text-sm text-muted-foreground">左上の選択肢として表示される閲覧範囲です。</p>
+        </div>
+        {groups.isPending && <Skeleton className="h-20 w-full" />}
+        {groups.data?.length === 0 && (
+          <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+            まだプロジェクトがありません。下のフォームでデータソースを2つ以上選んで作成できます。
+          </p>
+        )}
+        {groups.data?.map((group) => (
+          <Card key={group.id}>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-2">
+                <div className="space-y-1">
+                  <CardTitle className="text-base">{group.name}</CardTitle>
+                  <CardDescription>データソース {group.members.length} 件</CardDescription>
+                </div>
+                <ConfirmDelete
+                  what={group.name}
+                  note="束ねた設定が外れます。記録そのものは残ります。"
+                  onConfirm={() => remove.mutate(group.id)}
+                >
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={remove.isPending}
+                    aria-label={`プロジェクト「${group.name}」を消す`}
+                  >
+                    <Trash2Icon />
+                  </Button>
+                </ConfirmDelete>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {group.members.map((member) => (
+                  <Badge key={member.id} variant="outline">
+                    <span className="text-muted-foreground">{sourceKind(member.identKind)}</span>
+                    {member.label}
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+
       <Card>
         <CardHeader>
-          <CardTitle>プロジェクトを作る</CardTitle>
+          <CardTitle>新しいプロジェクト</CardTitle>
           <CardDescription>
-            関連するリポジトリや issue の出どころを 1 つのプロジェクトにします。左上でプロジェクトを
-            選ぶと、チャット・探す・作業がその中だけを見るようになります。
+            関連するデータソースを2つ以上選んでください。同じデータソースを複数のプロジェクトに入れることもできます。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -91,9 +166,12 @@ export function ProjectsPanel() {
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
                         <span className="truncate font-medium">{scope.label}</span>
+                        <Badge variant="outline" className="shrink-0">
+                          {sourceKind(scope.identKind)}
+                        </Badge>
                         {scope.groups && (
                           <Badge variant="secondary" className="shrink-0">
-                            {scope.groups}
+                            所属: {scope.groups}
                           </Badge>
                         )}
                       </span>
@@ -122,64 +200,6 @@ export function ProjectsPanel() {
           </div>
         </CardContent>
       </Card>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium">プロジェクト</h2>
-        {groups.isPending && <Skeleton className="h-20 w-full" />}
-        {groups.data?.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            まだプロジェクトがありません。リポジトリは全部独立しています。
-          </p>
-        )}
-        {groups.data?.map((g) => {
-          const dirs = g.members.filter((m) => m.identKind !== "tracker");
-          return (
-            <Card key={g.id}>
-              <CardHeader>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-1">
-                    <CardTitle className="text-base">{g.name}</CardTitle>
-                    <CardDescription>
-                      {dirs.map((m) => m.label).join(" / ") || "リポジトリ未設定"}
-                    </CardDescription>
-                  </div>
-                  <ConfirmDelete
-                    what={g.name}
-                    note="束ねた設定が外れます。記録そのものは残ります。"
-                    onConfirm={() => remove.mutate(g.id)}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      disabled={remove.isPending}
-                      aria-label={`プロジェクト「${g.name}」を消す`}
-                    >
-                      <Trash2Icon />
-                    </Button>
-                  </ConfirmDelete>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3"></CardContent>
-            </Card>
-          );
-        })}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium">リポジトリと issue の出どころ</h2>
-        {scopes.isPending && <Skeleton className="h-20 w-full" />}
-        {scopes.data?.map((s) => (
-          <Item key={s.id} variant="outline">
-            <ItemContent>
-              <ItemTitle>{s.label}</ItemTitle>
-              <ItemDescription className="tabular-nums">
-                作業 {s.records} 件 / 記録 {s.nodes} 件{s.groups && ` / ${s.groups}`}
-                {s.role && ` / ${s.role}`}
-              </ItemDescription>
-            </ItemContent>
-          </Item>
-        ))}
-      </section>
     </div>
   );
 }

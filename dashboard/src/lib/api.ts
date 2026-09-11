@@ -33,6 +33,7 @@ export type ChatRow = {
 export type Scope = {
   id: number;
   label: string;
+  identKind: string;
   role: string | null;
   summary: string | null;
   groups: string | null;
