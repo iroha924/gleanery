@@ -23741,10 +23741,10 @@ function loadEnv(_from) {
   return out;
 }
 function settings(env, as) {
-  const named = as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
+  const named = as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : as === "github" ? env.KNOWLEDGE_DB_URL_GITHUB : undefined;
   if (as !== "admin" && !named) {
-    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
-    throw new Error(`${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API）。` + "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる");
+    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : as === "config" ? "KNOWLEDGE_DB_URL_CFG" : "KNOWLEDGE_DB_URL_GITHUB";
+    throw new Error(`${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API・GitHub worker）。` + "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる");
   }
   const raw = named ?? env.KNOWLEDGE_DB_URL;
   if (!raw) {
@@ -24060,6 +24060,12 @@ var gh = (repo, endpoint) => {
   });
   return JSON.parse(out).flat();
 };
+var cliSource = (repo) => ({
+  pulls: async () => gh(repo, "pulls?state=all&per_page=100"),
+  issues: async () => gh(repo, "issues?state=all&per_page=100"),
+  reviewComments: async () => gh(repo, "pulls/comments?per_page=100"),
+  issueComments: async () => gh(repo, "issues/comments?per_page=100")
+});
 var FILLER = /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:|:eyes:|:pray:)[!！。.\s]*$/i;
 var isFiller = (body) => {
   const t = body.trim();
@@ -24079,14 +24085,14 @@ var prOf = (p) => ({
 });
 var prText = (p) => `${p.kind === "pr" ? "PR" : "issue"} #${p.number} ${p.title}${p.body ? `
 ${p.body.slice(0, 12000)}` : ""}`;
-function collect(repo) {
+async function collect(repo, source = cliSource(repo)) {
   const titles = new Map;
   const prs = [];
-  for (const p of gh(repo, "pulls?state=all&per_page=100")) {
+  for (const p of await source.pulls()) {
     titles.set(p.number, p.title);
     prs.push(prOf(p));
   }
-  for (const i of gh(repo, "issues?state=all&per_page=100")) {
+  for (const i of await source.issues()) {
     if (i.pull_request || isNoise(i.user?.login ?? ""))
       continue;
     titles.set(i.number, i.title);
@@ -24104,7 +24110,7 @@ function collect(repo) {
     });
   }
   const threads = new Map;
-  const reviews = gh(repo, "pulls/comments?per_page=100");
+  const reviews = await source.reviewComments();
   const byId = new Map(reviews.map((r) => [r.id, r]));
   for (const r of reviews) {
     if (isFiller(r.body) || isNoise(r.user?.login ?? ""))
@@ -24125,7 +24131,7 @@ function collect(repo) {
     t.turns.push({ author: r.user?.login ?? "unknown", body: r.body.trim(), at: r.created_at });
     threads.set(key, t);
   }
-  for (const c of gh(repo, "issues/comments?per_page=100")) {
+  for (const c of await source.issueComments()) {
     if (isFiller(c.body) || isNoise(c.user?.login ?? ""))
       continue;
     const num = Number(c.issue_url.split("/").pop());
@@ -39225,7 +39231,7 @@ async function syncGithub(c, env2, dir) {
   if (scopeId === null)
     throw new Error("作業場所を決められなかった");
   console.error(`  ${repo} から集めています…`);
-  const { prs, threads: threads2 } = collect(repo);
+  const { prs, threads: threads2 } = await collect(repo);
   const r = await ingestThreads(c, env2, repo, scopeId, prs, threads2, (m) => console.error(`  ${m}`));
   return `${repo} / PR ${prs.length} 件（新しく入れた ${r.prs} 件）/ スレッド ${r.total} 件（埋め込みを取り直した ${r.embedded} 件）`;
 }

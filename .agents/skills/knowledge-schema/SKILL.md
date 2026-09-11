@@ -20,6 +20,9 @@ description: mitosのPostgreSQL migration、RLS・role、record/node schema、�
 
 `search_log`だけは`knowledge_ro`から追記を許すが、読み戻しと削除は許さない。
 
+外部sourceのworkerへ管理鍵を渡さない。sourceごとの専用roleを作り、必要なtable・列・sequenceだけをgrantし、
+`server/src/db.ts`で専用の接続変数が無いときは起動を止める。管理鍵へのfallbackは作らない。
+
 権限はmigrationを読むだけで判定しない。roleの接続文字列で禁止操作を実行し、`permission denied`に
 なることを確認する。
 
@@ -43,9 +46,9 @@ LLMで作らない。上書き型のsourceで消えた項目は`deleted_at`へ�
 
 ## migration
 
-`knowledge_ro`と`mitos_cfg`には後から作るtableへのdefault privilegesがある。table追加時は両roleの
+`knowledge_ro`と`mitos_cfg`には後から作るtableへのdefault privilegesがある。table追加時は全roleの
 read/writeを明示的に決め、読ませないtableには`revoke`を書く。`mitos_cfg`へ`record`と`node`のwriteを
-与えない。
+与えない。GitHub Appの接続tableは`mitos_cfg`、GitHub由来のknowledgeと同期状態は`mitos_github`だけが書く。
 
 変更後は対象migrationを実DBへ適用した経路と、`bun run verify`を確認する。kindや取り込み口の変更で
 `server/src/mcp.ts`、CLI、またはその依存moduleを触った場合は`plugin-release`も続けて使う。

@@ -126,7 +126,7 @@ bun run dev        # Hono API（:8787）+ Next.js（:3000）。**前面でだけ
 
 ## MCP のツール
 
-Claude Code と Codex から使える。**どれも読み取り専用**で、書き込みは CLI だけが持つ。
+Claude Code と Codex から使える。**どれも読み取り専用**で、管理鍵を持たない。
 
 | ツール | いつ呼ぶか |
 |---|---|
@@ -171,13 +171,18 @@ mitos usage                                    OpenAI の使用量と残り
 
 | 元 | 手段 | 注意 |
 |---|---|---|
-| GitHub の PR・issue の本文、レビュー・議論 | `gh` 経由 | **bot が作った PR も取り込む**（リリース PR がそれ） |
+| GitHub の PR・issue の本文、レビュー・議論 | GitHub App（dashboard）または`gh`（CLI） | **bot が作った PR も取り込む**（リリース PR がそれ） |
 | Linear の issue・コメント | **MCP をヘッドレスで叩く** | API キーが発行できない組織があるため。下記参照 |
 | Claude Code の会話 | `~/.claude/projects/*.jsonl`（ccs を使っているなら `~/.ccs/instances/*/projects/` も） | 貼り付けた議事録もここに入る。**そのマシンにしか無い**。Codex の rollout は読まない |
 | リポジトリの Markdown | `git ls-files` | 見出しで節に割る。**symlink は辿らない** |
 | 作業の判断 | `/mitos:trace` | 決定・捨てた案・制約・未解決。**ファイルではなく DB に入る** |
 
 **issue の出どころはプロジェクトごとに違う**（GitHub / Linear / Jira）ので、ダッシュボードで設定する。
+
+GitHub Appは`/settings`からインストールし、GitHub側で許可したリポジトリだけを同期する。installation
+tokenは保存せず、非公開のVercel Queue workerが必要なときだけ生成する。webhookは
+`/webhooks/github`で署名を検証し、同じ配送と再試行はidempotency keyと既存のcontent hashで重複させない。
+CLIの`mitos import-github`と`mitos sync`は引き続き`gh`を使える。
 
 **Linear は API キーを発行できない**（組織で禁止）ため、OAuth 済みの MCP を `claude -p` の
 ヘッドレス実行で叩いている。`--output-format stream-json` からツール結果を生で拾うので、
@@ -239,13 +244,14 @@ dashboardが宣言していないHono依存で検査に失敗した。採用に�
 
 ### 資格情報
 
-`~/.claude/knowledge.env` に置く。**DB の鍵は用途で 3 つに分かれている**（ほかに Voyage・OpenAI・Clerk の鍵が要る）。
+`~/.claude/knowledge.env` に置く。DBの鍵は用途で4つに分ける（ほかにVoyage・OpenAI・Clerkの鍵が要る）。
 
 | ロール | 誰が使うか | 書けるもの |
 |---|---|---|
 | `mitos_admin`（`KNOWLEDGE_DB_URL`） | CLI | 全部（BYPASSRLS） |
 | `knowledge_ro`（`KNOWLEDGE_DB_URL_RO`） | MCP・フック・API の読み取り | **`search_log` への追記だけ**（読み戻しも削除もできない）。**未設定なら MCP とフックは繋がらない** |
 | `mitos_cfg`（`KNOWLEDGE_DB_URL_CFG`） | ダッシュボードの設定 | scope / scope_path / group / person / term / chat / search_log |
+| `mitos_github`（`KNOWLEDGE_DB_URL_GITHUB`） | GitHub同期worker | GitHub由来のrecord / node / refと同期状態だけ |
 
 ほかに `VOYAGE_API_KEY`（埋め込みと rerank）と `OPENAI_API_KEY`（チャットの生成と、
 取り込み時に作業場所の役割・説明を読み取るのに使う）。
@@ -325,7 +331,7 @@ git remote で引くため、パスに依存しない）。設定が要るのは
 ```bash
 # 1. 資格情報。リポジトリには入っていないので手で置く
 #    ~/.claude/knowledge.env に KNOWLEDGE_DB_URL / KNOWLEDGE_DB_URL_RO /
-#    KNOWLEDGE_DB_URL_CFG / VOYAGE_API_KEY
+#    KNOWLEDGE_DB_URL_CFG / KNOWLEDGE_DB_URL_GITHUB / VOYAGE_API_KEY
 #    ダッシュボードも使うなら CLERK_SECRET_KEY / CLERK_PUBLISHABLE_KEY /
 #    MITOS_ALLOWED_USER_ID も要る（無いと bun run api が起動しない）
 #    接続は公開 CA で検証するので、証明書を配る必要は無い

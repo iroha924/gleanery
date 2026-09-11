@@ -11,10 +11,10 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 ## 実行境界
 
 - DBの正本は`db/migrations/`と手書きSQLだけ。Prisma・Drizzleのschemaを別の正本として足さない
-- ナレッジ本体の`record`と`node`を書けるのはCLIだけ。MCP、hook、HTTP APIへ管理鍵を渡さない
-- MCPとhookは`knowledge_ro`、dashboard設定は`mitos_cfg`を使い、管理鍵へfallbackしない
+- ナレッジ本体を書けるのはCLIとGitHub同期workerだけ。MCP、hook、HTTP APIへ管理鍵を渡さない
+- MCPとhookは`knowledge_ro`、dashboard設定は`mitos_cfg`、GitHub同期は`mitos_github`を使い、管理鍵へfallbackしない
 - Next.jsは画面、Honoは全`/api/*`を担当する。Route HandlerやServer ActionへAPIを複製しない
-- Honoの全APIはClerk認証middlewareを先に通す。`server/src/server.ts`のdefault exportをVercelの入口に保つ
+- Honoの全`/api/*`はClerk認証を先に通す。`/webhooks/github`だけはGitHub署名を検証し、公開例外を増やさない
 - DBや生成APIの資格情報をNext.jsのserver codeとbrowserへ渡さない。画面は同一originの`/api/*`だけを呼ぶ
 - HTML / Markdownの進捗fileを作らない。記録の正本はDB、現在地の表示はdashboardの`/now`
 

@@ -11,9 +11,32 @@
       "framework": "hono",
       "entrypoint": "src/server.ts",
       "buildCommand": "echo 'Vercel の型検査は飛ばす（@vercel/backends が TypeScript 7 で落ちる）。tsc は pre-commit と bun run check で通している'"
+    },
+    "github_worker": {
+      "root": "server/",
+      "framework": "hono",
+      "entrypoint": "src/github-worker.ts",
+      "buildCommand": "echo 'Vercel の型検査は飛ばす（@vercel/backends が TypeScript 7 で落ちる）。tsc は pre-commit と bun run check で通している'",
+      "functions": {
+        "src/github-worker.ts": {
+          "maxDuration": 300,
+          "experimentalTriggers": [
+            {
+              "type": "queue/v2beta",
+              "topic": "github-sync"
+            }
+          ]
+        }
+      }
     }
   },
   "rewrites": [
+    {
+      "source": "/webhooks/github",
+      "destination": {
+        "service": "api"
+      }
+    },
     {
       "source": "/api/(.*)",
       "destination": {

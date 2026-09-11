@@ -97,7 +97,7 @@ export function AppHeader() {
                             <Link
                               href={`/?chat=${encodeURIComponent(chat.id)}`}
                               onClick={() => setHistoryOpen("")}
-                              className="block min-w-0 pr-9"
+                              className="flex min-w-0 flex-col items-start gap-0 pr-9"
                             >
                               <span className="block truncate">{chat.title ?? "（無題）"}</span>
                               <time

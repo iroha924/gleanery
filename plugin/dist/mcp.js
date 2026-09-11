@@ -39012,10 +39012,10 @@ function loadEnv(_from) {
   return out;
 }
 function settings(env, as) {
-  const named = as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : undefined;
+  const named = as === "read" ? env.KNOWLEDGE_DB_URL_RO : as === "config" ? env.KNOWLEDGE_DB_URL_CFG : as === "github" ? env.KNOWLEDGE_DB_URL_GITHUB : undefined;
   if (as !== "admin" && !named) {
-    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : "KNOWLEDGE_DB_URL_CFG";
-    throw new Error(`${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API）。` + "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる");
+    const key = as === "read" ? "KNOWLEDGE_DB_URL_RO" : as === "config" ? "KNOWLEDGE_DB_URL_CFG" : "KNOWLEDGE_DB_URL_GITHUB";
+    throw new Error(`${key} が無い。管理側の鍵へは落とさない（MCP・編集フック・画面の API・GitHub worker）。` + "~/.claude/knowledge.env か、デプロイ先の環境変数に入れる");
   }
   const raw = named ?? env.KNOWLEDGE_DB_URL;
   if (!raw) {

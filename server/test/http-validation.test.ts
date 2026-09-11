@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import chatRoutes from "../src/http/routes/chats.ts";
+import githubRoutes from "../src/http/routes/github.ts";
 import knowledgeRoutes from "../src/http/routes/knowledge.ts";
 import settingsRoutes from "../src/http/routes/settings.ts";
 import speechRoutes from "../src/http/routes/speech.ts";
@@ -23,6 +24,8 @@ test("JSON の外部入力は handler より前に拒否する", async () => {
     speechRoutes.request("/reply", jsonRequest({ heard: "", scopeIds: [1] })),
     speechRoutes.request("/polish", jsonRequest({ text: "" })),
     chatRoutes.request("/chat", jsonRequest({ question: "q", scopeIds: [0] })),
+    githubRoutes.request("/github/installations", jsonRequest({ installationId: 0 })),
+    githubRoutes.request("/github/sync", jsonRequest({ repositoryId: "-1" })),
   ];
 
   for (const response of await Promise.all(requests)) {
