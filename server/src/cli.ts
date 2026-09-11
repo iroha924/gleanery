@@ -77,10 +77,9 @@ function readIr(file: string): unknown {
 
 // ingest が実際に読む形。中身の契約（棄却理由の有無など）は progress-log の validate が見ている。
 //
-// **本文が文字列であることまで確かめる。**確かめないと、要素がオブジェクトのときに
-// `String(o)` が全部 `[object Object]` になり、キーもハッシュも衝突して
-// 複数の制約が 1 件に潰れる（実測で再現した）。
+// **境界の本文まで確かめる。**旧 schema の文字列と、個別に検索昇格できる id 付きの形だけを受ける。
 const text = z.string();
+const boundary = z.union([text, z.object({ id: text, text }).strict()]);
 const evidence = z.array(z.object({ kind: z.string(), ref: z.string() }).loose()).optional();
 
 const IR_SHAPE = z
@@ -96,7 +95,7 @@ const IR_SHAPE = z
       })
       .loose(),
     background: z
-      .object({ nonGoals: z.array(text).optional(), constraints: z.array(text).optional() })
+      .object({ nonGoals: z.array(boundary).optional(), constraints: z.array(boundary).optional() })
       .loose()
       .optional(),
     decisions: z
@@ -115,6 +114,7 @@ const IR_SHAPE = z
     events: z.array(z.object({ id: text, kind: text, text, at: text, evidence }).loose()).optional(),
     verification: z.array(z.object({ id: text, what: text, at: text, evidence }).loose()).optional(),
     openQuestions: z.array(z.object({ id: text, q: text, at: text }).loose()).optional(),
+    knowledge: z.array(text).optional(),
     session: z
       .object({ id: text, host: z.enum(["claude-code", "codex"]) })
       .strict()
@@ -135,11 +135,27 @@ const IR_SHAPE = z
   })
   .loose()
   .superRefine((ir, ctx) => {
-    if (ir.schema !== "session/2") return;
+    if (!ir.schema.startsWith("session/")) return;
     if (!ir.session)
-      ctx.addIssue({ code: "custom", message: "session/2 には session が要る", path: ["session"] });
+      ctx.addIssue({ code: "custom", message: `${ir.schema} には session が要る`, path: ["session"] });
     if (!ir.utterances?.length) {
-      ctx.addIssue({ code: "custom", message: "session/2 には utterances が要る", path: ["utterances"] });
+      ctx.addIssue({ code: "custom", message: `${ir.schema} には utterances が要る`, path: ["utterances"] });
+    }
+    if (ir.schema === "session/3" && !ir.knowledge) {
+      ctx.addIssue({ code: "custom", message: "session/3 には knowledge が要る", path: ["knowledge"] });
+    }
+    if (ir.schema === "session/3") {
+      for (const field of ["constraints", "nonGoals"] as const) {
+        ir.background?.[field]?.forEach((value, index) => {
+          if (typeof value === "string") {
+            ctx.addIssue({
+              code: "custom",
+              message: `session/3 の background.${field} には id が要る`,
+              path: ["background", field, index],
+            });
+          }
+        });
+      }
     }
   });
 

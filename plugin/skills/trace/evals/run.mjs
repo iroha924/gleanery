@@ -51,7 +51,7 @@ console.log('参照と検証の接続:');
 }
 
 // patch: 契約を当てる側で拒否できること。**散文で書いてあるだけの規約は守られなかった**ので、
-// 「追記だけ」「id は再利用しない」「上書きは 3 つだけ」をここで機構にしてある。
+// 「追記だけ」「id は再利用しない」「履歴を上書きしない」をここで機構にしてある。
 console.log('patch:');
 {
   const base = () => JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
@@ -71,7 +71,7 @@ console.log('patch:');
   if (r.problems.some((p) => p.code === 'patch/append-no-at')) ok('patch-no-at');
   else ng('patch-no-at', '観測時点の無い要素を通してしまう');
 
-  // **上書きしてよいのは 3 つだけ。**events を set できると追記だけの契約が消える
+  // events を set できると追記だけの契約が消える
   r = applyPatch(base(), { set: { events: [] } });
   if (r.problems.some((p) => p.code === 'patch/not-settable')) ok('patch-not-settable');
   else ng('patch-not-settable', '過去の要素を上書きできてしまう');
@@ -109,6 +109,14 @@ console.log('patch:');
   r = applyPatch(base(), { set: { next: {} } });
   if (r.problems.some((p) => p.code === 'patch/set-not-array')) ok('patch-set-shape');
   else ng('patch-set-shape', '配列でない next を通してしまう');
+
+  r = applyPatch(base(), { set: { knowledge: [base().decisions[0].id] } });
+  if (r.ok && r.ir.knowledge[0] === base().decisions[0].id) ok('patch-set-knowledge');
+  else ng('patch-set-knowledge', `検索対象を更新できない: ${JSON.stringify(r.problems)}`);
+
+  r = applyPatch(base(), { set: { knowledge: {} } });
+  if (r.problems.some((p) => p.code === 'patch/set-not-array')) ok('patch-set-knowledge-shape');
+  else ng('patch-set-knowledge-shape', '配列でない knowledge を通してしまう');
 
   r = applyPatch(base(), { nope: {} });
   if (r.problems.some((p) => p.code === 'patch/unknown-key')) ok('patch-unknown-key');
@@ -148,10 +156,25 @@ console.log('採掘:');
 
   const ir = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
   const attached = sessionize(d, ir);
-  if (attached.meta.id === sessionRecordId('claude-code', 's1') && attached.schema === 'session/2') ok('sessionize-identity');
+  if (attached.meta.id === sessionRecordId('claude-code', 's1') && attached.schema === 'session/3') ok('sessionize-identity');
   else ng('sessionize-identity', `セッションの識別が違う: ${attached.meta.id}`);
   if (attached.utterances.length === d.messages.length && validate(attached).ok) ok('sessionize-valid');
   else ng('sessionize-valid', `会話を結び付けた IR が不正: ${JSON.stringify(validate(attached).problems)}`);
+
+  const withoutKnowledge = structuredClone(attached);
+  delete withoutKnowledge.knowledge;
+  if (validate(withoutKnowledge).problems.some((p) => p.code === 'knowledge/required')) ok('knowledge-required');
+  else ng('knowledge-required', '新しいセッション記録で検索対象を省略できてしまう');
+
+  const missingKnowledge = structuredClone(attached);
+  missingKnowledge.knowledge = ['d-does-not-exist'];
+  if (validate(missingKnowledge).problems.some((p) => p.code === 'knowledge/missing')) ok('knowledge-reference');
+  else ng('knowledge-reference', '存在しない要素を検索対象にできてしまう');
+
+  const duplicateKnowledge = structuredClone(attached);
+  duplicateKnowledge.knowledge = [attached.decisions[0].id, attached.decisions[0].id];
+  if (validate(duplicateKnowledge).problems.some((p) => p.code === 'knowledge/duplicate')) ok('knowledge-duplicate');
+  else ng('knowledge-duplicate', '同じ検索対象を重複指定できてしまう');
 }
 
 // 網羅: 材料にあったのに記録へ入らなかったものを、識別子の突き合わせだけで拾えること。

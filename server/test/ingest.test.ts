@@ -67,7 +67,7 @@ test("空の IR でも落ちない", () => {
 test("trace 済みセッションの会話は発言者と元セッション ID を保つ", () => {
   const ir: Ir = {
     ...base,
-    schema: "session/2",
+    schema: "session/3",
     session: { id: "550e8400-e29b-41d4-a716-446655440000", host: "codex" },
     utterances: [
       { key: "u-human", ordinal: 0, at: "2026-01-01T00:00:00Z", role: "human", text: "依頼" },
@@ -83,6 +83,70 @@ test("trace 済みセッションの会話は発言者と元セッション ID �
     ],
   );
   assert.equal(nodes[0]?.attrs?.session, "550e8400-e29b-41d4-a716-446655440000");
+  assert.ok(
+    nodes.every((node) => !node.searchable),
+    "完全な会話は保持するが横断検索へは出さない",
+  );
+});
+
+test("セッションは明示した知識だけを横断検索へ昇格する", () => {
+  const ir: Ir = {
+    ...base,
+    schema: "session/3",
+    knowledge: ["b-promoted", "d-promoted", "e-promoted", "v-promoted", "q-promoted"],
+    background: {
+      constraints: [
+        { id: "b-promoted", text: "変えてはいけない境界" },
+        { id: "b-detail-only", text: "この回だけの境界" },
+      ],
+    },
+    decisions: [
+      {
+        id: "d-promoted",
+        decision: "再利用する判断",
+        at: "2026-01-01T00:00:00Z",
+        options: [
+          { option: "採用案", chosen: true },
+          { option: "棄却案", whyNot: "再び選ばない理由" },
+        ],
+      },
+      { id: "d-detail-only", decision: "この回だけの判断", at: "2026-01-01T00:00:00Z" },
+    ],
+    events: [
+      { id: "e-promoted", kind: "dead_end", text: "再発する行き止まり", at: "2026-01-01T00:00:00Z" },
+      { id: "e-detail-only", kind: "work", text: "作業ログ", at: "2026-01-01T00:00:00Z" },
+    ],
+    verification: [
+      { id: "v-promoted", what: "再利用する検証結果", at: "2026-01-01T00:00:00Z" },
+      { id: "v-detail-only", what: "通常のテスト結果", at: "2026-01-01T00:00:00Z" },
+    ],
+    openQuestions: [
+      { id: "q-promoted", q: "別の回にも持ち越す問い", at: "2026-01-01T00:00:00Z" },
+      { id: "q-detail-only", q: "この回だけの問い", at: "2026-01-01T00:00:00Z" },
+    ],
+  };
+  const by = new Map(flatten(ir).map((node) => [node.key, node.searchable]));
+  assert.equal(by.get("d-promoted"), true);
+  assert.equal(by.get("d-promoted:0"), false, "採用案は決定本文と重複する");
+  assert.equal(by.get("d-promoted:1"), true, "棄却理由は決定と一緒に検索できる");
+  assert.equal(by.get("d-detail-only"), false);
+  assert.equal(by.get("e-promoted"), true);
+  assert.equal(by.get("e-detail-only"), false);
+  assert.equal(by.get("v-promoted"), true);
+  assert.equal(by.get("v-detail-only"), false);
+  assert.equal(by.get("q-promoted"), true);
+  assert.equal(by.get("q-detail-only"), false);
+  assert.equal(by.get("b-promoted"), true);
+  assert.equal(by.get("b-detail-only"), false);
+});
+
+test("旧セッションを再取り込みしても全件を検索対象へ戻さない", () => {
+  const ir: Ir = {
+    ...base,
+    schema: "session/2",
+    decisions: [{ id: "d-old", decision: "旧記録", at: "2026-01-01T00:00:00Z" }],
+  };
+  assert.equal(flatten(ir)[0]?.searchable, false);
 });
 
 test("記録の題を変えると再取得されるように、ハッシュが埋め込み文を覆う", () => {

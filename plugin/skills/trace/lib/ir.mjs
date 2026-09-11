@@ -10,6 +10,7 @@ import { SESSION_SCHEMA, sessionRecordId } from './session.mjs';
 
 export const SCHEMA = SESSION_SCHEMA;
 const LEGACY_SCHEMA = 'progress/1';
+const LEGACY_SESSION_SCHEMA = 'session/2';
 
 export const STATUS = ['planning', 'in-progress', 'blocked', 'paused', 'done'];
 export const EVENT_KINDS = ['work', 'finding', 'dead_end', 'debt', 'state_transition'];
@@ -52,7 +53,7 @@ export function validate(ir) {
   const P = (code, message, fix) => problems.push({ code, message, fix });
   const W = (code, message, fix) => warnings.push({ code, message, fix });
 
-  if (ir?.schema !== SCHEMA && ir?.schema !== LEGACY_SCHEMA) {
+  if (ir?.schema !== SCHEMA && ir?.schema !== LEGACY_SCHEMA && ir?.schema !== LEGACY_SESSION_SCHEMA) {
     P('schema/unknown', `schema が "${SCHEMA}" でない: ${JSON.stringify(ir?.schema)}`, `schema を "${SCHEMA}" にする`);
     return { ok: false, problems, warnings };
   }
@@ -65,7 +66,7 @@ export function validate(ir) {
     if (!ISO.test(m[f] || '')) P(`meta/${f}`, `meta.${f} が ISO 8601 でない: ${JSON.stringify(m[f])}`, '観測時点が無いと、いつ真だった話か分からなくなる');
   }
 
-  if (ir.schema === SCHEMA) {
+  if (ir.schema === SCHEMA || ir.schema === LEGACY_SESSION_SCHEMA) {
     const s = ir.session || {};
     if (!isStr(s.id)) P('session/id', 'session.id が空。', '元ツールのセッション ID を残す');
     if (!['claude-code', 'codex'].includes(s.host)) {
@@ -84,6 +85,9 @@ export function validate(ir) {
       if (!ISO.test(u.at || '')) P('session/utterance-at', `発言の at が ISO 8601 でない: ${JSON.stringify(u.at)}`, 'sessionize で作り直す');
       if (!['human', 'ai'].includes(u.role)) P('session/utterance-role', `発言の role が human / ai でない: ${JSON.stringify(u.role)}`, 'sessionize で作り直す');
       if (!isStr(u.text)) P('session/utterance-text', `発言 ${JSON.stringify(u.key)} の text が空。`, 'sessionize で作り直す');
+    }
+    if (ir.schema === SCHEMA && !Array.isArray(ir.knowledge)) {
+      P('knowledge/required', 'knowledge が無い。', '別のセッションから検索する価値がある境界 / decisions / events / verification / openQuestions の id を配列で指定する。無ければ空配列にする');
     }
   }
 
@@ -118,6 +122,23 @@ export function validate(ir) {
     const bad = Object.keys(o).filter((k) => !KEYS[where].includes(k));
     if (bad.length) P(`${where}/unknown-key`, `${where} "${o.id}" に無い欄がある: ${bad.join(' / ')}`, `使えるのは ${KEYS[where].join(' / ')}`);
   };
+
+  for (const [field, kind] of [['constraints', 'constraint'], ['nonGoals', 'non-goal']]) {
+    for (const value of arr(b[field])) {
+      if (typeof value === 'string') {
+        if (ir.schema === SCHEMA) {
+          P('background/boundary-shape', `background.${field} に id の無い文字列がある。`, `sessionize で { id, text } の形へ変換する`);
+        }
+        continue;
+      }
+      if (!value || typeof value !== 'object') {
+        P('background/boundary-shape', `background.${field} に文字列でもオブジェクトでもない値がある。`, '{ id, text } の形にする');
+        continue;
+      }
+      uniq(value.id, `background.${kind}`);
+      if (!isStr(value.text)) P('background/boundary-text', `background.${field} "${value.id}" の text が空。`, '境界の内容を書く');
+    }
+  }
 
   for (const e of arr(ir.events)) {
     uniq(e.id, 'events');
@@ -185,6 +206,28 @@ export function validate(ir) {
     if (v.result === 'not-run' && !isStr(v.whyNotRun)) P('verification/why-not-run', `verification "${v.id}" が not-run だが理由が無い。`, '環境が無い・別 OS が要る等、実行しなかった理由を書く');
   }
   if (ver.length === 0) W('verification/empty', 'verification が空。', '実行した検証と、実行しなかったものを残す');
+
+  if (Array.isArray(ir.knowledge)) {
+    const searchable = new Map([
+      ...arr(ir.background?.constraints).filter((x) => x && typeof x === 'object').map((x) => [x.id, 'constraints']),
+      ...arr(ir.background?.nonGoals).filter((x) => x && typeof x === 'object').map((x) => [x.id, 'nonGoals']),
+      ...arr(ir.decisions).map((x) => [x.id, 'decisions']),
+      ...arr(ir.events).map((x) => [x.id, 'events']),
+      ...arr(ir.verification).map((x) => [x.id, 'verification']),
+      ...arr(ir.openQuestions).map((x) => [x.id, 'openQuestions']),
+    ]);
+    const promoted = new Set();
+    for (const id of ir.knowledge) {
+      if (!ID.test(id || '')) {
+        P('knowledge/id', `knowledge の id が不正: ${JSON.stringify(id)}`, 'background の境界か decisions / events / verification / openQuestions にある意味のある id を指定する');
+      } else if (promoted.has(id)) {
+        P('knowledge/duplicate', `knowledge の id が重複している: ${id}`, '同じ id は 1 回だけ指定する');
+      } else if (!searchable.has(id)) {
+        P('knowledge/missing', `knowledge の id が記録内に無い: ${id}`, 'background の境界か decisions / events / verification / openQuestions に存在する id を指定する');
+      }
+      promoted.add(id);
+    }
+  }
 
   for (const i of arr(ir.links?.issues)) {
     if (!isStr(i.key) && !isStr(i.url)) P('links/issue', 'issue に key も url も無い。', '取得できなくても、せめて識別子は残す');

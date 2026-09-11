@@ -48,6 +48,13 @@ const codeCall = (args: Record<string, unknown>): OpenAI.Responses.ResponseFunct
   arguments: JSON.stringify(args),
 });
 
+const utteranceCall = (args: Record<string, unknown>): OpenAI.Responses.ResponseFunctionToolCall => ({
+  type: "function_call",
+  call_id: "u1",
+  name: "find_utterances",
+  arguments: JSON.stringify(args),
+});
+
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-chat-"));
 fs.writeFileSync(path.join(fixture, "billing.ts"), "// 呼称は Cube 側で解決する\n");
 const here = [{ label: "test/repo", dir: fixture }];
@@ -82,4 +89,22 @@ test("探せていて 0 件のときだけ、コードに無いと言う", async
   assert.equal(r.found, 0);
   assert.equal(r.unsearched, undefined);
   assert.match(r.note ?? "", /その語はコードに無い/);
+});
+
+test("発言を明示して探すときは横断検索へ昇格していないセッション発話も読む", async () => {
+  const sql: string[] = [];
+  const client = {
+    query: async (statement: string) => {
+      sql.push(statement);
+      return { rows: [{ n: 0 }] };
+    },
+  };
+
+  await runTool(client as never, [1], [], [], utteranceCall({ person: "iroha924" }), [], undefined);
+
+  assert.equal(sql.length, 2);
+  for (const statement of sql) {
+    assert.match(statement, /n\.kind = 'utterance'/);
+    assert.doesNotMatch(statement, /n\.searchable/);
+  }
 });

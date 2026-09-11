@@ -17,6 +17,7 @@ const sha = (s: unknown): string => crypto.createHash("sha256").update(String(s)
 const arr = <T>(v: T[] | undefined | null): T[] => (Array.isArray(v) ? v : []);
 
 export type Evidence = { kind: string; ref: string; note?: string; exit?: number };
+type Boundary = string | { id: string; text: string };
 
 /** progress-log スキルが書き出す IR のうち、取り込みが読む部分だけ。 */
 export type Ir = {
@@ -30,7 +31,7 @@ export type Ir = {
     created: string;
     updated: string;
   };
-  background?: { problem?: string; goal?: string; nonGoals?: string[]; constraints?: string[] };
+  background?: { problem?: string; goal?: string; nonGoals?: Boundary[]; constraints?: Boundary[] };
   current?: { at?: string; text?: string; phases?: unknown[] };
   next?: unknown[];
   decisions?: {
@@ -74,6 +75,8 @@ export type Ir = {
   };
   session?: { id: string; host: "claude-code" | "codex" };
   utterances?: { key: string; ordinal: number; at: string; role: "human" | "ai"; text: string }[];
+  /** 別のセッションから横断検索する価値がある境界 / decision / event / verification / question の id。 */
+  knowledge?: string[];
 };
 
 type Node = {
@@ -92,6 +95,7 @@ type Node = {
   actorKind?: "human" | "ai" | "ci" | "unknown" | undefined;
   actorName?: string | null | undefined;
   kindLabel?: string | undefined;
+  searchable: boolean;
   polarity: Polarity;
   contentHash: string;
 };
@@ -145,6 +149,13 @@ const KIND_LABEL: Record<string, string> = {
 /** IR を node の平たい配列へ落とす。 */
 export function flatten(ir: Ir): Node[] {
   const out: Node[] = [];
+  const isSession = ir.schema.startsWith("session/");
+  const sessionKnowledge = new Set(isSession ? arr(ir.knowledge) : []);
+  const searchableByDefault = !isSession;
+  const boundary = (value: Boundary, kind: "non-goal" | "constraint") => ({
+    key: typeof value === "string" ? `${kind}:${sha(value).slice(0, 8)}` : value.id,
+    text: typeof value === "string" ? value : value.text,
+  });
   const push = (o: Omit<Node, "polarity" | "contentHash" | "kindLabel">) => {
     const base = { ...o, kindLabel: KIND_LABEL[o.kind], polarity: polarityOf(o.kind, o.subkind) };
     // **埋め込みへ渡す文そのものをハッシュする。**再取得の要否をこの値で決めているので、
@@ -164,25 +175,30 @@ export function flatten(ir: Ir): Node[] {
       actorKind: u.role,
       actorName: u.role === "ai" ? (ir.session?.host ?? null) : null,
       attrs: { session: ir.session?.id ?? null, role: u.role },
+      searchable: false,
     });
   }
 
   for (const b of arr(ir.background?.nonGoals)) {
+    const item = boundary(b, "non-goal");
     push({
       kind: "boundary",
       subkind: "non-goal",
-      key: `non-goal:${sha(b).slice(0, 8)}`,
-      text: b,
+      key: item.key,
+      text: item.text,
       at: ir.meta.created,
+      searchable: searchableByDefault || sessionKnowledge.has(item.key),
     });
   }
   for (const b of arr(ir.background?.constraints)) {
+    const item = boundary(b, "constraint");
     push({
       kind: "boundary",
       subkind: "constraint",
-      key: `constraint:${sha(b).slice(0, 8)}`,
-      text: b,
+      key: item.key,
+      text: item.text,
       at: ir.meta.created,
+      searchable: searchableByDefault || sessionKnowledge.has(item.key),
     });
   }
   for (const d of arr(ir.decisions)) {
@@ -202,6 +218,7 @@ export function flatten(ir: Ir): Node[] {
         supersededBy: d.supersededBy,
       },
       evidence: d.evidence,
+      searchable: searchableByDefault || sessionKnowledge.has(d.id),
     });
     arr(d.options).forEach((o, i) => {
       push({
@@ -226,6 +243,8 @@ export function flatten(ir: Ir): Node[] {
         at: d.at,
         extra: o.whyNot,
         attrs: { whyNot: o.whyNot ?? null, chosen: Boolean(o.chosen) },
+        // 採用案は decision と重複する。横断検索には棄却理由のある代替案だけを残す。
+        searchable: (searchableByDefault || sessionKnowledge.has(d.id)) && !o.chosen,
       });
     });
   }
@@ -239,6 +258,7 @@ export function flatten(ir: Ir): Node[] {
       confidence: e.confidence,
       attrs: {},
       evidence: e.evidence,
+      searchable: searchableByDefault || sessionKnowledge.has(e.id),
     });
   }
   for (const v of arr(ir.verification)) {
@@ -260,6 +280,7 @@ export function flatten(ir: Ir): Node[] {
         verifies: v.verifies ?? null,
       },
       evidence: v.evidence,
+      searchable: searchableByDefault || sessionKnowledge.has(v.id),
     });
   }
   for (const q of arr(ir.openQuestions)) {
@@ -270,6 +291,7 @@ export function flatten(ir: Ir): Node[] {
       at: q.at,
       status: q.blocking ? "blocking" : "open",
       attrs: { who: q.who, when: q.when, blocking: Boolean(q.blocking) },
+      searchable: searchableByDefault || sessionKnowledge.has(q.id),
     });
   }
   return out;
@@ -325,7 +347,8 @@ export async function ingest(
                            current_at, current_text, phases, next, created_at, updated_at, raw, raw_hash, embedding)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        on conflict (id) do update set
-         title=excluded.title, status=excluded.status, branch=excluded.branch, hosts=excluded.hosts,
+         schema_ver=excluded.schema_ver, title=excluded.title, status=excluded.status,
+         branch=excluded.branch, hosts=excluded.hosts,
          problem=excluded.problem, goal=excluded.goal, current_at=excluded.current_at,
          current_text=excluded.current_text, phases=excluded.phases, next=excluded.next,
          updated_at=excluded.updated_at, raw=excluded.raw, raw_hash=excluded.raw_hash,
@@ -363,6 +386,7 @@ export async function ingest(
       ).rows.map((r) => [`${r.kind}|${r.key}`, r]),
     );
     const need = nodes.filter((n) => {
+      if (!n.searchable) return false;
       const e = existing.get(`${n.kind}|${n.key}`);
       return !e || e.content_hash !== n.contentHash || !e.has_emb;
     });
@@ -390,25 +414,25 @@ export async function ingest(
     for (const part of chunks(rows, 500)) {
       const r = await client.query<{ id: number; kind: string; key: string }>(
         `insert into node (record_id, scope_id, kind, key, ordinal, at, text, subkind, status,
-                           polarity, confidence, attrs, actor_kind, actor_name, content_hash,
+                           polarity, confidence, attrs, actor_kind, actor_name, content_hash, searchable,
                            embed_text, embed_model, embedded_at, embedding)
          select $1, $2, t.kind, t.key, t.ordinal, t.at, t.text, t.subkind, t.status,
-                t.polarity, t.confidence, t.attrs, t.actor_kind, t.actor_name, t.content_hash,
+                t.polarity, t.confidence, t.attrs, t.actor_kind, t.actor_name, t.content_hash, t.searchable,
                 t.embed_text, t.embed_model, t.embedded_at, t.embedding
          from unnest($3::text[], $4::text[], $5::int[], $6::timestamptz[], $7::text[], $8::text[], $9::text[],
                      $10::text[], $11::text[], $12::jsonb[], $13::text[], $14::text[], $15::text[],
-                     $16::text[], $17::text[], $18::timestamptz[], $19::extensions.vector[])
+                     $16::boolean[], $17::text[], $18::text[], $19::timestamptz[], $20::extensions.vector[])
               as t(kind, key, ordinal, at, text, subkind, status, polarity, confidence, attrs,
-                   actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
+                   actor_kind, actor_name, content_hash, searchable, embed_text, embed_model, embedded_at, embedding)
          on conflict (record_id, kind, key) do update set
            scope_id=excluded.scope_id, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, subkind=excluded.subkind,
            status=excluded.status, polarity=excluded.polarity, confidence=excluded.confidence,
            attrs=excluded.attrs, actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
-           content_hash=excluded.content_hash, deleted_at=null,
-           embed_text=coalesce(excluded.embed_text, node.embed_text),
-           embed_model=coalesce(excluded.embed_model, node.embed_model),
-           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
-           embedding=coalesce(excluded.embedding, node.embedding)
+           content_hash=excluded.content_hash, searchable=excluded.searchable, deleted_at=null,
+           embed_text=case when excluded.searchable then coalesce(excluded.embed_text, node.embed_text) end,
+           embed_model=case when excluded.searchable then coalesce(excluded.embed_model, node.embed_model) end,
+           embedded_at=case when excluded.searchable then coalesce(excluded.embedded_at, node.embedded_at) end,
+           embedding=case when excluded.searchable then coalesce(excluded.embedding, node.embedding) end
          returning id, kind, key`,
         [
           ir.meta.id,
@@ -426,6 +450,7 @@ export async function ingest(
           part.map((n) => n.actorKind ?? null),
           part.map((n) => n.actorName ?? (n.actorKind === "human" ? humanActor : null)),
           part.map((n) => n.contentHash),
+          part.map((n) => n.searchable),
           part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? embedText(ir, n) : null)),
           part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? EMBED_MODEL : null)),
           part.map((n) => (byKey.get(`${n.kind}|${n.key}`) ? new Date().toISOString() : null)),

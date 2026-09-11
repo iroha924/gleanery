@@ -38068,7 +38068,8 @@ async function search(client, env2, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
-    sessionOnly ? "r.schema_ver = 'session/2'" : "r.schema_ver <> 'session/1'",
+    "n.searchable",
+    sessionOnly ? "r.schema_ver like 'session/%'" : "r.schema_ver <> 'session/1'",
     ...kinds?.length ? [] : DEFAULT_EXCLUDED,
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");
@@ -38143,6 +38144,7 @@ async function outsideScopes(client, queryVector, scopeIds, {
   const params = [vec(queryVector), scopeIds];
   const where = [
     "n.deleted_at is null",
+    "n.searchable",
     "r.schema_ver <> 'session/1'",
     "not (n.scope_id = any($2))",
     ...kinds?.length ? [] : DEFAULT_EXCLUDED
@@ -38265,6 +38267,13 @@ var KIND_LABEL = {
 };
 function flatten(ir) {
   const out = [];
+  const isSession = ir.schema.startsWith("session/");
+  const sessionKnowledge = new Set(isSession ? arr(ir.knowledge) : []);
+  const searchableByDefault = !isSession;
+  const boundary = (value, kind) => ({
+    key: typeof value === "string" ? `${kind}:${sha(value).slice(0, 8)}` : value.id,
+    text: typeof value === "string" ? value : value.text
+  });
   const push = (o) => {
     const base = { ...o, kindLabel: KIND_LABEL[o.kind], polarity: polarityOf(o.kind, o.subkind) };
     out.push({ ...base, contentHash: sha(embedText(ir, base)) });
@@ -38279,25 +38288,30 @@ function flatten(ir) {
       text: u.text,
       actorKind: u.role,
       actorName: u.role === "ai" ? ir.session?.host ?? null : null,
-      attrs: { session: ir.session?.id ?? null, role: u.role }
+      attrs: { session: ir.session?.id ?? null, role: u.role },
+      searchable: false
     });
   }
   for (const b of arr(ir.background?.nonGoals)) {
+    const item = boundary(b, "non-goal");
     push({
       kind: "boundary",
       subkind: "non-goal",
-      key: `non-goal:${sha(b).slice(0, 8)}`,
-      text: b,
-      at: ir.meta.created
+      key: item.key,
+      text: item.text,
+      at: ir.meta.created,
+      searchable: searchableByDefault || sessionKnowledge.has(item.key)
     });
   }
   for (const b of arr(ir.background?.constraints)) {
+    const item = boundary(b, "constraint");
     push({
       kind: "boundary",
       subkind: "constraint",
-      key: `constraint:${sha(b).slice(0, 8)}`,
-      text: b,
-      at: ir.meta.created
+      key: item.key,
+      text: item.text,
+      at: ir.meta.created,
+      searchable: searchableByDefault || sessionKnowledge.has(item.key)
     });
   }
   for (const d of arr(ir.decisions)) {
@@ -38315,7 +38329,8 @@ function flatten(ir) {
         consequences: d.consequences,
         supersededBy: d.supersededBy
       },
-      evidence: d.evidence
+      evidence: d.evidence,
+      searchable: searchableByDefault || sessionKnowledge.has(d.id)
     });
     arr(d.options).forEach((o, i) => {
       push({
@@ -38327,7 +38342,8 @@ function flatten(ir) {
         text: o.option,
         at: d.at,
         extra: o.whyNot,
-        attrs: { whyNot: o.whyNot ?? null, chosen: Boolean(o.chosen) }
+        attrs: { whyNot: o.whyNot ?? null, chosen: Boolean(o.chosen) },
+        searchable: (searchableByDefault || sessionKnowledge.has(d.id)) && !o.chosen
       });
     });
   }
@@ -38340,7 +38356,8 @@ function flatten(ir) {
       at: e.at,
       confidence: e.confidence,
       attrs: {},
-      evidence: e.evidence
+      evidence: e.evidence,
+      searchable: searchableByDefault || sessionKnowledge.has(e.id)
     });
   }
   for (const v of arr(ir.verification)) {
@@ -38359,7 +38376,8 @@ function flatten(ir) {
         whyNotRun: v.whyNotRun ?? null,
         verifies: v.verifies ?? null
       },
-      evidence: v.evidence
+      evidence: v.evidence,
+      searchable: searchableByDefault || sessionKnowledge.has(v.id)
     });
   }
   for (const q of arr(ir.openQuestions)) {
@@ -38369,7 +38387,8 @@ function flatten(ir) {
       text: q.q,
       at: q.at,
       status: q.blocking ? "blocking" : "open",
-      attrs: { who: q.who, when: q.when, blocking: Boolean(q.blocking) }
+      attrs: { who: q.who, when: q.when, blocking: Boolean(q.blocking) },
+      searchable: searchableByDefault || sessionKnowledge.has(q.id)
     });
   }
   return out;
@@ -38395,7 +38414,8 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
                            current_at, current_text, phases, next, created_at, updated_at, raw, raw_hash, embedding)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        on conflict (id) do update set
-         title=excluded.title, status=excluded.status, branch=excluded.branch, hosts=excluded.hosts,
+         schema_ver=excluded.schema_ver, title=excluded.title, status=excluded.status,
+         branch=excluded.branch, hosts=excluded.hosts,
          problem=excluded.problem, goal=excluded.goal, current_at=excluded.current_at,
          current_text=excluded.current_text, phases=excluded.phases, next=excluded.next,
          updated_at=excluded.updated_at, raw=excluded.raw, raw_hash=excluded.raw_hash,
@@ -38422,6 +38442,8 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
     say(`record ${ir.meta.id}`);
     const existing = new Map((await client.query("select kind, key, content_hash, embedding is not null as has_emb from node where record_id=$1", [ir.meta.id])).rows.map((r) => [`${r.kind}|${r.key}`, r]));
     const need = nodes.filter((n) => {
+      if (!n.searchable)
+        return false;
       const e = existing.get(`${n.kind}|${n.key}`);
       return !e || e.content_hash !== n.contentHash || !e.has_emb;
     });
@@ -38433,25 +38455,25 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
     const idOf = new Map;
     for (const part of chunks(rows, 500)) {
       const r = await client.query(`insert into node (record_id, scope_id, kind, key, ordinal, at, text, subkind, status,
-                           polarity, confidence, attrs, actor_kind, actor_name, content_hash,
+                           polarity, confidence, attrs, actor_kind, actor_name, content_hash, searchable,
                            embed_text, embed_model, embedded_at, embedding)
          select $1, $2, t.kind, t.key, t.ordinal, t.at, t.text, t.subkind, t.status,
-                t.polarity, t.confidence, t.attrs, t.actor_kind, t.actor_name, t.content_hash,
+                t.polarity, t.confidence, t.attrs, t.actor_kind, t.actor_name, t.content_hash, t.searchable,
                 t.embed_text, t.embed_model, t.embedded_at, t.embedding
          from unnest($3::text[], $4::text[], $5::int[], $6::timestamptz[], $7::text[], $8::text[], $9::text[],
                      $10::text[], $11::text[], $12::jsonb[], $13::text[], $14::text[], $15::text[],
-                     $16::text[], $17::text[], $18::timestamptz[], $19::extensions.vector[])
+                     $16::boolean[], $17::text[], $18::text[], $19::timestamptz[], $20::extensions.vector[])
               as t(kind, key, ordinal, at, text, subkind, status, polarity, confidence, attrs,
-                   actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
+                   actor_kind, actor_name, content_hash, searchable, embed_text, embed_model, embedded_at, embedding)
          on conflict (record_id, kind, key) do update set
            scope_id=excluded.scope_id, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, subkind=excluded.subkind,
            status=excluded.status, polarity=excluded.polarity, confidence=excluded.confidence,
            attrs=excluded.attrs, actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
-           content_hash=excluded.content_hash, deleted_at=null,
-           embed_text=coalesce(excluded.embed_text, node.embed_text),
-           embed_model=coalesce(excluded.embed_model, node.embed_model),
-           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
-           embedding=coalesce(excluded.embedding, node.embedding)
+           content_hash=excluded.content_hash, searchable=excluded.searchable, deleted_at=null,
+           embed_text=case when excluded.searchable then coalesce(excluded.embed_text, node.embed_text) end,
+           embed_model=case when excluded.searchable then coalesce(excluded.embed_model, node.embed_model) end,
+           embedded_at=case when excluded.searchable then coalesce(excluded.embedded_at, node.embedded_at) end,
+           embedding=case when excluded.searchable then coalesce(excluded.embedding, node.embedding) end
          returning id, kind, key`, [
         ir.meta.id,
         effectiveScope,
@@ -38468,6 +38490,7 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
         part.map((n) => n.actorKind ?? null),
         part.map((n) => n.actorName ?? (n.actorKind === "human" ? humanActor : null)),
         part.map((n) => n.contentHash),
+        part.map((n) => n.searchable),
         part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? embedText(ir, n) : null),
         part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? EMBED_MODEL : null),
         part.map((n) => byKey.get(`${n.kind}|${n.key}`) ? new Date().toISOString() : null),
@@ -39306,6 +39329,7 @@ function readIr(file2) {
   return JSON.parse(m[1]);
 }
 var text = exports_external.string();
+var boundary = exports_external.union([text, exports_external.object({ id: text, text }).strict()]);
 var evidence = exports_external.array(exports_external.object({ kind: exports_external.string(), ref: exports_external.string() }).loose()).optional();
 var IR_SHAPE = exports_external.object({
   schema: exports_external.string().min(1),
@@ -39316,7 +39340,7 @@ var IR_SHAPE = exports_external.object({
     created: exports_external.string().min(1),
     updated: exports_external.string().min(1)
   }).loose(),
-  background: exports_external.object({ nonGoals: exports_external.array(text).optional(), constraints: exports_external.array(text).optional() }).loose().optional(),
+  background: exports_external.object({ nonGoals: exports_external.array(boundary).optional(), constraints: exports_external.array(boundary).optional() }).loose().optional(),
   decisions: exports_external.array(exports_external.object({
     id: text,
     decision: text,
@@ -39327,6 +39351,7 @@ var IR_SHAPE = exports_external.object({
   events: exports_external.array(exports_external.object({ id: text, kind: text, text, at: text, evidence }).loose()).optional(),
   verification: exports_external.array(exports_external.object({ id: text, what: text, at: text, evidence }).loose()).optional(),
   openQuestions: exports_external.array(exports_external.object({ id: text, q: text, at: text }).loose()).optional(),
+  knowledge: exports_external.array(text).optional(),
   session: exports_external.object({ id: text, host: exports_external.enum(["claude-code", "codex"]) }).strict().optional(),
   utterances: exports_external.array(exports_external.object({
     key: text,
@@ -39336,12 +39361,28 @@ var IR_SHAPE = exports_external.object({
     text
   }).strict()).optional()
 }).loose().superRefine((ir, ctx) => {
-  if (ir.schema !== "session/2")
+  if (!ir.schema.startsWith("session/"))
     return;
   if (!ir.session)
-    ctx.addIssue({ code: "custom", message: "session/2 には session が要る", path: ["session"] });
+    ctx.addIssue({ code: "custom", message: `${ir.schema} には session が要る`, path: ["session"] });
   if (!ir.utterances?.length) {
-    ctx.addIssue({ code: "custom", message: "session/2 には utterances が要る", path: ["utterances"] });
+    ctx.addIssue({ code: "custom", message: `${ir.schema} には utterances が要る`, path: ["utterances"] });
+  }
+  if (ir.schema === "session/3" && !ir.knowledge) {
+    ctx.addIssue({ code: "custom", message: "session/3 には knowledge が要る", path: ["knowledge"] });
+  }
+  if (ir.schema === "session/3") {
+    for (const field of ["constraints", "nonGoals"]) {
+      ir.background?.[field]?.forEach((value, index) => {
+        if (typeof value === "string") {
+          ctx.addIssue({
+            code: "custom",
+            message: `session/3 の background.${field} には id が要る`,
+            path: ["background", field, index]
+          });
+        }
+      });
+    }
   }
 });
 async function scopeIdFor(c, dir, create) {

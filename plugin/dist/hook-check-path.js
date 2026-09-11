@@ -5276,6 +5276,7 @@ async function whatAboutPath(client, filePath, scopeIds) {
        -- そもそも完全一致で足りる。
        and ref.key = $1
        and n.deleted_at is null
+       and n.searchable
        and n.polarity = 'dont'
        ${Array.isArray(scopeIds) ? "and n.scope_id = any($2)" : ""}
      order by n.at desc nulls last

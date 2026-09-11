@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { framed, labelOf, liveLabel, quote, type Shown } from "../src/search.ts";
+import {
+  framed,
+  labelOf,
+  liveLabel,
+  outsideScopes,
+  quote,
+  type Shown,
+  search,
+  whatAboutPath,
+} from "../src/search.ts";
 
 const row = (over: Partial<Shown> = {}): Shown => ({
   kind: "event",
@@ -95,4 +104,21 @@ test("記録のヘッダに、手で書いた status をそのまま出さない
     assert.match(liveLabel({ live: true, status }), new RegExp(`記録は ${status} だが`), status);
   }
   assert.equal(liveLabel({ live: false, status: "done" }), "進行中ではない");
+});
+
+test("横断検索の全経路が昇格済みノードだけを見る", async () => {
+  const sql: string[] = [];
+  const client = {
+    query: async (statement: string) => {
+      sql.push(statement);
+      return { rows: [] };
+    },
+  };
+
+  await search(client as never, {} as never, { question: "の", queryVector: [0] });
+  await outsideScopes(client as never, [0], []);
+  await whatAboutPath(client as never, "server/src/search.ts", []);
+
+  assert.equal(sql.length, 3);
+  for (const statement of sql) assert.match(statement, /n\.searchable/, statement);
 });

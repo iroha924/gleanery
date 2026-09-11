@@ -5,14 +5,14 @@
 // 後続の validate と ingest が古い内容に対して走り、成功と報告された。**
 // 書き捨てのコードは毎回まっさらで、テストも無く、失敗が終了コードに出ない。
 //
-// **契約はここで機構にする。**SKILL.md が散文で書いていた 3 つを、当てる側が拒否する。
+// **契約はここで機構にする。**SKILL.md が散文で書いていた制約を、当てる側が拒否する。
 //   - 追記してよいのは events / decisions / verification / openQuestions だけ
 //   - id は再利用しない（既にある id への append は拒否）
-//   - 上書きしてよいのは current / next / openQuestions / meta.updated だけ
+//   - 上書きしてよいのは current / next / openQuestions / knowledge / meta.updated だけ
 //     （events / decisions / verification は過去を書き換えない）
 
 const APPENDABLE = ['events', 'decisions', 'verification', 'openQuestions'];
-const SETTABLE = ['current', 'next', 'openQuestions', 'meta'];
+const SETTABLE = ['current', 'next', 'openQuestions', 'knowledge', 'meta'];
 const TOP = ['append', 'set', 'supersede'];
 
 const arr = (x) => (Array.isArray(x) ? x : []);
@@ -94,7 +94,7 @@ export function applyPatch(ir, patch) {
       P('patch/set-empty', `set.${field} が空。`, '値を渡す。消したいなら空の配列かオブジェクトを明示する');
       continue;
     }
-    if ((field === 'next' || field === 'openQuestions') && !Array.isArray(value)) {
+    if ((field === 'next' || field === 'openQuestions' || field === 'knowledge') && !Array.isArray(value)) {
       P('patch/set-not-array', `set.${field} は配列でなければならない。`, '配列を渡す');
       continue;
     }

@@ -5,7 +5,7 @@
 - 全体の形
 - meta
 - background
-- 更新される 3 つ（current / next / openQuestions）
+- 更新される 4 つ（current / next / openQuestions / knowledge）
 - events
 - decisions
 - verification
@@ -19,10 +19,11 @@
 
 ```json
 {
-  "schema": "session/2",
+  "schema": "session/3",
   "meta": {}, "background": {},
   "session": {}, "utterances": [],
   "current": {}, "next": [], "openQuestions": [],
+  "knowledge": [],
   "events": [], "decisions": [], "verification": [],
   "links": { "issues": [], "prs": [], "commits": [], "files": [] },
   "glossary": []
@@ -52,18 +53,32 @@
 `utterances` は `{ key, ordinal, at, role, text }[]`。`role` は `human` / `ai`。
 どちらも `progress sessionize` が digest から作る表示用データで、モデルは要約・転記しない。
 
+## knowledge
+
+別のセッションから横断検索する `background.constraints` / `background.nonGoals` / `decisions` / `events` /
+`verification` / `openQuestions` の id を並べる。
+完全なセッション記録はこの指定に関係なく保持される。該当が無くても省略せず、空配列を書く。
+
+入れるのは、コード・テスト・AGENTS・git から復元できず、その項目を知らないと将来の判断を誤るものだけ。
+`work` の実況、通常の検証結果、そのセッション限りの状態は入れない。失敗した検証が再び同じ道を通るのを
+防ぐ場合など、検証結果自体に再利用価値があるときは `verification` の id を指定できる。
+
 ## background
 
 | 欄 | 必須 | 内容 |
 |---|---|---|
 | `problem` | ○ | **なぜこの作業が必要になったか。**症状ではなく、放置すると誰が困るか |
 | `goal` | ○ | **達成を測れる形で。**「動くようにする」ではなく観測できる条件 |
-| `constraints` | | 変えてはいけないもの。理由もその場に書く |
-| `nonGoals` | 推奨 | やらないこと。空だと警告。境界が無いと再開した側が範囲を広げる |
+| `constraints` | | `[{ id, text }]`。変えてはいけないもの。理由もその場に書く |
+| `nonGoals` | 推奨 | `[{ id, text }]`。やらないこと。空だと警告。境界が無いと再開した側が範囲を広げる |
 
-## 更新される 3 つ
+`sessionize` は旧記録の文字列を安定した id 付きの形へ変換する。新しい `session/3` では、検索対象を
+個別に選べるように id の無い文字列を許さない。
 
-**上書きしてよいのはこの 3 つだけ。**
+## 更新される 4 つ
+
+**内容として上書きしてよいのは現在状態の 3 つと `knowledge` だけ。**
+このほか観測時点の `meta.updated` を更新できる。
 
 `current` — `{ at, text, phases[] }`。`phases[]` は `{ id, label, state }` で、
 `state` は `done` / `doing` / `blocked` / `todo`。工程バーになる。
@@ -76,6 +91,8 @@
 `when` は `now`（いま答えが要る）/ `during-implementation`（実装中に解ける）/ `out-of-scope`（この作業の外）。
 `blocking` が真のものは、再開時の要約で先頭に出る。**空なら節ごと描画されない**ので、
 埋めるものが無ければ空配列でよい。
+
+`knowledge` — 検索対象の id の配列。判断の価値が変わったときに、過去の要素を書き換えずこの一覧だけを更新する。
 
 ## events
 

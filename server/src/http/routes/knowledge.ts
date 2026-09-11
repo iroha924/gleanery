@@ -28,7 +28,7 @@ const app = new Hono()
       (
         await client.query<{ total: string }>(
           `select count(*) as total from record r
-           where ($1::int[] is null or r.scope_id = any($1)) and r.schema_ver = 'session/2'`,
+           where ($1::int[] is null or r.scope_id = any($1)) and r.schema_ver like 'session/%'`,
           [scopes ?? null],
         )
       ).rows[0]?.total ?? 0,
@@ -43,7 +43,7 @@ const app = new Hono()
                  and deleted_at is null)::int as exchanges
        from record r join scope s on s.id = r.scope_id
        where ($1::int[] is null or r.scope_id = any($1))
-         and r.schema_ver = 'session/2'
+         and r.schema_ver like 'session/%'
        order by r.updated_at desc, r.id
        limit $2 offset $3`,
       [scopes ?? null, pageSize, (page - 1) * pageSize],
@@ -88,7 +88,7 @@ const app = new Hono()
                where record_id = r.id and kind = 'utterance' and actor_kind = 'human'
                  and deleted_at is null)::int as exchanges
        from record r join scope s on s.id = r.scope_id
-       where r.id = $1 and r.schema_ver = 'session/2'`,
+       where r.id = $1 and r.schema_ver like 'session/%'`,
       [id],
     );
     if (record.rows.length === 0) return c.json({ error: "そのセッションは無い" }, 404);
