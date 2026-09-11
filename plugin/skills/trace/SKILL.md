@@ -28,6 +28,7 @@ Google の Design Docs の基準がそのまま当たる。トレードオフも
 | スコープ外を書かない | 再開した側が勝手に範囲を広げる |
 | 証拠のない断定を書く | 事実として読まれ、後で覆る |
 | 観測時点を書かない | そのときだけ真だったことが、恒久的な事実として残る |
+| 全記録を検索対象にする | 作業ログが判断を押し出し、検索結果を読めなくする |
 
 ## 2 つの入口
 
@@ -184,7 +185,7 @@ GitHub 以外（Linear / Jira / その他）の手順は [references/trackers.md
 node "$PG" sessionize digest.json ir.json
 ```
 
-このコマンドが `schema: session/2`、元ツール、セッション ID、会話、開始・最終記録時刻、branch、
+このコマンドが `schema: session/3`、元ツール、セッション ID、会話、開始・最終記録時刻、branch、
 DB 上の record ID を決定する。**これらを手で書き換えない。**同じセッションなら同じ record ID、
 別セッションなら必ず別の record ID になる。
 
@@ -197,13 +198,13 @@ node "$PG" patch ir.json patch.json
 ```json
 {
   "append": { "events": [ { "id": "e-...", "at": "2026-..." } ] },
-  "set":    { "current": { "at": "2026-...", "text": "..." }, "meta": { "updated": "2026-..." } },
+  "set":    { "current": { "at": "2026-...", "text": "..." }, "knowledge": ["d-..."], "meta": { "updated": "2026-..." } },
   "supersede": { "d-覆される": "d-覆した" }
 }
 ```
 
 **当てる側が契約を拒否する。**追記できるのは `events` / `decisions` / `verification` / `openQuestions`、
-上書きできるのは `current` / `next` / `openQuestions` / `meta.updated` だけ。既にある id への追記、
+上書きできるのは `current` / `next` / `openQuestions` / `knowledge` / `meta.updated` だけ。既にある id への追記、
 自分自身を覆す指定、同じ欄への `append` と `set` の同居は弾く。
 **違反が 1 つでもあれば書き込まない**ので、半分だけ当たった IR が残らない。
 
@@ -214,11 +215,12 @@ node "$PG" patch ir.json patch.json
 **既に足した要素の本文は patch では直せない**（追記しかできない）。直すなら
 `mitos export <id> > ir.json` で取り込み済みの状態を取り直し、当て直す。
 
-**上書きしてよいのは 3 つだけ。**残りは追記で、過去は書き換えない。
+**内容として上書きしてよいのは現在状態の 3 つと、検索対象を選ぶ `knowledge` だけ。**
+このほか観測時点の `meta.updated` を更新できる。残りは追記で、過去は書き換えない。
 
 | | 対象 | 追記時の扱い |
 |---|---|---|
-| **更新** | `current` / `next` / `openQuestions` | 上書きする。ただし `current` を変えたら、変わった事実を `events` に `state_transition` として必ず落とす |
+| **更新** | `current` / `next` / `openQuestions` / `knowledge` | 上書きする。ただし `current` を変えたら、変わった事実を `events` に `state_transition` として必ず落とす |
 | 追記 | `events` / `decisions` / `verification` | 過去の要素は書き換えない。id は再利用しない |
 | ほぼ不変 | `meta` / `background` / `links` / `glossary` | `background.goal` を変えるのは目的が変わったときだけで、その変更自体を `decisions` に残す |
 
@@ -244,6 +246,7 @@ node "$PG" patch ir.json patch.json
 - `openQuestions` の `when` は `now` / `during-implementation` / `out-of-scope`、`who` は `human` / `ai`
 - `status: superseded` の決定には **`supersededBy` が要る**
 - **知らない欄を書くと名前を挙げて弾かれる。**黙って捨てられて別の症状が出る、という形にはならない
+- `knowledge` は必須。`background` の境界と `decisions` / `events` / `verification` / `openQuestions` のうち、別のセッションから横断検索するものの id だけを書く。該当が無ければ空配列にする
 
 **結果は良いものだけ書かない。**受け入れた不利な点を `good: false` で残す。
 全部 `good: true` だと警告が出る。
@@ -317,9 +320,9 @@ node "$PG" cover digest.json ir.json
 **記録はもうファイルとして出ないので、レビュー用の投影は ir.json そのものである。**
 
 > この記録だけを読んで、作業を再開できるか。再開できない箇所を引用し、何が足りないかを書け。
-> 加えて、証拠の無い断定と、棄却理由の書かれていない決定を挙げよ。引用できない指摘は書くな。
+> 加えて、証拠の無い断定、棄却理由の書かれていない決定、`knowledge` に昇格しすぎた項目と漏れた項目を挙げよ。引用できない指摘は書くな。
 
-指摘は全件読む。直すのは**再開できない箇所と、証拠のない断定**だけで、
+指摘は全件読む。直すのは**再開できない箇所、証拠のない断定、`knowledge` の過剰昇格と漏れ**。
 それ以外は棄却した理由を記録に残す。**2 ラウンドで打ち切る。**
 
 **この工程を省かない。**実測: 検査を警告 0 件で通った記録に、レビュアーが 13 件の
@@ -337,7 +340,9 @@ mitos ingest ir.json              # 作業ディレクトリが未登録なら�
 ```
 
 **IR をそのまま渡す。**描く工程は無い — 記録の置き場所は DB で、ファイルは作らない。
-取り込まれて初めてダッシュボードの `/sessions` と検索に現れる。セッションを終了しただけでは入らない。
+取り込まれて初めてダッシュボードの `/sessions` に現れる。詳細画面には完全な記録を出すが、横断検索へ出るのは
+`knowledge` で選んだ項目だけ。
+セッションを終了しただけではどちらにも入らない。
 
 **`mitos` が入っていない環境では記録できない。**`d-drop-record-files` でファイルを廃止したので、
 DB は任意の層ではなく唯一の行き先になった。IR を作って検査するところまでは動くので、
@@ -389,6 +394,7 @@ XSS の境界・往復の一致・要約・折りたたみは、対象そのも�
 - **良い結果だけ書かない。** 受け入れた不利な点も並べる
 - **fact を名乗るなら証拠を出す。** 出せないなら inference と書く
 - **観測時点を必ず持たせる。** そのときだけ真だったことが恒久的な事実にならないように
-- **上書きは 3 つだけ。** 残りは追記し、過去を書き換えない
+- **内容の上書きは現在状態の 3 つと `knowledge` だけ。** `meta.updated` 以外の残りは追記し、過去を書き換えない
+- **完全な記録と検索知識を分ける。** `knowledge` には、コード・テスト・AGENTS・git から復元できず、削ると次の判断を誤る項目だけを入れる
 - **取れなかったことを空にしない。** 「未取得」「未提供」「未検証」と書く
 - **再開は `current_work` から入る。** 判断を何件集めても「いまどこか」は組み立てられない

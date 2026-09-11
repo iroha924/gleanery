@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 
-export const SESSION_SCHEMA = 'session/2';
+export const SESSION_SCHEMA = 'session/3';
 
 const safe = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-|-$/g, '');
 
@@ -17,6 +17,13 @@ const keyOf = (message) => crypto
   .digest('hex')
   .slice(0, 16);
 
+const boundary = (value, kind) => typeof value === 'string'
+  ? {
+      id: `b-${kind}-${crypto.createHash('sha256').update(value).digest('hex').slice(0, 8)}`,
+      text: value,
+    }
+  : value;
+
 export function sessionize(digest, ir) {
   if (!digest?.host || !digest?.sessionId) throw new Error('digest に host と sessionId が要る。');
   if (!digest?.from || !digest?.to) throw new Error('digest にセッションの開始・最終記録時刻が要る。');
@@ -27,6 +34,12 @@ export function sessionize(digest, ir) {
   return {
     ...ir,
     schema: SESSION_SCHEMA,
+    knowledge: Array.isArray(ir.knowledge) ? ir.knowledge : [],
+    background: {
+      ...ir.background,
+      constraints: (ir.background?.constraints || []).map((value) => boundary(value, 'constraint')),
+      nonGoals: (ir.background?.nonGoals || []).map((value) => boundary(value, 'non-goal')),
+    },
     meta: {
       ...ir.meta,
       id: sessionRecordId(digest.host, digest.sessionId),

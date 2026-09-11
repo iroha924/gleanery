@@ -873,6 +873,8 @@ export async function runTool(
 
   if (call.name === "find_utterances") {
     if (!a.person) return JSON.stringify({ error: "person が空" });
+    // 発話は通常の意味検索には混ぜないが、「誰が何と言ったか」を明示して探すこの道具では読む。
+    // `n.searchable` を足すと、完全な会話を保持している session/3 が全件 0 件になる。
     const w = [
       "n.kind = 'utterance'",
       "n.deleted_at is null",
@@ -1005,7 +1007,13 @@ export async function runTool(
   }
   if (call.name !== "find_prs") return JSON.stringify({ error: `知らない道具: ${call.name}` });
 
-  const where = ["n.kind = 'event'", "n.subkind = 'pr'", "n.deleted_at is null", "n.scope_id = any($1)"];
+  const where = [
+    "n.kind = 'event'",
+    "n.subkind = 'pr'",
+    "n.deleted_at is null",
+    "n.searchable",
+    "n.scope_id = any($1)",
+  ];
   const params: unknown[] = [scopeIds];
   const add = (v: unknown, clause: (i: number) => string) => {
     params.push(v);

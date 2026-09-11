@@ -92,8 +92,9 @@ export const labelOf = (r: { kind: string; subkind: string | null }): string =>
 /**
  * 種別を指定しなかったときに出さないもの。
  *
- * **どれも「1 件の決定に対して周辺が何十件も並ぶ」形をしている。**理由はそれぞれ
- * search() の clauses() の上にある。**範囲内と範囲外で同じものを使う** —
+ * **どれも「1 件の判断に対して周辺が何十件も並ぶ」形をしている。**
+ * セッションの生ログは `node.searchable` で除外する。ここは外部同期由来の既定除外だけを持つ。
+ * **範囲内と範囲外で同じものを使う** —
  * 片方だけに効かせると、母集団の違う 2 つを 1 つの閾値で比べることになる。
  */
 export const DEFAULT_EXCLUDED = [
@@ -125,6 +126,7 @@ export type SearchOpts = {
   pool?: number;
   rerankModel?: string;
   queryVector?: number[] | undefined;
+  sessionOnly?: boolean | undefined;
 };
 
 export type SearchResult = { rows: Hit[]; queryVector: number[]; topScore: number | null };
@@ -181,7 +183,16 @@ export function fuse(lists: Hit[][], k = 60): Hit[] {
 }
 
 export async function search(client: Db, env: Env, o: SearchOpts): Promise<SearchResult> {
-  const { question, scopeIds, polarity, kinds, limit = 5, pool = 30, rerankModel = "rerank-3" } = o;
+  const {
+    question,
+    scopeIds,
+    polarity,
+    kinds,
+    limit = 5,
+    pool = 30,
+    rerankModel = "rerank-3",
+    sessionOnly,
+  } = o;
 
   const qv = o.queryVector ?? (await embed(env, [question], "query"))[0];
   if (!qv) throw new Error("埋め込みが空で返った");
@@ -199,15 +210,8 @@ export async function search(client: Db, env: Env, o: SearchOpts): Promise<Searc
   /**
    * from 番目から採番して where 句を作る。
    *
-   * **外すのは bot の定型文だけにする。**当初は発言を丸ごと外していたが、
-   * 数え直すと定型は 13 件（使用量の通知 11 + "Didn't find any major issues." 2）で、
-   * すべて `issue`+`ai` だった。残る `review` 125 件は P1/P2 の具体的な指摘（平均 734 字）で
-   * ノイズではない。長さでは切れない — bot のレビューは p50 667 字、人と AI の往復は p50 215 字で逆向きである。
-   *
-   * **丸ごと外していたときに落ちていたのは、人と AI の往復だけだった。**
-   * bot は別の作業場所にいて、束が空なので候補に入っていない（実測）。
-   * 20 問の eval で、発言を全部戻しても top1 95% / recall@5 100% / MRR 0.967 は 1 つも動かず、
-   * セッションにしか答えの無い 10 問は 0/10 → 9/10 になった。
+   * **外部同期の bot 定型文だけを外す。**セッションの発言・検証・進捗は完全な記録として
+   * DB に残すが、横断検索へは昇格しないため `node.searchable` で外れる。
    *
    * **PR 本文も同じ理由で外す。**実測: event/pr は 24 件で本文が平均 5,015 バイトあり、
    * 全件返すと TOTAL 48,000 バイトの大半を占めたうえ、PER_ROW で切られて後半が届かない。
@@ -219,12 +223,14 @@ export async function search(client: Db, env: Env, o: SearchOpts): Promise<Searc
    * 文書は「なぜそうしたか」の周辺を厚く説明するので語が近く、
    * 決定 1 件に対して節が何十件も並ぶ。既定は決定を返す面である。
    *
-   * どれも、種別を指定すれば出る（kinds: ["utterance"] / ["event"] / ["doc"]）。
+   * 外部同期由来の既定除外は、種別を指定すれば出る（kinds: ["utterance"] / ["event"] / ["doc"]）。
+   * `searchable = false` のセッション投影は、種別を指定しても出ない。
    */
   const clauses = (from: number): string =>
     [
       "n.deleted_at is null",
-      "r.schema_ver <> 'session/1'",
+      "n.searchable",
+      sessionOnly ? "r.schema_ver like 'session/%'" : "r.schema_ver <> 'session/1'",
       ...(kinds?.length ? [] : DEFAULT_EXCLUDED),
       ...filters.map((f, i) => f.sql(from + i)),
     ].join(" and ");
@@ -387,6 +393,7 @@ export async function outsideScopes(
   // 言われた通り all_scopes で見にいっても既定の検索が外すので何も出てこない。
   const where = [
     "n.deleted_at is null",
+    "n.searchable",
     "r.schema_ver <> 'session/1'",
     "not (n.scope_id = any($2))",
     ...(kinds?.length ? [] : DEFAULT_EXCLUDED),
@@ -449,6 +456,7 @@ export async function whatAboutPath(
        -- そもそも完全一致で足りる。
        and ref.key = $1
        and n.deleted_at is null
+       and n.searchable
        and n.polarity = 'dont'
        ${Array.isArray(scopeIds) ? "and n.scope_id = any($2)" : ""}
      order by n.at desc nulls last

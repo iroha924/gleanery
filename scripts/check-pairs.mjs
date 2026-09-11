@@ -26,7 +26,7 @@ const grab = (file, re, what) => {
   return m[1];
 };
 
-// ---- node.kind の一覧が 3 つの出口で揃っているか ----
+// ---- node.kind の一覧が AI 向けの 2 つの出口で揃っているか ----
 //
 // 正本は DB の check 制約だが、広げる移行が複数ファイルに散るので、出口どうしを突き合わせる。
 // **片方に足してもう片方を忘れた**を捕まえられれば足りる。
@@ -42,11 +42,6 @@ const kindSets = {
     /const LABEL[^{]*\{(.*?)^\};/ms,
     "search.ts の LABEL",
   )?.match(/^\s*"([a-z_]+)\//gm),
-  "dashboard/src/app/(dashboard)/search/page.tsx（画面の絞り込み）": grab(
-    "dashboard/src/app/(dashboard)/search/page.tsx",
-    /const KINDS = \[(.*?)\] as const;/s,
-    "画面の KINDS",
-  )?.match(/\["[a-z_]+"/g),
 };
 
 const kinds = {};

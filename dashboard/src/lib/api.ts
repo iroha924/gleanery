@@ -88,15 +88,6 @@ export type Ref = {
 
 export type RecordDetail = RecordRow & { phases: Phase[]; next: NextItem[]; nodes: Node[]; refs: Ref[] };
 
-export type Hit = Node & {
-  record_id: string;
-  record_title: string;
-  scope_label: string;
-  relevance: number | null;
-  /** 発言の主。**bot か人かは、これを見ないと本文からしか判らない。** */
-  actor_name: string | null;
-};
-
 /** 範囲のクエリ。undefined は「すべて」なので付けない。 */
 const q = (scopes: number[] | undefined): string =>
   scopes === undefined ? "" : `?scopes=${scopes.join(",")}`;
@@ -188,19 +179,4 @@ export const api = {
   disconnectGithub: () => send<{ ok: true }>("/api/github/installation", "DELETE"),
   records: (scopes?: number[]) => get<RecordRow[]>(`/api/records${q(scopes)}`),
   record: (id: string) => get<RecordDetail>(`/api/records/${encodeURIComponent(id)}`),
-  search: async (body: {
-    question: string;
-    onlyDont?: boolean;
-    kinds?: string[];
-    limit?: number;
-    scopeIds?: number[];
-  }): Promise<Hit[]> => {
-    const res = await fetch("/api/search", {
-      method: "POST",
-      headers: await authed({ "content-type": "application/json" }),
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`検索が ${res.status}`);
-    return res.json() as Promise<Hit[]>;
-  },
 };

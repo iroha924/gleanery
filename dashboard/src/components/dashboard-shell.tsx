@@ -13,7 +13,7 @@ import { ProjectProvider } from "@/lib/project";
 function Body({ children }: { children: ReactNode }) {
   const path = usePathname();
   const edgeToEdge = path === "/" || path === "/mtg";
-  const ownsScroll = edgeToEdge || path === "/sessions" || path === "/search";
+  const ownsScroll = edgeToEdge || path === "/sessions";
 
   return (
     <div

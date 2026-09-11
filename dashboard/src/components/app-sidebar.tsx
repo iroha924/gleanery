@@ -12,7 +12,6 @@ import {
   Layers2Icon,
   MessageCircleIcon,
   MessagesSquareIcon,
-  SearchIcon,
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react-motion";
@@ -56,12 +55,11 @@ const SHOWN = 10;
 const NAVIGATION = [
   { href: "/sessions", label: "セッション", icon: MessagesSquareIcon },
   { href: "/", label: "チャット", icon: MessageCircleIcon },
-  { href: "/search", label: "ナレッジ検索", icon: SearchIcon },
   { href: "/mtg", label: "MTG録音", icon: AudioLinesIcon },
 ] as const;
 
 const isCurrent = (path: string, href: string): boolean =>
-  href === "/search" ? path === href || path.startsWith("/records") : path === href;
+  href === "/sessions" ? path === href || path.startsWith("/records") : path === href;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const qc = useQueryClient();

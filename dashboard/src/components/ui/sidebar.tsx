@@ -15,8 +15,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-// **割合にしない。**窓を狭めると項目名が読めなくなる。最長の項目「ナレッジ検索」は
-// 和文 13px で約 78px、これにアイコンと余白が付くので、固定で余裕を持たせる。
+// **割合にしない。**窓を狭めても項目名を読める幅を固定で確保する。
 const SIDEBAR_WIDTH = "20rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
 const SIDEBAR_WIDTH_ICON = "3rem";
