@@ -13,6 +13,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import type pg from "pg";
 import { z } from "zod";
 import { loadEnv, pool } from "./db.ts";
+import { mcpNote, ROOT, versionAt } from "./plugin.ts";
 import { identify } from "./scope.ts";
 import {
   currentWork,
@@ -66,8 +67,14 @@ async function currentScopeIds(cwd?: string): Promise<Scope> {
   return { ids: await scopeFamily(c, row.id), own: row.id, label: me.label, ident: me.ident };
 }
 
+// **起動時に 1 回だけ読む。**Codex は更新で旧版の cache を消すので、応答時に読むと
+// 肝心の「消えた版から動いている」ときに版が分からない。
+const VERSION = versionAt(ROOT);
+/** 実行版を応答から識別できるようにする。記録の枠（quote / framed）の外に置く。 */
+const signed = (text: string) => `${text}\n\n${mcpNote(VERSION, ROOT)}`;
+
 const server = new McpServer(
-  { name: "knowledge", version: "0.1.0" },
+  { name: "knowledge", version: VERSION ?? "unknown" },
   {
     // Claude Code は tool search が既定で有効で、開始時にモデルが見るのは
     // ツール名とこの instructions だけになる。空だと呼ばれない。
@@ -206,7 +213,7 @@ server.registerTool(
       // **0 件でも枠を通す。**lead は DB の値なので、ここだけ素で返すと枠から漏れる。
       (rows.length ? quote(rows, lead) : lead ? framed("該当なし。", lead) : "該当なし。") +
       (notes.length ? `\n\n※ ${notes.join("\n※ ")}` : "");
-    return { content: [{ type: "text" as const, text }] };
+    return { content: [{ type: "text" as const, text: signed(text) }] };
   },
 );
 
@@ -233,7 +240,9 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: `このディレクトリ（${scope.label}）はナレッジ DB に未登録です。記録がまだ 1 件もありません。`,
+            text: signed(
+              `このディレクトリ（${scope.label}）はナレッジ DB に未登録です。記録がまだ 1 件もありません。`,
+            ),
           },
         ],
       };
@@ -244,7 +253,7 @@ server.registerTool(
         content: [
           {
             type: "text" as const,
-            text: "進行中の作業はありません（工程が全部 done か、記録がまだありません）。",
+            text: signed("進行中の作業はありません（工程が全部 done か、記録がまだありません）。"),
           },
         ],
       };
@@ -290,7 +299,7 @@ server.registerTool(
       [ids],
     );
     return {
-      content: [{ type: "text" as const, text: quote(rows.rows, `いまの作業:\n\n${lead}`) }],
+      content: [{ type: "text" as const, text: signed(quote(rows.rows, `いまの作業:\n\n${lead}`)) }],
     };
   },
 );

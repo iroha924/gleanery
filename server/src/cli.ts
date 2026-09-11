@@ -14,6 +14,7 @@ import { collect, ingestThreads } from "./github.ts";
 import { ensureIdentity } from "./identity.ts";
 import { type Ir, ingest } from "./ingest.ts";
 import { fetchIssues, ingestIssue, listIssues, whoAmI } from "./linear.ts";
+import { observe, ROOT, report, versionAt } from "./plugin.ts";
 import { candidates, HOST, identify, rememberPath } from "./scope.ts";
 import { framed, logSearch, outsideScopes, quote, scopeFamily, search } from "./search.ts";
 import { ingestSession, readSession } from "./session.ts";
@@ -40,7 +41,9 @@ const USAGE = `使い方:
                                                  --yes は既に登録済みの場所を入れ替える）
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
   mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-  mitos doctor                                   資格情報と接続、Linear MCP の疎通、DB の大きさ
+  mitos doctor                                   plugin の版（repository・CLI・Claude Code・Codex・実行中 MCP）、
+                                                 資格情報と接続、Linear MCP の疎通、DB の大きさ
+  mitos --version                                この CLI の版と置き場所
   mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
   mitos usage                                    OpenAI の使用量と残り
 
@@ -338,6 +341,10 @@ async function main(): Promise<void> {
     console.log(USAGE);
     return;
   }
+  if (cmd === "--version") {
+    console.log(`${versionAt(ROOT) ?? "不明"}  ${ROOT}`);
+    return;
+  }
   const { values: opt, positionals: rest } = parseArgs({
     args: argv.slice(1),
     options: OPTIONS,
@@ -378,6 +385,9 @@ async function main(): Promise<void> {
   const env = loadEnv(cwd);
 
   if (cmd === "doctor") {
+    // **DB より先に出す。**接続に失敗すると doctor はそこで止まるが、版の食い違いは DB と無関係に見たい。
+    for (const line of report(observe(identify(cwd).absPath))) console.log(line);
+    console.log("");
     console.log(`KNOWLEDGE_DB_URL      ${env.KNOWLEDGE_DB_URL ? "あり" : "無い"}`);
     console.log(`VOYAGE_API_KEY       ${env.VOYAGE_API_KEY ? "あり" : "無い"}`);
     console.log(

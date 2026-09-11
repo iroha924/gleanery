@@ -5105,9 +5105,9 @@ var require_x509_transport_state = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
-import fs7 from "node:fs";
-import os4 from "node:os";
-import path8 from "node:path";
+import fs8 from "node:fs";
+import os5 from "node:os";
+import path9 from "node:path";
 import { parseArgs } from "node:util";
 
 // server/node_modules/zod/v4/classic/external.js
@@ -38952,10 +38952,223 @@ ${issue2.description}`;
   }
 }
 
+// server/src/plugin.ts
+import { execFileSync as execFileSync5 } from "node:child_process";
+import fs6 from "node:fs";
+import os4 from "node:os";
+import path7 from "node:path";
+import { fileURLToPath } from "node:url";
+var MANIFEST = path7.join(".claude-plugin", "plugin.json");
+function versionAt(root) {
+  try {
+    const m = JSON.parse(fs6.readFileSync(path7.join(root, MANIFEST), "utf8"));
+    return m.name === "mitos" && typeof m.version === "string" ? m.version : null;
+  } catch {
+    return null;
+  }
+}
+var here = path7.dirname(fileURLToPath(import.meta.url));
+var ROOT = [path7.join(here, ".."), path7.join(here, "..", "..", "plugin")].find((r) => versionAt(r) !== null) ?? path7.join(here, "..");
+function rootState(root) {
+  if (!fs6.existsSync(path7.join(root, MANIFEST)))
+    return "gone";
+  if (fs6.existsSync(path7.join(root, ".orphaned_at")))
+    return "orphaned";
+  return "ok";
+}
+function compareVersions(a, b) {
+  const x = a.split(".").map(Number);
+  const y = b.split(".").map(Number);
+  for (let i = 0;i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0);
+    if (d)
+      return Math.sign(d);
+  }
+  return 0;
+}
+function differingFiles(a, b) {
+  const list = (root) => new Map(fs6.readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => {
+    const abs = path7.join(e.parentPath, e.name);
+    return [path7.relative(root, abs), abs];
+  }).filter(([rel]) => rel !== ".orphaned_at"));
+  const x = list(a);
+  const y = list(b);
+  return [...new Set([...x.keys(), ...y.keys()])].filter((rel) => {
+    const p = x.get(rel);
+    const q = y.get(rel);
+    return !p || !q || !fs6.readFileSync(p).equals(fs6.readFileSync(q));
+  }).sort();
+}
+function parsePs(out) {
+  const procs = [];
+  for (const line of out.split(`
+`)) {
+    const m = line.match(/^\s*(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/);
+    const script = m?.[3]?.match(/(?:^|\/)node\s+(.*\/dist\/mcp\.js)\s*$/)?.[1];
+    if (m && script)
+      procs.push({ pid: Number(m[1]), started: new Date(m[2] ?? ""), script });
+  }
+  return procs;
+}
+function cwdOf(pid) {
+  try {
+    return fs6.readlinkSync(`/proc/${pid}/cwd`).replace(/ \(deleted\)$/, "");
+  } catch {}
+  try {
+    const out = execFileSync5("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return out.split(`
+`).find((l) => l.startsWith("n"))?.slice(1) ?? null;
+  } catch {
+    return null;
+  }
+}
+var CACHED = /\/plugins\/cache\/[^/]+\/mitos\/[^/]+$/;
+function observe(cwdRoot) {
+  const install = (root) => ({ version: versionAt(root), root });
+  const repository = [path7.dirname(ROOT), cwdRoot].filter((d) => fs6.existsSync(path7.join(d, ".claude-plugin", "marketplace.json"))).map((d) => install(path7.join(d, "plugin"))).find((r) => r.version !== null) ?? null;
+  let claude;
+  try {
+    const list = JSON.parse(execFileSync5("claude", ["plugin", "list", "--json"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 30000
+    }));
+    const m = list.find((p) => p.id.startsWith("mitos@"));
+    claude = m?.installPath ? { version: m.version ?? null, root: m.installPath } : null;
+  } catch {
+    claude = "unknown";
+  }
+  const codexCache = path7.join(process.env.CODEX_HOME ?? path7.join(os4.homedir(), ".codex"), "plugins", "cache");
+  const codex = [];
+  for (const market of safeDirs(codexCache)) {
+    for (const v of safeDirs(path7.join(codexCache, market, "mitos"))) {
+      codex.push(install(path7.join(codexCache, market, "mitos", v)));
+    }
+  }
+  let running;
+  try {
+    const out = execFileSync5("ps", ["-Ao", "pid=,lstart=,args="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, LC_ALL: "C" }
+    });
+    running = parsePs(out).map((p) => {
+      const base = path7.isAbsolute(p.script) ? "/" : cwdOf(p.pid);
+      const root = base ? path7.dirname(path7.dirname(path7.resolve(base, p.script))) : null;
+      return { pid: p.pid, started: p.started, root, version: root ? versionAt(root) : null };
+    }).filter((r) => r.root === null || r.version !== null || CACHED.test(r.root)).map((r) => r.root && r.version === null ? { ...r, version: path7.basename(r.root) } : r);
+  } catch {
+    running = null;
+  }
+  return { repository, cli: install(ROOT), claude, codex, codexCache, running };
+}
+function safeDirs(dir) {
+  try {
+    return fs6.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch {
+    return [];
+  }
+}
+var UPDATE = {
+  claude: "claude plugin marketplace update mitos && claude plugin update mitos@mitos の後、session を張り直す",
+  codex: "codex plugin marketplace upgrade mitos && codex plugin remove mitos@mitos && codex plugin add mitos@mitos の後、Codex を開き直す"
+};
+function report(s, now = new Date) {
+  const lines = [];
+  const todo = new Set;
+  const home = os4.homedir();
+  const short = (p) => p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p;
+  const pad = (t, n) => t + " ".repeat(Math.max(1, n - [...t].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0)));
+  const say = (label, text) => lines.push(`${pad(`  ${label}`, 21)}${text}`);
+  const row = (label, i, note, aside = "") => say(label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
+  const base = s.repository;
+  const against = (i) => {
+    if (!fs6.existsSync(i.root))
+      return "導入先が無い。Skill のパスも無効";
+    if (!base?.version || !i.version)
+      return;
+    const c = compareVersions(i.version, base.version);
+    if (c < 0)
+      return `repository（${base.version}）より古い`;
+    if (c > 0)
+      return `repository（${base.version}）より新しい。repository の checkout が古い`;
+    const diff = differingFiles(base.root, i.root);
+    return diff.length ? `同じ版なのに中身が違う（${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}）。版を上げずに変えたか、repository の変更がまだ配布されていない` : undefined;
+  };
+  lines.push("plugin の版");
+  if (base)
+    row("repository", base);
+  else
+    say("repository", "見えない（mitos の repository の中で実行すると比べられる）");
+  row("この CLI", s.cli, against(s.cli));
+  if (s.claude === "unknown")
+    say("Claude Code", "不明（claude plugin list --json が使えない）");
+  else if (s.claude === null)
+    say("Claude Code", "導入されていない");
+  else {
+    const note = against(s.claude);
+    if (note)
+      todo.add("claude");
+    row("Claude Code", s.claude, note);
+  }
+  if (s.codex.length === 0)
+    say("Codex", `見つからない（${short(s.codexCache)} を見た）`);
+  for (const x of s.codex) {
+    const note = s.codex.length > 1 ? "cache が複数ある。どれを使うかは Codex が決める" : against(x);
+    if (note)
+      todo.add("codex");
+    row("Codex", x, note);
+  }
+  if (!base && s.claude !== "unknown" && s.claude?.version && s.codex.length === 1) {
+    const x = s.codex[0];
+    if (x?.version === s.claude.version && differingFiles(s.claude.root, x.root).length) {
+      lines.push("  ← Claude Code と Codex で同じ版なのに中身が違う");
+    }
+  }
+  if (s.running === null)
+    say("実行中の MCP", "不明（ps が使えない）");
+  else if (s.running.length === 0)
+    say("実行中の MCP", "無い");
+  for (const r of s.running ?? []) {
+    const when = r.started.toLocaleString("sv-SE").slice(r.started.toDateString() === now.toDateString() ? 11 : 5, 16);
+    const label = `MCP pid ${r.pid}`;
+    const aside = `（${when} 起動）`;
+    if (!r.root) {
+      row(label, null, "起動元が分からない", aside);
+      continue;
+    }
+    const codex = r.root.startsWith(`${s.codexCache}/`);
+    const installed = codex ? s.codex.length === 1 ? s.codex[0] : undefined : s.claude;
+    const state2 = rootState(r.root);
+    let note;
+    if (state2 === "gone")
+      note = "起動元が消えている。Skill のパスも無効なので、この session を張り直す";
+    else if (!CACHED.test(r.root)) {
+      note = "配布された cache ではなく、この場所を直接読んでいる（directory 型 marketplace か --plugin-dir）";
+    } else if (state2 === "orphaned")
+      note = "Claude Code が更新で置き換えた版。session を張り直す";
+    else if (installed && installed !== "unknown" && installed.version && r.version) {
+      if (compareVersions(r.version, installed.version) < 0)
+        note = `導入済みの ${installed.version} より古い。session を張り直す`;
+    }
+    row(label, { version: r.version, root: r.root }, note, aside);
+  }
+  if (todo.size) {
+    lines.push("  更新するには:");
+    for (const k of todo)
+      lines.push(`    ${k === "claude" ? "Claude Code" : "Codex"}: ${UPDATE[k]}`);
+    lines.push("    届く中身は各ホストの marketplace の取得元で決まる。GitHub から取る設定なら、push していない変更は届かない");
+  }
+  return lines;
+}
+
 // server/src/session.ts
 import crypto7 from "node:crypto";
-import fs6 from "node:fs";
-import path7 from "node:path";
+import fs7 from "node:fs";
+import path8 from "node:path";
 var BOILERPLATE = /^(Base directory for this skill|<|\/|This session is being continued|Caveat: The messages below|Another Claude session sent a message|# Claude in Chrome|\(Re-invocation of|\[Image: source:|mcp__[a-z0-9_]+__ ?を呼ん)/;
 var textOf = (m) => {
   const c = m?.content;
@@ -38969,12 +39182,12 @@ var textOf = (m) => {
   }).map((x) => x.text).join(" ").trim();
 };
 function readSession(file2) {
-  const id = path7.basename(file2, ".jsonl");
+  const id = path8.basename(file2, ".jsonl");
   const exchanges = [];
   let cwd = "";
   let branch = "";
   let pending = null;
-  for (const line of fs6.readFileSync(file2, "utf8").split(`
+  for (const line of fs7.readFileSync(file2, "utf8").split(`
 `)) {
     if (!line.startsWith("{"))
       continue;
@@ -39103,7 +39316,9 @@ var USAGE = `使い方:
                                                  --yes は既に登録済みの場所を入れ替える）
   mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
   mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-  mitos doctor                                   資格情報と接続、Linear MCP の疎通、DB の大きさ
+  mitos doctor                                   plugin の版（repository・CLI・Claude Code・Codex・実行中 MCP）、
+                                                 資格情報と接続、Linear MCP の疎通、DB の大きさ
+  mitos --version                                この CLI の版と置き場所
   mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
   mitos usage                                    OpenAI の使用量と残り
 
@@ -39121,7 +39336,7 @@ var OPTIONS = {
 };
 var IR_TAG = /<script type="application\/json" id="progress-ir">([\s\S]*?)<\/script>/;
 function readIr(file2) {
-  const body = fs7.readFileSync(file2, "utf8");
+  const body = fs8.readFileSync(file2, "utf8");
   if (!file2.endsWith(".html"))
     return JSON.parse(body);
   const m = body.match(IR_TAG);
@@ -39191,12 +39406,12 @@ async function syncSessions(c, env2, dir, say) {
   const me = (await c.query("select display from person where is_me limit 1")).rows[0]?.display ?? "私";
   const slug2 = identify(dir).absPath.replace(/\//g, "-");
   const dirs = [
-    ...fs7.existsSync(path8.join(os4.homedir(), ".ccs", "instances")) ? fs7.readdirSync(path8.join(os4.homedir(), ".ccs", "instances"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path8.join(os4.homedir(), ".ccs", "instances", d.name, "projects", slug2)) : [],
-    path8.join(os4.homedir(), ".claude", "projects", slug2)
-  ].filter((d) => fs7.existsSync(d));
+    ...fs8.existsSync(path9.join(os5.homedir(), ".ccs", "instances")) ? fs8.readdirSync(path9.join(os5.homedir(), ".ccs", "instances"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => path9.join(os5.homedir(), ".ccs", "instances", d.name, "projects", slug2)) : [],
+    path9.join(os5.homedir(), ".claude", "projects", slug2)
+  ].filter((d) => fs8.existsSync(d));
   if (dirs.length === 0)
     return `${identify(dir).label} / セッション記録なし`;
-  const files = dirs.flatMap((d) => fs7.readdirSync(d).filter((f) => f.endsWith(".jsonl")).map((f) => path8.join(d, f)));
+  const files = dirs.flatMap((d) => fs8.readdirSync(d).filter((f) => f.endsWith(".jsonl")).map((f) => path9.join(d, f)));
   let nodes = 0;
   let embedded = 0;
   let done = 0;
@@ -39214,7 +39429,7 @@ async function syncSessions(c, env2, dir, say) {
 }
 async function syncDocs(c, env2, dir, say) {
   const me = identify(dir);
-  if (!fs7.existsSync(path8.join(me.absPath, ".git"))) {
+  if (!fs8.existsSync(path9.join(me.absPath, ".git"))) {
     throw new Error(`${dir} は git 管理下に無い。取り込む対象は git が追っている Markdown`);
   }
   const scopeId = await scopeIdFor(c, dir, true);
@@ -39282,6 +39497,10 @@ async function main() {
     console.log(USAGE);
     return;
   }
+  if (cmd === "--version") {
+    console.log(`${versionAt(ROOT) ?? "不明"}  ${ROOT}`);
+    return;
+  }
   const { values: opt, positionals: rest } = parseArgs({
     args: argv.slice(1),
     options: OPTIONS,
@@ -39320,6 +39539,9 @@ async function main() {
 ${USAGE}`);
   const env2 = loadEnv(cwd);
   if (cmd === "doctor") {
+    for (const line of report(observe(identify(cwd).absPath)))
+      console.log(line);
+    console.log("");
     console.log(`KNOWLEDGE_DB_URL      ${env2.KNOWLEDGE_DB_URL ? "あり" : "無い"}`);
     console.log(`VOYAGE_API_KEY       ${env2.VOYAGE_API_KEY ? "あり" : "無い"}`);
     console.log(`KNOWLEDGE_DB_URL_RO  ${env2.KNOWLEDGE_DB_URL_RO ? "あり" : "無い（MCP・フック・画面の API はここで止まる）"}`);
@@ -39347,10 +39569,10 @@ ${USAGE}`);
     }
     {
       const c3 = await connect(env2, { as: "read" });
-      const here = await c3.query(`select count(p.abs_path) as n, count(*) as all from scope s
+      const here2 = await c3.query(`select count(p.abs_path) as n, count(*) as all from scope s
          left join scope_path p on p.scope_id = s.id and p.host = $1
          where s.ident like 'git:%'`, [HOST]);
-      const h = here.rows[0];
+      const h = here2.rows[0];
       console.log(`置き場所（${HOST}）  ${h?.n ?? 0} / ${h?.all ?? 0} 件${Number(h?.n ?? 0) === 0 && Number(h?.all ?? 0) > 0 ? " ← mitos adopt を実行する" : ""}`);
       const r = await c3.query(`select s.label, max(r.ingested_at) as last, count(r.id)::int as records
          from scope s left join record r on r.scope_id = s.id
@@ -39377,12 +39599,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "advice") {
-    const log2 = path8.join(os4.homedir(), ".claude", "mitos-advice.jsonl");
-    if (!fs7.existsSync(log2)) {
+    const log2 = path9.join(os5.homedir(), ".claude", "mitos-advice.jsonl");
+    if (!fs8.existsSync(log2)) {
       console.log("まだ記録がありません（編集フックが一度も走っていない）。");
       return;
     }
-    const rows = fs7.readFileSync(log2, "utf8").split(`
+    const rows = fs8.readFileSync(log2, "utf8").split(`
 `).filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
     const shownRows = rows.filter((r) => r.shown.length > 0);
     const all = shownRows.flatMap((r) => r.shown);
@@ -39404,12 +39626,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "usage") {
-    const log2 = path8.join(os4.homedir(), ".claude", "mitos-usage.jsonl");
-    if (!fs7.existsSync(log2)) {
+    const log2 = path9.join(os5.homedir(), ".claude", "mitos-usage.jsonl");
+    if (!fs8.existsSync(log2)) {
       console.log("まだ記録がありません。");
       return;
     }
-    const rows = fs7.readFileSync(log2, "utf8").split(`
+    const rows = fs8.readFileSync(log2, "utf8").split(`
 `).filter(Boolean).map((l) => JSON.parse(l));
     const limit3 = Number(env2.MITOS_USAGE_LIMIT ?? 10);
     const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
@@ -39507,7 +39729,7 @@ ${USAGE}`);
           if (t.ident.startsWith("linear:")) {
             const team = t.ident.replace(/^linear:[^/]*\//, "");
             console.log(`取り込み完了: ${await syncLinear(c, env2, team, opt.all === true, undefined)}`);
-          } else if (t.ident.startsWith("git:") && t.abs_path && fs7.existsSync(t.abs_path)) {
+          } else if (t.ident.startsWith("git:") && t.abs_path && fs8.existsSync(t.abs_path)) {
             console.log(`取り込み完了: ${await syncGithub(c, env2, t.abs_path)}`);
             console.log(`取り込み完了: ${await syncSessions(c, env2, t.abs_path, () => {})}`);
             console.log(`取り込み完了: ${await syncDocs(c, env2, t.abs_path, () => {})}`);
@@ -39586,12 +39808,12 @@ ${USAGE}`);
       return;
     }
     if (cmd === "adopt") {
-      const here = candidates();
+      const here2 = candidates();
       const known = new Map((await c.query(`select s.id::int as id, s.ident, s.label, p.abs_path from scope s
              left join scope_path p on p.scope_id = s.id and p.host = $1
              where s.ident like 'git:%' or s.ident_kind = 'abs-path'`, [HOST])).rows.map((r) => [r.ident, r]));
       const byIdent = new Map;
-      for (const cand of here)
+      for (const cand of here2)
         byIdent.set(cand.ident, [...byIdent.get(cand.ident) ?? [], cand]);
       const linked = [];
       const unknown2 = [];
@@ -39662,17 +39884,17 @@ ${USAGE}`);
         throw new Error(`消す作業場所をディレクトリかラベルで指定する
 
 ${USAGE}`);
-      const abs = path8.resolve(target);
-      const here = identify(abs);
+      const abs = path9.resolve(target);
+      const here2 = identify(abs);
       const same = (a, b) => {
         try {
-          return fs7.realpathSync(a) === fs7.realpathSync(b);
+          return fs8.realpathSync(a) === fs8.realpathSync(b);
         } catch {
           return false;
         }
       };
       const hit = await c.query(`select id::int as id, label, ident from scope
-         where ident = $1 or label = $1 or ($2::text is not null and ident = $2)`, [target, same(here.absPath, abs) ? here.ident : null]);
+         where ident = $1 or label = $1 or ($2::text is not null and ident = $2)`, [target, same(here2.absPath, abs) ? here2.ident : null]);
       if (hit.rows.length === 0)
         throw new Error(`${target} に当たる作業場所が無い。mitos scopes で一覧を見る`);
       if (hit.rows.length > 1)
