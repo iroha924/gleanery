@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 // 仕込んだ欠陥を validate() が拾えるかを測る。加えて、採掘が人の発話を落とさないことと、
 // 網羅の検査が材料の取りこぼしを拾えることを見る。
-//
-// **描画に関する検査は d-drop-record-files で消した。**HTML と Markdown を出さなくなり、
-// XSS の境界・往復の一致・要約・折りたたみは、対象そのものが無くなった。
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
