@@ -32,7 +32,7 @@ description: mitosのPostgreSQL migration、RLS・role、record/node schema、�
 
 - `server/src/search.ts`のlabelと既定除外
 - `server/src/mcp.ts`の入力schemaと説明
-- dashboard検索画面のfilter
+- dashboardの`/sessions`検索filter
 - `scripts/check-pairs.mjs`で機械的に揃えられる一覧
 
 量の多いkindを既定検索へ入れる前後ではretrieval evalを測る。polarityは埋め込みへ推測させず、列で
