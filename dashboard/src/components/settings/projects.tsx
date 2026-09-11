@@ -19,9 +19,8 @@ export function ProjectsPanel() {
   const qc = useQueryClient();
   const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
   const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
-  const candidates = useQuery({ queryKey: ["candidates"], queryFn: api.candidates });
 
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   const [name, setName] = useState("");
 
   const save = useMutation({
@@ -46,9 +45,9 @@ export function ProjectsPanel() {
     onError: (e) => toast.error(String(e instanceof Error ? e.message : e)),
   });
 
-  const toggle = (p: string) => {
+  const toggle = (id: number) => {
     const next = new Set(picked);
-    next.has(p) ? next.delete(p) : next.add(p);
+    next.has(id) ? next.delete(id) : next.add(id);
     setPicked(next);
   };
 
@@ -58,60 +57,49 @@ export function ProjectsPanel() {
         <CardHeader>
           <CardTitle>プロジェクトを作る</CardTitle>
           <CardDescription>
-            関連するリポジトリを 1 つのプロジェクトにします。左上でプロジェクトを選ぶと、
-            チャット・探す・作業がその中だけを見るようになります。
+            関連するリポジトリや issue の出どころを 1 つのプロジェクトにします。左上でプロジェクトを
+            選ぶと、チャット・探す・作業がその中だけを見るようになります。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {candidates.isPending && <Skeleton className="h-56 w-full" />}
-          {/* **「0 件」と「読めなかった」を別々に出す。**候補はこのホストの ~/Projects を
-              走査した結果なので、リポジトリを持たないホストでは必ず空になる。
-              どちらも空の枠になると、選ぶものが無いのか壊れているのか読み取れない。 */}
-          {candidates.isError && (
+          {scopes.isPending && <Skeleton className="h-56 w-full" />}
+          {scopes.isError && (
             <p className="rounded-md border border-destructive/50 p-4 text-sm text-destructive">
-              候補を取れませんでした。API に届いていないか、認証が切れています。
+              置き場所を取れませんでした。API に届いていないか、認証が切れています。
             </p>
           )}
-          {candidates.data?.length === 0 && (
+          {scopes.data?.length === 0 && (
             <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-              このホストには束ねられる置き場所がありません。候補は API が動いているマシンの{" "}
-              <code className="font-mono text-xs">~/Projects</code> を走査して出しています。
+              登録済みの置き場所がありません。先にローカル環境で取り込みを実行してください。
             </p>
           )}
-          {candidates.data && candidates.data.length > 0 && (
+          {scopes.data && scopes.data.length > 0 && (
             <ScrollArea className="h-72 rounded-md border">
               <div className="divide-y">
-                {candidates.data.map((c) => (
+                {scopes.data.map((scope) => (
                   <Label
-                    key={c.ident}
-                    htmlFor={c.ident}
+                    key={scope.id}
+                    htmlFor={`scope-${scope.id}`}
                     className="flex cursor-pointer items-start gap-3 p-3 hover:bg-muted/50"
                   >
                     <Checkbox
-                      id={c.ident}
-                      checked={picked.has(c.absPath)}
-                      onCheckedChange={() => toggle(c.absPath)}
+                      id={`scope-${scope.id}`}
+                      checked={picked.has(scope.id)}
+                      onCheckedChange={() => toggle(scope.id)}
                       className="mt-0.5"
                     />
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
-                        <span className="truncate font-medium">{c.label}</span>
-                        {c.scopeId !== null && (
+                        <span className="truncate font-medium">{scope.label}</span>
+                        {scope.groups && (
                           <Badge variant="secondary" className="shrink-0">
-                            登録済み
+                            {scope.groups}
                           </Badge>
                         )}
                       </span>
-                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">{c.absPath}</span>
-                      {c.markers.length > 0 && (
-                        <span className="mt-1 flex flex-wrap gap-1">
-                          {c.markers.slice(0, 4).map((m) => (
-                            <Badge key={m} variant="outline" className="text-[10px]">
-                              {m}
-                            </Badge>
-                          ))}
-                        </span>
-                      )}
+                      <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
+                        作業 {scope.records} 件 / 記録 {scope.nodes} 件{scope.role && ` / ${scope.role}`}
+                      </span>
                     </span>
                   </Label>
                 ))}
