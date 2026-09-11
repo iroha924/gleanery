@@ -69,7 +69,7 @@ console.error(
   [
     `plugin/ の ${changed.length} 個が変わったのに版が ${now} のままになっている（${changed[0]} など）。`,
     "",
-    "  Claude Code と Codex は <cache>/mitos/mitos/<版>/ の複製から動く。",
+    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/mitos/mitos/<版>/ の複製から動く。",
     "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
     "",
     "  3つのmanifest（Claude、Codex、marketplace）のversionを同じ値へ上げる。",

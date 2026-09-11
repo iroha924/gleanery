@@ -39129,9 +39129,9 @@ function mcpNote(version2, root) {
   const v = `mitos MCP ${version2 ?? "（版不明）"}`;
   const state = rootState(root);
   if (state === "gone")
-    return `${v}。起動元 ${root} が消えている。Skill のパスも無効なので、この session を張り直す`;
+    return `${v}。起動元 ${root} が消えている。Skill のパスも無効なので、Claude Code は /reload-plugins、Codex は開き直すと新しい版になる`;
   if (state === "orphaned")
-    return `${v}。Claude Code がこの版を更新で置き換えた。session を張り直すと新しい版になる`;
+    return `${v}。Claude Code がこの版を更新で置き換えた。/reload-plugins か session の張り直しで新しい版になる`;
   return v;
 }
 

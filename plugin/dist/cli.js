@@ -38990,7 +38990,11 @@ function differingFiles(a, b) {
   const list = (root) => new Map(fs6.readdirSync(root, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => {
     const abs = path7.join(e.parentPath, e.name);
     return [path7.relative(root, abs), abs];
-  }).filter(([rel]) => rel !== ".orphaned_at"));
+  }).filter(([rel]) => {
+    const top = rel.split(path7.sep)[0] ?? "";
+    const mark = top.startsWith(".") && top !== ".claude-plugin" && top !== ".codex-plugin";
+    return !mark && path7.basename(rel) !== ".DS_Store";
+  }));
   const x = list(a);
   const y = list(b);
   return [...new Set([...x.keys(), ...y.keys()])].filter((rel) => {
@@ -39012,15 +39016,26 @@ function parsePs(out) {
 }
 function cwdOf(pid) {
   try {
-    return fs6.readlinkSync(`/proc/${pid}/cwd`).replace(/ \(deleted\)$/, "");
+    const link = fs6.readlinkSync(`/proc/${pid}/cwd`);
+    return { dir: link.replace(/ \(deleted\)$/, ""), replaced: link.endsWith(" (deleted)") };
   } catch {}
   try {
-    const out = execFileSync5("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], {
+    const out = execFileSync5("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fin"], {
       encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1e4
     });
-    return out.split(`
-`).find((l) => l.startsWith("n"))?.slice(1) ?? null;
+    const field = (k) => out.split(`
+`).find((l) => l.startsWith(k))?.slice(1);
+    const dir = field("n");
+    if (!dir)
+      return null;
+    let now;
+    try {
+      now = String(fs6.statSync(dir).ino);
+    } catch {}
+    const held = field("i");
+    return { dir, replaced: now !== undefined && held !== undefined && now !== held };
   } catch {
     return null;
   }
@@ -39036,12 +39051,17 @@ function observe(cwdRoot) {
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 30000
     }));
-    const m = list.find((p) => p.id.startsWith("mitos@"));
+    const mine = list.filter((p) => p.id.startsWith("mitos@") && p.enabled !== false);
+    const m = mine.find((p) => p.projectPath === cwdRoot) ?? mine.find((p) => p.scope === "user");
     claude = m?.installPath ? { version: m.version ?? null, root: m.installPath } : null;
   } catch {
     claude = "unknown";
   }
-  const codexCache = path7.join(process.env.CODEX_HOME ?? path7.join(os4.homedir(), ".codex"), "plugins", "cache");
+  const codexHome = process.env.CODEX_HOME ?? path7.join(os4.homedir(), ".codex");
+  let codexCache = path7.join(codexHome, "plugins", "cache");
+  try {
+    codexCache = fs6.realpathSync(codexCache);
+  } catch {}
   const codex = [];
   for (const market of safeDirs(codexCache)) {
     for (const v of safeDirs(path7.join(codexCache, market, "mitos"))) {
@@ -39050,16 +39070,32 @@ function observe(cwdRoot) {
   }
   let running;
   try {
-    const out = execFileSync5("ps", ["-Ao", "pid=,lstart=,args="], {
+    const out = execFileSync5("ps", ["-U", String(process.getuid?.()), "-o", "pid=,lstart=,args="], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
-      env: { ...process.env, LC_ALL: "C" }
+      env: { ...process.env, LC_ALL: "C" },
+      timeout: 1e4
     });
-    running = parsePs(out).map((p) => {
-      const base = path7.isAbsolute(p.script) ? "/" : cwdOf(p.pid);
-      const root = base ? path7.dirname(path7.dirname(path7.resolve(base, p.script))) : null;
-      return { pid: p.pid, started: p.started, root, version: root ? versionAt(root) : null };
-    }).filter((r) => r.root === null || r.version !== null || CACHED.test(r.root)).map((r) => r.root && r.version === null ? { ...r, version: path7.basename(r.root) } : r);
+    running = parsePs(out).flatMap((p) => {
+      const cwd = path7.isAbsolute(p.script) ? { dir: "/", replaced: false } : cwdOf(p.pid);
+      if (!cwd)
+        return [{ pid: p.pid, started: p.started, root: null, version: null }];
+      const root = path7.dirname(path7.dirname(path7.resolve(cwd.dir, p.script)));
+      const cached2 = CACHED.test(root);
+      const now = versionAt(root);
+      if (now === null && !cached2)
+        return [];
+      let version2 = cwd.replaced || now === null ? cached2 ? path7.basename(root) : null : now;
+      if (!cached2 && version2 !== null) {
+        try {
+          if (fs6.statSync(path7.join(root, "dist", "mcp.js")).mtimeMs > p.started.getTime())
+            version2 = null;
+        } catch {
+          version2 = null;
+        }
+      }
+      return [{ pid: p.pid, started: p.started, root, version: version2, replaced: cwd.replaced }];
+    });
   } catch {
     running = null;
   }
@@ -39073,9 +39109,10 @@ function safeDirs(dir) {
   }
 }
 var UPDATE = {
-  claude: "claude plugin marketplace update mitos && claude plugin update mitos@mitos の後、session を張り直す",
-  codex: "codex plugin marketplace upgrade mitos && codex plugin remove mitos@mitos && codex plugin add mitos@mitos の後、Codex を開き直す"
+  claude: "claude plugin marketplace update mitos && claude plugin update mitos@mitos の後、開いている session で /reload-plugins",
+  codex: "codex plugin marketplace upgrade mitos && codex plugin add mitos@mitos の後、Codex を開き直す"
 };
+var RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "Codex の開き直し" };
 function report(s, now = new Date) {
   const lines = [];
   const todo = new Set;
@@ -39087,44 +39124,49 @@ function report(s, now = new Date) {
   const base = s.repository;
   const against = (i) => {
     if (!fs6.existsSync(i.root))
-      return "導入先が無い。Skill のパスも無効";
+      return { note: "導入先が無い。Skill のパスも無効", update: true };
     if (!base?.version || !i.version)
-      return;
+      return {};
     const c = compareVersions(i.version, base.version);
     if (c < 0)
-      return `repository（${base.version}）より古い`;
+      return { note: `repository（${base.version}）より古い`, update: true };
     if (c > 0)
-      return `repository（${base.version}）より新しい。repository の checkout が古い`;
+      return { note: `repository（${base.version}）より新しい。repository の checkout が古い` };
     const diff = differingFiles(base.root, i.root);
-    return diff.length ? `同じ版なのに中身が違う（${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}）。版を上げずに変えたか、repository の変更がまだ配布されていない` : undefined;
+    if (!diff.length)
+      return {};
+    const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
+    return {
+      note: `同じ版なのに中身が違う（${files}）。repository の変更は、版を上げて main へ入れるまで届かない`
+    };
   };
   lines.push("plugin の版");
   if (base)
     row("repository", base);
   else
     say("repository", "見えない（mitos の repository の中で実行すると比べられる）");
-  row("この CLI", s.cli, against(s.cli));
+  row("この CLI", s.cli, against(s.cli).note);
   if (s.claude === "unknown")
     say("Claude Code", "不明（claude plugin list --json が使えない）");
   else if (s.claude === null)
     say("Claude Code", "導入されていない");
   else {
-    const note = against(s.claude);
-    if (note)
+    const { note, update } = against(s.claude);
+    if (update)
       todo.add("claude");
     row("Claude Code", s.claude, note);
   }
   if (s.codex.length === 0)
     say("Codex", `見つからない（${short(s.codexCache)} を見た）`);
-  for (const x of s.codex) {
-    const note = s.codex.length > 1 ? "cache が複数ある。どれを使うかは Codex が決める" : against(x);
-    if (note)
+  for (const x2 of s.codex) {
+    const { note, update } = s.codex.length > 1 ? { note: "cache が複数ある。どれを使うかは Codex が決める", update: true } : against(x2);
+    if (update)
       todo.add("codex");
-    row("Codex", x, note);
+    row("Codex", x2, note);
   }
-  if (!base && s.claude !== "unknown" && s.claude?.version && s.codex.length === 1) {
-    const x = s.codex[0];
-    if (x?.version === s.claude.version && differingFiles(s.claude.root, x.root).length) {
+  const x = s.codex.length === 1 ? s.codex[0] : undefined;
+  if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
+    if (fs6.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
       lines.push("  ← Claude Code と Codex で同じ版なのに中身が違う");
     }
   }
@@ -39142,17 +39184,20 @@ function report(s, now = new Date) {
     }
     const codex = r.root.startsWith(`${s.codexCache}/`);
     const installed = codex ? s.codex.length === 1 ? s.codex[0] : undefined : s.claude;
+    const again = RELOAD[codex ? "codex" : "claude"];
     const state2 = rootState(r.root);
     let note;
     if (state2 === "gone")
-      note = "起動元が消えている。Skill のパスも無効なので、この session を張り直す";
+      note = `起動元が消えている。Skill のパスも無効なので、${again}で直す`;
+    else if (r.replaced)
+      note = `起動元が同じ場所に作り直され、消えた旧版の中身で動いている。${again}で直す`;
     else if (!CACHED.test(r.root)) {
       note = "配布された cache ではなく、この場所を直接読んでいる（directory 型 marketplace か --plugin-dir）";
     } else if (state2 === "orphaned")
-      note = "Claude Code が更新で置き換えた版。session を張り直す";
+      note = `Claude Code が更新で置き換えた版。${again}で直す`;
     else if (installed && installed !== "unknown" && installed.version && r.version) {
       if (compareVersions(r.version, installed.version) < 0)
-        note = `導入済みの ${installed.version} より古い。session を張り直す`;
+        note = `導入済みの ${installed.version} より古い。${again}で直す`;
     }
     row(label, { version: r.version, root: r.root }, note, aside);
   }

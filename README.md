@@ -382,7 +382,8 @@ bun run eval       # 答えの正しさを測る
 bun run bundle     # plugin/dist を作り直す
 ```
 
-**`bun run bundle` を忘れると、plugin 側（MCP・フック・CLI）は古いままになる。**
+**`bun run bundle` を忘れると、repository の `plugin/bin/mitos`（日次同期もこれを叩く）は古い `dist` のまま動く。**
+Claude Code と Codex へは、commit に入った `dist` が GitHub 経由で届く（pre-commit が bundle する）。
 
 ### AI開発環境
 
@@ -396,8 +397,8 @@ Claude Codeでは既存の`docs-author`、Codexでは組み込みの`skill-creat
 
 ### MCP の変更を届ける
 
-`bun run bundle` だけでは Claude CodeやCodexに届かない。版更新、install済みpluginのrefresh、
-新しいsessionでの確認までが必要になる。手順は`.agents/skills/plugin-release/SKILL.md`に置く。
+`bun run bundle` だけでは Claude CodeやCodexに届かない。版更新、`main`へのmerge、install済みpluginの更新、
+`/reload-plugins`か新しいsessionでの確認までが必要になる。手順は`.agents/skills/plugin-release/SKILL.md`に置く。
 
 ## 精度をどう測っているか
 
