@@ -38046,7 +38046,16 @@ function fuse(lists, k = 60) {
   return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
 }
 async function search(client, env2, o) {
-  const { question, scopeIds, polarity, kinds, limit: limit2 = 5, pool = 30, rerankModel = "rerank-3" } = o;
+  const {
+    question,
+    scopeIds,
+    polarity,
+    kinds,
+    limit: limit2 = 5,
+    pool = 30,
+    rerankModel = "rerank-3",
+    sessionOnly
+  } = o;
   const qv = o.queryVector ?? (await embed(env2, [question], "query"))[0];
   if (!qv)
     throw new Error("埋め込みが空で返った");
@@ -38059,7 +38068,7 @@ async function search(client, env2, o) {
     filters.push({ sql: (i) => `n.kind = any($${i})`, value: kinds });
   const clauses = (from) => [
     "n.deleted_at is null",
-    "r.schema_ver <> 'session/1'",
+    sessionOnly ? "r.schema_ver = 'session/2'" : "r.schema_ver <> 'session/1'",
     ...kinds?.length ? [] : DEFAULT_EXCLUDED,
     ...filters.map((f, i) => f.sql(from + i))
   ].join(" and ");

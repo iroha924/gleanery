@@ -125,6 +125,7 @@ export type SearchOpts = {
   pool?: number;
   rerankModel?: string;
   queryVector?: number[] | undefined;
+  sessionOnly?: boolean | undefined;
 };
 
 export type SearchResult = { rows: Hit[]; queryVector: number[]; topScore: number | null };
@@ -181,7 +182,16 @@ export function fuse(lists: Hit[][], k = 60): Hit[] {
 }
 
 export async function search(client: Db, env: Env, o: SearchOpts): Promise<SearchResult> {
-  const { question, scopeIds, polarity, kinds, limit = 5, pool = 30, rerankModel = "rerank-3" } = o;
+  const {
+    question,
+    scopeIds,
+    polarity,
+    kinds,
+    limit = 5,
+    pool = 30,
+    rerankModel = "rerank-3",
+    sessionOnly,
+  } = o;
 
   const qv = o.queryVector ?? (await embed(env, [question], "query"))[0];
   if (!qv) throw new Error("埋め込みが空で返った");
@@ -224,7 +234,7 @@ export async function search(client: Db, env: Env, o: SearchOpts): Promise<Searc
   const clauses = (from: number): string =>
     [
       "n.deleted_at is null",
-      "r.schema_ver <> 'session/1'",
+      sessionOnly ? "r.schema_ver = 'session/2'" : "r.schema_ver <> 'session/1'",
       ...(kinds?.length ? [] : DEFAULT_EXCLUDED),
       ...filters.map((f, i) => f.sql(from + i)),
     ].join(" and ");

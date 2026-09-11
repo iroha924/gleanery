@@ -1,24 +1,24 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { labelOf, logSearch, type Polarity, search } from "../../search.ts";
+import { labelOf, logSearch, search } from "../../search.ts";
 import { db, env } from "../runtime.ts";
 import { positiveIds, scopesQuerySchema, textIdParamSchema } from "../validation.ts";
-
-const searchSchema = z
-  .object({
-    question: z.string().trim().min(1).max(20_000),
-    onlyDont: z.boolean().optional(),
-    kinds: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-    scopeIds: positiveIds.optional(),
-    limit: z.number().int().min(1).max(20).default(10),
-  })
-  .strict();
 
 const sessionsQuerySchema = scopesQuerySchema.extend({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
+
+const sessionSearchSchema = z
+  .object({
+    question: z.string().trim().min(1).max(20_000),
+    onlyDont: z.boolean().optional(),
+    kinds: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+    scopeIds: positiveIds.optional(),
+    limit: z.number().int().min(1).max(20).default(20),
+  })
+  .strict();
 
 const app = new Hono()
   .get("/sessions", zValidator("query", sessionsQuerySchema), async (c) => {
@@ -56,12 +56,32 @@ const app = new Hono()
       pages: Math.ceil(total / pageSize),
     });
   })
+  .post("/sessions/search", zValidator("json", sessionSearchSchema), async (c) => {
+    const body = c.req.valid("json");
+    const client = db();
+    const found = await search(client, env, {
+      question: body.question,
+      scopeIds: body.scopeIds,
+      polarity: body.onlyDont ? "dont" : undefined,
+      kinds: body.kinds ?? ["decision", "option", "event", "boundary", "verification", "question"],
+      limit: body.limit,
+      sessionOnly: true,
+    });
+    await logSearch(client, {
+      source: "dashboard",
+      scopeId: body.scopeIds?.[0] ?? null,
+      question: body.question,
+      result: found,
+    });
+    return c.json(found.rows.map((row) => ({ ...row, id: Number(row.id), label: labelOf(row) })));
+  })
   .get("/sessions/:id", zValidator("param", textIdParamSchema), async (c) => {
     const client = db();
     const { id } = c.req.valid("param");
     const record = await client.query(
       `select r.id, r.raw #>> '{session,id}' as session_id, r.title, r.status, r.branch,
-              r.created_at, r.updated_at,
+              r.problem, r.goal, r.current_at, r.current_text, r.phases, r.next,
+              r.created_at, r.updated_at, r.ended_at, r.ingested_at,
               s.label as scope_label,
               r.raw #>> '{session,host}' as host,
               (select count(*) from node
@@ -72,14 +92,18 @@ const app = new Hono()
       [id],
     );
     if (record.rows.length === 0) return c.json({ error: "そのセッションは無い" }, 404);
-    const exchanges = await client.query(
-      `select id::int, key, at, text, actor_kind as role, actor_name
+    const nodes = await client.query(
+      `select id::int, kind, subkind, polarity, status, key, at, text,
+              coalesce(attrs->>'context', '') as ex, attrs, parent_id::int
        from node
-       where record_id = $1 and deleted_at is null and kind = 'utterance'
-       order by ordinal, at nulls last`,
+       where record_id = $1 and deleted_at is null and kind <> 'utterance'
+       order by kind, ordinal, at nulls last`,
       [id],
     );
-    return c.json({ ...record.rows[0], entries: exchanges.rows });
+    return c.json({
+      ...record.rows[0],
+      nodes: nodes.rows.map((node) => ({ ...node, label: labelOf(node) })),
+    });
   })
   .get("/scopes", async (c) => {
     const result = await db().query(
@@ -144,25 +168,6 @@ const app = new Hono()
       nodes: nodes.rows.map((node) => ({ ...node, label: labelOf(node) })),
       refs: refs.rows,
     });
-  })
-  .post("/search", zValidator("json", searchSchema), async (c) => {
-    const body = c.req.valid("json");
-    const client = db();
-    const polarity: Polarity | undefined = body.onlyDont ? "dont" : undefined;
-    const found = await search(client, env, {
-      question: body.question,
-      scopeIds: body.scopeIds,
-      polarity,
-      kinds: body.kinds,
-      limit: body.limit,
-    });
-    await logSearch(client, {
-      source: "dashboard",
-      scopeId: body.scopeIds?.[0] ?? null,
-      question: body.question,
-      result: found,
-    });
-    return c.json(found.rows.map((row) => ({ ...row, id: Number(row.id), label: labelOf(row) })));
   });
 
 export default app;
