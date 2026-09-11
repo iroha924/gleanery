@@ -40,6 +40,22 @@ Skill・Agent・rule自体を新規作成するときは、Claude Codeでは既�
 `skill-creator`を使う。一般的なexplorer / workerと重なるrepo Agentは作らず、独立contextや固定modelが
 結果を変える専門検査だけをAgentにする。
 
+## branchとPR
+
+PRの要否はfile数ではなく影響面で決める。次をすべて満たす変更はmainへ直接入れてよい。
+
+- 本番の実行時動作、データ、認証、secret、build・deploy、利用者向けplugin配布物を変えない
+- 1 commitのrevertで戻せる
+- commit前にdiffを最初から最後まで読み、対象に応じた検査を通した
+
+例は文書、repository開発用の`.agents/skills/`・`.claude/`、test・evalの追加、意図した実行時動作を
+変えない内部整理である。AIの読込経路を変えた場合は`verify:ai`に加えClaude CodeとCodexの新しい
+sessionで確認する。
+
+dashboard・Honoの実行時動作、DB migration・権限・データ変換、認証・secret、依存・build・CI・
+Vercel設定、`plugin/skills/`・`plugin/agents/`・MCP・CLIを変える場合はPRを使う。Previewでの確認が
+必要な変更と、影響範囲を即答できない変更もPRへ寄せる。
+
 ## 最小command索引
 
 ```bash
