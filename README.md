@@ -19,6 +19,7 @@
 | **聞く** | ダッシュボードのチャット | 自然文で PR・issue・発言・コードを横断して答える |
 | **探す** | ダッシュボードのセッション | 判断・制約・行き止まりを意味検索し、元のセッション詳細へ辿る |
 | **記録する** | `/mitos:trace` スキル | いまのセッションの判断を構造化して DB へ入れる |
+| **要件と設計を固める** | `/mitos:requirements` と `/mitos:design` スキル | 利用者にしか決められない選択を 1 問ずつ聞いて、要件定義と設計書を作る。承認したものだけが検索とセッション詳細に出る |
 | **現在地を知る** | MCP `current_work` / `/mitos:current` | いまどこまで進んでいて、次に何をやるか。質問は要らない |
 | **溜める** | `mitos sync`（毎日 6:00）と `/mitos:trace` | GitHub・Linear・Markdown は同期し、Claude Code / Codex の作業セッションは trace したものだけを残す |
 
@@ -65,6 +66,42 @@ GitHub・Linear・リポジトリ内の Markdown で、Claude Code / Codex の�
 
 再開は `/mitos:current`（人向けの要約）か MCP の `current_work`（AI が自分で呼ぶ）から。
 
+### 要件定義と設計書を作る
+
+mitos で作る理由は 2 つある。過去の判断（棄却した案、行き止まり、触らないと決めた制約）とコードを先に
+調べるので、そこから答えられることは人に聞かずに済む。承認した要件と設計は検索（`kinds: ["doc"]`）と
+セッション詳細から引けるので、「何を満たせば完了か」を次のセッションへ渡せる。
+
+```
+1. /mitos:init                  リポジトリの根に .mitos/ を作る（1 回だけ）
+2. /mitos:requirements <要望>    調べてから、利用者にしか決められない選択を 1 問ずつ聞く
+                                → 要件定義を書く → 独立 review → 承認
+3. /mitos:design <change の名前>  承認済みの要件から、トレードオフのある選択を 1 問ずつ聞く
+                                → 設計書を書く → REQ の突き合わせ → 独立 review → 承認
+4. /mitos:trace                 このセッションで作った・直した要件定義・設計書を、セッションと結ぶ
+5. commit してから同期           承認済みのものだけが検索とセッション詳細へ入る
+```
+
+trace が結ぶのは、作業ツリーで変更中か、セッション開始以降に commit された成果物のうち、そのセッションが
+操作したものだけである。前から commit 済みで変えていないものは、読んでも結ばない。日次同期でも入るのは、
+GitHub の remote があり、このマシンに置き場所を登録したリポジトリだけである。
+
+Codex では `$mitos:init`、`$mitos:requirements`、`$mitos:design` と明示する。3 つとも、両ホストで
+**明示的に起動したときだけ**動き、requirements から design へ、design から実装へは自動で進まない。
+Skill はナレッジ DB へ書かないので、同期は人が `mitos import-docs --cwd <リポジトリの根>` で行う
+（Skill が絶対パスの形で案内する）。
+
+成果物は `.mitos/changes/<change の名前>/` に `change.json`・`requirements.md`・`design.md` として置く。
+
+- **承認状態は `change.json` だけが持つ。**本文の書きぶりからは推測しない。承認は閉じた問いで取り、
+  最後の書き込みとして `approved` にする。承認済みを直すときは、本文を触る前に `draft` へ戻す
+- **draft は検索にもダッシュボードにも出ない。**過去の承認済みの成果物は `search_knowledge` に
+  `kinds: ["doc"]` を付けたときだけ返る（文書は既定の検索から外している）
+- `change.json` の形と状態は `mitos check` が検査する（DB に触らない）。Skill は書くたびに実行する
+- **`.mitos` を使う前に、日次同期を含む全ての同期経路の CLI を 0.10.32 以降にする。**旧版は選別を
+  知らないので、追跡済みの draft を通常の文書として取り込み、この版が作った原文に墓標を立てる
+  （新しい版で同期し直すまで、セッション詳細から成果物が消える）
+
 ### 1 セッションの流れ
 
 ```
@@ -105,7 +142,7 @@ bun run dev        # Hono API（:8787）+ Next.js（:3000）。**前面でだけ
 | 画面 | ルート | 何をするところ |
 |---|---|---|
 | **質問する** | `/` | チャット。履歴は残り、リンクは新規タブで開く |
-| **セッション** | `/sessions` | trace 済みセッションの一覧、意味検索・詳細な絞り込み、構造化した詳細、元のセッション ID・再開コマンドを確認する |
+| **セッション** | `/sessions` | trace 済みセッションの一覧、意味検索・詳細な絞り込み、構造化した詳細、元のセッション ID・再開コマンドを確認する。詳細の「成果物」で、そのセッションで作った・直した承認済みの要件定義・設計書を読む |
 | **記録** | `/records/:id` | 1 件の中身。決定 / 分かったこと / 確かめたこと / 未解決の問いをタブで、参照を末尾に |
 | **会議を聞き取る** | `/mtg` | 2 系統の音声を Realtime へ流して文字起こし |
 | **設定** | `/settings` | プロジェクト（作業場所の束ね方と issue の出どころ）と、社内語の辞書 |
@@ -178,8 +215,13 @@ mitos usage                                    OpenAI の使用量と残り
 | GitHub の PR・issue の本文、レビュー・議論 | GitHub App（dashboard）または`gh`（CLI） | **bot が作った PR も取り込む**（リリース PR がそれ） |
 | Linear の issue・コメント | **MCP をヘッドレスで叩く** | API キーが発行できない組織があるため。下記参照 |
 | Claude Code / Codex の作業セッション | `/mitos:trace` | trace を実行したセッションだけを、元のセッション ID と会話付きで取り込む |
-| リポジトリの Markdown | `git ls-files` | 見出しで節に割る。**symlink は辿らない** |
+| リポジトリの Markdown | `git ls-files` | 見出しで節に割る。**symlink は辿らない**。`.mitos/` 配下は `change.json` で approved の要件定義・設計書だけ |
 | 作業の判断 | `/mitos:trace` | 決定・捨てた案・制約・未解決。**ファイルではなく DB に入る** |
+
+**追跡済みの要件定義・設計書を持つ change の `change.json` が壊れていると、そのリポジトリの文書同期を丸ごと止める**
+（README や ADR も入らない）。止めるのは埋め込みと文書の書き込みの前なので、前回の同期結果はそのまま残る。
+理由は `mitos check` が path と一緒に出す（ファイルの中身は出さない）。`mitos check` はそれより広く、
+`project.json` と未追跡の change も見る。
 
 **issue の出どころはプロジェクトごとに違う**（GitHub / Linear / Jira）ので、ダッシュボードで設定する。
 
@@ -377,7 +419,7 @@ bun run setup      # server / dashboard の依存を固定 lockfile から入れ
 bun run dev        # API + ダッシュボード（**前面でだけ使う。**背景では TTY を取りにいって落ちる）
 bun run check      # biome + tsc（server / dashboard）
 bun run architecture # ダッシュボードのroute-local境界
-bun run test       # node:test
+bun run test       # node:test と trace の eval
 bun run verify     # check + test + Next.js の本番ビルド（pre-push / CI と同じ）
 bun run verify:ai  # AGENTS、repository開発Skill、plugin Skill・Agentの設定
 bun run eval       # 答えの正しさを測る
@@ -386,6 +428,10 @@ bun run bundle     # plugin/dist を作り直す
 
 **`bun run bundle` を忘れると、repository の `plugin/bin/mitos`（日次同期もこれを叩く）は古い `dist` のまま動く。**
 Claude Code と Codex へは、commit に入った `dist` が GitHub 経由で届く（pre-commit が bundle する）。
+
+**CLI・同期・plugin を変える作業は、別の git worktree で行う。**日次同期は `~/Projects/mitos` の作業ツリーの
+`plugin/bin/mitos` を叩くので、そこで branch を切ると、作業途中の `dist` で本番の DB へ書く。
+worktree から push しても、pre-push は git が hook へ渡す変数を消してから verify する（`lefthook.yml`）。
 
 ### AI開発環境
 
@@ -448,4 +494,7 @@ recall@5 は**機構の差と偶然の差を区別できない**（実測 2026-0
 | 資格情報・接続・Linear MCP の疎通 | `mitos doctor` |
 | DB の容量が上限に近くないか | `mitos doctor` の「DB の大きさ」行。**超えると書き込みが止まる**（「DB を置いている先」） |
 | 日次同期が走っていない | `~/.claude/mitos-sync.log` |
+| 文書の同期が `.mitos` の問題で止まる | `mitos check --cwd <リポジトリ>` が path と理由を出す。直すまで、そのリポジトリの文書は前回の同期のまま |
+| 承認した要件定義・設計書がセッション詳細に出ない | そのセッションを `/mitos:trace` したか、そのセッションで作った・直したものか（前から commit 済みで読んだだけのものは結ばれない）、成果物と `change.json` を commit して承認後に同期したか。表示される同期時点は、そのリポジトリの文書同期が最後に成功した時刻 |
+| Codex で `mitos:requirements` などが起動しない | `$mitos:requirements` のように明示する。3 つの Skill は暗黙には起動しない |
 | チャットの費用が気になる | `mitos usage`（キャッシュ済み入力は 10% で計上される） |
