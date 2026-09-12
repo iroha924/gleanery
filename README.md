@@ -157,6 +157,8 @@ mitos import-github [--cwd <dir>]              PR と issue の本体、レビ�
 mitos import-linear --team <名前> [--group <束>] [--all]
                                                Linear の issue とコメントを取り込む
 mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
+mitos init [--cwd <dir>]                       要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
+mitos check [--cwd <dir>]                      .mitos/ の change.json を検査する（DB に触らない）
 mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
 mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
                                                --yes は既に登録済みの場所を入れ替える）

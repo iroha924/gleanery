@@ -8,6 +8,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import type pg from "pg";
 import { z } from "zod";
+import { check, init } from "./artifacts.ts";
 import { connect, type Env, loadEnv } from "./db.ts";
 import { ingestDocs } from "./docs.ts";
 import { collect, ingestThreads } from "./github.ts";
@@ -34,6 +35,8 @@ const USAGE = `使い方:
   mitos import-linear --team <名前> [--group <束>] [--all]
                                                  Linear の issue とコメントを取り込む
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
+  mitos init [--cwd <dir>]                       要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
+  mitos check [--cwd <dir>]                      .mitos/ の change.json を検査する（DB に触らない）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
                                                  --yes は既に登録済みの場所を入れ替える）
@@ -371,8 +374,38 @@ async function main(): Promise<void> {
     "forget",
     "adopt",
     "advice",
+    "init",
+    "check",
   ];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
+
+  // **DB と資格情報に触る前に済ませる。**ローカルのファイルを見るだけなので、資格情報の無い環境でも動く。
+  if (cmd === "init" || cmd === "check") {
+    // 共通の OPTIONS は他のコマンド用の flag と位置引数も通すので、`--cwd` だけで解釈し直す。
+    // 位置引数も拒否させる — `mitos init <dir>` が黙って cwd を初期化しないように。
+    parseArgs({ args: argv.slice(1), options: { cwd: OPTIONS.cwd } });
+    if (cmd === "init") {
+      const r = init(cwd);
+      console.log(r.created ? `.mitos を作った: ${r.root}` : `.mitos は既に初期化済み: ${r.root}`);
+      if (r.created) {
+        console.log(
+          "※ 日次同期を含む全ての同期経路の mitos を、この版以降へ更新してから .mitos を使う。" +
+            "旧版は .mitos の選別を知らず、追跡済みの draft を通常の文書として取り込む",
+        );
+      }
+      return;
+    }
+    const r = check(cwd);
+    for (const p of r.problems) console.error(`  ${p.path}: ${p.reason}`);
+    if (r.problems.length) {
+      process.exitCode = 1;
+      console.error(`.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`);
+      return;
+    }
+    console.log(`.mitos の検査は通った: ${r.root}（change ${r.changes} 件）`);
+    return;
+  }
+
   const env = loadEnv(cwd);
 
   if (cmd === "doctor") {

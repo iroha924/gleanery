@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -64,5 +66,37 @@ test("引数なしと --help は使い方を出して成功する", () => {
     const r = run(...args);
     assert.equal(r.code, 0, `${args.join(" ")}: ${r.out}`);
     assert.match(r.out, /使い方:/);
+  }
+});
+
+test("init と check は資格情報の無い環境で動き、--cwd 以外の引数を拒否する", () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-cli-init-")));
+  try {
+    const first = run("init", "--cwd", dir);
+    assert.equal(first.code, 0, first.out);
+    assert.match(first.out, /\.mitos を作った/);
+    assert.match(run("init", "--cwd", dir).out, /既に初期化済み/);
+    const ok = run("check", "--cwd", dir);
+    assert.equal(ok.code, 0, ok.out);
+
+    // 位置引数は黙って捨てると、別の場所を初期化したつもりで cwd を扱う
+    for (const [bad, want] of [
+      [["init", "other", "--cwd", dir], /Unexpected argument 'other'/],
+      [["init", "--all", "--cwd", dir], /Unknown option '--all'/],
+      [["check", "--yes", "--cwd", dir], /Unknown option '--yes'/],
+      [["init", "--foo", "--cwd", dir], /Unknown option '--foo'/],
+    ] as const) {
+      const r = run(...bad);
+      assert.notEqual(r.code, 0, `${bad.join(" ")} が通ってしまう`);
+      assert.match(r.out, want, r.out);
+    }
+
+    fs.mkdirSync(path.join(dir, ".mitos/changes/a"));
+    fs.writeFileSync(path.join(dir, ".mitos/changes/a/change.json"), "{");
+    const broken = run("check", "--cwd", dir);
+    assert.equal(broken.code, 1, broken.out);
+    assert.match(broken.out, /change\.json: JSON として読めない/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });

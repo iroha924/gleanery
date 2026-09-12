@@ -118,7 +118,7 @@ if (cmd === 'cover') {
   for (const b of bad.slice(0, 8)) console.error(`    - ${b.where}: ${b.kind} ${b.ref}`);
   if (bad.length) console.error('    → 実在する識別子へ直すか、証拠から外す。書いた時点では在ったが消えたなら、その旨を note に残す');
   if (r.note) console.error(`! ${r.note}`);
-  console.error(r.ok ? '\n人が選んだ決定は全部入っている' : '\n人が選んだ決定が記録に無い。これは落としてはいけない');
+  console.error(r.ok ? '\n落としてはいけないものは全部入っている' : '\n落としてはいけないもの（✗）が記録に無い');
   process.exit(r.ok ? 0 : 1);
 }
 

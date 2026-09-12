@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type pg from "pg";
+import { type Artifact, selectArtifacts, underMitos } from "./artifacts.ts";
 import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
 
 export type Section = {
@@ -28,7 +29,15 @@ export type Section = {
   /** その文書を最後に触ったコミットの日時。未コミットなら null */
   at: string | null;
   ordinal: number;
+  /** 承認済みの要件定義・設計書の節なら、その種別と change */
+  artifact?: Artifact | undefined;
 };
+
+/**
+ * 承認済みの成果物の原文。**節を連結しても元の Markdown に戻らない**（見出しだけの節を落とす）ので、
+ * ダッシュボードで読ませる本文を別に 1 件持つ。検索しないので埋め込みも持たない。
+ */
+export type Source = { key: string; text: string; at: string | null; artifact: Artifact };
 
 /**
  * 1 つの節の上限。**超えたぶんは捨てずに続きの節へ回す。**
@@ -227,6 +236,47 @@ const subkindOf = (rel: string): string =>
 
 const CHUNK = 200;
 
+/**
+ * 読んだ本文を node の形へ投影する。**`.mitos` 配下は承認済みの成果物だけを入れ**、成果物には検索用の節に加えて
+ * 原文を 1 件置く。原文の key は path そのもの — 節の key は必ず `#` を含み、成果物の path は含まないので交わらない
+ * （`#@...` のような接尾辞は、見出し slug が `@` を除かないので `## @...` の節と衝突する）。
+ */
+export function projectDocs(
+  bodies: Map<string, string>,
+  include: Map<string, Artifact>,
+  at: Map<string, string>,
+): { sections: Section[]; sources: Source[] } {
+  const all: Section[] = [];
+  const sources: Source[] = [];
+  for (const [rel, body] of bodies) {
+    const artifact = include.get(rel);
+    if (underMitos(rel) && !artifact) continue;
+    for (const s of sections(rel, body))
+      all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length, artifact });
+    if (artifact) sources.push({ key: rel, text: body, at: at.get(rel) ?? null, artifact });
+  }
+  return { sections: all, sources };
+}
+
+/**
+ * 埋め込みを取り直す節。**原文は受け取らない**（検索しないので埋め込みも持たない）。
+ * `existing` には墓標の行も入れる — draft へ戻してから再び承認した節は、本文が同じなら取り直さない。
+ */
+export const needEmbedding = (
+  all: Section[],
+  existing: Map<string, { content_hash: string; has_emb: boolean }>,
+): Section[] =>
+  all.filter((s) => {
+    const old = existing.get(s.key);
+    return !old || old.content_hash !== hash(sectionText(s)) || !old.has_emb;
+  });
+
+/** 墓標を立てずに残す key。**原文の key を落とすと、挿入した直後に soft delete される。** */
+export const liveKeys = (p: { sections: Section[]; sources: Source[] }): string[] => [
+  ...p.sections.map((s) => s.key),
+  ...p.sources.map((s) => s.key),
+];
+
 /** リポジトリ 1 つぶん。**docs は 1 記録**にして、どの文書かは node の key が持つ。 */
 export async function ingestDocs(
   client: pg.Client,
@@ -240,41 +290,41 @@ export async function ingestDocs(
   const recordId = `docs:${ident}`;
   const { files, symlinks } = markdownFiles(dir);
   const at = lastTouched(dir);
-  const all: Section[] = [];
+  const bodies = new Map<string, string>();
   for (const rel of files) {
-    let body: string;
     try {
-      body = fs.readFileSync(path.join(dir, rel), "utf8");
+      bodies.set(rel, fs.readFileSync(path.join(dir, rel), "utf8"));
     } catch {
       // 読めるとしたものが読めなかった。列挙と読み取りの間に消えた場合。
-      continue;
     }
-    for (const s of sections(rel, body)) all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
   }
+  // **本文を読み終えてから manifest を読む。**再編集は draft を書いてから本文を触るので、この順なら
+  // 編集中の本文は必ず draft として外れる。**不正なら埋め込みと DB 書き込みの前に止める** —
+  // どれが承認済みかを決められないまま、前回の状態を壊さない。
+  const { include, problems } = selectArtifacts(dir, [...bodies.keys()]);
+  if (problems.length) {
+    throw new Error(
+      `${label} の .mitos が不正なので、このリポジトリの文書を同期しない（前回の状態を保つ）:\n` +
+        problems.map((p) => `  ${p.path}: ${p.reason}`).join("\n"),
+    );
+  }
+  const projected = projectDocs(bodies, include, at);
+  const { sections: all, sources } = projected;
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
-  // **0 件でも早く返さない。**文書を全部消したとき（README を廃止して DB へ移した等）に
-  // ここで戻ると墓標を立てる処理へ到達せず、撤回した記述が永久に検索で返る。
-  // 空の `all` はそのまま流れて、末尾の `not (key = any('{}'))` が全件に当たる。
-  await client.query(
-    `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
-     values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
-     on conflict (id) do update set updated_at = now(), ingested_at = now()`,
-    [recordId, scopeId, `${label} の文書`],
-  );
 
+  // 墓標の行も読む（needEmbedding の説明を参照）。
   const existing = new Map(
     (
       await client.query<{ key: string; content_hash: string; has_emb: boolean }>(
-        "select key, content_hash, embedding is not null as has_emb from node where record_id=$1 and deleted_at is null",
+        "select key, content_hash, embedding is not null as has_emb from node where record_id=$1",
         [recordId],
       )
     ).rows.map((r) => [r.key, r]),
   );
-  const need = all.filter((s) => {
-    const old = existing.get(s.key);
-    return !old || old.content_hash !== hash(sectionText(s)) || !old.has_emb;
-  });
-  onProgress?.(`文書 ${files.length} 本 / 節 ${all.length} 件 / 埋め込みを取り直す ${need.length} 件`);
+  const need = needEmbedding(all, existing);
+  onProgress?.(
+    `文書 ${bodies.size} 本 / 節 ${all.length} 件 / 承認済みの成果物 ${sources.length} 本 / 埋め込みを取り直す ${need.length} 件`,
+  );
 
   const byKey = new Map<string, number[] | undefined>();
   for (let from = 0; from < need.length; from += CHUNK) {
@@ -284,51 +334,106 @@ export async function ingestDocs(
     onProgress?.(`  ${Math.min(from + CHUNK, need.length)} / ${need.length} 件を埋め込み`);
   }
 
+  const put = (n: {
+    subkind: string;
+    key: string;
+    ordinal: number;
+    at: string | null;
+    text: string;
+    attrs: Record<string, unknown>;
+    contentHash: string;
+    searchable: boolean;
+    embedText: string | null;
+    vector: number[] | undefined;
+  }) =>
+    client.query(
+      `insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
+                         actor_kind, content_hash, searchable, embed_text, embed_model, embedded_at, embedding)
+       values ($1,$2,'doc',$3,$4,$5,$6,$7,'na',$8,'unknown',$9,$10,$11,$12,$13,$14)
+       on conflict (record_id, kind, key) do update set
+         subkind=excluded.subkind, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
+         content_hash=excluded.content_hash, searchable=excluded.searchable, deleted_at=null,
+         embed_text=coalesce(excluded.embed_text, node.embed_text),
+         embed_model=coalesce(excluded.embed_model, node.embed_model),
+         embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
+         embedding=coalesce(excluded.embedding, node.embedding)`,
+      [
+        recordId,
+        scopeId,
+        n.subkind,
+        n.key,
+        n.ordinal,
+        n.at,
+        n.text,
+        JSON.stringify(n.attrs),
+        n.contentHash,
+        n.searchable,
+        n.embedText,
+        n.vector ? EMBED_MODEL : null,
+        n.vector ? new Date().toISOString() : null,
+        vec(n.vector),
+      ],
+    );
+
   await client.query("begin");
   try {
+    // **0 件でも早く返さない。**文書を全部消したとき（README を廃止して DB へ移した等）に
+    // 戻ると墓標を立てる処理へ到達せず、撤回した記述が永久に検索で返る。
+    // **record も transaction の中で書く。**外で書くと、埋め込みや取り込みが失敗しても ingested_at だけが進み、
+    // それを同期時点として出す画面が、入っていない本文を同期済みと表示する。
+    await client.query(
+      `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
+       values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
+       on conflict (id) do update set updated_at = now(), ingested_at = now()`,
+      [recordId, scopeId, `${label} の文書`],
+    );
     for (const s of all) {
       const v = byKey.get(s.key);
-      await client.query(
-        `insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
-                           actor_kind, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'doc',$3,$4,$5,$6,$7,'na',$8,'unknown',$9,$10,$11,$12,$13)
-         on conflict (record_id, kind, key) do update set
-           subkind=excluded.subkind, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
-           content_hash=excluded.content_hash, deleted_at=null,
-           embed_text=coalesce(excluded.embed_text, node.embed_text),
-           embed_model=coalesce(excluded.embed_model, node.embed_model),
-           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
-           embedding=coalesce(excluded.embedding, node.embedding)`,
-        [
-          recordId,
-          scopeId,
-          subkindOf(s.path),
-          s.key,
-          s.ordinal,
-          s.at,
-          s.text,
-          JSON.stringify({ path: s.path, title: s.title, trail: s.trail }),
-          hash(sectionText(s)),
-          v ? sectionText(s) : null,
-          v ? EMBED_MODEL : null,
-          v ? new Date().toISOString() : null,
-          vec(v),
-        ],
-      );
+      await put({
+        subkind: subkindOf(s.path),
+        key: s.key,
+        ordinal: s.ordinal,
+        at: s.at,
+        text: s.text,
+        attrs: {
+          path: s.path,
+          title: s.title,
+          trail: s.trail,
+          ...(s.artifact ? { artifact: s.artifact } : {}),
+        },
+        contentHash: hash(sectionText(s)),
+        searchable: true,
+        embedText: v ? sectionText(s) : null,
+        vector: v,
+      });
+    }
+    for (const s of sources) {
+      await put({
+        subkind: "artifact-source",
+        key: s.key,
+        ordinal: 0,
+        at: s.at,
+        text: s.text,
+        attrs: { path: s.key, title: path.basename(s.key), trail: s.key, artifact: s.artifact },
+        contentHash: hash(s.text),
+        searchable: false,
+        embedText: null,
+        vector: undefined,
+      });
     }
     // **消えた節を残さない。**文書は上書きで編集されるので、節を消して書き直すと
     // 古い本文が DB に残り続け、撤回した記述が検索で返る。PR や会話は追記しか
-    // されないのでこの手当てが要らなかったが、文書には要る。
+    // されないのでこの手当てが要らなかったが、文書には要る。承認を外した成果物もここで消える。
     const gone = await client.query<{ n: string }>(
       `update node set deleted_at = now()
        where record_id = $1 and kind = 'doc' and deleted_at is null and not (key = any($2))
        returning 1 as n`,
-      [recordId, all.map((s) => s.key)],
+      [recordId, liveKeys(projected)],
     );
     await client.query("commit");
-    return `${label} / 文書 ${files.length} 本・節 ${all.length} 件（埋め込み ${need.length} 件${
-      gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""
-    }）${skipped}`;
+    return `${label} / 文書 ${bodies.size} 本・節 ${all.length} 件（埋め込み ${need.length} 件${
+      sources.length ? ` / 承認済みの成果物 ${sources.length} 本` : ""
+    }${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}）${skipped}`;
   } catch (e) {
     await client.query("rollback").catch(() => {});
     throw e;

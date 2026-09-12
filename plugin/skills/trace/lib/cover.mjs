@@ -64,7 +64,7 @@ export function cover(digest, ir) {
   const hit = (s) => Boolean(s) && (blob.includes(s) || keyed.includes(s));
   const groups = [];
 
-  // 人が選んだ決定。**これだけは落としてはいけない**ので、唯一の違反にする。
+  // 人が選んだ決定。**落としてはいけない**ので違反にする。
   // 選択肢とトレードオフを見せたうえで人が選んだ記録は、他のどこにも復元できない。
   const choices = digest.choices || [];
   const choiceMiss = choices.filter((c) => {
@@ -78,7 +78,19 @@ export function cover(digest, ir) {
     fix: 'decisions へ移す。問いを context に、選択肢と説明を options に、回答を chosen にする',
   });
 
-  const files = (digest.git?.changed || []).map((c) => c.path).filter((p) => !NOISE.test(p));
+  // このセッションが触れた要件定義と設計書。`links.files` の要素と完全一致で見る — 取り込みで
+  // touched の辺になるのはそこだけで、本文や evidence に書いてあっても結ばれない。
+  const linked = new Set(ir.links?.files ?? []);
+  const artifacts = digest.artifacts || [];
+  groups.push({
+    id: 'artifacts', label: 'このセッションが触れた要件定義・設計書', blocking: true,
+    total: artifacts.length, missing: artifacts.filter((p) => !linked.has(p)),
+    fix: 'progress sessionize をやり直す（links.files へ機械的に入る）。path を手で書かない',
+  });
+
+  // `.mitos/` 配下は出さない。下の直し方どおり `.mitos/changes/` を links.files へ手で書くと、別セッションの作業
+  // との関連が消えずに残る（成果物以外の change.json や、畳まれた未追跡ディレクトリも同じ）。成果物は上で扱う。
+  const files = (digest.git?.changed || []).map((c) => c.path).filter((p) => !NOISE.test(p) && !p.startsWith('.mitos/'));
   groups.push({
     id: 'files', label: '変更したファイル', blocking: false,
     total: files.length, missing: files.filter((p) => !hit(p) && !hit(p.replace(/\/[^/]*$/, ''))),
@@ -105,6 +117,8 @@ export function cover(digest, ir) {
   const notes = [];
   if (failed > 0 && deadEnds === 0) notes.push(`失敗したコマンドが ${failed} 件あるが、駄目だった道の記録が 0 件。打ち間違いだけなら問題ない`);
   if (agents > 0) notes.push(`サブエージェントを ${agents} 体起動している。何を調べさせ何が分かったかが記録に要るか確かめる`);
+  // 取れなかったことを「成果物は無い」と読ませない。必須の検査がここで素通りしている。
+  if (digest.artifacts === null) notes.push('要件定義・設計書の候補を git から取れなかった。links.files に入っているかを目で確かめる');
   const note = notes.length ? notes.join(' / ') : null;
 
   const blocked = groups.filter((g) => g.blocking && g.missing.length > 0);

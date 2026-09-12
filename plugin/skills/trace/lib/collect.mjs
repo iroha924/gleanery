@@ -11,6 +11,9 @@ import { execFileSync } from 'node:child_process';
 
 const HOME = os.homedir();
 
+/** 要件定義と設計書の path。server/src/artifacts.ts の ARTIFACT_PATH と同じ形（scripts/check-pairs.mjs が突き合わせる）。 */
+export const ARTIFACT = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+
 const readLines = function* (file) {
   // 42MB の transcript でも一度に読んで問題ない（実測 0.1 秒）。
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
@@ -147,6 +150,10 @@ function collectClaude(file) {
         d.toolCounts[b.name] = (d.toolCounts[b.name] || 0) + 1;
         pending.set(b.id, { name: b.name, input: b.input || {}, at: o.timestamp });
         const i = b.input || {};
+        // 所属判定に使うのは操作対象だけ（ファイル系ツールの path 引数とシェルの命令）。
+        // 書き込む本文や Agent への指示に path を引用しただけのものを入れると、別 change の成果物を結び、
+        // その関連は取り込み直しても消えない。
+        for (const v of [i.file_path, i.notebook_path, i.path, i.command]) if (typeof v === 'string') d.inputs.push(v);
         if (i.file_path) touch(d, i.file_path, b.name);
         if (b.name === 'WebFetch' || b.name === 'WebSearch') push(d.urls, String(i.url || i.query || '').slice(0, 300));
         if (b.name === 'Agent') push(d.agents, String(i.description || i.subagent_type || '').slice(0, 120));
@@ -211,6 +218,7 @@ function collectCodex(file) {
       // 動的に組み立てられた命令まで追おうとすると、塞ぐ面に終端が無くなる。
       // input そのものが「何を実行したか」の記録なので、そのまま残す。
       if (p.type === 'custom_tool_call') {
+        d.inputs.push(String(p.input ?? ''));
         d.toolCounts[p.name] = (d.toolCounts[p.name] || 0) + 1;
         d.commands.push({
           at: o.timestamp,
@@ -224,6 +232,8 @@ function collectCodex(file) {
         d.toolCounts[p.name] = (d.toolCounts[p.name] || 0) + 1;
         let args = {};
         try { args = JSON.parse(p.arguments || '{}'); } catch { /* 引数が読めなくても記録は続ける */ }
+        // cmd は exec_command の命令、code は js のコード片。spawn_agent などへの指示文は入れない。
+        for (const v of [[].concat(args.command ?? []).join(' '), args.cmd, args.code, args.path, args.file_path]) if (typeof v === 'string' && v) d.inputs.push(v);
         if (args.command) {
           d.commands.push({
             at: o.timestamp,
@@ -243,6 +253,7 @@ function collectCodex(file) {
 const blank = (host, file) => ({
   host, transcript: file, sessionId: null, cwd: null, branch: null, from: null, to: null,
   messages: [], userMessages: [], notifications: 0, compactions: 0, choices: [], commands: [], files: {}, urls: [], agents: [], toolCounts: {},
+  inputs: [],
 });
 const push = (a, v) => { if (v && !a.includes(v)) a.push(v); };
 const addUserText = (d, entry, text) => {
@@ -289,8 +300,23 @@ function finish(d) {
 export function gitState(cwd, since) {
   const git = (...a) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   try { git('rev-parse', '--git-dir'); } catch { return null; }
-  const out = { branch: null, changed: [], commits: [] };
+  const out = { branch: null, changed: [], commits: [], artifactCandidates: [] };
   try { out.branch = git('rev-parse', '--abbrev-ref', 'HEAD').trim(); } catch { /* detached HEAD でも続ける */ }
+  // 要件定義と設計書は、下の status では足りない。-uall が無いと未追跡の `.mitos/` が 1 行に畳まれ、
+  // commit 後は status から消える。作業ツリーとセッション開始以降の commit の両方から候補を取る。
+  // `:/` を付けるので、cwd がサブディレクトリでも根から取れる。
+  // **作業ツリーを取れなかったら null にする。**空配列は「成果物は無い」と読まれ、必須の検査が素通りする。
+  // log は別に取る — 1 度も commit していないリポジトリでは失敗するが、それは「commit が無い」だけである。
+  let status = null;
+  let logged = [];
+  try {
+    status = git('status', '--porcelain', '-uall', '--no-renames', '--', ':/.mitos/changes')
+      .split('\n').filter(Boolean).map((l) => l.slice(3));
+  } catch { /* 下で null のまま返す */ }
+  try {
+    if (since) logged = git('log', `--since=${since}`, '--format=', '--name-only', '--', ':/.mitos/changes').split('\n').filter(Boolean);
+  } catch { /* commit が無い */ }
+  out.artifactCandidates = status === null ? null : [...new Set([...status, ...logged])].filter((p) => ARTIFACT.test(p)).sort();
   try {
     out.changed = git('status', '--porcelain')
       .split('\n').filter(Boolean)
@@ -310,5 +336,19 @@ export function gitState(cwd, since) {
 export function collect(file, host, cwd) {
   const d = host === 'codex' ? collectCodex(file) : collectClaude(file);
   d.git = gitState(cwd || d.cwd || process.cwd(), d.from);
+  // **このセッションが触れた成果物だけにする。**git の候補は他のセッションの変更も含むので、
+  // 操作対象（上の d.inputs）に path が出るものだけを残す。有限の候補への包含判定で、シェルの構文解析ではない。
+  // tool_result は見ない — `git status` の出力に他セッションの成果物が出ただけで結ばれる。
+  // git 管理外なら成果物は無い（同期は git が追うものしか読まない）。git はあるのに取れなければ null。
+  const candidates = d.git === null ? [] : d.git.artifactCandidates;
+  const inputs = d.inputs.map(patchHeadersOnly);
+  d.artifacts = candidates === null ? null : candidates.filter((p) => inputs.some((s) => s.includes(p)));
+  delete d.inputs;
   return d;
 }
+
+// patch の本文は書き込む中身なので、操作対象からはファイル見出しだけを残す（Claude 側の path 引数と揃える）。
+// Codex は patch を exec の JavaScript に文字列で埋め込むことが多く、そのときの改行は `\n` のエスケープである。
+const PATCH = /\*\*\* Begin Patch[\s\S]*?(?:\*\*\* End Patch|$)/g;
+const PATCH_HEADER = /(?<=^|\n|\\n)\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)(?=\\n|\n|$)/g;
+const patchHeadersOnly = (s) => s.replace(PATCH, (patch) => [...patch.matchAll(PATCH_HEADER)].map((m) => m[1]).join('\n'));

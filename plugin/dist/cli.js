@@ -537,7 +537,7 @@ var require_textParsers = __commonJS(function(exports, module) {
     result.radius = parseFloat(radius);
     return result;
   };
-  var init = function(register) {
+  var init2 = function(register) {
     register(20, parseBigInteger);
     register(21, parseInteger);
     register(23, parseInteger);
@@ -584,7 +584,7 @@ var require_textParsers = __commonJS(function(exports, module) {
     register(1270, parseStringArray);
   };
   module.exports = {
-    init
+    init: init2
   };
 });
 
@@ -841,7 +841,7 @@ var require_binaryParsers = __commonJS(function(exports, module) {
       return null;
     return parseBits(value, 8) > 0;
   };
-  var init = function(register) {
+  var init2 = function(register) {
     register(20, parseInt64);
     register(21, parseInt16);
     register(23, parseInt32);
@@ -860,7 +860,7 @@ var require_binaryParsers = __commonJS(function(exports, module) {
     register(25, parseText);
   };
   module.exports = {
-    init
+    init: init2
   };
 });
 
@@ -1331,12 +1331,12 @@ var require_sasl = __commonJS(function(exports, module) {
   }
   var DEFAULT_MAX_SCRAM_ITERATIONS = 1e5;
   function startSession(mechanisms, stream, scramMaxIterations = DEFAULT_MAX_SCRAM_ITERATIONS) {
-    const candidates = ["SCRAM-SHA-256"];
+    const candidates2 = ["SCRAM-SHA-256"];
     if (stream)
-      candidates.unshift("SCRAM-SHA-256-PLUS");
-    const mechanism = candidates.find((candidate) => mechanisms.includes(candidate));
+      candidates2.unshift("SCRAM-SHA-256-PLUS");
+    const mechanism = candidates2.find((candidate) => mechanisms.includes(candidate));
     if (!mechanism) {
-      throw new Error("SASL: Only mechanism(s) " + candidates.join(" and ") + " are supported");
+      throw new Error("SASL: Only mechanism(s) " + candidates2.join(" and ") + " are supported");
     }
     if (mechanism === "SCRAM-SHA-256-PLUS" && typeof stream.getPeerCertificate !== "function") {
       throw new Error("SASL: Mechanism SCRAM-SHA-256-PLUS requires a certificate");
@@ -1590,15 +1590,15 @@ var require_pg_connection_string = __commonJS(function(exports, module) {
     if (config2.sslnegotiation === "direct" && config2.ssl === undefined) {
       config2.ssl = true;
     }
-    const fs = config2.sslcert || config2.sslkey || config2.sslrootcert ? __require("fs") : null;
+    const fs3 = config2.sslcert || config2.sslkey || config2.sslrootcert ? __require("fs") : null;
     if (config2.sslcert) {
-      config2.ssl.cert = fs.readFileSync(config2.sslcert).toString();
+      config2.ssl.cert = fs3.readFileSync(config2.sslcert).toString();
     }
     if (config2.sslkey) {
-      config2.ssl.key = fs.readFileSync(config2.sslkey).toString();
+      config2.ssl.key = fs3.readFileSync(config2.sslkey).toString();
     }
     if (config2.sslrootcert) {
-      config2.ssl.ca = fs.readFileSync(config2.sslrootcert).toString();
+      config2.ssl.ca = fs3.readFileSync(config2.sslrootcert).toString();
     }
     if (options.useLibpqCompat && config2.uselibpqcompat) {
       throw new Error("Both useLibpqCompat and uselibpqcompat are set. Please use only one of them.");
@@ -3316,7 +3316,7 @@ var require_split2 = __commonJS(function(exports, module) {
 
 // server/node_modules/pgpass/lib/helper.js
 var require_helper = __commonJS(function(exports, module) {
-  var path = __require("path");
+  var path3 = __require("path");
   var Stream = __require("stream").Stream;
   var split = require_split2();
   var util = __require("util");
@@ -3356,7 +3356,7 @@ var require_helper = __commonJS(function(exports, module) {
   };
   exports.getFileName = function(rawEnv) {
     var env = rawEnv || process.env;
-    var file2 = env.PGPASSFILE || (isWin ? path.join(env.APPDATA || "./", "postgresql", "pgpass.conf") : path.join(env.HOME || "./", ".pgpass"));
+    var file2 = env.PGPASSFILE || (isWin ? path3.join(env.APPDATA || "./", "postgresql", "pgpass.conf") : path3.join(env.HOME || "./", ".pgpass"));
     return file2;
   };
   exports.usePgPass = function(stats, fname) {
@@ -3480,16 +3480,16 @@ var require_helper = __commonJS(function(exports, module) {
 
 // server/node_modules/pgpass/lib/index.js
 var require_lib = __commonJS(function(exports, module) {
-  var path = __require("path");
-  var fs = __require("fs");
+  var path3 = __require("path");
+  var fs3 = __require("fs");
   var helper = require_helper();
   module.exports = function(connInfo, cb) {
     var file2 = helper.getFileName();
-    fs.stat(file2, function(err, stat) {
+    fs3.stat(file2, function(err, stat) {
       if (err || !helper.usePgPass(stat, file2)) {
         return cb(undefined);
       }
-      var st = fs.createReadStream(file2);
+      var st = fs3.createReadStream(file2);
       helper.getPassword(connInfo, st, cb);
     });
   };
@@ -5105,9 +5105,9 @@ var require_x509_transport_state = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
-import fs7 from "node:fs";
+import fs8 from "node:fs";
 import os5 from "node:os";
-import path8 from "node:path";
+import path9 from "node:path";
 import { parseArgs } from "node:util";
 
 // server/node_modules/zod/v4/classic/external.js
@@ -23699,10 +23699,298 @@ function bigint3(params) {
 function date4(params) {
   return _coercedDate(ZodDate, params);
 }
-// server/src/db.ts
+// server/src/artifacts.ts
+import { execFileSync as execFileSync2 } from "node:child_process";
+import fs2 from "node:fs";
+import path2 from "node:path";
+
+// server/src/scope.ts
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+var HOME = os.homedir();
+function normalizeRemote(url2) {
+  if (!url2)
+    return null;
+  const raw = String(url2).trim();
+  if (!raw)
+    return null;
+  const scp = raw.match(/^(?:[^@/]+@)?([^:/]+):(?!\/)(.+?)(?:\.git)?$/);
+  if (scp)
+    return `${scp[1]}/${scp[2]}`;
+  try {
+    const u = new URL(raw);
+    if (!u.hostname)
+      return null;
+    const path2 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
+    return path2 ? `${u.hostname}/${path2}` : u.hostname;
+  } catch {
+    return null;
+  }
+}
+function identify(dir) {
+  const given = path.resolve(dir);
+  const git = (...args) => {
+    try {
+      return execFileSync("git", ["-C", given, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"]
+      }).trim();
+    } catch {
+      return null;
+    }
+  };
+  const remote = normalizeRemote(git("remote", "get-url", "origin"));
+  const top = git("rev-parse", "--show-toplevel");
+  const abs = top || given;
+  const rest = remote ? remote.split("/").slice(1) : [];
+  return {
+    ident: remote ? `git:${remote}` : `path:${abs}`,
+    identKind: remote ? "git-remote" : "abs-path",
+    absPath: abs,
+    hostOrg: rest.length > 1 ? rest[0] ?? null : null,
+    repoName: rest.length ? rest[rest.length - 1] ?? "" : path.basename(abs),
+    label: remote ? rest.join("/") : path.basename(abs)
+  };
+}
+var MARKERS = [
+  "package.json",
+  "pyproject.toml",
+  "go.mod",
+  "Cargo.toml",
+  "Gemfile",
+  "dbt_project.yml",
+  "Dockerfile",
+  "docker-compose.yml",
+  "main.tf",
+  "Chart.yaml",
+  "kustomization.yaml",
+  "next.config.js",
+  "requirements.txt",
+  "README.md"
+];
+function candidates(roots = [path.join(HOME, "Projects")]) {
+  const found = new Set;
+  const add = (d) => {
+    if (!found.has(d) && fs.existsSync(d) && fs.statSync(d).isDirectory())
+      found.add(d);
+  };
+  for (const root of roots) {
+    let es = [];
+    try {
+      es = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of es)
+      if (e.isDirectory() && !e.name.startsWith("."))
+        add(path.join(root, e.name));
+  }
+  return [...found].sort().map((d) => ({
+    ...identify(d),
+    markers: MARKERS.filter((m) => fs.existsSync(path.join(d, m)))
+  }));
+}
+var HOST = os.hostname();
+async function rememberPath(client, scopeId, absPath, { replace = false } = {}) {
+  const r = await client.query(replace ? `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+         on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()` : `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
+         on conflict (scope_id, host) do update set seen_at = now()
+         where scope_path.abs_path = excluded.abs_path`, [scopeId, HOST, absPath]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+// server/src/artifacts.ts
+var MITOS = ".mitos";
+var CHANGES = ".mitos/changes";
+var SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+var ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+var MAX_MANIFEST = 64 * 1024;
+var projectSchema = exports_external.object({ schema: exports_external.literal("mitos/project/1") }).strict();
+var phase = exports_external.object({ status: exports_external.enum(["draft", "approved"]) }).strict();
+var changeSchema = exports_external.object({
+  schema: exports_external.literal("mitos/change/1"),
+  title: exports_external.string().trim().min(1).max(200),
+  requirements: phase.optional(),
+  design: phase.optional()
+}).strict().superRefine((c, ctx) => {
+  if (c.design && !c.requirements) {
+    ctx.addIssue({ code: "custom", message: "requirements が無いのに design がある" });
+  }
+  if (c.design?.status === "approved" && c.requirements?.status !== "approved") {
+    ctx.addIssue({ code: "custom", message: "requirements が approved でないのに design が approved" });
+  }
+});
+var kindOf = (full) => {
+  const st = fs2.lstatSync(full, { throwIfNoEntry: false });
+  if (!st)
+    return null;
+  return st.isDirectory() ? "dir" : st.isFile() ? "file" : "other";
+};
+function readJson(root, rel) {
+  const full = path2.join(root, rel);
+  const st = fs2.lstatSync(full, { throwIfNoEntry: false });
+  if (!st)
+    return { reason: "無い" };
+  if (!st.isFile())
+    return { reason: "通常のファイルではない（symlink も受け付けない）" };
+  if (st.size > MAX_MANIFEST)
+    return { reason: `大きすぎる（${MAX_MANIFEST} bytes まで）` };
+  try {
+    return { value: JSON.parse(fs2.readFileSync(full, "utf8")) };
+  } catch {
+    return { reason: "JSON として読めない" };
+  }
+}
+var zodReason = (e) => e.issues.map((i) => `${i.path.join(".") || "(根)"}: ${i.code === "custom" ? i.message : i.code}`).join(" / ");
+function trackedChanges(root) {
+  try {
+    const out = execFileSync2("git", ["-C", root, "ls-files", "-z", "--", CHANGES], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return new Set(out.split("\x00").filter(Boolean));
+  } catch {
+    return null;
+  }
+}
+function inspectChange(root, slug, tracked) {
+  const dir = `${CHANGES}/${slug}`;
+  const problems = [];
+  if (!SLUG.test(slug))
+    return {
+      change: null,
+      problems: [
+        {
+          path: `${CHANGES}/${JSON.stringify(slug).replace(/[^\x20-\x7e]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`)}`,
+          reason: "change の名前は小文字英数字とハイフンだけにする"
+        }
+      ]
+    };
+  if (kindOf(path2.join(root, dir)) !== "dir") {
+    return {
+      change: null,
+      problems: [{ path: dir, reason: "ディレクトリではない（symlink も受け付けない）" }]
+    };
+  }
+  const manifest = `${dir}/change.json`;
+  const read = readJson(root, manifest);
+  if ("reason" in read)
+    return { change: null, problems: [{ path: manifest, reason: read.reason }] };
+  const parsed = changeSchema.safeParse(read.value);
+  if (!parsed.success)
+    return { change: null, problems: [{ path: manifest, reason: zodReason(parsed.error) }] };
+  for (const kind of ["requirements", "design"]) {
+    const md = `${dir}/${kind}.md`;
+    const exists = kindOf(path2.join(root, md));
+    if (exists !== null && exists !== "file")
+      problems.push({ path: md, reason: "通常のファイルではない（symlink も受け付けない）" });
+    if (exists !== null && !parsed.data[kind])
+      problems.push({ path: manifest, reason: `${kind}.md があるのに ${kind} のキーが無い` });
+    if (tracked?.has(md) && !tracked.has(manifest))
+      problems.push({ path: manifest, reason: `追跡済みの ${kind}.md に対して未追跡` });
+  }
+  return { change: parsed.data, problems };
+}
+function inspectRoot(root) {
+  for (const rel of [MITOS, CHANGES]) {
+    const kind = kindOf(path2.join(root, rel));
+    if (kind === null)
+      return [{ path: rel, reason: "無い（mitos init を実行する）" }];
+    if (kind !== "dir")
+      return [{ path: rel, reason: "ディレクトリではない（symlink も受け付けない）" }];
+  }
+  return [];
+}
+function check2(dir) {
+  const root = identify(dir).absPath;
+  const rootProblems = inspectRoot(root);
+  if (rootProblems.length)
+    return { root, changes: 0, problems: rootProblems };
+  const problems = [];
+  const project = readJson(root, `${MITOS}/project.json`);
+  if ("reason" in project)
+    problems.push({ path: `${MITOS}/project.json`, reason: project.reason });
+  else {
+    const parsed = projectSchema.safeParse(project.value);
+    if (!parsed.success)
+      problems.push({ path: `${MITOS}/project.json`, reason: zodReason(parsed.error) });
+  }
+  const tracked = trackedChanges(root);
+  const slugs = fs2.readdirSync(path2.join(root, CHANGES)).filter((name) => !name.startsWith("."));
+  for (const slug of slugs)
+    problems.push(...inspectChange(root, slug, tracked).problems);
+  return { root, changes: slugs.length, problems };
+}
+function selectArtifacts(root, files) {
+  const include = new Map;
+  const bySlug = new Map;
+  for (const rel of files) {
+    const m = ARTIFACT_PATH.exec(rel);
+    if (m?.[1] && m[2])
+      bySlug.set(m[1], [...bySlug.get(m[1]) ?? [], { rel, kind: m[2] }]);
+  }
+  if (bySlug.size === 0)
+    return { include, problems: [] };
+  const rootProblems = inspectRoot(root);
+  if (rootProblems.length)
+    return { include, problems: rootProblems };
+  const tracked = trackedChanges(root);
+  const problems = [];
+  for (const [slug, docs] of bySlug) {
+    const r = inspectChange(root, slug, tracked);
+    problems.push(...r.problems);
+    if (!r.change)
+      continue;
+    for (const { rel, kind } of docs) {
+      if (r.change[kind]?.status === "approved")
+        include.set(rel, { kind, change: slug, changeTitle: r.change.title });
+    }
+  }
+  return { include, problems };
+}
+var underMitos = (rel) => rel.startsWith(`${MITOS}/`) || rel.includes(`/${MITOS}/`);
+function init(dir) {
+  if (!fs2.statSync(dir, { throwIfNoEntry: false })?.isDirectory())
+    throw new Error(`${dir} はディレクトリではない`);
+  const root = identify(dir).absPath;
+  let created = false;
+  for (const rel2 of [MITOS, CHANGES]) {
+    try {
+      fs2.mkdirSync(path2.join(root, rel2));
+      created = true;
+    } catch (e) {
+      if (e.code !== "EEXIST")
+        throw e;
+      if (kindOf(path2.join(root, rel2)) !== "dir")
+        throw new Error(`${rel2} がディレクトリではない（symlink も受け付けない）`);
+    }
+  }
+  const rel = `${MITOS}/project.json`;
+  try {
+    fs2.writeFileSync(path2.join(root, rel), `${JSON.stringify({ schema: "mitos/project/1" }, null, 2)}
+`, {
+      flag: "wx"
+    });
+    created = true;
+  } catch (e) {
+    if (e.code !== "EEXIST")
+      throw e;
+    const read = readJson(root, rel);
+    if ("reason" in read)
+      throw new Error(`${rel}: ${read.reason}`);
+    const parsed = projectSchema.safeParse(read.value);
+    if (!parsed.success)
+      throw new Error(`${rel}: ${zodReason(parsed.error)}`);
+  }
+  return { root, created };
+}
+
+// server/src/db.ts
+import fs3 from "node:fs";
+import os2 from "node:os";
+import path3 from "node:path";
 
 // server/node_modules/pg/esm/index.mjs
 var import_lib = __toESM(require_lib2(), 1);
@@ -23720,11 +24008,11 @@ var defaults = import_lib.default.defaults;
 var esm_default = import_lib.default;
 
 // server/src/db.ts
-var GLOBAL_ENV = path.join(os.homedir(), ".claude", "knowledge.env");
+var GLOBAL_ENV = path3.join(os2.homedir(), ".claude", "knowledge.env");
 function readInto(out, file2) {
-  if (!fs.existsSync(file2))
+  if (!fs3.existsSync(file2))
     return false;
-  for (const line of fs.readFileSync(file2, "utf8").split(`
+  for (const line of fs3.readFileSync(file2, "utf8").split(`
 `)) {
     const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
     if (m?.[1] && !process.env[m[1]] && out[m[1]] === undefined) {
@@ -23736,7 +24024,7 @@ function readInto(out, file2) {
 function loadEnv(_from) {
   const out = { ...process.env };
   if (process.env.KNOWLEDGE_ENV_DIR)
-    readInto(out, path.join(process.env.KNOWLEDGE_ENV_DIR, ".env"));
+    readInto(out, path3.join(process.env.KNOWLEDGE_ENV_DIR, ".env"));
   readInto(out, GLOBAL_ENV);
   return out;
 }
@@ -23826,10 +24114,10 @@ async function embed(env, texts, inputType) {
 var vec = (a) => a ? `[${a.join(",")}]` : null;
 
 // server/src/docs.ts
-import { execFileSync } from "node:child_process";
+import { execFileSync as execFileSync3 } from "node:child_process";
 import crypto2 from "node:crypto";
-import fs2 from "node:fs";
-import path2 from "node:path";
+import fs4 from "node:fs";
+import path4 from "node:path";
 var MAX = 4000;
 var MAX_FILE = 2 * 1024 * 1024;
 var slug = (s) => s.toLowerCase().replace(/[`*_[\]()#]/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "本文";
@@ -23840,7 +24128,7 @@ function sections(rel, body) {
   const trail = [];
   let fence = null;
   let cur = {
-    title: path2.basename(rel),
+    title: path4.basename(rel),
     level: 0,
     trail: rel,
     buf: []
@@ -23908,7 +24196,7 @@ function lastTouched(dir) {
   const at = new Map;
   let out;
   try {
-    out = execFileSync("git", ["-C", dir, "-c", "core.quotepath=false", "log", "--format=@%aI", "--name-only", "--", "*.md", "*.mdx"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+    out = execFileSync3("git", ["-C", dir, "-c", "core.quotepath=false", "log", "--format=@%aI", "--name-only", "--", "*.md", "*.mdx"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
   } catch {
     return at;
   }
@@ -23923,25 +24211,25 @@ function lastTouched(dir) {
   return at;
 }
 function markdownFiles(dir) {
-  const out = execFileSync("git", ["-C", dir, "ls-files", "-z", "*.md", "*.mdx"], {
+  const out = execFileSync3("git", ["-C", dir, "ls-files", "-z", "*.md", "*.mdx"], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
   });
-  const base = fs2.realpathSync(dir);
+  const base = fs4.realpathSync(dir);
   const files = [];
   let symlinks = 0;
   for (const rel of out.split("\x00").filter(Boolean)) {
     let real;
     let st;
     try {
-      const full = path2.join(dir, rel);
-      st = fs2.lstatSync(full);
-      real = fs2.realpathSync(full);
+      const full = path4.join(dir, rel);
+      st = fs4.lstatSync(full);
+      real = fs4.realpathSync(full);
     } catch {
       continue;
     }
-    if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path2.sep}`))) {
+    if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path4.sep}`))) {
       symlinks++;
       continue;
     }
@@ -23956,31 +24244,50 @@ ${s.text}`;
 var hash2 = (s) => crypto2.createHash("sha256").update(s).digest("hex");
 var subkindOf = (rel) => /(^|\/)adr(s)?\//i.test(rel) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(rel) ? "adr" : "doc";
 var CHUNK = 200;
+function projectDocs(bodies, include, at) {
+  const all = [];
+  const sources = [];
+  for (const [rel, body] of bodies) {
+    const artifact = include.get(rel);
+    if (underMitos(rel) && !artifact)
+      continue;
+    for (const s of sections(rel, body))
+      all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length, artifact });
+    if (artifact)
+      sources.push({ key: rel, text: body, at: at.get(rel) ?? null, artifact });
+  }
+  return { sections: all, sources };
+}
+var needEmbedding = (all, existing) => all.filter((s) => {
+  const old = existing.get(s.key);
+  return !old || old.content_hash !== hash2(sectionText(s)) || !old.has_emb;
+});
+var liveKeys = (p) => [
+  ...p.sections.map((s) => s.key),
+  ...p.sources.map((s) => s.key)
+];
 async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
   const recordId = `docs:${ident}`;
   const { files, symlinks } = markdownFiles(dir);
   const at = lastTouched(dir);
-  const all = [];
+  const bodies = new Map;
   for (const rel of files) {
-    let body;
     try {
-      body = fs2.readFileSync(path2.join(dir, rel), "utf8");
-    } catch {
-      continue;
-    }
-    for (const s of sections(rel, body))
-      all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length });
+      bodies.set(rel, fs4.readFileSync(path4.join(dir, rel), "utf8"));
+    } catch {}
   }
+  const { include, problems } = selectArtifacts(dir, [...bodies.keys()]);
+  if (problems.length) {
+    throw new Error(`${label} の .mitos が不正なので、このリポジトリの文書を同期しない（前回の状態を保つ）:
+` + problems.map((p) => `  ${p.path}: ${p.reason}`).join(`
+`));
+  }
+  const projected = projectDocs(bodies, include, at);
+  const { sections: all, sources } = projected;
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
-  await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
-     values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
-     on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${label} の文書`]);
-  const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1 and deleted_at is null", [recordId])).rows.map((r) => [r.key, r]));
-  const need = all.filter((s) => {
-    const old = existing.get(s.key);
-    return !old || old.content_hash !== hash2(sectionText(s)) || !old.has_emb;
-  });
-  onProgress?.(`文書 ${files.length} 本 / 節 ${all.length} 件 / 埋め込みを取り直す ${need.length} 件`);
+  const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
+  const need = needEmbedding(all, existing);
+  onProgress?.(`文書 ${bodies.size} 本 / 節 ${all.length} 件 / 承認済みの成果物 ${sources.length} 本 / 埋め込みを取り直す ${need.length} 件`);
   const byKey = new Map;
   for (let from = 0;from < need.length; from += CHUNK) {
     const slice = need.slice(from, from + CHUNK);
@@ -23989,40 +24296,75 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
       byKey.set(s.key, vectors[i]);
     onProgress?.(`  ${Math.min(from + CHUNK, need.length)} / ${need.length} 件を埋め込み`);
   }
+  const put = (n) => client.query(`insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
+                         actor_kind, content_hash, searchable, embed_text, embed_model, embedded_at, embedding)
+       values ($1,$2,'doc',$3,$4,$5,$6,$7,'na',$8,'unknown',$9,$10,$11,$12,$13,$14)
+       on conflict (record_id, kind, key) do update set
+         subkind=excluded.subkind, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
+         content_hash=excluded.content_hash, searchable=excluded.searchable, deleted_at=null,
+         embed_text=coalesce(excluded.embed_text, node.embed_text),
+         embed_model=coalesce(excluded.embed_model, node.embed_model),
+         embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
+         embedding=coalesce(excluded.embedding, node.embedding)`, [
+    recordId,
+    scopeId,
+    n.subkind,
+    n.key,
+    n.ordinal,
+    n.at,
+    n.text,
+    JSON.stringify(n.attrs),
+    n.contentHash,
+    n.searchable,
+    n.embedText,
+    n.vector ? EMBED_MODEL : null,
+    n.vector ? new Date().toISOString() : null,
+    vec(n.vector)
+  ]);
   await client.query("begin");
   try {
+    await client.query(`insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
+       values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
+       on conflict (id) do update set updated_at = now(), ingested_at = now()`, [recordId, scopeId, `${label} の文書`]);
     for (const s of all) {
       const v = byKey.get(s.key);
-      await client.query(`insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
-                           actor_kind, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'doc',$3,$4,$5,$6,$7,'na',$8,'unknown',$9,$10,$11,$12,$13)
-         on conflict (record_id, kind, key) do update set
-           subkind=excluded.subkind, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
-           content_hash=excluded.content_hash, deleted_at=null,
-           embed_text=coalesce(excluded.embed_text, node.embed_text),
-           embed_model=coalesce(excluded.embed_model, node.embed_model),
-           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
-           embedding=coalesce(excluded.embedding, node.embedding)`, [
-        recordId,
-        scopeId,
-        subkindOf(s.path),
-        s.key,
-        s.ordinal,
-        s.at,
-        s.text,
-        JSON.stringify({ path: s.path, title: s.title, trail: s.trail }),
-        hash2(sectionText(s)),
-        v ? sectionText(s) : null,
-        v ? EMBED_MODEL : null,
-        v ? new Date().toISOString() : null,
-        vec(v)
-      ]);
+      await put({
+        subkind: subkindOf(s.path),
+        key: s.key,
+        ordinal: s.ordinal,
+        at: s.at,
+        text: s.text,
+        attrs: {
+          path: s.path,
+          title: s.title,
+          trail: s.trail,
+          ...s.artifact ? { artifact: s.artifact } : {}
+        },
+        contentHash: hash2(sectionText(s)),
+        searchable: true,
+        embedText: v ? sectionText(s) : null,
+        vector: v
+      });
+    }
+    for (const s of sources) {
+      await put({
+        subkind: "artifact-source",
+        key: s.key,
+        ordinal: 0,
+        at: s.at,
+        text: s.text,
+        attrs: { path: s.key, title: path4.basename(s.key), trail: s.key, artifact: s.artifact },
+        contentHash: hash2(s.text),
+        searchable: false,
+        embedText: null,
+        vector: undefined
+      });
     }
     const gone = await client.query(`update node set deleted_at = now()
        where record_id = $1 and kind = 'doc' and deleted_at is null and not (key = any($2))
-       returning 1 as n`, [recordId, all.map((s) => s.key)]);
+       returning 1 as n`, [recordId, liveKeys(projected)]);
     await client.query("commit");
-    return `${label} / 文書 ${files.length} 本・節 ${all.length} 件（埋め込み ${need.length} 件${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}）${skipped}`;
+    return `${label} / 文書 ${bodies.size} 本・節 ${all.length} 件（埋め込み ${need.length} 件${sources.length ? ` / 承認済みの成果物 ${sources.length} 本` : ""}${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}）${skipped}`;
   } catch (e) {
     await client.query("rollback").catch(() => {});
     throw e;
@@ -24030,7 +24372,7 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
 }
 
 // server/src/github.ts
-import { execFileSync as execFileSync2 } from "node:child_process";
+import { execFileSync as execFileSync4 } from "node:child_process";
 import crypto3 from "node:crypto";
 
 // server/src/actor.ts
@@ -24053,7 +24395,7 @@ var isNoise = (name) => actorKind(name) === "ci";
 
 // server/src/github.ts
 var gh = (repo, endpoint) => {
-  const out = execFileSync2("gh", ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"], {
+  const out = execFileSync4("gh", ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"], {
     encoding: "utf8",
     maxBuffer: 256 * 1024 * 1024,
     stdio: ["ignore", "pipe", "pipe"]
@@ -24305,8 +24647,8 @@ async function writeSlice(client, recordId, repo, scopeId, threads, byKey) {
 }
 
 // server/src/identity.ts
-import fs4 from "node:fs";
-import path5 from "node:path";
+import fs5 from "node:fs";
+import path6 from "node:path";
 
 // server/node_modules/openai/internal/tslib.mjs
 function __classPrivateFieldSet(receiver, state, value, kind, f) {
@@ -24904,9 +25246,9 @@ var formatRequestDetails = (details) => {
     details.options = { ...details.options };
     delete details.options["headers"];
     if (details.options.path) {
-      const path3 = details.options.path;
-      const redacted = new URL(redactURL(new URL(path3, "https://redacted.invalid").href));
-      details.options.path = redacted.origin === "https://redacted.invalid" ? `${path3.startsWith("/") ? "/" : ""}${redacted.pathname.slice(1)}${redacted.search}` : redacted.href;
+      const path5 = details.options.path;
+      const redacted = new URL(redactURL(new URL(path5, "https://redacted.invalid").href));
+      details.options.path = redacted.origin === "https://redacted.invalid" ? `${path5.startsWith("/") ? "/" : ""}${redacted.pathname.slice(1)}${redacted.search}` : redacted.href;
     }
     if (details.options.query) {
       details.options.query = Object.fromEntries(Object.entries(details.options.query).map(([name, value]) => [
@@ -27083,19 +27425,19 @@ class X509WorkloadIdentityAuth {
     assertSafeHeaders(headers);
   }
   fetch() {
-    return async (input2, init = {}) => {
+    return async (input2, init2 = {}) => {
       const target = assertX509APIOrigin(typeof input2 === "string" || input2 instanceof URL ? input2 : input2.url);
-      assertX509FetchOptions(init);
-      this.assertRequest(init);
-      const approved = init.headers;
+      assertX509FetchOptions(init2);
+      this.assertRequest(init2);
+      const approved = init2.headers;
       if (!(approved instanceof Headers)) {
         throw new OpenAIError("X.509 workload identity must preserve its issued workload authorization.");
       }
       const headers = new Headers([...Headers.prototype.entries.call(approved)]);
       assertSafeHeaders(headers);
-      init.headers = headers;
-      init.redirect = "manual";
-      return await __classPrivateFieldGet(this, _X509WorkloadIdentityAuth_transport, "f").dispatch(target, init);
+      init2.headers = headers;
+      init2.redirect = "manual";
+      return await __classPrivateFieldGet(this, _X509WorkloadIdentityAuth_transport, "f").dispatch(target, init2);
     };
   }
 }
@@ -27379,8 +27721,8 @@ function getName(value, options) {
       return basename(url2);
     }
   }
-  const path3 = "path" in value && value.path && String(value.path);
-  return path3 ? basename(path3) : undefined;
+  const path5 = "path" in value && value.path && String(value.path);
+  return path5 ? basename(path5) : undefined;
 }
 function basename(value) {
   return value.split(/[\\/]/).pop() || undefined;
@@ -27742,13 +28084,13 @@ function encodeURIPath(str) {
   return str.replace(/[^A-Za-z0-9\-._~!$&'()*+,;=:@]+/g, encodeURIComponent);
 }
 var EMPTY = /* @__PURE__ */ Object.freeze(/* @__PURE__ */ Object.create(null));
-var createPathTagFunction = (pathEncoder = encodeURIPath) => function path3(statics, ...params) {
+var createPathTagFunction = (pathEncoder = encodeURIPath) => function path5(statics, ...params) {
   if (statics.length === 1) {
     return statics[0];
   }
   let postPath = false;
   const invalidSegments = [];
-  let path4 = "";
+  let path6 = "";
   for (let index = 0;index < statics.length; index += 1) {
     if (index in statics) {
       const currentValue = statics[index];
@@ -27760,15 +28102,15 @@ var createPathTagFunction = (pathEncoder = encodeURIPath) => function path3(stat
       if (index !== params.length && (value == null || typeof value === "object" && value.toString === Object.getPrototypeOf(Object.getPrototypeOf(value.hasOwnProperty ?? EMPTY) ?? EMPTY)?.toString)) {
         encoded = value + "";
         invalidSegments.push({
-          start: path4.length + currentValue.length,
+          start: path6.length + currentValue.length,
           length: encoded.length,
           error: `Value of type ${Object.prototype.toString.call(value).slice(8, -1)} is not a valid path parameter`
         });
       }
-      path4 += currentValue + (index === params.length ? "" : encoded);
+      path6 += currentValue + (index === params.length ? "" : encoded);
     }
   }
-  const pathOnly = path4.split(/[?#]/, 1)[0];
+  const pathOnly = path6.split(/[?#]/, 1)[0];
   const invalidSegmentPattern = /(?<=^|\/)(?:\.|%2e){1,2}(?=\/|$)/gi;
   let match;
   while ((match = invalidSegmentPattern.exec(pathOnly)) !== null) {
@@ -27791,17 +28133,17 @@ var createPathTagFunction = (pathEncoder = encodeURIPath) => function path3(stat
     throw new OpenAIError(`Path parameters result in path with invalid segments:
 ${invalidSegments.map((e) => e.error).join(`
 `)}
-${path4}
+${path6}
 ${underline}`);
   }
-  return path4;
+  return path6;
 };
-var path3 = /* @__PURE__ */ createPathTagFunction(encodeURIPath);
+var path5 = /* @__PURE__ */ createPathTagFunction(encodeURIPath);
 
 // server/node_modules/openai/resources/chat/completions/messages.mjs
 class Messages extends APIResource {
   list(completionID, query = {}, options) {
-    return this._client.getAPIList(path3`/chat/completions/${completionID}/messages`, CursorPage, { query, ...options, __security: { bearerAuth: true } });
+    return this._client.getAPIList(path5`/chat/completions/${completionID}/messages`, CursorPage, { query, ...options, __security: { bearerAuth: true } });
   }
 }
 // server/node_modules/openai/lib/parser.mjs
@@ -29097,12 +29439,12 @@ class EventStream {
         const entry = { retention, active: true, check: undefined };
         pushQueue.enqueue(value);
         bufferedEventSizes.enqueue(entry);
-        const check2 = () => {
+        const check3 = () => {
           entry.check = undefined;
           revalidateBufferedEvent(value, entry);
         };
-        entry.check = check2;
-        __classPrivateFieldGet(this, _EventStream_pendingBufferedEventChecks, "f").add(check2);
+        entry.check = check3;
+        __classPrivateFieldGet(this, _EventStream_pendingBufferedEventChecks, "f").add(check3);
       }
     };
     const onFailure = (error62) => {
@@ -29212,10 +29554,10 @@ class EventStream {
         __classPrivateFieldSet(this, _EventStream_listenerDispatchDepth, __classPrivateFieldGet(this, _EventStream_listenerDispatchDepth, "f") - 1, "f");
         if (__classPrivateFieldGet(this, _EventStream_listenerDispatchDepth, "f") === 0) {
           __classPrivateFieldGet(this, _EventStream_instances, "m", _EventStream_cleanupEmittedListeners).call(this);
-          for (const check2 of __classPrivateFieldGet(this, _EventStream_pendingBufferedEventChecks, "f")) {
-            __classPrivateFieldGet(this, _EventStream_pendingBufferedEventChecks, "f").delete(check2);
+          for (const check3 of __classPrivateFieldGet(this, _EventStream_pendingBufferedEventChecks, "f")) {
+            __classPrivateFieldGet(this, _EventStream_pendingBufferedEventChecks, "f").delete(check3);
             if (!__classPrivateFieldGet(this, _EventStream_ended, "f")) {
-              check2();
+              check3();
             }
           }
         }
@@ -31498,13 +31840,13 @@ class Completions extends APIResource {
     });
   }
   retrieve(completionID, options) {
-    return this._client.get(path3`/chat/completions/${completionID}`, {
+    return this._client.get(path5`/chat/completions/${completionID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   update(completionID, body, options) {
-    return this._client.post(path3`/chat/completions/${completionID}`, {
+    return this._client.post(path5`/chat/completions/${completionID}`, {
       body,
       ...options,
       __security: { bearerAuth: true }
@@ -31518,7 +31860,7 @@ class Completions extends APIResource {
     });
   }
   delete(completionID, options) {
-    return this._client.delete(path3`/chat/completions/${completionID}`, {
+    return this._client.delete(path5`/chat/completions/${completionID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -31560,7 +31902,7 @@ class AdminAPIKeys extends APIResource {
     });
   }
   retrieve(keyID, options) {
-    return this._client.get(path3`/organization/admin_api_keys/${keyID}`, {
+    return this._client.get(path5`/organization/admin_api_keys/${keyID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31573,7 +31915,7 @@ class AdminAPIKeys extends APIResource {
     });
   }
   delete(keyID, options) {
-    return this._client.delete(path3`/organization/admin_api_keys/${keyID}`, {
+    return this._client.delete(path5`/organization/admin_api_keys/${keyID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31601,14 +31943,14 @@ class Certificates extends APIResource {
     });
   }
   retrieve(certificateID, query = {}, options) {
-    return this._client.get(path3`/organization/certificates/${certificateID}`, {
+    return this._client.get(path5`/organization/certificates/${certificateID}`, {
       query,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(certificateID, body, options) {
-    return this._client.post(path3`/organization/certificates/${certificateID}`, {
+    return this._client.post(path5`/organization/certificates/${certificateID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -31618,7 +31960,7 @@ class Certificates extends APIResource {
     return this._client.getAPIList("/organization/certificates", ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(certificateID, options) {
-    return this._client.delete(path3`/organization/certificates/${certificateID}`, {
+    return this._client.delete(path5`/organization/certificates/${certificateID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31663,7 +32005,7 @@ class Invites extends APIResource {
     });
   }
   retrieve(inviteID, options) {
-    return this._client.get(path3`/organization/invites/${inviteID}`, {
+    return this._client.get(path5`/organization/invites/${inviteID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31676,7 +32018,7 @@ class Invites extends APIResource {
     });
   }
   delete(inviteID, options) {
-    return this._client.delete(path3`/organization/invites/${inviteID}`, {
+    return this._client.delete(path5`/organization/invites/${inviteID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31693,13 +32035,13 @@ class Roles extends APIResource {
     });
   }
   retrieve(roleID, options) {
-    return this._client.get(path3`/organization/roles/${roleID}`, {
+    return this._client.get(path5`/organization/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(roleID, body, options) {
-    return this._client.post(path3`/organization/roles/${roleID}`, {
+    return this._client.post(path5`/organization/roles/${roleID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -31713,7 +32055,7 @@ class Roles extends APIResource {
     });
   }
   delete(roleID, options) {
-    return this._client.delete(path3`/organization/roles/${roleID}`, {
+    return this._client.delete(path5`/organization/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31730,13 +32072,13 @@ class SpendAlerts extends APIResource {
     });
   }
   retrieve(alertID, options) {
-    return this._client.get(path3`/organization/spend_alerts/${alertID}`, {
+    return this._client.get(path5`/organization/spend_alerts/${alertID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(alertID, body, options) {
-    return this._client.post(path3`/organization/spend_alerts/${alertID}`, {
+    return this._client.post(path5`/organization/spend_alerts/${alertID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -31746,7 +32088,7 @@ class SpendAlerts extends APIResource {
     return this._client.getAPIList("/organization/spend_alerts", ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(alertID, options) {
-    return this._client.delete(path3`/organization/spend_alerts/${alertID}`, {
+    return this._client.delete(path5`/organization/spend_alerts/${alertID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31860,7 +32202,7 @@ class Usage extends APIResource {
 // server/node_modules/openai/resources/admin/organization/groups/roles.mjs
 class Roles2 extends APIResource {
   create(groupID, body, options) {
-    return this._client.post(path3`/organization/groups/${groupID}/roles`, {
+    return this._client.post(path5`/organization/groups/${groupID}/roles`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -31868,17 +32210,17 @@ class Roles2 extends APIResource {
   }
   retrieve(roleID, params, options) {
     const { group_id } = params;
-    return this._client.get(path3`/organization/groups/${group_id}/roles/${roleID}`, {
+    return this._client.get(path5`/organization/groups/${group_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(groupID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/groups/${groupID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/groups/${groupID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(roleID, params, options) {
     const { group_id } = params;
-    return this._client.delete(path3`/organization/groups/${group_id}/roles/${roleID}`, {
+    return this._client.delete(path5`/organization/groups/${group_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31888,7 +32230,7 @@ class Roles2 extends APIResource {
 // server/node_modules/openai/resources/admin/organization/groups/users.mjs
 class Users extends APIResource {
   create(groupID, body, options) {
-    return this._client.post(path3`/organization/groups/${groupID}/users`, {
+    return this._client.post(path5`/organization/groups/${groupID}/users`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -31896,17 +32238,17 @@ class Users extends APIResource {
   }
   retrieve(userID, params, options) {
     const { group_id } = params;
-    return this._client.get(path3`/organization/groups/${group_id}/users/${userID}`, {
+    return this._client.get(path5`/organization/groups/${group_id}/users/${userID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(groupID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/groups/${groupID}/users`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/groups/${groupID}/users`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(userID, params, options) {
     const { group_id } = params;
-    return this._client.delete(path3`/organization/groups/${group_id}/users/${userID}`, {
+    return this._client.delete(path5`/organization/groups/${group_id}/users/${userID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31928,13 +32270,13 @@ class Groups extends APIResource {
     });
   }
   retrieve(groupID, options) {
-    return this._client.get(path3`/organization/groups/${groupID}`, {
+    return this._client.get(path5`/organization/groups/${groupID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(groupID, body, options) {
-    return this._client.post(path3`/organization/groups/${groupID}`, {
+    return this._client.post(path5`/organization/groups/${groupID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -31948,7 +32290,7 @@ class Groups extends APIResource {
     });
   }
   delete(groupID, options) {
-    return this._client.delete(path3`/organization/groups/${groupID}`, {
+    return this._client.delete(path5`/organization/groups/${groupID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31961,17 +32303,17 @@ Groups.Roles = Roles2;
 class APIKeys extends APIResource {
   retrieve(apiKeyID, params, options) {
     const { project_id } = params;
-    return this._client.get(path3`/organization/projects/${project_id}/api_keys/${apiKeyID}`, {
+    return this._client.get(path5`/organization/projects/${project_id}/api_keys/${apiKeyID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/api_keys`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/api_keys`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(apiKeyID, params, options) {
     const { project_id } = params;
-    return this._client.delete(path3`/organization/projects/${project_id}/api_keys/${apiKeyID}`, {
+    return this._client.delete(path5`/organization/projects/${project_id}/api_keys/${apiKeyID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -31981,26 +32323,26 @@ class APIKeys extends APIResource {
 // server/node_modules/openai/resources/admin/organization/projects/certificates.mjs
 class Certificates2 extends APIResource {
   list(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/certificates`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/certificates`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   activate(projectID, body, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/certificates/activate`, Page, { body, method: "post", ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/certificates/activate`, Page, { body, method: "post", ...options, __security: { adminAPIKeyAuth: true } });
   }
   deactivate(projectID, body, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/certificates/deactivate`, Page, { body, method: "post", ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/certificates/deactivate`, Page, { body, method: "post", ...options, __security: { adminAPIKeyAuth: true } });
   }
 }
 
 // server/node_modules/openai/resources/admin/organization/projects/data-retention.mjs
 class DataRetention2 extends APIResource {
   retrieve(projectID, options) {
-    return this._client.get(path3`/organization/projects/${projectID}/data_retention`, {
+    return this._client.get(path5`/organization/projects/${projectID}/data_retention`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/data_retention`, {
+    return this._client.post(path5`/organization/projects/${projectID}/data_retention`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32011,13 +32353,13 @@ class DataRetention2 extends APIResource {
 // server/node_modules/openai/resources/admin/organization/projects/hosted-tool-permissions.mjs
 class HostedToolPermissions extends APIResource {
   retrieve(projectID, options) {
-    return this._client.get(path3`/organization/projects/${projectID}/hosted_tool_permissions`, {
+    return this._client.get(path5`/organization/projects/${projectID}/hosted_tool_permissions`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/hosted_tool_permissions`, {
+    return this._client.post(path5`/organization/projects/${projectID}/hosted_tool_permissions`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32028,20 +32370,20 @@ class HostedToolPermissions extends APIResource {
 // server/node_modules/openai/resources/admin/organization/projects/model-permissions.mjs
 class ModelPermissions extends APIResource {
   retrieve(projectID, options) {
-    return this._client.get(path3`/organization/projects/${projectID}/model_permissions`, {
+    return this._client.get(path5`/organization/projects/${projectID}/model_permissions`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/model_permissions`, {
+    return this._client.post(path5`/organization/projects/${projectID}/model_permissions`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   delete(projectID, options) {
-    return this._client.delete(path3`/organization/projects/${projectID}/model_permissions`, {
+    return this._client.delete(path5`/organization/projects/${projectID}/model_permissions`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32051,11 +32393,11 @@ class ModelPermissions extends APIResource {
 // server/node_modules/openai/resources/admin/organization/projects/rate-limits.mjs
 class RateLimits extends APIResource {
   listRateLimits(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/rate_limits`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/rate_limits`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   updateRateLimit(rateLimitID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/organization/projects/${project_id}/rate_limits/${rateLimitID}`, {
+    return this._client.post(path5`/organization/projects/${project_id}/rate_limits/${rateLimitID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32066,7 +32408,7 @@ class RateLimits extends APIResource {
 // server/node_modules/openai/resources/admin/organization/projects/roles.mjs
 class Roles3 extends APIResource {
   create(projectID, body, options) {
-    return this._client.post(path3`/projects/${projectID}/roles`, {
+    return this._client.post(path5`/projects/${projectID}/roles`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32074,21 +32416,21 @@ class Roles3 extends APIResource {
   }
   retrieve(roleID, params, options) {
     const { project_id } = params;
-    return this._client.get(path3`/projects/${project_id}/roles/${roleID}`, {
+    return this._client.get(path5`/projects/${project_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(roleID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/projects/${project_id}/roles/${roleID}`, {
+    return this._client.post(path5`/projects/${project_id}/roles/${roleID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/projects/${projectID}/roles`, NextCursorPage, {
+    return this._client.getAPIList(path5`/projects/${projectID}/roles`, NextCursorPage, {
       query,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32096,7 +32438,7 @@ class Roles3 extends APIResource {
   }
   delete(roleID, params, options) {
     const { project_id } = params;
-    return this._client.delete(path3`/projects/${project_id}/roles/${roleID}`, {
+    return this._client.delete(path5`/projects/${project_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32106,7 +32448,7 @@ class Roles3 extends APIResource {
 // server/node_modules/openai/resources/admin/organization/projects/spend-alerts.mjs
 class SpendAlerts2 extends APIResource {
   create(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/spend_alerts`, {
+    return this._client.post(path5`/organization/projects/${projectID}/spend_alerts`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32114,25 +32456,25 @@ class SpendAlerts2 extends APIResource {
   }
   retrieve(alertID, params, options) {
     const { project_id } = params;
-    return this._client.get(path3`/organization/projects/${project_id}/spend_alerts/${alertID}`, {
+    return this._client.get(path5`/organization/projects/${project_id}/spend_alerts/${alertID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(alertID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/organization/projects/${project_id}/spend_alerts/${alertID}`, {
+    return this._client.post(path5`/organization/projects/${project_id}/spend_alerts/${alertID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/spend_alerts`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/spend_alerts`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(alertID, params, options) {
     const { project_id } = params;
-    return this._client.delete(path3`/organization/projects/${project_id}/spend_alerts/${alertID}`, {
+    return this._client.delete(path5`/organization/projects/${project_id}/spend_alerts/${alertID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32142,20 +32484,20 @@ class SpendAlerts2 extends APIResource {
 // server/node_modules/openai/resources/admin/organization/projects/spend-limit.mjs
 class SpendLimit2 extends APIResource {
   retrieve(projectID, options) {
-    return this._client.get(path3`/organization/projects/${projectID}/spend_limit`, {
+    return this._client.get(path5`/organization/projects/${projectID}/spend_limit`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/spend_limit`, {
+    return this._client.post(path5`/organization/projects/${projectID}/spend_limit`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   delete(projectID, options) {
-    return this._client.delete(path3`/organization/projects/${projectID}/spend_limit`, {
+    return this._client.delete(path5`/organization/projects/${projectID}/spend_limit`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32166,7 +32508,7 @@ class SpendLimit2 extends APIResource {
 class Roles4 extends APIResource {
   create(groupID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/projects/${project_id}/groups/${groupID}/roles`, {
+    return this._client.post(path5`/projects/${project_id}/groups/${groupID}/roles`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32174,18 +32516,18 @@ class Roles4 extends APIResource {
   }
   retrieve(roleID, params, options) {
     const { project_id, group_id } = params;
-    return this._client.get(path3`/projects/${project_id}/groups/${group_id}/roles/${roleID}`, {
+    return this._client.get(path5`/projects/${project_id}/groups/${group_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(groupID, params, options) {
     const { project_id, ...query } = params;
-    return this._client.getAPIList(path3`/projects/${project_id}/groups/${groupID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/projects/${project_id}/groups/${groupID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(roleID, params, options) {
     const { project_id, group_id } = params;
-    return this._client.delete(path3`/projects/${project_id}/groups/${group_id}/roles/${roleID}`, {
+    return this._client.delete(path5`/projects/${project_id}/groups/${group_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32199,7 +32541,7 @@ class Groups2 extends APIResource {
     this.roles = new Roles4(this._client);
   }
   create(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/groups`, {
+    return this._client.post(path5`/organization/projects/${projectID}/groups`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32207,18 +32549,18 @@ class Groups2 extends APIResource {
   }
   retrieve(groupID, params, options) {
     const { project_id, ...query } = params;
-    return this._client.get(path3`/organization/projects/${project_id}/groups/${groupID}`, {
+    return this._client.get(path5`/organization/projects/${project_id}/groups/${groupID}`, {
       query,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/groups`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/groups`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(groupID, params, options) {
     const { project_id } = params;
-    return this._client.delete(path3`/organization/projects/${project_id}/groups/${groupID}`, {
+    return this._client.delete(path5`/organization/projects/${project_id}/groups/${groupID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32230,7 +32572,7 @@ Groups2.Roles = Roles4;
 class APIKeys2 extends APIResource {
   create(serviceAccountID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/organization/projects/${project_id}/service_accounts/${serviceAccountID}/api_keys`, { body, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.post(path5`/organization/projects/${project_id}/service_accounts/${serviceAccountID}/api_keys`, { body, ...options, __security: { adminAPIKeyAuth: true } });
   }
 }
 
@@ -32241,7 +32583,7 @@ class ServiceAccounts extends APIResource {
     this.apiKeys = new APIKeys2(this._client);
   }
   create(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/service_accounts`, {
+    return this._client.post(path5`/organization/projects/${projectID}/service_accounts`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32249,21 +32591,21 @@ class ServiceAccounts extends APIResource {
   }
   retrieve(serviceAccountID, params, options) {
     const { project_id } = params;
-    return this._client.get(path3`/organization/projects/${project_id}/service_accounts/${serviceAccountID}`, {
+    return this._client.get(path5`/organization/projects/${project_id}/service_accounts/${serviceAccountID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(serviceAccountID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/organization/projects/${project_id}/service_accounts/${serviceAccountID}`, { body, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.post(path5`/organization/projects/${project_id}/service_accounts/${serviceAccountID}`, { body, ...options, __security: { adminAPIKeyAuth: true } });
   }
   list(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/service_accounts`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/service_accounts`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(serviceAccountID, params, options) {
     const { project_id } = params;
-    return this._client.delete(path3`/organization/projects/${project_id}/service_accounts/${serviceAccountID}`, { ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.delete(path5`/organization/projects/${project_id}/service_accounts/${serviceAccountID}`, { ...options, __security: { adminAPIKeyAuth: true } });
   }
 }
 ServiceAccounts.APIKeys = APIKeys2;
@@ -32272,7 +32614,7 @@ ServiceAccounts.APIKeys = APIKeys2;
 class Roles5 extends APIResource {
   create(userID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/projects/${project_id}/users/${userID}/roles`, {
+    return this._client.post(path5`/projects/${project_id}/users/${userID}/roles`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32280,18 +32622,18 @@ class Roles5 extends APIResource {
   }
   retrieve(roleID, params, options) {
     const { project_id, user_id } = params;
-    return this._client.get(path3`/projects/${project_id}/users/${user_id}/roles/${roleID}`, {
+    return this._client.get(path5`/projects/${project_id}/users/${user_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(userID, params, options) {
     const { project_id, ...query } = params;
-    return this._client.getAPIList(path3`/projects/${project_id}/users/${userID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/projects/${project_id}/users/${userID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(roleID, params, options) {
     const { project_id, user_id } = params;
-    return this._client.delete(path3`/projects/${project_id}/users/${user_id}/roles/${roleID}`, {
+    return this._client.delete(path5`/projects/${project_id}/users/${user_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32305,7 +32647,7 @@ class Users2 extends APIResource {
     this.roles = new Roles5(this._client);
   }
   create(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/users`, {
+    return this._client.post(path5`/organization/projects/${projectID}/users`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32313,25 +32655,25 @@ class Users2 extends APIResource {
   }
   retrieve(userID, params, options) {
     const { project_id } = params;
-    return this._client.get(path3`/organization/projects/${project_id}/users/${userID}`, {
+    return this._client.get(path5`/organization/projects/${project_id}/users/${userID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(userID, params, options) {
     const { project_id, ...body } = params;
-    return this._client.post(path3`/organization/projects/${project_id}/users/${userID}`, {
+    return this._client.post(path5`/organization/projects/${project_id}/users/${userID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(projectID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/projects/${projectID}/users`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/projects/${projectID}/users`, ConversationCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(userID, params, options) {
     const { project_id } = params;
-    return this._client.delete(path3`/organization/projects/${project_id}/users/${userID}`, {
+    return this._client.delete(path5`/organization/projects/${project_id}/users/${userID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32364,13 +32706,13 @@ class Projects extends APIResource {
     });
   }
   retrieve(projectID, options) {
-    return this._client.get(path3`/organization/projects/${projectID}`, {
+    return this._client.get(path5`/organization/projects/${projectID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(projectID, body, options) {
-    return this._client.post(path3`/organization/projects/${projectID}`, {
+    return this._client.post(path5`/organization/projects/${projectID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32384,7 +32726,7 @@ class Projects extends APIResource {
     });
   }
   archive(projectID, options) {
-    return this._client.post(path3`/organization/projects/${projectID}/archive`, {
+    return this._client.post(path5`/organization/projects/${projectID}/archive`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32406,7 +32748,7 @@ Projects.Certificates = Certificates2;
 // server/node_modules/openai/resources/admin/organization/users/roles.mjs
 class Roles6 extends APIResource {
   create(userID, body, options) {
-    return this._client.post(path3`/organization/users/${userID}/roles`, {
+    return this._client.post(path5`/organization/users/${userID}/roles`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32414,17 +32756,17 @@ class Roles6 extends APIResource {
   }
   retrieve(roleID, params, options) {
     const { user_id } = params;
-    return this._client.get(path3`/organization/users/${user_id}/roles/${roleID}`, {
+    return this._client.get(path5`/organization/users/${user_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(userID, query = {}, options) {
-    return this._client.getAPIList(path3`/organization/users/${userID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/organization/users/${userID}/roles`, NextCursorPage, { query, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(roleID, params, options) {
     const { user_id } = params;
-    return this._client.delete(path3`/organization/users/${user_id}/roles/${roleID}`, {
+    return this._client.delete(path5`/organization/users/${user_id}/roles/${roleID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32438,13 +32780,13 @@ class Users3 extends APIResource {
     this.roles = new Roles6(this._client);
   }
   retrieve(userID, options) {
-    return this._client.get(path3`/organization/users/${userID}`, {
+    return this._client.get(path5`/organization/users/${userID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   update(userID, body, options) {
-    return this._client.post(path3`/organization/users/${userID}`, {
+    return this._client.post(path5`/organization/users/${userID}`, {
       body,
       ...options,
       __security: { adminAPIKeyAuth: true }
@@ -32458,7 +32800,7 @@ class Users3 extends APIResource {
     });
   }
   delete(userID, options) {
-    return this._client.delete(path3`/organization/users/${userID}`, {
+    return this._client.delete(path5`/organization/users/${userID}`, {
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
@@ -32556,7 +32898,7 @@ class Batches extends APIResource {
     return this._client.post("/batches", { body, ...options, __security: { bearerAuth: true } });
   }
   retrieve(batchID, options) {
-    return this._client.get(path3`/batches/${batchID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.get(path5`/batches/${batchID}`, { ...options, __security: { bearerAuth: true } });
   }
   list(query = {}, options) {
     return this._client.getAPIList("/batches", CursorPage, {
@@ -32566,7 +32908,7 @@ class Batches extends APIResource {
     });
   }
   cancel(batchID, options) {
-    return this._client.post(path3`/batches/${batchID}/cancel`, {
+    return this._client.post(path5`/batches/${batchID}/cancel`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -32583,14 +32925,14 @@ class Assistants extends APIResource {
     });
   }
   retrieve(assistantID, options) {
-    return this._client.get(path3`/assistants/${assistantID}`, {
+    return this._client.get(path5`/assistants/${assistantID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
     });
   }
   update(assistantID, body, options) {
-    return this._client.post(path3`/assistants/${assistantID}`, {
+    return this._client.post(path5`/assistants/${assistantID}`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -32606,7 +32948,7 @@ class Assistants extends APIResource {
     });
   }
   delete(assistantID, options) {
-    return this._client.delete(path3`/assistants/${assistantID}`, {
+    return this._client.delete(path5`/assistants/${assistantID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -32660,7 +33002,7 @@ class Sessions2 extends APIResource {
     });
   }
   cancel(sessionID, options) {
-    return this._client.post(path3`/chatkit/sessions/${sessionID}/cancel`, {
+    return this._client.post(path5`/chatkit/sessions/${sessionID}/cancel`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "chatkit_beta=v1" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -32671,7 +33013,7 @@ class Sessions2 extends APIResource {
 // server/node_modules/openai/resources/beta/chatkit/threads.mjs
 class Threads extends APIResource {
   retrieve(threadID, options) {
-    return this._client.get(path3`/chatkit/threads/${threadID}`, {
+    return this._client.get(path5`/chatkit/threads/${threadID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "chatkit_beta=v1" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -32686,14 +33028,14 @@ class Threads extends APIResource {
     });
   }
   delete(threadID, options) {
-    return this._client.delete(path3`/chatkit/threads/${threadID}`, {
+    return this._client.delete(path5`/chatkit/threads/${threadID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "chatkit_beta=v1" }, options?.headers]),
       __security: { bearerAuth: true }
     });
   }
   listItems(threadID, query = {}, options) {
-    return this._client.getAPIList(path3`/chatkit/threads/${threadID}/items`, ConversationCursorPage, {
+    return this._client.getAPIList(path5`/chatkit/threads/${threadID}/items`, ConversationCursorPage, {
       query,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "chatkit_beta=v1" }, options?.headers]),
@@ -32717,7 +33059,7 @@ ChatKit.Threads = Threads;
 class InputItems extends APIResource {
   list(responseID, params = {}, options) {
     const { betas, ...query } = params ?? {};
-    return this._client.getAPIList(path3`/responses/${responseID}/input_items?beta=true`, CursorPage, {
+    return this._client.getAPIList(path5`/responses/${responseID}/input_items?beta=true`, CursorPage, {
       query,
       ...options,
       headers: buildHeaders([
@@ -32767,7 +33109,7 @@ class Responses extends APIResource {
   }
   retrieve(responseID, params = {}, options) {
     const { betas, ...query } = params ?? {};
-    return this._client.get(path3`/responses/${responseID}?beta=true`, {
+    return this._client.get(path5`/responses/${responseID}?beta=true`, {
       query,
       ...options,
       headers: buildHeaders([
@@ -32780,7 +33122,7 @@ class Responses extends APIResource {
   }
   delete(responseID, params = {}, options) {
     const { betas } = params ?? {};
-    return this._client.delete(path3`/responses/${responseID}?beta=true`, {
+    return this._client.delete(path5`/responses/${responseID}?beta=true`, {
       ...options,
       headers: buildHeaders([
         { Accept: "*/*", ...betas?.toString() != null ? { "openai-beta": betas?.toString() } : undefined },
@@ -32791,7 +33133,7 @@ class Responses extends APIResource {
   }
   cancel(responseID, params = {}, options) {
     const { betas } = params ?? {};
-    return this._client.post(path3`/responses/${responseID}/cancel?beta=true`, {
+    return this._client.post(path5`/responses/${responseID}/cancel?beta=true`, {
       ...options,
       headers: buildHeaders([
         { ...betas?.toString() != null ? { "openai-beta": betas?.toString() } : undefined },
@@ -32819,7 +33161,7 @@ Responses.InputTokens = InputTokens;
 // server/node_modules/openai/resources/beta/threads/messages.mjs
 class Messages2 extends APIResource {
   create(threadID, body, options) {
-    return this._client.post(path3`/threads/${threadID}/messages`, {
+    return this._client.post(path5`/threads/${threadID}/messages`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -32828,7 +33170,7 @@ class Messages2 extends APIResource {
   }
   retrieve(messageID, params, options) {
     const { thread_id } = params;
-    return this._client.get(path3`/threads/${thread_id}/messages/${messageID}`, {
+    return this._client.get(path5`/threads/${thread_id}/messages/${messageID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -32836,7 +33178,7 @@ class Messages2 extends APIResource {
   }
   update(messageID, params, options) {
     const { thread_id, ...body } = params;
-    return this._client.post(path3`/threads/${thread_id}/messages/${messageID}`, {
+    return this._client.post(path5`/threads/${thread_id}/messages/${messageID}`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -32844,7 +33186,7 @@ class Messages2 extends APIResource {
     });
   }
   list(threadID, query = {}, options) {
-    return this._client.getAPIList(path3`/threads/${threadID}/messages`, CursorPage, {
+    return this._client.getAPIList(path5`/threads/${threadID}/messages`, CursorPage, {
       query,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -32853,7 +33195,7 @@ class Messages2 extends APIResource {
   }
   delete(messageID, params, options) {
     const { thread_id } = params;
-    return this._client.delete(path3`/threads/${thread_id}/messages/${messageID}`, {
+    return this._client.delete(path5`/threads/${thread_id}/messages/${messageID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -32865,7 +33207,7 @@ class Messages2 extends APIResource {
 class Steps extends APIResource {
   retrieve(stepID, params, options) {
     const { thread_id, run_id, ...query } = params;
-    return this._client.get(path3`/threads/${thread_id}/runs/${run_id}/steps/${stepID}`, {
+    return this._client.get(path5`/threads/${thread_id}/runs/${run_id}/steps/${stepID}`, {
       query,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -32874,7 +33216,7 @@ class Steps extends APIResource {
   }
   list(runID, params, options) {
     const { thread_id, ...query } = params;
-    return this._client.getAPIList(path3`/threads/${thread_id}/runs/${runID}/steps`, CursorPage, {
+    return this._client.getAPIList(path5`/threads/${thread_id}/runs/${runID}/steps`, CursorPage, {
       query,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -33990,7 +34332,7 @@ class Runs extends APIResource {
   }
   create(threadID, params, options) {
     const { include, ...body } = params;
-    return this._client.post(path3`/threads/${threadID}/runs`, {
+    return this._client.post(path5`/threads/${threadID}/runs`, {
       query: { include },
       body,
       ...options,
@@ -34002,7 +34344,7 @@ class Runs extends APIResource {
   }
   retrieve(runID, params, options) {
     const { thread_id } = params;
-    return this._client.get(path3`/threads/${thread_id}/runs/${runID}`, {
+    return this._client.get(path5`/threads/${thread_id}/runs/${runID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -34010,7 +34352,7 @@ class Runs extends APIResource {
   }
   update(runID, params, options) {
     const { thread_id, ...body } = params;
-    return this._client.post(path3`/threads/${thread_id}/runs/${runID}`, {
+    return this._client.post(path5`/threads/${thread_id}/runs/${runID}`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -34018,7 +34360,7 @@ class Runs extends APIResource {
     });
   }
   list(threadID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/threads/${threadID}/runs`, CursorPage, {
+    return this._client.getAPIList(path5`/threads/${threadID}/runs`, CursorPage, {
       query: query2,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -34027,7 +34369,7 @@ class Runs extends APIResource {
   }
   cancel(runID, params, options) {
     const { thread_id } = params;
-    return this._client.post(path3`/threads/${thread_id}/runs/${runID}/cancel`, {
+    return this._client.post(path5`/threads/${thread_id}/runs/${runID}/cancel`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -34048,7 +34390,7 @@ class Runs extends APIResource {
   }
   submitToolOutputs(runID, params, options) {
     const { thread_id, ...body } = params;
-    return this._client.post(path3`/threads/${thread_id}/runs/${runID}/submit_tool_outputs`, {
+    return this._client.post(path5`/threads/${thread_id}/runs/${runID}/submit_tool_outputs`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -34083,14 +34425,14 @@ class Threads2 extends APIResource {
     });
   }
   retrieve(threadID, options) {
-    return this._client.get(path3`/threads/${threadID}`, {
+    return this._client.get(path5`/threads/${threadID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
     });
   }
   update(threadID, body, options) {
-    return this._client.post(path3`/threads/${threadID}`, {
+    return this._client.post(path5`/threads/${threadID}`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -34098,7 +34440,7 @@ class Threads2 extends APIResource {
     });
   }
   delete(threadID, options) {
-    return this._client.delete(path3`/threads/${threadID}`, {
+    return this._client.delete(path5`/threads/${threadID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -34156,7 +34498,7 @@ class Completions2 extends APIResource {
 class Content extends APIResource {
   retrieve(fileID, params, options) {
     const { container_id } = params;
-    return this._client.get(path3`/containers/${container_id}/files/${fileID}/content`, {
+    return this._client.get(path5`/containers/${container_id}/files/${fileID}/content`, {
       ...options,
       headers: buildHeaders([{ Accept: "application/binary" }, options?.headers]),
       __security: { bearerAuth: true },
@@ -34172,17 +34514,17 @@ class Files extends APIResource {
     this.content = new Content(this._client);
   }
   create(containerID, body, options) {
-    return this._client.post(path3`/containers/${containerID}/files`, maybeMultipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
+    return this._client.post(path5`/containers/${containerID}/files`, maybeMultipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
   }
   retrieve(fileID, params, options) {
     const { container_id } = params;
-    return this._client.get(path3`/containers/${container_id}/files/${fileID}`, {
+    return this._client.get(path5`/containers/${container_id}/files/${fileID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   list(containerID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/containers/${containerID}/files`, CursorPage, {
+    return this._client.getAPIList(path5`/containers/${containerID}/files`, CursorPage, {
       query: query2,
       ...options,
       __security: { bearerAuth: true }
@@ -34190,7 +34532,7 @@ class Files extends APIResource {
   }
   delete(fileID, params, options) {
     const { container_id } = params;
-    return this._client.delete(path3`/containers/${container_id}/files/${fileID}`, {
+    return this._client.delete(path5`/containers/${container_id}/files/${fileID}`, {
       ...options,
       headers: buildHeaders([{ Accept: "*/*" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -34209,7 +34551,7 @@ class Containers extends APIResource {
     return this._client.post("/containers", { body, ...options, __security: { bearerAuth: true } });
   }
   retrieve(containerID, options) {
-    return this._client.get(path3`/containers/${containerID}`, {
+    return this._client.get(path5`/containers/${containerID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -34222,7 +34564,7 @@ class Containers extends APIResource {
     });
   }
   delete(containerID, options) {
-    return this._client.delete(path3`/containers/${containerID}`, {
+    return this._client.delete(path5`/containers/${containerID}`, {
       ...options,
       headers: buildHeaders([{ Accept: "*/*" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -34240,7 +34582,7 @@ class ContentProvenanceChecks extends APIResource {
 class Items extends APIResource {
   create(conversationID, params, options) {
     const { include, ...body } = params;
-    return this._client.post(path3`/conversations/${conversationID}/items`, {
+    return this._client.post(path5`/conversations/${conversationID}/items`, {
       query: { include },
       body,
       ...options,
@@ -34249,18 +34591,18 @@ class Items extends APIResource {
   }
   retrieve(itemID, params, options) {
     const { conversation_id, ...query2 } = params;
-    return this._client.get(path3`/conversations/${conversation_id}/items/${itemID}`, {
+    return this._client.get(path5`/conversations/${conversation_id}/items/${itemID}`, {
       query: query2,
       ...options,
       __security: { bearerAuth: true }
     });
   }
   list(conversationID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/conversations/${conversationID}/items`, ConversationCursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
+    return this._client.getAPIList(path5`/conversations/${conversationID}/items`, ConversationCursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
   }
   delete(itemID, params, options) {
     const { conversation_id } = params;
-    return this._client.delete(path3`/conversations/${conversation_id}/items/${itemID}`, {
+    return this._client.delete(path5`/conversations/${conversation_id}/items/${itemID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -34277,20 +34619,20 @@ class Conversations extends APIResource {
     return this._client.post("/conversations", { body, ...options, __security: { bearerAuth: true } });
   }
   retrieve(conversationID, options) {
-    return this._client.get(path3`/conversations/${conversationID}`, {
+    return this._client.get(path5`/conversations/${conversationID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   update(conversationID, body, options) {
-    return this._client.post(path3`/conversations/${conversationID}`, {
+    return this._client.post(path5`/conversations/${conversationID}`, {
       body,
       ...options,
       __security: { bearerAuth: true }
     });
   }
   delete(conversationID, options) {
-    return this._client.delete(path3`/conversations/${conversationID}`, {
+    return this._client.delete(path5`/conversations/${conversationID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -34342,14 +34684,14 @@ class Embeddings extends APIResource {
 class OutputItems extends APIResource {
   retrieve(outputItemID, params, options) {
     const { eval_id, run_id } = params;
-    return this._client.get(path3`/evals/${eval_id}/runs/${run_id}/output_items/${outputItemID}`, {
+    return this._client.get(path5`/evals/${eval_id}/runs/${run_id}/output_items/${outputItemID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   list(runID, params, options) {
     const { eval_id, ...query2 } = params;
-    return this._client.getAPIList(path3`/evals/${eval_id}/runs/${runID}/output_items`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
+    return this._client.getAPIList(path5`/evals/${eval_id}/runs/${runID}/output_items`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
   }
 }
 
@@ -34360,7 +34702,7 @@ class Runs2 extends APIResource {
     this.outputItems = new OutputItems(this._client);
   }
   create(evalID, body, options) {
-    return this._client.post(path3`/evals/${evalID}/runs`, {
+    return this._client.post(path5`/evals/${evalID}/runs`, {
       body,
       ...options,
       __security: { bearerAuth: true }
@@ -34368,13 +34710,13 @@ class Runs2 extends APIResource {
   }
   retrieve(runID, params, options) {
     const { eval_id } = params;
-    return this._client.get(path3`/evals/${eval_id}/runs/${runID}`, {
+    return this._client.get(path5`/evals/${eval_id}/runs/${runID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   list(evalID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/evals/${evalID}/runs`, CursorPage, {
+    return this._client.getAPIList(path5`/evals/${evalID}/runs`, CursorPage, {
       query: query2,
       ...options,
       __security: { bearerAuth: true }
@@ -34382,14 +34724,14 @@ class Runs2 extends APIResource {
   }
   delete(runID, params, options) {
     const { eval_id } = params;
-    return this._client.delete(path3`/evals/${eval_id}/runs/${runID}`, {
+    return this._client.delete(path5`/evals/${eval_id}/runs/${runID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   cancel(runID, params, options) {
     const { eval_id } = params;
-    return this._client.post(path3`/evals/${eval_id}/runs/${runID}`, {
+    return this._client.post(path5`/evals/${eval_id}/runs/${runID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -34407,10 +34749,10 @@ class Evals extends APIResource {
     return this._client.post("/evals", { body, ...options, __security: { bearerAuth: true } });
   }
   retrieve(evalID, options) {
-    return this._client.get(path3`/evals/${evalID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.get(path5`/evals/${evalID}`, { ...options, __security: { bearerAuth: true } });
   }
   update(evalID, body, options) {
-    return this._client.post(path3`/evals/${evalID}`, { body, ...options, __security: { bearerAuth: true } });
+    return this._client.post(path5`/evals/${evalID}`, { body, ...options, __security: { bearerAuth: true } });
   }
   list(query2 = {}, options) {
     return this._client.getAPIList("/evals", CursorPage, {
@@ -34420,7 +34762,7 @@ class Evals extends APIResource {
     });
   }
   delete(evalID, options) {
-    return this._client.delete(path3`/evals/${evalID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.delete(path5`/evals/${evalID}`, { ...options, __security: { bearerAuth: true } });
   }
 }
 Evals.Runs = Runs2;
@@ -34447,7 +34789,7 @@ class Files2 extends APIResource {
     return this._client.post("/files", multipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
   }
   retrieve(fileID, options) {
-    return this._client.get(path3`/files/${fileID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.get(path5`/files/${fileID}`, { ...options, __security: { bearerAuth: true } });
   }
   list(query2 = {}, options) {
     return this._client.getAPIList("/files", CursorPage, {
@@ -34457,10 +34799,10 @@ class Files2 extends APIResource {
     });
   }
   delete(fileID, options) {
-    return this._client.delete(path3`/files/${fileID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.delete(path5`/files/${fileID}`, { ...options, __security: { bearerAuth: true } });
   }
   content(fileID, options) {
-    return this._client.get(path3`/files/${fileID}/content`, {
+    return this._client.get(path5`/files/${fileID}/content`, {
       ...options,
       headers: buildHeaders([{ Accept: "application/binary" }, options?.headers]),
       __security: { bearerAuth: true },
@@ -34505,21 +34847,21 @@ Alpha.Graders = Graders;
 // server/node_modules/openai/resources/fine-tuning/checkpoints/permissions.mjs
 class Permissions extends APIResource {
   create(fineTunedModelCheckpoint, body, options) {
-    return this._client.getAPIList(path3`/fine_tuning/checkpoints/${fineTunedModelCheckpoint}/permissions`, Page, { body, method: "post", ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/fine_tuning/checkpoints/${fineTunedModelCheckpoint}/permissions`, Page, { body, method: "post", ...options, __security: { adminAPIKeyAuth: true } });
   }
   retrieve(fineTunedModelCheckpoint, query2 = {}, options) {
-    return this._client.get(path3`/fine_tuning/checkpoints/${fineTunedModelCheckpoint}/permissions`, {
+    return this._client.get(path5`/fine_tuning/checkpoints/${fineTunedModelCheckpoint}/permissions`, {
       query: query2,
       ...options,
       __security: { adminAPIKeyAuth: true }
     });
   }
   list(fineTunedModelCheckpoint, query2 = {}, options) {
-    return this._client.getAPIList(path3`/fine_tuning/checkpoints/${fineTunedModelCheckpoint}/permissions`, ConversationCursorPage, { query: query2, ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.getAPIList(path5`/fine_tuning/checkpoints/${fineTunedModelCheckpoint}/permissions`, ConversationCursorPage, { query: query2, ...options, __security: { adminAPIKeyAuth: true } });
   }
   delete(permissionID, params, options) {
     const { fine_tuned_model_checkpoint } = params;
-    return this._client.delete(path3`/fine_tuning/checkpoints/${fine_tuned_model_checkpoint}/permissions/${permissionID}`, { ...options, __security: { adminAPIKeyAuth: true } });
+    return this._client.delete(path5`/fine_tuning/checkpoints/${fine_tuned_model_checkpoint}/permissions/${permissionID}`, { ...options, __security: { adminAPIKeyAuth: true } });
   }
 }
 
@@ -34535,7 +34877,7 @@ Checkpoints.Permissions = Permissions;
 // server/node_modules/openai/resources/fine-tuning/jobs/checkpoints.mjs
 class Checkpoints2 extends APIResource {
   list(fineTuningJobID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/fine_tuning/jobs/${fineTuningJobID}/checkpoints`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
+    return this._client.getAPIList(path5`/fine_tuning/jobs/${fineTuningJobID}/checkpoints`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
   }
 }
 
@@ -34549,7 +34891,7 @@ class Jobs extends APIResource {
     return this._client.post("/fine_tuning/jobs", { body, ...options, __security: { bearerAuth: true } });
   }
   retrieve(fineTuningJobID, options) {
-    return this._client.get(path3`/fine_tuning/jobs/${fineTuningJobID}`, {
+    return this._client.get(path5`/fine_tuning/jobs/${fineTuningJobID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -34562,22 +34904,22 @@ class Jobs extends APIResource {
     });
   }
   cancel(fineTuningJobID, options) {
-    return this._client.post(path3`/fine_tuning/jobs/${fineTuningJobID}/cancel`, {
+    return this._client.post(path5`/fine_tuning/jobs/${fineTuningJobID}/cancel`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   listEvents(fineTuningJobID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/fine_tuning/jobs/${fineTuningJobID}/events`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
+    return this._client.getAPIList(path5`/fine_tuning/jobs/${fineTuningJobID}/events`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
   }
   pause(fineTuningJobID, options) {
-    return this._client.post(path3`/fine_tuning/jobs/${fineTuningJobID}/pause`, {
+    return this._client.post(path5`/fine_tuning/jobs/${fineTuningJobID}/pause`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   resume(fineTuningJobID, options) {
-    return this._client.post(path3`/fine_tuning/jobs/${fineTuningJobID}/resume`, {
+    return this._client.post(path5`/fine_tuning/jobs/${fineTuningJobID}/resume`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -34637,13 +34979,13 @@ class Images extends APIResource {
 // server/node_modules/openai/resources/models.mjs
 class Models extends APIResource {
   retrieve(model, options) {
-    return this._client.get(path3`/models/${model}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.get(path5`/models/${model}`, { ...options, __security: { bearerAuth: true } });
   }
   list(options) {
     return this._client.getAPIList("/models", Page, { ...options, __security: { bearerAuth: true } });
   }
   delete(model, options) {
-    return this._client.delete(path3`/models/${model}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.delete(path5`/models/${model}`, { ...options, __security: { bearerAuth: true } });
   }
 }
 // server/node_modules/openai/resources/moderations.mjs
@@ -34709,7 +35051,7 @@ class Calls extends APIResource {
     }, "sdp"));
   }
   accept(callID, body, options) {
-    return this._client.post(path3`/realtime/calls/${callID}/accept`, {
+    return this._client.post(path5`/realtime/calls/${callID}/accept`, {
       body,
       ...options,
       headers: buildHeaders([{ Accept: "*/*" }, options?.headers]),
@@ -34717,14 +35059,14 @@ class Calls extends APIResource {
     });
   }
   hangup(callID, options) {
-    return this._client.post(path3`/realtime/calls/${callID}/hangup`, {
+    return this._client.post(path5`/realtime/calls/${callID}/hangup`, {
       ...options,
       headers: buildHeaders([{ Accept: "*/*" }, options?.headers]),
       __security: { bearerAuth: true }
     });
   }
   refer(callID, body, options) {
-    return this._client.post(path3`/realtime/calls/${callID}/refer`, {
+    return this._client.post(path5`/realtime/calls/${callID}/refer`, {
       body,
       ...options,
       headers: buildHeaders([{ Accept: "*/*" }, options?.headers]),
@@ -34732,7 +35074,7 @@ class Calls extends APIResource {
     });
   }
   reject(callID, body = {}, options) {
-    return this._client.post(path3`/realtime/calls/${callID}/reject`, {
+    return this._client.post(path5`/realtime/calls/${callID}/reject`, {
       body,
       ...options,
       headers: buildHeaders([{ Accept: "*/*" }, options?.headers]),
@@ -36116,7 +36458,7 @@ function finalizeResponse(snapshot, params) {
 // server/node_modules/openai/resources/responses/input-items.mjs
 class InputItems2 extends APIResource {
   list(responseID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/responses/${responseID}/input_items`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
+    return this._client.getAPIList(path5`/responses/${responseID}/input_items`, CursorPage, { query: query2, ...options, __security: { bearerAuth: true } });
   }
 }
 
@@ -36152,7 +36494,7 @@ class Responses2 extends APIResource {
     });
   }
   retrieve(responseID, query2 = {}, options) {
-    return this._client.get(path3`/responses/${responseID}`, {
+    return this._client.get(path5`/responses/${responseID}`, {
       query: query2,
       ...options,
       stream: query2?.stream ?? false,
@@ -36165,7 +36507,7 @@ class Responses2 extends APIResource {
     });
   }
   delete(responseID, options) {
-    return this._client.delete(path3`/responses/${responseID}`, {
+    return this._client.delete(path5`/responses/${responseID}`, {
       ...options,
       headers: buildHeaders([{ Accept: "*/*" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -36178,7 +36520,7 @@ class Responses2 extends APIResource {
     return ResponseStream.createResponse(this._client, body, options);
   }
   cancel(responseID, options) {
-    return this._client.post(path3`/responses/${responseID}/cancel`, {
+    return this._client.post(path5`/responses/${responseID}/cancel`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -36192,7 +36534,7 @@ Responses2.InputTokens = InputTokens2;
 // server/node_modules/openai/resources/safety/alerts.mjs
 class Alerts extends APIResource {
   retrieve(id, options) {
-    return this._client.get(path3`/safety/alerts/${id}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.get(path5`/safety/alerts/${id}`, { ...options, __security: { bearerAuth: true } });
   }
 }
 
@@ -36207,7 +36549,7 @@ Safety.Alerts = Alerts;
 // server/node_modules/openai/resources/skills/content.mjs
 class Content2 extends APIResource {
   retrieve(skillID, options) {
-    return this._client.get(path3`/skills/${skillID}/content`, {
+    return this._client.get(path5`/skills/${skillID}/content`, {
       ...options,
       headers: buildHeaders([{ Accept: "application/binary" }, options?.headers]),
       __security: { bearerAuth: true },
@@ -36220,7 +36562,7 @@ class Content2 extends APIResource {
 class Content3 extends APIResource {
   retrieve(version2, params, options) {
     const { skill_id } = params;
-    return this._client.get(path3`/skills/${skill_id}/versions/${version2}/content`, {
+    return this._client.get(path5`/skills/${skill_id}/versions/${version2}/content`, {
       ...options,
       headers: buildHeaders([{ Accept: "application/binary" }, options?.headers]),
       __security: { bearerAuth: true },
@@ -36236,19 +36578,19 @@ class Versions extends APIResource {
     this.content = new Content3(this._client);
   }
   create(skillID, body = {}, options) {
-    return this._client.post(path3`/skills/${skillID}/versions`, maybeMultipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client, {
+    return this._client.post(path5`/skills/${skillID}/versions`, maybeMultipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client, {
       stripFilenames: false
     }));
   }
   retrieve(version2, params, options) {
     const { skill_id } = params;
-    return this._client.get(path3`/skills/${skill_id}/versions/${version2}`, {
+    return this._client.get(path5`/skills/${skill_id}/versions/${version2}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   list(skillID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/skills/${skillID}/versions`, CursorPage, {
+    return this._client.getAPIList(path5`/skills/${skillID}/versions`, CursorPage, {
       query: query2,
       ...options,
       __security: { bearerAuth: true }
@@ -36256,7 +36598,7 @@ class Versions extends APIResource {
   }
   delete(version2, params, options) {
     const { skill_id } = params;
-    return this._client.delete(path3`/skills/${skill_id}/versions/${version2}`, {
+    return this._client.delete(path5`/skills/${skill_id}/versions/${version2}`, {
       ...options,
       __security: { bearerAuth: true }
     });
@@ -36277,10 +36619,10 @@ class Skills extends APIResource {
     }));
   }
   retrieve(skillID, options) {
-    return this._client.get(path3`/skills/${skillID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.get(path5`/skills/${skillID}`, { ...options, __security: { bearerAuth: true } });
   }
   update(skillID, body, options) {
-    return this._client.post(path3`/skills/${skillID}`, {
+    return this._client.post(path5`/skills/${skillID}`, {
       body,
       ...options,
       __security: { bearerAuth: true }
@@ -36294,7 +36636,7 @@ class Skills extends APIResource {
     });
   }
   delete(skillID, options) {
-    return this._client.delete(path3`/skills/${skillID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.delete(path5`/skills/${skillID}`, { ...options, __security: { bearerAuth: true } });
   }
 }
 Skills.Content = Content2;
@@ -36302,7 +36644,7 @@ Skills.Versions = Versions;
 // server/node_modules/openai/resources/uploads/parts.mjs
 class Parts extends APIResource {
   create(uploadID, body, options) {
-    return this._client.post(path3`/uploads/${uploadID}/parts`, multipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
+    return this._client.post(path5`/uploads/${uploadID}/parts`, multipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
   }
 }
 
@@ -36316,13 +36658,13 @@ class Uploads extends APIResource {
     return this._client.post("/uploads", { body, ...options, __security: { bearerAuth: true } });
   }
   cancel(uploadID, options) {
-    return this._client.post(path3`/uploads/${uploadID}/cancel`, {
+    return this._client.post(path5`/uploads/${uploadID}/cancel`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   complete(uploadID, body, options) {
-    return this._client.post(path3`/uploads/${uploadID}/complete`, {
+    return this._client.post(path5`/uploads/${uploadID}/complete`, {
       body,
       ...options,
       __security: { bearerAuth: true }
@@ -36385,7 +36727,7 @@ async function uploadAndPollVectorStoreFileBatch(resource, client, vectorStoreId
 // server/node_modules/openai/resources/vector-stores/file-batches.mjs
 class FileBatches extends APIResource {
   create(vectorStoreID, body, options) {
-    return this._client.post(path3`/vector_stores/${vectorStoreID}/file_batches`, {
+    return this._client.post(path5`/vector_stores/${vectorStoreID}/file_batches`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -36394,7 +36736,7 @@ class FileBatches extends APIResource {
   }
   retrieve(batchID, params, options) {
     const { vector_store_id } = params;
-    return this._client.get(path3`/vector_stores/${vector_store_id}/file_batches/${batchID}`, {
+    return this._client.get(path5`/vector_stores/${vector_store_id}/file_batches/${batchID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -36402,7 +36744,7 @@ class FileBatches extends APIResource {
   }
   cancel(batchID, params, options) {
     const { vector_store_id } = params;
-    return this._client.post(path3`/vector_stores/${vector_store_id}/file_batches/${batchID}/cancel`, {
+    return this._client.post(path5`/vector_stores/${vector_store_id}/file_batches/${batchID}/cancel`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -36414,7 +36756,7 @@ class FileBatches extends APIResource {
   }
   listFiles(batchID, params, options) {
     const { vector_store_id, ...query2 } = params;
-    return this._client.getAPIList(path3`/vector_stores/${vector_store_id}/file_batches/${batchID}/files`, CursorPage, {
+    return this._client.getAPIList(path5`/vector_stores/${vector_store_id}/file_batches/${batchID}/files`, CursorPage, {
       query: query2,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -36432,7 +36774,7 @@ class FileBatches extends APIResource {
 // server/node_modules/openai/resources/vector-stores/files.mjs
 class Files3 extends APIResource {
   create(vectorStoreID, body, options) {
-    return this._client.post(path3`/vector_stores/${vectorStoreID}/files`, {
+    return this._client.post(path5`/vector_stores/${vectorStoreID}/files`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -36441,7 +36783,7 @@ class Files3 extends APIResource {
   }
   retrieve(fileID, params, options) {
     const { vector_store_id } = params;
-    return this._client.get(path3`/vector_stores/${vector_store_id}/files/${fileID}`, {
+    return this._client.get(path5`/vector_stores/${vector_store_id}/files/${fileID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -36449,7 +36791,7 @@ class Files3 extends APIResource {
   }
   update(fileID, params, options) {
     const { vector_store_id, ...body } = params;
-    return this._client.post(path3`/vector_stores/${vector_store_id}/files/${fileID}`, {
+    return this._client.post(path5`/vector_stores/${vector_store_id}/files/${fileID}`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -36457,7 +36799,7 @@ class Files3 extends APIResource {
     });
   }
   list(vectorStoreID, query2 = {}, options) {
-    return this._client.getAPIList(path3`/vector_stores/${vectorStoreID}/files`, CursorPage, {
+    return this._client.getAPIList(path5`/vector_stores/${vectorStoreID}/files`, CursorPage, {
       query: query2,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -36466,7 +36808,7 @@ class Files3 extends APIResource {
   }
   delete(fileID, params, options) {
     const { vector_store_id } = params;
-    return this._client.delete(path3`/vector_stores/${vector_store_id}/files/${fileID}`, {
+    return this._client.delete(path5`/vector_stores/${vector_store_id}/files/${fileID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -36489,7 +36831,7 @@ class Files3 extends APIResource {
   }
   content(fileID, params, options) {
     const { vector_store_id } = params;
-    return this._client.getAPIList(path3`/vector_stores/${vector_store_id}/files/${fileID}/content`, Page, {
+    return this._client.getAPIList(path5`/vector_stores/${vector_store_id}/files/${fileID}/content`, Page, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
@@ -36513,14 +36855,14 @@ class VectorStores extends APIResource {
     });
   }
   retrieve(vectorStoreID, options) {
-    return this._client.get(path3`/vector_stores/${vectorStoreID}`, {
+    return this._client.get(path5`/vector_stores/${vectorStoreID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
     });
   }
   update(vectorStoreID, body, options) {
-    return this._client.post(path3`/vector_stores/${vectorStoreID}`, {
+    return this._client.post(path5`/vector_stores/${vectorStoreID}`, {
       body,
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
@@ -36536,14 +36878,14 @@ class VectorStores extends APIResource {
     });
   }
   delete(vectorStoreID, options) {
-    return this._client.delete(path3`/vector_stores/${vectorStoreID}`, {
+    return this._client.delete(path5`/vector_stores/${vectorStoreID}`, {
       ...options,
       headers: buildHeaders([{ "OpenAI-Beta": "assistants=v2" }, options?.headers]),
       __security: { bearerAuth: true }
     });
   }
   search(vectorStoreID, body, options) {
-    return this._client.getAPIList(path3`/vector_stores/${vectorStoreID}/search`, Page, {
+    return this._client.getAPIList(path5`/vector_stores/${vectorStoreID}/search`, Page, {
       body,
       method: "post",
       ...options,
@@ -36560,7 +36902,7 @@ class Videos extends APIResource {
     return this._client.post("/videos", multipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
   }
   retrieve(videoID, options) {
-    return this._client.get(path3`/videos/${videoID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.get(path5`/videos/${videoID}`, { ...options, __security: { bearerAuth: true } });
   }
   list(query2 = {}, options) {
     return this._client.getAPIList("/videos", ConversationCursorPage, {
@@ -36570,13 +36912,13 @@ class Videos extends APIResource {
     });
   }
   delete(videoID, options) {
-    return this._client.delete(path3`/videos/${videoID}`, { ...options, __security: { bearerAuth: true } });
+    return this._client.delete(path5`/videos/${videoID}`, { ...options, __security: { bearerAuth: true } });
   }
   createCharacter(body, options) {
     return this._client.post("/videos/characters", multipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
   }
   downloadContent(videoID, query2 = {}, options) {
-    return this._client.get(path3`/videos/${videoID}/content`, {
+    return this._client.get(path5`/videos/${videoID}/content`, {
       query: query2,
       ...options,
       headers: buildHeaders([{ Accept: "application/binary" }, options?.headers]),
@@ -36591,13 +36933,13 @@ class Videos extends APIResource {
     return this._client.post("/videos/extensions", multipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
   }
   getCharacter(characterID, options) {
-    return this._client.get(path3`/videos/characters/${characterID}`, {
+    return this._client.get(path5`/videos/characters/${characterID}`, {
       ...options,
       __security: { bearerAuth: true }
     });
   }
   remix(videoID, body, options) {
-    return this._client.post(path3`/videos/${videoID}/remix`, maybeMultipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
+    return this._client.post(path5`/videos/${videoID}/remix`, maybeMultipartFormRequestOptions({ body, ...options, __security: { bearerAuth: true } }, this._client));
   }
 }
 // server/node_modules/openai/lib/webhook-signature.mjs
@@ -37057,9 +37399,9 @@ https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
     this.apiKey = token;
     return true;
   }
-  buildURL(path4, query2, defaultBaseURL) {
+  buildURL(path6, query2, defaultBaseURL) {
     const baseURL = !__classPrivateFieldGet(this, _OpenAI_instances, "m", _OpenAI_baseURLOverridden).call(this) && defaultBaseURL || this.baseURL;
-    const url2 = isAbsoluteURL(path4) ? new URL(path4) : new URL(baseURL + (baseURL.endsWith("/") && path4.startsWith("/") ? path4.slice(1) : path4));
+    const url2 = isAbsoluteURL(path6) ? new URL(path6) : new URL(baseURL + (baseURL.endsWith("/") && path6.startsWith("/") ? path6.slice(1) : path6));
     const defaultQuery = this.defaultQuery();
     const pathQuery = Object.fromEntries(url2.searchParams);
     if (!isEmptyObj(defaultQuery) || !isEmptyObj(pathQuery)) {
@@ -37079,24 +37421,24 @@ https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
     }
   }
   async prepareRequest(request, { url: url2, options }) {}
-  get(path4, opts) {
-    return this.methodRequest("get", path4, opts);
+  get(path6, opts) {
+    return this.methodRequest("get", path6, opts);
   }
-  post(path4, opts) {
-    return this.methodRequest("post", path4, opts);
+  post(path6, opts) {
+    return this.methodRequest("post", path6, opts);
   }
-  patch(path4, opts) {
-    return this.methodRequest("patch", path4, opts);
+  patch(path6, opts) {
+    return this.methodRequest("patch", path6, opts);
   }
-  put(path4, opts) {
-    return this.methodRequest("put", path4, opts);
+  put(path6, opts) {
+    return this.methodRequest("put", path6, opts);
   }
-  delete(path4, opts) {
-    return this.methodRequest("delete", path4, opts);
+  delete(path6, opts) {
+    return this.methodRequest("delete", path6, opts);
   }
-  methodRequest(method, path4, opts) {
+  methodRequest(method, path6, opts) {
     return this.request(Promise.resolve(opts).then((opts2) => {
-      return { method, path: path4, ...opts2 };
+      return { method, path: path6, ...opts2 };
     }));
   }
   request(options, remainingRetries = null) {
@@ -37446,8 +37788,8 @@ https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
     });
     return { response, options, controller, requestLogID, retryOfRequestLogID, startTime };
   }
-  getAPIList(path4, Page2, opts) {
-    return this.requestAPIList(Page2, opts && "then" in opts ? opts.then((opts2) => ({ method: "get", path: path4, ...opts2 })) : { method: "get", path: path4, ...opts });
+  getAPIList(path6, Page2, opts) {
+    return this.requestAPIList(Page2, opts && "then" in opts ? opts.then((opts2) => ({ method: "get", path: path6, ...opts2 })) : { method: "get", path: path6, ...opts });
   }
   requestAPIList(Page2, options) {
     const authentication = __classPrivateFieldGet(this, _OpenAI_x509Authentication, "f") ?? this._workloadIdentityAuth;
@@ -37464,12 +37806,12 @@ https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
     page._thenUnwrap = guarded._thenUnwrap.bind(guarded);
     return page;
   }
-  async fetchWithAuth(url2, init, timeout, controller, schemes = {
+  async fetchWithAuth(url2, init2, timeout, controller, schemes = {
     bearerAuth: true,
     adminAPIKeyAuth: true
   }) {
     if (this._workloadIdentityAuth && !__classPrivateFieldGet(this, _OpenAI_x509Fetch, "f") && schemes.bearerAuth) {
-      const headers = init.headers;
+      const headers = init2.headers;
       const authHeader = headers.get("Authorization");
       if (!authHeader || authHeader === `Bearer ${WORKLOAD_IDENTITY_API_KEY_PLACEHOLDER}`) {
         const token = await this._workloadIdentityAuth.getToken();
@@ -37477,11 +37819,11 @@ https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
       }
     }
     const fetchWithTimeout = __classPrivateFieldGet(this, _OpenAI_x509Fetch, "f") ? _a5.prototype.fetchWithTimeout : this.fetchWithTimeout;
-    const response = await fetchWithTimeout.call(this, url2, init, timeout, controller);
+    const response = await fetchWithTimeout.call(this, url2, init2, timeout, controller);
     return response;
   }
-  async fetchWithTimeout(url2, init, ms, controller) {
-    const { signal, method, ...options } = init || {};
+  async fetchWithTimeout(url2, init2, ms, controller) {
+    const { signal, method, ...options } = init2 || {};
     const abort = this._makeAbort(controller);
     const composed = !!signal && composedCallerSignals.get(controller) === signal;
     if (signal && !composed)
@@ -37585,8 +37927,8 @@ https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety
     }
     const x509ClientFetchOptions = x509Authentication ? snapshotX509RequestOptions(this.fetchOptions) : undefined;
     const x509RequestFetchOptions = x509Authentication ? snapshotX509RequestOptions(options.fetchOptions) : undefined;
-    const { method, path: path4, query: query2, defaultBaseURL } = options;
-    const url2 = this.buildURL(path4, query2, defaultBaseURL);
+    const { method, path: path6, query: query2, defaultBaseURL } = options;
+    const url2 = this.buildURL(path6, query2, defaultBaseURL);
     x509Authentication?.snapshotAPIURL(url2);
     const explicitTimeout = "timeout" in options;
     if (explicitTimeout)
@@ -37802,117 +38144,20 @@ var brand_privateBedrockClient = Symbol.for("openai.privateBedrockClient");
 // server/node_modules/openai/bedrock.mjs
 var _a6;
 _a6 = brand_privateBedrockClient;
-// server/src/scope.ts
-import { execFileSync as execFileSync3 } from "node:child_process";
-import fs3 from "node:fs";
-import os2 from "node:os";
-import path4 from "node:path";
-var HOME = os2.homedir();
-function normalizeRemote(url2) {
-  if (!url2)
-    return null;
-  const raw = String(url2).trim();
-  if (!raw)
-    return null;
-  const scp = raw.match(/^(?:[^@/]+@)?([^:/]+):(?!\/)(.+?)(?:\.git)?$/);
-  if (scp)
-    return `${scp[1]}/${scp[2]}`;
-  try {
-    const u = new URL(raw);
-    if (!u.hostname)
-      return null;
-    const path5 = u.pathname.replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
-    return path5 ? `${u.hostname}/${path5}` : u.hostname;
-  } catch {
-    return null;
-  }
-}
-function identify(dir) {
-  const given = path4.resolve(dir);
-  const git = (...args) => {
-    try {
-      return execFileSync3("git", ["-C", given, ...args], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"]
-      }).trim();
-    } catch {
-      return null;
-    }
-  };
-  const remote = normalizeRemote(git("remote", "get-url", "origin"));
-  const top = git("rev-parse", "--show-toplevel");
-  const abs = top || given;
-  const rest = remote ? remote.split("/").slice(1) : [];
-  return {
-    ident: remote ? `git:${remote}` : `path:${abs}`,
-    identKind: remote ? "git-remote" : "abs-path",
-    absPath: abs,
-    hostOrg: rest.length > 1 ? rest[0] ?? null : null,
-    repoName: rest.length ? rest[rest.length - 1] ?? "" : path4.basename(abs),
-    label: remote ? rest.join("/") : path4.basename(abs)
-  };
-}
-var MARKERS = [
-  "package.json",
-  "pyproject.toml",
-  "go.mod",
-  "Cargo.toml",
-  "Gemfile",
-  "dbt_project.yml",
-  "Dockerfile",
-  "docker-compose.yml",
-  "main.tf",
-  "Chart.yaml",
-  "kustomization.yaml",
-  "next.config.js",
-  "requirements.txt",
-  "README.md"
-];
-function candidates(roots = [path4.join(HOME, "Projects")]) {
-  const found = new Set;
-  const add = (d) => {
-    if (!found.has(d) && fs3.existsSync(d) && fs3.statSync(d).isDirectory())
-      found.add(d);
-  };
-  for (const root of roots) {
-    let es = [];
-    try {
-      es = fs3.readdirSync(root, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of es)
-      if (e.isDirectory() && !e.name.startsWith("."))
-        add(path4.join(root, e.name));
-  }
-  return [...found].sort().map((d) => ({
-    ...identify(d),
-    markers: MARKERS.filter((m) => fs3.existsSync(path4.join(d, m)))
-  }));
-}
-var HOST = os2.hostname();
-async function rememberPath(client, scopeId, absPath, { replace = false } = {}) {
-  const r = await client.query(replace ? `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
-         on conflict (scope_id, host) do update set abs_path = excluded.abs_path, seen_at = now()` : `insert into scope_path (scope_id, host, abs_path) values ($1,$2,$3)
-         on conflict (scope_id, host) do update set seen_at = now()
-         where scope_path.abs_path = excluded.abs_path`, [scopeId, HOST, absPath]);
-  return (r.rowCount ?? 0) > 0;
-}
-
 // server/src/identity.ts
 var SOURCES = ["README.md", "CLAUDE.md", "AGENTS.md", "package.json"];
 var MAX2 = 6000;
 function material(absPath) {
   for (const name of SOURCES) {
     try {
-      const body = fs4.readFileSync(path5.join(absPath, name), "utf8").trim();
+      const body = fs5.readFileSync(path6.join(absPath, name), "utf8").trim();
       if (body)
         return `# ${name}
 ${body.slice(0, MAX2)}`;
     } catch {}
   }
   try {
-    const top = fs4.readdirSync(absPath, { withFileTypes: true }).filter((d) => !d.name.startsWith(".")).map((d) => d.isDirectory() ? `${d.name}/` : d.name).slice(0, 60);
+    const top = fs5.readdirSync(absPath, { withFileTypes: true }).filter((d) => !d.name.startsWith(".")).map((d) => d.isDirectory() ? `${d.name}/` : d.name).slice(0, 60);
     return top.length ? `# 置いてあるもの
 ${top.join(`
 `)}` : null;
@@ -37954,7 +38199,7 @@ async function ensureIdentity(c, env2, scopeId) {
   const s = r.rows[0];
   if (!s || s.role && s.summary)
     return null;
-  if (!s.abs_path || !fs4.existsSync(s.abs_path))
+  if (!s.abs_path || !fs5.existsSync(s.abs_path))
     return null;
   const got = await inferIdentity(env2, s.abs_path);
   if (!got)
@@ -38648,18 +38893,18 @@ async function ingest(client, env2, ir, scopeId, { onProgress } = {}) {
 }
 
 // server/src/linear.ts
-import { execFileSync as execFileSync4 } from "node:child_process";
+import { execFileSync as execFileSync5 } from "node:child_process";
 import crypto6 from "node:crypto";
-import fs5 from "node:fs";
+import fs6 from "node:fs";
 import os3 from "node:os";
-import path6 from "node:path";
+import path7 from "node:path";
 function mcpConfigPath() {
-  const p = path6.join(os3.tmpdir(), "mitos-linear-mcp.json");
-  fs5.writeFileSync(p, JSON.stringify({ mcpServers: { "linear-server": { type: "http", url: "https://mcp.linear.app/mcp" } } }));
+  const p = path7.join(os3.tmpdir(), "mitos-linear-mcp.json");
+  fs6.writeFileSync(p, JSON.stringify({ mcpServers: { "linear-server": { type: "http", url: "https://mcp.linear.app/mcp" } } }));
   return p;
 }
 function runClaude(prompt, tools) {
-  const out = execFileSync4("claude", [
+  const out = execFileSync5("claude", [
     "-p",
     prompt,
     "--mcp-config",
@@ -38703,8 +38948,8 @@ function resultText(content) {
   const raw = Array.isArray(content) ? content.map((x) => typeof x.text === "string" ? x.text : "").join("") : typeof content === "string" ? content : "";
   const saved = raw.match(/Output has been saved to (\S+?\.txt)/);
   const file2 = saved?.[1];
-  if (file2 && fs5.existsSync(file2))
-    return fs5.readFileSync(file2, "utf8");
+  if (file2 && fs6.existsSync(file2))
+    return fs6.readFileSync(file2, "utf8");
   return raw;
 }
 function callOnce(tool, args) {
@@ -39007,26 +39252,26 @@ ${issue2.description}`;
 }
 
 // server/src/plugin.ts
-import { execFileSync as execFileSync5 } from "node:child_process";
-import fs6 from "node:fs";
+import { execFileSync as execFileSync6 } from "node:child_process";
+import fs7 from "node:fs";
 import os4 from "node:os";
-import path7 from "node:path";
+import path8 from "node:path";
 import { fileURLToPath } from "node:url";
-var MANIFEST = path7.join(".claude-plugin", "plugin.json");
+var MANIFEST = path8.join(".claude-plugin", "plugin.json");
 function versionAt(root) {
   try {
-    const m = JSON.parse(fs6.readFileSync(path7.join(root, MANIFEST), "utf8"));
+    const m = JSON.parse(fs7.readFileSync(path8.join(root, MANIFEST), "utf8"));
     return m.name === "mitos" && typeof m.version === "string" ? m.version : null;
   } catch {
     return null;
   }
 }
-var here = path7.dirname(fileURLToPath(import.meta.url));
-var ROOT = [path7.join(here, ".."), path7.join(here, "..", "..", "plugin")].find((r) => versionAt(r) !== null) ?? path7.join(here, "..");
+var here = path8.dirname(fileURLToPath(import.meta.url));
+var ROOT = [path8.join(here, ".."), path8.join(here, "..", "..", "plugin")].find((r) => versionAt(r) !== null) ?? path8.join(here, "..");
 function rootState(root) {
-  if (!fs6.existsSync(path7.join(root, MANIFEST)))
+  if (!fs7.existsSync(path8.join(root, MANIFEST)))
     return "gone";
-  if (fs6.existsSync(path7.join(root, ".orphaned_at")))
+  if (fs7.existsSync(path8.join(root, ".orphaned_at")))
     return "orphaned";
   return "ok";
 }
@@ -39042,23 +39287,23 @@ function compareVersions(a, b) {
 }
 var HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
 function distributed(root, tracked) {
-  const walk = (dir) => fs6.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+  const walk = (dir) => fs7.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     if (dir === root && HOST_MARKS.has(e.name))
       return [];
-    const abs = path7.join(dir, e.name);
-    return e.isDirectory() ? walk(abs) : e.isFile() ? [path7.relative(root, abs)] : [];
+    const abs = path8.join(dir, e.name);
+    return e.isDirectory() ? walk(abs) : e.isFile() ? [path8.relative(root, abs)] : [];
   });
   let rels;
   if (tracked) {
     try {
-      rels = execFileSync5("git", ["-C", root, "ls-files", "-z"], {
+      rels = execFileSync6("git", ["-C", root, "ls-files", "-z"], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"]
-      }).split("\x00").filter((rel) => rel && fs6.existsSync(path7.join(root, rel)));
+      }).split("\x00").filter((rel) => rel && fs7.existsSync(path8.join(root, rel)));
     } catch {}
   }
   rels ??= walk(root);
-  return new Map(rels.filter((rel) => path7.basename(rel) !== ".DS_Store").map((rel) => [rel, path7.join(root, rel)]));
+  return new Map(rels.filter((rel) => path8.basename(rel) !== ".DS_Store").map((rel) => [rel, path8.join(root, rel)]));
 }
 function differingFiles(a, b, { tracked = false } = {}) {
   const x = distributed(a, tracked);
@@ -39066,7 +39311,7 @@ function differingFiles(a, b, { tracked = false } = {}) {
   return [...new Set([...x.keys(), ...y.keys()])].filter((rel) => {
     const p = x.get(rel);
     const q = y.get(rel);
-    return !p || !q || !fs6.readFileSync(p).equals(fs6.readFileSync(q));
+    return !p || !q || !fs7.readFileSync(p).equals(fs7.readFileSync(q));
   }).sort();
 }
 function parsePs(out) {
@@ -39082,11 +39327,11 @@ function parsePs(out) {
 }
 function cwdOf(pid) {
   try {
-    const link = fs6.readlinkSync(`/proc/${pid}/cwd`);
+    const link = fs7.readlinkSync(`/proc/${pid}/cwd`);
     return { dir: link.replace(/ \(deleted\)$/, ""), replaced: link.endsWith(" (deleted)") };
   } catch {}
   try {
-    const out = execFileSync5("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fin"], {
+    const out = execFileSync6("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fin"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 1e4
@@ -39098,7 +39343,7 @@ function cwdOf(pid) {
       return null;
     let now;
     try {
-      now = String(fs6.statSync(dir).ino);
+      now = String(fs7.statSync(dir).ino);
     } catch {}
     const held = field("i");
     return { dir, replaced: now !== undefined && held !== undefined && now !== held };
@@ -39109,10 +39354,10 @@ function cwdOf(pid) {
 var CACHED = /\/plugins\/cache\/[^/]+\/mitos\/[^/]+$/;
 function observe(cwdRoot) {
   const install = (root) => ({ version: versionAt(root), root });
-  const repository = [path7.dirname(ROOT), cwdRoot].filter((d) => fs6.existsSync(path7.join(d, ".claude-plugin", "marketplace.json"))).map((d) => install(path7.join(d, "plugin"))).find((r) => r.version !== null) ?? null;
+  const repository = [path8.dirname(ROOT), cwdRoot].filter((d) => fs7.existsSync(path8.join(d, ".claude-plugin", "marketplace.json"))).map((d) => install(path8.join(d, "plugin"))).find((r) => r.version !== null) ?? null;
   let claude;
   try {
-    const list = JSON.parse(execFileSync5("claude", ["plugin", "list", "--json"], {
+    const list = JSON.parse(execFileSync6("claude", ["plugin", "list", "--json"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 30000
@@ -39122,38 +39367,38 @@ function observe(cwdRoot) {
   } catch {
     claude = "unknown";
   }
-  let codexHome = process.env.CODEX_HOME ?? path7.join(os4.homedir(), ".codex");
+  let codexHome = process.env.CODEX_HOME ?? path8.join(os4.homedir(), ".codex");
   try {
-    codexHome = fs6.realpathSync(codexHome);
+    codexHome = fs7.realpathSync(codexHome);
   } catch {}
-  const codexCache = path7.join(codexHome, "plugins", "cache");
+  const codexCache = path8.join(codexHome, "plugins", "cache");
   const codex = [];
   for (const market of safeDirs(codexCache)) {
-    for (const v of safeDirs(path7.join(codexCache, market, "mitos"))) {
-      codex.push(install(path7.join(codexCache, market, "mitos", v)));
+    for (const v of safeDirs(path8.join(codexCache, market, "mitos"))) {
+      codex.push(install(path8.join(codexCache, market, "mitos", v)));
     }
   }
   let running;
   try {
-    const out = execFileSync5("ps", ["-U", String(process.getuid?.()), "-o", "pid=,lstart=,args="], {
+    const out = execFileSync6("ps", ["-U", String(process.getuid?.()), "-o", "pid=,lstart=,args="], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       env: { ...process.env, LC_ALL: "C" },
       timeout: 1e4
     });
     running = parsePs(out).flatMap((p) => {
-      const cwd = path7.isAbsolute(p.script) ? { dir: "/", replaced: false } : cwdOf(p.pid);
+      const cwd = path8.isAbsolute(p.script) ? { dir: "/", replaced: false } : cwdOf(p.pid);
       if (!cwd)
         return [{ pid: p.pid, started: p.started, root: null, version: null }];
-      const root = path7.dirname(path7.dirname(path7.resolve(cwd.dir, p.script)));
+      const root = path8.dirname(path8.dirname(path8.resolve(cwd.dir, p.script)));
       const cached2 = CACHED.test(root);
       const now = versionAt(root);
       if (now === null && !cached2)
         return [];
-      let version2 = cwd.replaced || now === null ? cached2 ? path7.basename(root) : null : now;
+      let version2 = cwd.replaced || now === null ? cached2 ? path8.basename(root) : null : now;
       if (!cached2 && version2 !== null) {
         try {
-          const touched = Math.max(...[path7.join("dist", "mcp.js"), MANIFEST].map((f) => fs6.statSync(path7.join(root, f)).mtimeMs));
+          const touched = Math.max(...[path8.join("dist", "mcp.js"), MANIFEST].map((f) => fs7.statSync(path8.join(root, f)).mtimeMs));
           if (touched > p.started.getTime())
             version2 = null;
         } catch {
@@ -39169,7 +39414,7 @@ function observe(cwdRoot) {
 }
 function safeDirs(dir) {
   try {
-    return fs6.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    return fs7.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
     return [];
   }
@@ -39189,7 +39434,7 @@ function report(s, now = new Date) {
   const row = (label, i, note, aside = "") => say(label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
   const base = s.repository;
   const against = (i) => {
-    if (!fs6.existsSync(i.root))
+    if (!fs7.existsSync(i.root))
       return { note: "導入先が無い。Skill のパスも無効", update: true };
     if (!base?.version || !i.version)
       return {};
@@ -39198,7 +39443,7 @@ function report(s, now = new Date) {
       return { note: `repository（${base.version}）より古い`, update: true };
     if (c > 0)
       return { note: `repository（${base.version}）より新しい。repository の checkout が古い` };
-    if (path7.resolve(i.root) === path7.resolve(base.root))
+    if (path8.resolve(i.root) === path8.resolve(base.root))
       return {};
     const diff = differingFiles(base.root, i.root, { tracked: true });
     if (!diff.length)
@@ -39234,7 +39479,7 @@ function report(s, now = new Date) {
   }
   const x = s.codex.length === 1 ? s.codex[0] : undefined;
   if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
-    if (fs6.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
+    if (fs7.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
       lines.push("  ← Claude Code と Codex で同じ版なのに中身が違う");
     }
   }
@@ -39295,6 +39540,8 @@ var USAGE = `使い方:
   mitos import-linear --team <名前> [--group <束>] [--all]
                                                  Linear の issue とコメントを取り込む
   mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
+  mitos init [--cwd <dir>]                       要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
+  mitos check [--cwd <dir>]                      .mitos/ の change.json を検査する（DB に触らない）
   mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
   mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
                                                  --yes は既に登録済みの場所を入れ替える）
@@ -39320,7 +39567,7 @@ var OPTIONS = {
 };
 var IR_TAG = /<script type="application\/json" id="progress-ir">([\s\S]*?)<\/script>/;
 function readIr(file2) {
-  const body = fs7.readFileSync(file2, "utf8");
+  const body = fs8.readFileSync(file2, "utf8");
   if (!file2.endsWith(".html"))
     return JSON.parse(body);
   const m = body.match(IR_TAG);
@@ -39419,7 +39666,7 @@ async function trackerScopeId(c, ident, label, hostOrg, group) {
 }
 async function syncDocs(c, env2, dir, say) {
   const me = identify(dir);
-  if (!fs7.existsSync(path8.join(me.absPath, ".git"))) {
+  if (!fs8.existsSync(path9.join(me.absPath, ".git"))) {
     throw new Error(`${dir} は git 管理下に無い。取り込む対象は git が追っている Markdown`);
   }
   const scopeId = await scopeIdFor(c, dir, true);
@@ -39520,12 +39767,35 @@ async function main() {
     "gaps",
     "forget",
     "adopt",
-    "advice"
+    "advice",
+    "init",
+    "check"
   ];
   if (!KNOWN.includes(cmd))
     throw new Error(`知らないコマンド: ${cmd}
 
 ${USAGE}`);
+  if (cmd === "init" || cmd === "check") {
+    parseArgs({ args: argv.slice(1), options: { cwd: OPTIONS.cwd } });
+    if (cmd === "init") {
+      const r2 = init(cwd);
+      console.log(r2.created ? `.mitos を作った: ${r2.root}` : `.mitos は既に初期化済み: ${r2.root}`);
+      if (r2.created) {
+        console.log("※ 日次同期を含む全ての同期経路の mitos を、この版以降へ更新してから .mitos を使う。" + "旧版は .mitos の選別を知らず、追跡済みの draft を通常の文書として取り込む");
+      }
+      return;
+    }
+    const r = check2(cwd);
+    for (const p of r.problems)
+      console.error(`  ${p.path}: ${p.reason}`);
+    if (r.problems.length) {
+      process.exitCode = 1;
+      console.error(`.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`);
+      return;
+    }
+    console.log(`.mitos の検査は通った: ${r.root}（change ${r.changes} 件）`);
+    return;
+  }
   const env2 = loadEnv(cwd);
   if (cmd === "doctor") {
     for (const line of report(observe(identify(cwd).absPath)))
@@ -39588,12 +39858,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "advice") {
-    const log2 = path8.join(os5.homedir(), ".claude", "mitos-advice.jsonl");
-    if (!fs7.existsSync(log2)) {
+    const log2 = path9.join(os5.homedir(), ".claude", "mitos-advice.jsonl");
+    if (!fs8.existsSync(log2)) {
       console.log("まだ記録がありません（編集フックが一度も走っていない）。");
       return;
     }
-    const rows = fs7.readFileSync(log2, "utf8").split(`
+    const rows = fs8.readFileSync(log2, "utf8").split(`
 `).filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
     const shownRows = rows.filter((r) => r.shown.length > 0);
     const all = shownRows.flatMap((r) => r.shown);
@@ -39615,12 +39885,12 @@ ${USAGE}`);
     return;
   }
   if (cmd === "usage") {
-    const log2 = path8.join(os5.homedir(), ".claude", "mitos-usage.jsonl");
-    if (!fs7.existsSync(log2)) {
+    const log2 = path9.join(os5.homedir(), ".claude", "mitos-usage.jsonl");
+    if (!fs8.existsSync(log2)) {
       console.log("まだ記録がありません。");
       return;
     }
-    const rows = fs7.readFileSync(log2, "utf8").split(`
+    const rows = fs8.readFileSync(log2, "utf8").split(`
 `).filter(Boolean).map((l) => JSON.parse(l));
     const limit3 = Number(env2.MITOS_USAGE_LIMIT ?? 10);
     const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0);
@@ -39718,7 +39988,7 @@ ${USAGE}`);
           if (t.ident.startsWith("linear:")) {
             const team = t.ident.replace(/^linear:[^/]*\//, "");
             console.log(`取り込み完了: ${await syncLinear(c, env2, team, opt.all === true, undefined)}`);
-          } else if (t.ident.startsWith("git:") && t.abs_path && fs7.existsSync(t.abs_path)) {
+          } else if (t.ident.startsWith("git:") && t.abs_path && fs8.existsSync(t.abs_path)) {
             console.log(`取り込み完了: ${await syncGithub(c, env2, t.abs_path)}`);
             console.log(`取り込み完了: ${await syncDocs(c, env2, t.abs_path, () => {})}`);
             const scopeId = await scopeIdFor(c, t.abs_path, false);
@@ -39868,11 +40138,11 @@ ${USAGE}`);
         throw new Error(`消す作業場所をディレクトリかラベルで指定する
 
 ${USAGE}`);
-      const abs = path8.resolve(target);
+      const abs = path9.resolve(target);
       const here2 = identify(abs);
       const same = (a, b) => {
         try {
-          return fs7.realpathSync(a) === fs7.realpathSync(b);
+          return fs8.realpathSync(a) === fs8.realpathSync(b);
         } catch {
           return false;
         }

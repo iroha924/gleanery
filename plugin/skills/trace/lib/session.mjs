@@ -49,6 +49,10 @@ export function sessionize(digest, ir) {
       updated: digest.to,
     },
     session: { id: digest.sessionId, host: digest.host },
+    // 成果物の path はモデルに転記させない。和集合にするので、再 trace でも前回結んだものが残る。
+    ...(digest.artifacts?.length
+      ? { links: { ...ir.links, files: [...new Set([...(ir.links?.files ?? []), ...digest.artifacts])] } }
+      : {}),
     utterances: digest.messages.map((message, ordinal) => ({
       key: `u-${keyOf(message)}`,
       ordinal,

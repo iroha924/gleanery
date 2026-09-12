@@ -2,7 +2,9 @@
 // 仕込んだ欠陥を validate() が拾えるかを測る。加えて、採掘が人の発話を落とさないことと、
 // 網羅の検査が材料の取りこぼしを拾えることを見る。
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validate } from '../lib/ir.mjs';
 import { collect } from '../lib/collect.mjs';
@@ -208,6 +210,132 @@ console.log('網羅:');
   const allOk = { commitExists: () => true, fileExists: () => true };
   if (refsExist(irc, '/tmp', allOk).length === 0) ok('refs-no-false-positive');
   else ng('refs-no-false-positive', '実在するのに未到達と判定した');
+}
+
+// 成果物: セッションが触れた要件定義・設計書だけを、commit の前後を問わず links.files へ結べること。
+// git の候補は他のセッションの変更も含むので、tool 呼び出しの入力に path が出るものだけを残す。
+console.log('成果物:');
+{
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'trace-artifacts-')));
+  try {
+    const repo = path.join(tmp, 'repo');
+    execFileSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+    const git = (...a) => execFileSync('git', ['-C', repo, ...a], { stdio: 'ignore' });
+    git('config', 'user.email', 't@example.com');
+    git('config', 'user.name', 't');
+    const put = (rel) => {
+      fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+      fs.writeFileSync(path.join(repo, rel), '# x\n');
+    };
+    put('README.md');
+    git('add', '-A');
+    git('commit', '-qm', 'init');
+    // このセッションが書く成果物と、別のセッションが書いた成果物。`.mitos/` は丸ごと未追跡
+    put('.mitos/changes/auth/requirements.md');
+    put('.mitos/changes/other/design.md');
+    fs.mkdirSync(path.join(repo, 'sub'));
+    const line = (o) => JSON.stringify(o);
+    const claude = path.join(tmp, 'claude.jsonl');
+    fs.writeFileSync(claude, [
+      line({ type: 'user', timestamp: '2026-01-01T00:00:00Z', cwd: repo, sessionId: 's-art', message: { content: '要件を書いて' } }),
+      // 書き込む本文と Agent への指示に、別 change の成果物の path を引用しただけ
+      line({ type: 'assistant', timestamp: '2026-01-01T00:01:00Z', message: { content: [{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: path.join(repo, '.mitos/changes/auth/requirements.md'), content: '# r\n参照: .mitos/changes/other/design.md' } }] } }),
+      line({ type: 'assistant', timestamp: '2026-01-01T00:01:30Z', message: { content: [{ type: 'tool_use', id: 't2', name: 'Agent', input: { description: 'review', prompt: '.mitos/changes/other/design.md を読んで比べよ' } }] } }),
+      // 他のセッションの成果物は tool の出力にだけ出る
+      line({ type: 'user', timestamp: '2026-01-01T00:02:00Z', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: '?? .mitos/changes/other/design.md' }] } }),
+    ].join('\n'));
+
+    let d = collect(claude, 'claude-code', path.join(repo, 'sub'));
+    if (JSON.stringify(d.artifacts) === JSON.stringify(['.mitos/changes/auth/requirements.md'])) ok('artifacts-session-only');
+    else ng('artifacts-session-only', `成果物 ${JSON.stringify(d.artifacts)} / 候補 ${JSON.stringify(d.git?.artifactCandidates)}`);
+    if (!('inputs' in d)) ok('artifacts-inputs-not-persisted');
+    else ng('artifacts-inputs-not-persisted', 'tool の入力全文が digest に残る');
+
+    // commit した後に trace しても、セッション開始以降の commit から拾う
+    git('add', '-A');
+    git('commit', '-qm', 'artifacts');
+    d = collect(claude, 'claude-code', repo);
+    if (JSON.stringify(d.artifacts) === JSON.stringify(['.mitos/changes/auth/requirements.md'])) ok('artifacts-after-commit');
+    else ng('artifacts-after-commit', `commit 後の成果物 ${JSON.stringify(d.artifacts)}`);
+
+    // Codex の apply_patch は、ファイル見出しだけが操作対象。本文で引用した別 change の path は入れない
+    const codex = path.join(tmp, 'codex.jsonl');
+    fs.writeFileSync(codex, [
+      line({ type: 'session_meta', timestamp: '2026-01-01T00:00:00Z', payload: { cwd: repo, id: 'c-art' } }),
+      line({ type: 'response_item', timestamp: '2026-01-01T00:00:01Z', payload: { type: 'message', role: 'user', content: [{ text: '設計を書いて' }] } }),
+      line({ type: 'response_item', timestamp: '2026-01-01T00:00:02Z', payload: { type: 'custom_tool_call', name: 'apply_patch', call_id: 'c1', input: '*** Begin Patch\n*** Add File: .mitos/changes/other/design.md\n+# d\n+参照: .mitos/changes/auth/requirements.md\n*** End Patch' } }),
+    ].join('\n'));
+    const dc = collect(codex, 'codex', repo);
+    if (JSON.stringify(dc.artifacts) === JSON.stringify(['.mitos/changes/other/design.md'])) ok('artifacts-codex-input');
+    else ng('artifacts-codex-input', `Codex の成果物 ${JSON.stringify(dc.artifacts)}`);
+
+    // 実際の Codex は patch を exec の JavaScript に文字列で埋め込む（改行は `\n` のエスケープ）。
+    // js の function_call も同じ形のコードを持ち、exec_command の命令は cmd に入る
+    const codexCase = (id, payload, want) => {
+      const f = path.join(tmp, `${id}.jsonl`);
+      fs.writeFileSync(f, [
+        line({ type: 'session_meta', timestamp: '2026-01-01T00:00:00Z', payload: { cwd: repo, id } }),
+        line({ type: 'response_item', timestamp: '2026-01-01T00:00:02Z', payload: { call_id: 'c1', ...payload } }),
+      ].join('\n'));
+      const got = collect(f, 'codex', repo).artifacts;
+      if (JSON.stringify(got) === JSON.stringify(want)) ok(id);
+      else ng(id, `Codex の成果物 ${JSON.stringify(got)}`);
+    };
+    const embedded = (file, quoted) =>
+      `const r=await tools.apply_patch("*** Begin Patch\\n*** Update File: ${file}\\n+参照: ${quoted}\\n*** End Patch"); text(r);`;
+    codexCase('artifacts-codex-exec', { type: 'custom_tool_call', name: 'exec', input: embedded('.mitos/changes/other/design.md', '.mitos/changes/auth/requirements.md') }, ['.mitos/changes/other/design.md']);
+    codexCase('artifacts-codex-js', { type: 'function_call', name: 'js', arguments: JSON.stringify({ code: embedded('.mitos/changes/auth/requirements.md', '.mitos/changes/other/design.md') }) }, ['.mitos/changes/auth/requirements.md']);
+    codexCase('artifacts-codex-cmd', { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'sed -n 1,20p .mitos/changes/other/design.md' }) }, ['.mitos/changes/other/design.md']);
+
+    // sessionize は和集合で足す。再 trace で前回結んだ成果物が落ちない
+    const ir = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
+    const before = [...ir.links.files];
+    ir.links.files.push('.mitos/changes/auth/requirements.md');
+    const attached = sessionize(dc, ir);
+    const want = [...before, '.mitos/changes/auth/requirements.md', '.mitos/changes/other/design.md'];
+    if (JSON.stringify(attached.links.files) === JSON.stringify(want)) ok('artifacts-sessionize-union');
+    else ng('artifacts-sessionize-union', `links.files ${JSON.stringify(attached.links.files)}`);
+
+    // links.files に無ければ落ちる。本文に path が書いてあるだけでは通さない
+    if (cover(dc, attached).groups.find((g) => g.id === 'artifacts').missing.length === 0) ok('artifacts-cover-pass');
+    else ng('artifacts-cover-pass', 'sessionize した IR で成果物が未記録と判定された');
+    const handwritten = structuredClone(attached);
+    handwritten.links.files = before;
+    handwritten.events[0].text += ' .mitos/changes/other/design.md を書いた';
+    const r = cover(dc, handwritten);
+    if (!r.ok && r.blocked.some((g) => g.id === 'artifacts')) ok('artifacts-cover-blocking');
+    else ng('artifacts-cover-blocking', `成果物の欠落を通した: ok=${r.ok}`);
+
+    // `.mitos/` 配下はファイルの警告に出さない。警告の直し方は「links.files に入れる」で、そこへ `.mitos/changes/` を
+    // 手で書くと別セッションの作業との関連が消えずに残る。成果物以外（change.json、畳まれた未追跡ディレクトリ）も同じ。
+    // 通常のファイルは従来どおり警告に残す。記録側にどれの言及も無い IR で見る
+    const dirty = { ...dc, git: { ...dc.git, changed: [
+      { state: 'M', path: '.mitos/changes/other/design.md' },
+      { state: 'M', path: '.mitos/changes/other/change.json' },
+      { state: '??', path: '.mitos/changes/b/' },
+      { state: 'M', path: 'lib/unmentioned-9431.ts' },
+    ] } };
+    const plain = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
+    const warned = cover(dirty, plain).groups.find((g) => g.id === 'files').missing;
+    if (JSON.stringify(warned) === JSON.stringify(['lib/unmentioned-9431.ts'])) ok('artifacts-files-warning-excluded');
+    else ng('artifacts-files-warning-excluded', `ファイルの警告: ${JSON.stringify(warned)}`);
+
+    // 1 度も commit していないリポジトリでも、未追跡の成果物を拾う（git log が失敗しても status 側を捨てない）
+    const fresh = path.join(tmp, 'fresh');
+    execFileSync('git', ['init', '-q', fresh], { stdio: 'ignore' });
+    fs.mkdirSync(path.join(fresh, '.mitos/changes/new'), { recursive: true });
+    fs.writeFileSync(path.join(fresh, '.mitos/changes/new/requirements.md'), '# n\n');
+    const first = path.join(tmp, 'first.jsonl');
+    fs.writeFileSync(first, [
+      line({ type: 'user', timestamp: '2026-01-01T00:00:00Z', cwd: fresh, sessionId: 's-first', message: { content: '要件を書いて' } }),
+      line({ type: 'assistant', timestamp: '2026-01-01T00:01:00Z', message: { content: [{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: path.join(fresh, '.mitos/changes/new/requirements.md'), content: '# n' } }] } }),
+    ].join('\n'));
+    const df = collect(first, 'claude-code', fresh);
+    if (JSON.stringify(df.artifacts) === JSON.stringify(['.mitos/changes/new/requirements.md'])) ok('artifacts-no-commits');
+    else ng('artifacts-no-commits', `commit の無いリポジトリの成果物 ${JSON.stringify(df.artifacts)}`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n${pass} 件 pass / ${fail} 件 fail`);
