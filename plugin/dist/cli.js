@@ -23863,7 +23863,7 @@ function inspectChange(root, slug, tracked) {
       change: null,
       problems: [
         {
-          path: `${CHANGES}/${JSON.stringify(slug)}`,
+          path: `${CHANGES}/${JSON.stringify(slug).replace(/[^\x20-\x7e]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`)}`,
           reason: "change の名前は小文字英数字とハイフンだけにする"
         }
       ]

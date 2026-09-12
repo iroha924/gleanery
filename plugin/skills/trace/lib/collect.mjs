@@ -218,10 +218,7 @@ function collectCodex(file) {
       // 動的に組み立てられた命令まで追おうとすると、塞ぐ面に終端が無くなる。
       // input そのものが「何を実行したか」の記録なので、そのまま残す。
       if (p.type === 'custom_tool_call') {
-        // apply_patch の本文は書き込む中身なので、操作対象はファイル見出しだけにする（Claude 側の path 引数と揃える）。
-        if (p.name === 'apply_patch') {
-          for (const m of String(p.input ?? '').matchAll(/^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+)$/gm)) d.inputs.push(m[1]);
-        } else d.inputs.push(String(p.input ?? ''));
+        d.inputs.push(String(p.input ?? ''));
         d.toolCounts[p.name] = (d.toolCounts[p.name] || 0) + 1;
         d.commands.push({
           at: o.timestamp,
@@ -235,7 +232,8 @@ function collectCodex(file) {
         d.toolCounts[p.name] = (d.toolCounts[p.name] || 0) + 1;
         let args = {};
         try { args = JSON.parse(p.arguments || '{}'); } catch { /* 引数が読めなくても記録は続ける */ }
-        for (const v of [[].concat(args.command ?? []).join(' '), args.path, args.file_path]) if (typeof v === 'string' && v) d.inputs.push(v);
+        // cmd は exec_command の命令、code は js のコード片。spawn_agent などへの指示文は入れない。
+        for (const v of [[].concat(args.command ?? []).join(' '), args.cmd, args.code, args.path, args.file_path]) if (typeof v === 'string' && v) d.inputs.push(v);
         if (args.command) {
           d.commands.push({
             at: o.timestamp,
@@ -343,7 +341,14 @@ export function collect(file, host, cwd) {
   // tool_result は見ない — `git status` の出力に他セッションの成果物が出ただけで結ばれる。
   // git 管理外なら成果物は無い（同期は git が追うものしか読まない）。git はあるのに取れなければ null。
   const candidates = d.git === null ? [] : d.git.artifactCandidates;
-  d.artifacts = candidates === null ? null : candidates.filter((p) => d.inputs.some((s) => s.includes(p)));
+  const inputs = d.inputs.map(patchHeadersOnly);
+  d.artifacts = candidates === null ? null : candidates.filter((p) => inputs.some((s) => s.includes(p)));
   delete d.inputs;
   return d;
 }
+
+// patch の本文は書き込む中身なので、操作対象からはファイル見出しだけを残す（Claude 側の path 引数と揃える）。
+// Codex は patch を exec の JavaScript に文字列で埋め込むことが多く、そのときの改行は `\n` のエスケープである。
+const PATCH = /\*\*\* Begin Patch[\s\S]*?(?:\*\*\* End Patch|$)/g;
+const PATCH_HEADER = /(?<=^|\n|\\n)\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)(?=\\n|\n|$)/g;
+const patchHeadersOnly = (s) => s.replace(PATCH, (patch) => [...patch.matchAll(PATCH_HEADER)].map((m) => m[1]).join('\n'));

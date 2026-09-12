@@ -16,8 +16,6 @@
 // 日付・時刻・数値は突き合わせない。表現の揺れが大きくマッチ判定が破綻する
 // （Entity-level Factual Consistency, EACL 2021 の脚注 2 が同じ理由で除外している）。
 
-import { ARTIFACT } from './collect.mjs';
-
 // 記録に書く価値の無い変更。除外しないと毎回同じ警告が出て、読まれなくなる。
 const NOISE = /(^|\/)(node_modules|dist|build|out|coverage|\.next|\.venv|vendor)\/|(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|go\.sum)$|\.(min\.(js|css)|snap|lock)$/;
 
@@ -90,9 +88,9 @@ export function cover(digest, ir) {
     fix: 'progress sessionize をやり直す（links.files へ機械的に入る）。path を手で書かない',
   });
 
-  // 成果物の path は上で扱う。ここに残すと、別セッションが変更中の成果物を links.files へ入れるよう促し、
-  // 操作対象で絞った意味が消える。
-  const files = (digest.git?.changed || []).map((c) => c.path).filter((p) => !NOISE.test(p) && !ARTIFACT.test(p));
+  // `.mitos/` 配下は出さない。下の直し方どおり `.mitos/changes/` を links.files へ手で書くと、別セッションの作業
+  // との関連が消えずに残る（成果物以外の change.json や、畳まれた未追跡ディレクトリも同じ）。成果物は上で扱う。
+  const files = (digest.git?.changed || []).map((c) => c.path).filter((p) => !NOISE.test(p) && !p.startsWith('.mitos/'));
   groups.push({
     id: 'files', label: '変更したファイル', blocking: false,
     total: files.length, missing: files.filter((p) => !hit(p) && !hit(p.replace(/\/[^/]*$/, ''))),

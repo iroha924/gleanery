@@ -269,6 +269,24 @@ console.log('成果物:');
     if (JSON.stringify(dc.artifacts) === JSON.stringify(['.mitos/changes/other/design.md'])) ok('artifacts-codex-input');
     else ng('artifacts-codex-input', `Codex の成果物 ${JSON.stringify(dc.artifacts)}`);
 
+    // 実際の Codex は patch を exec の JavaScript に文字列で埋め込む（改行は `\n` のエスケープ）。
+    // js の function_call も同じ形のコードを持ち、exec_command の命令は cmd に入る
+    const codexCase = (id, payload, want) => {
+      const f = path.join(tmp, `${id}.jsonl`);
+      fs.writeFileSync(f, [
+        line({ type: 'session_meta', timestamp: '2026-01-01T00:00:00Z', payload: { cwd: repo, id } }),
+        line({ type: 'response_item', timestamp: '2026-01-01T00:00:02Z', payload: { call_id: 'c1', ...payload } }),
+      ].join('\n'));
+      const got = collect(f, 'codex', repo).artifacts;
+      if (JSON.stringify(got) === JSON.stringify(want)) ok(id);
+      else ng(id, `Codex の成果物 ${JSON.stringify(got)}`);
+    };
+    const embedded = (file, quoted) =>
+      `const r=await tools.apply_patch("*** Begin Patch\\n*** Update File: ${file}\\n+参照: ${quoted}\\n*** End Patch"); text(r);`;
+    codexCase('artifacts-codex-exec', { type: 'custom_tool_call', name: 'exec', input: embedded('.mitos/changes/other/design.md', '.mitos/changes/auth/requirements.md') }, ['.mitos/changes/other/design.md']);
+    codexCase('artifacts-codex-js', { type: 'function_call', name: 'js', arguments: JSON.stringify({ code: embedded('.mitos/changes/auth/requirements.md', '.mitos/changes/other/design.md') }) }, ['.mitos/changes/auth/requirements.md']);
+    codexCase('artifacts-codex-cmd', { type: 'function_call', name: 'exec_command', arguments: JSON.stringify({ cmd: 'sed -n 1,20p .mitos/changes/other/design.md' }) }, ['.mitos/changes/other/design.md']);
+
     // sessionize は和集合で足す。再 trace で前回結んだ成果物が落ちない
     const ir = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
     const before = [...ir.links.files];
@@ -288,12 +306,18 @@ console.log('成果物:');
     if (!r.ok && r.blocked.some((g) => g.id === 'artifacts')) ok('artifacts-cover-blocking');
     else ng('artifacts-cover-blocking', `成果物の欠落を通した: ok=${r.ok}`);
 
-    // 成果物の path はファイルの警告に出さない（出すと、別セッションの成果物を links.files へ入れるよう促す）。
-    // change.json のような成果物以外は従来どおり警告に残す。記録側に .mitos の言及が無い IR で見る
-    const dirty = { ...dc, git: { ...dc.git, changed: [{ state: 'M', path: '.mitos/changes/other/design.md' }, { state: 'M', path: '.mitos/changes/other/change.json' }] } };
+    // `.mitos/` 配下はファイルの警告に出さない。警告の直し方は「links.files に入れる」で、そこへ `.mitos/changes/` を
+    // 手で書くと別セッションの作業との関連が消えずに残る。成果物以外（change.json、畳まれた未追跡ディレクトリ）も同じ。
+    // 通常のファイルは従来どおり警告に残す。記録側にどれの言及も無い IR で見る
+    const dirty = { ...dc, git: { ...dc.git, changed: [
+      { state: 'M', path: '.mitos/changes/other/design.md' },
+      { state: 'M', path: '.mitos/changes/other/change.json' },
+      { state: '??', path: '.mitos/changes/b/' },
+      { state: 'M', path: 'lib/unmentioned-9431.ts' },
+    ] } };
     const plain = JSON.parse(fs.readFileSync(path.join(HERE, 'fixtures', 'clean.json'), 'utf8'));
     const warned = cover(dirty, plain).groups.find((g) => g.id === 'files').missing;
-    if (JSON.stringify(warned) === JSON.stringify(['.mitos/changes/other/change.json'])) ok('artifacts-files-warning-excluded');
+    if (JSON.stringify(warned) === JSON.stringify(['lib/unmentioned-9431.ts'])) ok('artifacts-files-warning-excluded');
     else ng('artifacts-files-warning-excluded', `ファイルの警告: ${JSON.stringify(warned)}`);
 
     // 1 度も commit していないリポジトリでも、未追跡の成果物を拾う（git log が失敗しても status 側を捨てない）

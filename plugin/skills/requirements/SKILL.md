@@ -3,7 +3,7 @@ name: requirements
 description: 生の要求から、コードと mitos の過去の判断を根拠に一問ずつ壁打ちし、要件定義（.mitos/changes 配下の requirements.md）を作って利用者の明示承認まで進める。設計書・タスク・実装は作らない。
 argument-hint: "[変更名 または 実現したいこと]"
 disable-model-invocation: true
-allowed-tools: Read, Edit(.mitos/changes/*/requirements.md), AskUserQuestion, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos check*), mcp__plugin_mitos_mitos__current_work, mcp__plugin_mitos_mitos__search_knowledge, mcp__plugin_mitos_mitos__check_path
+allowed-tools: Read, AskUserQuestion, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos check*), mcp__plugin_mitos_mitos__current_work, mcp__plugin_mitos_mitos__search_knowledge, mcp__plugin_mitos_mitos__check_path
 ---
 
 # requirements — 要求を、検証できる要件へ変える
@@ -59,8 +59,10 @@ M="../../bin/mitos"
 **change.json を書いたら、そのたびに `$M check` を実行し、exit 0 を確かめてから次へ進む。**
 0 でなければ、出た path と理由を直す。直せないなら利用者へ戻す。
 
-change.json の書き込みは事前承認に入れていない。Claude Code では、approved を書く瞬間が権限の確認として
-利用者に見える（検索結果などの第三者の文面を読んだ直後に、承認を黙って書き換えさせないため）。
+事前承認するのは読み取りと `$M check` だけで、本文と change.json の書き込みは入れていない。承認済みの本文を
+書き換えると次の同期でそのまま approved として入るので、書き込みは権限の確認で利用者に見せる。ただし acceptEdits・
+auto モードや、セッション中の編集を許可した後は確認が出ない。approved にしてよいかは、権限の確認ではなく
+利用者への閉じた問いで決める。
 
 成果物と change.json は、このスキルを起動したセッション自身が書く。subagent に書かせると、
 そのセッションの記録と成果物が結び付かない。

@@ -103,13 +103,14 @@ function inspectChange(
 ): { change: Change | null; problems: Problem[] } {
   const dir = `${CHANGES}/${slug}`;
   const problems: Problem[] = [];
-  // 規則外の名前はそのまま出さない。制御文字を含むと端末と同期ログへ流れる。
+  // 規則外の名前はそのまま出さない。制御文字を含むと端末と同期ログへ流れる。JSON.stringify は C0 だけを
+  // エスケープし、C1（U+009B は ESC [ と同じに解釈する端末がある）と双方向制御を素通しするので、ASCII の外も直す。
   if (!SLUG.test(slug))
     return {
       change: null,
       problems: [
         {
-          path: `${CHANGES}/${JSON.stringify(slug)}`,
+          path: `${CHANGES}/${JSON.stringify(slug).replace(/[^\x20-\x7e]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`)}`,
           reason: "change の名前は小文字英数字とハイフンだけにする",
         },
       ],

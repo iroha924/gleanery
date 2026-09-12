@@ -164,18 +164,21 @@ test("check は不正な manifest を拒否し、ファイルの内容をエラ�
 });
 
 // Zod の message は未知のキー名をそのまま含み、ディレクトリ名は制御文字を含みうる。どちらも端末と同期ログへ流れる。
+// C1 の CSI（U+009B）は ESC [ と同じに解釈する端末があり、U+202E は表示の向きを反転させる。
 test("check は未知のキー名と規則外の名前を、エラーにそのまま出さない", () => {
   withRepo((repo) => {
     init(repo);
     manifest(repo, "a", { schema: "mitos/change/1", title: "t", SECRET_KEY_NAME: 1 });
-    fs.mkdirSync(path.join(repo, ".mitos/changes/bad[31m"));
+    fs.mkdirSync(path.join(repo, ".mitos/changes/bad\u001b[31m\u009b31m\u202e"));
     const text = check(repo)
       .problems.map((p) => `${p.path}: ${p.reason}`)
       .join("\n");
     assert.match(text, /unrecognized_keys/);
     assert.doesNotMatch(text, /SECRET_KEY_NAME/);
-    assert.equal(text.includes(""), false, "制御文字がそのまま出た");
-    assert.match(text, /\\u001b/);
+    assert.equal(text.includes("\u001b"), false, "制御文字がそのまま出た");
+    assert.equal(text.includes("\u009b"), false, "C1 の CSI がそのまま出た");
+    assert.equal(text.includes("\u202e"), false, "双方向制御がそのまま出た");
+    assert.match(text, /\\u001b.*\\u009b.*\\u202e/);
   });
 });
 
