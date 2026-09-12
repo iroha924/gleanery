@@ -85,7 +85,8 @@ Codexでは組み込みの`skill-creator`を使う。
 ## 評価
 
 `bun run verify:ai`はroot指示の行数・bytes、repository開発Skillのfrontmatter・trigger例・参照先・
-symlink、plugin利用者へ配るSkillのmanifest入口、plugin Agentの必須設定を検査する。文言の一致は
+symlink、plugin利用者へ配るSkillのmanifest入口とfrontmatter・参照先・明示起動の対（Claude Codeの
+`disable-model-invocation`とCodexの`agents/openai.yaml`）・Codex用のCLIの呼び方、plugin Agentの必須設定を検査する。文言の一致は
 評価しない。
 
 新しいsessionのsmoke testでは、Hono endpoint、dashboard、DB migration、MCP、deployの各依頼に対し、

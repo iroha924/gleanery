@@ -1,8 +1,6 @@
 ---
 name: trace
-description: >
-  作業の判断・行き止まり・未解決の問いを構造化して DB に残し、
-  次のセッションが MCP の current_work から再開できるようにする。ユーザーが明示的に頼んだときだけ使う。
+description: 作業の判断・行き止まり・未解決の問いを構造化して DB に残し、次のセッションが MCP の current_work から再開できるようにする。ユーザーが明示的に頼んだときだけ使う。
 argument-hint: "[作業テーマ / issue 番号 / URL]"
 disable-model-invocation: true
 allowed-tools: Read, Write, AskUserQuestion, Bash(node "$PG" *), Bash(node ${CLAUDE_SKILL_DIR}/bin/progress.mjs *), Bash(mitos ingest *), Bash(mitos export *), Bash(mitos search *), Bash(mitos scopes), Bash(mitos candidates *), Bash(mitos link *), Bash(gh issue view *), Bash(gh pr list *), Bash(git log *)
@@ -69,13 +67,15 @@ Google の Design Docs の基準がそのまま当たる。トレードオフも
 
 **CLI の呼び方はホストで違う。**片方だけ書くともう片方で壊れる
 （`${CLAUDE_SKILL_DIR}` は Codex では空に展開され、Claude Code の cwd はユーザーの
-プロジェクトなので相対パスは当たらない）。**以降、`PG` は自分のホストの側を指す。**
+プロジェクトなので相対パスは当たらない。Codex では `mitos` が PATH に無く exit 127 になる）。
+**以降、`PG` と `mitos` は自分のホストの側を指す。**
 
 ```bash
-# Claude Code
+# Claude Code（mitos は PATH のものをそのまま使う）
 PG="${CLAUDE_SKILL_DIR}/bin/progress.mjs"
-# Codex（このスキルのディレクトリからの相対パス）
+# Codex（このスキルのディレクトリからの相対パス。以降の mitos をこれに読み替える）
 PG="bin/progress.mjs"
+MITOS="../../bin/mitos"
 ```
 
 ## Step 0 — セッションを採掘する

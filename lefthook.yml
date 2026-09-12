@@ -18,7 +18,7 @@ pre-commit:
       glob: "{dashboard/src/**/*.ts,dashboard/src/**/*.tsx,server/src/db.ts,server/src/github-worker.ts,server/src/server.ts,scripts/check-dashboard-boundaries.mjs,scripts/check-github-boundaries.mjs,vercel.json,package.json}"
       run: bun run architecture
     - name: ai-config
-      glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,plugin/agents/**,scripts/check-ai-config.mjs,package.json}"
+      glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,plugin/agents/**,plugin/skills/**,scripts/check-ai-config.mjs,package.json}"
       run: bun run verify:ai
     # dist は配布物。ソースだけ直して bundle を忘れると、
     # Codex 側（依存を自動インストールしない）で古いコードが動き続ける。
