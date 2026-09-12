@@ -50,5 +50,6 @@ pre-push:
   jobs:
     - name: verify
       # git は hook へ GIT_DIR などを export し、worktree ではそれが絶対パスになる。残すとテストが作る一時リポジトリの
-      # git までこのリポジトリを向いて落ちる（実測 8 件）。githooks(5) の勧めどおり消してから走らせる。
+      # git がこのリポジトリを向き、テストが落ちるうえに設定と branch へ書き込む（実測: core.bare=true と user.* を書き、
+      # commit を 2 つ積んだ）。githooks(5) の勧めどおり消してから走らせる。
       run: unset $(git rev-parse --local-env-vars); bun run verify
