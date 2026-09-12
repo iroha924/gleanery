@@ -377,7 +377,7 @@ bun run check      # biome + tsc（server / dashboard）
 bun run architecture # ダッシュボードのroute-local境界
 bun run test       # node:test
 bun run verify     # check + test + Next.js の本番ビルド（pre-push / CI と同じ）
-bun run verify:ai  # AGENTS、repository開発Skill、plugin Agentの設定
+bun run verify:ai  # AGENTS、repository開発Skill、plugin Skill・Agentの設定
 bun run eval       # 答えの正しさを測る
 bun run bundle     # plugin/dist を作り直す
 ```

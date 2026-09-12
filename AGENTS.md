@@ -62,7 +62,7 @@ Vercel設定、`plugin/skills/`・`plugin/agents/`・MCP・CLIを変える場合
 bun run setup       # server / dashboardの依存とLefthookを固定lockfileから入れる
 bun run dev         # Hono + Next.js。TTYが要るため前面でだけ実行する
 bun run verify      # lint、architecture、型、AI設定、test、Next.js production build
-bun run verify:ai   # AGENTS、repository開発Skill、plugin Agentの静的検査
+bun run verify:ai   # AGENTS、repository開発Skill、plugin Skill・Agentの静的検査
 bun run bundle      # MCP、CLI、hookのplugin配布物を更新する
 ```
 
