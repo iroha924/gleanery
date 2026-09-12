@@ -62,6 +62,7 @@ Codexでは組み込みの`skill-creator`を使う。
 | Claude plugin manifestのversion | Codex plugin manifestのversion |
 | reviewerの`effort`固定 | 同じ理由が必要な`model`固定 |
 | CLI一覧を`USAGE`から生成 | `USAGE`自体の未検証な説明 |
+| 同期が承認を判定する成果物pathの正規表現 | traceがセッションへ結ぶ同じ正規表現と、画面の成果物の種別（`check-pairs`へ追加） |
 
 2026-09-08にはMCP sourceを変更してbundleしただけのcommitが8回続き、versioned plugin cacheへ届いて
 いなかった。このためplugin配布は注意書きだけでなくLefthookのversion検査でも止める。

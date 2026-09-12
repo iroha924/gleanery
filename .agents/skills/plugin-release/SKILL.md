@@ -47,4 +47,18 @@ merge後に届いたことを確かめる。`mitos doctor`の「plugin の版」
 `plugin/agents/`もcache経由なので、保存やsession再起動だけでは新しい定義にならない。Agentを変更する
 場合は先に`plugin-agent-authoring`も読む。
 
+## plugin Skill
+
+- 明示起動だけにするSkillは、SKILL.mdの`disable-model-invocation: true`（Claude Code）と、Skillディレクトリの
+  `agents/openai.yaml`の`policy.allow_implicit_invocation: false`（Codex）を対で置く。Codexは前者を解釈しない。
+  対は`verify:ai`が検査する
+- CLIを呼ぶSkillは、ホスト別に解決する。Claude Codeは`${CLAUDE_PLUGIN_ROOT}/bin/mitos`、Codexは
+  Skillディレクトリからの`../../bin/mitos`。素の`mitos`はCodexのPATHに無く（exit 127）、Claude Codeでは
+  PATHの古いCLIが新しいコマンドを知らない。`verify:ai`はCodex側の行があるかを見る
+- `allowed-tools`に`${CLAUDE_PLUGIN_ROOT}`を書いた事前承認は効く。2026-09-12に、一時リポジトリで
+  `claude -p "/mitos:init" --plugin-dir <plugin> --permission-mode default --output-format json`を実行し、
+  `.mitos`が作られて`permission_denials`が空だった（利用者の設定にmitosを許すBashのルールは無い）。requirementsとdesignは書き込みを事前承認に入れない。承認済みの
+  本文を確認なしで書き換えられると、次の同期でそのままapprovedとして入る
+- merge後の7では、Codexで`$mitos:<skill>`の明示起動で本文が読まれることも確かめる
+
 人向けのCLI出力とAI向けのMCP応答は別々に確認する。

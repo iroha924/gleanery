@@ -44,6 +44,24 @@ description: mitosのPostgreSQL migration、RLS・role、record/node schema、�
 埋め込みを取り直さず、埋め込みAPIはtransactionの外で呼ぶ。文脈は題や見出しから決定的に前置し、
 LLMで作らない。上書き型のsourceで消えた項目は`deleted_at`へ反映する。
 
+### 要件定義・設計書（`.mitos/changes/`）
+
+文書の同期（`server/src/docs.ts`）は、`.mitos/`配下からは`change.json`でapprovedの`requirements.md`と
+`design.md`だけを取り込む。承認の判定と検証は`server/src/artifacts.ts`にだけ置き、`mitos check`と同期が
+同じ関数を通る。範囲は違う — 同期は追跡済みの成果物を持つchangeだけを検査し、`mitos check`は
+`project.json`と未追跡のchangeも見る。
+
+- 本文を読んでからmanifestを読み、選別と検証を埋め込みと文書のDB書き込みより前に済ませる。逆にすると、
+  編集中の本文がapprovedとして入り、draftの節が埋め込みAPIへ送られる
+- 追跡済みの成果物を持つchangeのmanifestが不正なら、そのrepositoryの文書同期を丸ごと止める。エラーには
+  pathと理由だけを出し、ファイルの内容と未知のキー名は出さない
+- approvedの成果物は、検索用の節（`searchable = true`）と原文node（`subkind = 'artifact-source'`、
+  `searchable = false`、埋め込み無し、keyはpathそのもの）へ同じtransactionで投影する。原文のkeyを
+  墓標の対象外リストから落とすと、挿入した直後にsoft deleteされる
+- docs recordの`ingested_at`はtransactionの中で更新する。セッション詳細の同期時点がこれを返す
+- セッションとの関連は新しいtableを作らず、traceの`links.files`から作る`file` refと`touched`の
+  `ref_link`を使う。`ref_link`は追記しかされないので、誤って結んだ関連は取り込み直しても消えない
+
 ## migration
 
 `knowledge_ro`と`mitos_cfg`には後から作るtableへのdefault privilegesがある。table追加時は全roleの

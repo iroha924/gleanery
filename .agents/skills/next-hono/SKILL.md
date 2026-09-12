@@ -29,6 +29,8 @@ Next.jsは `dashboard/node_modules/next/dist/docs/` の対象ガイドを読む�
 - `proxy.ts`はClerk情報をServer Componentへ渡す入口で、認可の正本ではない
 - browserが呼ぶ`/api/*`はClerk session tokenで守る。外部webhookは個別pathに分け、raw bodyの署名を
   handlerの入口で検証する。公開例外を汎用middlewareやprefixへ広げない
+- セッション詳細の成果物は、session、scope、`file` ref、原文nodeのkeyが全部一致するものだけを返す。
+  任意のpathや別scopeの文書を指定して本文を取れる入口を作らない
 
 ## Next.js
 
