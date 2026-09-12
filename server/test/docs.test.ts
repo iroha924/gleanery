@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Artifact } from "../src/artifacts.ts";
-import { markdownFiles, projectDocs, sections, sectionText } from "../src/docs.ts";
+import { liveKeys, markdownFiles, needEmbedding, projectDocs, sections, sectionText } from "../src/docs.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
 // 説明と、その説明が指すコマンドが別々の断片になる。
@@ -153,6 +154,8 @@ test("成果物は承認済みだけを節と原文にし、draft と .mitos の
     [req, "# 要件\n\n## 背景\n### 経緯\n\n本文\n"],
     [".mitos/changes/auth/design.md", "# 設計\n\n本文\n"],
     [".mitos/notes.md", "# メモ\n\n本文\n"],
+    // 承認の判定は根の .mitos にしか無いので、入れ子の .mitos は通常の文書として入れない
+    ["sub/.mitos/changes/x/requirements.md", "# 入れ子\n\n本文\n"],
   ]);
   const got = projectDocs(bodies, new Map([[req, artifact]]), new Map());
   assert.deepEqual([...new Set(got.sections.map((s) => s.path))], ["README.md", req]);
@@ -163,7 +166,43 @@ test("成果物は承認済みだけを節と原文にし、draft と .mitos の
     sections("README.md", bodies.get("README.md") ?? "").map((s) => s.key),
     "通常の文書の節が変わった",
   );
-  assert.deepEqual(got.sources, [{ key: req, path: req, text: bodies.get(req), at: null, artifact }]);
+  assert.deepEqual(got.sources, [{ key: req, text: bodies.get(req), at: null, artifact }]);
+});
+
+// 墓標の対象外リストに原文の key が無いと、原文は挿入した直後に soft delete される。
+test("墓標を立てずに残す key には、節と原文の両方が入る", () => {
+  const req = ".mitos/changes/a/requirements.md";
+  const got = projectDocs(
+    new Map([
+      ["README.md", "# r\n\n本文\n"],
+      [req, "# 要件\n\n本文\n"],
+    ]),
+    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
+    new Map(),
+  );
+  const keys = liveKeys(got);
+  for (const s of got.sections) assert.ok(keys.includes(s.key), `${s.key} が墓標になる`);
+  assert.ok(keys.includes(req), "原文が墓標になる");
+});
+
+// 原文は検索しないので埋め込まない。draft へ戻して再承認した節は、墓標の行の埋め込みを使い回す。
+test("埋め込みを取り直すのは本文が変わった節か埋め込みの無い節だけで、原文は入らない", () => {
+  const req = ".mitos/changes/a/requirements.md";
+  const got = projectDocs(
+    new Map([[req, "# 要件\n\n## 変わらない\n\n同じ本文\n\n## 変わる\n\n新しい本文\n"]]),
+    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
+    new Map(),
+  );
+  const sha = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
+  const [same, changed] = got.sections;
+  assert.ok(same && changed);
+  const existing = new Map([
+    [same.key, { content_hash: sha(sectionText(same)), has_emb: true }],
+    [changed.key, { content_hash: "古い本文のハッシュ", has_emb: true }],
+  ]);
+  const need = needEmbedding(got.sections, existing).map((s) => s.key);
+  assert.deepEqual(need, [changed.key]);
+  assert.ok(!need.includes(req), "原文が埋め込み対象に入った");
 });
 
 // 節は見出しだけの節を落とすので、連結しても元に戻らない。原文は読んだ本文をそのまま持つ。

@@ -80,16 +80,16 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
     assert.equal(ok.code, 0, ok.out);
 
     // 位置引数は黙って捨てると、別の場所を初期化したつもりで cwd を扱う
-    for (const bad of [
-      ["init", "other", "--cwd", dir],
-      ["init", "--all", "--cwd", dir],
-      ["check", "--yes", "--cwd", dir],
-    ]) {
+    for (const [bad, want] of [
+      [["init", "other", "--cwd", dir], /Unexpected argument 'other'/],
+      [["init", "--all", "--cwd", dir], /Unknown option '--all'/],
+      [["check", "--yes", "--cwd", dir], /Unknown option '--yes'/],
+      [["init", "--foo", "--cwd", dir], /Unknown option '--foo'/],
+    ] as const) {
       const r = run(...bad);
       assert.notEqual(r.code, 0, `${bad.join(" ")} が通ってしまう`);
-      assert.match(r.out, /--cwd だけ/, r.out);
+      assert.match(r.out, want, r.out);
     }
-    assert.match(run("init", "--foo", "--cwd", dir).out, /Unknown option/);
 
     fs.mkdirSync(path.join(dir, ".mitos/changes/a"));
     fs.writeFileSync(path.join(dir, ".mitos/changes/a/change.json"), "{");

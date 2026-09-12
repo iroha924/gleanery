@@ -65,6 +65,43 @@ for (const [where, set] of Object.entries(kinds)) {
   }
 }
 
+// ---- 成果物の path の形が、同期・trace・画面で揃っているか ----
+//
+// 同期（server/src/artifacts.ts）が承認を判定する path と、trace（collect.mjs）がセッションへ結ぶ path は
+// 同じ集合でなければならない。片方だけ変えると、結んだのに表示されない、または承認を通らない path が結ばれる。
+const artifactPatterns = {
+  "server/src/artifacts.ts（同期と API）": grab(
+    "server/src/artifacts.ts",
+    /const ARTIFACT_PATH = (\/.*\/);/,
+    "server の ARTIFACT_PATH",
+  ),
+  "plugin/skills/trace/lib/collect.mjs（trace）": grab(
+    "plugin/skills/trace/lib/collect.mjs",
+    /export const ARTIFACT = (\/.*\/);/,
+    "trace の ARTIFACT",
+  ),
+};
+if (new Set(Object.values(artifactPatterns).filter(Boolean)).size > 1) {
+  fail.push(
+    `成果物の path の形が揃っていない。次を同じ正規表現にする:\n    ${Object.entries(artifactPatterns)
+      .map(([where, re]) => `${where}: ${re}`)
+      .join("\n    ")}`,
+  );
+}
+const pathKinds = Object.values(artifactPatterns)[0]
+  ?.match(/\(([a-z|]+)\)\\\.md/)?.[1]
+  ?.split("|");
+const screenKinds = grab(
+  "dashboard/src/app/(dashboard)/sessions/_sessions/api/sessions.ts",
+  /kind: ((?:"[a-z]+"(?: \| )?)+);/,
+  "画面の SessionArtifact.kind",
+)?.match(/[a-z]+/g);
+if (pathKinds && screenKinds && pathKinds.sort().join() !== [...screenKinds].sort().join()) {
+  fail.push(
+    `成果物の種別が揃っていない: path は ${pathKinds.join(" / ")}、画面の SessionArtifact.kind は ${screenKinds.join(" / ")}`,
+  );
+}
+
 // ---- README の CLI 一覧を USAGE から書き出す ----
 //
 // **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: 9 コマンドのうち

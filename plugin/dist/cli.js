@@ -23806,6 +23806,7 @@ var MITOS = ".mitos";
 var CHANGES = ".mitos/changes";
 var SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 var ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+var MAX_MANIFEST = 64 * 1024;
 var projectSchema = exports_external.object({ schema: exports_external.literal("mitos/project/1") }).strict();
 var phase = exports_external.object({ status: exports_external.enum(["draft", "approved"]) }).strict();
 var changeSchema = exports_external.object({
@@ -23829,18 +23830,20 @@ var kindOf = (full) => {
 };
 function readJson(root, rel) {
   const full = path2.join(root, rel);
-  const kind = kindOf(full);
-  if (kind === null)
+  const st = fs2.lstatSync(full, { throwIfNoEntry: false });
+  if (!st)
     return { reason: "無い" };
-  if (kind !== "file")
+  if (!st.isFile())
     return { reason: "通常のファイルではない（symlink も受け付けない）" };
+  if (st.size > MAX_MANIFEST)
+    return { reason: `大きすぎる（${MAX_MANIFEST} bytes まで）` };
   try {
     return { value: JSON.parse(fs2.readFileSync(full, "utf8")) };
   } catch {
     return { reason: "JSON として読めない" };
   }
 }
-var zodReason = (e) => e.issues.map((i) => `${i.path.join(".") || "(根)"}: ${i.message}`).join(" / ");
+var zodReason = (e) => e.issues.map((i) => `${i.path.join(".") || "(根)"}: ${i.code === "custom" ? i.message : i.code}`).join(" / ");
 function trackedChanges(root) {
   try {
     const out = execFileSync2("git", ["-C", root, "ls-files", "-z", "--", CHANGES], {
@@ -23858,7 +23861,12 @@ function inspectChange(root, slug, tracked) {
   if (!SLUG.test(slug))
     return {
       change: null,
-      problems: [{ path: dir, reason: "change の名前は小文字英数字とハイフンだけにする" }]
+      problems: [
+        {
+          path: `${CHANGES}/${JSON.stringify(slug)}`,
+          reason: "change の名前は小文字英数字とハイフンだけにする"
+        }
+      ]
     };
   if (kindOf(path2.join(root, dir)) !== "dir") {
     return {
@@ -23942,7 +23950,7 @@ function selectArtifacts(root, files) {
   }
   return { include, problems };
 }
-var underMitos = (rel) => rel.startsWith(`${MITOS}/`);
+var underMitos = (rel) => rel.startsWith(`${MITOS}/`) || rel.includes(`/${MITOS}/`);
 function init(dir) {
   if (!fs2.statSync(dir, { throwIfNoEntry: false })?.isDirectory())
     throw new Error(`${dir} はディレクトリではない`);
@@ -24246,10 +24254,18 @@ function projectDocs(bodies, include, at) {
     for (const s of sections(rel, body))
       all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length, artifact });
     if (artifact)
-      sources.push({ key: rel, path: rel, text: body, at: at.get(rel) ?? null, artifact });
+      sources.push({ key: rel, text: body, at: at.get(rel) ?? null, artifact });
   }
   return { sections: all, sources };
 }
+var needEmbedding = (all, existing) => all.filter((s) => {
+  const old = existing.get(s.key);
+  return !old || old.content_hash !== hash2(sectionText(s)) || !old.has_emb;
+});
+var liveKeys = (p) => [
+  ...p.sections.map((s) => s.key),
+  ...p.sources.map((s) => s.key)
+];
 async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
   const recordId = `docs:${ident}`;
   const { files, symlinks } = markdownFiles(dir);
@@ -24266,13 +24282,11 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
 ` + problems.map((p) => `  ${p.path}: ${p.reason}`).join(`
 `));
   }
-  const { sections: all, sources } = projectDocs(bodies, include, at);
+  const projected = projectDocs(bodies, include, at);
+  const { sections: all, sources } = projected;
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
   const existing = new Map((await client.query("select key, content_hash, embedding is not null as has_emb from node where record_id=$1", [recordId])).rows.map((r) => [r.key, r]));
-  const need = all.filter((s) => {
-    const old = existing.get(s.key);
-    return !old || old.content_hash !== hash2(sectionText(s)) || !old.has_emb;
-  });
+  const need = needEmbedding(all, existing);
   onProgress?.(`文書 ${bodies.size} 本 / 節 ${all.length} 件 / 承認済みの成果物 ${sources.length} 本 / 埋め込みを取り直す ${need.length} 件`);
   const byKey = new Map;
   for (let from = 0;from < need.length; from += CHUNK) {
@@ -24339,7 +24353,7 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
         ordinal: 0,
         at: s.at,
         text: s.text,
-        attrs: { path: s.path, title: path4.basename(s.path), trail: s.path, artifact: s.artifact },
+        attrs: { path: s.key, title: path4.basename(s.key), trail: s.key, artifact: s.artifact },
         contentHash: hash2(s.text),
         searchable: false,
         embedText: null,
@@ -24348,7 +24362,7 @@ async function ingestDocs(client, env, ident, label, dir, scopeId, onProgress) {
     }
     const gone = await client.query(`update node set deleted_at = now()
        where record_id = $1 and kind = 'doc' and deleted_at is null and not (key = any($2))
-       returning 1 as n`, [recordId, [...all.map((s) => s.key), ...sources.map((s) => s.key)]]);
+       returning 1 as n`, [recordId, liveKeys(projected)]);
     await client.query("commit");
     return `${label} / 文書 ${bodies.size} 本・節 ${all.length} 件（埋め込み ${need.length} 件${sources.length ? ` / 承認済みの成果物 ${sources.length} 本` : ""}${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}）${skipped}`;
   } catch (e) {
@@ -39762,12 +39776,7 @@ async function main() {
 
 ${USAGE}`);
   if (cmd === "init" || cmd === "check") {
-    const extra = [
-      ...rest,
-      ...Object.keys(opt).filter((k) => k !== "cwd").map((k) => `--${k}`)
-    ];
-    if (extra.length)
-      throw new Error(`${cmd} が受け取るのは --cwd だけ: ${extra.join(" ")}`);
+    parseArgs({ args: argv.slice(1), options: { cwd: OPTIONS.cwd } });
     if (cmd === "init") {
       const r2 = init(cwd);
       console.log(r2.created ? `.mitos を作った: ${r2.root}` : `.mitos は既に初期化済み: ${r2.root}`);

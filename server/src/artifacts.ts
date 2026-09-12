@@ -12,8 +12,13 @@ import { identify } from "./scope.ts";
 const MITOS = ".mitos";
 const CHANGES = ".mitos/changes";
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-/** 同期と Dashboard が成果物として扱う path。これ以外の `.mitos` 配下の Markdown は取り込まない。 */
-export const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+/**
+ * 同期と Dashboard が成果物として扱う path。これ以外の `.mitos` 配下の Markdown は取り込まない。
+ * trace の `plugin/skills/trace/lib/collect.mjs` の `ARTIFACT` と同じ形（`scripts/check-pairs.mjs` が突き合わせる）。
+ */
+const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+/** manifest は数行の JSON。上限が無いと、巨大なファイル 1 つで日次同期のプロセスごと落ちる（OOM）。 */
+const MAX_MANIFEST = 64 * 1024;
 
 export type ArtifactKind = "requirements" | "design";
 export type Artifact = { kind: ArtifactKind; change: string; changeTitle: string };
@@ -52,9 +57,10 @@ const kindOf = (full: string): "dir" | "file" | "other" | null => {
  */
 function readJson(root: string, rel: string): { value: unknown } | { reason: string } {
   const full = path.join(root, rel);
-  const kind = kindOf(full);
-  if (kind === null) return { reason: "無い" };
-  if (kind !== "file") return { reason: "通常のファイルではない（symlink も受け付けない）" };
+  const st = fs.lstatSync(full, { throwIfNoEntry: false });
+  if (!st) return { reason: "無い" };
+  if (!st.isFile()) return { reason: "通常のファイルではない（symlink も受け付けない）" };
+  if (st.size > MAX_MANIFEST) return { reason: `大きすぎる（${MAX_MANIFEST} bytes まで）` };
   try {
     return { value: JSON.parse(fs.readFileSync(full, "utf8")) };
   } catch {
@@ -62,8 +68,14 @@ function readJson(root: string, rel: string): { value: unknown } | { reason: str
   }
 }
 
+/**
+ * Zod の理由から**入力由来の文字列を除く。**`message` は未知のキー名をそのまま含み、キー名に制御文字があれば
+ * 端末と同期ログへ流れる。path は schema のキーか添字だけなので出してよい。自前の検査（custom）の文言は固定文。
+ */
 const zodReason = (e: z.ZodError): string =>
-  e.issues.map((i) => `${i.path.join(".") || "(根)"}: ${i.message}`).join(" / ");
+  e.issues
+    .map((i) => `${i.path.join(".") || "(根)"}: ${i.code === "custom" ? i.message : i.code}`)
+    .join(" / ");
 
 /** `.mitos/changes` 配下で git が追っている path。git 管理外なら null。 */
 function trackedChanges(root: string): Set<string> | null {
@@ -91,10 +103,16 @@ function inspectChange(
 ): { change: Change | null; problems: Problem[] } {
   const dir = `${CHANGES}/${slug}`;
   const problems: Problem[] = [];
+  // 規則外の名前はそのまま出さない。制御文字を含むと端末と同期ログへ流れる。
   if (!SLUG.test(slug))
     return {
       change: null,
-      problems: [{ path: dir, reason: "change の名前は小文字英数字とハイフンだけにする" }],
+      problems: [
+        {
+          path: `${CHANGES}/${JSON.stringify(slug)}`,
+          reason: "change の名前は小文字英数字とハイフンだけにする",
+        },
+      ],
     };
   if (kindOf(path.join(root, dir)) !== "dir") {
     return {
@@ -188,8 +206,11 @@ export function selectArtifacts(
   return { include, problems };
 }
 
-/** `.mitos` 配下の Markdown か。承認済みの成果物以外は同期しない。 */
-export const underMitos = (rel: string): boolean => rel.startsWith(`${MITOS}/`);
+/**
+ * `.mitos` 配下の Markdown か。承認済みの成果物以外は同期しない。**入れ子の `.mitos` も含める** —
+ * 根にしか承認の判定が無いので、サブディレクトリの draft が通常の文書として検索に入る。
+ */
+export const underMitos = (rel: string): boolean => rel.startsWith(`${MITOS}/`) || rel.includes(`/${MITOS}/`);
 
 /**
  * `.mitos/` を作る。**Git リポジトリの中なら常に根へ**置く。

@@ -381,14 +381,9 @@ async function main(): Promise<void> {
 
   // **DB と資格情報に触る前に済ませる。**ローカルのファイルを見るだけなので、資格情報の無い環境でも動く。
   if (cmd === "init" || cmd === "check") {
-    // 共通の OPTIONS は他のコマンド用の flag と位置引数も通すので、`mitos init <dir>` が黙って cwd を扱わないよう弾く。
-    const extra = [
-      ...rest,
-      ...Object.keys(opt)
-        .filter((k) => k !== "cwd")
-        .map((k) => `--${k}`),
-    ];
-    if (extra.length) throw new Error(`${cmd} が受け取るのは --cwd だけ: ${extra.join(" ")}`);
+    // 共通の OPTIONS は他のコマンド用の flag と位置引数も通すので、`--cwd` だけで解釈し直す。
+    // 位置引数も拒否させる — `mitos init <dir>` が黙って cwd を初期化しないように。
+    parseArgs({ args: argv.slice(1), options: { cwd: OPTIONS.cwd } });
     if (cmd === "init") {
       const r = init(cwd);
       console.log(r.created ? `.mitos を作った: ${r.root}` : `.mitos は既に初期化済み: ${r.root}`);

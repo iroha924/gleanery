@@ -13,7 +13,7 @@
     "verify:ai": "node scripts/check-ai-config.mjs",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd dashboard typecheck",
     "check": "bun run lint && bun run architecture && bun run verify:ai && bun run typecheck",
-    "test": "bun run --cwd server test",
+    "test": "bun run --cwd server test && node plugin/skills/trace/evals/run.mjs",
     "verify": "bun run check && bun run test && bun run build",
     "bundle": "bun build server/src/mcp.ts --target=node --outfile plugin/dist/mcp.js && bun build server/src/hook-check-path.ts --target=node --outfile plugin/dist/hook-check-path.js && bun build server/src/cli.ts --target=node --outfile plugin/dist/cli.js",
     "eval": "cd server && node evals/answers.ts && node evals/multi.ts",

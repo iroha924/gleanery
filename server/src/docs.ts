@@ -37,7 +37,7 @@ export type Section = {
  * 承認済みの成果物の原文。**節を連結しても元の Markdown に戻らない**（見出しだけの節を落とす）ので、
  * ダッシュボードで読ませる本文を別に 1 件持つ。検索しないので埋め込みも持たない。
  */
-export type Source = { key: string; path: string; text: string; at: string | null; artifact: Artifact };
+export type Source = { key: string; text: string; at: string | null; artifact: Artifact };
 
 /**
  * 1 つの節の上限。**超えたぶんは捨てずに続きの節へ回す。**
@@ -253,10 +253,29 @@ export function projectDocs(
     if (underMitos(rel) && !artifact) continue;
     for (const s of sections(rel, body))
       all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length, artifact });
-    if (artifact) sources.push({ key: rel, path: rel, text: body, at: at.get(rel) ?? null, artifact });
+    if (artifact) sources.push({ key: rel, text: body, at: at.get(rel) ?? null, artifact });
   }
   return { sections: all, sources };
 }
+
+/**
+ * 埋め込みを取り直す節。**原文は受け取らない**（検索しないので埋め込みも持たない）。
+ * `existing` には墓標の行も入れる — draft へ戻してから再び承認した節は、本文が同じなら取り直さない。
+ */
+export const needEmbedding = (
+  all: Section[],
+  existing: Map<string, { content_hash: string; has_emb: boolean }>,
+): Section[] =>
+  all.filter((s) => {
+    const old = existing.get(s.key);
+    return !old || old.content_hash !== hash(sectionText(s)) || !old.has_emb;
+  });
+
+/** 墓標を立てずに残す key。**原文の key を落とすと、挿入した直後に soft delete される。** */
+export const liveKeys = (p: { sections: Section[]; sources: Source[] }): string[] => [
+  ...p.sections.map((s) => s.key),
+  ...p.sources.map((s) => s.key),
+];
 
 /** リポジトリ 1 つぶん。**docs は 1 記録**にして、どの文書かは node の key が持つ。 */
 export async function ingestDocs(
@@ -289,10 +308,11 @@ export async function ingestDocs(
         problems.map((p) => `  ${p.path}: ${p.reason}`).join("\n"),
     );
   }
-  const { sections: all, sources } = projectDocs(bodies, include, at);
+  const projected = projectDocs(bodies, include, at);
+  const { sections: all, sources } = projected;
   const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
 
-  // **墓標の行も読む。**draft へ戻してから再び承認した節は、本文が同じなら埋め込みを取り直さない。
+  // 墓標の行も読む（needEmbedding の説明を参照）。
   const existing = new Map(
     (
       await client.query<{ key: string; content_hash: string; has_emb: boolean }>(
@@ -301,11 +321,7 @@ export async function ingestDocs(
       )
     ).rows.map((r) => [r.key, r]),
   );
-  // 原文は `all` に入っていないので、ここで埋め込み対象にならない。
-  const need = all.filter((s) => {
-    const old = existing.get(s.key);
-    return !old || old.content_hash !== hash(sectionText(s)) || !old.has_emb;
-  });
+  const need = needEmbedding(all, existing);
   onProgress?.(
     `文書 ${bodies.size} 本 / 節 ${all.length} 件 / 承認済みの成果物 ${sources.length} 本 / 埋め込みを取り直す ${need.length} 件`,
   );
@@ -398,7 +414,7 @@ export async function ingestDocs(
         ordinal: 0,
         at: s.at,
         text: s.text,
-        attrs: { path: s.path, title: path.basename(s.path), trail: s.path, artifact: s.artifact },
+        attrs: { path: s.key, title: path.basename(s.key), trail: s.key, artifact: s.artifact },
         contentHash: hash(s.text),
         searchable: false,
         embedText: null,
@@ -412,7 +428,7 @@ export async function ingestDocs(
       `update node set deleted_at = now()
        where record_id = $1 and kind = 'doc' and deleted_at is null and not (key = any($2))
        returning 1 as n`,
-      [recordId, [...all.map((s) => s.key), ...sources.map((s) => s.key)]],
+      [recordId, liveKeys(projected)],
     );
     await client.query("commit");
     return `${label} / 文書 ${bodies.size} 本・節 ${all.length} 件（埋め込み ${need.length} 件${
