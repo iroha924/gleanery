@@ -42,6 +42,17 @@ export type SessionNode = {
   parent_id: number | null;
 };
 
+/** セッションが触れた要件定義・設計書のうち、承認済みとして同期された原文。 */
+export type SessionArtifact = {
+  kind: "requirements" | "design";
+  change: string;
+  path: string;
+  title: string;
+  /** 作業場所の文書同期が最後に成功した時刻。commit 時刻ではない */
+  syncedAt: string;
+  content: string;
+};
+
 export type SessionDetail = SessionRow & {
   problem: string;
   goal: string;
@@ -52,6 +63,7 @@ export type SessionDetail = SessionRow & {
   ended_at: string | null;
   ingested_at: string;
   nodes: SessionNode[];
+  artifacts: SessionArtifact[];
 };
 
 export type SessionHit = {

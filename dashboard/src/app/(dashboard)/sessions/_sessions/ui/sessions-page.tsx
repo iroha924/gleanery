@@ -8,7 +8,9 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleCheckIcon,
+  ClipboardListIcon,
   CopyIcon,
+  DraftingCompassIcon,
   GitBranchIcon,
   ListChecksIcon,
   MessagesSquareIcon,
@@ -36,6 +38,7 @@ import { useProject } from "@/lib/project";
 import {
   loadSession,
   loadSessions,
+  type SessionArtifact,
   type SessionDetail,
   type SessionHit,
   type SessionNode,
@@ -357,8 +360,67 @@ function SectionCard({ section, onOpen }: { section: Section; onOpen: () => void
   );
 }
 
+const ARTIFACT_KINDS = {
+  requirements: { label: "要件定義", icon: ClipboardListIcon, badge: "info" },
+  design: { label: "設計書", icon: DraftingCompassIcon, badge: "secondary" },
+} as const;
+
+function ArtifactCard({ artifact, onOpen }: { artifact: SessionArtifact; onOpen: () => void }) {
+  const kind = ARTIFACT_KINDS[artifact.kind];
+  return (
+    <button
+      type="button"
+      data-motion-icon-group=""
+      className="group flex min-w-0 flex-col gap-2 rounded-md border bg-card p-4 text-left transition-colors hover:bg-muted/50"
+      onClick={onOpen}
+    >
+      <span className="flex items-center justify-between gap-3">
+        <Badge variant={kind.badge}>
+          <kind.icon className="size-3.5" />
+          {kind.label}
+        </Badge>
+        <ChevronRightIcon className="size-4 text-muted-foreground" />
+      </span>
+      <span className="font-medium leading-snug">{artifact.title}</span>
+      <span className="font-mono text-xs break-all text-muted-foreground">{artifact.path}</span>
+      <span className="text-xs text-muted-foreground tabular-nums">同期 {formatDate(artifact.syncedAt)}</span>
+    </button>
+  );
+}
+
+function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | null; onClose: () => void }) {
+  return (
+    <Dialog open={artifact !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="grid max-h-[82vh] grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden p-6 sm:max-w-[48rem]">
+        {artifact && (
+          <>
+            <DialogHeader className="pr-8">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={ARTIFACT_KINDS[artifact.kind].badge}>
+                  {ARTIFACT_KINDS[artifact.kind].label}
+                </Badge>
+                <span className="text-sm text-muted-foreground tabular-nums">
+                  同期 {formatDate(artifact.syncedAt)}
+                </span>
+              </div>
+              <DialogTitle className="text-left">{artifact.title}</DialogTitle>
+              <DialogDescription className="text-left font-mono text-xs break-all">
+                {artifact.path}
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="min-h-0 pr-4">
+              <MarkdownText text={artifact.content} className="text-sm leading-6" />
+            </ScrollArea>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
   const [selectedSection, setSelectedSection] = useState<Section | null>(null);
+  const [selectedArtifact, setSelectedArtifact] = useState<SessionArtifact | null>(null);
   const detail = useQuery({
     queryKey: ["session", id],
     queryFn: () => loadSession(id as string),
@@ -366,6 +428,7 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
   });
   const closeDialog = () => {
     setSelectedSection(null);
+    setSelectedArtifact(null);
     onClose();
   };
 
@@ -465,6 +528,26 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                   ))}
                 </div>
               </section>
+
+              {detail.data.artifacts.length > 0 && (
+                <section className="space-y-3">
+                  <div>
+                    <h3 className="font-medium">成果物</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      このセッションが触れた要件定義と設計書。承認済みとして同期された本文を表示します。
+                    </p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {detail.data.artifacts.map((artifact) => (
+                      <ArtifactCard
+                        key={artifact.path}
+                        artifact={artifact}
+                        onOpen={() => setSelectedArtifact(artifact)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           </ScrollArea>
         ) : null}
@@ -474,6 +557,7 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
           options={detail.data?.nodes.filter((node) => node.kind === "option") ?? []}
           onClose={() => setSelectedSection(null)}
         />
+        <ArtifactDialog artifact={selectedArtifact} onClose={() => setSelectedArtifact(null)} />
       </DialogContent>
     </Dialog>
   );

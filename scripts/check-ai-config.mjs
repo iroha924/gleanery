@@ -133,7 +133,7 @@ for (const name of pluginSkills) {
   }
 
   // CodexのPATHにmitosは無い（exit 127を観測）。
-  if (/Bash\(mitos |^mitos /m.test(source) && !source.includes("../../bin/mitos")) {
+  if (/Bash\(mitos |^mitos |\}\/bin\/mitos/m.test(source) && !source.includes("../../bin/mitos")) {
     fail(`${relative}: mitosのCLIを呼ぶのに、Codex用の../../bin/mitosが無い`);
   }
 }

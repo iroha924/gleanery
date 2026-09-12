@@ -4,7 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { markdownFiles, sections, sectionText } from "../src/docs.ts";
+import type { Artifact } from "../src/artifacts.ts";
+import { markdownFiles, projectDocs, sections, sectionText } from "../src/docs.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
 // 説明と、その説明が指すコマンドが別々の断片になる。
@@ -141,4 +142,53 @@ test("CRLF と BOM でも見出しで割れる", () => {
     want,
     "BOM で先頭の見出しが落ちた",
   );
+});
+
+// **承認済みの成果物だけを入れる。**draft を入れると、未承認の AI 生成物が次の生成の根拠として引かれる。
+test("成果物は承認済みだけを節と原文にし、draft と .mitos のそれ以外は入れない", () => {
+  const req = ".mitos/changes/auth/requirements.md";
+  const artifact: Artifact = { kind: "requirements", change: "auth", changeTitle: "認証" };
+  const bodies = new Map([
+    ["README.md", "# 読んで\n\n本文\n"],
+    [req, "# 要件\n\n## 背景\n### 経緯\n\n本文\n"],
+    [".mitos/changes/auth/design.md", "# 設計\n\n本文\n"],
+    [".mitos/notes.md", "# メモ\n\n本文\n"],
+  ]);
+  const got = projectDocs(bodies, new Map([[req, artifact]]), new Map());
+  assert.deepEqual([...new Set(got.sections.map((s) => s.path))], ["README.md", req]);
+  assert.ok(got.sections.filter((s) => s.path === req).every((s) => s.artifact === artifact));
+  assert.equal(got.sections.find((s) => s.path === "README.md")?.artifact, undefined);
+  assert.deepEqual(
+    got.sections.filter((s) => s.path === "README.md").map((s) => s.key),
+    sections("README.md", bodies.get("README.md") ?? "").map((s) => s.key),
+    "通常の文書の節が変わった",
+  );
+  assert.deepEqual(got.sources, [{ key: req, path: req, text: bodies.get(req), at: null, artifact }]);
+});
+
+// 節は見出しだけの節を落とすので、連結しても元に戻らない。原文は読んだ本文をそのまま持つ。
+test("原文は見出しだけの節・コードフェンス・末尾の改行を含めて元の本文と一致する", () => {
+  const req = ".mitos/changes/a/requirements.md";
+  const body = "# 題\n\n## 見出しだけ\n### 子\n\n```sh\n# コメント\n```\n\n末尾\n\n";
+  const got = projectDocs(
+    new Map([[req, body]]),
+    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
+    new Map(),
+  );
+  assert.equal(got.sources[0]?.text, body);
+  assert.notEqual(got.sections.map((s) => s.text).join("\n"), body, "節の連結で戻るなら原文は要らない");
+});
+
+// 見出し slug は `@` を除かないので、`#@...` を原文の key にすると `## @...` の節と衝突し、後勝ちで片方が消える。
+test("原文の key は、どんな見出しから作った節の key とも交わらない", () => {
+  const req = ".mitos/changes/a/requirements.md";
+  const body = "## @artifact-source\n\n本文\n\n## .mitos/changes/a/requirements.md\n\n本文\n";
+  const got = projectDocs(
+    new Map([[req, body]]),
+    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
+    new Map(),
+  );
+  const sectionKeys = new Set(got.sections.map((s) => s.key));
+  for (const s of got.sources) assert.equal(sectionKeys.has(s.key), false, `${s.key} が節の key と衝突した`);
+  assert.ok(got.sections.every((s) => s.key.includes("#")));
 });

@@ -64,7 +64,7 @@ export function cover(digest, ir) {
   const hit = (s) => Boolean(s) && (blob.includes(s) || keyed.includes(s));
   const groups = [];
 
-  // 人が選んだ決定。**これだけは落としてはいけない**ので、唯一の違反にする。
+  // 人が選んだ決定。**落としてはいけない**ので違反にする。
   // 選択肢とトレードオフを見せたうえで人が選んだ記録は、他のどこにも復元できない。
   const choices = digest.choices || [];
   const choiceMiss = choices.filter((c) => {
@@ -78,7 +78,19 @@ export function cover(digest, ir) {
     fix: 'decisions へ移す。問いを context に、選択肢と説明を options に、回答を chosen にする',
   });
 
-  const files = (digest.git?.changed || []).map((c) => c.path).filter((p) => !NOISE.test(p));
+  // このセッションが触れた要件定義と設計書。`links.files` の要素と完全一致で見る — 取り込みで
+  // touched の辺になるのはそこだけで、本文や evidence に書いてあっても結ばれない。
+  const linked = new Set(ir.links?.files ?? []);
+  const artifacts = digest.artifacts || [];
+  groups.push({
+    id: 'artifacts', label: 'このセッションが触れた要件定義・設計書', blocking: true,
+    total: artifacts.length, missing: artifacts.filter((p) => !linked.has(p)),
+    fix: 'progress sessionize をやり直す（links.files へ機械的に入る）。path を手で書かない',
+  });
+
+  // `.mitos/` は上で扱う。ここに残すと、別セッションが変更中の成果物を links.files へ入れるよう促し、
+  // tool の入力で絞った意味が消える。
+  const files = (digest.git?.changed || []).map((c) => c.path).filter((p) => !NOISE.test(p) && !p.startsWith('.mitos/'));
   groups.push({
     id: 'files', label: '変更したファイル', blocking: false,
     total: files.length, missing: files.filter((p) => !hit(p) && !hit(p.replace(/\/[^/]*$/, ''))),

@@ -11,6 +11,9 @@ import { execFileSync } from 'node:child_process';
 
 const HOME = os.homedir();
 
+/** 要件定義と設計書の path。DB 側（server/src/artifacts.ts の ARTIFACT_PATH）と同じ形にする。 */
+export const ARTIFACT = /^\.mitos\/changes\/[a-z0-9]+(?:-[a-z0-9]+)*\/(requirements|design)\.md$/;
+
 const readLines = function* (file) {
   // 42MB の transcript でも一度に読んで問題ない（実測 0.1 秒）。
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
@@ -130,6 +133,7 @@ function collectClaude(file) {
         else addAssistantText(d, o, b.text);
       }
       if (b.type === 'tool_use') {
+        d.inputs.push(JSON.stringify(b.input ?? {}));
         // AskUserQuestion は、選択肢と各案のトレードオフを示したうえで人が選んだ記録である。
         // decisions がまさに欲しい形（文脈・検討した案・採った案）がそのまま残っているのに、
         // ツールの一種として数えるだけでは中身が落ちる。実測: このスキルの読み手・ファイル単位・
@@ -211,6 +215,7 @@ function collectCodex(file) {
       // 動的に組み立てられた命令まで追おうとすると、塞ぐ面に終端が無くなる。
       // input そのものが「何を実行したか」の記録なので、そのまま残す。
       if (p.type === 'custom_tool_call') {
+        d.inputs.push(String(p.input ?? ''));
         d.toolCounts[p.name] = (d.toolCounts[p.name] || 0) + 1;
         d.commands.push({
           at: o.timestamp,
@@ -221,6 +226,7 @@ function collectCodex(file) {
         });
       }
       if (p.type === 'function_call') {
+        d.inputs.push(String(p.arguments ?? ''));
         d.toolCounts[p.name] = (d.toolCounts[p.name] || 0) + 1;
         let args = {};
         try { args = JSON.parse(p.arguments || '{}'); } catch { /* 引数が読めなくても記録は続ける */ }
@@ -243,6 +249,7 @@ function collectCodex(file) {
 const blank = (host, file) => ({
   host, transcript: file, sessionId: null, cwd: null, branch: null, from: null, to: null,
   messages: [], userMessages: [], notifications: 0, compactions: 0, choices: [], commands: [], files: {}, urls: [], agents: [], toolCounts: {},
+  inputs: [],
 });
 const push = (a, v) => { if (v && !a.includes(v)) a.push(v); };
 const addUserText = (d, entry, text) => {
@@ -289,8 +296,19 @@ function finish(d) {
 export function gitState(cwd, since) {
   const git = (...a) => execFileSync('git', ['-C', cwd, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
   try { git('rev-parse', '--git-dir'); } catch { return null; }
-  const out = { branch: null, changed: [], commits: [] };
+  const out = { branch: null, changed: [], commits: [], artifactCandidates: [] };
   try { out.branch = git('rev-parse', '--abbrev-ref', 'HEAD').trim(); } catch { /* detached HEAD でも続ける */ }
+  // 要件定義と設計書は、下の status では足りない。-uall が無いと未追跡の `.mitos/` が 1 行に畳まれ、
+  // commit 後は status から消える。作業ツリーとセッション開始以降の commit の両方から候補を取る。
+  // `:/` を付けるので、cwd がサブディレクトリでも根から取れる。
+  try {
+    const status = git('status', '--porcelain', '-uall', '--no-renames', '--', ':/.mitos/changes')
+      .split('\n').filter(Boolean).map((l) => l.slice(3));
+    const logged = since
+      ? git('log', `--since=${since}`, '--format=', '--name-only', '--', ':/.mitos/changes').split('\n').filter(Boolean)
+      : [];
+    out.artifactCandidates = [...new Set([...status, ...logged])].filter((p) => ARTIFACT.test(p)).sort();
+  } catch { /* 取れなくても記録は続ける */ }
   try {
     out.changed = git('status', '--porcelain')
       .split('\n').filter(Boolean)
@@ -310,5 +328,10 @@ export function gitState(cwd, since) {
 export function collect(file, host, cwd) {
   const d = host === 'codex' ? collectCodex(file) : collectClaude(file);
   d.git = gitState(cwd || d.cwd || process.cwd(), d.from);
+  // **このセッションが触れた成果物だけにする。**git の候補は他のセッションの変更も含むので、
+  // tool 呼び出しの入力に path が出るものだけを残す。有限の候補への包含判定で、シェルの構文解析ではない。
+  // tool_result は見ない — `git status` の出力に他セッションの成果物が出ただけで結ばれる。
+  d.artifacts = (d.git?.artifactCandidates || []).filter((p) => d.inputs.some((s) => s.includes(p)));
+  delete d.inputs;
   return d;
 }

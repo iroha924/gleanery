@@ -105,6 +105,11 @@ node "$PG" record-id digest.json
 スクリプトの出力）はツールの引数に現れず、拾おうとするとシェルの構文解析になる。
 そこには終端が無いので踏み込まない。`collect` は git の `status` と `log` を使う。
 
+**要件定義と設計書（`.mitos/changes/*/{requirements,design}.md`）だけは所属まで決める。**
+候補は git から取る（作業ツリーと、セッション開始以降の commit）。そのうち、このセッションの
+tool 呼び出しの入力に path が出るものを `artifacts` にする。有限の候補への包含判定で、シェルの構文解析ではない。
+tool の出力は見ない — 他のセッションの成果物が `git status` の出力に出ただけで結ばれる。
+
 **失敗したコマンドは `dead_end` の候補**として出てくるが、そのまま書き写さない。
 一時的な打ち間違いと、方針が駄目だったことは別である。後者だけを残す。
 
@@ -186,8 +191,11 @@ node "$PG" sessionize digest.json ir.json
 ```
 
 このコマンドが `schema: session/3`、元ツール、セッション ID、会話、開始・最終記録時刻、branch、
-DB 上の record ID を決定する。**これらを手で書き換えない。**同じセッションなら同じ record ID、
+DB 上の record ID、要件定義と設計書の `links.files` を決定する。**これらを手で書き換えない。**同じセッションなら同じ record ID、
 別セッションなら必ず別の record ID になる。
+
+**`.mitos/changes/` の path を `links.files` へ手で書かない。**取り込みでセッションとの関連（touched）になり、
+その関連は取り込み直しても消えない。成果物は `sessionize` が和集合で足すので、再 trace でも前回の分が残る。
 
 **書き捨てのスクリプトで IR を直さない。**`progress patch` に JSON を渡す。
 
@@ -222,7 +230,7 @@ node "$PG" patch ir.json patch.json
 |---|---|---|
 | **更新** | `current` / `next` / `openQuestions` / `knowledge` | 上書きする。ただし `current` を変えたら、変わった事実を `events` に `state_transition` として必ず落とす |
 | 追記 | `events` / `decisions` / `verification` | 過去の要素は書き換えない。id は再利用しない |
-| ほぼ不変 | `meta` / `background` / `links` / `glossary` | `background.goal` を変えるのは目的が変わったときだけで、その変更自体を `decisions` に残す |
+| ほぼ不変 | `meta` / `background` / `links` / `glossary` | `background.goal` を変えるのは目的が変わったときだけで、その変更自体を `decisions` に残す。`links.files` の成果物は `sessionize` が足す |
 
 各欄に何を書くかは [references/sections.md](references/sections.md)。
 全フィールドの定義は [references/schema.md](references/schema.md)。
@@ -269,7 +277,8 @@ node "$PG" cover digest.json ir.json
 | 見るもの | 扱い |
 |---|---|
 | **人が選んだ決定**（`AskUserQuestion`） | **落としてはいけない。**未記録なら exit 1 |
-| 変更したファイル / 参照した URL | 警告。入れる価値が無いなら入れなくてよい |
+| **このセッションが触れた要件定義・設計書**（`digest.artifacts`） | **落としてはいけない。**`links.files` に完全一致で無ければ exit 1。`sessionize` をやり直せば入る |
+| 変更したファイル / 参照した URL | 警告。入れる価値が無いなら入れなくてよい（`.mitos/` は上の行で扱うので出さない） |
 | **参照先の実在**（コミット・ファイル） | 警告。**存在しない識別子を証拠に書く経路をここだけが見ている** |
 | 失敗したコマンド / サブエージェント | 件数だけ出す。**個別には指摘しない** |
 

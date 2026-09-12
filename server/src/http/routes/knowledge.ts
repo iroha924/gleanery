@@ -100,9 +100,27 @@ const app = new Hono()
        order by kind, ordinal, at nulls last`,
       [id],
     );
+    // セッションが触れた要件定義・設計書のうち、同じ作業場所で承認済みとして同期された原文だけを返す。
+    // 原文の key は path そのもので、(record_id, kind, key) が一意なので 1 つの path に 0 件か 1 件になる。
+    // syncedAt は docs 記録の ingested_at（その作業場所の文書同期が最後に成功した時刻）。commit 時刻ではない。
+    const artifacts = await client.query(
+      `select n.attrs->'artifact'->>'kind' as kind, n.attrs->'artifact'->>'change' as change,
+              n.attrs->>'path' as path, n.attrs->'artifact'->>'changeTitle' as title,
+              d.ingested_at as "syncedAt", n.text as content
+       from ref_link l
+       join ref on ref.id = l.ref_id and ref.kind = 'file'
+       join record s on s.id = l.record_id
+       join record d on d.scope_id = s.scope_id and d.schema_ver = 'docs/1'
+       join node n on n.record_id = d.id and n.kind = 'doc' and n.key = ref.key
+                  and n.subkind = 'artifact-source' and n.deleted_at is null
+       where l.record_id = $1 and l.role = 'touched'
+       order by n.attrs->'artifact'->>'change', n.attrs->'artifact'->>'kind' desc`,
+      [id],
+    );
     return c.json({
       ...record.rows[0],
       nodes: nodes.rows.map((node) => ({ ...node, label: labelOf(node) })),
+      artifacts: artifacts.rows,
     });
   })
   .get("/scopes", async (c) => {
