@@ -24187,6 +24187,24 @@ function lastSaid(session) {
     return null;
   }
 }
+function agentReport(input2) {
+  const prompt = input2.prompt ?? "";
+  if (input2.hook_event_name !== "UserPromptSubmit" || !prompt.trimStart().startsWith("<task-notification"))
+    return null;
+  const start = prompt.indexOf("<result>");
+  const end = prompt.lastIndexOf("</result>");
+  if (start < 0 || end < start)
+    return null;
+  const report = visible(prompt.slice(start + "<result>".length, end)).trim();
+  if (!report)
+    return null;
+  const summary = prompt.match(/<summary>([^<]*)<\/summary>/)?.[1]?.trim();
+  return summary ? `${visible(summary)}
+
+${report}` : report;
+}
+var visible = (s) => s.replace(/[\p{Zl}\p{Zp}]/gu, `
+`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 function answersOf(input2) {
   const response = input2.tool_response;
   const answers = response?.answers;
@@ -24224,15 +24242,6 @@ function onHook(host, input2) {
 `);
     }
     return { flush: false, notice: captureNotice(loadEnv()) };
-  }
-  if (event === "SubagentStop") {
-    const report = (input2.last_assistant_message ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, "").trim();
-    return {
-      flush: false,
-      notice: report ? `${input2.agent_type ?? "レビュアー"} の報告
-
-${report}` : null
-    };
   }
   if (!isOwnerTurn(input2))
     return { flush: false };
@@ -24540,12 +24549,19 @@ async function main() {
     await flush(loadEnv());
     return;
   }
-  const host = process.argv[2] === "codex" ? "codex" : "claude-code";
   process.stdin.setEncoding("utf8");
   let raw = "";
   for await (const chunk of process.stdin)
     raw += chunk;
-  const { flush: send, notice } = onHook(host, JSON.parse(raw || "{}"));
+  const input2 = JSON.parse(raw || "{}");
+  if (process.argv[2] === "--show") {
+    const report = agentReport(input2);
+    if (report)
+      process.stdout.write(JSON.stringify({ systemMessage: report }));
+    return;
+  }
+  const host = process.argv[2] === "codex" ? "codex" : "claude-code";
+  const { flush: send, notice } = onHook(host, input2);
   if (notice)
     process.stdout.write(JSON.stringify({ systemMessage: notice }));
   if (send)
@@ -24556,6 +24572,7 @@ if (process.argv[1] && /capture\.(ts|js)$/.test(process.argv[1])) {
 }
 export {
   MAX_MESSAGE,
+  agentReport,
   answersOf,
   captureNotice,
   fit,

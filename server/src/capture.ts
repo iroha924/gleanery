@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、触ったファイルを残す。
-// mitos のレビュアー（subagent）が終わったときは、その報告を持ち主の画面へ出す（記録はしない）。
+// 背景の agent の完了通知が届いたときは、その報告を持ち主の画面へ出す（`--show`。記録はしない）。
 //
 // **フックは手元の待ち行列へ書くだけにする。**網へは Stop のときにまとめて送る（async のフックなので待たせない）。
 // DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は入力から決定的に作る）。
@@ -129,7 +129,6 @@ type HookInput = {
   prompt_id?: string;
   turn_id?: string;
   agent_id?: string;
-  agent_type?: string;
   cwd?: string;
   prompt?: string;
   last_assistant_message?: string | null;
@@ -203,6 +202,31 @@ function lastSaid(session: string): string | null {
 }
 
 /**
+ * 背景の agent の完了通知から、持ち主の画面へ出す報告を作る（`--show` の同期フックが出す）。報告の本文は完了通知の
+ * `<result>` にしか無く、親の Claude には届くが持ち主の画面には出ない。本文の無い通知（背景のシェルの完了など）は出さない。
+ * subagent の SubagentStop や ReportFindings で返した表示は、持ち主の画面に出なかった（実測 2026-09-13、2.1.269）。
+ */
+export function agentReport(input: HookInput): string | null {
+  const prompt = input.prompt ?? "";
+  if (input.hook_event_name !== "UserPromptSubmit" || !prompt.trimStart().startsWith("<task-notification"))
+    return null;
+  const start = prompt.indexOf("<result>");
+  const end = prompt.lastIndexOf("</result>");
+  if (start < 0 || end < start) return null;
+  const report = visible(prompt.slice(start + "<result>".length, end)).trim();
+  if (!report) return null;
+  const summary = prompt.match(/<summary>([^<]*)<\/summary>/)?.[1]?.trim();
+  return summary ? `${visible(summary)}\n\n${report}` : report;
+}
+
+/**
+ * 画面に出す文字だけにする。報告は他人の diff を引用するので、端末を乱す制御文字と、見た目を偽れる書式文字（双方向の
+ * 上書き、ゼロ幅、タグ文字）を落とし、行区切りは改行にする。文字の結合に要る ZWJ・ZWNJ は残す。
+ */
+const visible = (s: string): string =>
+  s.replace(/[\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+
+/**
  * AskUserQuestion で持ち主が選んだ答えと、答えに添えたメモ。質問と答えの組を持ち主の発言として残す。
  * tool_response は `{ questions, answers: {質問: 答え}, annotations: {質問: { notes }} }`（transcript の実物で確認）。
  * **答えは tool_response からだけ取る。**tool_input はモデルが書くので、そこにある値を持ち主の答えにしない。
@@ -247,19 +271,6 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
       fs.appendFileSync(file, `export MITOS_PARENT_SESSION=${input.session_id}\n`);
     }
     return { flush: false, notice: captureNotice(loadEnv()) };
-  }
-  if (event === "SubagentStop") {
-    // レビュアーと validator（hooks.json の matcher が mitos:review-* に絞る）の生の報告を、終わった時点で持ち主の画面に
-    // 出す。systemMessage はモデルの文脈に入らないので、親の Claude の判断は変えない。レビュアーは他人の diff を引用するので、
-    // 端末を乱す制御文字と、見た目を偽れる文字（双方向の上書き、ゼロ幅、行区切り）は落とす。
-    const report = (input.last_assistant_message ?? "")
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: 端末を乱す制御文字を落とすための範囲
-      .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, "")
-      .trim();
-    return {
-      flush: false,
-      notice: report ? `${input.agent_type ?? "レビュアー"} の報告\n\n${report}` : null,
-    };
   }
   if (!isOwnerTurn(input)) return { flush: false };
   const place = identify(input.cwd ?? process.cwd());
@@ -644,12 +655,18 @@ async function main(): Promise<void> {
     await flush(loadEnv());
     return;
   }
-  const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
   // 塊ごとに文字へ変えると、境目で割れた多バイト文字が化ける。文字として読ませる。
   process.stdin.setEncoding("utf8");
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const { flush: send, notice } = onHook(host, JSON.parse(raw || "{}") as HookInput);
+  const input = JSON.parse(raw || "{}") as HookInput;
+  if (process.argv[2] === "--show") {
+    const report = agentReport(input);
+    if (report) process.stdout.write(JSON.stringify({ systemMessage: report }));
+    return;
+  }
+  const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
+  const { flush: send, notice } = onHook(host, input);
   // systemMessage は持ち主に見える警告で、モデルの文脈には入らない。
   if (notice) process.stdout.write(JSON.stringify({ systemMessage: notice }));
   // 送信は session から切り離したプロセスで行う。フックのプロセスのままだと、session の終わりに

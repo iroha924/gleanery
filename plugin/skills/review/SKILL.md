@@ -141,7 +141,7 @@ A="../../agents"
 
 | | Claude Code | Codex |
 |---|---|---|
-| 立て方 | `Agent` ツール。`subagent_type` に **`mitos:` を付けた名前**（`mitos:review-adversarial`）を渡す（**`fork` にしない**） | `spawn_agent`。`$A/<名>.md` を `Read` し、**フロントマターを除いた本文をそのままプロンプトに渡す** |
+| 立て方 | `Agent` ツール。`subagent_type` に **`mitos:` を付けた名前**（`mitos:review-adversarial`）を渡し、**背景で立てる**（`run_in_background`。前面の agent には完了通知が来ず、報告が持ち主の画面に出ない）。**`fork` にしない** | `spawn_agent`。`$A/<名>.md` を `Read` し、**フロントマターを除いた本文をそのままプロンプトに渡す** |
 | 深さの固定 | 定義の `effort` が効く | `spawn_agent` の **`reasoning_effort`** に、定義の `effort` と同じ値を渡す |
 | 回収 | 完了通知 | `wait_agent` |
 
@@ -300,8 +300,9 @@ Claude が反証する。両方由来なら決定的な再現を優先する。
 **混ぜると、レビュアーごとに違う言葉が返って畳めない。**
 
 **文章で返す。`ReportFindings` は使わない**（実測 2026-09-13: 呼んでも持ち主の画面に何も出なかった）。
-Claude Code の subagent として立てたレビュアーと validator の生の報告は、終わった時点で plugin の `SubagentStop` フックが
-持ち主の画面へ出す。**フックが効かない経路では、起動側が生の報告を 1 レーンずつ文章で出す** — Claude から回す Codex の
+Claude Code で背景に立てたレビュアーと validator の生の報告は、完了通知が届いた時点で plugin のフック
+（`UserPromptSubmit` の `capture.js --show`）が持ち主の画面へ出す（実測 2026-09-13: `SubagentStop` で返した表示は
+画面に出なかった）。**フックが効かない経路では、起動側が生の報告を 1 レーンずつ文章で出す** — Claude から回す Codex の
 レーン（`codex exec`）と、Codex がホストのとき（Codex の plugin にはフックが無い）。そのうえで、畳んで裁定した結果を返す。
 
 **`REFUTED` は台帳の隣に別の節として残す** — 崩れた指摘と、崩した根拠を 1 行ずつ。**棄却したことを残さないと、次のラウンドで同じ指摘が来て、

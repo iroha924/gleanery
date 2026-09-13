@@ -6,6 +6,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 import {
+  agentReport,
   answersOf,
   fit,
   isOwnerTurn,
@@ -479,38 +480,40 @@ test("エージェントが起動した子と、作業場所の外の session �
   assert.deepEqual(spooled(), []);
 });
 
-test("レビュアーが終わったら、その生の報告を持ち主の画面へ出し、会話としては残さない", () => {
-  reset();
-  // 端末を乱す制御文字（ESC・CR）と、見た目を偽れる文字（双方向の上書き・ゼロ幅）は落とす。
-  const [esc, rlo, zw] = [0x1b, 0x202e, 0x200b].map((c) => String.fromCodePoint(c));
-  const r = onHook("claude-code", {
-    session_id: "s1",
-    agent_id: "a1",
-    agent_type: "mitos:review-security",
-    cwd: repoDir,
-    hook_event_name: "SubagentStop",
-    last_assistant_message: `verdict: pass\n${esc}[31mfindings: 0${esc}[0m ${rlo}a${zw}b\r\n`,
-  });
-  assert.deepEqual(r, {
-    flush: false,
-    notice: "mitos:review-security の報告\n\nverdict: pass\n[31mfindings: 0[0m ab",
-  });
-  assert.deepEqual(spooled(), []);
-  const empty = onHook("claude-code", { session_id: "s1", agent_id: "a1", hook_event_name: "SubagentStop" });
-  assert.equal(empty.notice, null, "報告が空なら何も出さない");
+test("背景の agent の完了通知からは、報告の本文を画面に出せる文字にして返す", () => {
+  const [esc, rlo, zwj, ls] = [0x1b, 0x202e, 0x200d, 0x2028].map((c) => String.fromCodePoint(c));
+  const note = (body: string) =>
+    `<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n<summary>Agent "security" finished</summary>\n${body}\n</task-notification>`;
+  // 端末を乱す制御文字と双方向の上書きは落とし、絵文字をつなぐ ZWJ は残し、行区切りは改行にする。
+  const family = `👨${zwj}👩`;
+  assert.equal(
+    agentReport({
+      hook_event_name: "UserPromptSubmit",
+      prompt: note(`<result>verdict: pass${esc}[31m ${rlo}ab${ls}${family}</result>\n<usage>x</usage>`),
+    }),
+    `Agent "security" finished\n\nverdict: pass[31m ab\n${family}`,
+  );
+  // 本文の無い通知（背景のシェルの完了）と、持ち主の発言には何も返さない。
+  assert.equal(agentReport({ hook_event_name: "UserPromptSubmit", prompt: note("") }), null);
+  assert.equal(
+    agentReport({ hook_event_name: "UserPromptSubmit", prompt: "<result>x</result> を調べて" }),
+    null,
+  );
 });
 
-test("フックは、多バイト文字が標準入力の塊の境目で割れても化けずに読む", () => {
-  const out = execFileSync(process.execPath, [path.join(import.meta.dirname, "..", "src", "capture.ts")], {
-    input: JSON.stringify({
-      hook_event_name: "SubagentStop",
-      session_id: "s1",
-      agent_id: "a1",
-      agent_type: "mitos:review-adversarial",
-      last_assistant_message: "境".repeat(60_000),
-    }),
-    env: { ...process.env, HOME: home },
-  }).toString("utf8");
+test("表示のフックは、多バイト文字が標準入力の塊の境目で割れても化けずに読む", () => {
+  const out = execFileSync(
+    process.execPath,
+    [path.join(import.meta.dirname, "..", "src", "capture.ts"), "--show"],
+    {
+      input: JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        session_id: "s1",
+        prompt: `<task-notification>\n<summary>Agent "x" finished</summary>\n<result>${"境".repeat(60_000)}</result>\n</task-notification>`,
+      }),
+      env: { ...process.env, HOME: home },
+    },
+  ).toString("utf8");
   const shown = (JSON.parse(out) as { systemMessage: string }).systemMessage;
   assert.equal(shown.includes(String.fromCodePoint(0xfffd)), false, "割れた文字が置き換え文字になった");
   assert.ok(shown.endsWith("境".repeat(10)));

@@ -16,6 +16,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\" --show",
+            "timeout": 10
+          },
+          {
+            "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
             "async": true
           }
@@ -41,18 +46,6 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
             "async": true
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "^mitos:review-",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
-            "timeout": 10
           }
         ]
       }
