@@ -24467,7 +24467,7 @@ var foot = (text) => `╰─ ${text}`;
 var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
 `);
 var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
-`).replace(/(?![\t\n])\p{Cc}|[\u202a-\u202e\u2066-\u2069]/gu, "");
+`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 var width = (text) => [...text].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0);
 var pad = (text, to) => text + " ".repeat(Math.max(1, to - width(text)));
 
@@ -24568,8 +24568,8 @@ function captureNotice(env) {
   if (!env[KEY.capture])
     return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
-  if (s.error && s.pending > 0)
-    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.error.slice(0, 120))}`], "mitos doctor で確かめる");
+  if (s.stuck)
+    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.stuck.slice(0, 120))}`], "mitos doctor で確かめる");
   if (s.rejected > 0)
     return panel(`mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`, [rejectedDir()], "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる");
   return null;
@@ -24660,11 +24660,11 @@ function readState() {
     }
   };
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
+  let state = {};
   try {
-    return { ...JSON.parse(fs4.readFileSync(stateFile(), "utf8")), ...counts };
-  } catch {
-    return counts;
-  }
+    state = JSON.parse(fs4.readFileSync(stateFile(), "utf8"));
+  } catch {}
+  return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
 }
 function lock() {
   const file2 = path4.join(spoolDir(), ".lock");
@@ -26862,8 +26862,7 @@ async function doctor(env, cwd) {
   }
   say(env.VOYAGE_API_KEY ? "ok" : "fail", "VOYAGE_API_KEY", env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）");
   const s = readState();
-  const stuck = Boolean(s.error) && s.pending > 0;
-  say(stuck ? "fail" : s.rejected ? "warn" : "ok", "自動記録", `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${stuck ? ` / 失敗: ${plain(s.error ?? "")}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
+  say(s.stuck ? "fail" : s.rejected ? "warn" : "ok", "自動記録", `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.stuck ? ` / 失敗: ${plain(s.stuck)}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
   if (env[KEY.reader]) {
     try {
       await withDb(env, "reader", async (c) => {

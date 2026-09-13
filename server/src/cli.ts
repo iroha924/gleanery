@@ -228,7 +228,6 @@ async function traceContext(env: Env, cwd: string, host?: string): Promise<strin
 
 async function doctor(env: Env, cwd: string): Promise<void> {
   const issues: string[] = [];
-  // ✗ が 1 つでもあれば終了コードを 1 にする（△ と ○ は 0 のまま）。
   const count = (m: Mark, label: string) => {
     if (m === "warn" || m === "fail") issues.push(label);
     if (m === "fail") process.exitCode = 1;
@@ -268,13 +267,11 @@ async function doctor(env: Env, cwd: string): Promise<void> {
     env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）",
   );
   const s = readState();
-  // 送れていないのは、失敗が残っていて待ちもあるときだけ（session の開始時の警告と同じ条件）。待ちが空になれば失敗は過去のもの。
-  const stuck = Boolean(s.error) && s.pending > 0;
   say(
-    stuck ? "fail" : s.rejected ? "warn" : "ok",
+    s.stuck ? "fail" : s.rejected ? "warn" : "ok",
     "自動記録",
     `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
-      stuck ? ` / 失敗: ${plain(s.error ?? "")}` : ""
+      s.stuck ? ` / 失敗: ${plain(s.stuck)}` : ""
     }${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${
       s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
     }`,

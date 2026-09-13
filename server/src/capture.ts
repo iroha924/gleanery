@@ -228,10 +228,10 @@ export function captureNotice(env: Env): string | null {
   if (!env[KEY.capture])
     return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
-  if (s.error && s.pending > 0)
+  if (s.stuck)
     return panel(
       "mitos: 自動記録を送れていない",
-      [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.error.slice(0, 120))}`],
+      [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.stuck.slice(0, 120))}`],
       "mitos doctor で確かめる",
     );
   if (s.rejected > 0)
@@ -323,7 +323,11 @@ function writeState(s: State): void {
   }
 }
 
-export function readState(): State & { pending: number; rejected: number } {
+/**
+ * 待ち行列と送信の状態。`stuck` は送れていないときの最後の失敗で、失敗が残っていて待ちもあるときだけ入る
+ * （待ちが空になれば失敗は過去のもの）。session の開始時の警告と doctor が同じ判定を使う。
+ */
+export function readState(): State & { pending: number; rejected: number; stuck: string | null } {
   const count = (dir: string) => {
     try {
       return fs.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
@@ -332,11 +336,13 @@ export function readState(): State & { pending: number; rejected: number } {
     }
   };
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
+  let state: State = {};
   try {
-    return { ...(JSON.parse(fs.readFileSync(stateFile(), "utf8")) as State), ...counts };
+    state = JSON.parse(fs.readFileSync(stateFile(), "utf8")) as State;
   } catch {
-    return counts;
+    // まだ送っていない
   }
+  return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
 }
 
 /**

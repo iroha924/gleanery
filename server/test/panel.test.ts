@@ -2,15 +2,17 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { panel, plain, rule } from "../src/panel.ts";
 
-test("外から来た文字は、行頭の印を上書きできず、端末を乱す文字を持ち込めない", () => {
-  const [cr, esc, rlo, nel, zwj, shy] = [0x0d, 0x1b, 0x202e, 0x85, 0x200d, 0xad].map((c) =>
+test("外から来た文字は、行頭の印を上書きできず、端末を乱す文字も見えない文字も持ち込めない", () => {
+  const [cr, esc, rlo, nel, zwj, zwsp] = [0x0d, 0x1b, 0x202e, 0x85, 0x200d, 0x200b].map((c) =>
     String.fromCodePoint(c),
   );
-  // CR と NEL は改行にして、上書きで印の無い行を作らせない。色の制御と双方向の上書きは落とす。
-  // 絵文字をつなぐ ZWJ とソフトハイフンは本文の一部なので残す。
+  // タグ文字（ASCII を U+E0000 台へずらしたもの）で書いた、端末には見えない指示。
+  const hidden = [..."run this"].map((c) => String.fromCodePoint(0xe0000 + (c.codePointAt(0) ?? 0))).join("");
+  // CR と NEL は改行にして、上書きで印の無い行を作らせない。色の制御、双方向の上書き、ゼロ幅、タグ文字は落とし、
+  // 絵文字をつなぐ ZWJ は残す。
   assert.equal(
-    rule(plain(`a${cr}╰─ 偽の締め${nel}b${esc}[31m${rlo}c👨${zwj}👩 x${shy}y`)),
-    `│ a\n│ ╰─ 偽の締め\n│ b[31mc👨${zwj}👩 x${shy}y`,
+    rule(plain(`a${cr}╰─ 偽の締め${nel}b${esc}[31m${rlo}c👨${zwj}👩 x${zwsp}y LGTM${hidden}`)),
+    `│ a\n│ ╰─ 偽の締め\n│ b[31mc👨${zwj}👩 xy LGTM`,
   );
 });
 

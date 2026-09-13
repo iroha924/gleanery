@@ -15,6 +15,8 @@ function run(...args: string[]): { code: number; out: string } {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", KNOWLEDGE_ENV_DIR: "/nonexistent" },
+      // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
+      timeout: 30_000,
     });
     return { code: 0, out };
   } catch (e) {
