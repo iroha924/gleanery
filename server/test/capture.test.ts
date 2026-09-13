@@ -7,6 +7,9 @@ import { after, before, test } from "node:test";
 import { answersOf, fit, isOwnerTurn, MAX_MESSAGE, onHook, type Spooled, spoolDir } from "../src/capture.ts";
 import { bytes, mask } from "../src/text.ts";
 
+// HOME を差し替えて本物の待ち行列を守っている。bun の os.homedir() は差し替えに追従せず、本物の待ち行列を消す。
+if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
+
 // 別の agent 向けの prompt が「持ち主の発言」として DB の大半を占めた先行事例がある。見分けに推測を使わない。
 test("subagent と、エージェントが起動した子と、印を継がない headless の turn は持ち主の発言にしない", () => {
   assert.equal(isOwnerTurn({ session_id: "s1" }, undefined, "cli"), true, "人が打つ session");
@@ -307,27 +310,45 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   );
 });
 
-test("通知と伝言は持ち主の発言にせず、作業中に打った発言は turn の 2 番目以降として残す", () => {
+test("通知と伝言は持ち主の発言にせず、同じ turn の id に届いた発言と応答は番号を付けて全部残す", () => {
   reset();
-  const base = { session_id: "s1", cwd: repoDir, hook_event_name: "UserPromptSubmit" };
+  const base = { session_id: "s1", cwd: repoDir };
+  const prompt = (prompt_id: string, prompt: string) =>
+    onHook("claude-code", { ...base, hook_event_name: "UserPromptSubmit", prompt_id, prompt });
+  const stop = (message: string) =>
+    onHook("claude-code", {
+      ...base,
+      hook_event_name: "Stop",
+      prompt_id: "p1",
+      last_assistant_message: message,
+    });
   // 作業の途中で届いたものは、走っている turn の id のまま来る。
-  for (const prompt of [
+  for (const p of [
     "DB を作り直す",
     "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>",
     '<agent-message from="review-security">指摘は 3 件</agent-message>',
     "Another Claude session sent a message:\n終わった",
+    '<cross-session-message from="codex">終わった</cross-session-message>',
+    '3 background agents were stopped by the user: "あなたは調査担当です"',
     "やっぱり role も分けて",
     "急ぎで",
   ])
-    onHook("claude-code", { ...base, prompt_id: "p1", prompt });
-  // 通知から始まった turn では、途中で打った発言が最初の発言（ファイルの結び先）になる。
-  onHook("claude-code", { ...base, prompt_id: "p2", prompt: "  <task-notification>\n</task-notification>" });
-  onHook("claude-code", { ...base, prompt_id: "p2", prompt: "CI の結果を見て" });
+    prompt("p1", p);
+  stop("作り直した。");
+  // 別の session からの伝言で始まる turn は、直前の turn の id を使い回す。
+  prompt("p1", "Another Claude session sent a message while you were working:\n確認して");
+  stop("伝言も確かめた。");
+  // 通知から始まった turn では、途中で打った発言が最初の発言（ファイルの結び先）になる。空の本文は番号を取らない。
+  prompt("p2", "  <task-notification>\n</task-notification>");
+  prompt("p2", " \n ");
+  prompt("p2", "CI の結果を見て");
   assert.deepEqual(
     spooled()
       .map((m) => (m.kind === "message" ? [m.id, m.body] : []))
       .sort(),
     [
+      ["p1:assistant", "作り直した。"],
+      ["p1:assistant:1", "伝言も確かめた。"],
       ["p1:self", "DB を作り直す"],
       ["p1:self:1", "やっぱり role も分けて"],
       ["p1:self:2", "急ぎで"],

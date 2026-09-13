@@ -24160,11 +24160,17 @@ function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoi
     return parent === input2.session_id;
   return entrypoint !== "sdk-cli";
 }
-var INJECTED = ["<task-notification>", "<agent-message", "Another Claude session sent a message:"];
-function nth(session, turn) {
+var INJECTED = [
+  /^<task-notification>/,
+  /^\d+ background agents were stopped by the user:/,
+  /^Another Claude session sent a message/,
+  /^<cross-session-message[\s>]/,
+  /^<agent-message[\s>]/
+];
+function nextId(session, key) {
   const dir = path3.join(spoolDir(), "turns");
   fs3.mkdirSync(dir, { recursive: true, mode: 448 });
-  const mark = uuidFrom(session, turn);
+  const mark = uuidFrom(session, key);
   for (let n = 0;; n++) {
     try {
       fs3.writeFileSync(path3.join(dir, `${mark}.${n}`), "", { flag: "wx", mode: 384 });
@@ -24173,15 +24179,15 @@ function nth(session, turn) {
         continue;
       throw e;
     }
-    if (n === 0) {
-      const old = Date.now() - 7 * 86400000;
-      for (const f of fs3.readdirSync(dir)) {
-        const st = fs3.statSync(path3.join(dir, f), { throwIfNoEntry: false });
-        if (st && st.mtimeMs < old)
-          fs3.rmSync(path3.join(dir, f), { force: true });
-      }
+    if (n > 0)
+      return `${key}:${n}`;
+    const old = Date.now() - 7 * 86400000;
+    for (const f of fs3.readdirSync(dir)) {
+      const st = fs3.statSync(path3.join(dir, f), { throwIfNoEntry: false });
+      if (st && st.mtimeMs < old)
+        fs3.rmSync(path3.join(dir, f), { force: true });
     }
-    return n;
+    return key;
   }
 }
 function answersOf(input2) {
@@ -24240,18 +24246,16 @@ function onHook(host, input2) {
     turn,
     at
   };
-  const say = (id, speaker, raw) => {
+  const say = (key, speaker, raw) => {
     const kept = fit(clean(raw).trim());
     if (!kept.body.trim())
       return;
-    spool({ ...base, kind: "message", id, speaker, ...kept });
+    spool({ ...base, kind: "message", id: nextId(base.session, key), speaker, ...kept });
   };
   if (event === "UserPromptSubmit" && input2.prompt) {
-    const prompt = input2.prompt;
-    if (INJECTED.some((p) => prompt.trimStart().startsWith(p)))
-      return { flush: false };
-    const n = nth(base.session, turn);
-    say(n === 0 ? `${turn}:self` : `${turn}:self:${n}`, "self", prompt);
+    const prompt = input2.prompt.trimStart();
+    if (!INJECTED.some((r) => r.test(prompt)))
+      say(`${turn}:self`, "self", prompt);
   }
   if (event === "Stop") {
     if (input2.last_assistant_message)

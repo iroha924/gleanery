@@ -2,7 +2,7 @@
 // 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、その turn で触ったファイルを残す。
 //
 // **フックは手元の待ち行列へ書くだけにする。**網へは Stop のときにまとめて送る（async のフックなので待たせない）。
-// DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は決定的に作る）。
+// DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は待ち行列に書くときに決まる）。
 //
 // **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
 // 「利用者の発言」として DB の 97.2% を占めた。見分けは 4 つで、どれも推測をしない。
@@ -13,7 +13,7 @@
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
 //     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
 //   - 持ち主の session の中でも、背景タスクの完了通知と、subagent・別の session からの伝言が UserPromptSubmit に
-//     届く（通知は 2.1.269 で実測）。決まった書き出し（INJECTED）で外す
+//     届く（通知は 2.1.269 で実測）。決まった形（INJECTED）で外す
 // 値を「その session の id」にしてあるのは、この変数が将来 hook 自身の環境へ届く仕様になっても、
 // 持ち主の session では自分の id と一致して記録が止まらないようにするため。
 
@@ -147,19 +147,30 @@ export function isOwnerTurn(
   return entrypoint !== "sdk-cli";
 }
 
-/** 持ち主が打っていないのに UserPromptSubmit へ届く prompt の書き出し（transcript と待ち行列で見た形）。 */
-const INJECTED = ["<task-notification>", "<agent-message", "Another Claude session sent a message:"];
+/**
+ * 持ち主が打たずに届く prompt の形。hook の入力には出自の印が無い（transcript には付く。2.1.269 で実測）ので、形で外す。
+ * 手元の transcript で持ち主以外の印が付いていた形、待ち行列に入った subagent の伝言、SendMessage の説明にある
+ * 別 session からの伝言の包み。**載っていない形は持ち主の発言として入る。**
+ */
+const INJECTED = [
+  /^<task-notification>/,
+  /^\d+ background agents were stopped by the user:/,
+  /^Another Claude session sent a message/,
+  /^<cross-session-message[\s>]/,
+  /^<agent-message[\s>]/,
+];
 
 /**
- * この prompt が turn の中で何番目の持ち主の発言か（0 から）。**作業中に打った発言は、走っている turn の id の
- * まま届く**（transcript で 148 件中 143 件）ので、turn の id だけで発言の id を作ると、最初の発言と一意制約で
- * ぶつかって黙って捨てられる。番号は印を排他的に作って取る（`wx`）ので、同時に届いた 2 つが同じ番号にならない。
- * 印は turn の間だけ要る。7 日より古いものは消す。
+ * key（`<turn>:self` か `<turn>:assistant`）に番号を付けた記録の id。最初は key のまま、2 つ目から `<key>:1`。
+ * **1 つの turn の id に発言も応答も複数届く。**作業中に打った発言は走っている turn の id のまま届き
+ * （transcript で 148 件中 143 件）、別の session からの伝言で始まる turn は直前の turn の id を使い回す（127 件すべて）。
+ * turn の id だけで作ると一意制約でぶつかり、後から届いた方が黙って捨てられる。番号は印を排他的に作って取る（`wx`）
+ * ので、同時に届いた 2 つが同じ番号にならない。印は turn の間だけ要る。7 日より古いものは消す。
  */
-function nth(session: string, turn: string): number {
+function nextId(session: string, key: string): string {
   const dir = path.join(spoolDir(), "turns");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const mark = uuidFrom(session, turn);
+  const mark = uuidFrom(session, key);
   for (let n = 0; ; n++) {
     try {
       fs.writeFileSync(path.join(dir, `${mark}.${n}`), "", { flag: "wx", mode: 0o600 });
@@ -167,14 +178,13 @@ function nth(session: string, turn: string): number {
       if ((e as NodeJS.ErrnoException).code === "EEXIST") continue;
       throw e;
     }
-    if (n === 0) {
-      const old = Date.now() - 7 * 86_400_000;
-      for (const f of fs.readdirSync(dir)) {
-        const st = fs.statSync(path.join(dir, f), { throwIfNoEntry: false });
-        if (st && st.mtimeMs < old) fs.rmSync(path.join(dir, f), { force: true });
-      }
+    if (n > 0) return `${key}:${n}`;
+    const old = Date.now() - 7 * 86_400_000;
+    for (const f of fs.readdirSync(dir)) {
+      const st = fs.statSync(path.join(dir, f), { throwIfNoEntry: false });
+      if (st && st.mtimeMs < old) fs.rmSync(path.join(dir, f), { force: true });
     }
-    return n;
+    return key;
   }
 }
 
@@ -239,18 +249,16 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     turn,
     at,
   };
-  const say = (id: string, speaker: "self" | "assistant", raw: string) => {
+  // 番号は残すと決まってから取る（空の本文が `<turn>:self` を取ると、その turn のファイルの結び先が無くなる）。
+  const say = (key: string, speaker: "self" | "assistant", raw: string) => {
     const kept = fit(clean(raw).trim());
     if (!kept.body.trim()) return;
-    spool({ ...base, kind: "message", id, speaker, ...kept });
+    spool({ ...base, kind: "message", id: nextId(base.session, key), speaker, ...kept });
   };
 
   if (event === "UserPromptSubmit" && input.prompt) {
-    const prompt = input.prompt;
-    if (INJECTED.some((p) => prompt.trimStart().startsWith(p))) return { flush: false };
-    // 最初の発言だけを `<turn>:self` にする（その turn で触ったファイルの結び先）。
-    const n = nth(base.session, turn);
-    say(n === 0 ? `${turn}:self` : `${turn}:self:${n}`, "self", prompt);
+    const prompt = input.prompt.trimStart();
+    if (!INJECTED.some((r) => r.test(prompt))) say(`${turn}:self`, "self", prompt);
   }
   if (event === "Stop") {
     if (input.last_assistant_message) say(`${turn}:assistant`, "assistant", input.last_assistant_message);
@@ -355,7 +363,8 @@ type Vectors = Map<Spooled, { text: string; v: number[] | undefined }>;
 /**
  * 記録の束を 1 つの transaction で書く。**表ごとに 1 往復**（Neon まで 1 往復 80ms 前後ある）。
  * **衝突先の列を書かない（`on conflict do nothing`）。**列を書くと PostgreSQL はその列の SELECT 権限を求め、
- * 本文を読めない capture の鍵では拒否される。id は決定的に作るので、どの一意制約に当たっても「もう入っている」。
+ * 本文を読めない capture の鍵では拒否される。id は待ち行列に書くときに決まるので、送り直しがどの一意制約に当たっても
+ * 「もう入っている」。
  */
 async function write(
   db: pg.Client,
@@ -445,7 +454,8 @@ async function write(
         EMBED_MODEL,
       ],
     );
-    // その turn の最初の持ち主の発言へ結ぶ。持ち主が何も打たなかった turn（通知から始まった turn）は結ぶ先が無いので捨てる。
+    // その turn の id の最初の持ち主の発言へ結ぶ。完了通知から始まった turn は新しい id になり、持ち主が何も打たなければ
+    // 結ぶ先が無いので捨てる。伝言から始まった turn は直前の id を使い回すので、直前の持ち主の発言へ結ばれる。
     const files = batch.flatMap((r) => {
       const p = r.kind === "file" ? projects.get(r.project) : undefined;
       if (r.kind !== "file" || !p) return [];
