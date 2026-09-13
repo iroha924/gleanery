@@ -111,6 +111,10 @@ Codex では `$mitos:init`、`$mitos:requirements`、`$mitos:design` と明示�
   関連しそうな判断を探したいときは `recall` を使う
 - **フックは編集を止めない。**制約は編集の結果と一緒に届く（PreToolUse の文脈はそう届く）。判断は編集する側がする
 - **外した制約と解決した問いは検索に出ない。**外した理由と答えは決定か分かったこととして残す
+- **背景の agent の報告は、完了通知が届いた時点で画面に出る**（plugin の `UserPromptSubmit` フック。記録はしないので、
+  登録していない作業場所でも出る）。各行の頭の `│ ` は agent が返した引用の印。1 万字を超える報告は Claude Code が
+  ファイルへ逃がし、先頭だけを出す。前面の agent、Codex のレーン、Codex がホストのときは出ないので、`/mitos:review` は
+  起動側が文章で出す
 - **MCP を直したら、版を上げてプラグインを更新する。**セッションを張り直すだけでは届かない
   （手順は `.agents/skills/plugin-release/SKILL.md`）
 

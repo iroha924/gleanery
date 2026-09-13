@@ -2,7 +2,7 @@
   "type": "sequence",
   "meta": {
     "title": "会話の自動記録",
-    "subtitle": "フックは手元の待ち行列（~/.claude/mitos-spool）へ書くだけ。DB へは turn の終わりに、切り離した送信プロセスが届ける",
+    "subtitle": "記録のフックは手元の待ち行列（~/.claude/mitos-spool）へ書くだけ。DB へは turn の終わりに、切り離した送信プロセスが届ける",
     "views": [
       {
         "id": "record",
