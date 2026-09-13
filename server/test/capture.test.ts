@@ -249,6 +249,8 @@ const spooled = (): Spooled[] => {
     .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as Spooled);
 };
 const reset = () => fs.rmSync(spoolDir(), { recursive: true, force: true });
+/** 本文から作る id の後半を伏せて、形だけを比べる。 */
+const shape = (id: string) => id.replace(/:(self|assistant):[0-9a-f]{16}$/, ":$1:<hash>");
 
 test("持ち主の発言・AI の最後の応答・編集したファイルが待ち行列に入る", () => {
   reset();
@@ -293,28 +295,24 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   const messages = got.filter((x) => x.kind === "message");
   const files = got.filter((x) => x.kind === "file");
   assert.deepEqual(
-    messages.map((m) =>
-      m.kind === "message"
-        ? [m.id.replace(/:assistant:[0-9a-f-]{36}$/, ":assistant:<uuid>"), m.speaker, m.project]
-        : [],
-    ),
+    messages.map((m) => (m.kind === "message" ? [shape(m.id), m.speaker, m.project] : [])),
     [
-      ["p1:self", "self", "git:github.com/o/r"],
-      ["p1:assistant:<uuid>", "assistant", "git:github.com/o/r"],
+      ["p1:self:<hash>", "self", "git:github.com/o/r"],
+      ["p1:assistant:<hash>", "assistant", "git:github.com/o/r"],
     ],
   );
-  const said = messages[0];
-  assert.ok(said?.kind === "message" && !said.body.includes("sk-proj-abc"), "鍵が待ち行列に入った");
+  const said = messages[0]?.kind === "message" ? messages[0] : null;
+  assert.ok(said && !said.body.includes("sk-proj-abc"), "鍵が待ち行列に入った");
   assert.deepEqual(
-    files.map((f) => (f.kind === "file" ? [f.path, f.action] : [])),
+    files.map((f) => (f.kind === "file" ? [f.path, f.action, f.message] : [])),
     [
-      ["db/schema.sql", "edit"],
-      [".mitos/changes/auth/design.md", "read"],
+      ["db/schema.sql", "edit", said?.id],
+      [".mitos/changes/auth/design.md", "read", said?.id],
     ],
   );
 });
 
-test("通知と伝言は持ち主の発言にせず、同じ turn の id に届いた発言と応答は別の id で全部残す", () => {
+test("通知と伝言は持ち主の発言にせず、同じ turn の id に届いた発言と応答は本文ごとの id で全部残す", () => {
   reset();
   const base = { session_id: "s1", cwd: repoDir };
   const prompt = (prompt_id: string, prompt: string) =>
@@ -326,6 +324,16 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
       prompt_id: "p1",
       last_assistant_message: message,
     });
+  const edit = (prompt_id: string, file: string) =>
+    onHook("claude-code", {
+      ...base,
+      hook_event_name: "PostToolUse",
+      prompt_id,
+      tool_name: "Edit",
+      tool_input: { file_path: path.join(repoDir, file) },
+    });
+  // 持ち主がまだ何も言っていない session で触ったファイルは、結ぶ先が無いので書かない。
+  edit("p0", "a.ts");
   // 作業の途中で届いたものは、走っている turn の id のまま来る。
   for (const p of [
     "DB を作り直す",
@@ -341,25 +349,31 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
     "急ぎで",
   ])
     prompt("p1", p);
+  // 同じ入力が 2 度届いても同じ id になる（DB で 1 行）。
+  prompt("p1", "急ぎで");
   stop("作り直した。");
   // 別の session からの伝言で始まる turn は、直前の turn の id を使い回す。
   prompt("p1", "Another Claude session sent a message while you were working:\n確認して");
   stop("伝言も確かめた。");
-  // 通知から始まった turn では、途中で打った発言が最初の発言（ファイルの結び先）になる。
+  // 完了通知から始まった turn で触ったファイルは、持ち主の最後の発言へ結ぶ。
   prompt("p2", "  <task-notification>\n</task-notification>");
-  prompt("p2", "CI の結果を見て");
-  const messages = spooled().flatMap((m) => (m.kind === "message" ? [m] : []));
-  assert.equal(new Set(messages.map((m) => m.id)).size, messages.length, "同じ id は一意制約で 1 件に潰れる");
+  edit("p2", "b.ts");
+  const got = spooled();
+  const messages = got.flatMap((m) => (m.kind === "message" ? [m] : []));
+  assert.deepEqual(messages.map((m) => [shape(m.id), m.body]).sort(), [
+    ["p1:assistant:<hash>", "伝言も確かめた。"],
+    ["p1:assistant:<hash>", "作り直した。"],
+    ["p1:self:<hash>", "DB を作り直す"],
+    ["p1:self:<hash>", "やっぱり role も分けて"],
+    ["p1:self:<hash>", "急ぎで"],
+    ["p1:self:<hash>", "急ぎで"],
+  ]);
+  // 2 度届いた「急ぎで」だけが同じ id で、ほかは別の id（同じ id は一意制約で 1 行に潰れる）。
+  assert.equal(new Set(messages.map((m) => m.id)).size, messages.length - 1);
+  const last = messages.find((m) => m.body === "急ぎで")?.id;
   assert.deepEqual(
-    messages.map((m) => [m.id.replace(/:assistant:[0-9a-f-]{36}$/, ":assistant:<uuid>"), m.body]).sort(),
-    [
-      ["p1:assistant:<uuid>", "伝言も確かめた。"],
-      ["p1:assistant:<uuid>", "作り直した。"],
-      ["p1:self", "DB を作り直す"],
-      ["p1:self:1", "やっぱり role も分けて"],
-      ["p1:self:2", "急ぎで"],
-      ["p2:self", "CI の結果を見て"],
-    ],
+    got.flatMap((f) => (f.kind === "file" ? [[f.path, f.message]] : [])),
+    [["b.ts", last]],
   );
 });
 
@@ -403,15 +417,15 @@ test("SessionStart は、この session の id を子へ継がせる", () => {
 
 test("Codex の apply_patch は見出しから編集先を読む", () => {
   reset();
+  const base = { session_id: "t1", turn_id: "turn-1", cwd: repoDir };
+  onHook("codex", { ...base, hook_event_name: "UserPromptSubmit", prompt: "a.ts を直して" });
   onHook("codex", {
-    session_id: "t1",
-    turn_id: "turn-1",
-    cwd: repoDir,
+    ...base,
     hook_event_name: "PostToolUse",
     tool_name: "apply_patch",
     tool_input: { command: "*** Begin Patch\n*** Update File: server/src/a.ts\n@@\n+x\n*** End Patch" },
   });
-  const got = spooled();
-  assert.equal(got.length, 1);
-  assert.ok(got[0]?.kind === "file" && got[0].path === "server/src/a.ts" && got[0].host === "codex");
+  const files = spooled().filter((x) => x.kind === "file");
+  assert.equal(files.length, 1);
+  assert.ok(files[0]?.kind === "file" && files[0].path === "server/src/a.ts" && files[0].host === "codex");
 });

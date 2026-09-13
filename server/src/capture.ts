@@ -1,24 +1,22 @@
 #!/usr/bin/env node
-// 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、その turn で触ったファイルを残す。
+// 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、触ったファイルを残す。
 //
 // **フックは手元の待ち行列へ書くだけにする。**網へは Stop のときにまとめて送る（async のフックなので待たせない）。
-// DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は待ち行列に書くときに決まる）。
+// DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は入力から決定的に作る）。
 //
 // **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
 // 「利用者の発言」として DB の 97.2% を占めた。見分けは 4 つで、どれも推測をしない。
 //   - subagent の中の turn は hook 入力に agent_id が付く
 //   - エージェントが起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
 //     CLAUDE_ENV_FILE に書いた MITOS_PARENT_SESSION を継ぐ。自分の session id と違えば子である
-//     （記録させたくない起動には、どの session とも一致しない値を置けばよい）
+//     （記録させたくない起動には、どの session とも一致しない値を置けばよい。値を「その session の id」にしてあるのは、
+//     この変数が将来 hook 自身の環境へ届く仕様になっても、持ち主の session では自分の id と一致して記録が止まらないようにするため）
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
 //     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
 //   - 持ち主の session の中でも、背景タスクの完了・停止の通知と、subagent・別の session からの伝言が UserPromptSubmit に
 //     届く（通知は 2.1.269 で実測）。決まった形（INJECTED）で外す
-// 値を「その session の id」にしてあるのは、この変数が将来 hook 自身の環境へ届く仕様になっても、
-// 持ち主の session では自分の id と一致して記録が止まらないようにするため。
 
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -62,6 +60,8 @@ export type Spooled =
       project: string;
       branch: string | null;
       turn: string;
+      /** 結ぶ先の持ち主の発言（message の id）。触る前に持ち主が最後にした発言 */
+      message: string;
       path: string;
       action: Exclude<FileAction, "review">;
       at: string;
@@ -162,30 +162,38 @@ const INJECTED = [
 ];
 
 /**
- * 持ち主の発言の id。turn の最初の発言は `<turn>:self`（その turn で触ったファイルの結び先）、2 つ目から `<turn>:self:1`。
- * **作業中に打った発言は、走っている turn の id のまま届く**（transcript で 148 件中 143 件）。turn の id だけで作ると
- * 最初の発言と一意制約でぶつかり、後から届いた方が黙って捨てられる。番号は印を排他的に作って取る（`wx`）ので、
- * 同時に届いた 2 つが同じ番号にならない。印は 7 日で消す（同じ turn の id で届いた発言は、最初の発言から最大 12 分後
- * だった。全 transcript の 59 件）。
+ * 発言と応答の id の後半。**1 つの turn の id に発言も応答も複数届く** — 作業中に打った発言は走っている turn の id の
+ * まま届き（transcript で 148 件中 143 件）、別の session からの伝言で始まる turn は直前の turn の id を使い回す
+ * （127 件すべて）。turn の id だけで作ると一意制約でぶつかり、後から届いた方が黙って捨てられる。本文から作るので、
+ * 同じ入力が 2 度届いても 1 行になる（同じ turn の id に同じ文面をもう一度打つと、それも 1 行になる）。
  */
-function selfId(session: string, turn: string): string {
-  const dir = path.join(spoolDir(), "turns");
+const digest = (s: string): string => sha256(s).toString("hex").slice(0, 16);
+
+const saidDir = (): string => path.join(spoolDir(), "said");
+
+/**
+ * 持ち主の最後の発言の id を session ごとに覚える。その後に触ったファイルはこの発言へ結ぶ（完了通知や伝言から
+ * 始まった turn には持ち主の発言が無く、turn の id では結べない）。読みかけに半端な値を返さないよう、別名で書いてから
+ * 置き換える。30 日触らなかった session の分は消す。
+ */
+function remember(session: string, id: string): void {
+  const dir = saidDir();
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const mark = uuidFrom(session, turn);
-  for (let n = 0; ; n++) {
-    try {
-      fs.writeFileSync(path.join(dir, `${mark}.${n}`), "", { flag: "wx", mode: 0o600 });
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "EEXIST") continue;
-      throw e;
-    }
-    if (n > 0) return `${turn}:self:${n}`;
-    const old = Date.now() - 7 * 86_400_000;
-    for (const f of fs.readdirSync(dir)) {
-      const st = fs.statSync(path.join(dir, f), { throwIfNoEntry: false });
-      if (st && st.mtimeMs < old) fs.rmSync(path.join(dir, f), { force: true });
-    }
-    return `${turn}:self`;
+  const file = path.join(dir, uuidFrom(session));
+  fs.writeFileSync(`${file}.${process.pid}`, id, { mode: 0o600 });
+  fs.renameSync(`${file}.${process.pid}`, file);
+  const old = Date.now() - 30 * 86_400_000;
+  for (const f of fs.readdirSync(dir)) {
+    const st = fs.statSync(path.join(dir, f), { throwIfNoEntry: false });
+    if (st && st.mtimeMs < old) fs.rmSync(path.join(dir, f), { force: true });
+  }
+}
+
+function lastSaid(session: string): string | null {
+  try {
+    return fs.readFileSync(path.join(saidDir(), uuidFrom(session)), "utf8");
+  } catch {
+    return null; // この session で持ち主がまだ何も言っていない
   }
 }
 
@@ -254,17 +262,16 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     const kept = fit(clean(raw).trim());
     if (!kept.body.trim()) return;
     spool({ ...base, kind: "message", id, speaker, ...kept });
+    if (speaker === "self") remember(base.session, id);
   };
 
   if (event === "UserPromptSubmit" && input.prompt) {
     const prompt = input.prompt.trimStart();
-    if (!INJECTED.some((r) => r.test(prompt))) say(selfId(base.session, turn), "self", prompt);
+    if (!INJECTED.some((r) => r.test(prompt))) say(`${turn}:self:${digest(prompt)}`, "self", prompt);
   }
   if (event === "Stop") {
-    // 応答は同じ turn の id で何度も届く（別の session からの伝言で始まる turn は、直前の turn の id を使い回す。
-    // transcript で 127 件すべて）。1 つずつ別の id にする。
-    if (input.last_assistant_message)
-      say(`${turn}:assistant:${randomUUID()}`, "assistant", input.last_assistant_message);
+    const reply = input.last_assistant_message;
+    if (reply) say(`${turn}:assistant:${digest(reply)}`, "assistant", reply);
     return { flush: true };
   }
   if (event === "PostToolUse") {
@@ -275,6 +282,8 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
       if (said) say(`${turn}:ask:${input.tool_use_id ?? at}`, "self", said);
       return { flush: false };
     }
+    const message = lastSaid(base.session);
+    if (!message) return { flush: false }; // 持ち主がまだ何も言っていない session には結ぶ先が無い
     const cwd = input.cwd ?? place.root;
     const files = (
       tool === "apply_patch"
@@ -286,7 +295,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
       // 読んだファイルは、要件定義・設計書だけを残す。画面のセッション詳細は、そのうち承認済みとして同期された
       // 版だけを出す（draft を読んだ session も、後で承認された成果物に結ばれる）。
       if (action === "read" && !ARTIFACT_PATH.test(p)) continue;
-      spool({ ...base, kind: "file", path: p, action });
+      spool({ ...base, kind: "file", message, path: p, action });
     }
   }
   return { flush: false };
@@ -457,15 +466,14 @@ async function write(
         EMBED_MODEL,
       ],
     );
-    // その turn の id の最初の持ち主の発言（`<turn>:self`）へ結ぶ。その発言がまだ DB に無ければ結ぶ先が無いので捨てる
-    // （完了通知から始まった turn で、持ち主が打つ前に触ったファイルなど）。伝言から始まった turn は直前の id を使い回すので、
-    // 直前の持ち主の発言へ結ばれる。
+    // 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの会話の DB に無ければ（途中で別の作業場所へ移った session など）
+    // 結ぶ先が無いので捨てる。
     const files = batch.flatMap((r) => {
       const p = r.kind === "file" ? projects.get(r.project) : undefined;
       if (r.kind !== "file" || !p) return [];
       return [
         {
-          message: uuidFrom(conversationId(p.id, r.host, r.session), `${r.turn}:self`),
+          message: uuidFrom(conversationId(p.id, r.host, r.session), r.message),
           path: r.path,
           action: r.action,
         },
@@ -567,7 +575,7 @@ export async function flush(
       );
     } catch (e) {
       if (!rejected(e)) throw e;
-      // 1 件ずつ。発言を先に送り、ファイルは後に送る（ファイルは同じ turn の発言へ結ぶので、順が逆だと結び先が無い）。
+      // 1 件ずつ。発言を先に送り、ファイルは後に送る（ファイルは持ち主の発言へ結ぶので、順が逆だと結び先が無い）。
       const ordered = [...known].sort((a, b) => Number(a.r.kind === "file") - Number(b.r.kind === "file"));
       for (const x of ordered) {
         try {
@@ -578,15 +586,14 @@ export async function flush(
         }
       }
     }
-    // 最初の持ち主の発言（`<turn>:self`）が弾かれた turn のファイル記録も一緒に残す（ファイルはその発言へ結ぶので、
-    // 送っても 0 行になる）。ほかの発言や AI の応答、AskUserQuestion の答えだけが弾かれた turn のファイルは送れている。
+    // 弾かれた持ち主の発言へ結ぶファイルの記録も一緒に残す（送っても結ぶ先が無く 0 行になる）。
     const lost = new Set(
       bad.flatMap((x) =>
-        x.r.kind === "message" && x.r.id === `${x.r.turn}:self` ? [`${x.r.session}\0${x.r.turn}`] : [],
+        x.r.kind === "message" && x.r.speaker === "self" ? [`${x.r.session}\0${x.r.id}`] : [],
       ),
     );
     for (const x of known)
-      if (x.r.kind === "file" && lost.has(`${x.r.session}\0${x.r.turn}`) && !bad.includes(x)) bad.push(x);
+      if (x.r.kind === "file" && lost.has(`${x.r.session}\0${x.r.message}`) && !bad.includes(x)) bad.push(x);
     if (bad.length) {
       fs.mkdirSync(rejectedDir(), { recursive: true, mode: 0o700 });
       for (const x of bad) {

@@ -5080,7 +5080,6 @@ var require_lib2 = __commonJS(function(exports, module) {
 
 // server/src/capture.ts
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import fs3 from "node:fs";
 import os3 from "node:os";
 import path3 from "node:path";
@@ -24167,27 +24166,26 @@ var INJECTED = [
   /^(?:Another Claude|A peer) session sent a message/,
   /^<(?:cross-session|teammate|agent)-message[\s>]/
 ];
-function selfId(session, turn) {
-  const dir = path3.join(spoolDir(), "turns");
+var digest = (s) => sha256(s).toString("hex").slice(0, 16);
+var saidDir = () => path3.join(spoolDir(), "said");
+function remember(session, id) {
+  const dir = saidDir();
   fs3.mkdirSync(dir, { recursive: true, mode: 448 });
-  const mark = uuidFrom(session, turn);
-  for (let n = 0;; n++) {
-    try {
-      fs3.writeFileSync(path3.join(dir, `${mark}.${n}`), "", { flag: "wx", mode: 384 });
-    } catch (e) {
-      if (e.code === "EEXIST")
-        continue;
-      throw e;
-    }
-    if (n > 0)
-      return `${turn}:self:${n}`;
-    const old = Date.now() - 7 * 86400000;
-    for (const f of fs3.readdirSync(dir)) {
-      const st = fs3.statSync(path3.join(dir, f), { throwIfNoEntry: false });
-      if (st && st.mtimeMs < old)
-        fs3.rmSync(path3.join(dir, f), { force: true });
-    }
-    return `${turn}:self`;
+  const file2 = path3.join(dir, uuidFrom(session));
+  fs3.writeFileSync(`${file2}.${process.pid}`, id, { mode: 384 });
+  fs3.renameSync(`${file2}.${process.pid}`, file2);
+  const old = Date.now() - 30 * 86400000;
+  for (const f of fs3.readdirSync(dir)) {
+    const st = fs3.statSync(path3.join(dir, f), { throwIfNoEntry: false });
+    if (st && st.mtimeMs < old)
+      fs3.rmSync(path3.join(dir, f), { force: true });
+  }
+}
+function lastSaid(session) {
+  try {
+    return fs3.readFileSync(path3.join(saidDir(), uuidFrom(session)), "utf8");
+  } catch {
+    return null;
   }
 }
 function answersOf(input2) {
@@ -24251,15 +24249,18 @@ function onHook(host, input2) {
     if (!kept.body.trim())
       return;
     spool({ ...base, kind: "message", id, speaker, ...kept });
+    if (speaker === "self")
+      remember(base.session, id);
   };
   if (event === "UserPromptSubmit" && input2.prompt) {
     const prompt = input2.prompt.trimStart();
     if (!INJECTED.some((r) => r.test(prompt)))
-      say(selfId(base.session, turn), "self", prompt);
+      say(`${turn}:self:${digest(prompt)}`, "self", prompt);
   }
   if (event === "Stop") {
-    if (input2.last_assistant_message)
-      say(`${turn}:assistant:${randomUUID()}`, "assistant", input2.last_assistant_message);
+    const reply = input2.last_assistant_message;
+    if (reply)
+      say(`${turn}:assistant:${digest(reply)}`, "assistant", reply);
     return { flush: true };
   }
   if (event === "PostToolUse") {
@@ -24271,13 +24272,16 @@ function onHook(host, input2) {
         say(`${turn}:ask:${input2.tool_use_id ?? at}`, "self", said);
       return { flush: false };
     }
+    const message = lastSaid(base.session);
+    if (!message)
+      return { flush: false };
     const cwd = input2.cwd ?? place.root;
     const files = (tool === "apply_patch" ? patchPaths(String(ti.command ?? "")) : [ti.file_path, ti.notebook_path].filter((p) => typeof p === "string")).flatMap((p) => relativeTo(place.root, p, cwd) ?? []);
     const action = tool === "Read" ? "read" : "edit";
     for (const p of files) {
       if (action === "read" && !ARTIFACT_PATH.test(p))
         continue;
-      spool({ ...base, kind: "file", path: p, action });
+      spool({ ...base, kind: "file", message, path: p, action });
     }
   }
   return { flush: false };
@@ -24417,7 +24421,7 @@ async function write(db, batch, projects, vectors) {
         return [];
       return [
         {
-          message: uuidFrom(conversationId(p.id, r.host, r.session), `${r.turn}:self`),
+          message: uuidFrom(conversationId(p.id, r.host, r.session), r.message),
           path: r.path,
           action: r.action
         }
@@ -24491,9 +24495,9 @@ async function flush(env) {
         }
       }
     }
-    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" && x.r.id === `${x.r.turn}:self` ? [`${x.r.session}\x00${x.r.turn}`] : []));
+    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" && x.r.speaker === "self" ? [`${x.r.session}\x00${x.r.id}`] : []));
     for (const x of known)
-      if (x.r.kind === "file" && lost.has(`${x.r.session}\x00${x.r.turn}`) && !bad.includes(x))
+      if (x.r.kind === "file" && lost.has(`${x.r.session}\x00${x.r.message}`) && !bad.includes(x))
         bad.push(x);
     if (bad.length) {
       fs3.mkdirSync(rejectedDir(), { recursive: true, mode: 448 });
