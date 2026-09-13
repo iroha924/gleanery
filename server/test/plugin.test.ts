@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
@@ -126,7 +127,8 @@ test("repository より古い導入は両ホストとも更新手順を出す", 
       codex: [plugin("codex/plugins/cache/mitos/mitos/0.10.18", "0.10.18")],
     }),
   );
-  const out = r.lines.join("\n");
+  // 色は端末と FORCE_COLOR で付く。印を比べる前に外す。
+  const out = stripVTControlCharacters(r.lines.join("\n"));
   assert.match(out, /△ Claude Code .*← repository（0\.10\.19）より古い/);
   assert.match(out, /△ Codex .*← repository（0\.10\.19）より古い/);
   assert.match(out, /✓ repository /);
@@ -265,7 +267,8 @@ test("導入先が消えていれば repository が見えなくても出す", ()
 
 test("観測できないものは無いと言わず不明と出す", () => {
   const r = report(seen({ claude: "unknown", running: null }));
-  const out = r.lines.join("\n");
+  // 色は端末と FORCE_COLOR で付く。印を比べる前に外す。
+  const out = stripVTControlCharacters(r.lines.join("\n"));
   assert.match(out, /○ Claude Code\s+不明/);
   assert.match(out, /○ 実行中の MCP\s+不明/);
   assert.match(out, /○ repository\s+見えない/);

@@ -128,6 +128,26 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
   );
 }
 
+// ---- 状態の印が、CLI と review の台帳で揃っているか ----
+//
+// 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
+// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。
+const marks = [
+  ...(
+    grab("server/src/panel.ts", /const MARKS = \{([\s\S]*?)\} as const;/, "panel.ts の MARKS") ?? ""
+  ).matchAll(/\["(.)",/g),
+].map((m) => m[1]);
+const ledger = [
+  ...(grab("plugin/skills/review/SKILL.md", /状態は印（(.*?)）/, "review Skill の台帳の印") ?? "").matchAll(
+    /`(.)`/g,
+  ),
+].map((m) => m[1]);
+if (marks.length && ledger.length && !same(marks, ledger)) {
+  fail.push(
+    `状態の印が揃っていない: panel.ts は ${marks.join(" ")}、review Skill の台帳は ${ledger.join(" ")}`,
+  );
+}
+
 // ---- README の CLI 一覧を USAGE から書き出す ----
 //
 // **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、

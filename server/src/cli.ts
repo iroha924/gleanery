@@ -13,7 +13,7 @@ import { syncDocs } from "./docs.ts";
 import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
-import { foot, type Mark, mark, pad, panel, rule, title, width } from "./panel.ts";
+import { foot, type Mark, mark, pad, panel, plain, rule, title, width } from "./panel.ts";
 import { observe, ROOT, report, versionAt } from "./plugin.ts";
 import { identify, localRoots, nameLocal, type Place, projectId } from "./project.ts";
 import {
@@ -267,7 +267,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
     s.error ? "fail" : s.rejected ? "warn" : "ok",
     "自動記録",
     `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
-      s.error ? ` / 失敗: ${s.error}` : ""
+      s.error ? ` / 失敗: ${plain(s.error)}` : ""
     }${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${
       s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
     }`,
@@ -295,8 +295,9 @@ async function doctor(env: Env, cwd: string): Promise<void> {
           `select 'knowledge' as t, status, count(*) as n from mitos.knowledge_embedding where status <> 'ready' group by status
            union all select 'message', status, count(*) from mitos.message_embedding where status <> 'ready' group by status`,
         );
+        // 残りは次の同期が埋め、埋められなかった行は再試行の上限で止まる。どちらも手で直すものではない。
         say(
-          emb.rows.length ? "warn" : "ok",
+          emb.rows.length ? "none" : "ok",
           "埋め込みの残り",
           emb.rows.length ? emb.rows.map((r) => `${r.t} ${r.status} ${r.n}`).join(" / ") : "無い",
         );
@@ -318,8 +319,9 @@ async function doctor(env: Env, cwd: string): Promise<void> {
           const days = x.last_success_at
             ? Math.floor((Date.now() - x.last_success_at.getTime()) / 86_400_000)
             : null;
-          const stale = days === null || days >= 2;
-          const m: Mark = x.last_error ? "fail" : stale ? "warn" : "ok";
+          // 取り込み元の無い作業場所（GitHub も git も持たない）は同期するものが無いので、直すものに数えない。
+          const stale = x.provider !== null && (days === null || days >= 2);
+          const m: Mark = x.last_error ? "fail" : x.provider === null ? "none" : stale ? "warn" : "ok";
           if (m !== "ok") issues.push(`作業場所 ${label(x)}`);
           const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
           console.log(
@@ -328,17 +330,18 @@ async function doctor(env: Env, cwd: string): Promise<void> {
                 x.last_success_at
                   ? `${x.last_success_at.toLocaleString("sv-SE")}（${days} 日前）${stale ? " ← 日次同期が止まっているかもしれない" : ""}`
                   : "まだ同期していない"
-              }${x.last_error ? ` / 失敗: ${x.last_error}` : ""}${where}`,
+              }${x.last_error ? ` / 失敗: ${plain(x.last_error)}` : ""}${where}`,
             ),
           );
         }
       });
     } catch (e) {
-      say("fail", "DB", `読めない: ${e instanceof Error ? e.message : e}`);
+      say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
       process.exitCode = 1;
     }
   }
-  console.log(foot(issues.length ? `直すもの ${issues.length} 件: ${issues.join(" / ")}` : "直すものは無い"));
+  const fix = [...new Set(issues)];
+  console.log(foot(fix.length ? `直すもの ${fix.length} 件: ${fix.join(" / ")}` : "直すものは無い"));
 }
 
 async function main(): Promise<void> {
@@ -386,7 +389,7 @@ async function main(): Promise<void> {
       console.error(
         panel(
           "mitos check",
-          r.problems.map((p) => `${mark("fail", process.stderr)} ${p.path}: ${p.reason}`),
+          r.problems.map((p) => `${mark("fail")} ${p.path}: ${p.reason}`),
           `.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`,
         ),
       );
@@ -405,7 +408,7 @@ async function main(): Promise<void> {
       console.error(
         panel(
           "mitos trace check",
-          r.problems.map((p) => `${mark("fail", process.stderr)} ${p}`),
+          r.problems.map((p) => `${mark("fail")} ${p}`),
           `問題 ${r.problems.length} 件`,
         ),
       );
@@ -608,48 +611,59 @@ async function main(): Promise<void> {
     console.log(title(`mitos sync ${startedAt.toLocaleString("sv-SE")}`));
     await flush(env).catch((e: unknown) =>
       console.error(
-        rule(`${mark("fail", process.stderr)} 自動記録の送信に失敗: ${e instanceof Error ? e.message : e}`),
+        rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(e instanceof Error ? e.message : String(e))}`),
       ),
     );
     const failed: string[] = [];
     let done = 0;
-    await withDb(env, "ingest", async (c) => {
-      const only = opt.cwd ? placeOf(cwd) : null;
-      if (only) await registered(c, only);
-      const { found, ambiguous } = localRoots();
-      const projects = await c.query<{ id: string; key: string; name: string }>(
-        "select id, key, name from mitos.project order by name",
-      );
-      for (const p of projects.rows) {
-        if (only && only.key !== p.key) continue;
-        const root = only?.root ?? found.get(p.key);
-        if (!root) {
-          console.log(
-            rule(
-              `${mark("none")} ${p.name}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`,
-            ),
-          );
-          continue;
-        }
-        try {
-          const place = { key: p.key, root, name: p.name };
-          for (const line of await syncOne(c, Number(p.id), place, opt["reset-docs"] === true)) {
-            console.log(rule(`${mark("ok")} ${p.name} / ${line}`));
+    try {
+      await withDb(env, "ingest", async (c) => {
+        const only = opt.cwd ? placeOf(cwd) : null;
+        if (only) await registered(c, only);
+        const { found, ambiguous } = localRoots();
+        const projects = await c.query<{ id: string; key: string; name: string }>(
+          "select id, key, name from mitos.project order by name",
+        );
+        for (const p of projects.rows) {
+          if (only && only.key !== p.key) continue;
+          const root = only?.root ?? found.get(p.key);
+          if (!root) {
+            console.log(
+              rule(
+                `${mark("none")} ${p.name}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`,
+              ),
+            );
+            continue;
           }
-          done++;
-        } catch (e) {
-          // 1 つ落ちても残りは回す。失敗は終了コードへ出す（launchd の LastExitStatus で見える）。
-          failed.push(p.name);
-          console.error(rule(`${mark("fail", process.stderr)} ${e instanceof Error ? e.message : e}`));
+          try {
+            const place = { key: p.key, root, name: p.name };
+            for (const line of await syncOne(c, Number(p.id), place, opt["reset-docs"] === true)) {
+              console.log(rule(`${mark("ok")} ${p.name} / ${line}`));
+            }
+            done++;
+          } catch (e) {
+            // 1 つ落ちても残りは回す。失敗は終了コードへ出す（launchd の LastExitStatus で見える）。
+            failed.push(p.name);
+            const lines = plain(e instanceof Error ? e.message : String(e)).split("\n");
+            console.error(
+              rule([`${mark("fail")} ${p.name}`, ...lines.map((l) => `  ${l.trim()}`)].join("\n")),
+            );
+          }
         }
-      }
-      // 埋め込みは全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
-      for (const line of [
-        describeFill("知識の埋め込み", await fillKnowledge(c, env)),
-        describeFill("発言の埋め込み", await fillMessages(c, env)),
-      ])
-        if (line) console.log(rule(line));
-    });
+        // 埋め込みは全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
+        for (const line of [
+          describeFill("知識の埋め込み", await fillKnowledge(c, env)),
+          describeFill("発言の埋め込み", await fillMessages(c, env)),
+        ])
+          if (line) console.log(rule(line));
+      });
+    } catch (e) {
+      // 見出しを出した後で止まっても、枠を閉じてから終わる（ログは日をまたいで追記される）。
+      console.error(rule(`${mark("fail")} ${plain(e instanceof Error ? e.message : String(e))}`));
+      console.log(foot(`${mark("fail")} 止まった ${new Date().toLocaleString("sv-SE")}`));
+      process.exitCode = 1;
+      return;
+    }
     console.log(
       foot(
         `おわり ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} 秒 / 成功 ${done}${
@@ -670,11 +684,11 @@ async function main(): Promise<void> {
       const hits = opt.said
         ? await searchMessages(c, env, { question: question || undefined, projects, who: opt.said, limit })
         : await searchKnowledge(c, env, { question, projects, avoid: opt.avoid, limit });
-      // この出力は Skill の許可済みコマンド経由でエージェントの文脈へ入る。記録の囲い（framed）を通す。
+      // この出力はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
       console.log(
         panel(
           "mitos search",
-          hits.length ? [framed(renderHits(hits, 16 * 1024))] : [],
+          hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [],
           `${hits.length ? `${hits.length} 件` : "該当なし"} / ${place ? place.name : "すべての作業場所"}`,
         ),
       );
@@ -744,11 +758,16 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
+  const [cmd, sub] = process.argv.slice(2);
+  const name =
+    cmd && ["project", "trace", "capture"].includes(cmd) && sub && !sub.startsWith("-")
+      ? `${cmd} ${sub}`
+      : cmd;
   console.error(
     panel(
-      `mitos ${process.argv[2] ?? ""}`.trim(),
-      [e instanceof Error ? e.message : String(e)],
-      `${mark("fail", process.stderr)} 止まった`,
+      `mitos ${name ?? ""}`.trim(),
+      [plain(e instanceof Error ? e.message : String(e))],
+      `${mark("fail")} 止まった`,
     ),
   );
   process.exit(1);

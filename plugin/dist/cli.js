@@ -24457,7 +24457,7 @@ var MARKS = {
   fail: ["✗", "red"],
   none: ["○", "gray"]
 };
-var mark = (m, stream = process.stdout) => styleText(MARKS[m][1], MARKS[m][0], { stream });
+var mark = (m) => process.stderr.isTTY ? styleText(MARKS[m][1], MARKS[m][0], { stream: process.stdout }) : MARKS[m][0];
 var title = (text) => `✦ ${text}`;
 var rule = (text) => text.split(`
 `).map((line) => line ? `│ ${line}` : "│").join(`
@@ -24465,6 +24465,8 @@ var rule = (text) => text.split(`
 var foot = (text) => `╰─ ${text}`;
 var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
 `);
+var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
+`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 var width = (text) => [...text].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0);
 var pad = (text, to) => text + " ".repeat(Math.max(1, to - width(text)));
 
@@ -24566,7 +24568,7 @@ function captureNotice(env) {
     return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
   if (s.error && s.pending > 0)
-    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${s.error.slice(0, 120)}`], "mitos doctor で確かめる");
+    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.error.slice(0, 120))}`], "mitos doctor で確かめる");
   if (s.rejected > 0)
     return panel(`mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`, [rejectedDir()], "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる");
   return null;
@@ -25856,7 +25858,7 @@ function report(s, now = new Date) {
       issues.push(label);
     lines.push(`  ${mark(m)} ${pad(label, 19)}${text}`);
   };
-  const row = (label, i, note, aside = "") => say(note ? "warn" : "ok", label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
+  const row = (label, i, note, aside = "", m = note ? "warn" : "ok") => say(m, label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
   const base = s.repository;
   const against = (i) => {
     if (!fs5.existsSync(i.root))
@@ -25917,7 +25919,7 @@ function report(s, now = new Date) {
     const label = `MCP pid ${r.pid}`;
     const aside = `（${when} 起動）`;
     if (!r.root) {
-      row(label, null, "起動元が分からない", aside);
+      row(label, null, "起動元が分からない", aside, "none");
       continue;
     }
     const codex = r.root.startsWith(`${s.codexCache}/`);
@@ -26854,7 +26856,7 @@ async function doctor(env, cwd) {
   }
   say(env.VOYAGE_API_KEY ? "ok" : "fail", "VOYAGE_API_KEY", env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）");
   const s = readState();
-  say(s.error ? "fail" : s.rejected ? "warn" : "ok", "自動記録", `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.error ? ` / 失敗: ${s.error}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
+  say(s.error ? "fail" : s.rejected ? "warn" : "ok", "自動記録", `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.error ? ` / 失敗: ${plain(s.error)}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
   if (env[KEY.reader]) {
     try {
       await withDb(env, "reader", async (c) => {
@@ -26869,7 +26871,7 @@ async function doctor(env, cwd) {
         }
         const emb = await c.query(`select 'knowledge' as t, status, count(*) as n from mitos.knowledge_embedding where status <> 'ready' group by status
            union all select 'message', status, count(*) from mitos.message_embedding where status <> 'ready' group by status`);
-        say(emb.rows.length ? "warn" : "ok", "埋め込みの残り", emb.rows.length ? emb.rows.map((r2) => `${r2.t} ${r2.status} ${r2.n}`).join(" / ") : "無い");
+        say(emb.rows.length ? "none" : "ok", "埋め込みの残り", emb.rows.length ? emb.rows.map((r2) => `${r2.t} ${r2.status} ${r2.n}`).join(" / ") : "無い");
         const { found } = localRoots();
         const r = await c.query(`select p.key, p.name, cn.provider, cn.last_success_at, cn.last_error
            from mitos.project p left join mitos.connector cn on cn.project_id = p.id order by p.name, cn.provider`);
@@ -26880,20 +26882,21 @@ ${rule("作業場所")}`);
         const column = Math.max(...r.rows.map((x) => width(label(x)))) + 2;
         for (const x of r.rows) {
           const days = x.last_success_at ? Math.floor((Date.now() - x.last_success_at.getTime()) / 86400000) : null;
-          const stale = days === null || days >= 2;
-          const m = x.last_error ? "fail" : stale ? "warn" : "ok";
+          const stale = x.provider !== null && (days === null || days >= 2);
+          const m = x.last_error ? "fail" : x.provider === null ? "none" : stale ? "warn" : "ok";
           if (m !== "ok")
             issues.push(`作業場所 ${label(x)}`);
           const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
-          console.log(rule(`  ${mark(m)} ${pad(label(x), column)}${x.last_success_at ? `${x.last_success_at.toLocaleString("sv-SE")}（${days} 日前）${stale ? " ← 日次同期が止まっているかもしれない" : ""}` : "まだ同期していない"}${x.last_error ? ` / 失敗: ${x.last_error}` : ""}${where}`));
+          console.log(rule(`  ${mark(m)} ${pad(label(x), column)}${x.last_success_at ? `${x.last_success_at.toLocaleString("sv-SE")}（${days} 日前）${stale ? " ← 日次同期が止まっているかもしれない" : ""}` : "まだ同期していない"}${x.last_error ? ` / 失敗: ${plain(x.last_error)}` : ""}${where}`));
         }
       });
     } catch (e) {
-      say("fail", "DB", `読めない: ${e instanceof Error ? e.message : e}`);
+      say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
       process.exitCode = 1;
     }
   }
-  console.log(foot(issues.length ? `直すもの ${issues.length} 件: ${issues.join(" / ")}` : "直すものは無い"));
+  const fix = [...new Set(issues)];
+  console.log(foot(fix.length ? `直すもの ${fix.length} 件: ${fix.join(" / ")}` : "直すものは無い"));
 }
 async function main2() {
   const argv = process.argv.slice(2);
@@ -26930,7 +26933,7 @@ ${USAGE}`);
     const r = check2(cwd);
     if (r.problems.length) {
       process.exitCode = 1;
-      console.error(panel("mitos check", r.problems.map((p) => `${mark("fail", process.stderr)} ${p.path}: ${p.reason}`), `.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`));
+      console.error(panel("mitos check", r.problems.map((p) => `${mark("fail")} ${p.path}: ${p.reason}`), `.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`));
       return;
     }
     console.log(panel("mitos check", [], `${mark("ok")} .mitos の検査は通った: ${r.root}（change ${r.changes} 件）`));
@@ -26944,7 +26947,7 @@ ${USAGE}`);
 ${USAGE}`);
     const r = checkTrace(readTrace(file3));
     if (r.problems.length) {
-      console.error(panel("mitos trace check", r.problems.map((p) => `${mark("fail", process.stderr)} ${p}`), `問題 ${r.problems.length} 件`));
+      console.error(panel("mitos trace check", r.problems.map((p) => `${mark("fail")} ${p}`), `問題 ${r.problems.length} 件`));
       process.exitCode = 1;
       return;
     }
@@ -27079,41 +27082,51 @@ ${USAGE}`);
       throw new Error("--reset-docs は --cwd で作業場所を 1 つ指定したときだけ使える");
     const startedAt = new Date;
     console.log(title(`mitos sync ${startedAt.toLocaleString("sv-SE")}`));
-    await flush(env).catch((e) => console.error(rule(`${mark("fail", process.stderr)} 自動記録の送信に失敗: ${e instanceof Error ? e.message : e}`)));
+    await flush(env).catch((e) => console.error(rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(e instanceof Error ? e.message : String(e))}`)));
     const failed = [];
     let done = 0;
-    await withDb(env, "ingest", async (c) => {
-      const only = opt.cwd ? placeOf(cwd) : null;
-      if (only)
-        await registered(c, only);
-      const { found, ambiguous } = localRoots();
-      const projects = await c.query("select id, key, name from mitos.project order by name");
-      for (const p of projects.rows) {
-        if (only && only.key !== p.key)
-          continue;
-        const root = only?.root ?? found.get(p.key);
-        if (!root) {
-          console.log(rule(`${mark("none")} ${p.name}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`));
-          continue;
-        }
-        try {
-          const place = { key: p.key, root, name: p.name };
-          for (const line of await syncOne(c, Number(p.id), place, opt["reset-docs"] === true)) {
-            console.log(rule(`${mark("ok")} ${p.name} / ${line}`));
+    try {
+      await withDb(env, "ingest", async (c) => {
+        const only = opt.cwd ? placeOf(cwd) : null;
+        if (only)
+          await registered(c, only);
+        const { found, ambiguous } = localRoots();
+        const projects = await c.query("select id, key, name from mitos.project order by name");
+        for (const p of projects.rows) {
+          if (only && only.key !== p.key)
+            continue;
+          const root = only?.root ?? found.get(p.key);
+          if (!root) {
+            console.log(rule(`${mark("none")} ${p.name}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`));
+            continue;
           }
-          done++;
-        } catch (e) {
-          failed.push(p.name);
-          console.error(rule(`${mark("fail", process.stderr)} ${e instanceof Error ? e.message : e}`));
+          try {
+            const place = { key: p.key, root, name: p.name };
+            for (const line of await syncOne(c, Number(p.id), place, opt["reset-docs"] === true)) {
+              console.log(rule(`${mark("ok")} ${p.name} / ${line}`));
+            }
+            done++;
+          } catch (e) {
+            failed.push(p.name);
+            const lines = plain(e instanceof Error ? e.message : String(e)).split(`
+`);
+            console.error(rule([`${mark("fail")} ${p.name}`, ...lines.map((l) => `  ${l.trim()}`)].join(`
+`)));
+          }
         }
-      }
-      for (const line of [
-        describeFill("知識の埋め込み", await fillKnowledge(c, env)),
-        describeFill("発言の埋め込み", await fillMessages(c, env))
-      ])
-        if (line)
-          console.log(rule(line));
-    });
+        for (const line of [
+          describeFill("知識の埋め込み", await fillKnowledge(c, env)),
+          describeFill("発言の埋め込み", await fillMessages(c, env))
+        ])
+          if (line)
+            console.log(rule(line));
+      });
+    } catch (e) {
+      console.error(rule(`${mark("fail")} ${plain(e instanceof Error ? e.message : String(e))}`));
+      console.log(foot(`${mark("fail")} 止まった ${new Date().toLocaleString("sv-SE")}`));
+      process.exitCode = 1;
+      return;
+    }
     console.log(foot(`おわり ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} 秒 / 成功 ${done}${failed.length ? ` / 失敗 ${failed.join(" / ")}` : ""}`));
     if (failed.length)
       process.exitCode = 1;
@@ -27129,7 +27142,7 @@ ${USAGE}`);
     await withDb(env, "reader", async (c) => {
       const projects = place ? [await registered(c, place)] : null;
       const hits = opt.said ? await searchMessages(c, env, { question: question2 || undefined, projects, who: opt.said, limit }) : await searchKnowledge(c, env, { question: question2, projects, avoid: opt.avoid, limit });
-      console.log(panel("mitos search", hits.length ? [framed(renderHits(hits, 16 * 1024))] : [], `${hits.length ? `${hits.length} 件` : "該当なし"} / ${place ? place.name : "すべての作業場所"}`));
+      console.log(panel("mitos search", hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [], `${hits.length ? `${hits.length} 件` : "該当なし"} / ${place ? place.name : "すべての作業場所"}`));
     });
     return;
   }
@@ -27170,6 +27183,8 @@ ${USAGE}`);
   }
 }
 main2().catch((e) => {
-  console.error(panel(`mitos ${process.argv[2] ?? ""}`.trim(), [e instanceof Error ? e.message : String(e)], `${mark("fail", process.stderr)} 止まった`));
+  const [cmd, sub] = process.argv.slice(2);
+  const name = cmd && ["project", "trace", "capture"].includes(cmd) && sub && !sub.startsWith("-") ? `${cmd} ${sub}` : cmd;
+  console.error(panel(`mitos ${name ?? ""}`.trim(), [plain(e instanceof Error ? e.message : String(e))], `${mark("fail")} 止まった`));
   process.exit(1);
 });

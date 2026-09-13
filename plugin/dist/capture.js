@@ -24118,6 +24118,8 @@ var rule = (text) => text.split(`
 var foot = (text) => `╰─ ${text}`;
 var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
 `);
+var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
+`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 
 // server/src/capture.ts
 var spoolDir = () => path3.join(os3.homedir(), ".claude", "mitos-spool");
@@ -24217,7 +24219,7 @@ function captureNotice(env) {
     return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
   if (s.error && s.pending > 0)
-    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${s.error.slice(0, 120)}`], "mitos doctor で確かめる");
+    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.error.slice(0, 120))}`], "mitos doctor で確かめる");
   if (s.rejected > 0)
     return panel(`mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`, [rejectedDir()], "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる");
   return null;

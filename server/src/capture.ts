@@ -24,7 +24,7 @@ import type pg from "pg";
 import { ARTIFACT_PATH } from "./artifacts.ts";
 import { connect, EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, vec } from "./db.ts";
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
-import { panel } from "./panel.ts";
+import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
 import { bytes, clean, head, mask, sha256, tail, tsvector, uuidFrom } from "./text.ts";
 
@@ -221,7 +221,7 @@ export function answersOf(input: HookInput): string | null {
 }
 
 /**
- * 自動記録が止まっているなら、持ち主へ伝える一文。**黙って待ち行列を積み続けない。**
+ * 自動記録が止まっているなら、session の開始時に持ち主へ出す表示。**黙って待ち行列を積み続けない。**
  * 鍵が無い・送信が失敗し続けている・DB が受け付けなかった記録がある、のどれか。
  */
 export function captureNotice(env: Env): string | null {
@@ -231,7 +231,7 @@ export function captureNotice(env: Env): string | null {
   if (s.error && s.pending > 0)
     return panel(
       "mitos: 自動記録を送れていない",
-      [`待ち ${s.pending} 件 / 最後の失敗: ${s.error.slice(0, 120)}`],
+      [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.error.slice(0, 120))}`],
       "mitos doctor で確かめる",
     );
   if (s.rejected > 0)

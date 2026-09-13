@@ -300,9 +300,9 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     if (m === "warn" || m === "fail") issues.push(label);
     lines.push(`  ${mark(m)} ${pad(label, 19)}${text}`);
   };
-  const row = (label: string, i: Install | null, note?: string, aside = "") =>
+  const row = (label: string, i: Install | null, note?: string, aside = "", m: Mark = note ? "warn" : "ok") =>
     say(
-      note ? "warn" : "ok",
+      m,
       label,
       `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`,
     );
@@ -370,7 +370,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     const label = `MCP pid ${r.pid}`;
     const aside = `（${when} 起動）`;
     if (!r.root) {
-      row(label, null, "起動元が分からない", aside);
+      row(label, null, "起動元が分からない", aside, "none");
       continue;
     }
     const codex = r.root.startsWith(`${s.codexCache}/`);
