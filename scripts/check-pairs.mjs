@@ -130,8 +130,8 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 
 // ---- README の CLI 一覧を USAGE から書き出す ----
 //
-// **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: 9 コマンドのうち
-// import-github だけが README 側で issue に触れ、doctor は README だけが更新されていた）。
+// **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、
+// README 側だけが更新された説明が両方あった）。
 // 正本は USAGE — 端末で `mitos` を叩いた人が見るのはこちらで、README は読み物だから。
 const usage = grab("server/src/cli.ts", /const USAGE = `使い方:\n(.*?)\n\n/s, "cli.ts の USAGE");
 if (usage) {

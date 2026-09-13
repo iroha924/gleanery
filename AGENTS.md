@@ -10,11 +10,12 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 
 ## 実行境界
 
-- DBの正本は`db/migrations/`と手書きSQLだけ。Prisma・Drizzleのschemaを別の正本として足さない
-- ナレッジ本体を書けるのはCLIとGitHub同期workerだけ。MCP、hook、HTTP APIへ管理鍵を渡さない
-- MCPとhookは`knowledge_ro`、dashboard設定は`mitos_cfg`、GitHub同期は`mitos_github`を使い、管理鍵へfallbackしない
+- DBの正本は`db/schema.sql`の1本だけ。Prisma・Drizzleのschemaを別の正本として足さない
+- 鍵は操作ごとに分ける。MCPと画面のAPIは`mitos_reader`（読むだけ）、CLIの取り込み・traceは`mitos_ingest`、
+  会話の自動記録は`mitos_capture`（追記だけ）を使う。owner鍵は`bun run db:*`だけが使い、どの鍵もownerへfallbackしない
+- untrustedな文章（PR・issueの本文、記録された会話）を読む出口に書き込みを持たせない
 - Next.jsは画面、Honoは全`/api/*`を担当する。Route HandlerやServer ActionへAPIを複製しない
-- Honoの全`/api/*`はClerk認証を先に通す。`/webhooks/github`だけはGitHub署名を検証し、公開例外を増やさない
+- Honoの全`/api/*`はClerk認証を先に通す。公開の例外を作らない
 - DBや生成APIの資格情報をNext.jsのserver codeとbrowserへ渡さない。画面は同一originの`/api/*`だけを呼ぶ
 - HTML / Markdownの進捗fileを作らない。記録の正本はDB、セッションの表示はdashboardの`/sessions`
 
@@ -31,8 +32,8 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 該当する作業では、実装前に次のSkillを最後まで読む。
 
 - Next.js、Hono、Clerk、画面のAPI通信: `next-hono`
-- migration、role、RLS、node kind、取り込み: `knowledge-schema`
-- MCP、CLI、hook、plugin Skill・Agentの配布: `plugin-release`
+- DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
+- MCP、CLI、自動記録のhook、plugin Skill・Agentの配布: `plugin-release`
 - `plugin/agents/`とreview Agent: `plugin-agent-authoring`
 - Vercel、Clerk本番、環境変数、domain、DNS: `deploy`
 
@@ -52,7 +53,7 @@ PRの要否はfile数ではなく影響面で決める。次をすべて満た�
 変えない内部整理である。AIの読込経路を変えた場合は`verify:ai`に加えClaude CodeとCodexの新しい
 sessionで確認する。
 
-dashboard・Honoの実行時動作、DB migration・権限・データ変換、認証・secret、依存・build・CI・
+dashboard・Honoの実行時動作、DB schema・権限・データ変換、認証・secret、依存・build・CI・
 Vercel設定、`plugin/skills/`・`plugin/agents/`・MCP・CLIを変える場合はPRを使う。Previewでの確認が
 必要な変更と、影響範囲を即答できない変更もPRへ寄せる。
 
@@ -63,7 +64,7 @@ bun run setup       # server / dashboardの依存とLefthookを固定lockfileか
 bun run dev         # Hono + Next.js。TTYが要るため前面でだけ実行する
 bun run verify      # lint、architecture、型、AI設定、test、Next.js production build
 bun run verify:ai   # AGENTS、repository開発Skill、plugin Skill・Agentの静的検査
-bun run bundle      # MCP、CLI、hookのplugin配布物を更新する
+bun run bundle      # MCP、CLI、自動記録のplugin配布物を更新する
 ```
 
 個別command、setup、運用、障害対応はREADMEを読む。pre-commitは変更対象の軽い検査、pre-pushとCIは
@@ -72,11 +73,12 @@ bun run bundle      # MCP、CLI、hookのplugin配布物を更新する
 ## 外へ出す文章
 
 PRは`.github/pull_request_template.md`、issueは`.github/ISSUE_TEMPLATE/`を先に読み、埋まらない節を
-削除する。確認できない事実を補わない。PRとissueの本文はそのままナレッジへ取り込まれる。
+削除する。確認できない事実を補わない。PRとissueの本文はそのままDBへ取り込まれ、発言として引かれる。
 
 ## 参照先
 
-- `README.md`: 全体像、DB、setup、全command、新しいPC、Vercel運用、troubleshooting
+- `README.md`: 全体像、DB、鍵とrole、setup、全command、新しいPC、troubleshooting
 - `dashboard/AGENTS.md`: installed Next.js版が生成した規約
-- `plugin/skills/trace/SKILL.md`: 記録を作る契約
+- `plugin/skills/trace/SKILL.md`: 判断を記録する契約
+- `server/src/capture.ts`: 会話を自動記録する範囲（持ち主の判定、残すものと残さないもの）
 - `plugin/skills/review/SKILL.md`: reviewの実行と担当分け

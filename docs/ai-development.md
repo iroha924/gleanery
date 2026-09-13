@@ -32,9 +32,9 @@ Claude Codeもsymlink先のSkillを読めるので、`.claude/skills/`には同�
 | Vercel、Clerk本番、DNS、環境変数 | 手順 | `deploy` Skill |
 | MCP bundle、manifest version、到達確認 | 手順 | `plugin-release` Skill |
 | Next.js、Hono、Clerkの実装規約 | 手順 | `next-hono` Skill |
-| migration、role、kind、取り込み | 手順 | `knowledge-schema` Skill |
+| DB schema、role、知識の種類、取り込み | 手順 | `knowledge-schema` Skill |
 | plugin review Agent固有の配布と解決 | 手順 | `plugin-agent-authoring` Skill |
-| 過去に片側だけ直した事例 | 履歴 | このdocument |
+| 対になる出口と、それを守る検査 | 配置の根拠 | このdocument |
 
 Skill・Agent・ruleを作る一般手順はrepositoryに複製しない。Claude Codeではuser scopeの`docs-author`、
 Codexでは組み込みの`skill-creator`を使う。
@@ -46,23 +46,23 @@ Codexでは組み込みの`skill-creator`を使う。
 `plugin/agents/`に分離されているため、今回は新しいAgentを追加せず、そのfrontmatterを
 `verify:ai`の検査対象にした。
 
-## 過去の観測
+## 対になる出口
 
-常時contextから外したが、配置判断の根拠として残す。
+同じ値や判断が2箇所以上に写っている場所。片方だけ直しても、もう片方が動いてしまうので気付けない。
+列挙できる対は検査で止め、集合にならない対は同じ関数を通して写しそのものを無くす。
 
-| 片側の変更 | 後から見つかった対 |
-|---|---|
-| symlink末端の`lstat` | 途中directoryのsymlink |
-| `identify()`の基点 | `syncDocs`へ渡す基点 |
-| 検索の既定除外 | `outsideScopes()`の同じ一覧 |
-| MCPが返す記録の帰属 | dashboard chatの帰属 |
-| 引用枠の`node.text` | 枠外へ出ていたrecord列 |
-| READMEのdoctor説明 | CLIの`USAGE` |
-| pre-commitの`pairs`終了code | 同じ複数command形式の`bundle` |
-| Claude plugin manifestのversion | Codex plugin manifestのversion |
-| reviewerの`effort`固定 | 同じ理由が必要な`model`固定 |
-| CLI一覧を`USAGE`から生成 | `USAGE`自体の未検証な説明 |
-| 同期が承認を判定する成果物pathの正規表現 | traceがセッションへ結ぶ同じ正規表現と、画面の成果物の種別（`check-pairs`へ追加） |
+| 片側 | 対 | 守り |
+|---|---|---|
+| `db/schema.sql`のCHECK（知識の種類と状態、話者、出自、ファイルの操作） | `server/src/knowledge.ts`の定数 | `scripts/check-pairs.mjs` |
+| 同期が承認を判定する成果物のpath（`ARTIFACT_PATH`） | 画面の成果物の種別 | `scripts/check-pairs.mjs` |
+| CLIの`USAGE` | READMEのCLI一覧 | `scripts/check-pairs.mjs`が書き出す |
+| schemaのrevision | `server/src/db.ts`の`SCHEMA_REVISION` | `server/test/db.test.ts` |
+| Claude plugin manifestのversion | Codex plugin manifestとmarketplaceのversion | `scripts/check-mcp-version.mjs` |
+| 明示起動Skillの`disable-model-invocation` | Codexの`agents/openai.yaml` | `verify:ai` |
+| reviewerの`effort`固定 | 同じ理由が要る`model`固定 | `verify:ai` |
+| MCPの`recall`・`read` | 画面のチャットと全文表示 | 同じ`server/src/search.ts`の関数を通す |
+| 自動記録が伏せる鍵の形 | traceが伏せる鍵の形 | 同じ`server/src/text.ts`の`mask`を通す |
+| `mitos check`の成果物検査（作業ツリー） | 文書同期の成果物検査（commit tree） | 同じ`server/src/artifacts.ts`の関数を通す |
 
 2026-09-08にはMCP sourceを変更してbundleしただけのcommitが8回続き、versioned plugin cacheへ届いて
 いなかった。このためplugin配布は注意書きだけでなくLefthookのversion検査でも止める。
@@ -90,7 +90,7 @@ symlink、plugin利用者へ配るSkillのmanifest入口とfrontmatter・参照�
 `disable-model-invocation`とCodexの`agents/openai.yaml`）・Codex用のCLIの呼び方、plugin Agentの必須設定を検査する。文言の一致は
 評価しない。
 
-新しいsessionのsmoke testでは、Hono endpoint、dashboard、DB migration、MCP、deployの各依頼に対し、
+新しいsessionのsmoke testでは、Hono endpoint、dashboard、DB schema、MCP、deployの各依頼に対し、
 正しいSkill、禁止境界、実行する検証を答えられるかを見る。実装や外部変更はさせず、不要な質問や
 subagent起動も失敗として扱う。
 

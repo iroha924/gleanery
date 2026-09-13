@@ -1,13 +1,14 @@
 ---
 name: plugin-release
-description: mitosのMCP、CLI、hook、plugin SkillまたはAgentを変更して配布物を更新する。bundle入口とその依存module、3 manifest、Claude/Codex両方への到達確認が対象。HTTP APIやdashboardだけの変更には使わない。
+description: mitosのMCP、CLI、自動記録のhook、plugin SkillまたはAgentを変更して配布物を更新する。bundle入口とその依存module、3 manifest、Claude/Codex両方への到達確認が対象。HTTP APIやdashboardだけの変更には使わない。
 ---
 
 # プラグイン変更を届ける
 
 ## Triggers
 
-- `server/src/mcp.ts`、`server/src/cli.ts`、`server/src/hook-check-path.ts`、またはそれらがimportするmoduleを変更する
+- `server/src/mcp.ts`、`server/src/cli.ts`、`server/src/capture.ts`、またはそれらがimportするmoduleを変更する
+- `plugin/hooks/hooks.json`を変更する
 - `plugin/skills/`、`plugin/agents/`を変更する
 - `plugin/dist/`またはplugin manifestの版を更新する
 - ローカル変更がClaude CodeやCodexに届かない原因を調べる
@@ -22,7 +23,8 @@ description: mitosのMCP、CLI、hook、plugin SkillまたはAgentを変更し�
 Claude CodeとCodexは、GitHubの`main`からpluginを取り、版ごとのcacheへ複製して動かす。cacheは版が
 変わったときだけ更新されるので、`bun run bundle`やcommitだけでは届かず、mergeまで届かない。
 directory型marketplaceのClaude Codeはcacheを使わず作業ツリーを直接読むので、配布物の確認にならない。
-CLIは実行した場所の`dist/cli.js`を読むため、CLIで動くことはMCPで動く証拠にならない。
+CLIは実行した場所の`dist/cli.js`を読むため、CLIで動くことはMCPで動く証拠にならない。自動記録のhookは
+`${CLAUDE_PLUGIN_ROOT}/dist/capture.js`を叩くので、これもcacheの版で動く。
 
 変更時は次を同じcommitに含める。
 
@@ -41,8 +43,9 @@ merge後に届いたことを確かめる。`mitos doctor`の「plugin の版」
 5. Codex: `codex plugin marketplace upgrade mitos && codex plugin add mitos@mitos`の後、Codexを開き直す
 6. `mitos doctor`で、両ホストの導入済みcacheがrepositoryと同じ版・同じ中身になり、実行中のMCPに
    張り直しの指示が残っていないことを見る
-7. 反映後のsessionから`current_work`を呼び、末尾の`mitos MCP <版>`が新しい版であることと、変更した
-   MCP tool、Skill、Agentの中身を確かめる
+7. 反映後のsessionから`recall`を呼び、変更したMCP tool、Skill、Agentの中身を確かめる。自動記録を変えたなら、
+   その session の発言がダッシュボードの`/sessions`に出ることと、`mitos doctor`の「自動記録」行に待ちが
+   残っていないことも見る
 
 `plugin/agents/`もcache経由なので、保存やsession再起動だけでは新しい定義にならない。Agentを変更する
 場合は先に`plugin-agent-authoring`も読む。
