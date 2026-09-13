@@ -6,6 +6,9 @@ import path from "node:path";
 import { test } from "node:test";
 import { identify, localRoots, nameLocal, normalizeRemote, patchPaths, relativeTo } from "../src/project.ts";
 
+// HOME を差し替えて本物の名前の対応表を守っている。bun の os.homedir() は差し替えに追従せず、本物の対応表を書き換える。
+if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
+
 test("ssh と https の remote が同じ key へ揃う", () => {
   const want = "github.com/iroha924/hir4ta-developer";
   assert.equal(normalizeRemote("git@github.com:iroha924/hir4ta-developer.git"), want);

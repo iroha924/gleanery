@@ -36,7 +36,7 @@
           "msg-0",
           "msg-3"
         ],
-        "note": "子の session・subagent・印の無い headless は残さない。"
+        "note": "子の session・subagent・印の無い headless・通知と伝言は残さない。"
       }
     ]
   },
@@ -100,7 +100,7 @@
       "from": "hook",
       "to": "hook",
       "kind": "self",
-      "label": "持ち主の turn か（subagent・子を外す）"
+      "label": "持ち主の発言か（subagent・子・通知を外す）"
     },
     {
       "from": "hook",
