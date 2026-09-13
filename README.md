@@ -48,13 +48,14 @@ MCP は読み取り専用の鍵で動く。PR コメントのような外部の�
 
 登録した作業場所（`mitos project add`）の session では、フックが次を残す。
 
-- 持ち主が打った発言。AskUserQuestion で選んだ答え（質問と答えの組、添えたメモ）
+- 持ち主が打った発言（作業中に打ち足したものも）。AskUserQuestion で選んだ答え（質問と答えの組、添えたメモ）
 - AI の最後の応答（turn ごと）
 - その turn で Edit / Write / MultiEdit / NotebookEdit したファイルと、Read した要件定義・設計書
   （Bash で書いた・読んだファイルは入らない。セッション詳細に出るのは、そのうち承認済みとして同期された版）
 
 残さないものは、subagent の中の turn、エージェントが起動した子の session（Bash から叩いた `claude -p` など）、
-印の無い `claude -p`（launchd や Codex から起動したもの）、tool の出力、通知、Skill の本文。
+印の無い `claude -p`（launchd や Codex から起動したもの）、tool の出力、Skill の本文、
+背景タスクの完了通知と subagent・別の session からの伝言（持ち主の入力と同じ口から届くので、決まった書き出しで外す）。
 **Codex の会話はまだ自動では残らない**（Codex のフックの入力を測ってから有効にする）。
 
 - 貼ってしまった鍵は、送る前に形で分かるものだけ伏せる（接頭辞の決まった鍵、`KEY=…` や `"password": …` の代入、

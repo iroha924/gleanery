@@ -5,13 +5,15 @@
 // DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は決定的に作る）。
 //
 // **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
-// 「利用者の発言」として DB の 97.2% を占めた。見分けは 3 つで、どれも推測をしない。
+// 「利用者の発言」として DB の 97.2% を占めた。見分けは 4 つで、どれも推測をしない。
 //   - subagent の中の turn は hook 入力に agent_id が付く
 //   - エージェントが起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
 //     CLAUDE_ENV_FILE に書いた MITOS_PARENT_SESSION を継ぐ。自分の session id と違えば子である
 //     （記録させたくない起動には、どの session とも一致しない値を置けばよい）
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
 //     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
+//   - 持ち主の session の中でも、背景タスクの完了通知と、subagent・別の session からの伝言が UserPromptSubmit に
+//     届く（通知は 2.1.269 で実測）。決まった書き出し（INJECTED）で外す
 // 値を「その session の id」にしてあるのは、この変数が将来 hook 自身の環境へ届く仕様になっても、
 // 持ち主の session では自分の id と一致して記録が止まらないようにするため。
 
@@ -145,6 +147,37 @@ export function isOwnerTurn(
   return entrypoint !== "sdk-cli";
 }
 
+/** 持ち主が打っていないのに UserPromptSubmit へ届く prompt の書き出し（transcript と待ち行列で見た形）。 */
+const INJECTED = ["<task-notification>", "<agent-message", "Another Claude session sent a message:"];
+
+/**
+ * この prompt が turn の中で何番目の持ち主の発言か（0 から）。**作業中に打った発言は、走っている turn の id の
+ * まま届く**（transcript で 148 件中 143 件）ので、turn の id だけで発言の id を作ると、最初の発言と一意制約で
+ * ぶつかって黙って捨てられる。番号は印を排他的に作って取る（`wx`）ので、同時に届いた 2 つが同じ番号にならない。
+ * 印は turn の間だけ要る。7 日より古いものは消す。
+ */
+function nth(session: string, turn: string): number {
+  const dir = path.join(spoolDir(), "turns");
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const mark = uuidFrom(session, turn);
+  for (let n = 0; ; n++) {
+    try {
+      fs.writeFileSync(path.join(dir, `${mark}.${n}`), "", { flag: "wx", mode: 0o600 });
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw e;
+    }
+    if (n === 0) {
+      const old = Date.now() - 7 * 86_400_000;
+      for (const f of fs.readdirSync(dir)) {
+        const st = fs.statSync(path.join(dir, f), { throwIfNoEntry: false });
+        if (st && st.mtimeMs < old) fs.rmSync(path.join(dir, f), { force: true });
+      }
+    }
+    return n;
+  }
+}
+
 /**
  * AskUserQuestion で持ち主が選んだ答えと、答えに添えたメモ。質問と答えの組を持ち主の発言として残す。
  * tool_response は `{ questions, answers: {質問: 答え}, annotations: {質問: { notes }} }`（transcript の実物で確認）。
@@ -212,7 +245,13 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     spool({ ...base, kind: "message", id, speaker, ...kept });
   };
 
-  if (event === "UserPromptSubmit" && input.prompt) say(`${turn}:self`, "self", input.prompt);
+  if (event === "UserPromptSubmit" && input.prompt) {
+    const prompt = input.prompt;
+    if (INJECTED.some((p) => prompt.trimStart().startsWith(p))) return { flush: false };
+    // 最初の発言だけを `<turn>:self` にする（その turn で触ったファイルの結び先）。
+    const n = nth(base.session, turn);
+    say(n === 0 ? `${turn}:self` : `${turn}:self:${n}`, "self", prompt);
+  }
   if (event === "Stop") {
     if (input.last_assistant_message) say(`${turn}:assistant`, "assistant", input.last_assistant_message);
     return { flush: true };
@@ -406,7 +445,7 @@ async function write(
         EMBED_MODEL,
       ],
     );
-    // その turn の持ち主の発言へ結ぶ。発言が無い turn（通知から始まった turn）は結ぶ先が無いので捨てる。
+    // その turn の最初の持ち主の発言へ結ぶ。持ち主が何も打たなかった turn（通知から始まった turn）は結ぶ先が無いので捨てる。
     const files = batch.flatMap((r) => {
       const p = r.kind === "file" ? projects.get(r.project) : undefined;
       if (r.kind !== "file" || !p) return [];
@@ -525,8 +564,8 @@ export async function flush(
         }
       }
     }
-    // 持ち主の発言（`<turn>:self`）が弾かれた turn のファイル記録も一緒に残す（ファイルはその発言へ結ぶので、
-    // 送っても 0 行になる）。AI の応答や AskUserQuestion の答えだけが弾かれた turn のファイルは送れている。
+    // 最初の持ち主の発言（`<turn>:self`）が弾かれた turn のファイル記録も一緒に残す（ファイルはその発言へ結ぶので、
+    // 送っても 0 行になる）。ほかの発言や AI の応答、AskUserQuestion の答えだけが弾かれた turn のファイルは送れている。
     const lost = new Set(
       bad.flatMap((x) =>
         x.r.kind === "message" && x.r.id === `${x.r.turn}:self` ? [`${x.r.session}\0${x.r.turn}`] : [],

@@ -307,6 +307,35 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   );
 });
 
+test("通知と伝言は持ち主の発言にせず、作業中に打った発言は turn の 2 番目以降として残す", () => {
+  reset();
+  const base = { session_id: "s1", cwd: repoDir, hook_event_name: "UserPromptSubmit" };
+  // 作業の途中で届いたものは、走っている turn の id のまま来る。
+  for (const prompt of [
+    "DB を作り直す",
+    "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>",
+    '<agent-message from="review-security">指摘は 3 件</agent-message>',
+    "Another Claude session sent a message:\n終わった",
+    "やっぱり role も分けて",
+    "急ぎで",
+  ])
+    onHook("claude-code", { ...base, prompt_id: "p1", prompt });
+  // 通知から始まった turn では、途中で打った発言が最初の発言（ファイルの結び先）になる。
+  onHook("claude-code", { ...base, prompt_id: "p2", prompt: "  <task-notification>\n</task-notification>" });
+  onHook("claude-code", { ...base, prompt_id: "p2", prompt: "CI の結果を見て" });
+  assert.deepEqual(
+    spooled()
+      .map((m) => (m.kind === "message" ? [m.id, m.body] : []))
+      .sort(),
+    [
+      ["p1:self", "DB を作り直す"],
+      ["p1:self:1", "やっぱり role も分けて"],
+      ["p1:self:2", "急ぎで"],
+      ["p2:self", "CI の結果を見て"],
+    ],
+  );
+});
+
 test("エージェントが起動した子と、作業場所の外の session は何も書かない", () => {
   reset();
   process.env.MITOS_PARENT_SESSION = "parent";
