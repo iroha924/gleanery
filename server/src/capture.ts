@@ -150,22 +150,22 @@ export function isOwnerTurn(
 
 /**
  * 持ち主が打たずに届く prompt の形。hook の入力には出自の印が無い（transcript には付く。2.1.269 で実測）ので、形で外す。
- * 背景タスクの完了通知、背景 agent を止めた通知、別の session・subagent・teammate からの伝言で、どれも Claude Code
- * 2.1.270 の実行ファイルにある文面（完了通知・止めた通知・伝言は手元の transcript にも実物がある）。
+ * 背景タスクの完了通知、背景 agent を止めた通知、channel・別の session・subagent・teammate からの伝言で、どれも
+ * Claude Code 2.1.270 の実行ファイルにある文面（完了通知・止めた通知・伝言は手元の transcript にも実物がある）。
  * **載っていない形は持ち主の発言として入る**（`/loop` で起きたときの prompt も、印の無い本文だけが届くので外せない）。
  */
 const INJECTED = [
-  /^<task-notification>/,
+  /^<(?:task-notification|channel|cross-session-message|teammate-message|agent-message)[\s>]/,
   /^(?:\d+ background agents were|Background agent ".*" was) stopped by the user/,
   /^(?:Another Claude|A peer) session sent a message/,
-  /^<(?:cross-session|teammate|agent)-message[\s>]/,
 ];
 
 /**
  * 発言と応答の id の後半。**1 つの turn の id に発言も応答も複数届く** — 作業中に打った発言は走っている turn の id の
  * まま届き（transcript で 148 件中 143 件）、別の session からの伝言で始まる turn は直前の turn の id を使い回す
- * （127 件すべて）。turn の id だけで作ると一意制約でぶつかり、後から届いた方が黙って捨てられる。本文から作るので、
- * 同じ入力が 2 度届いても 1 行になる（同じ turn の id に同じ文面をもう一度打つと、それも 1 行になる）。
+ * （127 件すべて）。turn の id だけで作ると一意制約でぶつかり、後から届いた方が黙って捨てられる。
+ * **伏せた後の本文から作る**（伏せる前から作ると、伏せた本文と突き合わせて弱い鍵を総当たりで戻せる）。同じ入力が
+ * 2 度届いても 1 行になる。同じ turn の id に同じ文面が 2 度届いたとき（同じ文面の打ち足しや応答）も 1 行になる。
  */
 const digest = (s: string): string => sha256(s).toString("hex").slice(0, 16);
 
@@ -258,20 +258,20 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     turn,
     at,
   };
-  const say = (id: string, speaker: "self" | "assistant", raw: string) => {
+  const say = (key: string, speaker: "self" | "assistant", raw: string) => {
     const kept = fit(clean(raw).trim());
     if (!kept.body.trim()) return;
+    const id = `${key}:${digest(kept.body)}`;
     spool({ ...base, kind: "message", id, speaker, ...kept });
     if (speaker === "self") remember(base.session, id);
   };
 
   if (event === "UserPromptSubmit" && input.prompt) {
     const prompt = input.prompt.trimStart();
-    if (!INJECTED.some((r) => r.test(prompt))) say(`${turn}:self:${digest(prompt)}`, "self", prompt);
+    if (!INJECTED.some((r) => r.test(prompt))) say(`${turn}:self`, "self", prompt);
   }
   if (event === "Stop") {
-    const reply = input.last_assistant_message;
-    if (reply) say(`${turn}:assistant:${digest(reply)}`, "assistant", reply);
+    if (input.last_assistant_message) say(`${turn}:assistant`, "assistant", input.last_assistant_message);
     return { flush: true };
   }
   if (event === "PostToolUse") {
@@ -586,7 +586,8 @@ export async function flush(
         }
       }
     }
-    // 弾かれた持ち主の発言へ結ぶファイルの記録も一緒に残す（送っても結ぶ先が無く 0 行になる）。
+    // この束で弾かれた持ち主の発言へ結ぶファイルの記録も一緒に残す（送っても結ぶ先が無く 0 行になる）。後の束で届いた
+    // ファイルの記録は、結ぶ先が無いまま捨てる。
     const lost = new Set(
       bad.flatMap((x) =>
         x.r.kind === "message" && x.r.speaker === "self" ? [`${x.r.session}\0${x.r.id}`] : [],

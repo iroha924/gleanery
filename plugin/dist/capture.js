@@ -24161,10 +24161,9 @@ function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoi
   return entrypoint !== "sdk-cli";
 }
 var INJECTED = [
-  /^<task-notification>/,
+  /^<(?:task-notification|channel|cross-session-message|teammate-message|agent-message)[\s>]/,
   /^(?:\d+ background agents were|Background agent ".*" was) stopped by the user/,
-  /^(?:Another Claude|A peer) session sent a message/,
-  /^<(?:cross-session|teammate|agent)-message[\s>]/
+  /^(?:Another Claude|A peer) session sent a message/
 ];
 var digest = (s) => sha256(s).toString("hex").slice(0, 16);
 var saidDir = () => path3.join(spoolDir(), "said");
@@ -24244,10 +24243,11 @@ function onHook(host, input2) {
     turn,
     at
   };
-  const say = (id, speaker, raw) => {
+  const say = (key, speaker, raw) => {
     const kept = fit(clean(raw).trim());
     if (!kept.body.trim())
       return;
+    const id = `${key}:${digest(kept.body)}`;
     spool({ ...base, kind: "message", id, speaker, ...kept });
     if (speaker === "self")
       remember(base.session, id);
@@ -24255,12 +24255,11 @@ function onHook(host, input2) {
   if (event === "UserPromptSubmit" && input2.prompt) {
     const prompt = input2.prompt.trimStart();
     if (!INJECTED.some((r) => r.test(prompt)))
-      say(`${turn}:self:${digest(prompt)}`, "self", prompt);
+      say(`${turn}:self`, "self", prompt);
   }
   if (event === "Stop") {
-    const reply = input2.last_assistant_message;
-    if (reply)
-      say(`${turn}:assistant:${digest(reply)}`, "assistant", reply);
+    if (input2.last_assistant_message)
+      say(`${turn}:assistant`, "assistant", input2.last_assistant_message);
     return { flush: true };
   }
   if (event === "PostToolUse") {

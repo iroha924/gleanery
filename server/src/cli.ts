@@ -200,7 +200,7 @@ async function traceContext(env: Env, cwd: string, host?: string): Promise<strin
     const said = messages.rows.map(
       (m) =>
         `## ${m.speaker_kind === "self" ? "持ち主" : "AI"}（${m.sent_at.toISOString()}）${m.truncated ? " ※一部だけ保存" : ""}\n` +
-        `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nこの turn で触ったファイル: ${m.paths.join(" / ")}` : ""}`,
+        `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nこの発言の後に触ったファイル: ${m.paths.join(" / ")}` : ""}`,
     );
     const edited = [...new Set(messages.rows.flatMap((m) => m.paths))];
     return [

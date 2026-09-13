@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
 import { answersOf, fit, isOwnerTurn, MAX_MESSAGE, onHook, type Spooled, spoolDir } from "../src/capture.ts";
-import { bytes, mask } from "../src/text.ts";
+import { bytes, mask, sha256 } from "../src/text.ts";
 
 // HOME を差し替えて本物の待ち行列を守っている。bun の os.homedir() は差し替えに追従せず、本物の待ち行列を消す。
 if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
@@ -303,6 +303,13 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   );
   const said = messages[0]?.kind === "message" ? messages[0] : null;
   assert.ok(said && !said.body.includes("sk-proj-abc"), "鍵が待ち行列に入った");
+  // id の後半は伏せた後の本文から作る（伏せる前から作ると、伏せた本文と突き合わせて弱い鍵を総当たりで戻せる）。
+  assert.equal(
+    said?.id,
+    `p1:self:${sha256(said?.body ?? "")
+      .toString("hex")
+      .slice(0, 16)}`,
+  );
   assert.deepEqual(
     files.map((f) => (f.kind === "file" ? [f.path, f.action, f.message] : [])),
     [
@@ -338,6 +345,8 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
   for (const p of [
     "DB を作り直す",
     "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>",
+    '<task-notification id="b2">\n<status>completed</status>\n</task-notification>',
+    '<channel source="slack">終わった</channel>',
     '<agent-message from="review-security">指摘は 3 件</agent-message>',
     "Another Claude session sent a message:\n終わった",
     '<cross-session-message from="codex">終わった</cross-session-message>',
