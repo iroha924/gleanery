@@ -24500,7 +24500,7 @@ function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoi
   return entrypoint !== "sdk-cli";
 }
 var INJECTED = [
-  /^<(task-notification|channel|cross-session-message|teammate-message|agent-message|slack-ping|slack-tag-message|fetched-web-content|remote-review|remote-review-progress)[\s>](?:(?!<\/\1>)[\s\S])*<\/\1>\s*$/,
+  /^<(?:task-notification|channel|cross-session-message|teammate-message|agent-message|slack-ping|slack-tag-message|fetched-web-content|remote-review|remote-review-progress)[\s>]/,
   /^(?:\d+ background agents were stopped by the user:|Background agent ".*" was stopped by the user\.)/,
   /^(?:Another Claude|A peer) session sent a message(?: while you were working)?:/
 ];

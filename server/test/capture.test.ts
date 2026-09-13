@@ -399,22 +399,23 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
   );
 });
 
-test("包みで始まっても、持ち主が続けて打った問いは残し、閉じタグの多い入力でも照合は線形に終わる", () => {
+test("閉じタグの後ろに文が付く通知も外し、区切りの無い文面で始めた持ち主の問いは残す", () => {
   reset();
   const base = { session_id: "s1", prompt_id: "p1", cwd: repoDir, hook_event_name: "UserPromptSubmit" };
-  const big = `<task-notification>${"</task-notification> x".repeat(20_000)}`;
-  const started = performance.now();
+  // 入力待ちで止まった背景のシェルの通知は、閉じタグの後ろに最後の出力が付く。
+  onHook("claude-code", {
+    ...base,
+    prompt: "<task-notification>\n<status>running</status>\n</task-notification>\nLast output: Password:",
+  });
   const asked = [
-    "<task-notification> って何？",
-    "<task-notification>\n<status>failed</status>\n</task-notification>\nこれ何で落ちた？",
-    "<task-notification>A</task-notification>\nこの 2 つの失敗の原因を直して\n<task-notification>B</task-notification>",
     "Another Claude session sent a message と出たが、どこから来たか調べて",
     "3 background agents were stopped by the user って何？",
-    big,
   ];
   for (const prompt of asked) onHook("claude-code", { ...base, prompt });
-  assert.ok(performance.now() - started < 1000, `${Math.round(performance.now() - started)}ms かかった`);
-  assert.equal(spooled().filter((m) => m.kind === "message").length, asked.length);
+  assert.deepEqual(
+    spooled().flatMap((m) => (m.kind === "message" ? [m.body] : [])),
+    asked,
+  );
 });
 
 test("DB へ書くとき、ファイルは turn ではなく待ち行列に書いた持ち主の発言の id へ結ぶ", async () => {

@@ -153,12 +153,12 @@ export function isOwnerTurn(
  * 背景タスクの完了通知、背景 agent を止めた通知、channel・Slack・Web の取得結果・別の session・subagent・teammate からの
  * 伝言で、どれも Claude Code 2.1.270 の実行ファイルにある文面（完了通知・止めた通知・伝言は手元の transcript にも実物がある）。
  * **載っていない形は持ち主の発言として入る**（`/loop` で起きたときの prompt も、印の無い本文だけが届くので外せない）。
- * 包みは prompt 全体がちょうど 1 つの包みのとき、文面は区切り（`:` か `.`）まで一致したときだけ外す（手元の transcript の
- * 包み 510 件は、どれも 1 つの包みで閉じタグで終わっていた）。書き出しだけで外すと、「<task-notification> って何？」や、
- * 通知を貼って続けた持ち主の問いまで捨てる。
+ * **書き出しで外す。**機械の文を持ち主の発言と取り違えるより、持ち主が包みや通知の文面で書き始めた発言を落とす方を取る
+ * （閉じタグの後ろに文が付く通知もある。手元の全 transcript では、持ち主の入力 830 件を 1 件も外さず、印の付いた通知と
+ * 伝言 227 件をすべて外した）。文面は区切り（`:` か `.`）まで一致したときだけ外す。
  */
 const INJECTED = [
-  /^<(task-notification|channel|cross-session-message|teammate-message|agent-message|slack-ping|slack-tag-message|fetched-web-content|remote-review|remote-review-progress)[\s>](?:(?!<\/\1>)[\s\S])*<\/\1>\s*$/,
+  /^<(?:task-notification|channel|cross-session-message|teammate-message|agent-message|slack-ping|slack-tag-message|fetched-web-content|remote-review|remote-review-progress)[\s>]/,
   /^(?:\d+ background agents were stopped by the user:|Background agent ".*" was stopped by the user\.)/,
   /^(?:Another Claude|A peer) session sent a message(?: while you were working)?:/,
 ];
