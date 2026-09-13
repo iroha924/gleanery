@@ -14,6 +14,7 @@ import {
   MAX_MESSAGE,
   onHook,
   readInput,
+  readState,
   type Spooled,
   spoolDir,
   write,
@@ -528,6 +529,23 @@ test("自動記録が止まっていれば、session の開始時に同じ枠の
     captureNotice({}),
     "✦ mitos: KNOWLEDGE_DB_URL_CAPTURE が無いので、会話を自動記録できない\n╰─ mitos doctor で確かめる",
   );
+});
+
+test("送れていない判定は、待ちがあって失敗が残るときだけで、状態ファイルが壊れていても落ちない", () => {
+  reset();
+  const file = path.join(home, ".claude", "mitos-capture.json");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  for (const body of ["null", "{", "3"]) {
+    fs.writeFileSync(file, body);
+    assert.equal(readState().stuck, null, body);
+  }
+  fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
+  assert.equal(readState().stuck, null, "待ちが空なら、失敗は過去のもの");
+  fs.mkdirSync(spoolDir(), { recursive: true });
+  fs.writeFileSync(path.join(spoolDir(), "1.json"), "{}");
+  assert.equal(readState().stuck, "auth");
+  reset();
+  fs.rmSync(file);
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {

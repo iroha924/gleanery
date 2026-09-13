@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { panel, plain, rule } from "../src/panel.ts";
 
-test("外から来た文字は、行頭の印を上書きできず、端末を乱す文字も見えない文字も持ち込めない", () => {
+test("外から来た文字は、行頭の印を上書きできず、端末を乱す文字とタグ文字・ゼロ幅を落とす", () => {
   const [cr, esc, rlo, nel, zwj, zwsp] = [0x0d, 0x1b, 0x202e, 0x85, 0x200d, 0x200b].map((c) =>
     String.fromCodePoint(c),
   );

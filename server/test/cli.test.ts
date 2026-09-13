@@ -20,7 +20,9 @@ function run(...args: string[]): { code: number; out: string } {
     });
     return { code: 0, out };
   } catch (e) {
-    const err = e as { status?: number; stdout?: string; stderr?: string };
+    const err = e as { status?: number; stdout?: string; stderr?: string; code?: string };
+    // 時間切れは、期待どおりの出力を出した後でも失敗にする（終わらない退行を、終了コードの比べ方で通さない）。
+    if (err.code === "ETIMEDOUT") throw new Error(`mitos ${args.join(" ")} が 30 秒で終わらなかった`);
     return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
   }
 }
@@ -35,6 +37,10 @@ test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落�
   }
   const r = run("frobnicate");
   assert.match(r.out, /知らないコマンド: frobnicate/);
+  // エラーの見出しはサブコマンドまで出し、引数に仕込んだ改行で印の無い偽の締めの行を作らせない。
+  assert.match(run("trace", "check").out, /^✦ mitos trace check$/m);
+  const forged = run("x\n╰─ ✓ 直すものは無い");
+  assert.doesNotMatch(forged.out, /^╰─ ✓ 直すものは無い$/m, forged.out);
   assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");
 });
 

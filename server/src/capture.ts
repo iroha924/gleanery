@@ -338,9 +338,10 @@ export function readState(): State & { pending: number; rejected: number; stuck:
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
   let state: State = {};
   try {
-    state = JSON.parse(fs.readFileSync(stateFile(), "utf8")) as State;
+    const parsed: unknown = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
+    if (parsed && typeof parsed === "object") state = parsed as State;
   } catch {
-    // まだ送っていない
+    // まだ送っていないか、書きかけで壊れていて読めない
   }
   return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
 }

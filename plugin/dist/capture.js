@@ -24312,7 +24312,9 @@ function readState() {
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
   let state = {};
   try {
-    state = JSON.parse(fs3.readFileSync(stateFile(), "utf8"));
+    const parsed = JSON.parse(fs3.readFileSync(stateFile(), "utf8"));
+    if (parsed && typeof parsed === "object")
+      state = parsed;
   } catch {}
   return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
 }

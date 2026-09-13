@@ -17,13 +17,13 @@ const MARKS = {
 } as const;
 
 /**
- * 色は標準出力と標準エラーの両方が端末で、NO_COLOR が無いときだけ付ける。どちらかをファイルやパイプへ流したら、
- * どちらの行にも付けない（styleText の判定は 1 本の出力先しか見ないので、ここで両方を見る）。
+ * 色は標準出力と標準エラーの両方が端末のときだけ付ける（どちらかをファイルやパイプへ流したら、どちらの行にも付けない）。
+ * 両方が端末なら、NO_COLOR・FORCE_COLOR=0・TERM=dumb などは styleText が見る。
  */
-const colored = (): boolean => Boolean(process.stdout.isTTY && process.stderr.isTTY) && !process.env.NO_COLOR;
-
 export const mark = (m: Mark): string =>
-  colored() ? styleText(MARKS[m][1], MARKS[m][0], { validateStream: false }) : MARKS[m][0];
+  process.stdout.isTTY && process.stderr.isTTY
+    ? styleText(MARKS[m][1], MARKS[m][0], { stream: process.stdout })
+    : MARKS[m][0];
 
 export const title = (text: string): string => `✦ ${text}`;
 
@@ -40,10 +40,12 @@ export const panel = (head: string, lines: string[], end: string): string =>
   [title(head), ...lines.map(rule), foot(end)].join("\n");
 
 /**
- * 外から来た文字（PR・issue の本文、DB に残ったエラー文）を枠の中へ出せる形にする。CR で行頭の │ を上書きしたり、
- * 制御文字で端末を乱したりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にし、制御文字と書式文字を落とす。
- * 書式文字には見えないもの（タグ文字・ゼロ幅・双方向の制御）があり、端末の人に見えない指示をエージェントへ届けられる。
- * 旗の絵文字やソフトハイフンも崩れるが、落とす側を取る。文字の結合に要る ZWJ・ZWNJ だけ残す。
+ * 外から来た文字（PR・issue の本文、DB に残ったエラー文）を、端末に出す枠の中へ入れられる形にする。CR で行頭の │ を
+ * 上書きしたり、制御文字で端末を乱したりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にし、制御文字と書式文字を落とす。
+ * 書式文字を落とすのは、タグ文字・ゼロ幅・双方向の制御で、端末の人に見えない文をエージェントにだけ読ませないため。
+ * 見えない文字をすべて落とせるわけではない（異体字セレクタなどは残る）。エージェントへの守りは、記録を囲う framed の方である
+ * （AI だけが読む MCP の結果と trace context は、この関数を通さず framed だけで囲う）。
+ * タグ列でできた地域旗とソフトハイフンは崩れるが、落とす側を取る。文字の結合に要る ZWJ・ZWNJ だけ残す。
  */
 export const plain = (s: string): string =>
   s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");

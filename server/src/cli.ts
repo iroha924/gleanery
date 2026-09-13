@@ -343,8 +343,12 @@ async function doctor(env: Env, cwd: string): Promise<void> {
       say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
     }
   }
-  const fix = [...new Set(issues)];
-  console.log(foot(fix.length ? `直すもの ${fix.length} 件: ${fix.join(" / ")}` : "直すものは無い"));
+  // 件数は行の数で数え、名前だけ重ねない（同じ名前の Codex の cache や作業場所が複数あっても件数は減らさない）。
+  console.log(
+    foot(
+      issues.length ? `直すもの ${issues.length} 件: ${[...new Set(issues)].join(" / ")}` : "直すものは無い",
+    ),
+  );
 }
 
 async function main(): Promise<void> {
@@ -765,9 +769,15 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
+  // 見出しは打った引数の先頭 2 つまで（サブコマンドを持つコマンドでも、どれが止まったか分かる）。
+  // 見出しには行頭の印が付かないので、改行を空白にまとめて 1 行にする（引数から偽の締めの行を作らせない）。
+  const typed = process.argv
+    .slice(2, 4)
+    .filter((a) => !a.startsWith("-"))
+    .join(" ");
   console.error(
     panel(
-      `mitos ${process.argv[2] ?? ""}`.trim(),
+      plain(`mitos ${typed}`).replace(/\s+/g, " ").trim(),
       [plain(e instanceof Error ? e.message : String(e))],
       `${mark("fail")} 止まった`,
     ),

@@ -131,21 +131,36 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 // ---- 状態の印が、CLI と review の台帳で揃っているか ----
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
-// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。**並び順ごと比べる** — MARKS は 良い・見る・壊れている・情報、
-// 台帳は 実行・打ち切り・不能・未実行 の順で、同じ位置どうしが対になる（集合で比べると印の入れ替えを見逃す）。
-const marks = [
-  ...(
-    grab("server/src/panel.ts", /const MARKS = \{([\s\S]*?)\} as const;/, "panel.ts の MARKS") ?? ""
-  ).matchAll(/\["(.)",/g),
-].map((m) => m[1]);
-const ledger = [
-  ...(grab("plugin/skills/review/SKILL.md", /状態は印（(.*?)）/, "review Skill の台帳の印") ?? "").matchAll(
-    /`(.)`/g,
-  ),
-].map((m) => m[1]);
-if (marks.length && ledger.length && marks.join() !== ledger.join()) {
+// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。**印と状態の組で比べる**（並びや集合で比べると入れ替えを
+// 見逃す）。凡例だけでなく、例の表に書いた「印 状態」の組もすべて見る。
+const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
+const marks = Object.fromEntries(
+  [
+    ...(
+      grab("server/src/panel.ts", /const MARKS = \{([\s\S]*?)\} as const;/, "panel.ts の MARKS") ?? ""
+    ).matchAll(/(\w+): \["(.)",/g),
+  ].map((m) => [m[1], m[2]]),
+);
+if (Object.keys(LEDGER).every((k) => marks[k])) {
+  const glyphs = Object.values(marks).join("");
+  const used = [
+    ...read("plugin/skills/review/SKILL.md").matchAll(
+      new RegExp(`\`?([${glyphs}])\`? (${Object.values(LEDGER).join("|")})`, "g"),
+    ),
+  ];
+  const missing = Object.values(LEDGER).filter((state) => !used.some((m) => m[2] === state));
+  if (missing.length)
+    fail.push(
+      `review Skill に、印の付いた ${missing.join(" / ")} が無い（凡例が消えたか、印が panel.ts と違う）`,
+    );
+  for (const [, glyph, state] of used) {
+    const key = Object.keys(LEDGER).find((k) => LEDGER[k] === state);
+    if (marks[key] !== glyph)
+      fail.push(`review Skill が「${state}」に ${glyph} を書いている。panel.ts の ${key} は ${marks[key]}`);
+  }
+} else {
   fail.push(
-    `状態の印が揃っていない: panel.ts は ${marks.join(" ")}、review Skill の台帳は ${ledger.join(" ")}`,
+    "panel.ts の MARKS から ok / warn / fail / none の印を取り出せない。check-pairs.mjs の正規表現が実物とずれている",
   );
 }
 

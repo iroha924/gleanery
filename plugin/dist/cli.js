@@ -24457,8 +24457,7 @@ var MARKS = {
   fail: ["✗", "red"],
   none: ["○", "gray"]
 };
-var colored = () => Boolean(process.stdout.isTTY && process.stderr.isTTY) && !process.env.NO_COLOR;
-var mark = (m) => colored() ? styleText(MARKS[m][1], MARKS[m][0], { validateStream: false }) : MARKS[m][0];
+var mark = (m) => process.stdout.isTTY && process.stderr.isTTY ? styleText(MARKS[m][1], MARKS[m][0], { stream: process.stdout }) : MARKS[m][0];
 var title = (text) => `✦ ${text}`;
 var rule = (text) => text.split(`
 `).map((line) => line ? `│ ${line}` : "│").join(`
@@ -24662,7 +24661,9 @@ function readState() {
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
   let state = {};
   try {
-    state = JSON.parse(fs4.readFileSync(stateFile(), "utf8"));
+    const parsed = JSON.parse(fs4.readFileSync(stateFile(), "utf8"));
+    if (parsed && typeof parsed === "object")
+      state = parsed;
   } catch {}
   return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
 }
@@ -26899,8 +26900,7 @@ ${rule("作業場所")}`);
       say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
     }
   }
-  const fix = [...new Set(issues)];
-  console.log(foot(fix.length ? `直すもの ${fix.length} 件: ${fix.join(" / ")}` : "直すものは無い"));
+  console.log(foot(issues.length ? `直すもの ${issues.length} 件: ${[...new Set(issues)].join(" / ")}` : "直すものは無い"));
 }
 async function main2() {
   const argv = process.argv.slice(2);
@@ -27187,6 +27187,7 @@ ${USAGE}`);
   }
 }
 main2().catch((e) => {
-  console.error(panel(`mitos ${process.argv[2] ?? ""}`.trim(), [plain(e instanceof Error ? e.message : String(e))], `${mark("fail")} 止まった`));
+  const typed = process.argv.slice(2, 4).filter((a) => !a.startsWith("-")).join(" ");
+  console.error(panel(plain(`mitos ${typed}`).replace(/\s+/g, " ").trim(), [plain(e instanceof Error ? e.message : String(e))], `${mark("fail")} 止まった`));
   process.exit(1);
 });
