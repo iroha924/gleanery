@@ -3,15 +3,16 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 import {
-  agentReport,
   answersOf,
   fit,
   isOwnerTurn,
   MAX_MESSAGE,
   onHook,
+  readInput,
   type Spooled,
   spoolDir,
   write,
@@ -480,63 +481,45 @@ test("エージェントが起動した子と、作業場所の外の session �
   assert.deepEqual(spooled(), []);
 });
 
-test("背景の agent の完了通知からは、報告の本文を画面に出せる文字にし、引用の印を付けて返す", () => {
-  const [esc, rlo, zwj, ls] = [0x1b, 0x202e, 0x200d, 0x2028].map((c) => String.fromCodePoint(c));
-  const note = (body: string, summary = '<summary>Agent "security" finished</summary>') =>
-    `<task-notification>\n<task-id>a1</task-id>\n<status>completed</status>\n${summary}\n${body}\n</task-notification>`;
-  const family = `👨${zwj}👩`;
-  // 端末を乱す制御文字と双方向の上書きは落とし、絵文字をつなぐ ZWJ は残し、CR と行区切りは改行にする。
-  // 完了通知は < > & を実体参照にして渡すので元の文字に戻す（&amp;lt; は &lt; までしか戻さない）。
-  assert.equal(
-    agentReport({
-      hook_event_name: "UserPromptSubmit",
-      prompt: note(
-        `<result>verdict: pass${esc}[31m ${rlo}ab${ls}${family}\r--cwd &lt;dir&gt; &amp;&amp; &amp;lt;</result>\n<usage>x</usage>`,
-      ),
-    }),
-    `Agent "security" finished\n│ verdict: pass[31m ab\n│ ${family}\n│ --cwd <dir> && &lt;`,
-  );
-  // 見出しは本文より前からだけ取り、本文に書かれた summary を見出しにしない。
-  assert.equal(
-    agentReport({
-      hook_event_name: "UserPromptSubmit",
-      prompt: note("<result><summary>偽</summary></result>", ""),
-    }),
-    "agent の報告\n│ <summary>偽</summary>",
-  );
-  // 見出しは印の無い 1 行なので改行をまとめ、本文の NEL は改行にする（行をつなげない）。
-  const nel = String.fromCodePoint(0x85);
-  assert.equal(
-    agentReport({
-      hook_event_name: "UserPromptSubmit",
-      prompt: note(`<result>a${nel}b</result>`, "<summary>Agent \nmitos: 偽の警告</summary>"),
-    }),
-    "Agent mitos: 偽の警告\n│ a\n│ b",
-  );
-  // 本文の無い通知（背景のシェルの完了）と、持ち主の発言には何も返さない。
-  assert.equal(agentReport({ hook_event_name: "UserPromptSubmit", prompt: note("") }), null);
-  assert.equal(
-    agentReport({ hook_event_name: "UserPromptSubmit", prompt: "<result>x</result> を調べて" }),
-    null,
-  );
+test("フックの入力は、多バイト文字が塊の境目で割れても化けずに読む", async () => {
+  // 標準入力は塊で届く。「境」の 3 バイトの途中で塊を分け、境目を作る。
+  const input = Buffer.from(JSON.stringify({ prompt: "境界" }));
+  const cut = input.indexOf(Buffer.from("境")) + 1;
+  const parts = () => Readable.from([input.subarray(0, cut), input.subarray(cut)], { objectMode: false });
+  // 塊が 1 つにまとまると境目ができず、この試験は何も確かめなくなる。先に 2 つ届くことを見る。
+  const chunks: unknown[] = [];
+  for await (const chunk of parts()) chunks.push(chunk);
+  assert.equal(chunks.length, 2);
+  assert.equal((await readInput(parts())).prompt, "境界");
 });
 
-test("表示のフックは、多バイト文字が標準入力の塊の境目で割れても化けずに読む", () => {
-  const out = execFileSync(
-    process.execPath,
-    [path.join(import.meta.dirname, "..", "src", "capture.ts"), "--show"],
-    {
+test("記録のフックを起動すると、標準入力の持ち主の発言が待ち行列に入る", () => {
+  // 入口の判定と main の配線を通す。main は例外を握りつぶすので、壊れても記録が黙って止まるだけになる。
+  // 本番のフックが起動するのはバンドルした dist/capture.js なので、ソースと両方を通す。
+  const entries = [
+    path.join(import.meta.dirname, "..", "src", "capture.ts"),
+    path.join(import.meta.dirname, "..", "..", "plugin", "dist", "capture.js"),
+  ];
+  for (const entry of entries) {
+    reset();
+    execFileSync(process.execPath, [entry], {
       input: JSON.stringify({
         hook_event_name: "UserPromptSubmit",
         session_id: "s1",
-        prompt: `<task-notification>\n<summary>Agent "x" finished</summary>\n<result>${"境".repeat(60_000)}</result>\n</task-notification>`,
+        prompt_id: "p1",
+        cwd: repoDir,
+        prompt: "境界",
       }),
       env: { ...process.env, HOME: home },
-    },
-  ).toString("utf8");
-  const shown = (JSON.parse(out) as { systemMessage: string }).systemMessage;
-  assert.equal(shown.includes(String.fromCodePoint(0xfffd)), false, "割れた文字が置き換え文字になった");
-  assert.ok(shown.endsWith("境".repeat(10)));
+      // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
+      timeout: 10_000,
+    });
+    assert.deepEqual(
+      spooled().flatMap((m) => (m.kind === "message" ? [[m.host, m.body]] : [])),
+      [["claude-code", "境界"]],
+      entry,
+    );
+  }
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {

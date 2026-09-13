@@ -24187,31 +24187,6 @@ function lastSaid(session) {
     return null;
   }
 }
-function agentReport(input2) {
-  const prompt = input2.prompt ?? "";
-  if (input2.hook_event_name !== "UserPromptSubmit" || !/^<task-notification[\s>]/.test(prompt.trimStart()))
-    return null;
-  const open2 = /^<result>/m.exec(prompt);
-  if (!open2)
-    return null;
-  const start = open2.index + "<result>".length;
-  const end = prompt.indexOf("</result>", start);
-  if (end < 0)
-    return null;
-  const report = visible(fromEntities(prompt.slice(start, end))).trim();
-  if (!report)
-    return null;
-  const summary = prompt.slice(0, open2.index).match(/<summary>([^<]*)<\/summary>/)?.[1];
-  const head2 = summary ? visible(fromEntities(summary)).replace(/\s+/g, " ").trim() : "agent の報告";
-  return `${head2}
-${report.split(`
-`).map((line) => `│ ${line}`).join(`
-`)}`;
-}
-var ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
-var fromEntities = (s) => s.replace(/&(lt|gt|amp|quot|#39);/g, (whole, name) => ENTITIES[name] ?? whole);
-var visible = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
-`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 function answersOf(input2) {
   const response = input2.tool_response;
   const answers = response?.answers;
@@ -24551,22 +24526,19 @@ async function flush(env) {
     unlock();
   }
 }
+async function readInput(stream) {
+  stream.setEncoding("utf8");
+  let raw = "";
+  for await (const chunk of stream)
+    raw += chunk;
+  return JSON.parse(raw || "{}");
+}
 async function main() {
   if (process.argv[2] === "--flush") {
     await flush(loadEnv());
     return;
   }
-  process.stdin.setEncoding("utf8");
-  let raw = "";
-  for await (const chunk of process.stdin)
-    raw += chunk;
-  const input2 = JSON.parse(raw || "{}");
-  if (process.argv[2] === "--show") {
-    const report = agentReport(input2);
-    if (report)
-      process.stdout.write(JSON.stringify({ systemMessage: report }));
-    return;
-  }
+  const input2 = await readInput(process.stdin);
   const host = process.argv[2] === "codex" ? "codex" : "claude-code";
   const { flush: send, notice } = onHook(host, input2);
   if (notice)
@@ -24579,13 +24551,13 @@ if (process.argv[1] && /capture\.(ts|js)$/.test(process.argv[1])) {
 }
 export {
   MAX_MESSAGE,
-  agentReport,
   answersOf,
   captureNotice,
   fit,
   flush,
   isOwnerTurn,
   onHook,
+  readInput,
   readState,
   rejectedDir,
   spoolDir,

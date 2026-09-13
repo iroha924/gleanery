@@ -16,11 +16,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\" --show",
-            "timeout": 10
-          },
-          {
-            "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
             "async": true
           }
