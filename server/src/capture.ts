@@ -150,16 +150,17 @@ export function isOwnerTurn(
 
 /**
  * 持ち主が打たずに届く prompt の形。hook の入力には出自の印が無い（transcript には付く。2.1.269 で実測）ので、形で外す。
- * 背景タスクの完了通知、背景 agent を止めた通知、channel・別の session・subagent・teammate からの伝言で、どれも
- * Claude Code 2.1.270 の実行ファイルにある文面（完了通知・止めた通知・伝言は手元の transcript にも実物がある）。
+ * 背景タスクの完了通知、背景 agent を止めた通知、channel・Slack・Web の取得結果・別の session・subagent・teammate からの
+ * 伝言で、どれも Claude Code 2.1.270 の実行ファイルにある文面（完了通知・止めた通知・伝言は手元の transcript にも実物がある）。
  * **載っていない形は持ち主の発言として入る**（`/loop` で起きたときの prompt も、印の無い本文だけが届くので外せない）。
- * 包みは、prompt 全体が 1 つの包みのときだけ外す（手元の transcript の 510 件はすべて閉じタグで終わっていた）。
- * 書き出しだけで外すと、「<task-notification> って何？」や、通知を貼って続けた持ち主の問いまで捨てる。
+ * 包みは prompt 全体がちょうど 1 つの包みのとき、文面は区切り（`:` か `.`）まで一致したときだけ外す（手元の transcript の
+ * 包み 510 件は、どれも 1 つの包みで閉じタグで終わっていた）。書き出しだけで外すと、「<task-notification> って何？」や、
+ * 通知を貼って続けた持ち主の問いまで捨てる。
  */
 const INJECTED = [
-  /^<(task-notification|channel|cross-session-message|teammate-message|agent-message)[\s>][\s\S]*<\/\1>\s*$/,
-  /^(?:\d+ background agents were|Background agent ".*" was) stopped by the user/,
-  /^(?:Another Claude|A peer) session sent a message/,
+  /^<(task-notification|channel|cross-session-message|teammate-message|agent-message|slack-ping|slack-tag-message|fetched-web-content|remote-review|remote-review-progress)[\s>](?:(?!<\/\1>)[\s\S])*<\/\1>\s*$/,
+  /^(?:\d+ background agents were stopped by the user:|Background agent ".*" was stopped by the user\.)/,
+  /^(?:Another Claude|A peer) session sent a message(?: while you were working)?:/,
 ];
 
 /**
@@ -380,7 +381,7 @@ type Vectors = Map<Spooled, { text: string; v: number[] | undefined }>;
  * 本文を読めない capture の鍵では拒否される。id は待ち行列に書くときに決まるので、送り直しがどの一意制約に当たっても
  * 「もう入っている」。
  */
-async function write(
+export async function write(
   db: pg.Client,
   batch: Spooled[],
   projects: Map<string, Project>,
