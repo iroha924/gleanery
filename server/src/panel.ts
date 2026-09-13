@@ -17,11 +17,13 @@ const MARKS = {
 } as const;
 
 /**
- * 色は標準出力と標準エラーの両方が端末のときだけ付ける（どちらかをファイルへ流したら、どちらの行にも付けない）。
- * NO_COLOR と FORCE_COLOR は styleText が見る。
+ * 色は標準出力と標準エラーの両方が端末で、NO_COLOR が無いときだけ付ける。どちらかをファイルやパイプへ流したら、
+ * どちらの行にも付けない（styleText の判定は 1 本の出力先しか見ないので、ここで両方を見る）。
  */
+const colored = (): boolean => Boolean(process.stdout.isTTY && process.stderr.isTTY) && !process.env.NO_COLOR;
+
 export const mark = (m: Mark): string =>
-  process.stderr.isTTY ? styleText(MARKS[m][1], MARKS[m][0], { stream: process.stdout }) : MARKS[m][0];
+  colored() ? styleText(MARKS[m][1], MARKS[m][0], { validateStream: false }) : MARKS[m][0];
 
 export const title = (text: string): string => `✦ ${text}`;
 
@@ -39,11 +41,13 @@ export const panel = (head: string, lines: string[], end: string): string =>
 
 /**
  * 外から来た文字（PR・issue の本文、DB に残ったエラー文）を枠の中へ出せる形にする。CR で行頭の │ を上書きしたり、
- * 制御文字で端末を乱したりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にし、ほかの制御文字と書式文字を落とす
- * （文字の結合に要る ZWJ・ZWNJ は残す）。
+ * 制御文字で端末を乱したり、双方向の制御で表示の向きを変えたりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にする。
+ * ほかの書式文字（ZWJ、旗のタグ、ソフトハイフン）は本文の一部なので残す。
  */
 export const plain = (s: string): string =>
-  s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+  s
+    .replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n")
+    .replace(/(?![\t\n])\p{Cc}|[\u202a-\u202e\u2066-\u2069]/gu, "");
 
 /**
  * 端末での表示幅の近似。U+00FF を超える文字を 2 桁と数えるので、全角は合い、ラテン拡張や記号は多めに数える

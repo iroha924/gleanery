@@ -24457,7 +24457,8 @@ var MARKS = {
   fail: ["✗", "red"],
   none: ["○", "gray"]
 };
-var mark = (m) => process.stderr.isTTY ? styleText(MARKS[m][1], MARKS[m][0], { stream: process.stdout }) : MARKS[m][0];
+var colored = () => Boolean(process.stdout.isTTY && process.stderr.isTTY) && !process.env.NO_COLOR;
+var mark = (m) => colored() ? styleText(MARKS[m][1], MARKS[m][0], { validateStream: false }) : MARKS[m][0];
 var title = (text) => `✦ ${text}`;
 var rule = (text) => text.split(`
 `).map((line) => line ? `│ ${line}` : "│").join(`
@@ -24466,7 +24467,7 @@ var foot = (text) => `╰─ ${text}`;
 var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
 `);
 var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
-`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+`).replace(/(?![\t\n])\p{Cc}|[\u202a-\u202e\u2066-\u2069]/gu, "");
 var width = (text) => [...text].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0);
 var pad = (text, to) => text + " ".repeat(Math.max(1, to - width(text)));
 
@@ -26829,9 +26830,14 @@ ${decisions.rows.map((d) => `- ${d.source_key}（${d.status}）${head(d.body, 20
 }
 async function doctor(env, cwd) {
   const issues = [];
-  const say = (m, label, text2) => {
+  const count = (m, label) => {
     if (m === "warn" || m === "fail")
       issues.push(label);
+    if (m === "fail")
+      process.exitCode = 1;
+  };
+  const say = (m, label, text2) => {
+    count(m, label);
     console.log(rule(`${mark(m)} ${pad(label, 26)}${text2}`));
   };
   console.log(title("mitos doctor"));
@@ -26851,12 +26857,13 @@ async function doctor(env, cwd) {
       });
       say("ok", KEY[role], "繋がる / schema は期待どおり");
     } catch (e) {
-      say("fail", KEY[role], `繋がらない: ${e instanceof Error ? e.message : e}`);
+      say("fail", KEY[role], `繋がらない: ${plain(e instanceof Error ? e.message : String(e))}`);
     }
   }
   say(env.VOYAGE_API_KEY ? "ok" : "fail", "VOYAGE_API_KEY", env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）");
   const s = readState();
-  say(s.error ? "fail" : s.rejected ? "warn" : "ok", "自動記録", `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.error ? ` / 失敗: ${plain(s.error)}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
+  const stuck = Boolean(s.error) && s.pending > 0;
+  say(stuck ? "fail" : s.rejected ? "warn" : "ok", "自動記録", `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${stuck ? ` / 失敗: ${plain(s.error ?? "")}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
   if (env[KEY.reader]) {
     try {
       await withDb(env, "reader", async (c) => {
@@ -26884,15 +26891,13 @@ ${rule("作業場所")}`);
           const days = x.last_success_at ? Math.floor((Date.now() - x.last_success_at.getTime()) / 86400000) : null;
           const stale = x.provider !== null && (days === null || days >= 2);
           const m = x.last_error ? "fail" : x.provider === null ? "none" : stale ? "warn" : "ok";
-          if (m !== "ok")
-            issues.push(`作業場所 ${label(x)}`);
+          count(m, `作業場所 ${label(x)}`);
           const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
           console.log(rule(`  ${mark(m)} ${pad(label(x), column)}${x.last_success_at ? `${x.last_success_at.toLocaleString("sv-SE")}（${days} 日前）${stale ? " ← 日次同期が止まっているかもしれない" : ""}` : "まだ同期していない"}${x.last_error ? ` / 失敗: ${plain(x.last_error)}` : ""}${where}`));
         }
       });
     } catch (e) {
       say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
-      process.exitCode = 1;
     }
   }
   const fix = [...new Set(issues)];
@@ -27110,7 +27115,7 @@ ${USAGE}`);
             failed.push(p.name);
             const lines = plain(e instanceof Error ? e.message : String(e)).split(`
 `);
-            console.error(rule([`${mark("fail")} ${p.name}`, ...lines.map((l) => `  ${l.trim()}`)].join(`
+            console.error(rule([`${mark("fail")} ${p.name}`, ...lines.map((l) => l.trim() ? `  ${l.trim()}` : "")].join(`
 `)));
           }
         }
@@ -27183,8 +27188,6 @@ ${USAGE}`);
   }
 }
 main2().catch((e) => {
-  const [cmd, sub] = process.argv.slice(2);
-  const name = cmd && ["project", "trace", "capture"].includes(cmd) && sub && !sub.startsWith("-") ? `${cmd} ${sub}` : cmd;
-  console.error(panel(`mitos ${name ?? ""}`.trim(), [plain(e instanceof Error ? e.message : String(e))], `${mark("fail")} 止まった`));
+  console.error(panel(`mitos ${process.argv[2] ?? ""}`.trim(), [plain(e instanceof Error ? e.message : String(e))], `${mark("fail")} 止まった`));
   process.exit(1);
 });

@@ -131,7 +131,8 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 // ---- 状態の印が、CLI と review の台帳で揃っているか ----
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
-// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。
+// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。**並び順ごと比べる** — MARKS は 良い・見る・壊れている・情報、
+// 台帳は 実行・打ち切り・不能・未実行 の順で、同じ位置どうしが対になる（集合で比べると印の入れ替えを見逃す）。
 const marks = [
   ...(
     grab("server/src/panel.ts", /const MARKS = \{([\s\S]*?)\} as const;/, "panel.ts の MARKS") ?? ""
@@ -142,7 +143,7 @@ const ledger = [
     /`(.)`/g,
   ),
 ].map((m) => m[1]);
-if (marks.length && ledger.length && !same(marks, ledger)) {
+if (marks.length && ledger.length && marks.join() !== ledger.join()) {
   fail.push(
     `状態の印が揃っていない: panel.ts は ${marks.join(" ")}、review Skill の台帳は ${ledger.join(" ")}`,
   );

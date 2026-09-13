@@ -228,8 +228,13 @@ async function traceContext(env: Env, cwd: string, host?: string): Promise<strin
 
 async function doctor(env: Env, cwd: string): Promise<void> {
   const issues: string[] = [];
-  const say = (m: Mark, label: string, text: string) => {
+  // ✗ が 1 つでもあれば終了コードを 1 にする（△ と ○ は 0 のまま）。
+  const count = (m: Mark, label: string) => {
     if (m === "warn" || m === "fail") issues.push(label);
+    if (m === "fail") process.exitCode = 1;
+  };
+  const say = (m: Mark, label: string, text: string) => {
+    count(m, label);
     console.log(rule(`${mark(m)} ${pad(label, 26)}${text}`));
   };
   console.log(title("mitos doctor"));
@@ -254,7 +259,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
       });
       say("ok", KEY[role], "繋がる / schema は期待どおり");
     } catch (e) {
-      say("fail", KEY[role], `繋がらない: ${e instanceof Error ? e.message : e}`);
+      say("fail", KEY[role], `繋がらない: ${plain(e instanceof Error ? e.message : String(e))}`);
     }
   }
   say(
@@ -263,11 +268,13 @@ async function doctor(env: Env, cwd: string): Promise<void> {
     env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）",
   );
   const s = readState();
+  // 送れていないのは、失敗が残っていて待ちもあるときだけ（session の開始時の警告と同じ条件）。待ちが空になれば失敗は過去のもの。
+  const stuck = Boolean(s.error) && s.pending > 0;
   say(
-    s.error ? "fail" : s.rejected ? "warn" : "ok",
+    stuck ? "fail" : s.rejected ? "warn" : "ok",
     "自動記録",
     `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
-      s.error ? ` / 失敗: ${plain(s.error)}` : ""
+      stuck ? ` / 失敗: ${plain(s.error ?? "")}` : ""
     }${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${
       s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
     }`,
@@ -322,7 +329,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
           // 取り込み元の無い作業場所（GitHub も git も持たない）は同期するものが無いので、直すものに数えない。
           const stale = x.provider !== null && (days === null || days >= 2);
           const m: Mark = x.last_error ? "fail" : x.provider === null ? "none" : stale ? "warn" : "ok";
-          if (m !== "ok") issues.push(`作業場所 ${label(x)}`);
+          count(m, `作業場所 ${label(x)}`);
           const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
           console.log(
             rule(
@@ -337,7 +344,6 @@ async function doctor(env: Env, cwd: string): Promise<void> {
       });
     } catch (e) {
       say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
-      process.exitCode = 1;
     }
   }
   const fix = [...new Set(issues)];
@@ -646,7 +652,11 @@ async function main(): Promise<void> {
             failed.push(p.name);
             const lines = plain(e instanceof Error ? e.message : String(e)).split("\n");
             console.error(
-              rule([`${mark("fail")} ${p.name}`, ...lines.map((l) => `  ${l.trim()}`)].join("\n")),
+              rule(
+                [`${mark("fail")} ${p.name}`, ...lines.map((l) => (l.trim() ? `  ${l.trim()}` : ""))].join(
+                  "\n",
+                ),
+              ),
             );
           }
         }
@@ -758,14 +768,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
-  const [cmd, sub] = process.argv.slice(2);
-  const name =
-    cmd && ["project", "trace", "capture"].includes(cmd) && sub && !sub.startsWith("-")
-      ? `${cmd} ${sub}`
-      : cmd;
   console.error(
     panel(
-      `mitos ${name ?? ""}`.trim(),
+      `mitos ${process.argv[2] ?? ""}`.trim(),
       [plain(e instanceof Error ? e.message : String(e))],
       `${mark("fail")} 止まった`,
     ),

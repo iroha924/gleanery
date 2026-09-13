@@ -24119,7 +24119,7 @@ var foot = (text) => `╰─ ${text}`;
 var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
 `);
 var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
-`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+`).replace(/(?![\t\n])\p{Cc}|[\u202a-\u202e\u2066-\u2069]/gu, "");
 
 // server/src/capture.ts
 var spoolDir = () => path3.join(os3.homedir(), ".claude", "mitos-spool");
