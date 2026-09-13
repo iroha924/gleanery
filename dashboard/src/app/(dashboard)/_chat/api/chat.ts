@@ -1,25 +1,17 @@
-import type { Polarity } from "@/lib/api";
-import { authed, get } from "@/lib/api-client";
+import type { Stance } from "@/lib/api";
+import { authed } from "@/lib/api-client";
 
+/** 答えの根拠。n は本文の [n] に対応する。ref は全文を読むときに /api/read へ渡す。 */
 export type ChatSource = {
   n: number;
-  actor: string | null;
+  ref: string;
   label: string;
+  stance: Stance;
   text: string;
-  polarity: Polarity;
-  recordId: string;
-  recordTitle: string;
-  scope: string;
+  speaker: string | null;
+  project: string;
   at: string | null;
-  url?: string | null;
-};
-
-type ChatDetail = {
-  id: string;
-  title: string | null;
-  scope_ids: number[];
-  scope_name: string | null;
-  messages: { role: "user" | "assistant"; content: string; sources: ChatSource[]; at: string }[];
+  url: string | null;
 };
 
 export type PolishOption = {
@@ -27,8 +19,6 @@ export type PolishOption = {
   text: string;
   changed: string[];
 };
-
-export const loadChat = (id: string) => get<ChatDetail>(`/api/chats/${encodeURIComponent(id)}`);
 
 export async function polishTranscript(text: string): Promise<PolishOption[]> {
   const res = await fetch("/api/polish", {
@@ -51,20 +41,18 @@ export async function transcribe(audio: Blob): Promise<string> {
   return json.text ?? "";
 }
 
+/** 質問を送り、答えを流して受け取る。**会話は保存されない**（履歴は画面が持って次の質問と一緒に送る）。 */
 export async function askStream(
   body: {
     question: string;
     history: { role: "user" | "assistant"; content: string }[];
-    scopeIds: number[];
-    chatId?: string;
-    scopeName?: string;
+    projects: number[];
   },
   on: {
     sources: (sources: ChatSource[]) => void;
     text: (text: string) => void;
     error: (message: string) => void;
-    saved?: (chatId: string) => void;
-    cost?: (question: number, month: number | null) => void;
+    cost?: (question: number) => void;
   },
   signal?: AbortSignal,
 ): Promise<void> {
@@ -74,6 +62,10 @@ export async function askStream(
     body: JSON.stringify(body),
     signal,
   });
+  if (!res.ok) {
+    const json = (await res.json().catch(() => ({}))) as { error?: unknown };
+    throw new Error(typeof json.error === "string" ? json.error : `チャットが ${res.status}`);
+  }
   if (!res.body) throw new Error("応答が空");
 
   const reader = res.body.getReader();
@@ -93,8 +85,7 @@ export async function askStream(
       const data = JSON.parse(raw);
       if (event === "sources") on.sources(data.sources);
       else if (event === "text") on.text(data.text);
-      else if (event === "saved") on.saved?.(data.chatId);
-      else if (event === "cost") on.cost?.(data.question, data.month);
+      else if (event === "cost") on.cost?.(data.question);
       else if (event === "error") on.error(data.message);
     }
   }

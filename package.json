@@ -9,15 +9,15 @@
     "dashboard": "bun run --cwd dashboard dev",
     "build": "bun run --cwd dashboard build",
     "lint": "bunx --bun @biomejs/biome@2.5.12 check .",
-    "architecture": "node scripts/check-dashboard-boundaries.mjs && node scripts/check-github-boundaries.mjs",
+    "architecture": "node scripts/check-dashboard-boundaries.mjs",
     "verify:ai": "node scripts/check-ai-config.mjs",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd dashboard typecheck",
     "check": "bun run lint && bun run architecture && bun run verify:ai && bun run typecheck",
-    "test": "bun run --cwd server test && node plugin/skills/trace/evals/run.mjs",
+    "test": "bun run --cwd server test",
     "verify": "bun run check && bun run test && bun run build",
-    "bundle": "bun build server/src/mcp.ts --target=node --outfile plugin/dist/mcp.js && bun build server/src/hook-check-path.ts --target=node --outfile plugin/dist/hook-check-path.js && bun build server/src/cli.ts --target=node --outfile plugin/dist/cli.js",
-    "eval": "cd server && node evals/answers.ts && node evals/multi.ts",
-    "eval:gen": "cd server && node evals/generate.ts",
-    "eval:lexical": "cd server && node evals/lexical.ts"
+    "bundle": "bun build server/src/mcp.ts --target=node --outfile plugin/dist/mcp.js && bun build server/src/capture.ts --target=node --outfile plugin/dist/capture.js && bun build server/src/cli.ts --target=node --outfile plugin/dist/cli.js",
+    "db:apply": "node server/src/admin.ts apply",
+    "db:reset": "node server/src/admin.ts reset",
+    "db:roles": "node server/src/admin.ts roles"
   }
 }

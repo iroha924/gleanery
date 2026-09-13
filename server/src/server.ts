@@ -3,11 +3,8 @@
 import { clerkMiddleware, getAuth } from "@clerk/hono";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
-import chatRoutes from "./http/routes/chats.ts";
-import githubRoutes from "./http/routes/github.ts";
-import githubWebhookRoutes from "./http/routes/github-webhooks.ts";
+import chatRoutes from "./http/routes/chat.ts";
 import knowledgeRoutes from "./http/routes/knowledge.ts";
-import settingsRoutes from "./http/routes/settings.ts";
 import speechRoutes from "./http/routes/speech.ts";
 import { env } from "./http/runtime.ts";
 
@@ -37,9 +34,6 @@ const authorizedParties = [...configuredOrigins, ...ownOrigins];
 
 const app = new Hono();
 
-// GitHub signs this public endpoint. It cannot use a Clerk browser session.
-app.route("/webhooks", githubWebhookRoutes);
-
 // Every user API route passes Clerk token verification and the single-user authorization boundary first.
 app.use("/api/*", clerkMiddleware({ secretKey, publishableKey, authorizedParties }));
 app.use("/api/*", async (c, next) => {
@@ -54,8 +48,6 @@ app.use("/api/*", async (c, next) => {
 });
 
 app.route("/api", knowledgeRoutes);
-app.route("/api", settingsRoutes);
-app.route("/api", githubRoutes);
 app.route("/api", speechRoutes);
 app.route("/api", chatRoutes);
 

@@ -1,6 +1,6 @@
 ---
 name: review-conventions
-description: プロジェクトが自ら明文化している規約・制約に照らして diff を確認する。CLAUDE.md / AGENTS.md、rules ファイル、ADR、ドキュメント、スキーマ、そして周辺コードが既に踏襲しているパターン。CLAUDE.md や rules に違反していないか確認する時に使用。ADR・スキーマ・ドキュメントと実装の食い違いを検出したい時に使用。周辺コードの確立されたパターンから逸脱していないか確認する時に使用。一般的なコード品質は対象外で、セキュリティ（review-security）や正しさ（review-adversarial）も対象外。変更を生んだ思考ではなく明文化されたルールに基づいて判断させるため、fork ではなく必ず新規エージェントとして起動すること。範囲と変更ファイル一覧を渡せば diff は自分で読む。依頼元の会話にはアクセスできない。
+description: diff を、プロジェクトが明文化した規約（AGENTS.md・rules・ADR・schema・周辺コードの型）に照らす独立レビュアー。fork にせず新規エージェントとして起動し、範囲と変更ファイル一覧だけを渡す。
 tools: Read, Grep, Glob, Bash
 model: opus
 effort: medium

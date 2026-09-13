@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "mitos",
-  "description": "作業の判断を記録し、横断して引くための plugin",
+  "description": "過去の判断と会話を、開発中に引くための plugin",
   "owner": {
     "name": "iroha924",
     "email": "shunichi@hir4ta.com"
@@ -9,8 +9,8 @@
   "plugins": [
     {
       "name": "mitos",
-      "description": "作業の判断を記録し、過去の決定・行き止まり・制約を横断して引く",
-      "version": "0.10.35",
+      "description": "会話と判断を貯め、過去の決定・棄却した案・制約・発言を引く",
+      "version": "0.11.7",
       "source": "./plugin",
       "author": {
         "name": "iroha924",

@@ -25,78 +25,104 @@ const grab = (file, re, what) => {
   }
   return m[1];
 };
-
-// ---- node.kind の一覧が AI 向けの 2 つの出口で揃っているか ----
-//
-// 正本は DB の check 制約だが、広げる移行が複数ファイルに散るので、出口どうしを突き合わせる。
-// **片方に足してもう片方を忘れた**を捕まえられれば足りる。
-// 漏れると何が起きるかは .agents/skills/knowledge-schema/SKILL.md「nodeと検索の出口」。
-const kindSets = {
-  "server/src/mcp.ts（MCP の kinds）": grab(
-    "server/src/mcp.ts",
-    /kinds:\s*z\s*\.array\(\s*z\.enum\(\[([^\]]*)\]\)/,
-    "MCP の kinds enum",
-  )?.match(/"[a-z_]+"/g),
-  "server/src/search.ts（再ランクへ渡す札）": grab(
-    "server/src/search.ts",
-    /const LABEL[^{]*\{(.*?)^\};/ms,
-    "search.ts の LABEL",
-  )?.match(/^\s*"([a-z_]+)\//gm),
+/** 引用符で囲んだ語を並べる。1 つも無ければ取り出しの失敗として報告する。 */
+const words = (text, quote, what) => {
+  const got = [...(text ?? "").matchAll(new RegExp(`${quote}([a-z_-]+)${quote}`, "g"))].map((m) => m[1]);
+  if (text !== null && got.length === 0) fail.push(`${what} から値を 1 つも取り出せない`);
+  return got;
 };
+const same = (a, b) => [...a].sort().join() === [...b].sort().join();
 
-const kinds = {};
-for (const [where, hit] of Object.entries(kindSets)) {
-  // **0 件を「差が無い」と読ませない。**ここで黙って飛ばすと、その出口が照合から外れたまま
-  // 全体は成功で終わる。検査が効かなくなったこと自体を差と同じ強さで報告する。
-  if (!hit?.length) {
-    fail.push(`${where} から kind を 1 つも取り出せない。check-pairs.mjs の正規表現が実物とずれている`);
-    continue;
-  }
-  kinds[where] = new Set(hit.map((s) => s.replace(/[^a-z_]/g, "")));
-}
-const all = new Set(Object.values(kinds).flatMap((s) => [...s]));
-for (const [where, set] of Object.entries(kinds)) {
-  const missing = [...all].filter((k) => !set.has(k)).sort();
-  if (missing.length) {
+// ---- 値の域が、DB の CHECK とコードで揃っているか ----
+//
+// 正本は db/schema.sql の CHECK。コード側（server/src/knowledge.ts）の写しを、MCP の入力・trace の検査・札・
+// 自動記録と取り込みの型が参照する（札の表は型で全部の状態を持たされる）。**片方に足してもう片方を忘れた**を捕まえる。
+// DB だけに足すと検索の札が空になり、コードだけに足すと取り込みや自動記録が CHECK で落ちる
+// （Read した成果物を action 'read' で送り、CHECK が edit / review しか許さずに自動記録が止まった実例がある）。
+const schema = read("db/schema.sql");
+const knowledgeTable = schema.slice(
+  schema.indexOf("create table mitos.knowledge ("),
+  schema.indexOf("create index knowledge_listing"),
+);
+const PAIRS = [
+  ["knowledge.kind", /kind in \(([^)]*)\)\s*\),\s*status text/, "KINDS"],
+  ["message.speaker_kind", /speaker_kind text not null check \(speaker_kind in \(([^)]*)\)\)/, "SPEAKERS"],
+  ["conversation.origin", /origin text not null check \(origin in \(([^)]*)\)\)/, "ORIGINS"],
+  ["message_file.action", /action text not null check \(action in \(([^)]*)\)\)/, "FILE_ACTIONS"],
+];
+for (const [column, re, constant] of PAIRS) {
+  const db = words(grab("db/schema.sql", re, `${column} の CHECK`), "'", `${column} の CHECK`);
+  const code = words(
+    grab(
+      "server/src/knowledge.ts",
+      new RegExp(`export const ${constant} = \\[([^\\]]*)\\]`),
+      `knowledge.ts の ${constant}`,
+    ),
+    '"',
+    `knowledge.ts の ${constant}`,
+  );
+  if (db.length && code.length && !same(db, code))
     fail.push(
-      `kind の ${missing.join(" / ")} が ${where} に無い。` +
-        "足し方は .agents/skills/knowledge-schema/SKILL.md「nodeと検索の出口」",
+      `${column} が揃っていない: DB は ${db.join(" / ")}、knowledge.ts の ${constant} は ${code.join(" / ")}`,
+    );
+}
+const dbStatuses = Object.fromEntries(
+  [...knowledgeTable.matchAll(/when '([a-z_]+)' then status is not null and status in \(([^)]*)\)/g)].map(
+    (m) => [
+      m[1],
+      [...m[2].matchAll(/'([a-z_]+)'/g)]
+        .map((x) => x[1])
+        .sort()
+        .join(),
+    ],
+  ),
+);
+const codeStatuses = Object.fromEntries(
+  [
+    ...(
+      grab(
+        "server/src/knowledge.ts",
+        /export const STATUSES = \{(.*?)\} as const/s,
+        "knowledge.ts の STATUSES",
+      ) ?? ""
+    ).matchAll(/([a-z_]+): \[([^\]]*)\]/g),
+  ].map((m) => [
+    m[1],
+    [...m[2].matchAll(/"([a-z_]+)"/g)]
+      .map((x) => x[1])
+      .sort()
+      .join(),
+  ]),
+);
+if (Object.keys(dbStatuses).length === 0)
+  fail.push(
+    "db/schema.sql から状態の CHECK を 1 つも取り出せない。check-pairs.mjs の正規表現が実物とずれている",
+  );
+for (const kind of new Set([...Object.keys(dbStatuses), ...Object.keys(codeStatuses)])) {
+  if (dbStatuses[kind] !== codeStatuses[kind]) {
+    fail.push(
+      `${kind} の状態が揃っていない: DB は ${dbStatuses[kind] ?? "無し"}、knowledge.ts は ${codeStatuses[kind] ?? "無し"}`,
     );
   }
 }
 
-// ---- 成果物の path の形が、同期・trace・画面で揃っているか ----
+// ---- 成果物の種別が、同期と画面で揃っているか ----
 //
-// 同期（server/src/artifacts.ts）が承認を判定する path と、trace（collect.mjs）がセッションへ結ぶ path は
-// 同じ集合でなければならない。片方だけ変えると、結んだのに表示されない、または承認を通らない path が結ばれる。
-const artifactPatterns = {
-  "server/src/artifacts.ts（同期と API）": grab(
-    "server/src/artifacts.ts",
-    /const ARTIFACT_PATH = (\/.*\/);/,
-    "server の ARTIFACT_PATH",
-  ),
-  "plugin/skills/trace/lib/collect.mjs（trace）": grab(
-    "plugin/skills/trace/lib/collect.mjs",
-    /export const ARTIFACT = (\/.*\/);/,
-    "trace の ARTIFACT",
-  ),
-};
-if (new Set(Object.values(artifactPatterns).filter(Boolean)).size > 1) {
-  fail.push(
-    `成果物の path の形が揃っていない。次を同じ正規表現にする:\n    ${Object.entries(artifactPatterns)
-      .map(([where, re]) => `${where}: ${re}`)
-      .join("\n    ")}`,
-  );
-}
-const pathKinds = Object.values(artifactPatterns)[0]
-  ?.match(/\(([a-z|]+)\)\\\.md/)?.[1]
-  ?.split("|");
+// 同期（server/src/artifacts.ts）が承認を判定する path の種別と、画面が出す成果物の種別は同じ集合でなければならない。
+// 自動記録は同じ ARTIFACT_PATH を読み込むので、ここでは突き合わせない。
+const artifactPattern = grab(
+  "server/src/artifacts.ts",
+  /export const ARTIFACT_PATH = (\/.*\/);/,
+  "server の ARTIFACT_PATH",
+);
+const pathKinds = artifactPattern?.match(/\(([a-z|]+)\)\\\.md/)?.[1]?.split("|");
+if (artifactPattern && !pathKinds?.length) fail.push("ARTIFACT_PATH から成果物の種別を取り出せない");
 const screenKinds = grab(
   "dashboard/src/app/(dashboard)/sessions/_sessions/api/sessions.ts",
   /kind: ((?:"[a-z]+"(?: \| )?)+);/,
   "画面の SessionArtifact.kind",
 )?.match(/[a-z]+/g);
-if (pathKinds && screenKinds && pathKinds.sort().join() !== [...screenKinds].sort().join()) {
+if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
   fail.push(
     `成果物の種別が揃っていない: path は ${pathKinds.join(" / ")}、画面の SessionArtifact.kind は ${screenKinds.join(" / ")}`,
   );
@@ -104,8 +130,8 @@ if (pathKinds && screenKinds && pathKinds.sort().join() !== [...screenKinds].sor
 
 // ---- README の CLI 一覧を USAGE から書き出す ----
 //
-// **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: 9 コマンドのうち
-// import-github だけが README 側で issue に触れ、doctor は README だけが更新されていた）。
+// **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、
+// README 側だけが更新された説明が両方あった）。
 // 正本は USAGE — 端末で `mitos` を叩いた人が見るのはこちらで、README は読み物だから。
 const usage = grab("server/src/cli.ts", /const USAGE = `使い方:\n(.*?)\n\n/s, "cli.ts の USAGE");
 if (usage) {

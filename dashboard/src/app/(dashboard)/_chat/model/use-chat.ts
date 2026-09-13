@@ -1,18 +1,9 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useProject } from "@/lib/project";
-import {
-  askStream,
-  type ChatSource,
-  loadChat,
-  type PolishOption,
-  polishTranscript,
-  transcribe,
-} from "../api/chat";
+import { askStream, type ChatSource, type PolishOption, polishTranscript, transcribe } from "../api/chat";
 
 export type Turn = {
   id: string;
@@ -23,13 +14,17 @@ export type Turn = {
   stopped?: boolean;
 };
 
+/**
+ * チャットの状態。**会話は保存しない**（ブラウザを閉じれば消える）。作業場所を切り替えたら会話を捨てる —
+ * 前の作業場所の答えを文脈に持ったまま、別の作業場所について聞かせない。
+ */
 export function useChat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [cost, setCost] = useState<{ question: number; month: number | null } | null>(null);
-  const { scopeIds: picked, label: projectLabel } = useProject();
-  const scopeIds = picked ?? [];
+  const [cost, setCost] = useState<number | null>(null);
+  const { project, label: projectLabel } = useProject();
+  const projects = project ? [project.id] : [];
   const abort = useRef<AbortController | null>(null);
   const pendingQuestion = useRef<string | null>(null);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
@@ -37,16 +32,6 @@ export function useChat() {
   const [preparing, setPreparing] = useState(false);
   const [options, setOptions] = useState<PolishOption[]>([]);
   const [polishing, setPolishing] = useState(false);
-  const searchParams = useSearchParams();
-  const chatId = searchParams.get("chat") || undefined;
-  const loaded = useRef<string | undefined>(undefined);
-  const activeChatId = useRef(chatId);
-  const queryClient = useQueryClient();
-
-  const setChatId = (id: string | undefined) => {
-    activeChatId.current = id;
-    window.history.pushState(null, "", id ? `/?chat=${encodeURIComponent(id)}` : "/");
-  };
 
   const stop = () => {
     const controller = abort.current;
@@ -127,43 +112,43 @@ export function useChat() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // 作業場所が変わったら、流している答えを止めて会話を捨てる。
+  const projectId = project?.id ?? null;
+  const shown = useRef(projectId);
   useEffect(() => {
-    if (abort.current && activeChatId.current !== chatId) abort.current.abort();
-    activeChatId.current = chatId;
-    if (!chatId) {
-      if (loaded.current) {
-        loaded.current = undefined;
-        setTurns([]);
-      }
-      return;
-    }
-    if (loaded.current === chatId) return;
-    loaded.current = chatId;
-    loadChat(chatId)
-      .then((chat) =>
-        setTurns(
-          chat.messages.map((message, index) => ({
-            id: `${chat.id}-${index}`,
-            role: message.role,
-            content: message.content,
-            sources: message.sources,
-          })),
-        ),
-      )
-      .catch(() => toast.error("会話を開けなかった"));
-  }, [chatId]);
+    if (shown.current === projectId) return;
+    shown.current = projectId;
+    abort.current?.abort();
+    setTurns([]);
+    setCost(null);
+    setOptions([]);
+  }, [projectId]);
 
   useEffect(() => () => abort.current?.abort(), []);
 
   const ask = async (question: string) => {
     setOptions([]);
-    if (!question.trim() || busy || scopeIds.length === 0) return;
+    if (!question.trim() || busy || projects.length === 0) return;
     setDraft("");
     setBusy(true);
     pendingQuestion.current = question;
+    // 文脈にするのは答えまで返った往復の直近 4 往復だけ。止めた往復と失敗した往復は送らない。
+    // サーバーの /api/chat は history を 8 件、1 件 50,000 字（UTF-16 の単位）までしか受けない（越えると以後の質問が
+    // 全部 400 になる）。切り口で絵文字などのサロゲートペアを割らない。
+    const fit = (text: string) => {
+      const cut = text.slice(0, 50_000);
+      return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
+    };
     const history = turns
-      .filter((turn) => !turn.stopped)
-      .map((turn) => ({ role: turn.role, content: turn.content }));
+      .flatMap((turn, index) => {
+        const question = turns[index - 1];
+        if (turn.role !== "assistant" || !question || turn.stopped || turn.error || !turn.content) return [];
+        return [
+          { role: "user" as const, content: fit(question.content) },
+          { role: "assistant" as const, content: fit(turn.content) },
+        ];
+      })
+      .slice(-8);
     const id = crypto.randomUUID();
     setTurns((current) => [
       ...current,
@@ -172,7 +157,6 @@ export function useChat() {
     ]);
 
     const controller = new AbortController();
-    const requestChatId = activeChatId.current;
     abort.current = controller;
     const patchLastTurn = (update: (turn: Turn) => Turn) =>
       setTurns((current) =>
@@ -181,24 +165,12 @@ export function useChat() {
 
     try {
       await askStream(
-        { question, history, scopeIds, chatId: activeChatId.current, scopeName: projectLabel },
+        { question, history, projects },
         {
           sources: (sources) => patchLastTurn((turn) => ({ ...turn, sources })),
           text: (text) => patchLastTurn((turn) => ({ ...turn, content: turn.content + text })),
           error: (message) => patchLastTurn((turn) => ({ ...turn, error: message })),
-          cost: (questionCost, month) => setCost({ question: questionCost, month }),
-          saved: (savedChatId) => {
-            if (abort.current === controller) {
-              abort.current = null;
-              pendingQuestion.current = null;
-              setBusy(false);
-            }
-            if (window.location.pathname === "/" && activeChatId.current === requestChatId) {
-              loaded.current = savedChatId;
-              if (savedChatId !== requestChatId) setChatId(savedChatId);
-            }
-            queryClient.invalidateQueries({ queryKey: ["chats"] });
-          },
+          cost: setCost,
         },
         controller.signal,
       );
@@ -229,8 +201,8 @@ export function useChat() {
     polishing,
     preparing,
     projectLabel,
+    projects,
     recorder,
-    scopeIds,
     setDraft,
     setOptions,
     stop,

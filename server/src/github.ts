@@ -1,35 +1,70 @@
-// GitHub の PR から発言をナレッジにする。
+// GitHub の PR・issue を、今の状態（source_item）と会話（conversation / message）にする。
 //
-// **1 件 = 1 スレッド**（最初の指摘とその返信）。会話は往復で意味が立つので、
-// 発言を 1 つずつ切ると「なぜそう言ったか」と「どう決着したか」が別々の断片になる。
-// 1 スレッドは実測で平均 200〜600 字なので、これ以上の分割は要らない。
+// **経路は `gh` の 1 つだけ。**持ち主 1 人なので `gh auth` がそのまま使え、同期先は Neon なので
+// どれか 1 台の PC が毎日回せば全 PC から引ける。
 //
-// **埋め込む文には文脈を前置する**（Anthropic の Contextual Retrieval と同じ発想）。
-// ここでは PR の題・ファイル・発言者を構造から付けるので、LLM の推論は要らない。
+// PR・issue 1 件が 1 つの会話で、本文・コメント・レビューの指摘がそれぞれ 1 発言になる。
+// レビューの返信は reply_to で親を指し、指されたファイルは message_file に置く（「このファイルについて」で引く）。
+// **一覧は毎回全部取る。**消えたコメントと PR を反映するには完全な一覧が要り、持ち主のリポジトリなら数秒で済む。
+// 書き込みは内容の hash が変わった行だけにし、表ごとに 1 往復でまとめて書く（Neon まで 1 往復 80ms 前後ある）。
+// GitHub から来た文字列は全部 clean() を通す（NUL が 1 つあると transaction ごと落ち、毎日の同期が止まる）。
 
 import { execFileSync } from "node:child_process";
-import crypto from "node:crypto";
-import { actorKind, isNoise } from "./actor.ts";
+import type pg from "pg";
+import { EMBED_MODEL, inTransaction } from "./db.ts";
+import { conversationId, indexesMessage, messageText, type SpeakerKind } from "./knowledge.ts";
+import { connectorOf } from "./project.ts";
+import { clean, sha256, tsvector, uuidFrom } from "./text.ts";
 
-export type Thread = {
-  key: string;
-  pr: number;
-  prTitle: string;
-  path: string | null;
-  line: number | null;
-  at: string;
-  /** 口を開いた順。最初が指摘、以降が返信 */
-  turns: { author: string; body: string; at: string }[];
-  url: string;
+type User = { id: number; login: string } | null;
+
+export type Pull = {
+  number: number;
+  title: string;
+  body: string | null;
+  user: User;
+  state: string;
+  merged_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  html_url: string;
 };
 
-const gh = (repo: string, endpoint: string): unknown[] => {
-  const out = execFileSync("gh", ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"], {
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return (JSON.parse(out) as unknown[][]).flat();
+export type RawIssue = {
+  number: number;
+  title: string;
+  body: string | null;
+  user: User;
+  state: string;
+  closed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+  /** この鍵があるものは PR。issues エンドポイントは PR も返す */
+  pull_request?: unknown;
+};
+
+export type ReviewComment = {
+  id: number;
+  in_reply_to_id?: number;
+  user: User;
+  body: string;
+  path: string;
+  line: number | null;
+  start_line?: number | null;
+  created_at: string;
+  html_url: string;
+  pull_request_url: string;
+};
+
+export type IssueComment = {
+  id: number;
+  user: User;
+  body: string;
+  created_at: string;
+  html_url: string;
+  issue_url: string;
 };
 
 export type GithubSource = {
@@ -39,431 +74,426 @@ export type GithubSource = {
   issueComments: () => Promise<IssueComment[]>;
 };
 
-const cliSource = (repo: string): GithubSource => ({
+function gh(repo: string, endpoint: string): unknown[] {
+  const out = execFileSync("gh", ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"], {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return (JSON.parse(out) as unknown[][]).flat();
+}
+
+export const cliSource = (repo: string): GithubSource => ({
   pulls: async () => gh(repo, "pulls?state=all&per_page=100") as Pull[],
   issues: async () => gh(repo, "issues?state=all&per_page=100") as RawIssue[],
   reviewComments: async () => gh(repo, "pulls/comments?per_page=100") as ReviewComment[],
   issueComments: async () => gh(repo, "issues/comments?per_page=100") as IssueComment[],
 });
 
+// AI のレビューは中身があるので残す。落とすのは推論を含まない自動通知（Terraform の plan、デプロイ URL、
+// カバレッジ表、依存更新）だけ。名前で決めるのは、本文で判定すると書式が変わるたびに漏れるから。
+const AI_REVIEWERS = new Set([
+  "gemini-code-assist[bot]",
+  "coderabbitai[bot]",
+  "cursor[bot]",
+  "claude[bot]",
+  "chatgpt-codex-connector[bot]",
+  "Copilot",
+]);
+
+export type Speaker = Exclude<SpeakerKind, "self">;
+export const speakerOf = (login: string): Speaker =>
+  AI_REVIEWERS.has(login) ? "assistant" : login.endsWith("[bot]") ? "bot" : "person";
+
 // 相槌はナレッジではない。**短さだけで落とさない** — 「これは DBT 側で」は 10 字でも中身がある。
 const FILLER =
   /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:|:eyes:|:pray:)[!！。.\s]*$/i;
-
-const isFiller = (body: string): boolean => {
+export const isFiller = (body: string): boolean => {
   const t = body.trim();
   return t.length === 0 || FILLER.test(t) || /^!?\[[^\]]*\]\([^)]*\)$/.test(t);
 };
 
-export type ReviewComment = {
-  id: number;
-  in_reply_to_id?: number;
-  user: { login: string } | null;
-  body: string;
-  path: string;
-  line: number | null;
-  created_at: string;
-  html_url: string;
-  pull_request_url: string;
-};
-
-export type IssueComment = {
-  id: number;
-  user: { login: string } | null;
-  body: string;
-  created_at: string;
-  html_url: string;
-  issue_url: string;
-};
-
-export type RawIssue = {
+export type Item = {
+  kind: "pull_request" | "issue";
   number: number;
   title: string;
-  body: string | null;
-  user: { login: string } | null;
-  state: string;
-  created_at: string;
-  html_url: string;
-  /** この鍵があるものは PR。issues エンドポイントは PR も返す */
-  pull_request?: unknown;
-};
-
-export type Pull = {
-  number: number;
-  title: string;
-  body: string | null;
-  user: { login: string } | null;
-  state: string;
-  draft?: boolean;
-  merged_at: string | null;
-  created_at: string;
-  html_url: string;
-  head?: { ref?: string };
-};
-
-/**
- * PR と issue そのもの。**コメントだけ入れても本体は入らない。**
- * PR では「私の最新のマージ済み PR」に答えられず（実測）、issue では
- * **本文がまるごと落ちる** — issues/comments は付いたコメントしか返さないので、
- * 実装より先に設計を issue へ書く進め方だと、決めたこと自体が 1 件も入らない
- * （実測: nomophyl の 108 件・213,863 字が全部欠けていた）。
- */
-export type Pr = {
-  number: number;
-  kind: "pr" | "issue";
-  title: string;
-  body: string;
-  author: string;
-  /** open / merged / closed。closed は「マージせず閉じた」 */
   state: "open" | "merged" | "closed";
-  /** 並べ替えに使う日付。マージ済みならマージ日、そうでなければ作成日 */
-  at: string;
-  /** 作った日。**at と別に持つ** — 「作成した最新」と「マージした最新」は別の問い */
-  createdAt: string;
   url: string;
-  branch: string;
+  author: User;
+  createdAt: string;
+  updatedAt: string;
+  /** マージした（PR）か閉じた時刻。開いているものは null */
+  closedAt: string | null;
 };
 
-const prOf = (p: Pull): Pr => ({
-  number: p.number,
-  kind: "pr",
-  title: p.title,
-  body: (p.body ?? "").trim(),
-  author: p.user?.login ?? "unknown",
-  state: p.merged_at ? "merged" : p.state === "open" ? "open" : "closed",
-  // **マージ済みならマージ日。**「最新のマージ済み PR」は作成順ではなくマージ順で並ぶ。
-  at: p.merged_at ?? p.created_at,
-  createdAt: p.created_at,
-  url: p.html_url,
-  branch: p.head?.ref ?? "",
-});
+export type Said = {
+  /** 会話の中で一意。本文は `body`、コメントは `c:<id>`、レビューは `r:<id>` */
+  externalId: string;
+  replyTo: string | null;
+  author: User;
+  speaker: Speaker;
+  body: string;
+  url: string;
+  at: string;
+  file: { path: string; line: number | null; startLine: number | null } | null;
+};
 
-/**
- * 埋め込む文。題と本文だけ。差分は入れない（長すぎて意味が薄まる）。
- *
- * **本文は 12,000 字まで取る。**設計を issue へ書く進め方だと本文がそのまま設計文書になり、
- * 4,000 字では後半が消える（実測: nomophyl の最長 11,450 字、中央値 1,299 字）。
- */
-export const prText = (p: Pr): string =>
-  `${p.kind === "pr" ? "PR" : "issue"} #${p.number} ${p.title}${p.body ? `\n${p.body.slice(0, 12_000)}` : ""}`;
+export type Collected = { items: Item[]; said: Map<number, Said[]> };
 
-/** repo は "owner/name"。PR と issue の本体、レビュー / issue のコメントを返す。 */
-export async function collect(
-  repo: string,
-  source: GithubSource = cliSource(repo),
-): Promise<{ prs: Pr[]; threads: Thread[] }> {
-  const titles = new Map<number, string>();
-  const prs: Pr[] = [];
-  for (const p of await source.pulls()) {
-    titles.set(p.number, p.title);
-    // **PR は bot が作ったものも入れる。**isNoise はコメント用の判定で、
-    // 「Terraform の plan 結果」のような推論を含まない通知を落とすためのもの。
-    // リリース PR は release-bot[bot] が作るので、ここで落とすと
-    // 「いつ何がリリースされたか」に答えられなくなる（実測: dbt #361 が丸ごと欠けていた）。
-    prs.push(prOf(p));
-  }
-
-  // issue 本体。**issues エンドポイントは PR も返す**ので、pull_request を持つものは
-  // 上の pulls で入っている。番号も本文も同じなので、ここで落とさないと二重になる。
-  //
-  // **PR と違って、bot が作った issue は入れない。**PR で bot を入れているのは
-  // リリース PR が release-bot 名義だからで、issue にその事情は無い。定期実行の
-  // レポートが同じ形で並ぶだけになる（実測: monopoly-source は非 PR issue 68 件のうち
-  // 62 件が bot 作で、本文の 96% にあたる 531,741 字を占める。人が書いたのは 18,999 字）。
-  // isNoise は推論を含まない通知だけを落とすので、AI が書いた issue は残る。
-  for (const i of await source.issues()) {
-    if (i.pull_request || isNoise(i.user?.login ?? "")) continue;
-    titles.set(i.number, i.title);
-    prs.push({
-      number: i.number,
-      kind: "issue",
-      title: i.title,
-      body: (i.body ?? "").trim(),
-      author: i.user?.login ?? "unknown",
-      // issue に merged は無い。closed は「解決した」と「やらないことにした」の両方を含む。
-      state: i.state === "open" ? "open" : "closed",
-      at: i.created_at,
-      createdAt: i.created_at,
-      url: i.html_url,
-      branch: "",
+/** PR と issue の本体、コメント、レビューを集めて、書き込む形へ揃える。 */
+export async function collect(source: GithubSource): Promise<Collected> {
+  const items = new Map<number, Item>();
+  // ページ送りの最中に新しい PR やコメントが入ると、境界の項目が 2 ページに現れる。同じ発言は 1 つにする
+  // （まとめて書く upsert に同じ id が 2 行あると、transaction ごと落ちる）。
+  const said = new Map<number, Map<string, Said>>();
+  const push = (n: number, s: Said) => said.set(n, (said.get(n) ?? new Map()).set(s.externalId, s));
+  const who = (u: User): User => (u ? { id: u.id, login: clean(u.login) } : null);
+  const body = (n: number, author: User, text: string | null, at: string, url: string) => {
+    const t = clean(text ?? "").trim();
+    if (!t || !author) return;
+    push(n, {
+      externalId: "body",
+      replyTo: null,
+      author,
+      speaker: speakerOf(author.login),
+      body: t,
+      url,
+      at,
+      file: null,
     });
-  }
-
-  const threads = new Map<string, Thread>();
-
-  // レビューコメント。in_reply_to_id で親子が取れるので、スレッドに束ねられる。
-  const reviews = await source.reviewComments();
-  const byId = new Map(reviews.map((r) => [r.id, r]));
-  for (const r of reviews) {
-    if (isFiller(r.body) || isNoise(r.user?.login ?? "")) continue;
-    const root = r.in_reply_to_id ? (byId.get(r.in_reply_to_id) ?? r) : r;
-    const pr = Number(root.pull_request_url.split("/").pop());
-    const key = `pr-review:${repo}#${pr}:${root.id}`;
-    const t = threads.get(key) ?? {
-      key,
-      pr,
-      prTitle: titles.get(pr) ?? "",
-      path: root.path ?? null,
-      line: root.line ?? null,
-      at: root.created_at,
-      turns: [],
-      url: root.html_url,
-    };
-    t.turns.push({ author: r.user?.login ?? "unknown", body: r.body.trim(), at: r.created_at });
-    threads.set(key, t);
-  }
-
-  // issue / PR 本体のコメント。親子が無いので 1 件 = 1 スレッド。
-  for (const c of await source.issueComments()) {
-    if (isFiller(c.body) || isNoise(c.user?.login ?? "")) continue;
-    const num = Number(c.issue_url.split("/").pop());
-    const key = `issue:${repo}#${num}:${c.id}`;
-    threads.set(key, {
-      key,
-      pr: num,
-      prTitle: titles.get(num) ?? "",
-      path: null,
-      line: null,
-      at: c.created_at,
-      turns: [{ author: c.user?.login ?? "unknown", body: c.body.trim(), at: c.created_at }],
-      url: c.html_url,
-    });
-  }
-
-  for (const t of threads.values()) t.turns.sort((a, b) => a.at.localeCompare(b.at));
-  return {
-    prs: prs.sort((a, b) => a.at.localeCompare(b.at)),
-    threads: [...threads.values()].sort((a, b) => a.at.localeCompare(b.at)),
   };
+
+  for (const p of await source.pulls()) {
+    // **bot が作った PR も入れる。**リリース PR は release-bot 名義で、落とすと「いつ何を出したか」が消える。
+    const state = p.merged_at ? "merged" : p.state === "open" ? "open" : "closed";
+    const url = clean(p.html_url);
+    items.set(p.number, {
+      kind: "pull_request",
+      number: p.number,
+      title: clean(p.title),
+      state,
+      url,
+      author: who(p.user),
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+      closedAt: state === "open" ? null : (p.merged_at ?? p.closed_at ?? p.updated_at),
+    });
+    body(p.number, who(p.user), p.body, p.created_at, url);
+  }
+  for (const i of await source.issues()) {
+    // issues エンドポイントは PR も返す。**bot が作った issue は入れない**（定期レポートが並ぶだけになる）。
+    if (i.pull_request || speakerOf(i.user?.login ?? "") === "bot") continue;
+    const state = i.state === "open" ? "open" : "closed";
+    const url = clean(i.html_url);
+    items.set(i.number, {
+      kind: "issue",
+      number: i.number,
+      title: clean(i.title),
+      state,
+      url,
+      author: who(i.user),
+      createdAt: i.created_at,
+      updatedAt: i.updated_at,
+      closedAt: state === "open" ? null : (i.closed_at ?? i.updated_at),
+    });
+    body(i.number, who(i.user), i.body, i.created_at, url);
+  }
+
+  const keep = (author: User, text: string) =>
+    Boolean(author) && speakerOf(author?.login ?? "") !== "bot" && !isFiller(text);
+  for (const r of await source.reviewComments()) {
+    const n = Number(r.pull_request_url.split("/").pop());
+    if (!items.has(n) || !keep(r.user, r.body)) continue;
+    push(n, {
+      externalId: `r:${r.id}`,
+      replyTo: r.in_reply_to_id ? `r:${r.in_reply_to_id}` : null,
+      author: who(r.user),
+      speaker: speakerOf(r.user?.login ?? ""),
+      body: clean(r.body).trim(),
+      url: clean(r.html_url),
+      at: r.created_at,
+      file: { path: clean(r.path), line: r.line ?? null, startLine: r.start_line ?? null },
+    });
+  }
+  for (const c of await source.issueComments()) {
+    const n = Number(c.issue_url.split("/").pop());
+    if (!items.has(n) || !keep(c.user, c.body)) continue;
+    push(n, {
+      externalId: `c:${c.id}`,
+      replyTo: null,
+      author: who(c.user),
+      speaker: speakerOf(c.user?.login ?? ""),
+      body: clean(c.body).trim(),
+      url: clean(c.html_url),
+      at: c.created_at,
+      file: null,
+    });
+  }
+  // 返信の親が落とされた（相槌だった）ときは、親を持たない発言として残す。
+  const lists = new Map([...said].map(([n, m]) => [n, [...m.values()]]));
+  for (const list of lists.values()) {
+    const ids = new Set(list.map((s) => s.externalId));
+    for (const s of list) if (s.replyTo && !ids.has(s.replyTo)) s.replyTo = null;
+  }
+  return { items: [...items.values()], said: lists };
 }
 
-/** 埋め込みへ渡す文。**構造から文脈を付ける。** */
-export function threadText(t: Thread): string {
-  const where = t.path ? `${t.path}${t.line ? `:${t.line}` : ""}` : "";
-  const head = [`PR #${t.pr}`, t.prTitle, where].filter(Boolean).join(" / ");
-  const body = t.turns.map((x, i) => `${i === 0 ? "指摘" : "返信"} @${x.author}: ${x.body}`).join("\n");
-  return `${head}\n${body}`;
-}
-
-export const threadHash = (t: Thread): string =>
-  crypto.createHash("sha256").update(threadText(t)).digest("hex");
-
-// --- DB へ入れる ---
-
-import { type Db, EMBED_MODEL, type Env, embed, vec } from "./db.ts";
-
-// 1 トランザクションで扱う件数。
-//
-// **全件を 1 つのトランザクションに入れない。**begin してから埋め込みを取りに行くので、
-// その間ずっと「開いたまま何もしていない」状態になる。実測: main-repo は
-// スレッド 24,568 件で、埋め込みだけで 30 分を超えた。途中で切れると全部消えるうえ、
-// 30 分ぶんの API 費用も無駄になる。分けて確定すれば、落ちても続きから再開できる
-// （content_hash が一致するものは次回そのまま飛ばされる）。
-const CHUNK = 500;
+const itemHash = (i: Item): Buffer =>
+  sha256(
+    JSON.stringify([
+      i.kind,
+      i.title,
+      i.state,
+      i.url,
+      i.author?.id ?? null,
+      i.createdAt,
+      i.updatedAt,
+      i.closedAt,
+    ]),
+  );
 
 /**
- * スレッドを node へ入れる。
- * **`content_hash` が変わったものだけ埋め込みを取り直す。**日次で回すので、
- * 毎回全件を埋め込むと費用と時間が線形に増える。
+ * 1 つの作業場所の GitHub を同期する。repo は `owner/name`。
+ * **読み始めた時刻が、既に入っている snapshot より古ければ書かない**（遅れて commit した同期が新しい状態を巻き戻さない）。
  */
-export async function ingestThreads(
-  client: Db,
-  env: Env,
+export async function syncGithub(
+  client: pg.Client,
+  projectId: number,
+  projectName: string,
   repo: string,
-  scopeId: number,
-  prs: Pr[],
-  threads: Thread[],
-  onProgress?: (m: string) => void,
-): Promise<{ total: number; prs: number; embedded: number }> {
-  const recordId = `github:${repo}`;
+): Promise<string> {
+  // snapshot の時刻は DB の時計で取る。PC の時計が進んでいると、その差の分だけ他の PC の同期が止まる。
+  const snapshotAt = (await client.query<{ now: Date }>("select now()")).rows[0]?.now;
+  if (!snapshotAt) throw new Error("DB の時刻を取れなかった");
+  const { items, said } = await collect(cliSource(repo));
 
-  // リポジトリ 1 つ = 記録 1 つ。個々のスレッドはその下の node。
-  await client.query(
-    `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
-     values ($1,$2,'github/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
-     on conflict (id) do update set updated_at = now(), ingested_at = now()`,
-    [recordId, scopeId, `${repo} のレビューと議論`],
-  );
+  const counts = await inTransaction(client, async () => {
+    const connector = await connectorOf(client, projectId, "github");
+    // 取得を始めた後に、別の同期がより新しい取得を入れていれば書かない（遅れた古い取得で巻き戻さない）。
+    if (connector.snapshotAt && snapshotAt.getTime() < connector.snapshotAt.getTime()) return null;
 
-  const existing = new Map(
-    (
-      await client.query<{ key: string; content_hash: string; has_emb: boolean }>(
-        "select key, content_hash, embedding is not null as has_emb from node where record_id=$1",
-        [recordId],
-      )
-    ).rows.map((r) => [r.key, r]),
-  );
+    // 発言者。login は変えられるので user id で結び、handle は今の login に揃える。
+    const users = new Map<number, string>();
+    for (const i of items) if (i.author) users.set(i.author.id, i.author.login);
+    for (const list of said.values())
+      for (const s of list) if (s.author) users.set(s.author.id, s.author.login);
+    const ids = new Map<number, string>();
+    if (users.size) {
+      await client.query(
+        `insert into mitos.person_identity (provider, external_id, handle)
+         select 'github', t.id, t.handle from unnest($1::text[], $2::text[]) as t(id, handle)
+         on conflict (provider, external_id) do update set handle = excluded.handle
+           where mitos.person_identity.handle <> excluded.handle`,
+        [[...users.keys()].map(String), [...users.values()]],
+      );
+      const all = await client.query<{ id: string; external_id: string }>(
+        "select id, external_id from mitos.person_identity where provider = 'github' and external_id = any($1)",
+        [[...users.keys()].map(String)],
+      );
+      for (const x of all.rows) ids.set(Number(x.external_id), x.id);
+    }
+    const identity = (u: User) => (u ? (ids.get(u.id) ?? null) : null);
 
-  const stale = new Set(
-    threads
-      .filter((t) => {
-        const e = existing.get(t.key);
-        return !e || e.content_hash !== threadHash(t) || !e.has_emb;
-      })
-      .map((t) => t.key),
-  );
-  onProgress?.(`スレッド ${threads.length} 件 / 埋め込みを取り直す ${stale.size} 件`);
+    const known = new Map(
+      (
+        await client.query<{ id: string; external_id: string; content_hash: Buffer }>(
+          "select id, external_id, content_hash from mitos.source_item where connector_id = $1",
+          [connector.id],
+        )
+      ).rows.map((r) => [r.external_id, r]),
+    );
+    // 既に入っている発言を 1 回で読む。変わっていない PR・issue では 1 往復もしない。
+    const stored = new Map(
+      (
+        await client.query<{ id: string; content_hash: Buffer }>(
+          `select m.id, m.content_hash from mitos.message m
+           join mitos.conversation c on c.id = m.conversation_id
+           join mitos.source_item s on s.id = c.source_item_id
+           where s.connector_id = $1`,
+          [connector.id],
+        )
+      ).rows.map((r) => [r.id, r.content_hash]),
+    );
 
-  // **PR そのものを先に入れる。**コメントだけだと「私の最新のマージ済み PR は」に
-  // 答えられない（実測: 「マージします！」という発言が 8 件返っただけだった）。
-  const prStale = prs.filter((p) => {
-    const e = existing.get(`${p.kind}:${p.number}`);
-    return !e || e.content_hash !== crypto.createHash("sha256").update(prText(p)).digest("hex") || !e.has_emb;
-  });
-  for (let from = 0; from < prStale.length; from += CHUNK) {
-    const slice = prStale.slice(from, from + CHUNK);
-    const vectors = await embed(env, slice.map(prText), "document");
-    await client.query("begin");
-    try {
-      for (const [i, p] of slice.entries()) {
+    const sourceId = new Map([...known].map(([n, r]) => [n, r.id]));
+    const changedItems = items.filter((i) => !known.get(String(i.number))?.content_hash.equals(itemHash(i)));
+    if (changedItems.length) {
+      const r = await client.query<{ id: string; external_id: string }>(
+        `insert into mitos.source_item (connector_id, external_id, kind, title, state, url, author_identity_id,
+                                        source_created_at, source_updated_at, closed_at, content_hash, synced_at)
+         select $1, t.number, t.kind, t.title, t.state, t.url, t.author, t.created, t.updated, t.closed,
+                decode(t.hash, 'hex'), now()
+         from jsonb_to_recordset($2::jsonb) as t(number text, kind text, title text, state text, url text,
+                                                 author bigint, created timestamptz, updated timestamptz,
+                                                 closed timestamptz, hash text)
+         on conflict (connector_id, external_id) do update set
+           kind = excluded.kind, title = excluded.title, state = excluded.state, url = excluded.url,
+           author_identity_id = excluded.author_identity_id, source_created_at = excluded.source_created_at,
+           source_updated_at = excluded.source_updated_at, closed_at = excluded.closed_at,
+           content_hash = excluded.content_hash, synced_at = now()
+         returning id, external_id`,
+        [
+          connector.id,
+          JSON.stringify(
+            changedItems.map((i) => ({
+              number: String(i.number),
+              kind: i.kind,
+              title: i.title,
+              state: i.state,
+              url: i.url,
+              author: identity(i.author),
+              created: i.createdAt,
+              updated: i.updatedAt,
+              closed: i.closedAt,
+              hash: itemHash(i).toString("hex"),
+            })),
+          ),
+        ],
+      );
+      for (const x of r.rows) sourceId.set(x.external_id, x.id);
+    }
+
+    // 変わった発言だけを集める。返信は同じ文で親を書くので順は問わない（外部キーは文の終わりで確かめられる）。
+    const live = new Set<string>();
+    const conversations = new Map<string, { source: string; external: string; at: string }>();
+    const messages = [];
+    for (const item of items) {
+      const source = sourceId.get(String(item.number));
+      if (!source) throw new Error(`PR・issue を書けなかった: #${item.number}`);
+      const conversation = conversationId(projectId, "github", `${repo}#${item.number}`);
+      for (const s of said.get(item.number) ?? []) {
+        const messageId = uuidFrom(conversation, s.externalId);
+        live.add(messageId);
+        const embedText = messageText({
+          body: s.body,
+          speakerKind: s.speaker,
+          handle: s.author?.login ?? null,
+          project: projectName,
+          source: { kind: item.kind, number: String(item.number), title: item.title },
+          paths: s.file ? [s.file.path] : [],
+        });
+        const hash = sha256(
+          JSON.stringify([
+            s.body,
+            s.speaker,
+            s.author?.id ?? null,
+            s.url,
+            s.at,
+            s.replyTo,
+            s.file,
+            embedText,
+          ]),
+        );
+        if (stored.get(messageId)?.equals(hash)) continue;
+        conversations.set(conversation, { source, external: `${repo}#${item.number}`, at: item.createdAt });
+        const indexed = indexesMessage("github", s.speaker);
+        messages.push({
+          s,
+          indexed,
+          embedText,
+          json: {
+            id: messageId,
+            conversation,
+            external: s.externalId,
+            reply: s.replyTo ? uuidFrom(conversation, s.replyTo) : null,
+            speaker: s.speaker,
+            identity: identity(s.author),
+            body: s.body,
+            url: s.url,
+            at: s.at,
+            hash: hash.toString("hex"),
+            lex: indexed ? tsvector(`${item.title}\n${s.file?.path ?? ""}\n${s.body}`) : null,
+          },
+        });
+      }
+    }
+    if (conversations.size) {
+      const c = [...conversations];
+      await client.query(
+        `insert into mitos.conversation (id, project_id, source_item_id, origin, external_id, started_at)
+         select t.id, $1, t.source, 'github', t.external, t.at
+         from unnest($2::uuid[], $3::bigint[], $4::text[], $5::timestamptz[]) as t(id, source, external, at)
+         on conflict (id) do nothing`,
+        [
+          projectId,
+          c.map(([id]) => id),
+          c.map(([, v]) => v.source),
+          c.map(([, v]) => v.external),
+          c.map(([, v]) => v.at),
+        ],
+      );
+    }
+    if (messages.length) {
+      await client.query(
+        `insert into mitos.message (id, conversation_id, external_id, reply_to_id, speaker_kind, identity_id, body,
+                                    original_bytes, url, sent_at, content_hash, lexemes)
+         select t.id, t.conversation, t.external, t.reply, t.speaker, t.identity, t.body, octet_length(t.body), t.url,
+                t.at, decode(t.hash, 'hex'), t.lex::tsvector
+         from jsonb_to_recordset($1::jsonb) as t(id uuid, conversation uuid, external text, reply uuid, speaker text,
+                                                 identity bigint, body text, url text, at timestamptz, hash text,
+                                                 lex text)
+         on conflict (id) do update set
+           reply_to_id = excluded.reply_to_id, speaker_kind = excluded.speaker_kind,
+           identity_id = excluded.identity_id, body = excluded.body, original_bytes = excluded.original_bytes,
+           url = excluded.url, sent_at = excluded.sent_at, content_hash = excluded.content_hash,
+           lexemes = excluded.lexemes`,
+        [JSON.stringify(messages.map((m) => m.json))],
+      );
+      const written = messages.map((m) => m.json.id);
+      await client.query("delete from mitos.message_file where message_id = any($1::uuid[])", [written]);
+      const files = messages.flatMap((m) => (m.s.file ? [{ id: m.json.id, ...m.s.file }] : []));
+      if (files.length) {
         await client.query(
-          `insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, status, attrs,
-                             actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-           values ($1,$2,'event',$3,$4,$5,$6,'na',$7,$8,$9,$10,$11,$12,$13,$14,$15)
-           on conflict (record_id, kind, key) do update set
-             at=excluded.at, text=excluded.text, status=excluded.status, attrs=excluded.attrs,
-             subkind=excluded.subkind,
-             actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
-             content_hash=excluded.content_hash, deleted_at=null,
-             embed_text=excluded.embed_text, embed_model=excluded.embed_model,
-             embedded_at=excluded.embedded_at, embedding=excluded.embedding`,
+          `insert into mitos.message_file (message_id, path, action, line_start, line_end)
+           select t.id, t.path, 'review', t.first, t.last
+           from unnest($1::uuid[], $2::text[], $3::int[], $4::int[]) as t(id, path, first, last)`,
           [
-            recordId,
-            scopeId,
-            p.kind,
-            `${p.kind}:${p.number}`,
-            p.at,
-            prText(p),
-            p.state,
-            // **PR の attrs の形は変えない。**チャットと check-path が attrs->>'pr' を読む。
-            JSON.stringify(
-              p.kind === "pr"
-                ? {
-                    pr: p.number,
-                    prTitle: p.title,
-                    state: p.state,
-                    url: p.url,
-                    branch: p.branch,
-                    createdAt: p.createdAt,
-                  }
-                : { issue: p.number, title: p.title, state: p.state, url: p.url, createdAt: p.createdAt },
-            ),
-            actorKind(p.author),
-            p.author,
-            crypto.createHash("sha256").update(prText(p)).digest("hex"),
-            prText(p),
-            EMBED_MODEL,
-            new Date().toISOString(),
-            vec(vectors[i]),
+            files.map((f) => f.id),
+            files.map((f) => f.path),
+            files.map((f) => f.startLine ?? f.line),
+            files.map((f) => f.line ?? f.startLine),
           ],
         );
       }
-      await client.query("commit");
-    } catch (e) {
-      await client.query("rollback").catch(() => {});
-      throw e;
-    }
-    onProgress?.(`  PR ${Math.min(from + CHUNK, prStale.length)} / ${prStale.length} 件を確定`);
-  }
-
-  // **変わっていないものは書き直さない。**content_hash が同じなら本文も出自も同じで、
-  // 書いても結果は変わらない。日次で回すのに全件へ 1 件 4 クエリを投げると、
-  // main-repo だけで 10 万回の往復になる（実測: 書き込みだけで 30 分）。
-  const changed = threads.filter((t) => stale.has(t.key));
-  let done = 0;
-  for (let from = 0; from < changed.length; from += CHUNK) {
-    const slice = changed.slice(from, from + CHUNK);
-    const need = slice;
-    // **埋め込みはトランザクションの外で取る。**中で待つと、その間ずっと開いたままになる。
-    const vectors = need.length ? await embed(env, need.map(threadText), "document") : [];
-    const byKey = new Map(need.map((t, i) => [t.key, vectors[i]]));
-
-    await client.query("begin");
-    try {
-      await writeSlice(client, recordId, repo, scopeId, slice, byKey);
-      await client.query("commit");
-    } catch (e) {
-      await client.query("rollback").catch(() => {});
-      throw e;
-    }
-    done += slice.length;
-    onProgress?.(`  ${done} / ${changed.length} 件を確定`);
-  }
-  return { total: threads.length, prs: prStale.length, embedded: stale.size };
-}
-
-/** 1 チャンクぶんを書く。呼び出し側がトランザクションを持つ。 */
-async function writeSlice(
-  client: Db,
-  recordId: string,
-  repo: string,
-  scopeId: number,
-  threads: Thread[],
-  byKey: Map<string, number[] | undefined>,
-): Promise<void> {
-  for (const t of threads) {
-    const v = byKey.get(t.key);
-    const text = t.turns.map((x) => `@${x.author}: ${x.body}`).join("\n");
-    const r = await client.query<{ id: number }>(
-      `insert into node (record_id, scope_id, kind, subkind, key, at, text, polarity, attrs,
-                           actor_kind, actor_name, content_hash, embed_text, embed_model, embedded_at, embedding)
-         values ($1,$2,'utterance',$3,$4,$5,$6,'na',$7,$8,$9,$10,$11,$12,$13,$14)
-         on conflict (record_id, kind, key) do update set
-           at=excluded.at, text=excluded.text, subkind=excluded.subkind, attrs=excluded.attrs,
-           actor_kind=excluded.actor_kind, actor_name=excluded.actor_name,
-           content_hash=excluded.content_hash, deleted_at=null,
-           embed_text=coalesce(excluded.embed_text, node.embed_text),
-           embed_model=coalesce(excluded.embed_model, node.embed_model),
-           embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
-           embedding=coalesce(excluded.embedding, node.embedding)
-         returning id`,
-      [
-        recordId,
-        scopeId,
-        t.key.startsWith("pr-review:") ? "review" : "issue",
-        t.key,
-        t.at,
-        text,
-        JSON.stringify({
-          pr: t.pr,
-          prTitle: t.prTitle,
-          path: t.path,
-          line: t.line,
-          url: t.url,
-          authors: [...new Set(t.turns.map((x) => x.author))],
-        }),
-        actorKind(t.turns[0]?.author ?? "unknown"),
-        // 最初に口を開いた人。返信者は attrs.authors に残す。
-        t.turns[0]?.author ?? "unknown",
-        threadHash(t),
-        v ? threadText(t) : null,
-        v ? EMBED_MODEL : null,
-        v ? new Date().toISOString() : null,
-        vec(v),
-      ],
-    );
-    const nodeId = r.rows[0]?.id;
-    if (nodeId === undefined) continue;
-
-    // **どのファイルの話かを辺にする。**これが無いと check_path から引けない。
-    for (const [kind, key, url] of [
-      ["pr", `${repo}#${t.pr}`, t.url],
-      ...(t.path ? [["file", t.path, null] as const] : []),
-    ] as [string, string, string | null][]) {
-      const ref = await client.query<{ id: number }>(
-        `insert into ref (kind, repo, key, url) values ($1,$2,$3,$4)
-           on conflict (kind, coalesce(repo,''), key) do update set url=coalesce(excluded.url, ref.url)
-           returning id`,
-        [kind, repo, key, url],
-      );
-      const refId = ref.rows[0]?.id;
-      if (refId !== undefined) {
+      const embed = messages.filter((m) => m.indexed);
+      if (embed.length) {
         await client.query(
-          `insert into ref_link (ref_id, record_id, node_id, role) values ($1,$2,$3,'evidence')
-             on conflict (ref_id, record_id, role, coalesce(node_id, 0)) do nothing`,
-          [refId, recordId, nodeId],
+          `insert into mitos.message_embedding (message_id, model, source_hash, status)
+           select t.id, $3, t.hash, 'pending' from unnest($1::uuid[], $2::bytea[]) as t(id, hash)
+           on conflict (message_id) do update set
+             source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0,
+             last_error = null, updated_at = now()
+           where mitos.message_embedding.source_hash <> excluded.source_hash`,
+          [embed.map((m) => m.json.id), embed.map((m) => sha256(m.embedText)), EMBED_MODEL],
         );
       }
     }
-  }
+    // GitHub で消されたコメントは消す。一覧は完全なもの（取れなかったら collect が投げてここに来ない）。
+    const gone = [...stored.keys()].filter((id) => !live.has(id));
+    const messagesRemoved = gone.length
+      ? ((await client.query("delete from mitos.message where id = any($1::uuid[])", [gone])).rowCount ?? 0)
+      : 0;
+    // 一覧から消えた PR・issue（削除された、別のリポジトリへ移された）は行ごと消す。
+    const removed = await client.query(
+      "delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))",
+      [connector.id, items.map((i) => String(i.number))],
+    );
+    await client.query(
+      "update mitos.connector set snapshot_at = $2, last_success_at = now(), last_error = null where id = $1",
+      [connector.id, snapshotAt],
+    );
+    return {
+      itemsWritten: changedItems.length,
+      messagesWritten: messages.length,
+      messagesRemoved,
+      itemsRemoved: removed.rowCount ?? 0,
+    };
+  });
+
+  if (!counts) return "飛ばした（読み始めた後に、別の同期がより新しい状態を入れた）";
+  const total = [...said.values()].reduce((n, l) => n + l.length, 0);
+  return [
+    `PR・issue ${items.length} 件（書き直した ${counts.itemsWritten} 件${counts.itemsRemoved ? ` / 消えた ${counts.itemsRemoved} 件` : ""}）`,
+    `発言 ${total} 件（書き直した ${counts.messagesWritten} 件${counts.messagesRemoved ? ` / 消えた ${counts.messagesRemoved} 件` : ""}）`,
+  ].join(" / ");
 }

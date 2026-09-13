@@ -1,18 +1,14 @@
 {
-  "name": "knowledge-mcp",
+  "name": "mitos-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "作業のナレッジを PostgreSQL(pgvector) へ貯めて、Claude と Codex から MCP で引く",
-  "bin": {
-    "knowledge": "./src/cli.ts"
-  },
+  "description": "mitos の MCP・CLI・自動記録・画面の API（Neon の PostgreSQL と Voyage、OpenAI）",
   "scripts": {
     "check": "biome check .",
     "fix": "biome check --write .",
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
-    "eval": "node evals/retrieval.ts",
     "mcp": "node src/mcp.ts",
     "api": "node src/server.ts"
   },
@@ -21,13 +17,9 @@
     "@hono/node-server": "^2.1.1",
     "@hono/zod-validator": "0.9.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@types/pg-copy-streams": "^1.2.5",
-    "@vercel/queue": "0.5.1",
     "hono": "4.13.7",
-    "octokit": "5.0.5",
     "openai": "^7.10.0",
     "pg": "^8.23.0",
-    "pg-copy-streams": "^7.0.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

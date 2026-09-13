@@ -1,50 +1,34 @@
-// リポジトリの Markdown をナレッジにする。
+// リポジトリの Markdown を、原文（source_item）と検索用の節（knowledge の document）にする。
 //
-// **コードは埋め込まないが、文書は埋め込む。**code.ts が「コード（いまどうなっているか）は
-// 変わるので、聞かれたときに読みに行く」と決めているのに対し、設計文書と ADR は
-// 「なぜそうしたか」であり、そこで貯める価値があると同じ判断が名指ししている。
-// そしてリポジトリが消えれば読みに行く先も消える。
+// **コードは入れないが、文書は入れる。**設計文書と ADR は「なぜそうしたか」で、リポジトリが消えれば読む先も消える。
+// **見出しで切る。**1 本を丸ごと 1 件にすると、長い設計書が 1 つのベクトルに潰れて何にも当たらない。
+// **原文は別に持つ。**節は見出しだけの節を落とすので、連結しても元の Markdown に戻らない。画面は原文を出す。
 //
-// **見出しで切る。**ファイル 1 本を丸ごと 1 件にすると、3,460 行の設計書が
-// 1 つのベクトルに潰れて何にも当たらない。節は書いた人が付けた意味の区切りなので、
-// 機械が長さで切るより境界が正しい。
+// **正は remote の既定 branch の commit で、作業ツリーは読まない。**作業ツリーを読むと、どの PC の・どの branch の・
+// 書きかけの状態が DB に入るかが同期した順で決まる（branch の切り替え、未 push の commit、古い clone で巻き戻る）。
+// 一覧・本文・manifest・更新日を 1 つの commit の tree から読むので、読む順も filesystem の symlink も関係しない。
 
 import { execFileSync } from "node:child_process";
-import crypto from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import type pg from "pg";
-import { type Artifact, selectArtifacts, underMitos } from "./artifacts.ts";
-import { EMBED_MODEL, type Env, embed, vec } from "./db.ts";
+import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underMitos } from "./artifacts.ts";
+import { EMBED_MODEL, inTransaction } from "./db.ts";
+import { knowledgeText } from "./knowledge.ts";
+import { connectorOf } from "./project.ts";
+import { clean, sha256, tsvector } from "./text.ts";
 
 export type Section = {
+  /** 作業場所の中で一意な key。`doc:<path>#<見出し>` */
   key: string;
-  /** リポジトリ根からの相対パス */
   path: string;
-  /** この節の見出し（先頭の節だけはファイル名） */
   title: string;
-  /** 祖先の見出しをつないだ道。埋め込みの前置きに使う */
+  /** 祖先の見出しをつないだ道。検索の見出しになる */
   trail: string;
   text: string;
-  /** その文書を最後に触ったコミットの日時。未コミットなら null */
-  at: string | null;
-  ordinal: number;
-  /** 承認済みの要件定義・設計書の節なら、その種別と change */
-  artifact?: Artifact | undefined;
 };
 
-/**
- * 承認済みの成果物の原文。**節を連結しても元の Markdown に戻らない**（見出しだけの節を落とす）ので、
- * ダッシュボードで読ませる本文を別に 1 件持つ。検索しないので埋め込みも持たない。
- */
-export type Source = { key: string; text: string; at: string | null; artifact: Artifact };
-
-/**
- * 1 つの節の上限。**超えたぶんは捨てずに続きの節へ回す。**
- * リポジトリが消えた後は原文を取り直せないので、切り落とすと永久に失われる。
- */
+/** 1 つの節の上限。**超えたぶんは捨てずに続きの節へ回す。**リポジトリが消えた後は取り直せない。 */
 const MAX = 4000;
-
 /** 1 ファイルの上限。これを超える .md は文書ではない（生成物かデータの取り違え）。 */
 const MAX_FILE = 2 * 1024 * 1024;
 
@@ -57,21 +41,17 @@ const slug = (s: string): string =>
     .slice(0, 60) || "本文";
 
 /**
- * 見出しで節に割る。
- *
- * **コードフェンスの中は見ない。**シェルのコメント（`# 使い方`）や YAML の
- * フロントマターの区切りが見出しに化けて、節が本文の途中で割れる。
+ * 見出しで節に割る。**コードフェンスの中は見ない。**シェルのコメントや frontmatter の区切りが見出しに化ける。
+ * フェンスは開いたときと同じ文字で、同じ長さ以上の、info の無い行でだけ閉じる（CommonMark）。
+ * 4 つのバッククォートで囲んだ例の中の 3 つのバッククォートで閉じたと読むと、例の中の見出しが節になる。
  */
 export function sections(rel: string, body: string): Section[] {
-  // **CRLF と BOM を先に落とす。**JS の `.` は `\r` を行終端として扱うので、
-  // `/^(#{1,3}) +(\S.*)$/` が CRLF の見出しに一致しない。Windows で書かれた文書だけが
-  // **1 本まるごと 1 つのベクトルに潰れる**（実測）。BOM は先頭の見出しだけを落とす。
+  // JS の `.` は `\r` を行終端として扱うので、CRLF の見出しが一致しない。BOM は先頭の見出しを落とす。
   const lines = body
     .replace(/^\uFEFF/, "")
     .split("\n")
     .map((l) => l.replace(/\r$/, ""));
   const out: Section[] = [];
-  // 見出しの深さごとの直近の題。前置きに使う道を作る
   const trail: string[] = [];
   let fence: string | null = null;
   let cur: { title: string; level: number; trail: string; buf: string[] } = {
@@ -81,15 +61,14 @@ export function sections(rel: string, body: string): Section[] {
     buf: [],
   };
   const used = new Map<string, number>();
+  const keys = new Set<string>();
 
   const flush = (): void => {
     const raw = cur.buf.join("\n").trim();
     if (!raw) return;
-    // **見出しだけの節は置かない。**「## 背景」の直後に「### 経緯」が来る形で、
-    // 中身は子が持っている。実測（nomophyl の 91 本）で 811 件中 64 件がこれで、
-    // 埋め込んでも 10 字のベクトルが増えるだけになる。見出し自体は子の trail に残る。
+    // 見出しだけの節は置かない。中身は子が持ち、見出しは子の trail に残る。
     if (cur.level > 0 && raw === cur.buf.find((l) => l.trim())?.trim()) return;
-    // 上限で割る。**段落の切れ目で割る** — 文の途中で切ると両側とも読めなくなる。
+    // 上限で割る。段落の切れ目で割る — 文の途中で切ると両側とも読めなくなる。
     const parts: string[] = [];
     let rest = raw;
     while (rest.length > MAX) {
@@ -100,34 +79,34 @@ export function sections(rel: string, body: string): Section[] {
     }
     parts.push(rest);
     for (const text of parts) {
-      const base = `${rel}#${slug(cur.title)}`;
-      // 同じ題の節が 1 つのファイルに何度も出る（「## 背景」など）。
-      // key が衝突すると unique (record_id, kind, key) で後勝ちになり、前の節が消える。
-      const n = (used.get(base) ?? 0) + 1;
+      const base = `doc:${rel}#${slug(cur.title)}`;
+      // 同じ題の節は 1 つのファイルに何度も出る（「## 背景」など）。番号で分けないと後勝ちで前の節が消える。
+      // 番号を付けた key が別の見出し（「## 背景:2」）と重ならないよう、使った key 全体で一意にする。
+      let n = (used.get(base) ?? 0) + 1;
+      let key = n === 1 && parts.length === 1 ? base : `${base}:${n}`;
+      while (keys.has(key)) key = `${base}:${++n}`;
       used.set(base, n);
+      keys.add(key);
       out.push({
-        key: n === 1 && parts.length === 1 ? base : `${base}:${n}`,
+        key,
         path: rel,
         title: cur.title,
         trail: cur.trail,
         text,
-        at: null,
-        ordinal: out.length,
       });
     }
   };
 
   for (const line of lines) {
-    const f = line.match(/^\s*(```+|~~~+)/);
+    const f = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
     if (f?.[1]) {
-      if (fence === null) fence = f[1][0] ?? "`";
-      else if (line.trimStart().startsWith(fence)) fence = null;
+      const mark = f[1];
+      if (fence === null) fence = mark;
+      else if (mark[0] === fence[0] && mark.length >= fence.length && !f[2]?.trim()) fence = null;
       cur.buf.push(line);
       continue;
     }
-    // **`.*\S` にしない。**` +` と取り合って行長の二乗になり、空白 80,000 の 1 行で
-    // 2.4 秒かかる（実測。`\S.*` なら 0.14 ms）。日次同期は無人で走るので、
-    // 追跡された巨大な .md 1 本で朝の取り込みが止まる。
+    // `.*\S` にしない。` +` と取り合って行長の二乗になり、空白 80,000 の 1 行で数秒止まる。
     const h = fence === null ? line.match(/^(#{1,3}) +(\S.*)$/) : null;
     if (!h?.[1] || !h[2]) {
       cur.buf.push(line);
@@ -144,298 +123,368 @@ export function sections(rel: string, body: string): Section[] {
   return out;
 }
 
+// 無人の同期（launchd）で資格情報の入力を待って止まらない。
+const git = (root: string, args: string[], input?: Buffer): Buffer =>
+  execFileSync("git", ["-C", root, ...args], {
+    input,
+    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 60_000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
+
 /**
- * 文書ごとの最終更新日。
- *
- * **文書にも観測時点が要る。**「いつ書かれたか」が無い決定は、10 年前のものでも
- * 恒久的な事実として読まれる。記録の側は全エントリに ISO 8601 を強制しているのに、
- * 取り込んだ文書だけが時点を持たないのは同じ穴になる。
- *
- * **1 回の git log で全部取る。**ファイルごとに叩くと本数に比例して遅くなる。
+ * 同期する commit。remote を持つ作業場所は、remote の HEAD（既定 branch）をその場で取る。**ローカルの
+ * origin/HEAD は読まない** — fetch だけでは既定 branch の名前変更に追随しない。取れなければ投げる（前回の状態を保つ）。
+ * 取った先は専用の ref に置く（共有の FETCH_HEAD は同じ PC の別の fetch に上書きされる）。
+ * remote の無い作業場所は HEAD。branch を切り替えても fast-forward なら入る（戻すと止まる）。
  */
-function lastTouched(dir: string): Map<string, string> {
-  const at = new Map<string, string>();
-  let out: string;
-  try {
-    out = execFileSync(
-      "git",
-      ["-C", dir, "-c", "core.quotepath=false", "log", "--format=@%aI", "--name-only", "--", "*.md", "*.mdx"],
-      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
-    );
-  } catch {
-    // まだ 1 度もコミットしていないリポジトリ。日付なしで進む。
-    return at;
+export function commitOf(root: string, remote: boolean): string {
+  if (remote) {
+    try {
+      git(root, [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-recurse-submodules",
+        "origin",
+        "+HEAD:refs/mitos/docs-head",
+      ]);
+    } catch (e) {
+      const err = e as { code?: string; stderr?: Buffer };
+      const detail =
+        err.code === "ETIMEDOUT"
+          ? "60 秒で終わらなかった"
+          : (err.stderr?.toString().trim().split("\n").at(-1) ?? "");
+      throw new Error(`remote の既定 branch を取れなかった（${detail}）。文書は前回の同期のまま`);
+    }
+    return git(root, ["rev-parse", "--verify", "refs/mitos/docs-head^{commit}"]).toString().trim();
   }
+  try {
+    return git(root, ["rev-parse", "--verify", "HEAD^{commit}"]).toString().trim();
+  } catch {
+    throw new Error("commit が 1 つも無い");
+  }
+}
+
+/** a が b の祖先か（a から b へ fast-forward できるか）。どちらかがこの clone に無ければ false。 */
+export function isAncestor(root: string, a: string, b: string): boolean {
+  try {
+    git(root, ["merge-base", "--is-ancestor", a, b]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type Entry = { mode: string; oid: string; size: number };
+const FILE_MODES = new Set(["100644", "100755"]);
+
+/** commit の tree 全体。**symlink（120000）とサブモジュール（160000）は本文として読まない。** */
+export function treeOf(root: string, commit: string): { entries: Map<string, Entry>; dirs: Set<string> } {
+  const entries = new Map<string, Entry>();
+  const dirs = new Set<string>();
+  for (const record of git(root, ["ls-tree", "-r", "-z", "-l", "--full-tree", commit])
+    .toString("utf8")
+    .split("\0")) {
+    const tab = record.indexOf("\t");
+    if (tab < 0) continue;
+    const [mode, , oid, size] = record.slice(0, tab).trim().split(/\s+/);
+    const rel = record.slice(tab + 1);
+    if (!mode || !oid) continue;
+    entries.set(rel, { mode, oid, size: Number(size) || 0 });
+    for (let d = path.posix.dirname(rel); d !== "."; d = path.posix.dirname(d)) dirs.add(d);
+  }
+  return { entries, dirs };
+}
+
+/** blob を 1 回の `git cat-file --batch` でまとめて読む。clean / smudge の filter は通さない（commit の中身そのもの）。 */
+export function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
+  const out = new Map<string, Buffer>();
+  if (oids.length === 0) return out;
+  const raw = git(root, ["cat-file", "--batch"], Buffer.from(`${[...new Set(oids)].join("\n")}\n`));
+  let at = 0;
+  while (at < raw.length) {
+    const nl = raw.indexOf(10, at);
+    const [oid, , size] = raw.subarray(at, nl).toString("utf8").split(" ");
+    const n = Number(size);
+    if (!oid || !Number.isFinite(n)) throw new Error("git cat-file の応答を読めなかった");
+    out.set(oid, raw.subarray(nl + 1, nl + 1 + n));
+    at = nl + 1 + n + 1;
+  }
+  return out;
+}
+
+/** commit の tree を、成果物の検査の読み先にする。 */
+function snapshotOf(tree: ReturnType<typeof treeOf>, blobs: Map<string, Buffer>): Snapshot {
+  return {
+    kind: (rel) => {
+      const e = tree.entries.get(rel);
+      if (e) return FILE_MODES.has(e.mode) ? "file" : "other";
+      return tree.dirs.has(rel) ? "dir" : null;
+    },
+    size: (rel) => tree.entries.get(rel)?.size ?? 0,
+    read: (rel) => {
+      const e = tree.entries.get(rel);
+      const b = e && blobs.get(e.oid);
+      if (!b) throw new Error(`${rel} を読んでいない`);
+      return b.toString("utf8");
+    },
+    tracked: new Set(tree.entries.keys()),
+  };
+}
+
+/**
+ * 文書ごとの最終更新日（その commit から遡って最後に触ったコミット）。**1 回の git log で全部取る。**
+ * 観測時点の無い文書は、10 年前の記述でも今の事実として読まれる。取れなければ投げる（日付の無い節を書かない）。
+ * pathspec は一覧の `/\.mdx?$/i` と同じく大文字小文字を区別しない（`README.MD` の日付を落とさない）。
+ */
+function lastTouched(root: string, commit: string): Map<string, string> {
+  const at = new Map<string, string>();
+  const out = git(root, [
+    "-c",
+    "core.quotepath=false",
+    "log",
+    commit,
+    "--format=@%aI",
+    "--name-only",
+    "--",
+    ":(icase)*.md",
+    ":(icase)*.mdx",
+  ]).toString("utf8");
   let cur = "";
   for (const line of out.split("\n")) {
-    // **日付の形まで見る。**`@` で始まるパス（`@scope/doc.md` など）を日付と読むと、
-    // そのファイルが日付を失ううえ、**次のファイルがパス文字列を日付として受け取る**。
-    // それは timestamptz へ渡って insert が落ち、そのリポジトリの取り込みが
-    // 毎回まるごとロールバックする（実測: `invalid input syntax for type timestamp`）。
+    // 日付の形まで見る。`@` で始まるパスを日付と読むと、次のファイルがパスを日付として受け取る。
     if (/^@\d{4}-\d{2}-\d{2}T/.test(line)) cur = line.slice(1);
-    // log は新しい順なので、最初に出たものがその文書の最終更新。
     else if (line && cur && !at.has(line)) at.set(line, cur);
   }
   return at;
 }
 
-/**
- * その作業場所で git が追っている Markdown。
- * **自前で走査しない** — gitignore と node_modules を勝手に避ける。
- *
- * **symlink は返さない。**git は追跡された symlink をそのまま列挙し、読む側は
- * その先を開く。`docs/setup.md -> ~/.claude/knowledge.env` を追跡しているリポジトリが
- * 1 つあれば、日次同期が無人で資格情報を埋め込み API へ送り、本文として保存し、
- * 以後どのエージェントの文脈にも返す。**.gitignore は効かない** —
- * ignore されるのは参照先であって、追跡されている symlink 自体ではない。
- */
-export function markdownFiles(dir: string): { files: string[]; symlinks: number } {
-  const out = execFileSync("git", ["-C", dir, "ls-files", "-z", "*.md", "*.mdx"], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  // **外へ出さないのは realpath の前方一致。**末端の lstat だけでは足りない —
-  // `docs/` 自体が外への symlink だと、`docs/notes.md` の末端は普通のファイルに見える（実測）。
-  // 判定は `server/src/code.ts` の `inside()` と同じ形にする。
-  // lstat のほうは**リポジトリ内を指す別名**を落とす（同じ本文が 2 つの key で入るのを防ぐ）。
-  const base = fs.realpathSync(dir);
-  const files: string[] = [];
-  let symlinks = 0;
-  for (const rel of out.split("\0").filter(Boolean)) {
-    let real: string;
-    let st: fs.Stats;
-    try {
-      const full = path.join(dir, rel);
-      st = fs.lstatSync(full);
-      real = fs.realpathSync(full);
-    } catch {
-      // git は追っているが手元に無い（sparse checkout、消したまま未コミット）。
-      continue;
-    }
-    if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path.sep}`))) {
-      symlinks++;
-      continue;
-    }
-    // **丸ごとメモリへ載せるので上限を置く。**文書として書かれた Markdown が
-    // これを超えることはない。超えるのは生成物か、取り違えたデータファイル。
-    if (st.size > MAX_FILE) continue;
-    files.push(rel);
-  }
-  return { files, symlinks };
-}
+export type Doc = {
+  path: string;
+  kind: "document" | "requirements" | "design";
+  title: string;
+  body: string;
+  at: string | null;
+  artifact?: Artifact | undefined;
+  sections: Section[];
+};
 
-/** 埋め込む文。**どの文書のどの節かを前置する**（github.ts の PR 題と同じ発想）。 */
-export const sectionText = (s: Section): string => `${s.trail}\n${s.text}`;
-
-const hash = (s: string): string => crypto.createHash("sha256").update(s).digest("hex");
-
-/** ADR は決定そのもの。仕様と分けて引けるようにする。 */
-const subkindOf = (rel: string): string =>
-  /(^|\/)adr(s)?\//i.test(rel) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(rel) ? "adr" : "doc";
-
-const CHUNK = 200;
-
-/**
- * 読んだ本文を node の形へ投影する。**`.mitos` 配下は承認済みの成果物だけを入れ**、成果物には検索用の節に加えて
- * 原文を 1 件置く。原文の key は path そのもの — 節の key は必ず `#` を含み、成果物の path は含まないので交わらない
- * （`#@...` のような接尾辞は、見出し slug が `@` を除かないので `## @...` の節と衝突する）。
- */
+/** 読んだ本文を文書の形へ投影する。**`.mitos` 配下は承認済みの成果物だけを入れる。** */
 export function projectDocs(
   bodies: Map<string, string>,
   include: Map<string, Artifact>,
   at: Map<string, string>,
-): { sections: Section[]; sources: Source[] } {
-  const all: Section[] = [];
-  const sources: Source[] = [];
-  for (const [rel, body] of bodies) {
+): Doc[] {
+  const out: Doc[] = [];
+  for (const [rel, raw] of bodies) {
     const artifact = include.get(rel);
     if (underMitos(rel) && !artifact) continue;
-    for (const s of sections(rel, body))
-      all.push({ ...s, at: at.get(rel) ?? null, ordinal: all.length, artifact });
-    if (artifact) sources.push({ key: rel, text: body, at: at.get(rel) ?? null, artifact });
+    const body = clean(raw);
+    if (!body.trim()) continue;
+    const title = body.match(/^#\s+(\S.*)$/m)?.[1]?.trim() ?? path.basename(rel);
+    out.push({
+      path: rel,
+      kind: artifact?.kind ?? "document",
+      title,
+      body,
+      at: at.get(rel) ?? null,
+      artifact,
+      sections: sections(rel, body),
+    });
   }
-  return { sections: all, sources };
+  return out;
 }
 
 /**
- * 埋め込みを取り直す節。**原文は受け取らない**（検索しないので埋め込みも持たない）。
- * `existing` には墓標の行も入れる — draft へ戻してから再び承認した節は、本文が同じなら取り直さない。
+ * 文書を行へ投影する形の版。**節の割り方・札・metadata を変えたら上げる。**本文が同じでも hash が変わり、
+ * 次の同期で全文書が書き直される（上げないと、古い形の節が残り続ける）。
  */
-export const needEmbedding = (
-  all: Section[],
-  existing: Map<string, { content_hash: string; has_emb: boolean }>,
-): Section[] =>
-  all.filter((s) => {
-    const old = existing.get(s.key);
-    return !old || old.content_hash !== hash(sectionText(s)) || !old.has_emb;
-  });
+const PROJECTION = 1;
 
-/** 墓標を立てずに残す key。**原文の key を落とすと、挿入した直後に soft delete される。** */
-export const liveKeys = (p: { sections: Section[]; sources: Source[] }): string[] => [
-  ...p.sections.map((s) => s.key),
-  ...p.sources.map((s) => s.key),
-];
+/** 文書 1 本の hash。**これが同じなら、その文書の行には一切書かない。**毎日の同期で全節を書き直さない。 */
+export const docHash = (d: Doc): Buffer =>
+  sha256(JSON.stringify([PROJECTION, d.kind, d.path, d.title, d.body, d.at, d.artifact ?? null]));
 
-/** リポジトリ 1 つぶん。**docs は 1 記録**にして、どの文書かは node の key が持つ。 */
-export async function ingestDocs(
-  client: pg.Client,
-  env: Env,
-  ident: string,
-  label: string,
-  dir: string,
-  scopeId: number,
-  onProgress?: (m: string) => void,
-): Promise<string> {
-  const recordId = `docs:${ident}`;
-  const { files, symlinks } = markdownFiles(dir);
-  const at = lastTouched(dir);
-  const bodies = new Map<string, string>();
-  for (const rel of files) {
-    try {
-      bodies.set(rel, fs.readFileSync(path.join(dir, rel), "utf8"));
-    } catch {
-      // 読めるとしたものが読めなかった。列挙と読み取りの間に消えた場合。
-    }
-  }
-  // **本文を読み終えてから manifest を読む。**再編集は draft を書いてから本文を触るので、この順なら
-  // 編集中の本文は必ず draft として外れる。**不正なら埋め込みと DB 書き込みの前に止める** —
-  // どれが承認済みかを決められないまま、前回の状態を壊さない。
-  const { include, problems } = selectArtifacts(dir, [...bodies.keys()]);
+const CHUNK = 500;
+
+/**
+ * commit の tree から、入れる文書を組み立てる（DB に触らない）。`.mitos` が不正なら、どれが承認済みかを
+ * 決められないので投げる（呼び出し側は何も書かず、前回の状態を保つ）。
+ */
+export function collectDocs(root: string, commit: string): { docs: Doc[]; skipped: number } {
+  const tree = treeOf(root, commit);
+  const md = [...tree.entries].filter(([rel]) => /\.mdx?$/i.test(rel));
+  const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
+  // 大きすぎる manifest は読まない（検査が大きさだけで「大きすぎる」と返す）。読み込んでから測ると、1 本で同期ごと落ちる。
+  const manifests = [...tree.entries].filter(
+    ([rel, e]) =>
+      rel.startsWith(".mitos/") && rel.endsWith(".json") && FILE_MODES.has(e.mode) && e.size <= MAX_MANIFEST,
+  );
+  const snap = snapshotOf(
+    tree,
+    blobsOf(
+      root,
+      [...readable, ...manifests].map(([, e]) => e.oid),
+    ),
+  );
+  const bodies = new Map(readable.map(([rel]) => [rel, snap.read(rel)]));
+  const { include, problems } = selectArtifacts(snap, [...bodies.keys()]);
   if (problems.length) {
     throw new Error(
-      `${label} の .mitos が不正なので、このリポジトリの文書を同期しない（前回の状態を保つ）:\n` +
-        problems.map((p) => `  ${p.path}: ${p.reason}`).join("\n"),
+      `.mitos が不正なので、この作業場所の文書を同期しない（前回の状態を保つ）:\n${problems
+        .map((p) => `  ${p.path}: ${p.reason}`)
+        .join("\n")}`,
     );
   }
-  const projected = projectDocs(bodies, include, at);
-  const { sections: all, sources } = projected;
-  const skipped = symlinks ? ` / symlink を飛ばした ${symlinks} 件` : "";
+  const skipped = md.filter(([, e]) => !FILE_MODES.has(e.mode)).length;
+  return { docs: projectDocs(bodies, include, lastTouched(root, commit)), skipped };
+}
 
-  // 墓標の行も読む（needEmbedding の説明を参照）。
-  const existing = new Map(
-    (
-      await client.query<{ key: string; content_hash: string; has_emb: boolean }>(
-        "select key, content_hash, embedding is not null as has_emb from node where record_id=$1",
-        [recordId],
-      )
-    ).rows.map((r) => [r.key, r]),
-  );
-  const need = needEmbedding(all, existing);
-  onProgress?.(
-    `文書 ${bodies.size} 本 / 節 ${all.length} 件 / 承認済みの成果物 ${sources.length} 本 / 埋め込みを取り直す ${need.length} 件`,
-  );
+/**
+ * 1 つの作業場所の文書を同期する。tree の一覧は完全なので、一覧から消えた文書は行ごと消す。
+ *
+ * **自動で進めるのは fast-forward だけ。**そうでなければ一度だけ取り直す。前に入れた commit 以降まで進んでいれば、
+ * 同時に走った別の同期が新しい commit を先に入れたので、何も書かずに終える（別の PC が入れた commit は、取り直すまで
+ * この clone に無い）。進んでいなければ巻き戻し・force-push・分岐した branch への切り替えで、どちらが正しいかを
+ * 決められないので書かずに止まる（止まれば doctor と画面に出る。漏れた文書を巻き戻して消したときに黙って残さない）。
+ * 今の状態に揃えるのは人の操作（reset）だけ。
+ */
+export async function syncDocs(
+  client: pg.Client,
+  projectId: number,
+  root: string,
+  opts: { remote: boolean; reset?: boolean },
+): Promise<string> {
+  const commit = commitOf(root, opts.remote);
+  const { docs, skipped } = collectDocs(root, commit);
 
-  const byKey = new Map<string, number[] | undefined>();
-  for (let from = 0; from < need.length; from += CHUNK) {
-    const slice = need.slice(from, from + CHUNK);
-    const vectors = await embed(env, slice.map(sectionText), "document");
-    for (const [i, s] of slice.entries()) byKey.set(s.key, vectors[i]);
-    onProgress?.(`  ${Math.min(from + CHUNK, need.length)} / ${need.length} 件を埋め込み`);
-  }
-
-  const put = (n: {
-    subkind: string;
-    key: string;
-    ordinal: number;
-    at: string | null;
-    text: string;
-    attrs: Record<string, unknown>;
-    contentHash: string;
-    searchable: boolean;
-    embedText: string | null;
-    vector: number[] | undefined;
-  }) =>
-    client.query(
-      `insert into node (record_id, scope_id, kind, subkind, key, ordinal, at, text, polarity, attrs,
-                         actor_kind, content_hash, searchable, embed_text, embed_model, embedded_at, embedding)
-       values ($1,$2,'doc',$3,$4,$5,$6,$7,'na',$8,'unknown',$9,$10,$11,$12,$13,$14)
-       on conflict (record_id, kind, key) do update set
-         subkind=excluded.subkind, ordinal=excluded.ordinal, at=excluded.at, text=excluded.text, attrs=excluded.attrs,
-         content_hash=excluded.content_hash, searchable=excluded.searchable, deleted_at=null,
-         embed_text=coalesce(excluded.embed_text, node.embed_text),
-         embed_model=coalesce(excluded.embed_model, node.embed_model),
-         embedded_at=coalesce(excluded.embedded_at, node.embedded_at),
-         embedding=coalesce(excluded.embedding, node.embedding)`,
-      [
-        recordId,
-        scopeId,
-        n.subkind,
-        n.key,
-        n.ordinal,
-        n.at,
-        n.text,
-        JSON.stringify(n.attrs),
-        n.contentHash,
-        n.searchable,
-        n.embedText,
-        n.vector ? EMBED_MODEL : null,
-        n.vector ? new Date().toISOString() : null,
-        vec(n.vector),
-      ],
+  const done = await inTransaction(client, async () => {
+    const connector = await connectorOf(client, projectId, "docs");
+    const before = connector.headOid;
+    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))
+      return { refused: before, changed: 0, removed: 0 };
+    const known = new Map(
+      (
+        await client.query<{ external_id: string; content_hash: Buffer }>(
+          "select external_id, content_hash from mitos.source_item where connector_id = $1",
+          [connector.id],
+        )
+      ).rows.map((r) => [r.external_id, r.content_hash]),
     );
+    const changed = docs.filter((d) => !known.get(d.path)?.equals(docHash(d)));
 
-  await client.query("begin");
-  try {
-    // **0 件でも早く返さない。**文書を全部消したとき（README を廃止して DB へ移した等）に
-    // 戻ると墓標を立てる処理へ到達せず、撤回した記述が永久に検索で返る。
-    // **record も transaction の中で書く。**外で書くと、埋め込みや取り込みが失敗しても ingested_at だけが進み、
-    // それを同期時点として出す画面が、入っていない本文を同期済みと表示する。
+    if (changed.length) {
+      const items = await client.query<{ id: string; external_id: string }>(
+        `insert into mitos.source_item (connector_id, external_id, kind, title, path, body, source_updated_at,
+                                        content_hash, metadata, synced_at)
+         select $1, t.path, t.kind, t.title, t.path, t.body, t.at, decode(t.hash, 'hex'), t.metadata, now()
+         from jsonb_to_recordset($2::jsonb) as t(path text, kind text, title text, body text, at timestamptz,
+                                                 hash text, metadata jsonb)
+         on conflict (connector_id, external_id) do update set
+           kind = excluded.kind, title = excluded.title, body = excluded.body,
+           source_updated_at = excluded.source_updated_at, content_hash = excluded.content_hash,
+           metadata = excluded.metadata, synced_at = now()
+         returning id, external_id`,
+        [
+          connector.id,
+          JSON.stringify(
+            changed.map((d) => ({
+              path: d.path,
+              kind: d.kind,
+              title: d.title,
+              body: d.body,
+              at: d.at,
+              hash: docHash(d).toString("hex"),
+              metadata: d.artifact ? { change: d.artifact.change, changeTitle: d.artifact.changeTitle } : {},
+            })),
+          ),
+        ],
+      );
+      const sourceOf = new Map(items.rows.map((r) => [r.external_id, r.id]));
+      const sections = changed.flatMap((d) =>
+        d.sections.map((s) => {
+          const row = { kind: "document", heading: s.trail, body: s.text, reason: null };
+          return {
+            s,
+            source: sourceOf.get(d.path),
+            at: d.at,
+            hash: sha256(knowledgeText(row)),
+            lex: tsvector(`${s.trail}\n${s.text}`),
+          };
+        }),
+      );
+      // 節が消えた・key が変わったものを先に消す。残すと撤回した記述が検索で返る。
+      await client.query(
+        "delete from mitos.knowledge where source_item_id = any($1::bigint[]) and not (source_key = any($2))",
+        [[...sourceOf.values()], sections.map((x) => x.s.key)],
+      );
+      for (let i = 0; i < sections.length; i += CHUNK) {
+        const part = sections.slice(i, i + CHUNK);
+        const written = await client.query<{ id: string; content_hash: Buffer }>(
+          `insert into mitos.knowledge (project_id, source_item_id, source_key, kind, heading, body, occurred_at,
+                                        content_hash, lexemes)
+           select $1, t.source, t.key, 'document', t.heading, t.body, coalesce(t.at, now()), t.hash, t.lex::tsvector
+           from unnest($2::bigint[], $3::text[], $4::text[], $5::text[], $6::timestamptz[], $7::bytea[], $8::text[])
+             as t(source, key, heading, body, at, hash, lex)
+           on conflict (project_id, source_key) do update set
+             source_item_id = excluded.source_item_id, heading = excluded.heading, body = excluded.body,
+             occurred_at = excluded.occurred_at, content_hash = excluded.content_hash, lexemes = excluded.lexemes
+           where mitos.knowledge.content_hash <> excluded.content_hash
+           returning id, content_hash`,
+          [
+            projectId,
+            part.map((x) => x.source),
+            part.map((x) => x.s.key),
+            part.map((x) => x.s.trail),
+            part.map((x) => x.s.text),
+            part.map((x) => x.at),
+            part.map((x) => x.hash),
+            part.map((x) => x.lex),
+          ],
+        );
+        await client.query(
+          `insert into mitos.knowledge_embedding (knowledge_id, model, source_hash, status)
+           select t.id, $3, t.hash, 'pending' from unnest($1::bigint[], $2::bytea[]) as t(id, hash)
+           on conflict (knowledge_id) do update set
+             source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0, last_error = null,
+             updated_at = now()
+           where mitos.knowledge_embedding.source_hash <> excluded.source_hash`,
+          [written.rows.map((r) => r.id), written.rows.map((r) => r.content_hash), EMBED_MODEL],
+        );
+      }
+    }
+    // git の一覧は完全なので、一覧から消えた文書（承認を外した成果物を含む）は行ごと消す。
+    const removed = await client.query(
+      "delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))",
+      [connector.id, docs.map((d) => d.path)],
+    );
     await client.query(
-      `insert into record (id, scope_id, schema_ver, title, status, problem, goal, created_at, updated_at, raw, raw_hash)
-       values ($1,$2,'docs/1',$3,'in-progress','','',now(),now(),'{}'::jsonb,'')
-       on conflict (id) do update set updated_at = now(), ingested_at = now()`,
-      [recordId, scopeId, `${label} の文書`],
+      "update mitos.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1",
+      [connector.id, commit],
     );
-    for (const s of all) {
-      const v = byKey.get(s.key);
-      await put({
-        subkind: subkindOf(s.path),
-        key: s.key,
-        ordinal: s.ordinal,
-        at: s.at,
-        text: s.text,
-        attrs: {
-          path: s.path,
-          title: s.title,
-          trail: s.trail,
-          ...(s.artifact ? { artifact: s.artifact } : {}),
-        },
-        contentHash: hash(sectionText(s)),
-        searchable: true,
-        embedText: v ? sectionText(s) : null,
-        vector: v,
-      });
-    }
-    for (const s of sources) {
-      await put({
-        subkind: "artifact-source",
-        key: s.key,
-        ordinal: 0,
-        at: s.at,
-        text: s.text,
-        attrs: { path: s.key, title: path.basename(s.key), trail: s.key, artifact: s.artifact },
-        contentHash: hash(s.text),
-        searchable: false,
-        embedText: null,
-        vector: undefined,
-      });
-    }
-    // **消えた節を残さない。**文書は上書きで編集されるので、節を消して書き直すと
-    // 古い本文が DB に残り続け、撤回した記述が検索で返る。PR や会話は追記しか
-    // されないのでこの手当てが要らなかったが、文書には要る。承認を外した成果物もここで消える。
-    const gone = await client.query<{ n: string }>(
-      `update node set deleted_at = now()
-       where record_id = $1 and kind = 'doc' and deleted_at is null and not (key = any($2))
-       returning 1 as n`,
-      [recordId, liveKeys(projected)],
+    return { refused: null, changed: changed.length, removed: removed.rowCount ?? 0 };
+  });
+
+  if (done.refused) {
+    // 取り直しは transaction の外で行う（connector の行を掴んだまま、最大 60 秒の fetch を待たない）。
+    const latest = commitOf(root, opts.remote);
+    if (latest === done.refused || isAncestor(root, done.refused, latest))
+      return `別の同期が新しい commit（${done.refused.slice(0, 8)}）を先に入れていたので、何も書かなかった`;
+    throw new Error(
+      `前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` +
+        "fast-forward でないので書かなかった（巻き戻し・force-push・分岐した branch への切り替え）。" +
+        `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``,
     );
-    await client.query("commit");
-    return `${label} / 文書 ${bodies.size} 本・節 ${all.length} 件（埋め込み ${need.length} 件${
-      sources.length ? ` / 承認済みの成果物 ${sources.length} 本` : ""
-    }${gone.rowCount ? ` / 消えた節 ${gone.rowCount} 件` : ""}）${skipped}`;
-  } catch (e) {
-    await client.query("rollback").catch(() => {});
-    throw e;
   }
+  const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
+  return [
+    `文書 ${docs.length} 本・節 ${sectionCount} 件`,
+    `書き直した ${done.changed} 本`,
+    done.removed ? `消えた ${done.removed} 本` : null,
+    skipped ? `symlink とサブモジュールを飛ばした ${skipped} 件` : null,
+  ]
+    .filter(Boolean)
+    .join(" / ");
 }

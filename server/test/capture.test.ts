@@ -1,0 +1,361 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { after, before, test } from "node:test";
+import { answersOf, fit, isOwnerTurn, MAX_MESSAGE, onHook, type Spooled, spoolDir } from "../src/capture.ts";
+import { bytes, mask } from "../src/text.ts";
+
+// 別の agent 向けの prompt が「持ち主の発言」として DB の大半を占めた先行事例がある。見分けに推測を使わない。
+test("subagent と、エージェントが起動した子と、印を継がない headless の turn は持ち主の発言にしない", () => {
+  assert.equal(isOwnerTurn({ session_id: "s1" }, undefined, "cli"), true, "人が打つ session");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "s1", "cli"), true, "自分が書いた印は自分の id と一致する");
+  assert.equal(isOwnerTurn({ session_id: "child" }, "s1", "sdk-cli"), false, "親の印を継いだ子");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"), false, "mitos が起動した headless");
+  assert.equal(
+    isOwnerTurn({ session_id: "s1" }, undefined, "sdk-cli"),
+    false,
+    "launchd や Codex から起動した claude -p",
+  );
+  assert.equal(isOwnerTurn({ session_id: "s1", agent_id: "a1" }, undefined, "cli"), false, "subagent");
+  assert.equal(isOwnerTurn({}, undefined, "cli"), false, "session の分からない入力");
+});
+
+test("128 KiB を超えた発言は冒頭と末尾だけを残し、元の大きさを持つ", () => {
+  const small = fit("短い");
+  assert.deepEqual(small, { body: "短い", truncated: false, originalBytes: bytes("短い") });
+  const big = `${"頭".repeat(20_000)}${"中".repeat(50_000)}${"尾".repeat(20_000)}`;
+  const got = fit(big);
+  assert.equal(got.truncated, true);
+  assert.equal(got.originalBytes, bytes(big));
+  assert.ok(bytes(got.body) < 20 * 1024, `${bytes(got.body)} bytes 残っている`);
+  assert.ok(got.body.startsWith("頭") && got.body.endsWith("尾"));
+  assert.match(got.body, /中央 [\d,]+ bytes を保存していない/);
+  assert.ok(bytes(big) > MAX_MESSAGE);
+});
+
+// [入力, 残ってはいけない断片]。レビューで素通りを再現した形を足していく。
+const LEAKS: [string, string][] = [
+  ["OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123", "sk-proj-abc"],
+  ["VOYAGE=pa-abcdefghijklmnopqrstuvwxyz0123", "pa-abcdef"],
+  ["gh: ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abc"],
+  ["url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db", "s3cr3t"],
+  ["PGPASSWORD=npg_AbCdEf123456", "npg_AbCdEf"],
+  ["npg_AbCdEf123456XY を貼った", "npg_AbCdEf"],
+  ["aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "wJalrXUtn"],
+  ["Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123456", "eyJhbGci"],
+  ["Authorization: Bearer 0123456789abcdefghijABCDEFGHIJ", "0123456789abcdefghij"],
+  ["AIzaSyA1234567890abcdefghijklmnopqrstuv", "AIzaSy"],
+  ["npm_abcdefghijklmnopqrstuvwxyz0123456789", "npm_abc"],
+  ["glpat-abcdefghij1234567890", "glpat-"],
+  ["rk_live_abcdefghijklmnop1234", "rk_live_"],
+  ["whsec_abcdefghijklmnopqrstuvwxyz", "whsec_"],
+  ['{"password": "hunter2-example"}', "hunter2"],
+  ["postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb", "ab@cdEFGH"],
+  ["Authorization: Basic YWRtaW46c3dvcmRmaXNoMTIz", "YWRtaW46"],
+  ["X-API-Key: ak_9f8e7d6c5b4a3", "ak_9f8e7d"],
+  ["DB_PASS=s3cr3t-value", "s3cr3t"],
+  ["mysql -u root -phunter2x db", "hunter2x"],
+  ["redis://:hunter2x@cache:6379", "hunter2x"],
+  ["authorization: bearer abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnop"],
+  ['PASSWORD="correct horse battery staple"', "horse"],
+  ["AccountKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789==", "AbCdEfGh"],
+  ['password: "correcthorsebatterystaple"', "correcthorse"],
+  ["client_secret: 'zyxwvutsrqponmlkjihg'", "zyxwvuts"],
+  ["MASTERKEY=m4sterv4lue99", "m4sterv4lue"],
+  ["ENCRYPTIONKEY=0123456789abcdef", "0123456789abcdef"],
+  ['{"Authorization": "Basic dXNlcjpwYXNzd29yZDEyMw=="}', "dXNlcjpw"],
+  ["headers={'Authorization': 'Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b'}", "9944b091"],
+  ['Authorization: "Bearer abcdefghijklmnopqrstuvwx"', "abcdefghijklmnop"],
+  ['-H "X-Auth: bearer 0123456789abcdefghij"', "0123456789abcdefghij"],
+  ["?refresh_token=$RT&client_secret=GOCSPX-abcdef123456", "GOCSPX-abc"],
+  ["token=getToken()&password=s3cr3tpass1", "s3cr3tpass"],
+  ['"password": "$2b$10$abcdefghijklmnopqrstuv"', "abcdefghijklmnop"],
+  [
+    `mysqldump --single-transaction --routines --triggers --events --set-gtid-purged=OFF ${"--x ".repeat(60)}-pS3cr3tPass dbname`,
+    "S3cr3tPass",
+  ],
+  ["-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----", "MIIEowIB"],
+  [`{"SessionToken": "IQoJb3JpZ2luX2Vj${"EAoaCXVzLWVhc3QtMSJHMEUCIQD".repeat(26)}"}`, "IQoJb3Jp"],
+  ["spring.datasource.password=Xk9&mZ2pQ7vL", "mZ2pQ7vL"],
+  ["db.password=Tr0ub4dor&3", "Tr0ub4dor"],
+  ['MYSQL_ROOT_PASSWORD: "SuperSecret"', "SuperSecret"],
+  ['"password": "letmeinnow"', "letmeinnow"],
+  ['{"db_password":"sunshineforever"}', "sunshineforever"],
+  ['"password": "stunt-kayak-ferry-enamel"', "stunt-kayak"],
+  ['"secret": "Tr0ub4dor 3xyz"', "Tr0ub4dor"],
+  ['"password": "p\u00e4ssw\u00f6rd-2024"', "2024"],
+  ['"password": "パスワード1234abcd"', "1234abcd"],
+  ["password: P4ss&word1", "word1"],
+  ['"token": "curl -d password=Tr0ub4dor33 https://x"', "Tr0ub4dor33"],
+  ["mysql \\\n  -u root \\\n  -phunter2x db", "hunter2x"],
+  ["mysql -u root -p'correct horse battery' db", "horse"],
+  ["X-Auth: bearer abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnop"],
+  ['{"X-Auth": "bearer abc123def456ghi789jk"}', "abc123def456"],
+  ["BEARER 0123456789abcdefghij", "0123456789abcdefghij"],
+  ['mysql -u root -e "SHOW DATABASES;" -pS3cretPw9', "S3cretPw9"],
+  ["mysql -u root -p'Tr0ub;4dor&3' db", "4dor"],
+  ['mysql -p"s3cr&et|pw" db', "et|pw"],
+  ["mysql \\\r\n  -u root \\\r\n  -phunter2x db", "hunter2x"],
+  [`id_token=${"A1b2C3".repeat(900)}xyzEND&state=x`, "xyzEND"],
+  ['"token": "run it with password=\'letmeinnow\' please"', "letmeinnow"],
+  ['password := "Tr0ub4dor33"', "Tr0ub4dor33"],
+  ["'password' => 'Tr0ub4dor33'", "Tr0ub4dor33"],
+  ["(password=Tr0ub4dor33)", "Tr0ub4dor33"],
+];
+
+// 伏せた文は元に戻せない。コードの型注釈・変数の参照・画面の文言・パスを鍵とみなして消すと、会話の中身が失われる。
+const KEEPS = [
+  "ふつうの文: sk は短いので伏せない、pa-ge も伏せない",
+  "max_tokens: 5000 と keyboard の key の話。const token = await getToken();",
+  "password: string;",
+  "const token = await getToken();",
+  "apiKey: process.env.API_KEY",
+  "PASSWORD=$DB_PASSWORD",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: テンプレートの参照を文字として貼った形を試す
+  'token: "${process.env.TOKEN}"',
+  "MONKEY=banana TURKEY=roast COMPASS=north",
+  "http://localhost:5173/@vite/client",
+  "see https://github.com/o/r/pull/3",
+  "refresh token server/src/http/routes/knowledge.ts を読んだ",
+  "the basic src/components/app-sidebar.tsx layout",
+  "--brand-token: #ff00aa11;",
+  "PWD=/Users/someone/Projects/x PASS=3 FAIL=0",
+  '{ password: "Password is required" }',
+  'password: "パスワードを入力してください"',
+  '{"brand-token": "#ff00aa11"}',
+  "'surface-token': '#0f172acc'",
+  "the bearer src/app/api/v2/route.ts handles it",
+];
+
+test("形の決まった鍵と、名前で分かる代入・ヘッダ・URL の資格情報・mysql -p・秘密鍵を伏せる", () => {
+  for (const [input, leak] of LEAKS)
+    assert.ok(!mask(input).includes(leak), `${leak} が残った: ${mask(input)}`);
+  assert.match(
+    mask("url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db"),
+    /mitos_reader:\[伏せた\]@ep-x\.neon\.tech\/db/,
+  );
+  assert.match(
+    mask("postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb"),
+    /@ep-x\.neon\.tech\/neondb/,
+  );
+  assert.match(mask("redis://:hunter2x@cache:6379"), /@cache:6379/, "どこへ繋いだかは残す");
+  assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[伏せた]"}', "引用符を残す");
+  // 鍵の名前に付いた引用符の値は、文言でも伏せる側に倒す（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
+  assert.equal(mask('{ password: "Required" }'), '{ password: "[伏せた]" }');
+  // URL の次の引数は値に含めない（伏せた値の後ろを消さない）。
+  assert.equal(
+    mask("?access_token=abc123def456&user=alice&page=2"),
+    "?access_token=[伏せた]&user=alice&page=2",
+  );
+  // 同じコマンドの最初の -p だけ。後ろの別のコマンドの -p は消さない。
+  const chained = mask("mysql -u root -phunter2x db && ssh -p2222 host && cp -pr src dst");
+  assert.ok(
+    !chained.includes("hunter2x") && chained.includes("ssh -p2222") && chained.includes("cp -pr"),
+    chained,
+  );
+});
+
+test("鍵でない代入・画面の文言・パス・URL は変えない", () => {
+  for (const text of KEEPS) assert.equal(mask(text), text, text);
+});
+
+// 伏せ字は発言の全文へかける。引き金を繰り返しただけの入力で、フックや trace の保存が何秒も止まらない。
+test("伏せ字は引き金を繰り返した入力でも線形に終わる", () => {
+  const N = 512 * 1024;
+  for (const unit of [
+    "postgres://u:",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "password: a1",
+    "Bearer ",
+    "eyJabcdefgh.",
+    "a-",
+    "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "mysql ",
+    "token=",
+    'token: "',
+    "Authorization: Bearer ",
+    "eyJ-",
+  ]) {
+    const text = unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
+    const t = performance.now();
+    mask(text);
+    assert.ok(performance.now() - t < 500, `${unit}: ${(performance.now() - t).toFixed(0)} ms`);
+  }
+  // 引き金の後に長い空白・改行・閉じない値が続く形。
+  for (const [name, text] of [
+    ["Authorization: の後の空白", `Authorization:${" ".repeat(N)}`],
+    ["Authorization: の後の改行", `Authorization:${"\n".repeat(N)}`],
+    ["閉じない引用符", `token: "${"a".repeat(N)}`],
+    ["長い mysql の行", `mysql ${"a ".repeat(N / 2)}`],
+    ["継いだ行が続く mysql", `mysql ${"\\\n".repeat(N / 2)}`],
+  ]) {
+    const t = performance.now();
+    mask(text as string);
+    assert.ok(performance.now() - t < 500, `${name}: ${(performance.now() - t).toFixed(0)} ms`);
+  }
+});
+
+test("AskUserQuestion の答えを、質問と答えの組にする", () => {
+  assert.equal(
+    answersOf({ tool_response: { answers: { "全部推奨で？": "推奨", 選ぶもの: ["A", "B"] } } }),
+    "Q: 全部推奨で？\nA: 推奨\n\nQ: 選ぶもの\nA: A / B",
+  );
+  assert.equal(
+    answersOf({
+      tool_response: { answers: { 進め方: "推奨" }, annotations: { 進め方: { notes: "全部推奨で" } } },
+    }),
+    "Q: 進め方\nA: 推奨\nメモ: 全部推奨で",
+  );
+  assert.equal(answersOf({ tool_response: {} }), null);
+  assert.equal(
+    answersOf({ tool_input: { answers: { 質問: "モデルが書いた答え" } } }),
+    null,
+    "入力側の答えは使わない",
+  );
+});
+
+// ---- フックの入力から待ち行列までを通す ----
+
+const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-capture-home-")));
+const realHome = process.env.HOME;
+const repoDir = path.join(home, "repo");
+before(() => {
+  // この試験を Claude Code の Bash から走らせると、親の session の印と入口を継いでいる。
+  delete process.env.MITOS_PARENT_SESSION;
+  delete process.env.CLAUDE_CODE_ENTRYPOINT;
+  process.env.HOME = home;
+  execFileSync("git", ["init", "-q", repoDir], { stdio: "ignore" });
+  fs.mkdirSync(path.join(repoDir, "server"));
+  execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/o/r.git"], {
+    stdio: "ignore",
+  });
+});
+after(() => {
+  process.env.HOME = realHome;
+  fs.rmSync(home, { recursive: true, force: true });
+});
+const spooled = (): Spooled[] => {
+  const dir = spoolDir();
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".json") && !f.startsWith("."))
+    .sort()
+    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as Spooled);
+};
+const reset = () => fs.rmSync(spoolDir(), { recursive: true, force: true });
+
+test("持ち主の発言・AI の最後の応答・編集したファイルが待ち行列に入る", () => {
+  reset();
+  const base = { session_id: "s1", prompt_id: "p1", cwd: path.join(repoDir, "server") };
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "UserPromptSubmit",
+    prompt: "DB を作り直す。鍵は sk-proj-abcdefghijklmnopqrstuvwxyz0123",
+  });
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: path.join(repoDir, "db", "schema.sql") },
+  });
+  // リポジトリの外と、要件定義・設計書でない読み込みは残さない（承認されているかは問わない）。
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: "/etc/hosts" },
+  });
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    tool_input: { file_path: "README.md" },
+  });
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    tool_input: { file_path: path.join(repoDir, ".mitos/changes/auth/design.md") },
+  });
+  const r = onHook("claude-code", {
+    ...base,
+    hook_event_name: "Stop",
+    last_assistant_message: "作り直した。",
+  });
+  assert.equal(r.flush, true, "Stop で送る");
+  const got = spooled();
+  const messages = got.filter((x) => x.kind === "message");
+  const files = got.filter((x) => x.kind === "file");
+  assert.deepEqual(
+    messages.map((m) => (m.kind === "message" ? [m.id, m.speaker, m.project] : [])),
+    [
+      ["p1:self", "self", "git:github.com/o/r"],
+      ["p1:assistant", "assistant", "git:github.com/o/r"],
+    ],
+  );
+  const said = messages[0];
+  assert.ok(said?.kind === "message" && !said.body.includes("sk-proj-abc"), "鍵が待ち行列に入った");
+  assert.deepEqual(
+    files.map((f) => (f.kind === "file" ? [f.path, f.action] : [])),
+    [
+      ["db/schema.sql", "edit"],
+      [".mitos/changes/auth/design.md", "read"],
+    ],
+  );
+});
+
+test("エージェントが起動した子と、作業場所の外の session は何も書かない", () => {
+  reset();
+  process.env.MITOS_PARENT_SESSION = "parent";
+  try {
+    onHook("claude-code", {
+      session_id: "child",
+      prompt_id: "p",
+      cwd: repoDir,
+      hook_event_name: "UserPromptSubmit",
+      prompt: "レビューして",
+    });
+  } finally {
+    delete process.env.MITOS_PARENT_SESSION;
+  }
+  onHook("claude-code", {
+    session_id: "s2",
+    prompt_id: "p",
+    cwd: os.tmpdir(),
+    hook_event_name: "UserPromptSubmit",
+    prompt: "外",
+  });
+  assert.deepEqual(spooled(), []);
+});
+
+test("SessionStart は、この session の id を子へ継がせる", () => {
+  const file = path.join(home, "env-file");
+  fs.writeFileSync(file, "");
+  process.env.CLAUDE_ENV_FILE = file;
+  try {
+    onHook("claude-code", { session_id: "abc-123", hook_event_name: "SessionStart" });
+    // 形の違う id はシェルへ書かない（CLAUDE_ENV_FILE はシェルで読まれる）。
+    onHook("claude-code", { session_id: "x; rm -rf ~", hook_event_name: "SessionStart" });
+  } finally {
+    delete process.env.CLAUDE_ENV_FILE;
+  }
+  assert.equal(fs.readFileSync(file, "utf8"), "export MITOS_PARENT_SESSION=abc-123\n");
+});
+
+test("Codex の apply_patch は見出しから編集先を読む", () => {
+  reset();
+  onHook("codex", {
+    session_id: "t1",
+    turn_id: "turn-1",
+    cwd: repoDir,
+    hook_event_name: "PostToolUse",
+    tool_name: "apply_patch",
+    tool_input: { command: "*** Begin Patch\n*** Update File: server/src/a.ts\n@@\n+x\n*** End Patch" },
+  });
+  const got = spooled();
+  assert.equal(got.length, 1);
+  assert.ok(got[0]?.kind === "file" && got[0].path === "server/src/a.ts" && got[0].host === "codex");
+});

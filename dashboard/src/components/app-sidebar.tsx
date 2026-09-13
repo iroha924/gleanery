@@ -1,26 +1,17 @@
 "use client";
 
 import { UserButton, useUser } from "@clerk/nextjs";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRightIcon as StaticChevronRightIcon } from "lucide-react";
 import {
   AudioLinesIcon,
   ChevronDownIcon,
-  FolderIcon,
   GitBranchIcon,
-  HistoryIcon,
   Layers2Icon,
   MessageCircleIcon,
   MessagesSquareIcon,
-  SettingsIcon,
-  Trash2Icon,
 } from "lucide-react-motion";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Collapsible } from "radix-ui";
+import { usePathname } from "next/navigation";
 import type * as React from "react";
-import { useState } from "react";
-import { ConfirmDelete } from "@/components/confirm-delete";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,21 +27,16 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
   SidebarTrigger,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
+import type { Project } from "@/lib/api";
 import { useProject } from "@/lib/project";
-
-const SHOWN = 10;
 
 const NAVIGATION = [
   { href: "/sessions", label: "セッション", icon: MessagesSquareIcon },
@@ -58,17 +44,9 @@ const NAVIGATION = [
   { href: "/mtg", label: "MTG録音", icon: AudioLinesIcon },
 ] as const;
 
-const isCurrent = (path: string, href: string): boolean =>
-  href === "/sessions" ? path === href || path.startsWith("/records") : path === href;
-
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const qc = useQueryClient();
-  const router = useRouter();
   const path = usePathname();
-  const openChat = useSearchParams().get("chat") || undefined;
-  const chats = useQuery({ queryKey: ["chats"], queryFn: api.chats });
   const { user } = useUser();
-  const [showAll, setShowAll] = useState(false);
   const { setOpenMobile } = useSidebar();
   const closeMobile = () => setOpenMobile(false);
   const providerAccount = user?.externalAccounts.find((account) => account.username || account.emailAddress);
@@ -105,7 +83,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenu>
               {NAVIGATION.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={isCurrent(path, item.href)} tooltip={item.label}>
+                  <SidebarMenuButton asChild isActive={path === item.href} tooltip={item.label}>
                     <Link href={item.href} onClick={closeMobile}>
                       <item.icon />
                       <span>{item.label}</span>
@@ -116,83 +94,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        {chats.data && chats.data.length > 0 && (
-          <Collapsible.Root defaultOpen className="group/collapsible">
-            <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-              <SidebarGroupLabel asChild>
-                <Collapsible.Trigger
-                  data-motion-icon-group=""
-                  className="gap-2 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                >
-                  <HistoryIcon />
-                  <span>チャット履歴</span>
-                  <StaticChevronRightIcon className="ml-auto transition-transform group-data-[state=open]/collapsible:rotate-90" />
-                </Collapsible.Trigger>
-              </SidebarGroupLabel>
-              <Collapsible.Content>
-                <SidebarGroupContent className="ml-3 w-[calc(100%-0.75rem)] pl-2">
-                  <SidebarMenu>
-                    {chats.data.slice(0, showAll ? undefined : SHOWN).map((chat) => (
-                      <SidebarMenuItem key={chat.id}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <SidebarMenuButton asChild isActive={path === "/" && openChat === chat.id}>
-                              <Link href={`/?chat=${encodeURIComponent(chat.id)}`} onClick={closeMobile}>
-                                <MessageCircleIcon />
-                                <span>{chat.title ?? "（無題）"}</span>
-                              </Link>
-                            </SidebarMenuButton>
-                          </TooltipTrigger>
-                          <TooltipContent side="right">{chat.title ?? "（無題）"}</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <ConfirmDelete
-                            what={chat.title ?? "この会話"}
-                            note="この会話だけが消えます。記録は残ります。"
-                            onConfirm={() => {
-                              api.deleteChat(chat.id).then(() => {
-                                qc.invalidateQueries({ queryKey: ["chats"] });
-                                if (openChat === chat.id) router.push("/");
-                              });
-                            }}
-                          >
-                            <TooltipTrigger asChild>
-                              <SidebarMenuAction showOnHover aria-label="削除する">
-                                <Trash2Icon />
-                              </SidebarMenuAction>
-                            </TooltipTrigger>
-                          </ConfirmDelete>
-                          <TooltipContent side="right">削除する</TooltipContent>
-                        </Tooltip>
-                      </SidebarMenuItem>
-                    ))}
-                    {!showAll && chats.data.length > SHOWN && (
-                      <SidebarMenuItem>
-                        <SidebarMenuButton className="text-muted-foreground" onClick={() => setShowAll(true)}>
-                          <span>履歴をすべて表示</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              </Collapsible.Content>
-            </SidebarGroup>
-          </Collapsible.Root>
-        )}
       </SidebarContent>
 
       <SidebarFooter className="p-2">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={path.startsWith("/settings")} tooltip="設定">
-              <Link href="/settings" onClick={closeMobile}>
-                <SettingsIcon />
-                <span>設定</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
         <div className="flex h-10 items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <UserButton
             appearance={{
@@ -228,12 +132,22 @@ function Logo() {
   );
 }
 
+const DAY = 86_400_000;
+
+/** 最後の同期。**2 日より前か失敗なら目立たせる**（日次同期が止まっていると、古い判断を今のものとして読む）。 */
+function syncNote(p: Project): { text: string; stale: boolean } {
+  const failed = p.connectors.find((c) => c.lastError);
+  if (failed) return { text: `${failed.provider === "github" ? "GitHub" : "文書"}の同期に失敗`, stale: true };
+  const last = p.connectors
+    .map((c) => (c.lastSuccessAt ? Date.parse(c.lastSuccessAt) : 0))
+    .reduce((a, b) => Math.max(a, b), 0);
+  if (!last) return { text: "未同期", stale: true };
+  const days = Math.floor((Date.now() - last) / DAY);
+  return { text: days === 0 ? "今日同期" : `${days} 日前に同期`, stale: days >= 2 };
+}
+
 function ProjectSwitcher() {
-  const { target, setTarget, label } = useProject();
-  const groups = useQuery({ queryKey: ["groups"], queryFn: api.groups });
-  const scopes = useQuery({ queryKey: ["scopes"], queryFn: api.scopes });
-  const grouped = new Set(groups.data?.flatMap((group) => group.members.map((member) => member.id)) ?? []);
-  const loose = scopes.data?.filter((scope) => !grouped.has(scope.id)) ?? [];
+  const { target, setTarget, label, projects } = useProject();
   const { setOpenMobile } = useSidebar();
   const pick = (value: string) => {
     setTarget(value === "all" ? "" : value);
@@ -244,7 +158,7 @@ function ProjectSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger
         className="flex h-9 w-full items-center justify-between gap-2 rounded-md border border-sidebar-border bg-card px-3 text-base outline-none hover:bg-accent/50 focus-visible:border-ring data-[state=open]:border-foreground/20 data-[state=open]:bg-card"
-        aria-label="見るプロジェクト"
+        aria-label="見る作業場所"
       >
         <span className="truncate">{label}</span>
         <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
@@ -253,49 +167,44 @@ function ProjectSwitcher() {
         side="bottom"
         align="start"
         sideOffset={6}
-        className="w-(--radix-dropdown-menu-trigger-width) p-0"
+        className="w-(--radix-dropdown-menu-trigger-width) min-w-72 p-0"
       >
         <div className="border-b px-3 py-2.5">
           <p className="text-base font-medium">閲覧範囲</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">表示するナレッジを切り替えます</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">セッション・チャット・会議が引く作業場所</p>
         </div>
         <DropdownMenuRadioGroup value={target || "all"} onValueChange={pick} className="p-1.5">
           <DropdownMenuRadioItem value="all">
             <Layers2Icon className="size-4 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">すべて</span>
-            <span className="text-sm text-muted-foreground">絞り込みなし</span>
+            <span className="text-sm text-muted-foreground">セッションの一覧だけ</span>
           </DropdownMenuRadioItem>
-          <DropdownMenuGroup className="mt-2 border-t py-2">
-            <DropdownMenuLabel className="py-2">プロジェクト</DropdownMenuLabel>
-            {groups.isPending && <p className="px-2 py-2 text-sm text-muted-foreground">読み込み中…</p>}
-            {groups.isError && (
-              <p className="px-2 py-2 text-sm text-destructive">プロジェクトを読み込めませんでした</p>
-            )}
-            {groups.data?.length === 0 && (
+          <DropdownMenuGroup className="mt-2 border-t pt-2">
+            <DropdownMenuLabel>作業場所</DropdownMenuLabel>
+            {projects === undefined && <p className="px-2 py-2 text-sm text-muted-foreground">読み込み中…</p>}
+            {projects?.length === 0 && (
               <div className="mx-1 mb-2 rounded-md border border-dashed px-3 py-3">
-                <p className="text-sm font-medium">プロジェクトはまだありません</p>
-                <p className="mt-1 text-sm text-muted-foreground">設定画面から作成できます</p>
+                <p className="text-sm font-medium">作業場所はまだありません</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  リポジトリで <code className="font-mono">mitos project add</code> を実行します
+                </p>
               </div>
             )}
-            {groups.data?.map((group) => (
-              <DropdownMenuRadioItem key={`g:${group.id}`} value={`g:${group.id}`}>
-                <FolderIcon className="size-4 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate">{group.name}</span>
-                <span className="text-sm tabular-nums text-muted-foreground">{group.members.length}件</span>
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuGroup>
-          {loose.length > 0 && (
-            <DropdownMenuGroup className="border-t pt-2">
-              <DropdownMenuLabel>個別リポジトリ</DropdownMenuLabel>
-              {loose.map((scope) => (
-                <DropdownMenuRadioItem key={scope.id} value={String(scope.id)}>
-                  <GitBranchIcon className="size-4 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{scope.label}</span>
+            {projects?.map((project) => {
+              const note = syncNote(project);
+              return (
+                <DropdownMenuRadioItem key={project.id} value={String(project.id)} className="items-start">
+                  <GitBranchIcon className="mt-0.5 size-4 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{project.name}</span>
+                    <span className={`block text-xs ${note.stale ? "text-dont" : "text-muted-foreground"}`}>
+                      {note.text} ・ セッション {project.sessions}
+                    </span>
+                  </span>
                 </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuGroup>
-          )}
+              );
+            })}
+          </DropdownMenuGroup>
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>

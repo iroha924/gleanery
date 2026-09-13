@@ -1,24 +1,24 @@
 // `.mitos/` の作業領域。要件定義と設計書の置き場所と、公開してよいかを決める manifest。
 //
 // **承認状態は change.json だけが持つ。**本文の自然言語から推測しない。
-// 文書の同期と `mitos check` は同じ検証を通す。
+// 文書の同期（commit の tree を読む）と `mitos check`（作業ツリーを読む）は、同じ検査を読み先だけ替えて通す。
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { identify } from "./scope.ts";
+import { rootOf } from "./project.ts";
 
 const MITOS = ".mitos";
 const CHANGES = ".mitos/changes";
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
- * 同期と Dashboard が成果物として扱う path。これ以外の `.mitos` 配下の Markdown は取り込まない。
- * trace の `plugin/skills/trace/lib/collect.mjs` の `ARTIFACT` と同じ形（`scripts/check-pairs.mjs` が突き合わせる）。
+ * 同期と画面が成果物として扱う path。これ以外の `.mitos` 配下の Markdown は取り込まない。
+ * 自動記録も同じ定数で「読んだ成果物」を選ぶ。種別は画面の SessionArtifact.kind と `scripts/check-pairs.mjs` が突き合わせる。
  */
-const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+export const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
 /** manifest は数行の JSON。上限が無いと、巨大なファイル 1 つで日次同期のプロセスごと落ちる（OOM）。 */
-const MAX_MANIFEST = 64 * 1024;
+export const MAX_MANIFEST = 64 * 1024;
 
 export type ArtifactKind = "requirements" | "design";
 export type Artifact = { kind: ArtifactKind; change: string; changeTitle: string };
@@ -44,25 +44,41 @@ const changeSchema = z
   });
 type Change = z.infer<typeof changeSchema>;
 
-/** symlink を辿らずに種別を見る。無ければ null。 */
-const kindOf = (full: string): "dir" | "file" | "other" | null => {
-  const st = fs.lstatSync(full, { throwIfNoEntry: false });
-  if (!st) return null;
-  return st.isDirectory() ? "dir" : st.isFile() ? "file" : "other";
+/** 検査の読み先。種別は symlink を辿らずに見る（symlink とサブモジュールは other）。 */
+export type Snapshot = {
+  kind: (rel: string) => "dir" | "file" | "other" | null;
+  size: (rel: string) => number;
+  read: (rel: string) => string;
+  /** git が追っている path。分からなければ null */
+  tracked: Set<string> | null;
 };
+
+/** 作業ツリーを読む（`mitos check`）。 */
+export function workingTree(root: string): Snapshot {
+  const stat = (rel: string) => fs.lstatSync(path.join(root, rel), { throwIfNoEntry: false });
+  return {
+    kind: (rel) => {
+      const st = stat(rel);
+      if (!st) return null;
+      return st.isDirectory() ? "dir" : st.isFile() ? "file" : "other";
+    },
+    size: (rel) => stat(rel)?.size ?? 0,
+    read: (rel) => fs.readFileSync(path.join(root, rel), "utf8"),
+    tracked: trackedChanges(root),
+  };
+}
 
 /**
  * JSON を読む。**エラーにファイルの内容を出さない。**`JSON.parse` のエラー文は入力の先頭を含むので、
  * 追跡された symlink が資格情報を指していると、その断片が同期ログへ出る。
  */
-function readJson(root: string, rel: string): { value: unknown } | { reason: string } {
-  const full = path.join(root, rel);
-  const st = fs.lstatSync(full, { throwIfNoEntry: false });
-  if (!st) return { reason: "無い" };
-  if (!st.isFile()) return { reason: "通常のファイルではない（symlink も受け付けない）" };
-  if (st.size > MAX_MANIFEST) return { reason: `大きすぎる（${MAX_MANIFEST} bytes まで）` };
+function readJson(snap: Snapshot, rel: string): { value: unknown } | { reason: string } {
+  const kind = snap.kind(rel);
+  if (kind === null) return { reason: "無い" };
+  if (kind !== "file") return { reason: "通常のファイルではない（symlink も受け付けない）" };
+  if (snap.size(rel) > MAX_MANIFEST) return { reason: `大きすぎる（${MAX_MANIFEST} bytes まで）` };
   try {
-    return { value: JSON.parse(fs.readFileSync(full, "utf8")) };
+    return { value: JSON.parse(snap.read(rel)) };
   } catch {
     return { reason: "JSON として読めない" };
   }
@@ -96,11 +112,7 @@ function trackedChanges(root: string): Set<string> | null {
  * **Markdown より先に draft のキーを書く**契約なので、キーがあって Markdown がまだ無い状態は正常。
  * 逆に Markdown があるのにキーが無い状態は、承認されているかを決められないので不正。
  */
-function inspectChange(
-  root: string,
-  slug: string,
-  tracked: Set<string> | null,
-): { change: Change | null; problems: Problem[] } {
+function inspectChange(snap: Snapshot, slug: string): { change: Change | null; problems: Problem[] } {
   const dir = `${CHANGES}/${slug}`;
   const problems: Problem[] = [];
   // 規則外の名前はそのまま出さない。制御文字を含むと端末と同期ログへ流れる。JSON.stringify は C0 だけを
@@ -115,14 +127,14 @@ function inspectChange(
         },
       ],
     };
-  if (kindOf(path.join(root, dir)) !== "dir") {
+  if (snap.kind(dir) !== "dir") {
     return {
       change: null,
       problems: [{ path: dir, reason: "ディレクトリではない（symlink も受け付けない）" }],
     };
   }
   const manifest = `${dir}/change.json`;
-  const read = readJson(root, manifest);
+  const read = readJson(snap, manifest);
   if ("reason" in read) return { change: null, problems: [{ path: manifest, reason: read.reason }] };
   const parsed = changeSchema.safeParse(read.value);
   if (!parsed.success)
@@ -130,22 +142,22 @@ function inspectChange(
 
   for (const kind of ["requirements", "design"] as const) {
     const md = `${dir}/${kind}.md`;
-    const exists = kindOf(path.join(root, md));
+    const exists = snap.kind(md);
     if (exists !== null && exists !== "file")
       problems.push({ path: md, reason: "通常のファイルではない（symlink も受け付けない）" });
     if (exists !== null && !parsed.data[kind])
       problems.push({ path: manifest, reason: `${kind}.md があるのに ${kind} のキーが無い` });
     // 別のマシンの作業ツリーには manifest が無く、そのリポジトリの文書同期が毎日失敗する。
-    if (tracked?.has(md) && !tracked.has(manifest))
+    if (snap.tracked?.has(md) && !snap.tracked.has(manifest))
       problems.push({ path: manifest, reason: `追跡済みの ${kind}.md に対して未追跡` });
   }
   return { change: parsed.data, problems };
 }
 
 /** `.mitos` と `.mitos/changes` が symlink でない実ディレクトリか。 */
-function inspectRoot(root: string): Problem[] {
+function inspectRoot(snap: Snapshot): Problem[] {
   for (const rel of [MITOS, CHANGES]) {
-    const kind = kindOf(path.join(root, rel));
+    const kind = snap.kind(rel);
     if (kind === null) return [{ path: rel, reason: "無い（mitos init を実行する）" }];
     if (kind !== "dir") return [{ path: rel, reason: "ディレクトリではない（symlink も受け付けない）" }];
   }
@@ -156,32 +168,31 @@ function inspectRoot(root: string): Problem[] {
  * 作業ツリーの `.mitos` を全部検査する（`mitos check`）。draft は未追跡のことが多いので、追跡状態を問わず全 change を見る。
  */
 export function check(dir: string): { root: string; changes: number; problems: Problem[] } {
-  const root = identify(dir).absPath;
-  const rootProblems = inspectRoot(root);
+  const root = rootOf(dir);
+  const snap = workingTree(root);
+  const rootProblems = inspectRoot(snap);
   if (rootProblems.length) return { root, changes: 0, problems: rootProblems };
   const problems: Problem[] = [];
-  const project = readJson(root, `${MITOS}/project.json`);
+  const project = readJson(snap, `${MITOS}/project.json`);
   if ("reason" in project) problems.push({ path: `${MITOS}/project.json`, reason: project.reason });
   else {
     const parsed = projectSchema.safeParse(project.value);
     if (!parsed.success) problems.push({ path: `${MITOS}/project.json`, reason: zodReason(parsed.error) });
   }
-  const tracked = trackedChanges(root);
   // `.DS_Store` のような OS の置き物で落ちないよう、ドットで始まる名前は change として扱わない。
   const slugs = fs.readdirSync(path.join(root, CHANGES)).filter((name) => !name.startsWith("."));
-  for (const slug of slugs) problems.push(...inspectChange(root, slug, tracked).problems);
+  for (const slug of slugs) problems.push(...inspectChange(snap, slug).problems);
   return { root, changes: slugs.length, problems };
 }
 
 /**
- * 文書の同期で取り込む成果物を決める。**本文を読み終えた後に呼ぶ**（再編集は draft を書いてから本文を触るので、
- * この順なら編集中の本文は必ず draft として外れる）。
+ * 文書の同期で取り込む成果物を決める。本文と manifest は同じ commit の tree から読むので、読む順に依存しない。
  *
- * 追跡済みの成果物 Markdown を持つ change だけを検査し、1 つでも不正なら problems を返す。
+ * 成果物の Markdown を持つ change だけを検査し、1 つでも不正なら problems を返す。
  * 呼び出し側はそのとき、埋め込みと DB 書き込みの前にそのリポジトリの同期を止める。
  */
 export function selectArtifacts(
-  root: string,
+  snap: Snapshot,
   files: string[],
 ): { include: Map<string, Artifact>; problems: Problem[] } {
   const include = new Map<string, Artifact>();
@@ -191,12 +202,11 @@ export function selectArtifacts(
     if (m?.[1] && m[2]) bySlug.set(m[1], [...(bySlug.get(m[1]) ?? []), { rel, kind: m[2] as ArtifactKind }]);
   }
   if (bySlug.size === 0) return { include, problems: [] };
-  const rootProblems = inspectRoot(root);
+  const rootProblems = inspectRoot(snap);
   if (rootProblems.length) return { include, problems: rootProblems };
-  const tracked = trackedChanges(root);
   const problems: Problem[] = [];
   for (const [slug, docs] of bySlug) {
-    const r = inspectChange(root, slug, tracked);
+    const r = inspectChange(snap, slug);
     problems.push(...r.problems);
     if (!r.change) continue;
     for (const { rel, kind } of docs) {
@@ -221,10 +231,10 @@ export const underMitos = (rel: string): boolean => rel.startsWith(`${MITOS}/`) 
  * EEXIST のあとに lstat で種別を見て拒否する。
  */
 export function init(dir: string): { root: string; created: boolean } {
-  // identify() は存在しない path をそのまま返すので、先に確かめる。
+  // rootOf() は存在しない path をそのまま返すので、先に確かめる。
   if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory())
     throw new Error(`${dir} はディレクトリではない`);
-  const root = identify(dir).absPath;
+  const root = rootOf(dir);
   let created = false;
   for (const rel of [MITOS, CHANGES]) {
     try {
@@ -232,7 +242,7 @@ export function init(dir: string): { root: string; created: boolean } {
       created = true;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-      if (kindOf(path.join(root, rel)) !== "dir")
+      if (workingTree(root).kind(rel) !== "dir")
         throw new Error(`${rel} がディレクトリではない（symlink も受け付けない）`);
     }
   }
@@ -244,7 +254,7 @@ export function init(dir: string): { root: string; created: boolean } {
     created = true;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-    const read = readJson(root, rel);
+    const read = readJson(workingTree(root), rel);
     if ("reason" in read) throw new Error(`${rel}: ${read.reason}`);
     const parsed = projectSchema.safeParse(read.value);
     if (!parsed.success) throw new Error(`${rel}: ${zodReason(parsed.error)}`);

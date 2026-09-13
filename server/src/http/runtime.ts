@@ -1,18 +1,6 @@
-import type pg from "pg";
-import { loadEnv, pool } from "../db.ts";
+import { lazyPool, loadEnv } from "../db.ts";
 
-export const env = loadEnv(process.cwd());
+export const env = loadEnv();
 
-// Concurrent dashboard reads need a pool; a single client would serialize every request.
-let readPool: pg.Pool | null = null;
-export function db(): pg.Pool {
-  readPool ??= pool(env, { as: "read" });
-  return readPool;
-}
-
-let configPool: pg.Pool | null = null;
-export function cfg(): pg.Pool {
-  // This role can change dashboard configuration but cannot write the knowledge tables.
-  configPool ??= pool(env, { as: "config" });
-  return configPool;
-}
+// 画面の API は読むだけ。同時に来る読み込みを 1 本へ積まないよう pool を使う。
+export const db = lazyPool(env, "reader");

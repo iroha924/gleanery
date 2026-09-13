@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: mitosのNext.jsとHonoをVercelへdeployし、Clerk本番認証、環境変数、custom domain、DNSを設定・検証する。previewやproduction反映を行うときに使う。アプリの実装やGitHub連携の説明だけなら使わない。
+description: mitosのNext.jsとHonoをVercelへdeployし、Clerk本番認証、環境変数、custom domain、DNSを設定・検証する。previewやproduction反映を行うときに使う。アプリの実装だけなら使わない。
 ---
 
 # mitosをVercelへ出す
@@ -14,7 +14,6 @@ description: mitosのNext.jsとHonoをVercelへdeployし、Clerk本番認証、�
 ## Does not trigger
 
 - `dashboard/`やHono routeを実装するだけの作業
-- GitHub連携によるpreview運用を説明するだけの作業
 
 画面とAPIはVercelの1 project `mitos`、認証はClerk、本番は`https://mitos.iroh4.com`である。DNSは
 Squarespaceに残し、nameserverを移さない。
@@ -35,9 +34,9 @@ clerk deploy status --mode agent
 lockfileを読めない。`buildCommand`は`@vercel/backends`とTypeScript 7の非互換を避けるために置いて
 あり、型検査は`bun run verify`で行う。
 
-Honoの公開entrypointは`server/src/server.ts`、GitHub Queue workerは`server/src/github-worker.ts`のdefault
-exportである。workerは`github-sync`のQueue triggerだけを入口にし、rewriteへ追加しない。entrypointを
-外すとserviceが静的配信として扱われ、server配下が公開される。
+Honoの公開entrypointは`server/src/server.ts`のdefault exportで、rewriteは`/api/*`だけをこのserviceへ
+送る。entrypointを外すとserviceが静的配信として扱われ、server配下が公開される。GitHubの取り込みは各PCの
+`mitos sync`が行い、Vercelには置かない。
 
 ## 環境変数
 
@@ -48,20 +47,18 @@ vercel env add <name> production --sensitive --force < <value-file>
 vercel env add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY production --type config --force < <value-file>
 ```
 
-必要な変数は次の15個で、`KNOWLEDGE_DB_URL`は入れない。
+必要な変数は次の8個で、`KNOWLEDGE_DB_URL`（owner）、`KNOWLEDGE_DB_URL_INGEST`、`KNOWLEDGE_DB_URL_CAPTURE`は
+入れない。画面のAPIは読むだけで、書き込みの鍵を持たない。
 
 ```text
-KNOWLEDGE_DB_URL_RO  KNOWLEDGE_DB_URL_CFG  VOYAGE_API_KEY  OPENAI_API_KEY
+KNOWLEDGE_DB_URL_RO  VOYAGE_API_KEY  OPENAI_API_KEY
 CLERK_SECRET_KEY  CLERK_PUBLISHABLE_KEY  MITOS_ALLOWED_USER_ID  MITOS_ALLOWED_ORIGINS
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-KNOWLEDGE_DB_URL_GITHUB  GITHUB_APP_ID  GITHUB_APP_PRIVATE_KEY  GITHUB_APP_WEBHOOK_SECRET
-GITHUB_APP_SLUG  GITHUB_ALLOWED_ACCOUNT
 ```
 
-`NEXT_PUBLIC_`の公開鍵だけConfig型、残りはSecret型にする。GitHub AppにはMetadata、Issues、Pull
-requestsのread-onlyだけを許可し、Contents権限は付けない。setup URLは
-`https://mitos.iroh4.com/settings`、webhook URLは`https://mitos.iroh4.com/webhooks/github`にする。
-秘密鍵とwebhook secretはbrowserへ出さない。installation tokenは環境変数にもDBにも保存しない。
+`NEXT_PUBLIC_`の公開鍵だけConfig型、残りはSecret型にする。`bun run db:roles`で鍵を作り直したら、
+`KNOWLEDGE_DB_URL_RO`をpreviewとproductionの両方で入れ直してから再deployする。古い鍵のままのdeployは
+DBへ繋がらない。
 
 ## ClerkとDNS
 
@@ -85,8 +82,7 @@ deploy前に`bun run verify`を通す。deploy後は`vercel inspect`で成功と
 curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com
 curl -s -o /dev/null -w '%{http_code}\n' https://mitos.iroh4.com/sessions
 curl -s https://mitos.iroh4.com/api/sessions
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://mitos.iroh4.com/webhooks/github
 ```
 
-先頭2つは200、資格情報なしのAPIは401、署名なしのwebhookは400である。500なら環境変数不足を調べる。
-sign-in後の`/settings`で接続状態と同期結果を確認し、Vercel Queuesで`github-sync`の配送成功も確認する。
+先頭2つは200、資格情報なしのAPIは401である。500なら環境変数不足を調べる。sign-in後に作業場所を1つ選び、
+チャットが根拠付きで答えることと、`/sessions`に自動記録した会話が出ることを確かめる。

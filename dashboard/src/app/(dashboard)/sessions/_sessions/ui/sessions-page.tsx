@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import {
   ArrowLeftIcon,
+  BotIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -11,6 +12,7 @@ import {
   ClipboardListIcon,
   CopyIcon,
   DraftingCompassIcon,
+  FileTextIcon,
   GitBranchIcon,
   ListChecksIcon,
   MessagesSquareIcon,
@@ -18,7 +20,7 @@ import {
   ScaleIcon,
   SearchIcon,
   ShieldAlertIcon,
-  SlidersHorizontalIcon,
+  UserRoundIcon,
 } from "lucide-react-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -26,23 +28,33 @@ import { MarkdownText } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { polarityClass } from "@/lib/polarity";
 import { useProject } from "@/lib/project";
+import { stanceClass } from "@/lib/stance";
 import {
+  type FoundSession,
   loadSession,
   loadSessions,
+  type SearchMode,
   type SessionArtifact,
-  type SessionDetail,
-  type SessionHit,
-  type SessionNode,
+  type SessionKnowledge,
+  type SessionMessage,
   type SessionRow,
+  type SessionWork,
   searchSessions,
 } from "../api/sessions";
 
@@ -53,37 +65,17 @@ const DATE = new Intl.DateTimeFormat("ja-JP", {
   hour: "2-digit",
   minute: "2-digit",
 });
-
-const SEARCH_KINDS = [
-  ["decision", "決めたこと"],
-  ["option", "検討した案"],
-  ["event", "作業の経緯"],
-  ["boundary", "守るルール"],
-  ["verification", "確かめたこと"],
-  ["question", "未解決の問い"],
-] as const;
-const SEARCH_KIND_VALUES = new Set<string>(SEARCH_KINDS.map(([value]) => value));
-
-const hostLabel = (host: string): string => {
-  if (host === "claude-code") return "Claude Code";
-  if (host === "codex") return "Codex";
-  return host;
-};
-
 const formatDate = (value: string | null): string => (value ? DATE.format(new Date(value)) : "不明");
 
-const statusLabel = (status: string): string =>
-  ({ planning: "計画中", "in-progress": "進行中", blocked: "ブロック", paused: "一時停止", done: "完了" })[
-    status
-  ] ?? status;
+const SEARCH_MODES: [SearchMode, string][] = [
+  ["knowledge", "判断"],
+  ["avoid", "やらないこと"],
+  ["said", "自分の発言"],
+];
+const isMode = (v: string | null): v is SearchMode => SEARCH_MODES.some(([m]) => m === v);
 
-const statusVariant = (status: string): "secondary" | "info" | "warning" | "success" | "destructive" => {
-  if (status === "done") return "success";
-  if (status === "in-progress") return "info";
-  if (status === "blocked") return "destructive";
-  if (status === "paused") return "warning";
-  return "secondary";
-};
+const hostLabel = (host: string): string =>
+  host === "claude-code" ? "Claude Code" : host === "codex" ? "Codex" : host;
 
 const resumeCommand = (host: string, sessionId: string): string | null => {
   if (host === "claude-code") return `claude --resume ${sessionId}`;
@@ -91,14 +83,18 @@ const resumeCommand = (host: string, sessionId: string): string | null => {
   return null;
 };
 
-type Section = {
-  id: string;
-  title: string;
-  description: string;
-  icon: typeof ScaleIcon;
-  tone: keyof typeof SECTION_TONES;
-  nodes: SessionNode[];
+const WORK_STATUS: Record<
+  string,
+  { label: string; variant: "info" | "destructive" | "warning" | "success" | "secondary" }
+> = {
+  active: { label: "進行中", variant: "info" },
+  blocked: { label: "止まっている", variant: "destructive" },
+  paused: { label: "中断中", variant: "warning" },
+  done: { label: "完了", variant: "success" },
+  abandoned: { label: "取りやめ", variant: "secondary" },
 };
+
+// ---- 判断（trace で残したもの）----
 
 const SECTION_TONES = {
   green: {
@@ -136,116 +132,96 @@ const SECTION_TONES = {
 const SECTION_DEFINITIONS = [
   {
     id: "decision",
+    kinds: ["decision"],
     title: "決めたこと",
-    description: "採用した方針と、その理由",
+    description: "採用した方針と、捨てた案",
     icon: ScaleIcon,
     tone: "green",
   },
   {
-    id: "event",
-    title: "作業の経緯",
-    description: "発見、変更、行き止まり",
-    icon: RouteIcon,
-    tone: "ochre",
-  },
-  {
     id: "boundary",
+    kinds: ["constraint", "non_goal", "debt"],
     title: "守るルール",
-    description: "制約と、今回やらないこと",
+    description: "制約、やらないこと、意図して残した負債",
     icon: ShieldAlertIcon,
     tone: "red",
   },
   {
+    id: "event",
+    kinds: ["finding", "dead_end"],
+    title: "分かったこと",
+    description: "発見と、試して駄目だった道",
+    icon: RouteIcon,
+    tone: "ochre",
+  },
+  {
     id: "verification",
+    kinds: ["verification"],
     title: "確かめたこと",
-    description: "実行した検証と結果",
+    description: "検証と結果",
     icon: CircleCheckIcon,
     tone: "slate",
   },
   {
     id: "question",
-    title: "未解決の問い",
-    description: "次のセッションで判断すること",
+    kinds: ["question"],
+    title: "問い",
+    description: "答えの出ていない問い",
     icon: ListChecksIcon,
     tone: "brown",
   },
 ] as const;
 
-function sectionsOf(detail: SessionDetail): Section[] {
+type Section = (typeof SECTION_DEFINITIONS)[number] & { items: SessionKnowledge[] };
+
+function sectionsOf(knowledge: SessionKnowledge[]): Section[] {
   return SECTION_DEFINITIONS.flatMap((section) => {
-    const nodes = detail.nodes.filter((node) => node.kind === section.id);
-    return nodes.length > 0 ? [{ ...section, nodes }] : [];
+    const items = knowledge.filter((k) => (section.kinds as readonly string[]).includes(k.kind));
+    return items.length > 0 ? [{ ...section, items }] : [];
   });
 }
 
-function ResumeCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-
-  return (
-    <div className="mt-3 flex max-w-full items-center rounded-md border bg-card">
-      <code className="min-w-0 flex-1 overflow-x-auto px-3 py-2 font-mono text-sm text-foreground">
-        {command}
-      </code>
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="mr-1 shrink-0"
-              aria-label="再開コマンドをコピー"
-              onClick={() => {
-                navigator.clipboard.writeText(command).then(() => setCopied(true));
-              }}
-            >
-              {copied ? <CheckIcon /> : <CopyIcon />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top">{copied ? "コピーしました" : "再開コマンドをコピー"}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
-  );
-}
-
-function NodeDetails({
-  node,
+function KnowledgeDetails({
+  item,
   options,
   tone,
 }: {
-  node: SessionNode;
-  options: SessionNode[];
+  item: SessionKnowledge;
+  options: SessionKnowledge[];
   tone: Section["tone"];
 }) {
-  const related = options.filter((option) => option.parent_id === node.id);
+  const related = options.filter((option) => option.decisionId === item.id);
   return (
     <article className={cn("space-y-3 rounded-md border p-4", SECTION_TONES[tone].panel)}>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span className={SECTION_TONES[tone].text}>{node.label}</span>
-        {node.at && <time className="text-muted-foreground tabular-nums">{formatDate(node.at)}</time>}
+        <span className={stanceClass(item.stance)}>{item.label}</span>
+        <time className="text-muted-foreground tabular-nums">{formatDate(item.at)}</time>
       </div>
-      <MarkdownText text={node.text} className="text-base leading-7" />
-      {node.ex && (
+      <MarkdownText text={item.body} className="text-base leading-7" />
+      {item.reason && (
         <div className="rounded-md border bg-card p-3">
-          <p className="mb-1 text-sm font-medium text-muted-foreground">背景</p>
-          <MarkdownText text={node.ex} className="text-sm leading-6" />
+          <p className="mb-1 text-sm font-medium text-muted-foreground">
+            {item.kind === "decision"
+              ? "なぜ要ったか"
+              : item.kind === "verification"
+                ? "実行しなかった理由"
+                : "理由"}
+          </p>
+          <MarkdownText text={item.reason} className="text-sm leading-6" />
         </div>
       )}
-      {node.attrs.confirmation && (
+      {item.confirmation && (
         <div>
           <p className="text-sm font-medium text-muted-foreground">確かめ方</p>
-          <MarkdownText text={node.attrs.confirmation} className="mt-1 text-sm leading-6" />
+          <MarkdownText text={item.confirmation} className="mt-1 text-sm leading-6" />
         </div>
       )}
-      {node.attrs.consequences && node.attrs.consequences.length > 0 && (
-        <ul className="space-y-2 border-t pt-3">
-          {node.attrs.consequences.map((item) => (
-            <li key={item.text} className="grid grid-cols-[6rem_1fr] gap-2 text-sm leading-6">
-              <span className={item.good ? "text-do" : "text-dont"}>
-                {item.good ? "得たもの" : "引き受けた不利"}
-              </span>
-              <MarkdownText text={item.text} className="text-sm leading-6" />
+      {item.downsides.length > 0 && (
+        <ul className="space-y-1.5 border-t pt-3">
+          {item.downsides.map((text) => (
+            <li key={text} className="grid grid-cols-[7rem_1fr] gap-2 text-sm leading-6">
+              <span className="text-dont">引き受けた不利</span>
+              <MarkdownText text={text} className="text-sm leading-6" />
             </li>
           ))}
         </ul>
@@ -256,27 +232,13 @@ function NodeDetails({
           <ul className="space-y-1.5">
             {related.map((option) => (
               <li key={option.id} className="text-sm leading-6">
-                <span className={option.polarity === "dont" ? "text-dont" : "text-do"}>
-                  {option.polarity === "dont" ? "不採用" : "採用"}
-                </span>{" "}
-                {option.text}
-                {option.attrs.whyNot && (
-                  <span className="text-muted-foreground"> — {option.attrs.whyNot}</span>
-                )}
+                <span className={stanceClass(option.stance)}>{option.label}</span> {option.body}
+                {option.reason && <span className="text-muted-foreground"> — {option.reason}</span>}
               </li>
             ))}
           </ul>
         </div>
       )}
-      {node.attrs.cmd && (
-        <pre className="max-h-56 overflow-auto rounded-md bg-muted p-3 font-mono text-xs leading-5">
-          <code>
-            $ {node.attrs.cmd}
-            {node.attrs.output ? `\n${node.attrs.output}` : ""}
-          </code>
-        </pre>
-      )}
-      {node.attrs.whyNotRun && <p className="text-sm text-dont">未実行: {node.attrs.whyNotRun}</p>}
     </article>
   );
 }
@@ -287,7 +249,7 @@ function SectionDialog({
   onClose,
 }: {
   section: Section | null;
-  options: SessionNode[];
+  options: SessionKnowledge[];
   onClose: () => void;
 }) {
   return (
@@ -305,7 +267,7 @@ function SectionDialog({
                 >
                   <section.icon className="size-4" />
                 </span>
-                <span className="text-sm tabular-nums">{section.nodes.length}件</span>
+                <span className="text-sm tabular-nums">{section.items.length}件</span>
               </div>
               <DialogTitle className={cn("text-left", SECTION_TONES[section.tone].text)}>
                 {section.title}
@@ -314,8 +276,8 @@ function SectionDialog({
             </DialogHeader>
             <ScrollArea className="min-h-0 pr-4">
               <div className="space-y-3">
-                {section.nodes.map((node) => (
-                  <NodeDetails key={node.id} node={node} options={options} tone={section.tone} />
+                {section.items.map((item) => (
+                  <KnowledgeDetails key={item.id} item={item} options={options} tone={section.tone} />
                 ))}
               </div>
             </ScrollArea>
@@ -347,18 +309,133 @@ function SectionCard({ section, onOpen }: { section: Section; onOpen: () => void
           <section.icon className="size-4" />
         </span>
         <span className={cn("flex items-center gap-1 text-sm", SECTION_TONES[section.tone].text)}>
-          {section.nodes.length}件
+          {section.items.length}件
           <ChevronRightIcon className="size-4" />
         </span>
       </span>
       <span className={cn("mt-3 font-medium", SECTION_TONES[section.tone].text)}>{section.title}</span>
       <span className="mt-1 text-sm text-muted-foreground">{section.description}</span>
       <span className="mt-auto line-clamp-2 pt-4 text-sm leading-6 text-muted-foreground">
-        {section.nodes[0]?.text}
+        {section.items[0]?.body}
       </span>
     </button>
   );
 }
+
+// ---- 作業の現在地 ----
+
+function WorkCard({ work }: { work: SessionWork }) {
+  const status = WORK_STATUS[work.status] ?? { label: work.status, variant: "secondary" as const };
+  return (
+    <section className="space-y-3 rounded-md border border-do/25 bg-do/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-medium">{work.title}</h3>
+        <span className="flex items-center gap-2">
+          <Badge variant={status.variant}>{status.label}</Badge>
+          <time className="text-sm text-muted-foreground tabular-nums">
+            {formatDate(work.updatedAt)} 更新
+          </time>
+        </span>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">目指すところ</p>
+          <MarkdownText text={work.goal} className="mt-1 text-sm leading-6" />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-muted-foreground">いまの状況</p>
+          <MarkdownText text={work.current} className="mt-1 text-sm leading-6" />
+        </div>
+      </div>
+      {work.next.length > 0 && (
+        <div className="border-t pt-3">
+          <p className="text-sm font-medium text-muted-foreground">次にやること</p>
+          <ul className="mt-1 space-y-1">
+            {work.next.map((n) => (
+              <li key={n} className="text-sm leading-6">
+                {n.startsWith("人:") ? (
+                  <>
+                    <Badge variant="warning" className="mr-1.5">
+                      人
+                    </Badge>
+                    {n.slice(2).trim()}
+                  </>
+                ) : (
+                  n
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---- 会話（自動記録）----
+
+const FILE_ACTION = { edit: "編集", read: "読んだ", review: "指摘" } as const;
+
+function Turn({ message }: { message: SessionMessage }) {
+  const mine = message.speaker === "self";
+  // AI の応答は長い。読むのは持ち主の発言が主なので、応答は畳んでおき、開けば全文を出す。
+  const [open, setOpen] = useState(mine);
+  const long = !mine && message.body.length > 600;
+  return (
+    <li className={cn("flex gap-3", mine ? "" : "pl-6")}>
+      <span
+        className={cn(
+          "mt-1 flex size-7 flex-none items-center justify-center rounded-full border",
+          mine ? "bg-card" : "bg-secondary/60 text-muted-foreground",
+        )}
+        aria-hidden="true"
+      >
+        {mine ? <UserRoundIcon className="size-3.5" /> : <BotIcon className="size-3.5" />}
+      </span>
+      <div className="min-w-0 flex-1 space-y-2">
+        <p className="text-xs text-muted-foreground tabular-nums">
+          {mine ? "持ち主" : "AI の最後の応答"} ・ {formatDate(message.sentAt)}
+        </p>
+        <div
+          className={cn(
+            "rounded-md border p-3",
+            mine ? "bg-card" : "bg-secondary/25",
+            long && !open
+              ? "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]"
+              : "",
+          )}
+        >
+          <MarkdownText text={message.body} className="text-sm leading-6" />
+        </div>
+        {long && (
+          <Button type="button" variant="ghost" size="sm" className="-ml-2" onClick={() => setOpen(!open)}>
+            {open ? "畳む" : "全文を読む"}
+          </Button>
+        )}
+        {message.truncated && (
+          <p className="text-xs text-muted-foreground">
+            大きすぎる発言なので冒頭と末尾だけを保存した（元は {message.originalBytes.toLocaleString("ja-JP")}{" "}
+            bytes）
+          </p>
+        )}
+        {message.files.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5">
+            {message.files.map((f) => (
+              <li key={`${f.action}:${f.path}`}>
+                <Badge variant="outline" className="font-mono text-xs">
+                  <FileTextIcon className="size-3" />
+                  {FILE_ACTION[f.action]} {f.path}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </li>
+  );
+}
+
+// ---- 成果物 ----
 
 const ARTIFACT_KINDS = {
   requirements: { label: "要件定義", icon: ClipboardListIcon, badge: "info" },
@@ -383,7 +460,9 @@ function ArtifactCard({ artifact, onOpen }: { artifact: SessionArtifact; onOpen:
       </span>
       <span className="font-medium leading-snug">{artifact.title}</span>
       <span className="font-mono text-xs break-all text-muted-foreground">{artifact.path}</span>
-      <span className="text-xs text-muted-foreground tabular-nums">同期 {formatDate(artifact.syncedAt)}</span>
+      <span className="text-xs text-muted-foreground tabular-nums">
+        取り込み {formatDate(artifact.syncedAt)}
+      </span>
     </button>
   );
 }
@@ -400,7 +479,7 @@ function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | nul
                   {ARTIFACT_KINDS[artifact.kind].label}
                 </Badge>
                 <span className="text-sm text-muted-foreground tabular-nums">
-                  同期 {formatDate(artifact.syncedAt)}
+                  取り込み {formatDate(artifact.syncedAt)}
                 </span>
               </div>
               <DialogTitle className="text-left">{artifact.title}</DialogTitle>
@@ -418,55 +497,94 @@ function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | nul
   );
 }
 
+// ---- 詳細 ----
+
+function ResumeCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="mt-3 flex max-w-full items-center rounded-md border bg-card">
+      <code className="min-w-0 flex-1 overflow-x-auto px-3 py-2 font-mono text-sm text-foreground">
+        {command}
+      </code>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="mr-1 shrink-0"
+              aria-label="再開コマンドをコピー"
+              onClick={() => {
+                navigator.clipboard.writeText(command).then(() => setCopied(true));
+              }}
+            >
+              {copied ? <CheckIcon /> : <CopyIcon />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{copied ? "コピーしました" : "再開コマンドをコピー"}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+}
+
 function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
   const [selectedSection, setSelectedSection] = useState<Section | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<SessionArtifact | null>(null);
+  // 閉じる経路（ボタン・Esc・ブラウザの戻る）はどれも id を変える。session が変わったら、開いていた節と成果物を閉じる。
+  const [shownId, setShownId] = useState(id);
+  if (shownId !== id) {
+    setShownId(id);
+    setSelectedSection(null);
+    setSelectedArtifact(null);
+  }
   const detail = useQuery({
     queryKey: ["session", id],
     queryFn: () => loadSession(id as string),
     enabled: id !== null,
   });
-  const closeDialog = () => {
-    setSelectedSection(null);
-    setSelectedArtifact(null);
-    onClose();
-  };
+  const d = detail.data;
+  const decisions = d?.knowledge.filter((k) => k.kind !== "option") ?? [];
+  const lastAt = d?.messages.at(-1)?.sentAt ?? null;
+  const said = d?.messages.filter((m) => m.speaker === "self").length ?? 0;
 
   return (
-    <Dialog open={id !== null} onOpenChange={(open) => !open && closeDialog()}>
+    <Dialog open={id !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="grid max-h-[88vh] grid-rows-[auto_minmax(0,1fr)] gap-5 overflow-hidden p-6 sm:max-w-[58rem]">
         <DialogHeader className="pr-8">
-          <Button type="button" variant="ghost" size="sm" className="-ml-2 w-fit" onClick={closeDialog}>
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 w-fit" onClick={onClose}>
             <ArrowLeftIcon />
             一覧へ戻る
           </Button>
-          {detail.data ? (
+          {d ? (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="info">{hostLabel(detail.data.host)}</Badge>
-                <span className="text-sm text-muted-foreground">{detail.data.scope_label}</span>
+                <Badge variant="info">{hostLabel(d.origin)}</Badge>
+                <span className="text-sm text-muted-foreground">{d.project}</span>
               </div>
-              <DialogTitle className="text-left text-lg leading-snug">{detail.data.title}</DialogTitle>
+              <DialogTitle className="line-clamp-2 text-left text-lg leading-snug">
+                {d.title?.split("\n")[0] ?? "（持ち主の発言なし）"}
+              </DialogTitle>
               <DialogDescription className="space-y-1 text-left">
-                <span className="block font-mono text-sm break-all">
-                  Session ID: {detail.data.session_id}
-                </span>
+                <span className="block font-mono text-sm break-all">Session ID: {d.sessionId}</span>
                 <span className="flex flex-wrap gap-x-4 gap-y-1">
                   <span>
-                    {formatDate(detail.data.created_at)} 〜 {formatDate(detail.data.updated_at)}
+                    {formatDate(d.startedAt)}
+                    {lastAt && ` 〜 ${formatDate(lastAt)}`}
                   </span>
-                  {detail.data.branch && (
+                  {d.branch && (
                     <span className="inline-flex items-center gap-1">
                       <GitBranchIcon className="size-3" />
-                      {detail.data.branch}
+                      {d.branch}
                     </span>
                   )}
-                  <span>{detail.data.exchanges} 往復</span>
-                  <span>{statusLabel(detail.data.status)}</span>
+                  <span>持ち主の発言 {said}</span>
+                  <span>判断 {decisions.length}</span>
                 </span>
               </DialogDescription>
-              {resumeCommand(detail.data.host, detail.data.session_id) && (
-                <ResumeCommand command={resumeCommand(detail.data.host, detail.data.session_id) as string} />
+              {resumeCommand(d.origin, d.sessionId) && (
+                <ResumeCommand command={resumeCommand(d.origin, d.sessionId) as string} />
               )}
             </>
           ) : (
@@ -478,83 +596,75 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
           <Skeleton className="h-80 w-full" />
         ) : detail.error ? (
           <p className="text-base text-dont">{String(detail.error)}</p>
-        ) : detail.data ? (
+        ) : d ? (
           <ScrollArea className="min-h-0 pr-4">
             <div className="space-y-5">
-              {detail.data.current_text && (
-                <section className="rounded-md border border-do/25 bg-do/5 p-4">
-                  <div className="mb-2 flex items-center justify-between gap-4">
-                    <h3 className="font-medium text-do">完了時点</h3>
-                    {detail.data.phases.length > 0 && (
-                      <span className="text-sm text-muted-foreground tabular-nums">
-                        {detail.data.phases.filter((phase) => phase.state === "done").length} /{" "}
-                        {detail.data.phases.length} 完了
-                      </span>
-                    )}
-                  </div>
-                  <MarkdownText text={detail.data.current_text} className="text-sm leading-6" />
-                </section>
-              )}
-
-              {(detail.data.problem || detail.data.goal) && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {detail.data.problem && (
-                    <section className="rounded-md border border-dont/25 bg-dont/5 p-4">
-                      <h3 className="mb-2 text-sm font-medium text-dont">課題</h3>
-                      <MarkdownText text={detail.data.problem} className="text-sm leading-6" />
-                    </section>
+              {d.work.map((w) => (
+                <WorkCard key={w.id} work={w} />
+              ))}
+              <Tabs defaultValue={decisions.length > 0 ? "knowledge" : "conversation"}>
+                <TabsList>
+                  <TabsTrigger value="conversation">会話 {d.messages.length}</TabsTrigger>
+                  <TabsTrigger value="knowledge">判断 {decisions.length}</TabsTrigger>
+                  {d.artifacts.length > 0 && (
+                    <TabsTrigger value="artifacts">成果物 {d.artifacts.length}</TabsTrigger>
                   )}
-                  {detail.data.goal && (
-                    <section className="rounded-md border border-earth-slate/25 bg-earth-slate/5 p-4">
-                      <h3 className="mb-2 text-sm font-medium text-earth-slate">目標</h3>
-                      <MarkdownText text={detail.data.goal} className="text-sm leading-6" />
-                    </section>
-                  )}
-                </div>
-              )}
-
-              <section className="space-y-3">
-                <div>
-                  <h3 className="font-medium">セッションのナレッジ</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">セクションを選ぶと詳細を確認できます。</p>
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {sectionsOf(detail.data).map((section) => (
-                    <SectionCard
-                      key={section.id}
-                      section={section}
-                      onOpen={() => setSelectedSection(section)}
-                    />
-                  ))}
-                </div>
-              </section>
-
-              {detail.data.artifacts.length > 0 && (
-                <section className="space-y-3">
-                  <div>
-                    <h3 className="font-medium">成果物</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      このセッションが触れた要件定義と設計書。承認済みとして同期された本文を表示します。
+                </TabsList>
+                <TabsContent value="conversation" className="pt-3">
+                  {d.messages.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      この session の会話は記録されていない（trace だけで残した session）。
                     </p>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {detail.data.artifacts.map((artifact) => (
-                      <ArtifactCard
-                        key={artifact.path}
-                        artifact={artifact}
-                        onOpen={() => setSelectedArtifact(artifact)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
+                  ) : (
+                    <ol className="space-y-4">
+                      {d.messages.map((m) => (
+                        <Turn key={m.id} message={m} />
+                      ))}
+                    </ol>
+                  )}
+                </TabsContent>
+                <TabsContent value="knowledge" className="pt-3">
+                  {decisions.length === 0 ? (
+                    <p className="text-sm leading-6 text-muted-foreground">
+                      この session では判断を残していない。残すなら、その session で{" "}
+                      <code className="font-mono">/mitos:trace</code> を実行する。
+                    </p>
+                  ) : (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {sectionsOf(d.knowledge).map((section) => (
+                        <SectionCard
+                          key={section.id}
+                          section={section}
+                          onOpen={() => setSelectedSection(section)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </TabsContent>
+                {d.artifacts.length > 0 && (
+                  <TabsContent value="artifacts" className="space-y-3 pt-3">
+                    <p className="text-sm text-muted-foreground">
+                      この session が触れた要件定義と設計書。承認済みとして同期された本文を表示する。
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {d.artifacts.map((artifact) => (
+                        <ArtifactCard
+                          key={artifact.path}
+                          artifact={artifact}
+                          onOpen={() => setSelectedArtifact(artifact)}
+                        />
+                      ))}
+                    </div>
+                  </TabsContent>
+                )}
+              </Tabs>
             </div>
           </ScrollArea>
         ) : null}
 
         <SectionDialog
           section={selectedSection}
-          options={detail.data?.nodes.filter((node) => node.kind === "option") ?? []}
+          options={d?.knowledge.filter((k) => k.kind === "option") ?? []}
           onClose={() => setSelectedSection(null)}
         />
         <ArtifactDialog artifact={selectedArtifact} onClose={() => setSelectedArtifact(null)} />
@@ -563,56 +673,28 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
   );
 }
 
-type SearchGroup = {
-  id: string;
-  title: string;
-  scopeLabel: string;
-  hits: SessionHit[];
-};
-
-function groupHits(hits: SessionHit[]): SearchGroup[] {
-  const groups = new Map<string, SearchGroup>();
-  for (const hit of hits) {
-    const group = groups.get(hit.record_id);
-    if (group) group.hits.push(hit);
-    else {
-      groups.set(hit.record_id, {
-        id: hit.record_id,
-        title: hit.record_title,
-        scopeLabel: hit.scope_label,
-        hits: [hit],
-      });
-    }
-  }
-  return [...groups.values()];
-}
+// ---- 一覧と検索 ----
 
 function SearchToolbar({
   query,
-  onlyDont,
-  kinds,
+  mode,
   onSearch,
-  onKindsChange,
-  onOnlyDontChange,
+  onModeChange,
   onClear,
 }: {
   query: string | undefined;
-  onlyDont: boolean;
-  kinds: string[];
+  mode: SearchMode;
   onSearch: (query: string) => void;
-  onKindsChange: (kinds: string[]) => void;
-  onOnlyDontChange: (value: boolean) => void;
+  onModeChange: (mode: SearchMode) => void;
   onClear: () => void;
 }) {
   const [draft, setDraft] = useState(query ?? "");
-  const activeFilters = kinds.length + Number(onlyDont);
-
   useEffect(() => setDraft(query ?? ""), [query]);
 
   return (
-    <section className="shrink-0 overflow-hidden rounded-md border bg-card">
+    <section className="flex shrink-0 flex-col gap-2 rounded-md border bg-card p-2 sm:flex-row sm:items-center">
       <form
-        className="flex items-center gap-2 p-2"
+        className="flex min-w-0 flex-1 items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           if (draft.trim()) onSearch(draft.trim());
@@ -623,7 +705,13 @@ function SearchToolbar({
           <Input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="セッションの判断や経緯を検索"
+            placeholder={
+              mode === "said"
+                ? "自分が何と言ったかで探す"
+                : mode === "avoid"
+                  ? "やらないと決めたことで探す"
+                  : "判断や経緯で探す"
+            }
             aria-label="セッションを検索"
             className="h-10 bg-background pr-3 pl-9"
           />
@@ -637,59 +725,26 @@ function SearchToolbar({
           検索
         </Button>
       </form>
-      <details className="group border-t">
-        <summary
-          data-motion-icon-group=""
-          className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground [&::-webkit-details-marker]:hidden"
-        >
-          <SlidersHorizontalIcon className="size-4" />
-          詳細条件
-          {activeFilters > 0 && <Badge variant="secondary">{activeFilters}</Badge>}
-          <span className="ml-auto text-xs">
-            {kinds.length > 0 ? `${kinds.length}種類` : "すべてのナレッジ"}
-            {onlyDont ? "・やらないことのみ" : ""}
-          </span>
-          <ChevronRightIcon className="size-4 transition-transform group-open:rotate-90" />
-        </summary>
-        <div className="flex flex-wrap items-center gap-3 border-t p-3">
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">種類</p>
-            <ToggleGroup
-              type="multiple"
-              variant="outline"
-              size="sm"
-              value={kinds}
-              onValueChange={onKindsChange}
-              className="flex-wrap justify-start"
-            >
-              {SEARCH_KINDS.map(([value, label]) => (
-                <ToggleGroupItem key={value} value={value} aria-label={label}>
-                  {label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
-          </div>
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">方針</p>
-            <Button
-              type="button"
-              variant={onlyDont ? "secondary" : "outline"}
-              size="sm"
-              aria-pressed={onlyDont}
-              onClick={() => onOnlyDontChange(!onlyDont)}
-            >
-              やらないことのみ
-            </Button>
-          </div>
-        </div>
-      </details>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={mode}
+        onValueChange={(value) => isMode(value) && onModeChange(value)}
+        aria-label="何で探すか"
+      >
+        {SEARCH_MODES.map(([value, label]) => (
+          <ToggleGroupItem key={value} value={value}>
+            {label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
     </section>
   );
 }
 
-function SearchResults({ hits, onOpen }: { hits: SessionHit[]; onOpen: (id: string) => void }) {
-  const groups = groupHits(hits);
-  if (groups.length === 0) {
+function SearchResults({ found, onOpen }: { found: FoundSession[]; onOpen: (id: string) => void }) {
+  if (found.length === 0) {
     return (
       <Empty className="min-h-64 border-0">
         <EmptyHeader>
@@ -697,55 +752,59 @@ function SearchResults({ hits, onOpen }: { hits: SessionHit[]; onOpen: (id: stri
             <SearchIcon className="size-5" />
           </EmptyMedia>
           <EmptyTitle>該当するセッションはありません</EmptyTitle>
-          <EmptyDescription>言葉を変えるか、詳細条件を減らしてみてください。</EmptyDescription>
+          <EmptyDescription>
+            言葉を変えるか、探し方（判断・やらないこと・自分の発言）を切り替えてください。
+          </EmptyDescription>
         </EmptyHeader>
       </Empty>
     );
   }
-
+  const hits = found.reduce((n, s) => n + s.hits.length, 0);
   return (
     <div className="min-h-0 overflow-y-auto">
       <div className="mb-3 flex items-center justify-between gap-4">
         <h2 className="font-medium">検索結果</h2>
         <p className="text-sm text-muted-foreground">
-          {groups.length} セッション・{hits.length} 件
+          {found.length} セッション・{hits} 件
         </p>
       </div>
       <div className="space-y-3">
-        {groups.map((group) => (
+        {found.map((session) => (
           <button
-            key={group.id}
+            key={session.id}
             type="button"
             data-motion-icon-group=""
             className="group w-full rounded-md border bg-card p-4 text-left transition-colors hover:border-foreground/25 hover:bg-muted/30"
-            onClick={() => onOpen(group.id)}
+            onClick={() => onOpen(session.id)}
           >
             <span className="flex items-start justify-between gap-4">
               <span className="min-w-0">
-                <span className="block truncate font-medium">{group.title}</span>
-                <span className="mt-1 block text-sm text-muted-foreground">{group.scopeLabel}</span>
+                <span className="block truncate font-medium">{session.title ?? "（持ち主の発言なし）"}</span>
+                <span className="mt-1 block text-sm text-muted-foreground">
+                  {hostLabel(session.origin)} ・ {session.project} ・ {session.sessionId.slice(0, 8)}
+                </span>
               </span>
               <span className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground">
-                {group.hits.length}件
+                {session.hits.length}件
                 <ChevronRightIcon className="size-4" />
               </span>
             </span>
             <span className="mt-4 block space-y-3 border-t pt-3">
-              {group.hits.slice(0, 3).map((hit) => (
-                <span key={hit.id} className="grid gap-1 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
-                  <span className={`text-sm ${polarityClass(hit.polarity)}`}>{hit.label}</span>
+              {session.hits.slice(0, 3).map((hit) => (
+                <span key={hit.ref} className="grid gap-1 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-3">
+                  <span className={`text-sm ${stanceClass(hit.stance)}`}>{hit.label}</span>
                   <span className="min-w-0">
                     <span className="line-clamp-2 block text-sm leading-6">{hit.text}</span>
-                    {hit.ex && (
+                    {hit.reason && (
                       <span className="mt-0.5 line-clamp-1 block text-xs text-muted-foreground">
-                        {hit.ex}
+                        {hit.reason}
                       </span>
                     )}
                   </span>
                 </span>
               ))}
-              {group.hits.length > 3 && (
-                <span className="block text-sm text-muted-foreground">ほか {group.hits.length - 3} 件</span>
+              {session.hits.length > 3 && (
+                <span className="block text-sm text-muted-foreground">ほか {session.hits.length - 3} 件</span>
               )}
             </span>
           </button>
@@ -755,14 +814,23 @@ function SearchResults({ hits, onOpen }: { hits: SessionHit[]; onOpen: (id: stri
   );
 }
 
-function SessionRowView({ session, onOpen }: { session: SessionRow; onOpen: (id: string) => void }) {
+function SessionRowView({
+  session,
+  showProject,
+  onOpen,
+}: {
+  session: SessionRow;
+  showProject: boolean;
+  onOpen: (id: string) => void;
+}) {
   const open = () => onOpen(session.id);
+  const title = session.title?.split("\n")[0] ?? "（持ち主の発言なし）";
   return (
     <TableRow
       id={`session-row-${session.id}`}
       data-motion-icon-group=""
       tabIndex={0}
-      aria-label={`${session.title}の詳細を開く`}
+      aria-label={`${title}の詳細を開く`}
       className="cursor-pointer focus-visible:bg-muted focus-visible:outline-none"
       onClick={open}
       onKeyDown={(event) => {
@@ -773,16 +841,18 @@ function SessionRowView({ session, onOpen }: { session: SessionRow; onOpen: (id:
       }}
     >
       <TableCell className="w-[11rem] pl-4 text-sm text-muted-foreground tabular-nums">
-        {formatDate(session.updated_at)}
+        {formatDate(session.lastAt ?? session.startedAt)}
       </TableCell>
-      <TableCell className="font-mono text-sm text-muted-foreground" title={session.session_id}>
-        {session.session_id.slice(0, 8)}
+      <TableCell className="max-w-[34rem] whitespace-normal py-4">
+        <span className="line-clamp-2 font-medium">{title}</span>
+        <span className="mt-1 block font-mono text-xs text-muted-foreground" title={session.sessionId}>
+          {session.sessionId.slice(0, 8)}
+        </span>
       </TableCell>
-      <TableCell className="max-w-[34rem] whitespace-normal py-4 font-medium">{session.title}</TableCell>
       <TableCell>
-        <Badge variant="info">{hostLabel(session.host)}</Badge>
+        <Badge variant="info">{hostLabel(session.origin)}</Badge>
       </TableCell>
-      <TableCell>{session.scope_label}</TableCell>
+      {showProject && <TableCell>{session.project}</TableCell>}
       <TableCell className="text-muted-foreground">
         {session.branch ? (
           <span className="inline-flex items-center gap-1">
@@ -793,25 +863,30 @@ function SessionRowView({ session, onOpen }: { session: SessionRow; onOpen: (id:
           "—"
         )}
       </TableCell>
-      <TableCell>
-        <Badge variant={statusVariant(session.status)}>{statusLabel(session.status)}</Badge>
+      <TableCell className="text-right tabular-nums">{session.said}</TableCell>
+      <TableCell className="pr-4 text-right tabular-nums">
+        {session.traced > 0 ? (
+          <Badge variant="success">{session.traced}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
       </TableCell>
-      <TableCell className="pr-4 text-right tabular-nums">{session.exchanges}</TableCell>
     </TableRow>
   );
 }
 
 export function SessionsPage() {
-  const { scopeIds } = useProject();
+  const { target } = useProject();
+  const projectId = target ? Number(target) : undefined;
   const router = useRouter();
   const searchParams = useSearchParams();
   const selected = searchParams.get("session");
   const query = searchParams.get("q")?.trim() || undefined;
-  const onlyDont = searchParams.get("dont") === "1";
-  const kinds = searchParams.getAll("kind").filter((kind) => SEARCH_KIND_VALUES.has(kind));
+  const requestedMode = searchParams.get("mode");
+  const mode: SearchMode = isMode(requestedMode) ? requestedMode : "knowledge";
   const requestedPage = Number(searchParams.get("page") ?? "1");
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const scopeKey = scopeIds?.join(",") ?? "all";
+  const scopeKey = projectId ?? "all";
   const previousScope = useRef(scopeKey);
   const restoreRow = useRef<string | null>(null);
   const hrefFor = (nextPage: number, session?: string): string => {
@@ -820,8 +895,8 @@ export function SessionsPage() {
     params.delete("session");
     if (nextPage > 1) params.set("page", String(nextPage));
     if (session) params.set("session", session);
-    const query = params.toString();
-    return query ? `/sessions?${query}` : "/sessions";
+    const q = params.toString();
+    return q ? `/sessions?${q}` : "/sessions";
   };
   const listHref = hrefFor(page);
   const openSession = (id: string) => {
@@ -837,22 +912,16 @@ export function SessionsPage() {
     router.push(hrefFor(next), { scroll: false });
   };
   const sessions = useQuery({
-    queryKey: ["sessions", scopeIds, page],
-    queryFn: () => loadSessions(page, scopeIds),
+    queryKey: ["sessions", projectId, page],
+    queryFn: () => loadSessions(page, projectId),
   });
   const results = useQuery({
-    queryKey: ["session-search", query, onlyDont, kinds, scopeIds],
-    queryFn: () =>
-      searchSessions({
-        question: query as string,
-        onlyDont: onlyDont || undefined,
-        kinds: kinds.length > 0 ? kinds : undefined,
-        scopeIds,
-      }),
+    queryKey: ["session-search", query, mode, projectId],
+    queryFn: () => searchSessions(query as string, mode, projectId),
     enabled: query !== undefined,
     staleTime: 60_000,
   });
-  const updateSearch = (next: { q?: string; onlyDont?: boolean; kinds?: string[] }) => {
+  const updateSearch = (next: { q?: string; mode?: SearchMode }) => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete("session");
     params.delete("page");
@@ -860,13 +929,9 @@ export function SessionsPage() {
       if (next.q) params.set("q", next.q);
       else params.delete("q");
     }
-    if (next.onlyDont !== undefined) {
-      if (next.onlyDont) params.set("dont", "1");
-      else params.delete("dont");
-    }
-    if (next.kinds !== undefined) {
-      params.delete("kind");
-      for (const kind of next.kinds) params.append("kind", kind);
+    if (next.mode !== undefined) {
+      if (next.mode === "knowledge") params.delete("mode");
+      else params.set("mode", next.mode);
     }
     const nextQuery = params.toString();
     window.history.pushState(null, "", nextQuery ? `/sessions?${nextQuery}` : "/sessions");
@@ -892,17 +957,16 @@ export function SessionsPage() {
 
   if (sessions.isPending) return <Skeleton className="h-96 w-full" />;
   if (sessions.error) return <p className="text-base text-dont">{String(sessions.error)}</p>;
+  const showProject = projectId === undefined;
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[84rem] flex-col gap-4">
       <SearchToolbar
         query={query}
-        onlyDont={onlyDont}
-        kinds={kinds}
+        mode={mode}
         onSearch={(value) => updateSearch({ q: value })}
-        onKindsChange={(value) => updateSearch({ kinds: value })}
-        onOnlyDontChange={(value) => updateSearch({ onlyDont: value })}
-        onClear={() => updateSearch({ q: "", onlyDont: false, kinds: [] })}
+        onModeChange={(value) => updateSearch({ mode: value })}
+        onClear={() => updateSearch({ q: "", mode: "knowledge" })}
       />
 
       {query ? (
@@ -914,8 +978,20 @@ export function SessionsPage() {
         ) : results.error ? (
           <p className="text-base text-dont">{String(results.error)}</p>
         ) : (
-          <SearchResults hits={results.data} onOpen={openSession} />
+          <SearchResults found={results.data} onOpen={openSession} />
         )
+      ) : sessions.data.items.length === 0 && sessions.data.total > 0 ? (
+        <Empty className="min-h-80 border-0">
+          <EmptyHeader>
+            <EmptyTitle>{sessions.data.page} ページ目はありません</EmptyTitle>
+            <EmptyDescription>セッションは全 {sessions.data.pages} ページです。</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button type="button" variant="outline" size="sm" onClick={() => goToPage(sessions.data.pages)}>
+              最後のページへ
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : sessions.data.items.length === 0 ? (
         <Empty className="min-h-80 border-0">
           <EmptyHeader>
@@ -924,8 +1000,8 @@ export function SessionsPage() {
             </EmptyMedia>
             <EmptyTitle>セッションはまだありません</EmptyTitle>
             <EmptyDescription>
-              <span className="block whitespace-nowrap">残したいセッションで trace を実行すると、</span>
-              <span className="block">ここに表示されます。</span>
+              <span className="block">登録した作業場所で Claude Code を使うと、会話が自動で残り、</span>
+              <span className="block">ここに並びます。</span>
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -934,30 +1010,34 @@ export function SessionsPage() {
           <Table>
             <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
-                <TableHead className="pl-4">最終記録</TableHead>
-                <TableHead>Session ID</TableHead>
-                <TableHead>セッション</TableHead>
+                <TableHead className="pl-4">最後の発言</TableHead>
+                <TableHead>最初の発言</TableHead>
                 <TableHead>AI</TableHead>
-                <TableHead>プロジェクト</TableHead>
+                {showProject && <TableHead>作業場所</TableHead>}
                 <TableHead>ブランチ</TableHead>
-                <TableHead>状態</TableHead>
-                <TableHead className="pr-4 text-right">往復</TableHead>
+                <TableHead className="text-right">発言</TableHead>
+                <TableHead className="pr-4 text-right">判断</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {sessions.data.items.map((session) => (
-                <SessionRowView key={session.id} session={session} onOpen={openSession} />
+                <SessionRowView
+                  key={session.id}
+                  session={session}
+                  showProject={showProject}
+                  onOpen={openSession}
+                />
               ))}
             </TableBody>
           </Table>
         </div>
       )}
 
-      {!query && sessions.data.total > 0 && (
+      {!query && sessions.data.items.length > 0 && (
         <nav className="flex shrink-0 items-center justify-between gap-4" aria-label="セッション一覧のページ">
           <p className="text-sm text-muted-foreground">
-            {sessions.data.total} 件中 {(sessions.data.page - 1) * sessions.data.page_size + 1}〜
-            {Math.min(sessions.data.page * sessions.data.page_size, sessions.data.total)} 件
+            {sessions.data.total} 件中 {(sessions.data.page - 1) * sessions.data.pageSize + 1}〜
+            {Math.min(sessions.data.page * sessions.data.pageSize, sessions.data.total)} 件
           </p>
           <div className="flex items-center gap-2">
             <Button

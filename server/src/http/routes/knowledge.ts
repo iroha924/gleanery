@@ -1,191 +1,183 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
-import { labelOf, logSearch, search } from "../../search.ts";
+import { labelOf } from "../../knowledge.ts";
+import { type Hit, REF, read, searchKnowledge, searchMessages } from "../../search.ts";
 import { db, env } from "../runtime.ts";
-import { positiveIds, scopesQuerySchema, textIdParamSchema } from "../validation.ts";
+import { positiveId, positiveIds, uuidParamSchema } from "../validation.ts";
 
-const sessionsQuerySchema = scopesQuerySchema.extend({
+const conversationsQuery = z.object({
+  project: positiveId.optional(),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  pageSize: z.coerce.number().int().min(1).max(100).default(30),
 });
 
-const sessionSearchSchema = z
-  .object({
-    question: z.string().trim().min(1).max(20_000),
-    onlyDont: z.boolean().optional(),
-    kinds: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-    scopeIds: positiveIds.optional(),
-    limit: z.number().int().min(1).max(20).default(20),
-  })
-  .strict();
+// 判断（knowledge）・通ってはいけない道（avoid）・持ち主の発言（said）で引き、どの session の記録かでまとめる。
+const searchQuery = z.object({
+  q: z.string().trim().min(1).max(500),
+  mode: z.enum(["knowledge", "avoid", "said"]).default("knowledge"),
+  project: positiveId.optional(),
+});
+
+// session の題。持ち主の最初の発言、無ければ（trace だけで残した session）結んだ作業の題。
+const TITLE = `coalesce(
+  (select left(m.body, 200) from mitos.message m
+   where m.conversation_id = c.id and m.speaker_kind = 'self' order by m.sent_at limit 1),
+  (select w.title from mitos.work_item w where w.conversation_id = c.id order by w.updated_at desc limit 1))`;
+
+// どの作業場所について読むかは画面が持つ（チャットで選んだ作業場所）。その外の参照は「無い」と返す。
+const refQuery = z.object({
+  ref: z.string().regex(REF),
+  projects: z
+    .string()
+    .transform((v) => v.split(",").map(Number))
+    .pipe(positiveIds.min(1)),
+});
 
 const app = new Hono()
-  .get("/sessions", zValidator("query", sessionsQuerySchema), async (c) => {
-    const { scopes, page, pageSize } = c.req.valid("query");
-    const client = db();
+  .get("/projects", async (c) => {
+    const r = await (await db()).query(
+      `select p.id::int, p.key, p.name,
+              (select count(*) from mitos.conversation c where c.project_id = p.id and c.origin <> 'github')::int as sessions,
+              (select count(*) from mitos.knowledge k where k.project_id = p.id and k.kind <> 'document')::int as knowledge,
+              coalesce(json_agg(json_build_object('provider', cn.provider, 'lastSuccessAt', cn.last_success_at,
+                                                  'lastError', cn.last_error) order by cn.provider)
+                       filter (where cn.id is not null), '[]') as connectors
+       from mitos.project p left join mitos.connector cn on cn.project_id = p.id
+       group by p.id order by p.name`,
+    );
+    return c.json(r.rows);
+  })
+  // coding session の一覧。GitHub の会話は PR・issue の単位なので、ここには出さない。
+  .get("/sessions", zValidator("query", conversationsQuery), async (c) => {
+    const { project, page, pageSize } = c.req.valid("query");
+    const pool = await db();
+    const where = `c.origin <> 'github' and ($1::bigint is null or c.project_id = $1)`;
     const total = Number(
       (
-        await client.query<{ total: string }>(
-          `select count(*) as total from record r
-           where ($1::int[] is null or r.scope_id = any($1)) and r.schema_ver like 'session/%'`,
-          [scopes ?? null],
-        )
-      ).rows[0]?.total ?? 0,
+        await pool.query<{ n: string }>(`select count(*) as n from mitos.conversation c where ${where}`, [
+          project ?? null,
+        ])
+      ).rows[0]?.n ?? 0,
     );
-    const result = await client.query(
-      `select r.id, r.raw #>> '{session,id}' as session_id, r.title, r.status, r.branch,
-              r.created_at, r.updated_at,
-              s.label as scope_label,
-              r.raw #>> '{session,host}' as host,
-              (select count(*) from node
-               where record_id = r.id and kind = 'utterance' and actor_kind = 'human'
-                 and deleted_at is null)::int as exchanges
-       from record r join scope s on s.id = r.scope_id
-       where ($1::int[] is null or r.scope_id = any($1))
-         and r.schema_ver like 'session/%'
-       order by r.updated_at desc, r.id
+    const r = await pool.query(
+      `select c.id, c.origin, c.external_id as "sessionId", c.branch, c.started_at as "startedAt", p.name as project,
+              (select max(m.sent_at) from mitos.message m where m.conversation_id = c.id) as "lastAt",
+              ${TITLE} as title,
+              (select count(*) from mitos.message m where m.conversation_id = c.id and m.speaker_kind = 'self')::int as said,
+              (select count(*) from mitos.knowledge k where k.conversation_id = c.id and k.kind <> 'option')::int as traced
+       from mitos.conversation c join mitos.project p on p.id = c.project_id
+       where ${where}
+       order by coalesce((select max(m.sent_at) from mitos.message m where m.conversation_id = c.id), c.started_at) desc
        limit $2 offset $3`,
-      [scopes ?? null, pageSize, (page - 1) * pageSize],
+      [project ?? null, pageSize, (page - 1) * pageSize],
     );
-    return c.json({
-      items: result.rows,
-      total,
-      page,
-      page_size: pageSize,
-      pages: Math.ceil(total / pageSize),
-    });
+    return c.json({ items: r.rows, total, page, pageSize, pages: Math.ceil(total / pageSize) });
   })
-  .post("/sessions/search", zValidator("json", sessionSearchSchema), async (c) => {
-    const body = c.req.valid("json");
-    const client = db();
-    const found = await search(client, env, {
-      question: body.question,
-      scopeIds: body.scopeIds,
-      polarity: body.onlyDont ? "dont" : undefined,
-      kinds: body.kinds ?? ["decision", "option", "event", "boundary", "verification", "question"],
-      limit: body.limit,
-      sessionOnly: true,
-    });
-    await logSearch(client, {
-      source: "dashboard",
-      scopeId: body.scopeIds?.[0] ?? null,
-      question: body.question,
-      result: found,
-    });
-    return c.json(found.rows.map((row) => ({ ...row, id: Number(row.id), label: labelOf(row) })));
+  // 「あの判断をしたのはどの session だったか」「あのとき何と言ったか」から session を探す。
+  // GitHub の会話と文書は session ではないので外す（PR・issue は検索ではなくチャットの list_items で引く）。
+  .get("/sessions/search", zValidator("query", searchQuery), async (c) => {
+    const { q, mode, project } = c.req.valid("query");
+    const pool = await db();
+    const projects = project ? [project] : null;
+    const hits: Hit[] =
+      mode === "said"
+        ? await searchMessages(pool, env, { question: q, projects, who: "me", sessionsOnly: true, limit: 20 })
+        : await searchKnowledge(pool, env, { question: q, projects, avoid: mode === "avoid", limit: 20 });
+    if (hits.length === 0) return c.json([]);
+    const [table, id] = mode === "said" ? ["mitos.message", "uuid"] : ["mitos.knowledge", "bigint"];
+    const owners = await pool.query<{
+      ref: string;
+      id: string;
+      sessionId: string;
+      origin: string;
+      project: string;
+      title: string | null;
+    }>(
+      `select x.id::text as ref, c.id, c.external_id as "sessionId", c.origin, p.name as project,
+              ${TITLE} as title
+       from ${table} x join mitos.conversation c on c.id = x.conversation_id join mitos.project p on p.id = c.project_id
+       where x.id = any($1::${id}[]) and c.origin <> 'github'`,
+      [hits.map((h) => h.ref.slice(2))],
+    );
+    const ownerOf = new Map(owners.rows.map((o) => [o.ref, o]));
+    type Found = { id: string; sessionId: string; origin: string; project: string; title: string | null };
+    const sessions = new Map<
+      string,
+      Found & { hits: Pick<Hit, "ref" | "label" | "stance" | "text" | "reason" | "at">[] }
+    >();
+    for (const h of hits) {
+      const o = ownerOf.get(h.ref.slice(2));
+      if (!o) continue;
+      const s = sessions.get(o.id) ?? {
+        id: o.id,
+        sessionId: o.sessionId,
+        origin: o.origin,
+        project: o.project,
+        title: o.title,
+        hits: [],
+      };
+      s.hits.push({ ref: h.ref, label: h.label, stance: h.stance, text: h.text, reason: h.reason, at: h.at });
+      sessions.set(o.id, s);
+    }
+    return c.json([...sessions.values()]);
   })
-  .get("/sessions/:id", zValidator("param", textIdParamSchema), async (c) => {
-    const client = db();
+  .get("/sessions/:id", zValidator("param", uuidParamSchema), async (c) => {
     const { id } = c.req.valid("param");
-    const record = await client.query(
-      `select r.id, r.raw #>> '{session,id}' as session_id, r.title, r.status, r.branch,
-              r.problem, r.goal, r.current_at, r.current_text, r.phases, r.next,
-              r.created_at, r.updated_at, r.ended_at, r.ingested_at,
-              s.label as scope_label,
-              r.raw #>> '{session,host}' as host,
-              (select count(*) from node
-               where record_id = r.id and kind = 'utterance' and actor_kind = 'human'
-                 and deleted_at is null)::int as exchanges
-       from record r join scope s on s.id = r.scope_id
-       where r.id = $1 and r.schema_ver like 'session/%'`,
+    const pool = await db();
+    const head = await pool.query(
+      `select c.id, c.origin, c.external_id as "sessionId", c.branch, c.started_at as "startedAt",
+              p.id::int as "projectId", p.name as project, ${TITLE} as title
+       from mitos.conversation c join mitos.project p on p.id = c.project_id
+       where c.id = $1 and c.origin <> 'github'`,
       [id],
     );
-    if (record.rows.length === 0) return c.json({ error: "そのセッションは無い" }, 404);
-    const nodes = await client.query(
-      `select id::int, kind, subkind, polarity, status, key, at, text,
-              coalesce(attrs->>'context', '') as ex, attrs, parent_id::int
-       from node
-       where record_id = $1 and deleted_at is null and kind <> 'utterance'
-       order by kind, ordinal, at nulls last`,
+    const conversation = head.rows[0] as { projectId: number } | undefined;
+    if (!conversation) return c.json({ error: "その session は無い" }, 404);
+    const messages = await pool.query(
+      `select m.id, m.speaker_kind as speaker, m.body, m.sent_at as "sentAt", m.truncated, m.original_bytes as "originalBytes",
+              coalesce(json_agg(json_build_object('path', f.path, 'action', f.action) order by f.path)
+                       filter (where f.path is not null), '[]') as files
+       from mitos.message m left join mitos.message_file f on f.message_id = m.id
+       where m.conversation_id = $1 group by m.id order by m.sent_at`,
       [id],
     );
-    // セッションが触れた要件定義・設計書のうち、同じ作業場所で承認済みとして同期された原文だけを返す。
-    // 原文の key は path そのもので、(record_id, kind, key) が一意なので 1 つの path に 0 件か 1 件になる。
-    // syncedAt は docs 記録の ingested_at（その作業場所の文書同期が最後に成功した時刻）。commit 時刻ではない。
-    const artifacts = await client.query(
-      `select n.attrs->'artifact'->>'kind' as kind, n.attrs->'artifact'->>'change' as change,
-              n.attrs->>'path' as path, n.attrs->'artifact'->>'changeTitle' as title,
-              d.ingested_at as "syncedAt", n.text as content
-       from ref_link l
-       join ref on ref.id = l.ref_id and ref.kind = 'file'
-       join record s on s.id = l.record_id
-       join record d on d.scope_id = s.scope_id and d.schema_ver = 'docs/1'
-       join node n on n.record_id = d.id and n.kind = 'doc' and n.key = ref.key
-                  and n.subkind = 'artifact-source' and n.deleted_at is null
-       where l.record_id = $1 and l.role = 'touched'
-       order by n.attrs->'artifact'->>'change', n.attrs->'artifact'->>'kind' desc`,
+    const knowledge = await pool.query<{ kind: string; status: string | null }>(
+      `select k.id::int, k.kind, k.status, k.stance, k.body, k.reason, k.confirmation, k.downsides, k.occurred_at as "at",
+              k.decision_id::int as "decisionId"
+       from mitos.knowledge k where k.conversation_id = $1 order by k.occurred_at, k.id`,
       [id],
+    );
+    const work = await pool.query(
+      `select w.id::int, w.title, w.goal, w.current, w.next, w.status, w.updated_at as "updatedAt"
+       from mitos.work_item w where w.conversation_id = $1`,
+      [id],
+    );
+    // この session が触った承認済みの要件定義・設計書。同じ作業場所で同期された原文だけを返す
+    // （任意の path を指定して別の作業場所の本文を取れる入口にしない）。
+    const artifacts = await pool.query(
+      `select distinct on (s.id) s.kind, s.metadata->>'change' as change, s.metadata->>'changeTitle' as title, s.path,
+              s.body as content, s.synced_at as "syncedAt"
+       from mitos.message_file f
+       join mitos.message m on m.id = f.message_id
+       join mitos.source_item s on s.path = f.path and s.kind in ('requirements', 'design')
+       join mitos.connector cn on cn.id = s.connector_id and cn.project_id = $2
+       where m.conversation_id = $1
+       order by s.id`,
+      [id, conversation.projectId],
     );
     return c.json({
-      ...record.rows[0],
-      nodes: nodes.rows.map((node) => ({ ...node, label: labelOf(node) })),
+      ...conversation,
+      messages: messages.rows,
+      knowledge: knowledge.rows.map((k) => ({ ...k, label: labelOf(k) })),
+      work: work.rows,
       artifacts: artifacts.rows,
     });
   })
-  .get("/scopes", async (c) => {
-    const result = await db().query(
-      `select s.id::int, s.label, s.ident_kind as "identKind", s.role, s.summary,
-              coalesce(string_agg(distinct g.name, ', '), null) as groups,
-              (select count(*) from record where scope_id = s.id)::int as records,
-              (select count(*) from node where scope_id = s.id and deleted_at is null)::int as nodes
-       from scope s
-       left join group_member m on m.scope_id = s.id
-       left join scope_group  g on g.id = m.group_id
-       group by s.id order by s.label`,
-    );
-    return c.json(result.rows);
-  })
-  .get("/records", zValidator("query", scopesQuerySchema), async (c) => {
-    // trace したセッションは /sessions、その他の記録はここに分ける。
-    const result = await db().query(
-      `select r.id, r.title, r.status, r.branch, r.problem, r.goal, r.current_at, r.current_text,
-              r.updated_at, s.label as scope_label,
-              (select count(*) from node where record_id = r.id and deleted_at is null)::int as nodes
-       from record r join scope s on s.id = r.scope_id
-       where ($1::int[] is null or r.scope_id = any($1))
-         and r.schema_ver not like 'session/%'
-       order by r.updated_at desc nulls last`,
-      [c.req.valid("query").scopes ?? null],
-    );
-    return c.json(result.rows);
-  })
-  .get("/records/:id", zValidator("param", textIdParamSchema), async (c) => {
-    const client = db();
-    const { id } = c.req.valid("param");
-    // Explicit columns keep the unused raw IR and vector payload out of this response.
-    const record = await client.query(
-      `select r.id, r.title, r.status, r.branch, r.problem, r.goal, r.current_at, r.current_text,
-              r.phases, r.next, r.created_at, r.updated_at, r.ended_at, r.ingested_at,
-              s.label as scope_label
-       from record r join scope s on s.id = r.scope_id
-       where r.id = $1 and r.schema_ver not like 'session/%'`,
-      [id],
-    );
-    if (record.rows.length === 0) return c.json({ error: "その記録は無い" }, 404);
-    const nodes = await client.query(
-      `select id::int, kind, subkind, polarity, status, key, at, text,
-              coalesce(attrs->>'whyNot', attrs->>'context', '') as ex, attrs, parent_id::int
-       from node where record_id = $1 and deleted_at is null
-       order by kind, ordinal, at nulls last`,
-      [id],
-    );
-    const refs = await client.query(
-      `select ref.kind, ref.key, min(ref.title) as title, min(ref.url) as url,
-              string_agg(distinct l.role, ',' order by l.role) as roles,
-              string_agg(distinct l.note, ' / ') filter (where l.note is not null) as note,
-              count(*) filter (where l.exit_code is not null and l.exit_code <> 0)::int as failed
-       from ref join ref_link l on l.ref_id = ref.id
-       where l.record_id = $1
-       group by ref.kind, ref.key
-       order by ref.kind, ref.key`,
-      [id],
-    );
-    return c.json({
-      ...record.rows[0],
-      nodes: nodes.rows.map((node) => ({ ...node, label: labelOf(node) })),
-      refs: refs.rows,
-    });
+  // チャットの根拠を開いたときの全文。MCP の read と同じ関数を通す。
+  .get("/read", zValidator("query", refQuery), async (c) => {
+    const { ref, projects } = c.req.valid("query");
+    return c.json({ text: await read(await db(), [ref], 16 * 1024, { projects }) });
   });
 
 export default app;
