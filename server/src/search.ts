@@ -19,6 +19,8 @@ export type Hit = {
   ref: string;
   kind: string;
   status: string | null;
+  /** 通ってよい道か（do）、いけない道か（dont）。画面が札の色を分ける。発言は neutral */
+  stance: "do" | "dont" | "neutral";
   label: string;
   heading: string | null;
   text: string;
@@ -152,6 +154,7 @@ type KnowledgeRow = {
   id: string;
   kind: string;
   status: string | null;
+  stance: Hit["stance"];
   heading: string | null;
   body: string;
   reason: string | null;
@@ -165,7 +168,7 @@ type KnowledgeRow = {
   successor: string | null;
 };
 
-const KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.heading, k.body, k.reason, k.confirmation, k.downsides,
+const KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.stance, k.heading, k.body, k.reason, k.confirmation, k.downsides,
   k.occurred_at, p.name as project, s.kind as source_kind, s.path, s.url, succ.body as successor`;
 const KNOWLEDGE_FROM = `from mitos.knowledge k
   join mitos.project p on p.id = k.project_id
@@ -176,6 +179,7 @@ const knowledgeHit = (r: KnowledgeRow): Hit => ({
   ref: `k:${r.id}`,
   kind: r.kind,
   status: r.status,
+  stance: r.stance,
   label: labelOf({ kind: r.kind, status: r.status, source_kind: r.source_kind, path: r.path }),
   heading: r.heading,
   text: r.body,
@@ -201,8 +205,8 @@ function knowledgeFilters(q: KnowledgeQuery, p: P): string[] {
   if (q.avoid) w.push("k.stance = 'dont'");
   else {
     // 通常の検索は、いま有効な知識だけ。覆された決定と当時の案は avoid で引く（再提案を止めるため）。
-    // 外した制約と解決した問いはどの検索にも出さない（read と画面のセッション詳細で読む）。外した理由は
-    // 決定として残す（trace の Skill）。採った案は決定と同じ内容なので、決定だけを返す。
+    // 外した制約と解決した問いはどの検索にも出さない（read と画面のセッション詳細で読む）。外した理由と
+    // 問いの答えは decision か finding として残す（trace の Skill）。採った案は決定と同じ内容なので、決定だけを返す。
     w.push("not (k.kind = 'decision' and k.status = 'superseded')");
     w.push("not (k.kind = 'option' and k.status in ('chosen', 'was_chosen'))");
     w.push("coalesce(k.status, '') not in ('retired', 'resolved')");
@@ -314,6 +318,7 @@ const messageHit = (r: MessageRow): Hit => {
     ref: `m:${r.id}`,
     kind: "message",
     status: null,
+    stance: "neutral",
     label:
       speaker === "持ち主"
         ? "【持ち主の発言】"
@@ -700,7 +705,7 @@ export function renderWork(w: WorkDetail, budget: number): string {
 }
 
 /** 参照の形。k: / s: / w: は連番、m: は uuid。**形はここで確かめ、DB の例外を参照の誤りに読み替えない。** */
-export const REF = /^(?:[ksw]:\d{1,18}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+export const REF = /^(?:[ksw]:\d{1,19}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 /**
  * 参照を読む。`k:` 知識、`m:` 発言とその前後、`s:` 取り込み元（文書の原文、PR・issue）、`w:` 作業。
@@ -716,7 +721,8 @@ export async function read(
   const scope = opts.projects ?? null;
   const out: string[] = [];
   for (const ref of refs) {
-    if (!REF.test(ref)) {
+    // bigint の上限（19 桁）を越える数字は、形が合っても DB の型の誤りになる。参照の誤りとして返す。
+    if (!REF.test(ref) || (!ref.startsWith("m:") && BigInt(ref.slice(2)) > 9223372036854775807n)) {
       out.push(`${ref}: 読めない参照（k: / s: / w: は数字、m: は uuid）`);
       continue;
     }

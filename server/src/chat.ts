@@ -16,7 +16,6 @@ import {
   type Person,
   read,
   renderWork,
-  type Scope,
   searchKnowledge,
   searchMessages,
   workDetail,
@@ -147,6 +146,7 @@ export type ChatSource = {
   n: number;
   ref: string;
   label: string;
+  stance: Hit["stance"];
   text: string;
   speaker: string | null;
   project: string;
@@ -165,6 +165,7 @@ function cite(sources: ChatSource[], h: Hit): number {
     n,
     ref: h.ref,
     label: h.label,
+    stance: h.stance,
     text: h.text.slice(0, 600),
     speaker: h.speaker,
     project: h.project,
@@ -205,142 +206,134 @@ export async function runTool(
     return JSON.stringify({ error: "引数が JSON として読めなかった" });
   }
   try {
-    return await use(db, env, projects, call.name, a, sources);
-  } catch (e) {
-    if (e instanceof RangeError) return JSON.stringify({ error: e.message });
-    throw e;
-  }
-}
-
-async function use(
-  db: Db,
-  env: Env,
-  projects: Scope,
-  name: string,
-  a: Record<string, unknown>,
-  sources: ChatSource[],
-): Promise<string> {
-  const str = (k: string) => (typeof a[k] === "string" && a[k] ? (a[k] as string) : undefined);
-  if (name === "read") {
-    const refs = [
-      ...new Set((Array.isArray(a.refs) ? a.refs : []).filter((r): r is string => typeof r === "string")),
-    ].slice(0, 5);
-    if (!refs.length) return JSON.stringify({ error: "refs が空" });
-    // 1 件ずつ読んで番号を付ける。まとめて読むと、答えが読んだ全文を根拠にしても引用できない。
-    const each = Math.floor(12_000 / refs.length);
-    const rows = [];
-    for (const ref of refs) {
-      const text = await read(db, [ref], each, { projects });
-      const n = sources.length + 1;
-      sources.push({
-        n,
-        ref,
-        label: "【全文】",
-        text: head(text, 600),
-        speaker: null,
-        project: "",
-        at: null,
-        url: null,
-      });
-      rows.push({ n, ref, text });
-    }
-    return JSON.stringify({ rows });
-  }
-  if (name === "list_items") {
-    const kind = str("kind");
-    const r = await listItems(db, {
-      projects,
-      kind: kind === "pull_request" || kind === "issue" ? kind : undefined,
-      state: str("state"),
-      author: str("author"),
-      number: typeof a.number === "number" ? Math.trunc(a.number) : undefined,
-      since: str("since"),
-      until: str("until"),
-      limit: clampInt(a.limit, 10, 50),
-      offset: Math.max(Math.trunc(Number(a.offset ?? 0)) || 0, 0),
-    });
-    return JSON.stringify({
-      total: r.total,
-      shown: r.rows.length,
-      rows: r.rows.map((x) => {
+    const str = (k: string) => (typeof a[k] === "string" && a[k] ? (a[k] as string) : undefined);
+    if (call.name === "read") {
+      const refs = [
+        ...new Set((Array.isArray(a.refs) ? a.refs : []).filter((r): r is string => typeof r === "string")),
+      ].slice(0, 5);
+      if (!refs.length) return JSON.stringify({ error: "refs が空" });
+      // 1 件ずつ読んで番号を付ける。まとめて読むと、答えが読んだ全文を根拠にしても引用できない。
+      const each = Math.floor(12_000 / refs.length);
+      const rows = [];
+      for (const ref of refs) {
+        const text = await read(db, [ref], each, { projects });
         const n = sources.length + 1;
         sources.push({
           n,
-          ref: x.ref,
-          label: x.kind === "pull_request" ? "【PR】" : "【issue】",
-          text: `#${x.number} ${x.title}（${x.state}）`,
-          speaker: x.author,
-          project: x.project,
-          at: day(x.closedAt ?? x.createdAt),
-          url: x.url,
+          ref,
+          label: "【全文】",
+          stance: "neutral",
+          text: head(text, 600),
+          speaker: null,
+          project: "",
+          at: null,
+          url: null,
         });
-        return {
-          n,
-          ref: x.ref,
-          number: x.number,
-          title: x.title,
-          state: x.state,
-          author: x.author,
-          created_at: day(x.createdAt),
-          closed_at: day(x.closedAt),
-          updated_at: day(x.updatedAt),
-        };
-      }),
-    });
-  }
-  if (name !== "recall") return JSON.stringify({ error: `知らない道具: ${name}` });
-  const mode = str("mode") ?? "knowledge";
-  const limit = clampInt(a.limit, 8, 20);
-  const kinds = Array.isArray(a.kinds)
-    ? a.kinds.filter((k): k is string => typeof k === "string")
-    : undefined;
-  if (mode === "resume") {
-    const works = await openWork(db, projects);
-    if (works.length === 0) return JSON.stringify({ note: "進行中の作業は無い" });
-    const rows = [];
-    for (const w of works) {
-      const d = await workDetail(db, w.ref.slice(2), projects);
-      if (!d) continue;
-      const n = sources.length + 1;
-      sources.push({
-        n,
-        ref: d.ref,
-        label: "【作業の現在地】",
-        text: `${d.title}: ${head(d.current, 500)}`,
-        speaker: null,
-        project: d.project,
-        at: day(d.updatedAt),
-        url: null,
-      });
-      rows.push({ n, ref: d.ref, text: renderWork(d, 3000) });
+        rows.push({ n, ref, text });
+      }
+      return JSON.stringify({ rows });
     }
-    return JSON.stringify({ rows });
-  }
-  const hits =
-    mode === "said"
-      ? await searchMessages(db, env, {
-          question: str("question"),
-          projects,
-          who: str("who") ?? "me",
-          path: str("path"),
-          since: str("since"),
-          until: str("until"),
-          limit,
-        })
-      : str("question")
-        ? await searchKnowledge(db, env, {
-            question: str("question") as string,
+    if (call.name === "list_items") {
+      const kind = str("kind");
+      const r = await listItems(db, {
+        projects,
+        kind: kind === "pull_request" || kind === "issue" ? kind : undefined,
+        state: str("state"),
+        author: str("author"),
+        number: typeof a.number === "number" ? Math.trunc(a.number) : undefined,
+        since: str("since"),
+        until: str("until"),
+        limit: clampInt(a.limit, 10, 50),
+        offset: Math.max(Math.trunc(Number(a.offset ?? 0)) || 0, 0),
+      });
+      return JSON.stringify({
+        total: r.total,
+        shown: r.rows.length,
+        rows: r.rows.map((x) => {
+          const n = sources.length + 1;
+          sources.push({
+            n,
+            ref: x.ref,
+            label: x.kind === "pull_request" ? "【PR】" : "【issue】",
+            stance: "neutral",
+            text: `#${x.number} ${x.title}（${x.state}）`,
+            speaker: x.author,
+            project: x.project,
+            at: day(x.closedAt ?? x.createdAt),
+            url: x.url,
+          });
+          return {
+            n,
+            ref: x.ref,
+            number: x.number,
+            title: x.title,
+            state: x.state,
+            author: x.author,
+            created_at: day(x.createdAt),
+            closed_at: day(x.closedAt),
+            updated_at: day(x.updatedAt),
+          };
+        }),
+      });
+    }
+    if (call.name !== "recall") return JSON.stringify({ error: `知らない道具: ${call.name}` });
+    const mode = str("mode") ?? "knowledge";
+    const limit = clampInt(a.limit, 8, 20);
+    const kinds = Array.isArray(a.kinds)
+      ? a.kinds.filter((k): k is string => typeof k === "string")
+      : undefined;
+    if (mode === "resume") {
+      const works = await openWork(db, projects);
+      if (works.length === 0) return JSON.stringify({ note: "進行中の作業は無い" });
+      const rows = [];
+      for (const w of works) {
+        const d = await workDetail(db, w.ref.slice(2), projects);
+        if (!d) continue;
+        const n = sources.length + 1;
+        sources.push({
+          n,
+          ref: d.ref,
+          label: "【作業の現在地】",
+          stance: "neutral",
+          text: `${d.title}: ${head(d.current, 500)}`,
+          speaker: null,
+          project: d.project,
+          at: day(d.updatedAt),
+          url: null,
+        });
+        rows.push({ n, ref: d.ref, text: renderWork(d, 3000) });
+      }
+      return JSON.stringify({ rows });
+    }
+    const hits =
+      mode === "said"
+        ? await searchMessages(db, env, {
+            question: str("question"),
             projects,
-            kinds,
-            avoid: mode === "avoid",
+            who: str("who") ?? "me",
             path: str("path"),
             since: str("since"),
             until: str("until"),
             limit,
           })
-        : [];
-  if (hits.length === 0) return JSON.stringify({ rows: [], note: "該当なし" });
-  return JSON.stringify({ rows: asRows(sources, hits) });
+        : str("question")
+          ? await searchKnowledge(db, env, {
+              question: str("question") as string,
+              projects,
+              kinds,
+              avoid: mode === "avoid",
+              path: str("path"),
+              since: str("since"),
+              until: str("until"),
+              limit,
+            })
+          : [];
+    if (hits.length === 0) return JSON.stringify({ rows: [], note: "該当なし" });
+    return JSON.stringify({ rows: asRows(sources, hits) });
+  } catch (e) {
+    if (e instanceof RangeError) return JSON.stringify({ error: e.message });
+    throw e;
+  }
 }
 
 /** モデルごとの単価（$/1M）。キャッシュ済み入力は通常入力の 10%。 */

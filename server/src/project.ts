@@ -156,7 +156,7 @@ export function relativeTo(root: string, file: string, cwd = root): string | nul
   return rel.split(path.sep).join("/");
 }
 
-export type Connector = { id: string; headAt: Date | null; snapshotAt: Date | null };
+export type Connector = { id: string; headOid: string | null; snapshotAt: Date | null };
 
 /**
  * 取り込み元の行。無ければ作る。**transaction の中で呼び、行を掴む**（同じ取り込み元の同期の commit を 1 本ずつにする）。
@@ -171,23 +171,13 @@ export async function connectorOf(
     "insert into mitos.connector (project_id, provider) values ($1, $2) on conflict (project_id, provider) do nothing",
     [projectId, provider],
   );
-  const r = await db.query<{ id: string; head_at: Date | null; snapshot_at: Date | null }>(
-    "select id, head_at, snapshot_at from mitos.connector where project_id = $1 and provider = $2 for update",
+  const r = await db.query<{ id: string; head_oid: string | null; snapshot_at: Date | null }>(
+    "select id, head_oid, snapshot_at from mitos.connector where project_id = $1 and provider = $2 for update",
     [projectId, provider],
   );
   const row = r.rows[0];
   if (!row) throw new Error(`取り込み元を作れなかった: ${provider}`);
-  return { id: row.id, headAt: row.head_at, snapshotAt: row.snapshot_at };
-}
-
-/**
- * この snapshot が、既に入っているものより古いか。古ければ書かない（新しい状態を巻き戻さない）。
- * head は文書の HEAD の commit 時刻で、先に比べる（別の PC の古い clone）。同じなら読み始めた時刻で比べる（遅れた同期）。
- */
-export function isStale(stored: Connector, snapshotAt: Date, headAt: Date | null = null): boolean {
-  const h = (d: Date | null) => d?.getTime() ?? Number.NEGATIVE_INFINITY;
-  if (h(headAt) !== h(stored.headAt)) return h(headAt) < h(stored.headAt);
-  return stored.snapshotAt !== null && snapshotAt.getTime() < stored.snapshotAt.getTime();
+  return { id: row.id, headOid: row.head_oid, snapshotAt: row.snapshot_at };
 }
 
 /** Codex の apply_patch は編集先を patch の見出しに書く。見出しの 4 形だけを読む（本文は読まない）。 */

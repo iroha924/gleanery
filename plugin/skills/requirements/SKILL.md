@@ -214,6 +214,7 @@ draft の要点と path を示し、承認を**他の質問と混ぜずに**閉�
 
 - 設計書を作る: `/mitos:design <slug>`（Codex は `$mitos:design`）
 - このセッションを記録する: `/mitos:trace`（Codex は `$mitos:trace`）
-- 公開する: 成果物と `change.json` を commit したうえで、`$M sync --cwd <リポジトリの根>` を
-  **`$M` を絶対パスに解決した形で**示す。PATH の古い CLI は `.mitos` の選別を知らず、draft を取り込んでしまう。
-  同期は利用者が実行する。このスキルはナレッジ DB へ書かない
+- 公開する: 成果物と `change.json` を commit し、リポジトリの既定 branch（main）へ merge すると、次の日次同期で
+  ナレッジに入る。すぐ入れたいときは merge の後に `$M sync --cwd <リポジトリの根>` を **`$M` を絶対パスに解決した形で**
+  示す。同期は remote の既定 branch だけを読むので、merge 前の branch の成果物は入らない。同期は利用者が実行する。
+  このスキルはナレッジ DB へ書かない

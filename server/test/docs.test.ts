@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Artifact } from "../src/artifacts.ts";
-import { docHash, markdownFiles, projectDocs, sections } from "../src/docs.ts";
+import { collectDocs, commitOf, docHash, isAncestor, projectDocs, sections } from "../src/docs.ts";
 import { knowledgeText } from "../src/knowledge.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
@@ -47,6 +47,12 @@ test("同じ題の節でも key が衝突しない", () => {
 });
 
 // 中身は子が持っている。見出しは子の trail に残るので、落としても失われない。
+// 番号を付けた key が別の見出しと同じ文字列になると、1 つの upsert に同じ key が並んで同期ごと落ちる。
+test("番号を付けた節の key が、同じ文字列の見出しと重ならない", () => {
+  const out = sections("x.md", ["## 背景", "a", "## 背景", "b", "## 背景:2", "c"].join("\n"));
+  assert.equal(new Set(out.map((s) => s.key)).size, out.length, out.map((s) => s.key).join(" / "));
+});
+
 test("見出しだけの節は置かない", () => {
   const out = sections("a.md", ["## 親", "", "### 子", "中身"].join("\n"));
   assert.deepEqual(
@@ -86,62 +92,93 @@ test("見出しの無い本文も 1 件になる", () => {
   assert.equal(out[0]?.key, "doc:CLAUDE.md#claude.md");
 });
 
-// **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
-// `.gitignore` は参照先にしか効かないので、symlink 自体は追跡できてしまう。
-// 日次同期は無人で走るので、ここが開くと誰も見ていないところで資格情報が出ていく。
-test("追跡された symlink は読む対象に入れない", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-docs-"));
+/** 一時リポジトリを作り、fn に渡す。git は既定の設定を読まない。 */
+function withRepo(fn: (repo: string, git: (...a: string[]) => string) => void): void {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-docs-")));
   try {
-    fs.writeFileSync(path.join(dir, "outside.env"), "SECRET_TOKEN=sk-live-abc123\n");
     const repo = path.join(dir, "repo");
-    fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
-    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { stdio: "ignore" });
     execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
+    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" }).trim();
     git("config", "user.email", "t@example.com");
     git("config", "user.name", "t");
-    fs.writeFileSync(path.join(repo, "docs", "real.md"), "# 本物\n中身\n");
-    fs.symlinkSync("../../outside.env", path.join(repo, "docs", "leak.md"));
-    fs.symlinkSync("/etc/hosts", path.join(repo, "docs", "abs.md"));
-    git("add", "-A");
-    git("commit", "-qm", "x");
-
-    const got = markdownFiles(repo);
-    assert.deepEqual(got.files, ["docs/real.md"]);
-    assert.equal(got.symlinks, 2);
+    fs.writeFileSync(path.join(dir, "outside.env"), "SECRET_TOKEN=sk-live-abc123\n");
+    fn(repo, git);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+const put = (repo: string, rel: string, body: string) => {
+  fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+  fs.writeFileSync(path.join(repo, rel), body);
+};
+
+// **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
+// commit の tree では symlink は mode 120000 の項目で、ディレクトリの symlink の先はそもそも tree に無い。
+// 日次同期は無人で走るので、ここが開くと誰も見ていないところで資格情報が出ていく。
+test("commit の tree から読み、symlink の先は本文に入れない", () => {
+  withRepo((repo, git) => {
+    put(repo, "docs/real.md", "# 本物\n中身\n");
+    fs.symlinkSync("../../outside.env", path.join(repo, "docs", "leak.md"));
+    fs.symlinkSync("../outside.env", path.join(repo, "dirlink"));
+    git("add", "-A");
+    git("commit", "-qm", "x");
+    const { docs, skipped } = collectDocs(repo, commitOf(repo, false));
+    assert.deepEqual(
+      docs.map((d) => d.path),
+      ["docs/real.md"],
+    );
+    assert.equal(skipped, 1);
+    assert.ok(!JSON.stringify(docs).includes("SECRET_TOKEN"));
+  });
 });
 
-// **末端の lstat だけでは足りない。**`docs/` 自体が外への symlink だと、
-// `docs/notes.md` の末端は普通のファイルに見えて素通りする。
-// git は index を見るので、作業ツリー側の形が変わっても列挙は続く。
-test("途中のディレクトリが symlink でも外へ出られない", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-docs2-"));
-  try {
-    fs.mkdirSync(path.join(dir, "outside"));
-    fs.writeFileSync(path.join(dir, "outside", "notes.md"), "SECRET_TOKEN=sk-live-xyz\n");
-    const repo = path.join(dir, "repo");
-    fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
-    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { stdio: "ignore" });
-    execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
-    git("config", "user.email", "t@example.com");
-    git("config", "user.name", "t");
-    fs.writeFileSync(path.join(repo, "docs", "notes.md"), "# 本物\n中身\n");
-    fs.writeFileSync(path.join(repo, "keep.md"), "# 残る\n中身\n");
+// 作業ツリーを読むと、書きかけの本文や、承認を外している最中の成果物が DB に入る。
+test("作業ツリーの未 commit の編集は読まず、commit した承認だけを見る", () => {
+  withRepo((repo, git) => {
+    put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
+    put(
+      repo,
+      ".mitos/changes/auth/change.json",
+      JSON.stringify({ schema: "mitos/change/1", title: "認証", requirements: { status: "approved" } }),
+    );
+    put(repo, ".mitos/changes/auth/requirements.md", "# 要件\n承認した本文\n");
+    put(repo, "README.md", "# 読んで\n公開した本文\n");
     git("add", "-A");
     git("commit", "-qm", "x");
+    const head = commitOf(repo, false);
+    // commit していない変更（draft へ戻して書き直し中、README の書きかけ）
+    put(
+      repo,
+      ".mitos/changes/auth/change.json",
+      JSON.stringify({ schema: "mitos/change/1", title: "認証", requirements: { status: "draft" } }),
+    );
+    put(repo, ".mitos/changes/auth/requirements.md", "# 要件\n書きかけ\n");
+    put(repo, "README.md", "# 読んで\n書きかけ\n");
+    const { docs } = collectDocs(repo, head);
+    const body = Object.fromEntries(docs.map((d) => [d.path, d.body]));
+    assert.match(body["README.md"] ?? "", /公開した本文/);
+    assert.match(body[".mitos/changes/auth/requirements.md"] ?? "", /承認した本文/);
+    assert.equal(docs.find((d) => d.path.endsWith("requirements.md"))?.kind, "requirements");
+  });
+});
 
-    // docs/ ごと外への symlink に差し替える。git の index は変わらない。
-    fs.rmSync(path.join(repo, "docs"), { recursive: true });
-    fs.symlinkSync(path.join(dir, "outside"), path.join(repo, "docs"));
-
-    const got = markdownFiles(repo);
-    assert.deepEqual(got.files, ["keep.md"], "外の実体を読む対象に入れた");
-    assert.equal(got.symlinks, 1);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+test("commit の中の manifest が不正なら何も返さずに止め、fast-forward かどうかを祖先で見る", () => {
+  withRepo((repo, git) => {
+    put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
+    put(repo, ".mitos/changes/a/change.json", "{");
+    put(repo, ".mitos/changes/a/requirements.md", "# r\n");
+    git("add", "-A");
+    git("commit", "-qm", "a");
+    const first = commitOf(repo, false);
+    assert.throws(() => collectDocs(repo, first), /\.mitos が不正/);
+    put(repo, "README.md", "# x\n");
+    git("add", "-A");
+    git("commit", "-qm", "b");
+    const second = commitOf(repo, false);
+    assert.equal(isAncestor(repo, first, second), true);
+    assert.equal(isAncestor(repo, second, first), false);
+    assert.equal(isAncestor(repo, "0".repeat(40), second), false, "この clone に無い commit");
+  });
 });
 
 // **JS の `.` は `\r` を行終端として扱う。**CRLF の見出しに `/^(#{1,3}) +(\S.*)$/` が

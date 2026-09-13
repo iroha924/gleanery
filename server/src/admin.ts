@@ -97,7 +97,9 @@ export function rewriteEnv(body: string, set: Record<string, string>): string {
  * Neon はパスワードの変更を control plane へ渡すので、transaction で巻き戻せる保証が無い。
  * Neon は平文のパスワードしか受け付けない（SCRAM の verifier を渡すと control plane が 400 を返す。実測）。
  */
-async function roles(file: string): Promise<void> {
+async function roles(given: string): Promise<void> {
+  // symlink の env ファイルは、link ではなく実体を置き換える（link を通常のファイルで潰さない）。
+  const file = fs.existsSync(given) ? fs.realpathSync(given) : given;
   const env = loadEnv();
   const owner = env[KEY.owner];
   const t = target(owner);

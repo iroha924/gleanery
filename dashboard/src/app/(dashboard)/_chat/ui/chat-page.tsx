@@ -9,7 +9,6 @@ import {
   SquareIcon,
   UserRoundIcon,
 } from "lucide-react-motion";
-import Link from "next/link";
 import { useState } from "react";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +44,9 @@ import {
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { polarityClass } from "@/lib/polarity";
+import { api } from "@/lib/api";
+import { useProject } from "@/lib/project";
+import { stanceClass } from "@/lib/stance";
 import type { ChatSource, PolishOption } from "../api/chat";
 import { useChat } from "../model/use-chat";
 
@@ -75,9 +76,22 @@ function Marked({ text, marks }: { text: string; marks: string[] }) {
   );
 }
 
+/** 根拠 1 件。**全文はその場で読む**（選んでいる作業場所の外は読めない）。 */
 function Source({ source }: { source: ChatSource }) {
+  const { project } = useProject();
+  const [full, setFull] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
+  const readFull = () => {
+    if (!project) return;
+    setReading(true);
+    api
+      .read(source.ref, [project.id])
+      .then(setFull)
+      .catch((error) => setFull(error instanceof Error ? error.message : String(error)))
+      .finally(() => setReading(false));
+  };
   return (
-    <Dialog>
+    <Dialog onOpenChange={(open) => !open && setFull(null)}>
       <DialogTrigger asChild>
         <button
           type="button"
@@ -87,34 +101,40 @@ function Source({ source }: { source: ChatSource }) {
             {source.n}
           </span>
           <span className="line-clamp-2 min-w-0 text-foreground/85">
-            <span className={`mr-1 ${polarityClass(source.polarity)}`}>{source.label}</span>
+            <span className={`mr-1 ${stanceClass(source.stance)}`}>{source.label}</span>
             {source.text}
           </span>
         </button>
       </DialogTrigger>
       <DialogContent className="gap-5 p-6 sm:max-w-[42rem]">
         <DialogHeader>
-          <DialogTitle className="pr-10 text-lg leading-[1.7]">
-            <span className={`mr-1.5 ${polarityClass(source.polarity)}`}>{source.label}</span>
-            {source.recordTitle}
+          <DialogTitle className={`pr-10 text-lg leading-[1.7] ${stanceClass(source.stance)}`}>
+            {source.label}
           </DialogTitle>
-          <DialogDescription className="font-mono text-xs uppercase tracking-[0.12em]">
-            {source.actor && `@${source.actor} / `}
-            {source.scope}
-            {source.at && ` / ${source.at}`}
+          <DialogDescription className="font-mono text-xs tracking-[0.06em]">
+            {[source.speaker, source.project, source.at, source.ref].filter(Boolean).join(" / ")}
           </DialogDescription>
         </DialogHeader>
-        <p className="max-h-[50vh] overflow-y-auto pr-1 text-base leading-[2.1]">
-          {source.actor ? source.text.replace(/^@[^\s:]+:\s*/, "") : source.text}
+        <p className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap pr-1 text-base leading-[2.1]">
+          {full ?? source.text}
         </p>
         <DialogFooter className="-mx-6 -mb-6 p-5 sm:justify-start">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/records/${encodeURIComponent(source.recordId)}`}>記録を開く</Link>
-          </Button>
+          {full === null && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={readFull}
+              disabled={reading || !project}
+            >
+              {reading && <Spinner className="size-3" />}
+              全文を読む
+            </Button>
+          )}
           {source.url && (
             <Button asChild variant="ghost" size="sm">
               <a href={source.url} target="_blank" rel="noopener noreferrer">
-                PR を開く
+                GitHub で開く
               </a>
             </Button>
           )}
@@ -154,7 +174,7 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
         <div className="rounded-md bg-secondary/70 p-4">
           <p className="text-muted-foreground text-sm">まとめています。いちばん近い記録:</p>
           <p className="mt-1.5 text-base leading-relaxed">
-            <span className={`mr-1 font-medium ${polarityClass(top.polarity)}`}>{top.label}</span>
+            <span className={`mr-1 font-medium ${stanceClass(top.stance)}`}>{top.label}</span>
             {top.text}
           </p>
         </div>
@@ -256,13 +276,19 @@ export function ChatPage() {
                         記録について聞く
                       </EmptyTitle>
                       <EmptyDescription className="text-pretty leading-loose">
-                        保存されているものだけで答えます。記録に無いことは「無い」と答え、答えには根拠が付きます。
+                        記録（判断・会話・文書・PR）だけで答えます。記録に無いことは「無い」と答え、答えには根拠が付きます。
+                        この会話は保存しません。
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent className="mt-3 max-w-2xl flex-row flex-wrap justify-center gap-2">
                       {EXAMPLES.map((question) => (
                         <Badge key={question} asChild variant="outline" className="rounded-md font-normal">
-                          <button type="button" onClick={() => chat.ask(question)}>
+                          <button
+                            type="button"
+                            disabled={chat.projects.length === 0}
+                            className="disabled:opacity-40"
+                            onClick={() => chat.ask(question)}
+                          >
                             {question}
                           </button>
                         </Badge>
@@ -360,19 +386,18 @@ export function ChatPage() {
                   }
                 }}
                 placeholder={
-                  chat.scopeIds.length === 0 ? "ヘッダーでプロジェクトを選んでください" : "続けて聞く"
+                  chat.projects.length === 0 ? "サイドバーで作業場所を 1 つ選んでください" : "続けて聞く"
                 }
-                disabled={chat.scopeIds.length === 0}
+                disabled={chat.projects.length === 0}
                 className="max-h-64 min-h-14 px-4 pt-3.5 text-base leading-[2.05]"
               />
               <InputGroupAddon align="block-end" className="gap-1.5 px-3 pb-2.5">
                 <InputGroupText className="rounded-md border px-2 py-0.5 font-mono text-xs">
                   {chat.projectLabel}
                 </InputGroupText>
-                {chat.cost && (
+                {chat.cost !== null && (
                   <InputGroupText className="font-mono text-xs text-muted-foreground tabular-nums">
-                    直前 ${chat.cost.question.toFixed(3)}
-                    {chat.cost.month !== null && ` / 今月 $${chat.cost.month.toFixed(2)}`}
+                    直前 ${chat.cost.toFixed(3)}
                   </InputGroupText>
                 )}
                 <Tooltip>
@@ -383,7 +408,7 @@ export function ChatPage() {
                       variant={chat.recorder ? "default" : "ghost"}
                       className={`ml-auto ${chat.recorder ? "bg-dont text-white hover:bg-dont/90" : ""}`}
                       onClick={chat.listen}
-                      disabled={chat.hearing || chat.preparing || chat.scopeIds.length === 0}
+                      disabled={chat.hearing || chat.preparing || chat.projects.length === 0}
                       aria-label={chat.recorder ? "録音を終了" : "録音を開始"}
                     >
                       {chat.hearing || chat.preparing ? (
@@ -436,7 +461,7 @@ export function ChatPage() {
                         size="icon-sm"
                         variant="default"
                         onClick={() => chat.ask(chat.draft)}
-                        aria-disabled={!chat.draft.trim() || chat.scopeIds.length === 0}
+                        aria-disabled={!chat.draft.trim() || chat.projects.length === 0}
                         className="aria-disabled:pointer-events-none aria-disabled:opacity-40"
                         aria-label="送る"
                       >

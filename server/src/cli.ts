@@ -7,7 +7,7 @@ import path from "node:path";
 import { parseArgs } from "node:util";
 import type pg from "pg";
 import { check, init } from "./artifacts.ts";
-import { flush, readState } from "./capture.ts";
+import { flush, readState, rejectedDir } from "./capture.ts";
 import { checkSchema, connect, type Env, inTransaction, KEY, loadEnv, type Role } from "./db.ts";
 import { syncDocs } from "./docs.ts";
 import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
@@ -32,13 +32,15 @@ const USAGE = `使い方:
   mitos project add [--cwd <dir>] [--name <名前>]  作業場所を登録する（remote が無いなら --name でこの PC での名前を付ける）
   mitos project list                               登録済みの作業場所と、最後の同期
   mitos project forget <key|名前> [--yes]          作業場所のデータを消す（--yes が無ければ数えるだけ）
-  mitos sync [--cwd <dir>]                         この PC にある作業場所の GitHub と文書を同期する（日次用）
+  mitos sync [--cwd <dir> [--reset-docs]]          この PC にある作業場所の GitHub と文書を同期する（日次用）。文書は
+                                                   remote の既定 branch から入れ、fast-forward でなければ止まる
+                                                   （--reset-docs はその作業場所を今の状態に揃える）
   mitos search <質問> [--avoid] [--said me|others|<名前>] [--all] [--cwd <dir>] [--limit N]
                                                    引けるかを確かめる（--said は発言を探す）
   mitos who [<呼び名> <ハンドル>... [--me]]         GitHub のハンドルと人を結ぶ（--me は持ち主）
   mitos trace context [--host claude-code|codex]   いまの session の会話と、進行中の作業を出す（trace の材料）
-  mitos trace check <trace.json>                   trace の記録の形を確かめる（DB に触らない）
-  mitos trace save <trace.json>                    trace の記録を入れる
+  mitos trace check <trace.json|->                 trace の記録の形を確かめる（DB に触らない。- は標準入力）
+  mitos trace save <trace.json|->                  trace の記録を入れる（- は標準入力）
   mitos capture flush                              自動記録の待ち行列を DB へ送る
   mitos init [--cwd <dir>]                         要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
   mitos check [--cwd <dir>]                        .mitos/ の change.json を検査する（DB に触らない）
@@ -55,6 +57,7 @@ const OPTIONS = {
   name: { type: "string" },
   limit: { type: "string" },
   all: { type: "boolean" },
+  "reset-docs": { type: "boolean" },
   avoid: { type: "boolean" },
   said: { type: "string" },
   me: { type: "boolean" },
@@ -88,6 +91,9 @@ async function registered(c: pg.Client, place: Place): Promise<number> {
   return id;
 }
 
+/** trace の記録を読む。`-` は標準入力（Skill はファイルを作らずに渡す）。 */
+const readTrace = (file: string): unknown => JSON.parse(fs.readFileSync(file === "-" ? 0 : file, "utf8"));
+
 const githubRepo = (key: string): string | null =>
   key.match(/^git:github\.com\/([^/]+\/[^/]+)$/)?.[1] ?? null;
 
@@ -95,7 +101,7 @@ const githubRepo = (key: string): string | null =>
  * 1 つの作業場所を同期する。**GitHub と文書は互いに独立**なので、片方が落ちてももう片方は回す。
  * 失敗は取り込み元の last_error に残し（doctor と画面が出す）、最後にまとめて投げる。
  */
-async function syncOne(c: pg.Client, id: number, place: Place): Promise<string[]> {
+async function syncOne(c: pg.Client, id: number, place: Place, resetDocs = false): Promise<string[]> {
   const out: string[] = [];
   const failed: string[] = [];
   const run = async (provider: "github" | "docs", label: string, fn: () => Promise<string>) => {
@@ -116,7 +122,9 @@ async function syncOne(c: pg.Client, id: number, place: Place): Promise<string[]
   const repo = githubRepo(place.key);
   if (repo) await run("github", "GitHub", () => syncGithub(c, id, place.name, repo));
   if (fs.existsSync(path.join(place.root, ".git")))
-    await run("docs", "文書", () => syncDocs(c, id, place.root));
+    await run("docs", "文書", () =>
+      syncDocs(c, id, place.root, { remote: place.key.startsWith("git:"), reset: resetDocs }),
+    );
   if (failed.length) throw new Error([...out, ...failed].join("\n  "));
   return out;
 }
@@ -248,7 +256,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
     `自動記録                   待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
       s.error ? ` / 失敗: ${s.error}` : ""
     }${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${
-      s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（~/.claude/mitos-spool/rejected）` : ""
+      s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
     }`,
   );
   if (!env[KEY.reader]) return;
@@ -346,7 +354,7 @@ async function main(): Promise<void> {
   if (cmd === "trace" && rest[0] === "check") {
     const file = rest[1];
     if (!file) throw new Error(`確かめる記録のファイルを指定する\n\n${USAGE}`);
-    const r = checkTrace(JSON.parse(fs.readFileSync(file, "utf8")));
+    const r = checkTrace(readTrace(file));
     if (r.problems.length) {
       for (const p of r.problems) console.error(`  ${p}`);
       process.exitCode = 1;
@@ -397,9 +405,7 @@ async function main(): Promise<void> {
     }
     console.log(
       `新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${
-        r.rejected
-          ? ` / DB が受け付けなかった ${r.rejected} 件（~/.claude/mitos-spool/rejected に残した）`
-          : ""
+        r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（${rejectedDir()} に残した）` : ""
       }`,
     );
     return;
@@ -411,7 +417,7 @@ async function main(): Promise<void> {
     }
     if (rest[0] !== "save" || !rest[1])
       throw new Error(`mitos trace context / check <file> / save <file>\n\n${USAGE}`);
-    const r = checkTrace(JSON.parse(fs.readFileSync(rest[1], "utf8")));
+    const r = checkTrace(readTrace(rest[1]));
     if (!r.trace) throw new Error(`記録の形が通らない:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
     const trace = r.trace;
     // 書けるのはいまの session の記録だけ。ファイルの session を信じると、別の session の決定や制約を上書きできる。
@@ -520,6 +526,9 @@ async function main(): Promise<void> {
     );
     const failed: string[] = [];
     let done = 0;
+    // 揃え直しは作業場所を 1 つ名指ししたときだけ（日次の全件で比較不能な作業場所をまとめて上書きしない）。
+    if (opt["reset-docs"] && !opt.cwd)
+      throw new Error("--reset-docs は --cwd で作業場所を 1 つ指定したときだけ使える");
     await withDb(env, "ingest", async (c) => {
       const only = opt.cwd ? placeOf(cwd) : null;
       if (only) await registered(c, only);
@@ -537,7 +546,8 @@ async function main(): Promise<void> {
           continue;
         }
         try {
-          for (const line of await syncOne(c, Number(p.id), { key: p.key, root, name: p.name })) {
+          const place = { key: p.key, root, name: p.name };
+          for (const line of await syncOne(c, Number(p.id), place, opt["reset-docs"] === true)) {
             console.log(`${p.name} / ${line}`);
           }
           done++;

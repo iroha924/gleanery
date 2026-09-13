@@ -129,13 +129,13 @@ server.registerTool(
       a.path && h.place ? (relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path) : a.path;
 
     if (mode === "resume") {
-      const works = await openWork(pool, projects);
+      const works = await openWork(pool, projects, 10);
       if (works.length === 0) return text("進行中の作業は無い。");
       const only = works.length === 1 && works[0] ? await workDetail(pool, works[0].ref.slice(2)) : null;
       if (only) return text(framed(renderWork(only, RECALL_BYTES)));
       return text(
         framed(
-          `進行中の作業が ${works.length} 件ある。続けるものの参照を read に渡す。\n\n${works
+          `進行中の作業（新しい順に ${works.length} 件${works.length === 10 ? "まで" : ""}）。続けるものの参照を read に渡す。\n\n${works
             .map(
               (w) =>
                 `- ${w.title}（${w.project} / ${w.status} / ${w.ref}）\n  いまの状況: ${head(w.current, 300)}`,
@@ -177,11 +177,21 @@ server.registerTool(
     title: "参照を読む",
     description:
       "recall が返した参照を全文で読む。k: は知識（決定なら案と検証も）、m: は発言とその前後の turn、" +
-      "s: は文書の原文や PR・issue、w: は作業の現在地。",
-    inputSchema: { refs: z.array(z.string()).min(1).max(5).describe('例: ["k:12", "m:…"]') },
+      "s: は文書の原文や PR・issue、w: は作業の現在地。既定はいまの作業場所の参照だけで、recall を all_projects で引いたときはここにも all_projects を付ける。",
+    inputSchema: {
+      refs: z.array(z.string()).min(1).max(5).describe('例: ["k:12", "m:…"]'),
+      all_projects: z.boolean().optional().describe("全部の作業場所の参照を読む。既定はいまの作業場所だけ"),
+      cwd: z.string().optional().describe("どの作業場所として読むか。省くとサーバーの作業ディレクトリ"),
+    },
     annotations: READ_ONLY,
   },
-  async ({ refs }) => text(framed(await read(await db(), refs, READ_BYTES))),
+  // 範囲は recall と同じ。記録に書かれた別の作業場所の参照を、明示せずに読ませない。
+  async (a) => {
+    const h = await here(a.cwd);
+    if (!a.all_projects && h.id === null) return text(unregistered(h));
+    const projects = a.all_projects ? null : [h.id as number];
+    return text(framed(await read(await db(), a.refs, READ_BYTES, { projects })));
+  },
 );
 
 // ---- check_path: 編集の前に、そのファイルにかかる制約と負債を出す ----

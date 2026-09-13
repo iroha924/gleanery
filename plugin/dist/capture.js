@@ -23995,40 +23995,6 @@ function tail(s, n) {
   return chars.slice(i).join("");
 }
 var clean = (s) => s.replaceAll("\x00", "");
-
-// server/src/knowledge.ts
-function messageText(m) {
-  const context = m.source ? `${m.source.kind === "pull_request" ? "PR" : "issue"} #${m.source.number} ${m.source.title}` : m.project;
-  const speaker = m.speakerKind === "self" ? "持ち主の発言" : m.handle ? `@${m.handle}` : m.speakerKind === "assistant" ? "AI" : "";
-  return `${[context, ...m.paths, speaker].filter(Boolean).join(" / ")}
-${m.body}`;
-}
-var indexesMessage = (origin, speakerKind) => speakerKind !== "bot" && !(origin !== "github" && speakerKind === "assistant");
-var conversationId = (projectId, origin, externalId) => uuidFrom(String(projectId), origin, externalId);
-
-// server/src/capture.ts
-var spoolDir = () => path3.join(os3.homedir(), ".claude", "mitos-spool");
-var stateFile = () => path3.join(os3.homedir(), ".claude", "mitos-capture.json");
-var rejectedDir = () => path3.join(spoolDir(), "rejected");
-var MAX_MESSAGE = 128 * 1024;
-var KEEP = 8 * 1024;
-function fit(body) {
-  const all = bytes(body);
-  if (all <= MAX_MESSAGE)
-    return { body, truncated: false, originalBytes: all };
-  const a = head(body, KEEP);
-  const z2 = tail(body, KEEP);
-  const cut = all - bytes(a) - bytes(z2);
-  return {
-    body: `${a}
-
-[中央 ${cut.toLocaleString("en-US")} bytes を保存していない]
-
-${z2}`,
-    truncated: true,
-    originalBytes: all
-  };
-}
 var SECRETS = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
   [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
@@ -24046,16 +24012,53 @@ var SECRETS = [
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/g, "Bearer トークン"]
+  [/\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"]
 ];
-var ENV_ASSIGN = /\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*=\s*)(["']?)[^\s"']+\3/g;
-var FIELD_ASSIGN = /(["']?)\b([A-Za-z0-9_]*(?:api_?key|secret(?:_access)?_?key|access_?key|private_?key|client_?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?!\[伏せた)[^\s"',;]{6,}\4/gi;
-var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]+:)\S*@([^@\s/?#]+)/g;
+var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API_?KEY|KEY|PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
+var FIELD_ASSIGN = /(["']?)\b([A-Za-z0-9_-]*(?:api[-_]?key|account[-_]?key|secret(?:[-_]access)?[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?=[^\s"',;]*\d)(?=[^\s"',;]*[A-Za-z])(?![^\s"',;]*[()])[^\s"',;]{8,}\4/gi;
+var MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]*?\s-p)(?=[^\s-])\S+/g;
+var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 function mask(text) {
-  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]");
+  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]").replace(MYSQL_PASSWORD, "$1[伏せた]");
   for (const [re, what] of SECRETS)
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
+}
+
+// server/src/knowledge.ts
+function messageText(m) {
+  const context = m.source ? `${m.source.kind === "pull_request" ? "PR" : "issue"} #${m.source.number} ${m.source.title}` : m.project;
+  const speaker = m.speakerKind === "self" ? "持ち主の発言" : m.handle ? `@${m.handle}` : m.speakerKind === "assistant" ? "AI" : "";
+  return `${[context, ...m.paths, speaker].filter(Boolean).join(" / ")}
+${m.body}`;
+}
+var indexesMessage = (origin, speakerKind) => speakerKind !== "bot" && !(origin !== "github" && speakerKind === "assistant");
+var conversationId = (projectId, origin, externalId) => uuidFrom(String(projectId), origin, externalId);
+
+// server/src/capture.ts
+var spoolDir = () => path3.join(os3.homedir(), ".claude", "mitos-spool");
+var stateFile = () => path3.join(os3.homedir(), ".claude", "mitos-capture.json");
+var rejectedDir = () => path3.join(spoolDir(), "rejected");
+var MAX_MESSAGE = 128 * 1024;
+var KEEP = 8 * 1024;
+function fit(body, transform2 = (s) => s) {
+  const all = bytes(body);
+  if (all <= MAX_MESSAGE) {
+    const kept = transform2(body);
+    return { body: kept, truncated: false, originalBytes: bytes(kept) };
+  }
+  const a = head(transform2(head(body, KEEP * 2)), KEEP);
+  const z2 = tail(transform2(tail(body, KEEP * 2)), KEEP);
+  const cut = all - bytes(a) - bytes(z2);
+  return {
+    body: `${a}
+
+[中央 ${cut.toLocaleString("en-US")} bytes を保存していない]
+
+${z2}`,
+    truncated: true,
+    originalBytes: all
+  };
 }
 function spool(record2) {
   const dir = spoolDir();
@@ -24084,7 +24087,7 @@ function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoi
 }
 function answersOf(input2) {
   const response = input2.tool_response;
-  const answers = response?.answers ?? input2.tool_input?.answers;
+  const answers = response?.answers;
   if (!answers || typeof answers !== "object")
     return null;
   const lines = Object.entries(answers).map(([q, a]) => {
@@ -24098,15 +24101,27 @@ A: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo2}`;
 
 `) : null;
 }
+function captureNotice(env) {
+  if (!env[KEY.capture])
+    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+  const s = readState();
+  if (s.error && s.pending > 0)
+    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+  if (s.rejected > 0)
+    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+  return null;
+}
 function onHook(host, input2) {
   const event = input2.hook_event_name;
   if (event === "SessionStart") {
+    if (!isOwnerTurn(input2))
+      return { flush: false };
     const file2 = process.env.CLAUDE_ENV_FILE;
-    if (file2 && input2.session_id && /^[A-Za-z0-9_-]+$/.test(input2.session_id) && isOwnerTurn(input2)) {
+    if (file2 && input2.session_id && /^[A-Za-z0-9_-]+$/.test(input2.session_id)) {
       fs3.appendFileSync(file2, `export MITOS_PARENT_SESSION=${input2.session_id}
 `);
     }
-    return { flush: false };
+    return { flush: false, notice: captureNotice(loadEnv()) };
   }
   if (!isOwnerTurn(input2))
     return { flush: false };
@@ -24127,10 +24142,10 @@ function onHook(host, input2) {
     at
   };
   const say = (id, speaker, raw) => {
-    const body = mask(clean(raw)).trim();
-    if (!body)
+    const kept = fit(clean(raw).trim(), mask);
+    if (!kept.body.trim())
       return;
-    spool({ ...base, kind: "message", id, speaker, ...fit(body) });
+    spool({ ...base, kind: "message", id, speaker, ...kept });
   };
   if (event === "UserPromptSubmit" && input2.prompt)
     say(`${turn}:self`, "self", input2.prompt);
@@ -24182,23 +24197,38 @@ function readState() {
 function lock() {
   const file2 = path3.join(spoolDir(), ".lock");
   fs3.mkdirSync(spoolDir(), { recursive: true, mode: 448 });
-  const holder = Number(fs3.readFileSync(file2, { encoding: "utf8", flag: "a+" }) || 0);
-  const st = fs3.statSync(file2, { throwIfNoEntry: false });
-  const alive = (() => {
+  for (let attempt = 0;attempt < 2; attempt++) {
     try {
-      return holder > 0 && process.kill(holder, 0);
-    } catch {
-      return false;
+      fs3.writeFileSync(file2, String(process.pid), { flag: "wx", mode: 384 });
+      return () => {
+        try {
+          if (fs3.readFileSync(file2, "utf8") === String(process.pid))
+            fs3.rmSync(file2, { force: true });
+        } catch {}
+      };
+    } catch (e) {
+      if (e.code !== "EEXIST")
+        throw e;
     }
-  })();
-  if (!alive || st && Date.now() - st.mtimeMs > 5 * 60000)
+    const st = fs3.statSync(file2, { throwIfNoEntry: false });
+    if (!st)
+      continue;
+    const holder = Number(fs3.readFileSync(file2, "utf8") || 0);
+    const fresh = Date.now() - st.mtimeMs < 5 * 60000;
+    const alive = (() => {
+      if (holder <= 0)
+        return fresh;
+      try {
+        return process.kill(holder, 0);
+      } catch {
+        return false;
+      }
+    })();
+    if (alive && fresh)
+      return null;
     fs3.rmSync(file2, { force: true });
-  try {
-    fs3.writeFileSync(file2, String(process.pid), { flag: "wx" });
-    return () => fs3.rmSync(file2, { force: true });
-  } catch {
-    return null;
   }
+  return null;
 }
 var BATCH = 500;
 async function write(db, batch, projects, vectors) {
@@ -24292,7 +24322,10 @@ async function write(db, batch, projects, vectors) {
     return inserted.rowCount ?? 0;
   });
 }
-var rejected = (e) => /^2[23]/.test(String(e.code ?? ""));
+var rejected = (e) => {
+  const code = String(e.code ?? "");
+  return /^[0-9A-Z]{5}$/.test(code) && !/^(08|53|57|58)/.test(code);
+};
 async function flush(env) {
   const unlock = lock();
   if (!unlock)
@@ -24339,7 +24372,8 @@ async function flush(env) {
     } catch (e) {
       if (!rejected(e))
         throw e;
-      for (const x of known) {
+      const ordered = [...known].sort((a, b) => Number(a.r.kind === "file") - Number(b.r.kind === "file"));
+      for (const x of ordered) {
         try {
           sent += await write(db, [x.r], projects, vectorOf);
         } catch (e2) {
@@ -24349,10 +24383,20 @@ async function flush(env) {
         }
       }
     }
+    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" ? [`${x.r.session}\x00${x.r.turn}`] : []));
+    for (const x of known)
+      if (x.r.kind === "file" && lost.has(`${x.r.session}\x00${x.r.turn}`) && !bad.includes(x))
+        bad.push(x);
     if (bad.length) {
       fs3.mkdirSync(rejectedDir(), { recursive: true, mode: 448 });
-      for (const x of bad)
-        fs3.renameSync(path3.join(dir, x.name), path3.join(rejectedDir(), x.name));
+      for (const x of bad) {
+        try {
+          fs3.renameSync(path3.join(dir, x.name), path3.join(rejectedDir(), x.name));
+        } catch (e) {
+          if (e.code !== "ENOENT")
+            throw e;
+        }
+      }
     }
     const moved = new Set(bad.map((x) => x.name));
     for (const x of records)
@@ -24380,7 +24424,9 @@ async function main() {
   let raw = "";
   for await (const chunk of process.stdin)
     raw += chunk;
-  const { flush: send } = onHook(host, JSON.parse(raw || "{}"));
+  const { flush: send, notice } = onHook(host, JSON.parse(raw || "{}"));
+  if (notice)
+    process.stdout.write(JSON.stringify({ systemMessage: notice }));
   if (send)
     spawn(process.execPath, [process.argv[1] ?? "", "--flush"], { detached: true, stdio: "ignore" }).unref();
 }
@@ -24390,10 +24436,10 @@ if (process.argv[1] && /capture\.(ts|js)$/.test(process.argv[1])) {
 export {
   MAX_MESSAGE,
   answersOf,
+  captureNotice,
   fit,
   flush,
   isOwnerTurn,
-  mask,
   onHook,
   readState,
   rejectedDir,

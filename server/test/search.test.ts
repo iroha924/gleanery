@@ -16,6 +16,7 @@ const hit = (over: Partial<Hit> = {}): Hit => ({
   ref: "k:1",
   kind: "dead_end",
   status: null,
+  stance: "dont",
   label: "【試して駄目だった】",
   heading: "作り直し",
   text: "認証の差し替えは駄目だった",

@@ -20,7 +20,7 @@
   <key>StandardErrorPath</key><string>__HOME__/.claude/mitos-sync-launchd.log</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <!-- launchd は PATH をほぼ持たない。gh と claude と node の場所を通す -->
+    <!-- launchd は PATH をほぼ持たない。gh・git・node の場所を通す -->
     <key>PATH</key><string>__HOME__/.local/bin:__HOME__/.local/share/mise/shims:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
 </dict>

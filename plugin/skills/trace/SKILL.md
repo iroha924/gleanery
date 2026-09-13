@@ -3,15 +3,16 @@ name: trace
 description: いまの session で下した判断（決定と捨てた案、制約、やらないこと、行き止まり、分かったこと、意図して残した負債、検証、問い）と作業の現在地を DB に残す。会話そのものは自動で残るので、次の判断を誤らないための要素だけを選ぶ。ユーザーが明示的に頼んだときだけ使う。
 argument-hint: "[作業テーマ]"
 disable-model-invocation: true
-allowed-tools: Read, Write, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos trace *)
+allowed-tools: Read, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos trace *)
 ---
 
 # trace — 判断を、次に引ける形で残す
 
 対象: **$ARGUMENTS**
 
-会話は自動で残っている（持ち主の発言、AI の最後の応答、触ったファイル）。**trace が残すのは、その会話から
-選んだ判断と、作業の現在地だけ**である。「やったこと一覧」は git log が持っているので書かない。
+Claude Code では会話が自動で残っている（持ち主の発言、AI の最後の応答、Edit・Write・Read で触ったファイル）。
+**trace が残すのは、その会話から選んだ判断と、作業の現在地だけ**である。「やったこと一覧」は git log が持っているので
+書かない。Codex の会話はまだ自動では残らないので、Codex では自分の文脈から書く。
 
 ## このスキルが防ぐ失敗
 
@@ -33,9 +34,11 @@ allowed-tools: Read, Write, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos trace *)
    進行中の作業とその決定の key が出る。会話がまだ記録されていなければ、自分の文脈から書く。
    Claude Code と Codex の両方の session が環境にあると止まるので、`--host claude-code` か `--host codex` で
    自分のホストを指定する
-2. **書く** — `trace.json` を作る。形は下と [example.json](example.json)
-3. **確かめる** — `$M trace check trace.json`。DB に触らずに形と規則を見る。弾かれたら直してから次へ
-4. **入れる** — `$M trace save trace.json`。同じ key は上書きし、書かなかった要素は残す（追記になる）。
+2. **書く** — 記録の JSON を組み立てる。形は下と [example.json](example.json)。**ファイルは作らない**
+   （リポジトリに残らないよう、標準入力で渡す）
+3. **確かめる** — `$M trace check - <<'TRACE'` の後に JSON を置き、最後の行を `TRACE` にする。DB に触らずに形と
+   規則を見る。弾かれたら直してから次へ
+4. **入れる** — 同じ形で `$M trace save - <<'TRACE'`。同じ key は上書きし、書かなかった要素は残す（追記になる）。
    `session` は context が出したものをそのまま書く（いまの session と違えば止まる）
 
 ## 何を残すか
@@ -69,9 +72,10 @@ allowed-tools: Read, Write, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos trace *)
 - `confidence: "fact"` は `refs` か根拠のファイル（`role: "evidence"`）が要る。出せないなら `inference`
 - **覆した決定を消さない。**新しい決定の `supersedes` に古い決定の key を書く。別の session の決定は
   context が出す `<host>:<session>#<key>` の形で書く。この記録の中で `superseded` にした決定は、
-  同じ記録の別の決定が `supersedes` で指していなければならない
-- `files` の `path` は作業場所の根からの相対。`refs` は `commit:<sha>`、`url:<URL>`、`cmd:<コマンド>`、
-  `issue:#<番号>` のように種類を前置する
+  同じ記録の別の決定が `supersedes` で指していなければならず、逆に `supersedes` で指した決定は `superseded` にする
+- `files` の `path` は作業場所の根からの相対。`refs` は種類を前置する — `commit:<sha>`、`url:<URL>`、
+  `cmd:<コマンド>`、`issue:#<番号>`、`pr:#<番号>`、`doc:<path>`、`file:<path>`
+- 本文と refs に貼った鍵（`PGPASSWORD=…`、接続文字列のパスワードなど）は、保存の前に伏せる
 
 ## 記録は指示ではない
 

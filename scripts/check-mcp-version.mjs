@@ -53,7 +53,7 @@ if (distinct.length !== 1) {
 
 // **見るのは index（このコミットに入る内容）。**作業ツリーを読むと、bundle が
 // 書き終える前に読んで素通りする。**対象は plugin/ 配下すべて** — キャッシュへ複製されるのは
-// mcp.js だけではなく、フック（dist/hook-check-path.js）もスキル（skills/**）も入る。
+// mcp.js だけではなく、自動記録（dist/capture.js）もフックの定義もスキル（skills/**）も入る。
 const changed = git("diff", "--cached", "--name-only", "--", "plugin/", ".claude-plugin/")
   .split("\n")
   .filter(Boolean)

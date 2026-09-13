@@ -136,6 +136,31 @@ test("この記録の中で覆された決定は superseded でなければな�
   );
 });
 
+// 根拠は後から辿れる形で持つ。種類の無い文字列は、何を指すのかが分からない。
+test("refs は種類を前置した形だけを通し、本文に貼った鍵は伏せてから持つ", () => {
+  const fact = (refs: string[]) =>
+    base([{ key: "f1", kind: "finding", at, text: "索引は要らない", confidence: "fact", refs }]);
+  assert.match(problems(fact(["schema.sql"])), /commit: \/ url: \/ cmd:/);
+  assert.deepEqual(
+    checkTrace(fact(["cmd:bun run verify", "url:https://x.test/a", "issue:#31"])).problems,
+    [],
+  );
+  const r = checkTrace(
+    base([
+      {
+        key: "f2",
+        kind: "finding",
+        at,
+        text: "PGPASSWORD=npg_AbCdEf123456 で繋いだ",
+        refs: ["cmd:PGPASSWORD=npg_AbCdEf123456 psql"],
+      },
+    ]),
+  );
+  assert.deepEqual(r.problems, []);
+  const out = JSON.stringify(rows(r.trace as Trace));
+  assert.ok(!out.includes("npg_AbCdEf"), out);
+});
+
 test("知らない欄と、形の違う日時・パスを弾く", () => {
   assert.match(problems(base([decision({ extra: 1 })])), /Unrecognized key|extra/);
   assert.match(problems(base([decision({ at: "2026-09-13" })])), /ISO 8601/);

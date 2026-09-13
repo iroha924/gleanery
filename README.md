@@ -182,13 +182,15 @@ Claude Code と Codex から使える。**どれも読み取り専用**で、管
 mitos project add [--cwd <dir>] [--name <名前>]  作業場所を登録する（remote が無いなら --name でこの PC での名前を付ける）
 mitos project list                               登録済みの作業場所と、最後の同期
 mitos project forget <key|名前> [--yes]          作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos sync [--cwd <dir>]                         この PC にある作業場所の GitHub と文書を同期する（日次用）
+mitos sync [--cwd <dir> [--reset-docs]]          この PC にある作業場所の GitHub と文書を同期する（日次用）。文書は
+                                                 remote の既定 branch から入れ、fast-forward でなければ止まる
+                                                 （--reset-docs はその作業場所を今の状態に揃える）
 mitos search <質問> [--avoid] [--said me|others|<名前>] [--all] [--cwd <dir>] [--limit N]
                                                  引けるかを確かめる（--said は発言を探す）
 mitos who [<呼び名> <ハンドル>... [--me]]         GitHub のハンドルと人を結ぶ（--me は持ち主）
 mitos trace context [--host claude-code|codex]   いまの session の会話と、進行中の作業を出す（trace の材料）
-mitos trace check <trace.json>                   trace の記録の形を確かめる（DB に触らない）
-mitos trace save <trace.json>                    trace の記録を入れる
+mitos trace check <trace.json|->                 trace の記録の形を確かめる（DB に触らない。- は標準入力）
+mitos trace save <trace.json|->                  trace の記録を入れる（- は標準入力）
 mitos capture flush                              自動記録の待ち行列を DB へ送る
 mitos init [--cwd <dir>]                         要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
 mitos check [--cwd <dir>]                        .mitos/ の change.json を検査する（DB に触らない）

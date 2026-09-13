@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" capture",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" capture",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
             "async": true
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" capture",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
             "async": true
           }
         ]
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook\" capture",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/capture.js\"",
             "async": true
           }
         ]

@@ -81,14 +81,22 @@ async function run(
       if (!rejectsInput(e)) return { embedded, failed, stopped: reason(e) };
     }
     // どれかの本文を受け付けなかった。1 行ずつ送り直し、受け付けない行だけを数える。
+    // **全行が拒まれたら本文の問題ではない**（モデル名や引数の誤り）。数えずに止める — 数えると、設定を直しても
+    // 本文が変わるまで二度と送らない。
+    const refused: [Pending, unknown][] = [];
     for (const row of rows) {
       try {
         embedded += await store(db, t, [row], await embed(env, [row.text], "document"));
       } catch (e) {
         if (!rejectsInput(e)) return { embedded, failed, stopped: reason(e) };
-        await reject(db, t, row, e);
-        failed++;
+        refused.push([row, e]);
       }
+    }
+    if (refused.length === rows.length && rows.length > 1)
+      return { embedded, failed, stopped: `どの本文も受け付けられなかった（${reason(refused[0]?.[1])}）` };
+    for (const [row, e] of refused) {
+      await reject(db, t, row, e);
+      failed++;
     }
   }
 }

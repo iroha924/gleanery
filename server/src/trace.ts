@@ -11,7 +11,7 @@ import { z } from "zod";
 import { EMBED_MODEL, type Env, inTransaction } from "./db.ts";
 import { type Filled, fillKnowledge } from "./embeddings.ts";
 import { conversationId, knowledgeText, STATUSES } from "./knowledge.ts";
-import { sha256, tsvector } from "./text.ts";
+import { mask, sha256, tsvector } from "./text.ts";
 
 const KEY = /^[a-z0-9][a-z0-9._-]*$/;
 const key = z.string().regex(KEY, "小文字英数字と . _ - だけの意味のある語にする");
@@ -21,7 +21,8 @@ const at = z.iso.datetime({
   offset: true,
   message: "ISO 8601 のオフセット付きで書く（例 2026-09-13T10:00:00+09:00）",
 });
-const text = z.string().trim().min(1);
+// 記録は DB と埋め込みの API へ入る。貼ってしまった鍵を伏せてから持つ（自動記録と同じ網）。
+const text = z.string().trim().min(1).transform(mask);
 const file = z
   .object({
     path: z
@@ -39,7 +40,18 @@ const common = {
   text,
   confidence: z.enum(["fact", "inference", "opinion"]).optional(),
   /** ファイル以外の根拠。`commit:<sha>`、`url:<URL>`、`cmd:<コマンド>`、`issue:#<番号>` のように種類を前置する */
-  refs: z.array(text).default([]),
+  refs: z
+    .array(
+      text.pipe(
+        z
+          .string()
+          .regex(
+            /^(commit|url|cmd|issue|pr|doc|file):\S/,
+            "commit: / url: / cmd: / issue: / pr: / doc: / file: のどれかを前置する",
+          ),
+      ),
+    )
+    .default([]),
   files: z.array(file).default([]),
 };
 
@@ -359,13 +371,15 @@ export async function saveTrace(
 
     // **DB 側の覆しを優先する。**別の session が後で覆した決定を、古い session の再 trace が「採用」に戻さない。
     // work を省いた再 trace は、既に結んだ作業（とその題の見出し）から要素を外さない。
+    // 読んだ行は commit まで掴む。掴まないと、読んでから書くまでの間に別の trace が付けた覆しを上書きで消す。
     const prior = await client.query<{
       source_key: string;
       superseded_by_id: string | null;
       work_item_id: string | null;
       heading: string | null;
     }>(
-      "select source_key, superseded_by_id, work_item_id, heading from mitos.knowledge where project_id = $1 and source_key = any($2)",
+      `select source_key, superseded_by_id, work_item_id, heading from mitos.knowledge
+       where project_id = $1 and source_key = any($2) for update`,
       [projectId, all.map((r) => r.key)],
     );
     const laterBy = new Map(

@@ -11,7 +11,7 @@ create schema if not exists extensions;
 create extension if not exists vector with schema extensions;
 
 create schema mitos;
-comment on schema mitos is 'mitos schema revision 1';
+comment on schema mitos is 'mitos schema revision 2';
 revoke all on schema mitos from public;
 
 -- git remote を正規化した key（`git:github.com/owner/repo`）か、remote の無い作業場所に各 PC の設定で付けた key。
@@ -42,15 +42,15 @@ create table mitos.person_identity (
 );
 create index person_identity_handle on mitos.person_identity (provider, lower(handle));
 
--- 取り込み元ごとの、最後に入れた snapshot と直近の成否。secret は置かない（同期する PC の環境にある）。
--- 同期は、自分の snapshot がここより古ければ書かずに止まる。遅れて commit した同期や、別の PC の古い clone が
--- 新しい状態を巻き戻さないため。文書は HEAD の commit 時刻（head_at）を先に比べ、同じなら読んだ時刻で比べる。
+-- 取り込み元ごとの、最後に入れた版と直近の成否。secret は置かない（同期する PC の環境にある）。
+-- 文書は入れた commit（head_oid）。次の同期は、それから fast-forward できる commit だけを自動で入れる。
+-- GitHub は取得を始めた DB の時刻（snapshot_at）。それより前に始めた取得は、遅れて commit しても書かない。
 create table mitos.connector (
   id bigint generated always as identity primary key,
   project_id bigint not null references mitos.project (id) on delete cascade,
   provider text not null check (provider in ('github', 'docs')),
-  head_at timestamptz check (head_at is null or provider = 'docs'),
-  snapshot_at timestamptz,
+  head_oid text check (head_oid is null or (provider = 'docs' and head_oid ~ '^[0-9a-f]{40}([0-9a-f]{24})?$')),
+  snapshot_at timestamptz check (snapshot_at is null or provider = 'github'),
   last_success_at timestamptz,
   last_error text,
   unique (project_id, provider)
@@ -291,7 +291,9 @@ grant select, insert, update, delete on all tables in schema mitos to mitos_inge
 grant usage on all sequences in schema mitos to mitos_ingest;
 
 -- capture が読めるのは、作業場所の対応（id・key・名前）と、ファイルを結ぶ先の発言が在るかだけ。本文は読めない。
--- 書けるのは自動記録が埋める列だけ。GitHub の会話や他人の発言（source_item・identity）を指す列は書けない。
+-- 書けるのは自動記録が埋める列だけ。取り込み元（source_item）と人の身元（identity）を指す列は書けないので、
+-- GitHub の会話を作ることも、他人の身元を名乗ることもできない。会話の id は決定的に計算できるので、既存の会話へ
+-- 発言を足すことは列の権限では止めない（鍵が漏れた場合の残りの面）。
 grant select (id, key, name) on mitos.project to mitos_capture;
 grant select (id) on mitos.message to mitos_capture;
 grant insert (id, project_id, origin, external_id, branch, started_at) on mitos.conversation to mitos_capture;

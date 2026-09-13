@@ -4,17 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, before, test } from "node:test";
-import {
-  answersOf,
-  fit,
-  isOwnerTurn,
-  MAX_MESSAGE,
-  mask,
-  onHook,
-  type Spooled,
-  spoolDir,
-} from "../src/capture.ts";
-import { bytes } from "../src/text.ts";
+import { answersOf, fit, isOwnerTurn, MAX_MESSAGE, onHook, type Spooled, spoolDir } from "../src/capture.ts";
+import { bytes, mask } from "../src/text.ts";
 
 // 別の agent 向けの prompt が「持ち主の発言」として DB の大半を占めた先行事例がある。見分けに推測を使わない。
 test("subagent と、エージェントが起動した子と、印を継がない headless の turn は持ち主の発言にしない", () => {
@@ -96,6 +87,52 @@ test("よく貼られる鍵の形と、名前で分かる代入を伏せる", ()
   assert.equal(mask(plain), plain, "鍵でない文は変えない");
 });
 
+// 伏せた文は元に戻せない。コードの型注釈や変数の参照を鍵とみなして消すと、会話の中身が失われる。
+test("鍵でない代入と URL は変えず、残りの形（ヘッダ・mysql -p・ユーザー名の無い URL）は伏せる", () => {
+  for (const code of [
+    "password: string;",
+    "const token = await getToken();",
+    "apiKey: process.env.API_KEY",
+    "PASSWORD=$DB_PASSWORD",
+    "MONKEY=banana TURKEY=roast COMPASS=north",
+    "http://localhost:5173/@vite/client",
+    "see https://github.com/o/r/pull/3",
+  ])
+    assert.equal(mask(code), code, code);
+  const got = [
+    "Authorization: Basic YWRtaW46c3dvcmRmaXNoMTIz",
+    "X-API-Key: ak_9f8e7d6c5b4a3",
+    "DB_PASS=s3cr3t-value",
+    "mysql -u root -phunter2x db",
+    "redis://:hunter2x@cache:6379",
+    "authorization: bearer abcdefghijklmnopqrstuvwxyz",
+    'PASSWORD="correct horse battery staple"',
+    "AccountKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789==",
+  ]
+    .map(mask)
+    .join("\n");
+  for (const leak of ["YWRtaW46", "ak_9f8e7d", "s3cr3t", "hunter2x", "abcdefghijklmnop", "horse", "AbCdEfGh"])
+    assert.ok(!got.includes(leak), `${leak}:\n${got}`);
+  assert.match(got, /@cache:6379/);
+});
+
+// 伏せ字は発言の全文へかける。引き金を繰り返しただけの入力で、フックが何秒も止まらない。
+test("伏せ字は引き金を繰り返した入力でも線形に終わる", () => {
+  const N = 128 * 1024;
+  for (const unit of [
+    "postgres://u:",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "password: a1",
+    "Bearer ",
+    "eyJabcdefgh.",
+  ]) {
+    const text = unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
+    const t = performance.now();
+    mask(text);
+    assert.ok(performance.now() - t < 300, `${unit}: ${(performance.now() - t).toFixed(0)} ms`);
+  }
+});
+
 test("AskUserQuestion の答えを、質問と答えの組にする", () => {
   assert.equal(
     answersOf({ tool_response: { answers: { "全部推奨で？": "推奨", 選ぶもの: ["A", "B"] } } }),
@@ -108,6 +145,11 @@ test("AskUserQuestion の答えを、質問と答えの組にする", () => {
     "Q: 進め方\nA: 推奨\nメモ: 全部推奨で",
   );
   assert.equal(answersOf({ tool_response: {} }), null);
+  assert.equal(
+    answersOf({ tool_input: { answers: { 質問: "モデルが書いた答え" } } }),
+    null,
+    "入力側の答えは使わない",
+  );
 });
 
 // ---- フックの入力から待ち行列までを通す ----

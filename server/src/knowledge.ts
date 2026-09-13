@@ -34,15 +34,14 @@ export const STATUSES = {
   document: null,
 } as const satisfies Record<Kind, readonly [string, ...string[]] | null>;
 
-/** message.speaker_kind。self は持ち主、assistant は AI、bot は推論を含まない自動通知。 */
+// self は持ち主、assistant は AI（coding session の最後の応答と AI レビュアー）、bot は推論を含まない自動通知。
 export const SPEAKERS = ["self", "person", "assistant", "bot"] as const;
 export type SpeakerKind = (typeof SPEAKERS)[number];
 
-/** conversation.origin。 */
 export const ORIGINS = ["claude-code", "codex", "github"] as const;
 export type Origin = (typeof ORIGINS)[number];
 
-/** message_file.action。edit は編集、read は読んだ承認済みの成果物、review はレビューで指されたファイル。 */
+// edit は編集、read は読んだ承認済みの成果物、review はレビューで指されたファイル。
 export const FILE_ACTIONS = ["edit", "read", "review"] as const;
 export type FileAction = (typeof FILE_ACTIONS)[number];
 
@@ -161,5 +160,5 @@ export const indexesMessage = (origin: string, speakerKind: string): boolean =>
  * 会話の id。GitHub の同期・trace・自動記録が同じ規則で作るので、どれが先に書いても同じ行になる。
  * 作業場所をまたいだ session（途中で別のリポジトリへ移った）は、作業場所ごとに別の会話になる。
  */
-export const conversationId = (projectId: number, origin: string, externalId: string): string =>
+export const conversationId = (projectId: number, origin: Origin, externalId: string): string =>
   uuidFrom(String(projectId), origin, externalId);

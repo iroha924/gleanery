@@ -194,6 +194,40 @@ test("GitHub から来た題・handle・URL・path の NUL を落とし、マー
   assert.equal(got.items[0]?.state, "closed");
 });
 
+// ページ送りの最中に項目が増えると、境界の PR やコメントが 2 ページに現れる。
+test("2 ページに現れた同じ PR とコメントを 1 つにする", async () => {
+  const pr = {
+    number: 5,
+    title: "t",
+    body: "本文",
+    user: { id: 1, login: "alice" },
+    state: "open",
+    merged_at: null,
+    closed_at: null,
+    created_at: "2026-09-01T00:00:00Z",
+    updated_at: "2026-09-01T00:00:00Z",
+    html_url: "https://x/5",
+  };
+  const comment = {
+    id: 9,
+    user: { id: 2, login: "bob" },
+    body: "ここを直す",
+    created_at: "2026-09-02T00:00:00Z",
+    html_url: "https://x/5#c9",
+    issue_url: "https://api/x/issues/5",
+  };
+  const got = await collect({
+    pulls: async () => [pr, pr],
+    issues: async () => [],
+    reviewComments: async () => [],
+    issueComments: async () => [comment, comment],
+  });
+  assert.deepEqual(
+    (got.said.get(5) ?? []).map((s) => s.externalId),
+    ["body", "c:9"],
+  );
+});
+
 test("発言者の種類は名前で決める", () => {
   assert.equal(speakerOf("alice"), "person");
   assert.equal(speakerOf("gemini-code-assist[bot]"), "assistant");

@@ -39022,7 +39022,7 @@ var KEY = {
   ingest: "KNOWLEDGE_DB_URL_INGEST",
   capture: "KNOWLEDGE_DB_URL_CAPTURE"
 };
-var SCHEMA_REVISION = 1;
+var SCHEMA_REVISION = 2;
 function settings(env, role) {
   const raw = env[KEY[role]];
   if (!raw)
@@ -39414,7 +39414,7 @@ async function rerank(env, question, rows, limit) {
     return bare();
   }
 }
-var KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.heading, k.body, k.reason, k.confirmation, k.downsides,
+var KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.stance, k.heading, k.body, k.reason, k.confirmation, k.downsides,
   k.occurred_at, p.name as project, s.kind as source_kind, s.path, s.url, succ.body as successor`;
 var KNOWLEDGE_FROM = `from mitos.knowledge k
   join mitos.project p on p.id = k.project_id
@@ -39424,6 +39424,7 @@ var knowledgeHit = (r) => ({
   ref: `k:${r.id}`,
   kind: r.kind,
   status: r.status,
+  stance: r.stance,
   label: labelOf({ kind: r.kind, status: r.status, source_kind: r.source_kind, path: r.path }),
   heading: r.heading,
   text: r.body,
@@ -39505,6 +39506,7 @@ var messageHit = (r) => {
     ref: `m:${r.id}`,
     kind: "message",
     status: null,
+    stance: "neutral",
     label: speaker === "持ち主" ? "【持ち主の発言】" : r.speaker_kind === "assistant" ? "【AI の発言】" : "【人の発言】",
     heading: null,
     text: r.body,
@@ -39689,13 +39691,13 @@ ${renderHits(w.walls, Math.floor((budget - bytes(lines)) / 2))}` : null
 
 `);
 }
-var REF = /^(?:[ksw]:\d{1,18}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+var REF = /^(?:[ksw]:\d{1,19}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 async function read(db, refs, budget, opts = {}) {
   const each = Math.floor(budget / Math.max(refs.length, 1));
   const scope = opts.projects ?? null;
   const out = [];
   for (const ref of refs) {
-    if (!REF.test(ref)) {
+    if (!REF.test(ref) || !ref.startsWith("m:") && BigInt(ref.slice(2)) > 9223372036854775807n) {
       out.push(`${ref}: 読めない参照（k: / s: / w: は数字、m: は uuid）`);
       continue;
     }
@@ -39852,13 +39854,13 @@ server.registerTool("recall", {
   const mode = a.mode ?? "knowledge";
   const file2 = a.path && h.place ? relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path : a.path;
   if (mode === "resume") {
-    const works = await openWork(pool, projects);
+    const works = await openWork(pool, projects, 10);
     if (works.length === 0)
       return text("進行中の作業は無い。");
     const only = works.length === 1 && works[0] ? await workDetail(pool, works[0].ref.slice(2)) : null;
     if (only)
       return text(framed(renderWork(only, RECALL_BYTES)));
-    return text(framed(`進行中の作業が ${works.length} 件ある。続けるものの参照を read に渡す。
+    return text(framed(`進行中の作業（新しい順に ${works.length} 件${works.length === 10 ? "まで" : ""}）。続けるものの参照を read に渡す。
 
 ${works.map((w) => `- ${w.title}（${w.project} / ${w.status} / ${w.ref}）
   いまの状況: ${head(w.current, 300)}`).join(`
@@ -39892,10 +39894,20 @@ ${works.map((w) => `- ${w.title}（${w.project} / ${w.status} / ${w.ref}）
 });
 server.registerTool("read", {
   title: "参照を読む",
-  description: "recall が返した参照を全文で読む。k: は知識（決定なら案と検証も）、m: は発言とその前後の turn、" + "s: は文書の原文や PR・issue、w: は作業の現在地。",
-  inputSchema: { refs: exports_external.array(exports_external.string()).min(1).max(5).describe('例: ["k:12", "m:…"]') },
+  description: "recall が返した参照を全文で読む。k: は知識（決定なら案と検証も）、m: は発言とその前後の turn、" + "s: は文書の原文や PR・issue、w: は作業の現在地。既定はいまの作業場所の参照だけで、recall を all_projects で引いたときはここにも all_projects を付ける。",
+  inputSchema: {
+    refs: exports_external.array(exports_external.string()).min(1).max(5).describe('例: ["k:12", "m:…"]'),
+    all_projects: exports_external.boolean().optional().describe("全部の作業場所の参照を読む。既定はいまの作業場所だけ"),
+    cwd: exports_external.string().optional().describe("どの作業場所として読むか。省くとサーバーの作業ディレクトリ")
+  },
   annotations: READ_ONLY
-}, async ({ refs }) => text(framed(await read(await db(), refs, READ_BYTES))));
+}, async (a) => {
+  const h = await here2(a.cwd);
+  if (!a.all_projects && h.id === null)
+    return text(unregistered(h));
+  const projects = a.all_projects ? null : [h.id];
+  return text(framed(await read(await db(), a.refs, READ_BYTES, { projects })));
+});
 var index = new Map;
 var ADVICE = path4.join(os3.homedir(), ".claude", "mitos-advice.jsonl");
 async function rulesFor(id) {

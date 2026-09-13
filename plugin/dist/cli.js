@@ -5079,7 +5079,7 @@ var require_lib2 = __commonJS(function(exports, module) {
 });
 
 // server/src/cli.ts
-import fs7 from "node:fs";
+import fs6 from "node:fs";
 import os5 from "node:os";
 import path7 from "node:path";
 import { parseArgs } from "node:util";
@@ -23806,17 +23806,11 @@ function relativeTo(root, file2, cwd = root) {
 }
 async function connectorOf(db, projectId2, provider) {
   await db.query("insert into mitos.connector (project_id, provider) values ($1, $2) on conflict (project_id, provider) do nothing", [projectId2, provider]);
-  const r = await db.query("select id, head_at, snapshot_at from mitos.connector where project_id = $1 and provider = $2 for update", [projectId2, provider]);
+  const r = await db.query("select id, head_oid, snapshot_at from mitos.connector where project_id = $1 and provider = $2 for update", [projectId2, provider]);
   const row = r.rows[0];
   if (!row)
     throw new Error(`取り込み元を作れなかった: ${provider}`);
-  return { id: row.id, headAt: row.head_at, snapshotAt: row.snapshot_at };
-}
-function isStale(stored, snapshotAt, headAt = null) {
-  const h = (d) => d?.getTime() ?? Number.NEGATIVE_INFINITY;
-  if (h(headAt) !== h(stored.headAt))
-    return h(headAt) < h(stored.headAt);
-  return stored.snapshotAt !== null && snapshotAt.getTime() < stored.snapshotAt.getTime();
+  return { id: row.id, headOid: row.head_oid, snapshotAt: row.snapshot_at };
 }
 function patchPaths(patch) {
   const out = [];
@@ -23850,23 +23844,30 @@ var changeSchema = exports_external.object({
     ctx.addIssue({ code: "custom", message: "requirements が approved でないのに design が approved" });
   }
 });
-var kindOf = (full) => {
-  const st = fs2.lstatSync(full, { throwIfNoEntry: false });
-  if (!st)
-    return null;
-  return st.isDirectory() ? "dir" : st.isFile() ? "file" : "other";
-};
-function readJson(root, rel) {
-  const full = path2.join(root, rel);
-  const st = fs2.lstatSync(full, { throwIfNoEntry: false });
-  if (!st)
+function workingTree(root) {
+  const stat = (rel) => fs2.lstatSync(path2.join(root, rel), { throwIfNoEntry: false });
+  return {
+    kind: (rel) => {
+      const st = stat(rel);
+      if (!st)
+        return null;
+      return st.isDirectory() ? "dir" : st.isFile() ? "file" : "other";
+    },
+    size: (rel) => stat(rel)?.size ?? 0,
+    read: (rel) => fs2.readFileSync(path2.join(root, rel), "utf8"),
+    tracked: trackedChanges(root)
+  };
+}
+function readJson(snap, rel) {
+  const kind = snap.kind(rel);
+  if (kind === null)
     return { reason: "無い" };
-  if (!st.isFile())
+  if (kind !== "file")
     return { reason: "通常のファイルではない（symlink も受け付けない）" };
-  if (st.size > MAX_MANIFEST)
+  if (snap.size(rel) > MAX_MANIFEST)
     return { reason: `大きすぎる（${MAX_MANIFEST} bytes まで）` };
   try {
-    return { value: JSON.parse(fs2.readFileSync(full, "utf8")) };
+    return { value: JSON.parse(snap.read(rel)) };
   } catch {
     return { reason: "JSON として読めない" };
   }
@@ -23883,7 +23884,7 @@ function trackedChanges(root) {
     return null;
   }
 }
-function inspectChange(root, slug, tracked) {
+function inspectChange(snap, slug) {
   const dir = `${CHANGES}/${slug}`;
   const problems = [];
   if (!SLUG.test(slug))
@@ -23896,14 +23897,14 @@ function inspectChange(root, slug, tracked) {
         }
       ]
     };
-  if (kindOf(path2.join(root, dir)) !== "dir") {
+  if (snap.kind(dir) !== "dir") {
     return {
       change: null,
       problems: [{ path: dir, reason: "ディレクトリではない（symlink も受け付けない）" }]
     };
   }
   const manifest = `${dir}/change.json`;
-  const read = readJson(root, manifest);
+  const read = readJson(snap, manifest);
   if ("reason" in read)
     return { change: null, problems: [{ path: manifest, reason: read.reason }] };
   const parsed = changeSchema.safeParse(read.value);
@@ -23911,19 +23912,19 @@ function inspectChange(root, slug, tracked) {
     return { change: null, problems: [{ path: manifest, reason: zodReason(parsed.error) }] };
   for (const kind of ["requirements", "design"]) {
     const md = `${dir}/${kind}.md`;
-    const exists = kindOf(path2.join(root, md));
+    const exists = snap.kind(md);
     if (exists !== null && exists !== "file")
       problems.push({ path: md, reason: "通常のファイルではない（symlink も受け付けない）" });
     if (exists !== null && !parsed.data[kind])
       problems.push({ path: manifest, reason: `${kind}.md があるのに ${kind} のキーが無い` });
-    if (tracked?.has(md) && !tracked.has(manifest))
+    if (snap.tracked?.has(md) && !snap.tracked.has(manifest))
       problems.push({ path: manifest, reason: `追跡済みの ${kind}.md に対して未追跡` });
   }
   return { change: parsed.data, problems };
 }
-function inspectRoot(root) {
+function inspectRoot(snap) {
   for (const rel of [MITOS, CHANGES]) {
-    const kind = kindOf(path2.join(root, rel));
+    const kind = snap.kind(rel);
     if (kind === null)
       return [{ path: rel, reason: "無い（mitos init を実行する）" }];
     if (kind !== "dir")
@@ -23933,11 +23934,12 @@ function inspectRoot(root) {
 }
 function check2(dir) {
   const root = rootOf(dir);
-  const rootProblems = inspectRoot(root);
+  const snap = workingTree(root);
+  const rootProblems = inspectRoot(snap);
   if (rootProblems.length)
     return { root, changes: 0, problems: rootProblems };
   const problems = [];
-  const project = readJson(root, `${MITOS}/project.json`);
+  const project = readJson(snap, `${MITOS}/project.json`);
   if ("reason" in project)
     problems.push({ path: `${MITOS}/project.json`, reason: project.reason });
   else {
@@ -23945,13 +23947,12 @@ function check2(dir) {
     if (!parsed.success)
       problems.push({ path: `${MITOS}/project.json`, reason: zodReason(parsed.error) });
   }
-  const tracked = trackedChanges(root);
   const slugs = fs2.readdirSync(path2.join(root, CHANGES)).filter((name) => !name.startsWith("."));
   for (const slug of slugs)
-    problems.push(...inspectChange(root, slug, tracked).problems);
+    problems.push(...inspectChange(snap, slug).problems);
   return { root, changes: slugs.length, problems };
 }
-function selectArtifacts(root, files) {
+function selectArtifacts(snap, files) {
   const include = new Map;
   const bySlug = new Map;
   for (const rel of files) {
@@ -23961,13 +23962,12 @@ function selectArtifacts(root, files) {
   }
   if (bySlug.size === 0)
     return { include, problems: [] };
-  const rootProblems = inspectRoot(root);
+  const rootProblems = inspectRoot(snap);
   if (rootProblems.length)
     return { include, problems: rootProblems };
-  const tracked = trackedChanges(root);
   const problems = [];
   for (const [slug, docs] of bySlug) {
-    const r = inspectChange(root, slug, tracked);
+    const r = inspectChange(snap, slug);
     problems.push(...r.problems);
     if (!r.change)
       continue;
@@ -23991,7 +23991,7 @@ function init(dir) {
     } catch (e) {
       if (e.code !== "EEXIST")
         throw e;
-      if (kindOf(path2.join(root, rel2)) !== "dir")
+      if (workingTree(root).kind(rel2) !== "dir")
         throw new Error(`${rel2} がディレクトリではない（symlink も受け付けない）`);
     }
   }
@@ -24005,7 +24005,7 @@ function init(dir) {
   } catch (e) {
     if (e.code !== "EEXIST")
       throw e;
-    const read = readJson(root, rel);
+    const read = readJson(workingTree(root), rel);
     if ("reason" in read)
       throw new Error(`${rel}: ${read.reason}`);
     const parsed = projectSchema.safeParse(read.value);
@@ -24068,7 +24068,7 @@ var KEY = {
   ingest: "KNOWLEDGE_DB_URL_INGEST",
   capture: "KNOWLEDGE_DB_URL_CAPTURE"
 };
-var SCHEMA_REVISION = 1;
+var SCHEMA_REVISION = 2;
 function settings(env, role) {
   const raw = env[KEY[role]];
   if (!raw)
@@ -24253,6 +24253,35 @@ function tail(s, n) {
   return chars.slice(i).join("");
 }
 var clean = (s) => s.replaceAll("\x00", "");
+var SECRETS = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
+  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
+  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
+  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
+  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
+  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
+  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
+  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
+  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
+  [/\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"]
+];
+var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API_?KEY|KEY|PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
+var FIELD_ASSIGN = /(["']?)\b([A-Za-z0-9_-]*(?:api[-_]?key|account[-_]?key|secret(?:[-_]access)?[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?=[^\s"',;]*\d)(?=[^\s"',;]*[A-Za-z])(?![^\s"',;]*[()])[^\s"',;]{8,}\4/gi;
+var MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]*?\s-p)(?=[^\s-])\S+/g;
+var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
+function mask(text) {
+  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]").replace(MYSQL_PASSWORD, "$1[伏せた]");
+  for (const [re, what] of SECRETS)
+    out = out.replace(re, `[伏せた: ${what}]`);
+  return out;
+}
 
 // server/src/knowledge.ts
 var KINDS = [
@@ -24351,12 +24380,14 @@ var stateFile = () => path4.join(os3.homedir(), ".claude", "mitos-capture.json")
 var rejectedDir = () => path4.join(spoolDir(), "rejected");
 var MAX_MESSAGE = 128 * 1024;
 var KEEP = 8 * 1024;
-function fit(body) {
+function fit(body, transform2 = (s) => s) {
   const all = bytes(body);
-  if (all <= MAX_MESSAGE)
-    return { body, truncated: false, originalBytes: all };
-  const a = head(body, KEEP);
-  const z2 = tail(body, KEEP);
+  if (all <= MAX_MESSAGE) {
+    const kept = transform2(body);
+    return { body: kept, truncated: false, originalBytes: bytes(kept) };
+  }
+  const a = head(transform2(head(body, KEEP * 2)), KEEP);
+  const z2 = tail(transform2(tail(body, KEEP * 2)), KEEP);
   const cut = all - bytes(a) - bytes(z2);
   return {
     body: `${a}
@@ -24367,34 +24398,6 @@ ${z2}`,
     truncated: true,
     originalBytes: all
   };
-}
-var SECRETS = [
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
-  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
-  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
-  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
-  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
-  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
-  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
-  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
-  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
-  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
-  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
-  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/g, "Bearer トークン"]
-];
-var ENV_ASSIGN = /\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*=\s*)(["']?)[^\s"']+\3/g;
-var FIELD_ASSIGN = /(["']?)\b([A-Za-z0-9_]*(?:api_?key|secret(?:_access)?_?key|access_?key|private_?key|client_?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?!\[伏せた)[^\s"',;]{6,}\4/gi;
-var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]+:)\S*@([^@\s/?#]+)/g;
-function mask(text) {
-  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]");
-  for (const [re, what] of SECRETS)
-    out = out.replace(re, `[伏せた: ${what}]`);
-  return out;
 }
 function spool(record2) {
   const dir = spoolDir();
@@ -24423,7 +24426,7 @@ function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoi
 }
 function answersOf(input2) {
   const response = input2.tool_response;
-  const answers = response?.answers ?? input2.tool_input?.answers;
+  const answers = response?.answers;
   if (!answers || typeof answers !== "object")
     return null;
   const lines = Object.entries(answers).map(([q, a]) => {
@@ -24437,15 +24440,27 @@ A: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo2}`;
 
 `) : null;
 }
+function captureNotice(env) {
+  if (!env[KEY.capture])
+    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+  const s = readState();
+  if (s.error && s.pending > 0)
+    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+  if (s.rejected > 0)
+    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+  return null;
+}
 function onHook(host, input2) {
   const event = input2.hook_event_name;
   if (event === "SessionStart") {
+    if (!isOwnerTurn(input2))
+      return { flush: false };
     const file2 = process.env.CLAUDE_ENV_FILE;
-    if (file2 && input2.session_id && /^[A-Za-z0-9_-]+$/.test(input2.session_id) && isOwnerTurn(input2)) {
+    if (file2 && input2.session_id && /^[A-Za-z0-9_-]+$/.test(input2.session_id)) {
       fs4.appendFileSync(file2, `export MITOS_PARENT_SESSION=${input2.session_id}
 `);
     }
-    return { flush: false };
+    return { flush: false, notice: captureNotice(loadEnv()) };
   }
   if (!isOwnerTurn(input2))
     return { flush: false };
@@ -24466,10 +24481,10 @@ function onHook(host, input2) {
     at
   };
   const say = (id, speaker, raw) => {
-    const body = mask(clean(raw)).trim();
-    if (!body)
+    const kept = fit(clean(raw).trim(), mask);
+    if (!kept.body.trim())
       return;
-    spool({ ...base, kind: "message", id, speaker, ...fit(body) });
+    spool({ ...base, kind: "message", id, speaker, ...kept });
   };
   if (event === "UserPromptSubmit" && input2.prompt)
     say(`${turn}:self`, "self", input2.prompt);
@@ -24521,23 +24536,38 @@ function readState() {
 function lock() {
   const file2 = path4.join(spoolDir(), ".lock");
   fs4.mkdirSync(spoolDir(), { recursive: true, mode: 448 });
-  const holder = Number(fs4.readFileSync(file2, { encoding: "utf8", flag: "a+" }) || 0);
-  const st = fs4.statSync(file2, { throwIfNoEntry: false });
-  const alive = (() => {
+  for (let attempt = 0;attempt < 2; attempt++) {
     try {
-      return holder > 0 && process.kill(holder, 0);
-    } catch {
-      return false;
+      fs4.writeFileSync(file2, String(process.pid), { flag: "wx", mode: 384 });
+      return () => {
+        try {
+          if (fs4.readFileSync(file2, "utf8") === String(process.pid))
+            fs4.rmSync(file2, { force: true });
+        } catch {}
+      };
+    } catch (e) {
+      if (e.code !== "EEXIST")
+        throw e;
     }
-  })();
-  if (!alive || st && Date.now() - st.mtimeMs > 5 * 60000)
+    const st = fs4.statSync(file2, { throwIfNoEntry: false });
+    if (!st)
+      continue;
+    const holder = Number(fs4.readFileSync(file2, "utf8") || 0);
+    const fresh = Date.now() - st.mtimeMs < 5 * 60000;
+    const alive = (() => {
+      if (holder <= 0)
+        return fresh;
+      try {
+        return process.kill(holder, 0);
+      } catch {
+        return false;
+      }
+    })();
+    if (alive && fresh)
+      return null;
     fs4.rmSync(file2, { force: true });
-  try {
-    fs4.writeFileSync(file2, String(process.pid), { flag: "wx" });
-    return () => fs4.rmSync(file2, { force: true });
-  } catch {
-    return null;
   }
+  return null;
 }
 var BATCH = 500;
 async function write(db, batch, projects, vectors) {
@@ -24631,7 +24661,10 @@ async function write(db, batch, projects, vectors) {
     return inserted.rowCount ?? 0;
   });
 }
-var rejected = (e) => /^2[23]/.test(String(e.code ?? ""));
+var rejected = (e) => {
+  const code = String(e.code ?? "");
+  return /^[0-9A-Z]{5}$/.test(code) && !/^(08|53|57|58)/.test(code);
+};
 async function flush(env) {
   const unlock = lock();
   if (!unlock)
@@ -24678,7 +24711,8 @@ async function flush(env) {
     } catch (e) {
       if (!rejected(e))
         throw e;
-      for (const x of known) {
+      const ordered = [...known].sort((a, b) => Number(a.r.kind === "file") - Number(b.r.kind === "file"));
+      for (const x of ordered) {
         try {
           sent += await write(db, [x.r], projects, vectorOf);
         } catch (e2) {
@@ -24688,10 +24722,20 @@ async function flush(env) {
         }
       }
     }
+    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" ? [`${x.r.session}\x00${x.r.turn}`] : []));
+    for (const x of known)
+      if (x.r.kind === "file" && lost.has(`${x.r.session}\x00${x.r.turn}`) && !bad.includes(x))
+        bad.push(x);
     if (bad.length) {
       fs4.mkdirSync(rejectedDir(), { recursive: true, mode: 448 });
-      for (const x of bad)
-        fs4.renameSync(path4.join(dir, x.name), path4.join(rejectedDir(), x.name));
+      for (const x of bad) {
+        try {
+          fs4.renameSync(path4.join(dir, x.name), path4.join(rejectedDir(), x.name));
+        } catch (e) {
+          if (e.code !== "ENOENT")
+            throw e;
+        }
+      }
     }
     const moved = new Set(bad.map((x) => x.name));
     for (const x of records)
@@ -24719,7 +24763,9 @@ async function main() {
   let raw = "";
   for await (const chunk of process.stdin)
     raw += chunk;
-  const { flush: send } = onHook(host, JSON.parse(raw || "{}"));
+  const { flush: send, notice } = onHook(host, JSON.parse(raw || "{}"));
+  if (notice)
+    process.stdout.write(JSON.stringify({ systemMessage: notice }));
   if (send)
     spawn(process.execPath, [process.argv[1] ?? "", "--flush"], { detached: true, stdio: "ignore" }).unref();
 }
@@ -24729,7 +24775,6 @@ if (process.argv[1] && /capture\.(ts|js)$/.test(process.argv[1])) {
 
 // server/src/docs.ts
 import { execFileSync as execFileSync3 } from "node:child_process";
-import fs5 from "node:fs";
 import path5 from "node:path";
 var MAX = 4000;
 var MAX_FILE = 2 * 1024 * 1024;
@@ -24747,6 +24792,7 @@ function sections(rel, body) {
     buf: []
   };
   const used = new Map;
+  const keys = new Set;
   const flush2 = () => {
     const raw = cur.buf.join(`
 `).trim();
@@ -24767,10 +24813,14 @@ function sections(rel, body) {
     parts.push(rest);
     for (const text of parts) {
       const base = `doc:${rel}#${slug(cur.title)}`;
-      const n = (used.get(base) ?? 0) + 1;
+      let n = (used.get(base) ?? 0) + 1;
+      let key = n === 1 && parts.length === 1 ? base : `${base}:${n}`;
+      while (keys.has(key))
+        key = `${base}:${++n}`;
       used.set(base, n);
+      keys.add(key);
       out.push({
-        key: n === 1 && parts.length === 1 ? base : `${base}:${n}`,
+        key,
         path: rel,
         title: cur.title,
         trail: cur.trail,
@@ -24804,11 +24854,116 @@ function sections(rel, body) {
   flush2();
   return out;
 }
-function lastTouched(dir) {
+var git2 = (root, args, input2, timeout = 60000) => execFileSync3("git", ["-C", root, ...args], {
+  input: input2,
+  maxBuffer: 256 * 1024 * 1024,
+  stdio: ["pipe", "pipe", "pipe"],
+  timeout,
+  env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+});
+function commitOf(root, remote) {
+  if (remote) {
+    try {
+      git2(root, [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-recurse-submodules",
+        "origin",
+        "+HEAD:refs/mitos/docs-head"
+      ]);
+    } catch (e) {
+      const detail = e.stderr?.toString().trim().split(`
+`).at(-1) ?? "";
+      throw new Error(`remote の既定 branch を取れなかった（${detail}）。文書は前回の同期のまま`);
+    }
+    return git2(root, ["rev-parse", "--verify", "refs/mitos/docs-head^{commit}"]).toString().trim();
+  }
+  try {
+    return git2(root, ["rev-parse", "--verify", "HEAD^{commit}"]).toString().trim();
+  } catch {
+    throw new Error("commit が 1 つも無い");
+  }
+}
+function isAncestor(root, a, b) {
+  try {
+    git2(root, ["merge-base", "--is-ancestor", a, b]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+var FILE_MODES = new Set(["100644", "100755"]);
+function treeOf(root, commit) {
+  const entries = new Map;
+  const dirs = new Set;
+  for (const record2 of git2(root, ["ls-tree", "-r", "-z", "-l", "--full-tree", commit]).toString("utf8").split("\x00")) {
+    const tab = record2.indexOf("\t");
+    if (tab < 0)
+      continue;
+    const [mode, , oid, size] = record2.slice(0, tab).trim().split(/\s+/);
+    const rel = record2.slice(tab + 1);
+    if (!mode || !oid)
+      continue;
+    entries.set(rel, { mode, oid, size: Number(size) || 0 });
+    for (let d = path5.posix.dirname(rel);d !== "."; d = path5.posix.dirname(d))
+      dirs.add(d);
+  }
+  return { entries, dirs };
+}
+function blobsOf(root, oids) {
+  const out = new Map;
+  if (oids.length === 0)
+    return out;
+  const raw = git2(root, ["cat-file", "--batch"], Buffer.from(`${[...new Set(oids)].join(`
+`)}
+`));
+  let at = 0;
+  while (at < raw.length) {
+    const nl = raw.indexOf(10, at);
+    const [oid, , size] = raw.subarray(at, nl).toString("utf8").split(" ");
+    const n = Number(size);
+    if (!oid || !Number.isFinite(n))
+      throw new Error("git cat-file の応答を読めなかった");
+    out.set(oid, raw.subarray(nl + 1, nl + 1 + n));
+    at = nl + 1 + n + 1;
+  }
+  return out;
+}
+function snapshotOf(tree, blobs) {
+  return {
+    kind: (rel) => {
+      const e = tree.entries.get(rel);
+      if (e)
+        return FILE_MODES.has(e.mode) ? "file" : "other";
+      return tree.dirs.has(rel) ? "dir" : null;
+    },
+    size: (rel) => tree.entries.get(rel)?.size ?? 0,
+    read: (rel) => {
+      const e = tree.entries.get(rel);
+      const b = e && blobs.get(e.oid);
+      if (!b)
+        throw new Error(`${rel} を読んでいない`);
+      return b.toString("utf8");
+    },
+    tracked: new Set(tree.entries.keys())
+  };
+}
+function lastTouched(root, commit) {
   const at = new Map;
   let out;
   try {
-    out = execFileSync3("git", ["-C", dir, "-c", "core.quotepath=false", "log", "--format=@%aI", "--name-only", "--", "*.md", "*.mdx"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+    out = git2(root, [
+      "-c",
+      "core.quotepath=false",
+      "log",
+      commit,
+      "--format=@%aI",
+      "--name-only",
+      "--",
+      "*.md",
+      "*.mdx"
+    ]).toString("utf8");
   } catch {
     return at;
   }
@@ -24822,38 +24977,6 @@ function lastTouched(dir) {
   }
   return at;
 }
-function markdownFiles(dir) {
-  const out = execFileSync3("git", ["-C", dir, "ls-files", "-z", "*.md", "*.mdx"], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"]
-  });
-  const base = fs5.realpathSync(dir);
-  const files = [];
-  let symlinks = 0;
-  for (const rel of out.split("\x00").filter(Boolean)) {
-    let real;
-    let st;
-    try {
-      const full = path5.join(dir, rel);
-      st = fs5.lstatSync(full);
-      real = fs5.realpathSync(full);
-    } catch (e) {
-      if (missing(e))
-        continue;
-      throw e;
-    }
-    if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path5.sep}`))) {
-      symlinks++;
-      continue;
-    }
-    if (st.size > MAX_FILE)
-      continue;
-    files.push(rel);
-  }
-  return { files, symlinks };
-}
-var missing = (e) => ["ENOENT", "ENOTDIR"].includes(e.code ?? "");
 function projectDocs(bodies, include, at) {
   const out = [];
   for (const [rel, raw] of bodies) {
@@ -24876,45 +24999,33 @@ function projectDocs(bodies, include, at) {
   }
   return out;
 }
-var docHash = (d) => sha256(JSON.stringify([d.kind, d.path, d.title, d.body, d.at, d.artifact ?? null]));
+var PROJECTION = 1;
+var docHash = (d) => sha256(JSON.stringify([PROJECTION, d.kind, d.path, d.title, d.body, d.at, d.artifact ?? null]));
 var CHUNK = 500;
-function headTime(dir) {
-  try {
-    const out = execFileSync3("git", ["-C", dir, "log", "-1", "--format=%cI"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"]
-    }).trim();
-    return out ? new Date(out) : null;
-  } catch {
-    return null;
-  }
-}
-async function syncDocs(client, projectId2, root) {
-  const snapshotAt = new Date;
-  const headAt = headTime(root);
-  const { files, symlinks } = markdownFiles(root);
-  const at = lastTouched(root);
-  const bodies = new Map;
-  for (const rel of files) {
-    try {
-      bodies.set(rel, fs5.readFileSync(path5.join(root, rel), "utf8"));
-    } catch (e) {
-      if (missing(e))
-        continue;
-      throw e;
-    }
-  }
-  const { include, problems } = selectArtifacts(root, [...bodies.keys()]);
+function collectDocs(root, commit) {
+  const tree = treeOf(root, commit);
+  const md = [...tree.entries].filter(([rel]) => /\.mdx?$/i.test(rel));
+  const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
+  const manifests = [...tree.entries].filter(([rel, e]) => rel.startsWith(".mitos/") && rel.endsWith(".json") && FILE_MODES.has(e.mode));
+  const blobs = blobsOf(root, [...readable, ...manifests].map(([, e]) => e.oid));
+  const bodies = new Map(readable.map(([rel, e]) => [rel, (blobs.get(e.oid) ?? Buffer.alloc(0)).toString("utf8")]));
+  const { include, problems } = selectArtifacts(snapshotOf(tree, blobs), [...bodies.keys()]);
   if (problems.length) {
     throw new Error(`.mitos が不正なので、この作業場所の文書を同期しない（前回の状態を保つ）:
 ${problems.map((p) => `  ${p.path}: ${p.reason}`).join(`
 `)}`);
   }
-  const docs = projectDocs(bodies, include, at);
+  const skipped = md.filter(([, e]) => !FILE_MODES.has(e.mode)).length;
+  return { docs: projectDocs(bodies, include, lastTouched(root, commit)), skipped };
+}
+async function syncDocs(client, projectId2, root, opts) {
+  const commit = commitOf(root, opts.remote);
+  const { docs, skipped } = collectDocs(root, commit);
   const done = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId2, "docs");
-    if (isStale(connector, snapshotAt, headAt))
-      return null;
+    const before = connector.headOid;
+    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))
+      return { refused: before, changed: 0, removed: 0 };
     const known = new Map((await client.query("select external_id, content_hash from mitos.source_item where connector_id = $1", [connector.id])).rows.map((r) => [r.external_id, r.content_hash]));
     const changed = docs.filter((d) => !known.get(d.path)?.equals(docHash(d)));
     if (changed.length) {
@@ -24982,18 +25093,17 @@ ${s.text}`)
       }
     }
     const removed = await client.query("delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))", [connector.id, docs.map((d) => d.path)]);
-    await client.query(`update mitos.connector set head_at = $2, snapshot_at = $3, last_success_at = now(), last_error = null
-       where id = $1`, [connector.id, headAt, snapshotAt]);
-    return { changed: changed.length, removed: removed.rowCount ?? 0 };
+    await client.query("update mitos.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1", [connector.id, commit]);
+    return { refused: null, changed: changed.length, removed: removed.rowCount ?? 0 };
   });
-  if (!done)
-    return "飛ばした（この作業ツリーは、既に入っている状態より古い。pull してから同期する）";
+  if (done.refused)
+    throw new Error(`前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` + "fast-forward でないので書かなかった（巻き戻し・force-push・branch の切り替え・この clone に無い）。" + `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``);
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
     `文書 ${docs.length} 本・節 ${sectionCount} 件`,
     `書き直した ${done.changed} 本`,
     done.removed ? `消えた ${done.removed} 本` : null,
-    symlinks ? `symlink を飛ばした ${symlinks} 件` : null
+    skipped ? `symlink とサブモジュールを飛ばした ${skipped} 件` : null
   ].filter(Boolean).join(" / ");
 }
 
@@ -25037,15 +25147,21 @@ async function run(db, env, t, load) {
       if (!rejectsInput(e))
         return { embedded, failed, stopped: reason(e) };
     }
+    const refused = [];
     for (const row of rows) {
       try {
         embedded += await store(db, t, [row], await embed(env, [row.text], "document"));
       } catch (e) {
         if (!rejectsInput(e))
           return { embedded, failed, stopped: reason(e) };
-        await reject(db, t, row, e);
-        failed++;
+        refused.push([row, e]);
       }
+    }
+    if (refused.length === rows.length && rows.length > 1)
+      return { embedded, failed, stopped: `どの本文も受け付けられなかった（${reason(refused[0]?.[1])}）` };
+    for (const [row, e] of refused) {
+      await reject(db, t, row, e);
+      failed++;
     }
   }
 }
@@ -25121,7 +25237,7 @@ var isFiller = (body) => {
 async function collect(source) {
   const items = new Map;
   const said = new Map;
-  const push = (n, s) => said.set(n, [...said.get(n) ?? [], s]);
+  const push = (n, s) => said.set(n, (said.get(n) ?? new Map).set(s.externalId, s));
   const who = (u) => u ? { id: u.id, login: clean(u.login) } : null;
   const body = (n, author, text, at, url2) => {
     const t = clean(text ?? "").trim();
@@ -25203,13 +25319,14 @@ async function collect(source) {
       file: null
     });
   }
-  for (const list of said.values()) {
+  const lists = new Map([...said].map(([n, m]) => [n, [...m.values()]]));
+  for (const list of lists.values()) {
     const ids = new Set(list.map((s) => s.externalId));
     for (const s of list)
       if (s.replyTo && !ids.has(s.replyTo))
         s.replyTo = null;
   }
-  return { items: [...items.values()], said };
+  return { items: [...items.values()], said: lists };
 }
 var itemHash = (i) => sha256(JSON.stringify([
   i.kind,
@@ -25222,11 +25339,11 @@ var itemHash = (i) => sha256(JSON.stringify([
   i.closedAt
 ]));
 async function syncGithub(client, projectId2, projectName, repo) {
-  const snapshotAt = new Date;
+  const snapshotAt = (await client.query("select now()")).rows[0]?.now ?? new Date;
   const { items, said } = await collect(cliSource(repo));
   const counts = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId2, "github");
-    if (isStale(connector, snapshotAt))
+    if (connector.snapshotAt && snapshotAt.getTime() < connector.snapshotAt.getTime())
       return null;
     const users = new Map;
     for (const i of items)
@@ -25411,14 +25528,14 @@ ${s.body}`) : null
 
 // server/src/plugin.ts
 import { execFileSync as execFileSync5 } from "node:child_process";
-import fs6 from "node:fs";
+import fs5 from "node:fs";
 import os4 from "node:os";
 import path6 from "node:path";
 import { fileURLToPath } from "node:url";
 var MANIFEST = path6.join(".claude-plugin", "plugin.json");
 function versionAt(root) {
   try {
-    const m = JSON.parse(fs6.readFileSync(path6.join(root, MANIFEST), "utf8"));
+    const m = JSON.parse(fs5.readFileSync(path6.join(root, MANIFEST), "utf8"));
     return m.name === "mitos" && typeof m.version === "string" ? m.version : null;
   } catch {
     return null;
@@ -25427,9 +25544,9 @@ function versionAt(root) {
 var here = path6.dirname(fileURLToPath(import.meta.url));
 var ROOT = [path6.join(here, ".."), path6.join(here, "..", "..", "plugin")].find((r) => versionAt(r) !== null) ?? path6.join(here, "..");
 function rootState(root) {
-  if (!fs6.existsSync(path6.join(root, MANIFEST)))
+  if (!fs5.existsSync(path6.join(root, MANIFEST)))
     return "gone";
-  if (fs6.existsSync(path6.join(root, ".orphaned_at")))
+  if (fs5.existsSync(path6.join(root, ".orphaned_at")))
     return "orphaned";
   return "ok";
 }
@@ -25445,7 +25562,7 @@ function compareVersions(a, b) {
 }
 var HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
 function distributed(root, tracked) {
-  const walk = (dir) => fs6.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+  const walk = (dir) => fs5.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     if (dir === root && HOST_MARKS.has(e.name))
       return [];
     const abs = path6.join(dir, e.name);
@@ -25457,7 +25574,7 @@ function distributed(root, tracked) {
       rels = execFileSync5("git", ["-C", root, "ls-files", "-z"], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"]
-      }).split("\x00").filter((rel) => rel && fs6.existsSync(path6.join(root, rel)));
+      }).split("\x00").filter((rel) => rel && fs5.existsSync(path6.join(root, rel)));
     } catch {}
   }
   rels ??= walk(root);
@@ -25469,7 +25586,7 @@ function differingFiles(a, b, { tracked = false } = {}) {
   return [...new Set([...x.keys(), ...y.keys()])].filter((rel) => {
     const p = x.get(rel);
     const q = y.get(rel);
-    return !p || !q || !fs6.readFileSync(p).equals(fs6.readFileSync(q));
+    return !p || !q || !fs5.readFileSync(p).equals(fs5.readFileSync(q));
   }).sort();
 }
 function parsePs(out) {
@@ -25485,7 +25602,7 @@ function parsePs(out) {
 }
 function cwdOf(pid) {
   try {
-    const link = fs6.readlinkSync(`/proc/${pid}/cwd`);
+    const link = fs5.readlinkSync(`/proc/${pid}/cwd`);
     return { dir: link.replace(/ \(deleted\)$/, ""), replaced: link.endsWith(" (deleted)") };
   } catch {}
   try {
@@ -25501,7 +25618,7 @@ function cwdOf(pid) {
       return null;
     let now;
     try {
-      now = String(fs6.statSync(dir).ino);
+      now = String(fs5.statSync(dir).ino);
     } catch {}
     const held = field("i");
     return { dir, replaced: now !== undefined && held !== undefined && now !== held };
@@ -25512,7 +25629,7 @@ function cwdOf(pid) {
 var CACHED = /\/plugins\/cache\/[^/]+\/mitos\/[^/]+$/;
 function observe(cwdRoot) {
   const install = (root) => ({ version: versionAt(root), root });
-  const repository = [path6.dirname(ROOT), cwdRoot].filter((d) => fs6.existsSync(path6.join(d, ".claude-plugin", "marketplace.json"))).map((d) => install(path6.join(d, "plugin"))).find((r) => r.version !== null) ?? null;
+  const repository = [path6.dirname(ROOT), cwdRoot].filter((d) => fs5.existsSync(path6.join(d, ".claude-plugin", "marketplace.json"))).map((d) => install(path6.join(d, "plugin"))).find((r) => r.version !== null) ?? null;
   let claude;
   try {
     const list = JSON.parse(execFileSync5("claude", ["plugin", "list", "--json"], {
@@ -25527,7 +25644,7 @@ function observe(cwdRoot) {
   }
   let codexHome = process.env.CODEX_HOME ?? path6.join(os4.homedir(), ".codex");
   try {
-    codexHome = fs6.realpathSync(codexHome);
+    codexHome = fs5.realpathSync(codexHome);
   } catch {}
   const codexCache = path6.join(codexHome, "plugins", "cache");
   const codex = [];
@@ -25556,7 +25673,7 @@ function observe(cwdRoot) {
       let version2 = cwd.replaced || now === null ? cached2 ? path6.basename(root) : null : now;
       if (!cached2 && version2 !== null) {
         try {
-          const touched = Math.max(...[path6.join("dist", "mcp.js"), MANIFEST].map((f) => fs6.statSync(path6.join(root, f)).mtimeMs));
+          const touched = Math.max(...[path6.join("dist", "mcp.js"), MANIFEST].map((f) => fs5.statSync(path6.join(root, f)).mtimeMs));
           if (touched > p.started.getTime())
             version2 = null;
         } catch {
@@ -25572,7 +25689,7 @@ function observe(cwdRoot) {
 }
 function safeDirs(dir) {
   try {
-    return fs6.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
+    return fs5.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
     return [];
   }
@@ -25592,7 +25709,7 @@ function report(s, now = new Date) {
   const row = (label, i, note, aside = "") => say(label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
   const base = s.repository;
   const against = (i) => {
-    if (!fs6.existsSync(i.root))
+    if (!fs5.existsSync(i.root))
       return { note: "導入先が無い。Skill のパスも無効", update: true };
     if (!base?.version || !i.version)
       return {};
@@ -25637,7 +25754,7 @@ function report(s, now = new Date) {
   }
   const x = s.codex.length === 1 ? s.codex[0] : undefined;
   if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
-    if (fs6.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
+    if (fs5.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
       lines.push("  ← Claude Code と Codex で同じ版なのに中身が違う");
     }
   }
@@ -25751,7 +25868,7 @@ async function rerank(env, question, rows, limit) {
     return bare();
   }
 }
-var KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.heading, k.body, k.reason, k.confirmation, k.downsides,
+var KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.stance, k.heading, k.body, k.reason, k.confirmation, k.downsides,
   k.occurred_at, p.name as project, s.kind as source_kind, s.path, s.url, succ.body as successor`;
 var KNOWLEDGE_FROM = `from mitos.knowledge k
   join mitos.project p on p.id = k.project_id
@@ -25761,6 +25878,7 @@ var knowledgeHit = (r) => ({
   ref: `k:${r.id}`,
   kind: r.kind,
   status: r.status,
+  stance: r.stance,
   label: labelOf({ kind: r.kind, status: r.status, source_kind: r.source_kind, path: r.path }),
   heading: r.heading,
   text: r.body,
@@ -25842,6 +25960,7 @@ var messageHit = (r) => {
     ref: `m:${r.id}`,
     kind: "message",
     status: null,
+    stance: "neutral",
     label: speaker === "持ち主" ? "【持ち主の発言】" : r.speaker_kind === "assistant" ? "【AI の発言】" : "【人の発言】",
     heading: null,
     text: r.body,
@@ -26029,7 +26148,7 @@ var at = exports_external.iso.datetime({
   offset: true,
   message: "ISO 8601 のオフセット付きで書く（例 2026-09-13T10:00:00+09:00）"
 });
-var text = exports_external.string().trim().min(1);
+var text = exports_external.string().trim().min(1).transform(mask);
 var file2 = exports_external.object({
   path: exports_external.string().min(1).refine((p) => !p.startsWith("/") && !/(^|\/)\.\.(\/|$)/.test(p), "作業場所の根からの相対パスにする"),
   role: exports_external.enum(["applies_to", "evidence"]),
@@ -26040,7 +26159,7 @@ var common = {
   at,
   text,
   confidence: exports_external.enum(["fact", "inference", "opinion"]).optional(),
-  refs: exports_external.array(text).default([]),
+  refs: exports_external.array(text.pipe(exports_external.string().regex(/^(commit|url|cmd|issue|pr|doc|file):\S/, "commit: / url: / cmd: / issue: / pr: / doc: / file: のどれかを前置する"))).default([]),
   files: exports_external.array(file2).default([])
 };
 var decision = exports_external.object({
@@ -26260,11 +26379,12 @@ async function saveTrace(client, env, projectId2, t) {
       const found = await client.query("select id, source_key from mitos.knowledge where project_id = $1 and kind = 'decision' and source_key = any($2)", [projectId2, outside]);
       for (const f of found.rows)
         idOf.set(f.source_key, f.id);
-      const missing2 = outside.filter((k) => !idOf.has(k));
-      if (missing2.length)
-        throw new Error(`この作業場所に無い決定を指している: ${missing2.join(" / ")}`);
+      const missing = outside.filter((k) => !idOf.has(k));
+      if (missing.length)
+        throw new Error(`この作業場所に無い決定を指している: ${missing.join(" / ")}`);
     }
-    const prior = await client.query("select source_key, superseded_by_id, work_item_id, heading from mitos.knowledge where project_id = $1 and source_key = any($2)", [projectId2, all.map((r) => r.key)]);
+    const prior = await client.query(`select source_key, superseded_by_id, work_item_id, heading from mitos.knowledge
+       where project_id = $1 and source_key = any($2) for update`, [projectId2, all.map((r) => r.key)]);
     const laterBy = new Map(prior.rows.flatMap((p) => p.superseded_by_id ? [[p.source_key, p.superseded_by_id]] : []));
     const priorOf = new Map(prior.rows.map((p) => [p.source_key, p]));
     for (const r of all) {
@@ -26394,13 +26514,15 @@ var USAGE = `使い方:
   mitos project add [--cwd <dir>] [--name <名前>]  作業場所を登録する（remote が無いなら --name でこの PC での名前を付ける）
   mitos project list                               登録済みの作業場所と、最後の同期
   mitos project forget <key|名前> [--yes]          作業場所のデータを消す（--yes が無ければ数えるだけ）
-  mitos sync [--cwd <dir>]                         この PC にある作業場所の GitHub と文書を同期する（日次用）
+  mitos sync [--cwd <dir> [--reset-docs]]          この PC にある作業場所の GitHub と文書を同期する（日次用）。文書は
+                                                   remote の既定 branch から入れ、fast-forward でなければ止まる
+                                                   （--reset-docs はその作業場所を今の状態に揃える）
   mitos search <質問> [--avoid] [--said me|others|<名前>] [--all] [--cwd <dir>] [--limit N]
                                                    引けるかを確かめる（--said は発言を探す）
   mitos who [<呼び名> <ハンドル>... [--me]]         GitHub のハンドルと人を結ぶ（--me は持ち主）
   mitos trace context [--host claude-code|codex]   いまの session の会話と、進行中の作業を出す（trace の材料）
-  mitos trace check <trace.json>                   trace の記録の形を確かめる（DB に触らない）
-  mitos trace save <trace.json>                    trace の記録を入れる
+  mitos trace check <trace.json|->                 trace の記録の形を確かめる（DB に触らない。- は標準入力）
+  mitos trace save <trace.json|->                  trace の記録を入れる（- は標準入力）
   mitos capture flush                              自動記録の待ち行列を DB へ送る
   mitos init [--cwd <dir>]                         要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
   mitos check [--cwd <dir>]                        .mitos/ の change.json を検査する（DB に触らない）
@@ -26415,6 +26537,7 @@ var OPTIONS = {
   name: { type: "string" },
   limit: { type: "string" },
   all: { type: "boolean" },
+  "reset-docs": { type: "boolean" },
   avoid: { type: "boolean" },
   said: { type: "string" },
   me: { type: "boolean" },
@@ -26442,8 +26565,9 @@ async function registered(c, place) {
     throw new Error(`${place.name} は mitos に登録されていない。\`mitos project add\` で登録する`);
   return id;
 }
+var readTrace = (file3) => JSON.parse(fs6.readFileSync(file3 === "-" ? 0 : file3, "utf8"));
 var githubRepo = (key2) => key2.match(/^git:github\.com\/([^/]+\/[^/]+)$/)?.[1] ?? null;
-async function syncOne(c, id, place) {
+async function syncOne(c, id, place, resetDocs = false) {
   const out = [];
   const failed = [];
   const run2 = async (provider, label, fn) => {
@@ -26462,8 +26586,8 @@ async function syncOne(c, id, place) {
   const repo = githubRepo(place.key);
   if (repo)
     await run2("github", "GitHub", () => syncGithub(c, id, place.name, repo));
-  if (fs7.existsSync(path7.join(place.root, ".git")))
-    await run2("docs", "文書", () => syncDocs(c, id, place.root));
+  if (fs6.existsSync(path7.join(place.root, ".git")))
+    await run2("docs", "文書", () => syncDocs(c, id, place.root, { remote: place.key.startsWith("git:"), reset: resetDocs }));
   if (failed.length)
     throw new Error([...out, ...failed].join(`
   `));
@@ -26569,7 +26693,7 @@ async function doctor(env, cwd) {
   }
   console.log(`VOYAGE_API_KEY             ${env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）"}`);
   const s = readState();
-  console.log(`自動記録                   待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.error ? ` / 失敗: ${s.error}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（~/.claude/mitos-spool/rejected）` : ""}`);
+  console.log(`自動記録                   待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.error ? ` / 失敗: ${s.error}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
   if (!env[KEY.reader])
     return;
   await withDb(env, "reader", async (c) => {
@@ -26643,7 +26767,7 @@ ${USAGE}`);
       throw new Error(`確かめる記録のファイルを指定する
 
 ${USAGE}`);
-    const r = checkTrace(JSON.parse(fs7.readFileSync(file3, "utf8")));
+    const r = checkTrace(readTrace(file3));
     if (r.problems.length) {
       for (const p of r.problems)
         console.error(`  ${p}`);
@@ -26655,11 +26779,11 @@ ${USAGE}`);
   }
   if (cmd === "advice") {
     const log = path7.join(os5.homedir(), ".claude", "mitos-advice.jsonl");
-    if (!fs7.existsSync(log)) {
+    if (!fs6.existsSync(log)) {
       console.log("まだ記録が無い（編集フックが一度も走っていない）。");
       return;
     }
-    const rows2 = fs7.readFileSync(log, "utf8").split(`
+    const rows2 = fs6.readFileSync(log, "utf8").split(`
 `).flatMap((l) => {
       try {
         const r = JSON.parse(l);
@@ -26689,7 +26813,7 @@ ${USAGE}`);
       console.log("別の送信が走っているので何もしなかった（終われば待ち行列は空になる）");
       return;
     }
-    console.log(`新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（~/.claude/mitos-spool/rejected に残した）` : ""}`);
+    console.log(`新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（${rejectedDir()} に残した）` : ""}`);
     return;
   }
   if (cmd === "trace") {
@@ -26701,7 +26825,7 @@ ${USAGE}`);
       throw new Error(`mitos trace context / check <file> / save <file>
 
 ${USAGE}`);
-    const r = checkTrace(JSON.parse(fs7.readFileSync(rest[1], "utf8")));
+    const r = checkTrace(readTrace(rest[1]));
     if (!r.trace)
       throw new Error(`記録の形が通らない:
 ${r.problems.map((p) => `  ${p}`).join(`
@@ -26782,6 +26906,8 @@ ${USAGE}`);
     await flush(env).catch((e) => console.error(`  自動記録の送信に失敗: ${e instanceof Error ? e.message : e}`));
     const failed = [];
     let done = 0;
+    if (opt["reset-docs"] && !opt.cwd)
+      throw new Error("--reset-docs は --cwd で作業場所を 1 つ指定したときだけ使える");
     await withDb(env, "ingest", async (c) => {
       const only = opt.cwd ? placeOf(cwd) : null;
       if (only)
@@ -26797,7 +26923,8 @@ ${USAGE}`);
           continue;
         }
         try {
-          for (const line of await syncOne(c, Number(p.id), { key: p.key, root, name: p.name })) {
+          const place = { key: p.key, root, name: p.name };
+          for (const line of await syncOne(c, Number(p.id), place, opt["reset-docs"] === true)) {
             console.log(`${p.name} / ${line}`);
           }
           done++;
@@ -26866,10 +26993,10 @@ ${USAGE}`);
         return c.query(`update mitos.person_identity set person_id = $1
            where provider = 'github' and lower(handle) = any($2) returning handle`, [pe.rows[0]?.id, handles.map((h) => h.replace(/^@/, "").toLowerCase())]);
       });
-      const missing2 = handles.filter((h) => !linked.rows.some((l) => l.handle.toLowerCase() === h.replace(/^@/, "").toLowerCase()));
+      const missing = handles.filter((h) => !linked.rows.some((l) => l.handle.toLowerCase() === h.replace(/^@/, "").toLowerCase()));
       console.log(`名簿に入れた: ${display}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`);
-      if (missing2.length)
-        console.log(`まだ取り込んでいないハンドル: ${missing2.join(" / ")}（同期の後にもう一度結ぶ）`);
+      if (missing.length)
+        console.log(`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`);
     });
     return;
   }

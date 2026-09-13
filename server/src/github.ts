@@ -12,8 +12,8 @@
 import { execFileSync } from "node:child_process";
 import type pg from "pg";
 import { EMBED_MODEL, inTransaction } from "./db.ts";
-import { conversationId, indexesMessage, messageText } from "./knowledge.ts";
-import { connectorOf, isStale } from "./project.ts";
+import { conversationId, indexesMessage, messageText, type SpeakerKind } from "./knowledge.ts";
+import { connectorOf } from "./project.ts";
 import { clean, sha256, tsvector, uuidFrom } from "./text.ts";
 
 type User = { id: number; login: string } | null;
@@ -101,7 +101,7 @@ const AI_REVIEWERS = new Set([
   "Copilot",
 ]);
 
-export type Speaker = "person" | "assistant" | "bot";
+export type Speaker = Exclude<SpeakerKind, "self">;
 export const speakerOf = (login: string): Speaker =>
   AI_REVIEWERS.has(login) ? "assistant" : login.endsWith("[bot]") ? "bot" : "person";
 
@@ -143,8 +143,10 @@ export type Collected = { items: Item[]; said: Map<number, Said[]> };
 /** PR と issue の本体、コメント、レビューを集めて、書き込む形へ揃える。 */
 export async function collect(source: GithubSource): Promise<Collected> {
   const items = new Map<number, Item>();
-  const said = new Map<number, Said[]>();
-  const push = (n: number, s: Said) => said.set(n, [...(said.get(n) ?? []), s]);
+  // ページ送りの最中に新しい PR やコメントが入ると、境界の項目が 2 ページに現れる。同じ発言は 1 つにする
+  // （まとめて書く upsert に同じ id が 2 行あると、transaction ごと落ちる）。
+  const said = new Map<number, Map<string, Said>>();
+  const push = (n: number, s: Said) => said.set(n, (said.get(n) ?? new Map()).set(s.externalId, s));
   const who = (u: User): User => (u ? { id: u.id, login: clean(u.login) } : null);
   const body = (n: number, author: User, text: string | null, at: string, url: string) => {
     const t = clean(text ?? "").trim();
@@ -228,11 +230,12 @@ export async function collect(source: GithubSource): Promise<Collected> {
     });
   }
   // 返信の親が落とされた（相槌だった）ときは、親を持たない発言として残す。
-  for (const list of said.values()) {
+  const lists = new Map([...said].map(([n, m]) => [n, [...m.values()]]));
+  for (const list of lists.values()) {
     const ids = new Set(list.map((s) => s.externalId));
     for (const s of list) if (s.replyTo && !ids.has(s.replyTo)) s.replyTo = null;
   }
-  return { items: [...items.values()], said };
+  return { items: [...items.values()], said: lists };
 }
 
 const itemHash = (i: Item): Buffer =>
@@ -259,12 +262,14 @@ export async function syncGithub(
   projectName: string,
   repo: string,
 ): Promise<string> {
-  const snapshotAt = new Date();
+  // snapshot の時刻は DB の時計で取る。PC の時計が進んでいると、その差の分だけ他の PC の同期が止まる。
+  const snapshotAt = (await client.query<{ now: Date }>("select now()")).rows[0]?.now ?? new Date();
   const { items, said } = await collect(cliSource(repo));
 
   const counts = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId, "github");
-    if (isStale(connector, snapshotAt)) return null;
+    // 取得を始めた後に、別の同期がより新しい取得を入れていれば書かない（遅れた古い取得で巻き戻さない）。
+    if (connector.snapshotAt && snapshotAt.getTime() < connector.snapshotAt.getTime()) return null;
 
     // 発言者。login は変えられるので user id で結び、handle は今の login に揃える。
     const users = new Map<number, string>();

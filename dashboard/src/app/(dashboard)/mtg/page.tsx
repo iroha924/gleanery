@@ -37,8 +37,8 @@ export default function MeetingPage() {
   const closers = useRef<(() => void)[]>([]);
   const streams = useRef<MediaStream[]>([]);
   const t0 = useRef(0);
-  const { scopeIds: picked, label: projectLabel } = useProject();
-  const scopeIds = picked ?? [];
+  const { project, label: projectLabel } = useProject();
+  const projects = project ? [project.id] : [];
 
   const stop = () => {
     for (const c of closers.current) c();
@@ -63,10 +63,10 @@ export default function MeetingPage() {
     });
     // **相手の発話が確定したときだけ引く。**途中の delta で引くと、言い終える前の
     // 半端な文で検索することになり、当たらないうえ課金だけ増える。
-    if (who === "them" && h.done && h.text.trim() && scopeIds.length > 0) {
+    if (who === "them" && h.done && h.text.trim() && projects.length > 0) {
       setThinking(true);
       api
-        .reply(h.text, scopeIds)
+        .reply(h.text, projects)
         .then((r) => {
           // 問われていない発言なら、いま出ている案を消さずに置く。
           if (r.asked) setReply(r);
@@ -126,7 +126,7 @@ export default function MeetingPage() {
           <Button
             type="button"
             onClick={on ? stop : start}
-            disabled={!on && scopeIds.length === 0}
+            disabled={!on && projects.length === 0}
             className={`rounded-md ${on ? "bg-dont text-white hover:bg-dont/90" : ""}`}
           >
             {on ? <SquareIcon className="size-3.5" /> : <MicIcon className="size-4" />}
@@ -177,6 +177,7 @@ export default function MeetingPage() {
                                 <span className="flex-none font-mono text-muted-foreground">{n}</span>
                                 <span className="min-w-0 text-muted-foreground">
                                   <span className="text-foreground/70">{f.label}</span>
+                                  {f.speaker && `${f.speaker}: `}
                                   {f.text.slice(0, 90)}
                                 </span>
                               </li>
@@ -201,8 +202,8 @@ export default function MeetingPage() {
                     <strong className="font-medium text-foreground">記録で裏の取れた案</strong>
                     を出します。記録に無ければ、無いと言います。
                   </>
-                ) : scopeIds.length === 0 ? (
-                  "ヘッダーでプロジェクトを選んでください"
+                ) : projects.length === 0 ? (
+                  "サイドバーで作業場所を 1 つ選んでください"
                 ) : (
                   <>
                     共有を選ぶとき、

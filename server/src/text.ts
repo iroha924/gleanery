@@ -99,3 +99,51 @@ export function tail(s: string, n: number): string {
 
 /** PostgreSQL の text は NUL を持てない。外から来た文字列は入れる前にここを通す。 */
 export const clean = (s: string): string => s.replaceAll("\u0000", "");
+
+// 貼ってしまった鍵を DB・待ち行列・埋め込みの API へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
+// 形は 3 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報。
+// 載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
+const SECRETS: [RegExp, string][] = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
+  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
+  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
+  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
+  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
+  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
+  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
+  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
+  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
+  [/\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"],
+];
+// 名前で分かる代入。環境変数の形（大文字）と、設定ファイル・JSON・ヘッダの形（名前が鍵の語で終わる）。
+// **値が変数の参照や型名なら伏せない**（`PASSWORD=$DB_PASSWORD`、`password: string`）。設定ファイル・ヘッダの形は、
+// 数字と英字を両方含む 8 文字以上の値だけを鍵とみなす（コードの `token = getToken()` を消さない）。
+// KEY・PASS・PWD は語の区切り（`_`）の後か単独のときだけ鍵の名前とみなす（MONKEY=banana、COMPASS=north を消さない）。
+const ENV_ASSIGN =
+  /\b((?:[A-Z][A-Z0-9_]*_)?(?:API_?KEY|KEY|PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
+const FIELD_ASSIGN =
+  /(["']?)\b([A-Za-z0-9_-]*(?:api[-_]?key|account[-_]?key|secret(?:[-_]access)?[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?=[^\s"',;]*\d)(?=[^\s"',;]*[A-Za-z])(?![^\s"',;]*[()])[^\s"',;]{8,}\4/gi;
+// `mysql -p<パスワード>`（-p の直後に空白を置かない形だけがパスワードを持つ）。
+const MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]*?\s-p)(?=[^\s-])\S+/g;
+// URL の資格情報は、パスワードに @ を含んでも host の直前の @ まで伏せる。どこへ繋いだかは話の中身として残す。
+// userinfo は最初の `/` より前にしか無い（`http://localhost:5173/@vite` のポートを伏せない）。ここで切ると線形で終わる。
+const URL_CREDENTIALS =
+  /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
+
+export function mask(text: string): string {
+  // 代入と URL を先に伏せる（値ごと消える）。残った裸の鍵を形で伏せる。
+  let out = text
+    .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
+    .replace(ENV_ASSIGN, "$1$2[伏せた]")
+    .replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]")
+    .replace(MYSQL_PASSWORD, "$1[伏せた]");
+  for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
+  return out;
+}

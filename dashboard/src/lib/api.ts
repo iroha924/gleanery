@@ -1,136 +1,38 @@
-import { authed, get, send } from "@/lib/api-client";
+import { authed, get } from "@/lib/api-client";
 
 // API の型。**サーバーの戻り値をここで 1 回だけ書く。**
 // 画面ごとに書くと、片方だけ直したときに気付けない。
 
-export type Phase = { id: string; label: string; state: "done" | "doing" | "todo"; from: string };
-export type NextItem = { who: "ai" | "human"; text: string };
-export type Wall = { record_id: string; subkind: "constraint" | "non-goal"; text: string; key: string };
+/** 通ってよい道か（do）、いけない道か（dont）。札の色を分ける。 */
+export type Stance = "do" | "dont" | "neutral";
 
-/** 会話の一覧。**ナレッジとは別物**で、記録には混ざらない。 */
-export type ChatRow = {
-  id: string;
-  title: string | null;
-  scope_name: string | null;
-  updated_at: string;
-  messages: number;
-};
-
-export type Scope = {
-  id: number;
-  label: string;
-  identKind: string;
-  role: string | null;
-  summary: string | null;
-  groups: string | null;
-  records: number;
-  nodes: number;
-};
-
-export type RecordRow = {
-  id: string;
-  title: string;
-  status: string;
-  branch: string | null;
-  problem: string;
-  goal: string;
-  current_at: string | null;
-  current_text: string | null;
-  updated_at: string;
-  scope_label: string;
-  nodes: number;
-};
-
-export type Polarity = "do" | "dont" | "na";
-
-export type Node = {
-  id: number;
-  kind: string;
-  subkind: string | null;
-  polarity: Polarity;
-  status: string | null;
-  key: string;
-  at: string | null;
-  text: string;
-  ex: string;
-  label: string;
-  attrs: {
-    // 決定なら「どう確かめるか」と「受け入れた不利な点」、検証なら実行したコマンドと出力。
-    // どれも記録には書かれているのに、画面が落としていた。
-    confirmation?: string | null;
-    /** 実データは配列。良かった点と引き受けた不利が同じ配列に入る。 */
-    consequences?: { good: boolean; text: string }[] | null;
-    supersededBy?: string | null;
-    whyNot?: string | null;
-    cmd?: string | null;
-    output?: string | null;
-    whyNotRun?: string | null;
-    verifies?: string | null;
-    blocking?: boolean;
-    who?: string | null;
-    when?: string | null;
-  };
-  parent_id: number | null;
-};
-
-export type Ref = {
-  kind: string;
-  key: string;
-  title: string | null;
-  url: string | null;
-  /** 根拠(evidence) / 触った(touched) / 関連(link) をまとめたもの */
-  roles: string;
-  /** その参照について書き残したこと。URL はここにしか説明が無い */
-  note: string | null;
-  /** 0 以外で終わったコマンドの回数 */
-  failed: number;
-};
-
-export type RecordDetail = RecordRow & { phases: Phase[]; next: NextItem[]; nodes: Node[]; refs: Ref[] };
-
-/** 範囲のクエリ。undefined は「すべて」なので付けない。 */
-const q = (scopes: number[] | undefined): string =>
-  scopes === undefined ? "" : `?scopes=${scopes.join(",")}`;
-
-export type GroupMember = { id: number; label: string; identKind: string; ident: string };
-export type Group = { id: number; name: string; members: GroupMember[] };
-
-export type GithubRepository = {
-  id: string;
-  scopeId: number;
-  fullName: string;
-  private: boolean;
-  syncStatus: "queued" | "syncing" | "synced" | "error";
-  syncRequestedAt: string | null;
-  lastSyncedAt: string | null;
+/** 取り込み元ごとの最後の同期。失敗していれば lastError を持つ。 */
+export type Connector = {
+  provider: "github" | "docs";
+  lastSuccessAt: string | null;
   lastError: string | null;
 };
 
-export type GithubStatus = {
-  configured: boolean;
-  installUrl: string | null;
-  connection: {
-    id: number;
-    accountLogin: string;
-    repositorySelection: "all" | "selected";
-    status: "active" | "suspended";
-    repositories: GithubRepository[];
-  } | null;
-};
-
-/** プロジェクトの言葉。meaning が null なら「AI が聞きたがっている語」。 */
-export type Term = {
+export type Project = {
   id: number;
-  word: string;
-  aliases: string[];
-  meaning: string | null;
-  asked_why: string | null;
-  asked_at: string | null;
-  project: string | null;
+  key: string;
+  name: string;
+  /** coding session の数 */
+  sessions: number;
+  /** trace で残した判断の数（文書の節は数えない） */
+  knowledge: number;
+  connectors: Connector[];
 };
 
 /** 会議で引かれた記録の 1 件。返信案の番号はここを指す。 */
-export type Fact = { n: number; label: string; text: string; recordId: string; recordTitle: string };
+export type Fact = {
+  n: number;
+  ref: string;
+  label: string;
+  text: string;
+  speaker: string | null;
+  context: string | null;
+};
 
 /** 聞かれたことへの返信案。**missing なら記録に無い**ので、その場で作らない。 */
 export type Reply = {
@@ -141,12 +43,18 @@ export type Reply = {
 };
 
 export const api = {
+  projects: () => get<Project[]>("/api/projects"),
+  /** 参照（k: / m: / s: / w:）の全文。**選んだ作業場所の外は「無い」と返る。** */
+  read: (ref: string, projects: number[]) =>
+    get<{ text: string }>(`/api/read?${new URLSearchParams({ ref, projects: projects.join(",") })}`).then(
+      (r) => r.text,
+    ),
   /** 会議で聞かれたことへの返信案。**記録にあることしか返さない。** */
-  reply: async (heard: string, scopeIds: number[]): Promise<Reply> => {
+  reply: async (heard: string, projects: number[]): Promise<Reply> => {
     const res = await fetch("/api/reply", {
       method: "POST",
       headers: await authed({ "content-type": "application/json" }),
-      body: JSON.stringify({ heard, scopeIds }),
+      body: JSON.stringify({ heard, projects }),
     });
     const json = (await res.json()) as Reply & { error?: string };
     if (!res.ok) throw new Error(json.error ?? `返信案が ${res.status}`);
@@ -159,24 +67,4 @@ export const api = {
     if (!res.ok || !json.token) throw new Error(json.error ?? `一時鍵が ${res.status}`);
     return json.token;
   },
-  groups: () => get<Group[]>("/api/groups"),
-  saveGroup: (name: string, scopeIds: number[]) =>
-    send<{ ok: true; groupId: number }>("/api/groups", "POST", { name, scopeIds }),
-  deleteGroup: (id: number) => send<{ ok: true }>(`/api/groups/${id}`, "DELETE"),
-  chats: () => get<ChatRow[]>("/api/chats"),
-  deleteChat: (id: string) => send<{ ok: true }>(`/api/chats/${encodeURIComponent(id)}`, "DELETE"),
-  terms: (scopes?: number[]) => get<Term[]>(`/api/terms${q(scopes)}`),
-  saveTerm: (t: { word: string; meaning: string; aliases: string[]; groupId?: number }) =>
-    send<{ ok: true }>("/api/terms", "POST", t),
-  deleteTerm: (id: number) => send<{ ok: true }>(`/api/terms/${id}`, "DELETE"),
-  scopes: () => get<Scope[]>("/api/scopes"),
-  github: () => get<GithubStatus>("/api/github"),
-  connectGithub: (installationId: number) =>
-    send<GithubStatus>("/api/github/installations", "POST", { installationId }),
-  refreshGithub: () => send<GithubStatus>("/api/github/refresh", "POST"),
-  syncGithub: (repositoryId?: string) =>
-    send<{ ok: true; queued: number }>("/api/github/sync", "POST", { repositoryId }),
-  disconnectGithub: () => send<{ ok: true }>("/api/github/installation", "DELETE"),
-  records: (scopes?: number[]) => get<RecordRow[]>(`/api/records${q(scopes)}`),
-  record: (id: string) => get<RecordDetail>(`/api/records/${encodeURIComponent(id)}`),
 };

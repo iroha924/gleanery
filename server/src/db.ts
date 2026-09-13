@@ -54,7 +54,7 @@ export const KEY: Record<Role, string> = {
 };
 
 /** MCP と CLI が期待する schema の版。db/schema.sql の schema コメントと同じ数にする（テストが突き合わせる）。 */
-export const SCHEMA_REVISION = 1;
+export const SCHEMA_REVISION = 2;
 
 export type Db = Pick<pg.Client, "query">;
 

@@ -3,15 +3,18 @@
 // **コードは入れないが、文書は入れる。**設計文書と ADR は「なぜそうしたか」で、リポジトリが消えれば読む先も消える。
 // **見出しで切る。**1 本を丸ごと 1 件にすると、長い設計書が 1 つのベクトルに潰れて何にも当たらない。
 // **原文は別に持つ。**節は見出しだけの節を落とすので、連結しても元の Markdown に戻らない。画面は原文を出す。
+//
+// **正は remote の既定 branch の commit で、作業ツリーは読まない。**作業ツリーを読むと、どの PC の・どの branch の・
+// 書きかけの状態が DB に入るかが同期した順で決まる（branch の切り替え、未 push の commit、古い clone で巻き戻る）。
+// 一覧・本文・manifest・更新日を 1 つの commit の tree から読むので、読む順も filesystem の symlink も関係しない。
 
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import path from "node:path";
 import type pg from "pg";
-import { type Artifact, selectArtifacts, underMitos } from "./artifacts.ts";
+import { type Artifact, type Snapshot, selectArtifacts, underMitos } from "./artifacts.ts";
 import { EMBED_MODEL, inTransaction } from "./db.ts";
 import { knowledgeText } from "./knowledge.ts";
-import { connectorOf, isStale } from "./project.ts";
+import { connectorOf } from "./project.ts";
 import { clean, sha256, tsvector } from "./text.ts";
 
 export type Section = {
@@ -58,6 +61,7 @@ export function sections(rel: string, body: string): Section[] {
     buf: [],
   };
   const used = new Map<string, number>();
+  const keys = new Set<string>();
 
   const flush = (): void => {
     const raw = cur.buf.join("\n").trim();
@@ -77,10 +81,14 @@ export function sections(rel: string, body: string): Section[] {
     for (const text of parts) {
       const base = `doc:${rel}#${slug(cur.title)}`;
       // 同じ題の節は 1 つのファイルに何度も出る（「## 背景」など）。番号で分けないと後勝ちで前の節が消える。
-      const n = (used.get(base) ?? 0) + 1;
+      // 番号を付けた key が別の見出し（「## 背景:2」）と重ならないよう、使った key 全体で一意にする。
+      let n = (used.get(base) ?? 0) + 1;
+      let key = n === 1 && parts.length === 1 ? base : `${base}:${n}`;
+      while (keys.has(key)) key = `${base}:${++n}`;
       used.set(base, n);
+      keys.add(key);
       out.push({
-        key: n === 1 && parts.length === 1 ? base : `${base}:${n}`,
+        key,
         path: rel,
         title: cur.title,
         trail: cur.trail,
@@ -115,19 +123,132 @@ export function sections(rel: string, body: string): Section[] {
   return out;
 }
 
+// 無人の同期（launchd）で資格情報の入力を待って止まらない。
+const git = (root: string, args: string[], input?: Buffer, timeout = 60_000): Buffer =>
+  execFileSync("git", ["-C", root, ...args], {
+    input,
+    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+  });
+
 /**
- * 文書ごとの最終更新日（最後に触ったコミット）。**1 回の git log で全部取る。**
+ * 同期する commit。remote を持つ作業場所は、remote の HEAD（既定 branch）をその場で取る。**ローカルの
+ * origin/HEAD は読まない** — fetch だけでは既定 branch の名前変更に追随しない。取れなければ投げる（前回の状態を保つ）。
+ * 取った先は専用の ref に置く（共有の FETCH_HEAD は同じ PC の別の fetch に上書きされる）。
+ * remote の無い作業場所は HEAD。branch を切り替えても fast-forward なら入る（戻すと止まる）。
+ */
+export function commitOf(root: string, remote: boolean): string {
+  if (remote) {
+    try {
+      git(root, [
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--no-recurse-submodules",
+        "origin",
+        "+HEAD:refs/mitos/docs-head",
+      ]);
+    } catch (e) {
+      const detail = (e as { stderr?: Buffer }).stderr?.toString().trim().split("\n").at(-1) ?? "";
+      throw new Error(`remote の既定 branch を取れなかった（${detail}）。文書は前回の同期のまま`);
+    }
+    return git(root, ["rev-parse", "--verify", "refs/mitos/docs-head^{commit}"]).toString().trim();
+  }
+  try {
+    return git(root, ["rev-parse", "--verify", "HEAD^{commit}"]).toString().trim();
+  } catch {
+    throw new Error("commit が 1 つも無い");
+  }
+}
+
+/** a が b の祖先か（a から b へ fast-forward できるか）。どちらかがこの clone に無ければ false。 */
+export function isAncestor(root: string, a: string, b: string): boolean {
+  try {
+    git(root, ["merge-base", "--is-ancestor", a, b]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+type Entry = { mode: string; oid: string; size: number };
+const FILE_MODES = new Set(["100644", "100755"]);
+
+/** commit の tree 全体。**symlink（120000）とサブモジュール（160000）は本文として読まない。** */
+export function treeOf(root: string, commit: string): { entries: Map<string, Entry>; dirs: Set<string> } {
+  const entries = new Map<string, Entry>();
+  const dirs = new Set<string>();
+  for (const record of git(root, ["ls-tree", "-r", "-z", "-l", "--full-tree", commit])
+    .toString("utf8")
+    .split("\0")) {
+    const tab = record.indexOf("\t");
+    if (tab < 0) continue;
+    const [mode, , oid, size] = record.slice(0, tab).trim().split(/\s+/);
+    const rel = record.slice(tab + 1);
+    if (!mode || !oid) continue;
+    entries.set(rel, { mode, oid, size: Number(size) || 0 });
+    for (let d = path.posix.dirname(rel); d !== "."; d = path.posix.dirname(d)) dirs.add(d);
+  }
+  return { entries, dirs };
+}
+
+/** blob を 1 回の `git cat-file --batch` でまとめて読む。clean / smudge の filter は通さない（commit の中身そのもの）。 */
+export function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
+  const out = new Map<string, Buffer>();
+  if (oids.length === 0) return out;
+  const raw = git(root, ["cat-file", "--batch"], Buffer.from(`${[...new Set(oids)].join("\n")}\n`));
+  let at = 0;
+  while (at < raw.length) {
+    const nl = raw.indexOf(10, at);
+    const [oid, , size] = raw.subarray(at, nl).toString("utf8").split(" ");
+    const n = Number(size);
+    if (!oid || !Number.isFinite(n)) throw new Error("git cat-file の応答を読めなかった");
+    out.set(oid, raw.subarray(nl + 1, nl + 1 + n));
+    at = nl + 1 + n + 1;
+  }
+  return out;
+}
+
+/** commit の tree を、成果物の検査の読み先にする。 */
+function snapshotOf(tree: ReturnType<typeof treeOf>, blobs: Map<string, Buffer>): Snapshot {
+  return {
+    kind: (rel) => {
+      const e = tree.entries.get(rel);
+      if (e) return FILE_MODES.has(e.mode) ? "file" : "other";
+      return tree.dirs.has(rel) ? "dir" : null;
+    },
+    size: (rel) => tree.entries.get(rel)?.size ?? 0,
+    read: (rel) => {
+      const e = tree.entries.get(rel);
+      const b = e && blobs.get(e.oid);
+      if (!b) throw new Error(`${rel} を読んでいない`);
+      return b.toString("utf8");
+    },
+    tracked: new Set(tree.entries.keys()),
+  };
+}
+
+/**
+ * 文書ごとの最終更新日（その commit から遡って最後に触ったコミット）。**1 回の git log で全部取る。**
  * 観測時点の無い文書は、10 年前の記述でも今の事実として読まれる。
  */
-function lastTouched(dir: string): Map<string, string> {
+function lastTouched(root: string, commit: string): Map<string, string> {
   const at = new Map<string, string>();
   let out: string;
   try {
-    out = execFileSync(
-      "git",
-      ["-C", dir, "-c", "core.quotepath=false", "log", "--format=@%aI", "--name-only", "--", "*.md", "*.mdx"],
-      { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] },
-    );
+    out = git(root, [
+      "-c",
+      "core.quotepath=false",
+      "log",
+      commit,
+      "--format=@%aI",
+      "--name-only",
+      "--",
+      "*.md",
+      "*.mdx",
+    ]).toString("utf8");
   } catch {
     return at;
   }
@@ -139,48 +260,6 @@ function lastTouched(dir: string): Map<string, string> {
   }
   return at;
 }
-
-/**
- * その作業場所で git が追っている Markdown。**自前で走査しない**（gitignore と node_modules を避ける）。
- *
- * **symlink は返さない。**git は追跡された symlink を列挙し、読む側はその先を開く。
- * `docs/setup.md -> ~/.claude/knowledge.env` が 1 本あれば、無人の同期が資格情報を本文として保存する。
- * 途中のディレクトリが外への symlink の場合もあるので、realpath の前方一致で見る。
- */
-export function markdownFiles(dir: string): { files: string[]; symlinks: number } {
-  const out = execFileSync("git", ["-C", dir, "ls-files", "-z", "*.md", "*.mdx"], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  const base = fs.realpathSync(dir);
-  const files: string[] = [];
-  let symlinks = 0;
-  for (const rel of out.split("\0").filter(Boolean)) {
-    let real: string;
-    let st: fs.Stats;
-    try {
-      const full = path.join(dir, rel);
-      st = fs.lstatSync(full);
-      real = fs.realpathSync(full);
-    } catch (e) {
-      // 手元に無い（消したまま未コミット）ものだけを「無い」とする。**それ以外の失敗は投げる**
-      // — 一覧から黙って外すと、同期がその文書を消えたものとして DB から消す。
-      if (missing(e)) continue;
-      throw e;
-    }
-    if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path.sep}`))) {
-      symlinks++;
-      continue;
-    }
-    if (st.size > MAX_FILE) continue;
-    files.push(rel);
-  }
-  return { files, symlinks };
-}
-
-const missing = (e: unknown): boolean =>
-  ["ENOENT", "ENOTDIR"].includes((e as NodeJS.ErrnoException).code ?? "");
 
 export type Doc = {
   path: string;
@@ -218,46 +297,37 @@ export function projectDocs(
   return out;
 }
 
+/**
+ * 文書を行へ投影する形の版。**節の割り方・札・metadata を変えたら上げる。**本文が同じでも hash が変わり、
+ * 次の同期で全文書が書き直される（上げないと、古い形の節が残り続ける）。
+ */
+const PROJECTION = 1;
+
 /** 文書 1 本の hash。**これが同じなら、その文書の行には一切書かない。**毎日の同期で全節を書き直さない。 */
 export const docHash = (d: Doc): Buffer =>
-  sha256(JSON.stringify([d.kind, d.path, d.title, d.body, d.at, d.artifact ?? null]));
+  sha256(JSON.stringify([PROJECTION, d.kind, d.path, d.title, d.body, d.at, d.artifact ?? null]));
 
 const CHUNK = 500;
 
-/** HEAD の commit 時刻（committer）。commit の無いリポジトリは null。 */
-function headTime(dir: string): Date | null {
-  try {
-    const out = execFileSync("git", ["-C", dir, "log", "-1", "--format=%cI"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return out ? new Date(out) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * 1 つの作業場所の文書を同期する。git の一覧は完全なので、一覧から消えた文書は行ごと消す。
- * **既に入っている状態より古い作業ツリーからは書かない**（別の PC の古い clone、先に読み始めて遅れて commit した同期）。
+ * commit の tree から、入れる文書を組み立てる（DB に触らない）。`.mitos` が不正なら、どれが承認済みかを
+ * 決められないので投げる（呼び出し側は何も書かず、前回の状態を保つ）。
  */
-export async function syncDocs(client: pg.Client, projectId: number, root: string): Promise<string> {
-  const snapshotAt = new Date();
-  const headAt = headTime(root);
-  const { files, symlinks } = markdownFiles(root);
-  const at = lastTouched(root);
-  const bodies = new Map<string, string>();
-  for (const rel of files) {
-    try {
-      bodies.set(rel, fs.readFileSync(path.join(root, rel), "utf8"));
-    } catch (e) {
-      if (missing(e)) continue; // 列挙と読み取りの間に消えた
-      throw e;
-    }
-  }
-  // **本文を読み終えてから manifest を読む。**再編集は draft を書いてから本文を触るので、この順なら
-  // 編集中の本文は必ず draft として外れる。不正なら、どれが承認済みかを決められないので何も書かない。
-  const { include, problems } = selectArtifacts(root, [...bodies.keys()]);
+export function collectDocs(root: string, commit: string): { docs: Doc[]; skipped: number } {
+  const tree = treeOf(root, commit);
+  const md = [...tree.entries].filter(([rel]) => /\.mdx?$/i.test(rel));
+  const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
+  const manifests = [...tree.entries].filter(
+    ([rel, e]) => rel.startsWith(".mitos/") && rel.endsWith(".json") && FILE_MODES.has(e.mode),
+  );
+  const blobs = blobsOf(
+    root,
+    [...readable, ...manifests].map(([, e]) => e.oid),
+  );
+  const bodies = new Map(
+    readable.map(([rel, e]) => [rel, (blobs.get(e.oid) ?? Buffer.alloc(0)).toString("utf8")]),
+  );
+  const { include, problems } = selectArtifacts(snapshotOf(tree, blobs), [...bodies.keys()]);
   if (problems.length) {
     throw new Error(
       `.mitos が不正なので、この作業場所の文書を同期しない（前回の状態を保つ）:\n${problems
@@ -265,11 +335,31 @@ export async function syncDocs(client: pg.Client, projectId: number, root: strin
         .join("\n")}`,
     );
   }
-  const docs = projectDocs(bodies, include, at);
+  const skipped = md.filter(([, e]) => !FILE_MODES.has(e.mode)).length;
+  return { docs: projectDocs(bodies, include, lastTouched(root, commit)), skipped };
+}
+
+/**
+ * 1 つの作業場所の文書を同期する。tree の一覧は完全なので、一覧から消えた文書は行ごと消す。
+ *
+ * **自動で進めるのは fast-forward だけ。**前に入れた commit がこの commit の祖先でなければ（巻き戻し・force-push・
+ * この clone に無い）、どちらが正しいかを決められないので書かずに止まる。遅れて読んだ古い取得もここで止まる。
+ * 今の状態に揃えるのは人の操作（reset）だけ。
+ */
+export async function syncDocs(
+  client: pg.Client,
+  projectId: number,
+  root: string,
+  opts: { remote: boolean; reset?: boolean },
+): Promise<string> {
+  const commit = commitOf(root, opts.remote);
+  const { docs, skipped } = collectDocs(root, commit);
 
   const done = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId, "docs");
-    if (isStale(connector, snapshotAt, headAt)) return null;
+    const before = connector.headOid;
+    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))
+      return { refused: before, changed: 0, removed: 0 };
     const known = new Map(
       (
         await client.query<{ external_id: string; content_hash: Buffer }>(
@@ -366,20 +456,24 @@ export async function syncDocs(client: pg.Client, projectId: number, root: strin
       [connector.id, docs.map((d) => d.path)],
     );
     await client.query(
-      `update mitos.connector set head_at = $2, snapshot_at = $3, last_success_at = now(), last_error = null
-       where id = $1`,
-      [connector.id, headAt, snapshotAt],
+      "update mitos.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1",
+      [connector.id, commit],
     );
-    return { changed: changed.length, removed: removed.rowCount ?? 0 };
+    return { refused: null, changed: changed.length, removed: removed.rowCount ?? 0 };
   });
 
-  if (!done) return "飛ばした（この作業ツリーは、既に入っている状態より古い。pull してから同期する）";
+  if (done.refused)
+    throw new Error(
+      `前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` +
+        "fast-forward でないので書かなかった（巻き戻し・force-push・branch の切り替え・この clone に無い）。" +
+        `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``,
+    );
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
     `文書 ${docs.length} 本・節 ${sectionCount} 件`,
     `書き直した ${done.changed} 本`,
     done.removed ? `消えた ${done.removed} 本` : null,
-    symlinks ? `symlink を飛ばした ${symlinks} 件` : null,
+    skipped ? `symlink とサブモジュールを飛ばした ${skipped} 件` : null,
   ]
     .filter(Boolean)
     .join(" / ");

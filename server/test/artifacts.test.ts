@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { check, init, selectArtifacts } from "../src/artifacts.ts";
+import { check, init, selectArtifacts, workingTree } from "../src/artifacts.ts";
 
 /** 一時ディレクトリに git リポジトリを作り、終わったら消す。 */
 function withRepo(fn: (repo: string, git: (...a: string[]) => void, outside: string) => void): void {
@@ -248,7 +248,7 @@ test("同期は approved の成果物だけを選び、.mitos のそれ以外を
     write(repo, ".mitos/changes/auth/requirements.md", "# r\n");
     write(repo, ".mitos/changes/auth/design.md", "# d\n");
     write(repo, ".mitos/notes.md", "# n\n");
-    const r = selectArtifacts(repo, [
+    const r = selectArtifacts(workingTree(repo), [
       ".mitos/changes/auth/requirements.md",
       ".mitos/changes/auth/design.md",
       ".mitos/notes.md",
@@ -273,12 +273,12 @@ test("同期は追跡済みの成果物を持つ change の不正を問題とし
     manifest(repo, "a", { schema: "mitos/change/1", title: "t", requirements: { status: "approved" } });
     write(repo, ".mitos/changes/a/requirements.md", "# r\n");
     git("add", "-A");
-    assert.deepEqual(selectArtifacts(repo, [".mitos/changes/a/requirements.md"]).problems, []);
+    assert.deepEqual(selectArtifacts(workingTree(repo), [".mitos/changes/a/requirements.md"]).problems, []);
     write(repo, ".mitos/changes/a/change.json", "{");
-    const r = selectArtifacts(repo, [".mitos/changes/a/requirements.md"]);
+    const r = selectArtifacts(workingTree(repo), [".mitos/changes/a/requirements.md"]);
     assert.equal(r.include.size, 0);
     assert.match(r.problems.map((p) => p.reason).join("\n"), /JSON として読めない/);
     // 成果物を 1 つも追跡していなければ .mitos を読みにいかない
-    assert.deepEqual(selectArtifacts(repo, ["README.md"]).problems, []);
+    assert.deepEqual(selectArtifacts(workingTree(repo), ["README.md"]).problems, []);
   });
 });

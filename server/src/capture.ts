@@ -8,8 +8,8 @@
 // 「利用者の発言」として DB の 97.2% を占めた。見分けは 3 つで、どれも推測をしない。
 //   - subagent の中の turn は hook 入力に agent_id が付く
 //   - エージェントが起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
-//     CLAUDE_ENV_FILE に書いた MITOS_PARENT_SESSION を継ぐ。自分の session id と違えば子である。
-//     mitos 自身が起動する headless は MITOS_PARENT_SESSION=none を明示する
+//     CLAUDE_ENV_FILE に書いた MITOS_PARENT_SESSION を継ぐ。自分の session id と違えば子である
+//     （記録させたくない起動には、どの session とも一致しない値を置けばよい）
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
 //     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
 // 値を「その session の id」にしてあるのは、この変数が将来 hook 自身の環境へ届く仕様になっても、
@@ -21,10 +21,10 @@ import os from "node:os";
 import path from "node:path";
 import type pg from "pg";
 import { ARTIFACT_PATH } from "./artifacts.ts";
-import { connect, EMBED_MODEL, type Env, embed, inTransaction, loadEnv, vec } from "./db.ts";
-import { conversationId, type FileAction, indexesMessage, messageText } from "./knowledge.ts";
+import { connect, EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, vec } from "./db.ts";
+import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
-import { bytes, clean, head, sha256, tail, tsvector, uuidFrom } from "./text.ts";
+import { bytes, clean, head, mask, sha256, tail, tsvector, uuidFrom } from "./text.ts";
 
 // 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の待ち行列を触らない）。
 export const spoolDir = (): string => path.join(os.homedir(), ".claude", "mitos-spool");
@@ -32,7 +32,7 @@ const stateFile = (): string => path.join(os.homedir(), ".claude", "mitos-captur
 /** DB が受け付けなかった記録。消さずにここへ移し、doctor が数を出す（直してから戻せば送り直せる）。 */
 export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
 
-type Host = "claude-code" | "codex";
+type Host = Exclude<Origin, "github">;
 
 export type Spooled =
   | {
@@ -68,58 +68,28 @@ export type Spooled =
 export const MAX_MESSAGE = 128 * 1024;
 const KEEP = 8 * 1024;
 
-export function fit(body: string): { body: string; truncated: boolean; originalBytes: number } {
+/**
+ * 大きさを収め、transform（鍵の伏せ字）をかける。**伏せ字は残す部分にだけかける** — 巨大な入力の全文へ正規表現を
+ * 走らせない。切れ目をまたぐ鍵を半端に残さないよう、残す長さの倍の窓で伏せてから切る。
+ * 残した本文の大きさは、切り詰めないときは伏せた後の本文と一致させる（表の CHECK）。
+ */
+export function fit(
+  body: string,
+  transform: (s: string) => string = (s) => s,
+): { body: string; truncated: boolean; originalBytes: number } {
   const all = bytes(body);
-  if (all <= MAX_MESSAGE) return { body, truncated: false, originalBytes: all };
-  const a = head(body, KEEP);
-  const z = tail(body, KEEP);
+  if (all <= MAX_MESSAGE) {
+    const kept = transform(body);
+    return { body: kept, truncated: false, originalBytes: bytes(kept) };
+  }
+  const a = head(transform(head(body, KEEP * 2)), KEEP);
+  const z = tail(transform(tail(body, KEEP * 2)), KEEP);
   const cut = all - bytes(a) - bytes(z);
   return {
     body: `${a}\n\n[中央 ${cut.toLocaleString("en-US")} bytes を保存していない]\n\n${z}`,
     truncated: true,
     originalBytes: all,
   };
-}
-
-// 貼ってしまった鍵を DB・待ち行列・埋め込みの API へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
-// 形は 3 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報。
-// 載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
-const SECRETS: [RegExp, string][] = [
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
-  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
-  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
-  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
-  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
-  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
-  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
-  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
-  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
-  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
-  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
-  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/g, "Bearer トークン"],
-];
-// 名前で分かる代入。環境変数の形（大文字）と、設定ファイル・JSON の形（名前が鍵の語で終わる）の 2 つ。
-const ENV_ASSIGN =
-  /\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*=\s*)(["']?)[^\s"']+\3/g;
-const FIELD_ASSIGN =
-  /(["']?)\b([A-Za-z0-9_]*(?:api_?key|secret(?:_access)?_?key|access_?key|private_?key|client_?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?!\[伏せた)[^\s"',;]{6,}\4/gi;
-// URL の資格情報は、パスワードに @ を含んでも host の直前の @ まで伏せる。どこへ繋いだかは話の中身として残す。
-const URL_CREDENTIALS =
-  /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]+:)\S*@([^@\s/?#]+)/g;
-
-export function mask(text: string): string {
-  // 代入と URL を先に伏せる（値ごと消える）。残った裸の鍵を形で伏せる。
-  let out = text
-    .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
-    .replace(ENV_ASSIGN, "$1$2[伏せた]")
-    .replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]");
-  for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
-  return out;
 }
 
 function spool(record: Spooled): void {
@@ -181,12 +151,13 @@ export function isOwnerTurn(
 /**
  * AskUserQuestion で持ち主が選んだ答えと、答えに添えたメモ。質問と答えの組を持ち主の発言として残す。
  * tool_response は `{ questions, answers: {質問: 答え}, annotations: {質問: { notes }} }`（transcript の実物で確認）。
+ * **答えは tool_response からだけ取る。**tool_input はモデルが書くので、そこにある値を持ち主の答えにしない。
  */
 export function answersOf(input: HookInput): string | null {
   const response = input.tool_response as
     | { answers?: Record<string, unknown>; annotations?: Record<string, { notes?: unknown }> }
     | undefined;
-  const answers = response?.answers ?? (input.tool_input?.answers as Record<string, unknown> | undefined);
+  const answers = response?.answers;
   if (!answers || typeof answers !== "object") return null;
   const lines = Object.entries(answers).map(([q, a]) => {
     const notes = response?.annotations?.[q]?.notes;
@@ -196,16 +167,32 @@ export function answersOf(input: HookInput): string | null {
   return lines.length ? lines.join("\n\n") : null;
 }
 
+/**
+ * 自動記録が止まっているなら、持ち主へ伝える一文。**黙って待ち行列を積み続けない。**
+ * 鍵が無い・送信が失敗し続けている・DB が受け付けなかった記録がある、のどれか。
+ */
+export function captureNotice(env: Env): string | null {
+  if (!env[KEY.capture])
+    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+  const s = readState();
+  if (s.error && s.pending > 0)
+    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+  if (s.rejected > 0)
+    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+  return null;
+}
+
 /** フック 1 回ぶん。何が起きても作業は止めない（例外は呼び出し側で握る）。 */
-export function onHook(host: Host, input: HookInput): { flush: boolean } {
+export function onHook(host: Host, input: HookInput): { flush: boolean; notice?: string | null } {
   const event = input.hook_event_name;
   if (event === "SessionStart") {
+    if (!isOwnerTurn(input)) return { flush: false };
     // エージェントが Bash から起動する子へ、この session の id を継がせる。
     const file = process.env.CLAUDE_ENV_FILE;
-    if (file && input.session_id && /^[A-Za-z0-9_-]+$/.test(input.session_id) && isOwnerTurn(input)) {
+    if (file && input.session_id && /^[A-Za-z0-9_-]+$/.test(input.session_id)) {
       fs.appendFileSync(file, `export MITOS_PARENT_SESSION=${input.session_id}\n`);
     }
-    return { flush: false };
+    return { flush: false, notice: captureNotice(loadEnv()) };
   }
   if (!isOwnerTurn(input)) return { flush: false };
   const place = identify(input.cwd ?? process.cwd());
@@ -223,9 +210,9 @@ export function onHook(host: Host, input: HookInput): { flush: boolean } {
     at,
   };
   const say = (id: string, speaker: "self" | "assistant", raw: string) => {
-    const body = mask(clean(raw)).trim();
-    if (!body) return;
-    spool({ ...base, kind: "message", id, speaker, ...fit(body) });
+    const kept = fit(clean(raw).trim(), mask);
+    if (!kept.body.trim()) return;
+    spool({ ...base, kind: "message", id, speaker, ...kept });
   };
 
   if (event === "UserPromptSubmit" && input.prompt) say(`${turn}:self`, "self", input.prompt);
@@ -284,29 +271,43 @@ export function readState(): State & { pending: number; rejected: number } {
 }
 
 /**
- * 同時に 2 つ走らせない。鍵には持ち主の pid を書き、そのプロセスがもう居なければすぐ取り直す
- * （`-p` の終了で殺された送信が鍵を残すと、次の送信が黙って空振りする。実測で起きた）。
- * pid が別のプロセスに使い回された場合に備えて、5 分より古い鍵も取り直す。
+ * 同時に 2 つ走らせない。鍵は排他的に作り（`wx`）、中に持ち主の pid を書く。取れなければ中を読み、
+ * 持ち主がもう居ないか 5 分より古ければ壊して 1 度だけ取り直す（`-p` の終了で殺された送信が鍵を残すと、
+ * 次の送信が黙って空振りする。実測で起きた）。作った直後で pid をまだ書いていない鍵は、生きているものとして扱う。
  */
 function lock(): (() => void) | null {
   const file = path.join(spoolDir(), ".lock");
   fs.mkdirSync(spoolDir(), { recursive: true, mode: 0o700 });
-  const holder = Number(fs.readFileSync(file, { encoding: "utf8", flag: "a+" }) || 0);
-  const st = fs.statSync(file, { throwIfNoEntry: false });
-  const alive = (() => {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      return holder > 0 && process.kill(holder, 0);
-    } catch {
-      return false;
+      fs.writeFileSync(file, String(process.pid), { flag: "wx", mode: 0o600 });
+      // 自分の鍵だけを外す（古いと見なされて別の送信に取り直された後なら、その鍵を消さない）。
+      return () => {
+        try {
+          if (fs.readFileSync(file, "utf8") === String(process.pid)) fs.rmSync(file, { force: true });
+        } catch {
+          // もう無い
+        }
+      };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
     }
-  })();
-  if (!alive || (st && Date.now() - st.mtimeMs > 5 * 60_000)) fs.rmSync(file, { force: true });
-  try {
-    fs.writeFileSync(file, String(process.pid), { flag: "wx" });
-    return () => fs.rmSync(file, { force: true });
-  } catch {
-    return null;
+    const st = fs.statSync(file, { throwIfNoEntry: false });
+    if (!st) continue;
+    const holder = Number(fs.readFileSync(file, "utf8") || 0);
+    const fresh = Date.now() - st.mtimeMs < 5 * 60_000;
+    const alive = (() => {
+      if (holder <= 0) return fresh; // 書きかけ
+      try {
+        return process.kill(holder, 0);
+      } catch {
+        return false;
+      }
+    })();
+    if (alive && fresh) return null;
+    fs.rmSync(file, { force: true });
   }
+  return null;
 }
 
 const BATCH = 500;
@@ -430,8 +431,14 @@ async function write(
   });
 }
 
-/** DB が中身を受け付けなかった（型・値の域・制約）。送り直しても同じ結果になる。 */
-const rejected = (e: unknown): boolean => /^2[23]/.test(String((e as { code?: unknown }).code ?? ""));
+/**
+ * その記録が原因の失敗か。DB が SQLSTATE を返したものは、接続・資源・停止（08 / 53 / 57 / 58）を除いて
+ * 送り直しても同じ結果になる（値の域・制約・索引の上限など）。SQLSTATE の無い失敗（接続断）は束ごと送り直す。
+ */
+const rejected = (e: unknown): boolean => {
+  const code = String((e as { code?: unknown }).code ?? "");
+  return /^[0-9A-Z]{5}$/.test(code) && !/^(08|53|57|58)/.test(code);
+};
 
 /**
  * 待ち行列を DB へ送る。**鍵は capture（追記だけ）。**同じものを 2 回送っても行は増えない。
@@ -509,8 +516,9 @@ export async function flush(
       );
     } catch (e) {
       if (!rejected(e)) throw e;
-      // 記録の順（名前は時刻順）に 1 件ずつ。発言がファイルより先に入るので、ファイルの結び先が在る。
-      for (const x of known) {
+      // 1 件ずつ。発言を先に送り、ファイルは後に送る（ファイルは同じ turn の発言へ結ぶので、順が逆だと結び先が無い）。
+      const ordered = [...known].sort((a, b) => Number(a.r.kind === "file") - Number(b.r.kind === "file"));
+      for (const x of ordered) {
         try {
           sent += await write(db, [x.r], projects, vectorOf);
         } catch (e2) {
@@ -519,9 +527,19 @@ export async function flush(
         }
       }
     }
+    // 持ち主の発言が弾かれた turn のファイル記録も一緒に残す（結ぶ先が無いので送っても 0 行になる）。
+    const lost = new Set(bad.flatMap((x) => (x.r.kind === "message" ? [`${x.r.session}\0${x.r.turn}`] : [])));
+    for (const x of known)
+      if (x.r.kind === "file" && lost.has(`${x.r.session}\0${x.r.turn}`) && !bad.includes(x)) bad.push(x);
     if (bad.length) {
       fs.mkdirSync(rejectedDir(), { recursive: true, mode: 0o700 });
-      for (const x of bad) fs.renameSync(path.join(dir, x.name), path.join(rejectedDir(), x.name));
+      for (const x of bad) {
+        try {
+          fs.renameSync(path.join(dir, x.name), path.join(rejectedDir(), x.name));
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // 並んだ送信が先に動かした
+        }
+      }
     }
     const moved = new Set(bad.map((x) => x.name));
     for (const x of records) if (!moved.has(x.name)) fs.rmSync(path.join(dir, x.name), { force: true });
@@ -547,7 +565,9 @@ async function main(): Promise<void> {
   const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
-  const { flush: send } = onHook(host, JSON.parse(raw || "{}") as HookInput);
+  const { flush: send, notice } = onHook(host, JSON.parse(raw || "{}") as HookInput);
+  // systemMessage は持ち主に見える警告で、モデルの文脈には入らない。
+  if (notice) process.stdout.write(JSON.stringify({ systemMessage: notice }));
   // 送信は session から切り離したプロセスで行う。フックのプロセスのままだと、session の終わりに
   // ホストが殺し（`-p` では公式にそうなる）、最後の turn が次の送信まで届かない。
   if (send)
