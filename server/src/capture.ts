@@ -12,12 +12,13 @@
 //     （記録させたくない起動には、どの session とも一致しない値を置けばよい）
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
 //     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
-//   - 持ち主の session の中でも、背景タスクの完了通知と、subagent・別の session からの伝言が UserPromptSubmit に
+//   - 持ち主の session の中でも、背景タスクの完了・停止の通知と、subagent・別の session からの伝言が UserPromptSubmit に
 //     届く（通知は 2.1.269 で実測）。決まった形（INJECTED）で外す
 // 値を「その session の id」にしてあるのは、この変数が将来 hook 自身の環境へ届く仕様になっても、
 // 持ち主の session では自分の id と一致して記録が止まらないようにするため。
 
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -149,28 +150,28 @@ export function isOwnerTurn(
 
 /**
  * 持ち主が打たずに届く prompt の形。hook の入力には出自の印が無い（transcript には付く。2.1.269 で実測）ので、形で外す。
- * 手元の transcript で持ち主以外の印が付いていた形、待ち行列に入った subagent の伝言、SendMessage の説明にある
- * 別 session からの伝言の包み。**載っていない形は持ち主の発言として入る。**
+ * 背景タスクの完了通知、背景 agent を止めた通知、別の session・subagent・teammate からの伝言で、どれも Claude Code
+ * 2.1.270 の実行ファイルにある文面（完了通知・止めた通知・伝言は手元の transcript にも実物がある）。
+ * **載っていない形は持ち主の発言として入る**（`/loop` で起きたときの prompt も、印の無い本文だけが届くので外せない）。
  */
 const INJECTED = [
   /^<task-notification>/,
-  /^\d+ background agents were stopped by the user:/,
-  /^Another Claude session sent a message/,
-  /^<cross-session-message[\s>]/,
-  /^<agent-message[\s>]/,
+  /^(?:\d+ background agents were|Background agent ".*" was) stopped by the user/,
+  /^(?:Another Claude|A peer) session sent a message/,
+  /^<(?:cross-session|teammate|agent)-message[\s>]/,
 ];
 
 /**
- * key（`<turn>:self` か `<turn>:assistant`）に番号を付けた記録の id。最初は key のまま、2 つ目から `<key>:1`。
- * **1 つの turn の id に発言も応答も複数届く。**作業中に打った発言は走っている turn の id のまま届き
- * （transcript で 148 件中 143 件）、別の session からの伝言で始まる turn は直前の turn の id を使い回す（127 件すべて）。
- * turn の id だけで作ると一意制約でぶつかり、後から届いた方が黙って捨てられる。番号は印を排他的に作って取る（`wx`）
- * ので、同時に届いた 2 つが同じ番号にならない。印は turn の間だけ要る。7 日より古いものは消す。
+ * 持ち主の発言の id。turn の最初の発言は `<turn>:self`（その turn で触ったファイルの結び先）、2 つ目から `<turn>:self:1`。
+ * **作業中に打った発言は、走っている turn の id のまま届く**（transcript で 148 件中 143 件）。turn の id だけで作ると
+ * 最初の発言と一意制約でぶつかり、後から届いた方が黙って捨てられる。番号は印を排他的に作って取る（`wx`）ので、
+ * 同時に届いた 2 つが同じ番号にならない。印は 7 日で消す（同じ turn の id で届いた発言は、最初の発言から最大 12 分後
+ * だった。全 transcript の 59 件）。
  */
-function nextId(session: string, key: string): string {
+function selfId(session: string, turn: string): string {
   const dir = path.join(spoolDir(), "turns");
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const mark = uuidFrom(session, key);
+  const mark = uuidFrom(session, turn);
   for (let n = 0; ; n++) {
     try {
       fs.writeFileSync(path.join(dir, `${mark}.${n}`), "", { flag: "wx", mode: 0o600 });
@@ -178,13 +179,13 @@ function nextId(session: string, key: string): string {
       if ((e as NodeJS.ErrnoException).code === "EEXIST") continue;
       throw e;
     }
-    if (n > 0) return `${key}:${n}`;
+    if (n > 0) return `${turn}:self:${n}`;
     const old = Date.now() - 7 * 86_400_000;
     for (const f of fs.readdirSync(dir)) {
       const st = fs.statSync(path.join(dir, f), { throwIfNoEntry: false });
       if (st && st.mtimeMs < old) fs.rmSync(path.join(dir, f), { force: true });
     }
-    return key;
+    return `${turn}:self`;
   }
 }
 
@@ -249,19 +250,21 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     turn,
     at,
   };
-  // 番号は残すと決まってから取る（空の本文が `<turn>:self` を取ると、その turn のファイルの結び先が無くなる）。
-  const say = (key: string, speaker: "self" | "assistant", raw: string) => {
+  const say = (id: string, speaker: "self" | "assistant", raw: string) => {
     const kept = fit(clean(raw).trim());
     if (!kept.body.trim()) return;
-    spool({ ...base, kind: "message", id: nextId(base.session, key), speaker, ...kept });
+    spool({ ...base, kind: "message", id, speaker, ...kept });
   };
 
   if (event === "UserPromptSubmit" && input.prompt) {
     const prompt = input.prompt.trimStart();
-    if (!INJECTED.some((r) => r.test(prompt))) say(`${turn}:self`, "self", prompt);
+    if (!INJECTED.some((r) => r.test(prompt))) say(selfId(base.session, turn), "self", prompt);
   }
   if (event === "Stop") {
-    if (input.last_assistant_message) say(`${turn}:assistant`, "assistant", input.last_assistant_message);
+    // 応答は同じ turn の id で何度も届く（別の session からの伝言で始まる turn は、直前の turn の id を使い回す。
+    // transcript で 127 件すべて）。1 つずつ別の id にする。
+    if (input.last_assistant_message)
+      say(`${turn}:assistant:${randomUUID()}`, "assistant", input.last_assistant_message);
     return { flush: true };
   }
   if (event === "PostToolUse") {
@@ -454,8 +457,9 @@ async function write(
         EMBED_MODEL,
       ],
     );
-    // その turn の id の最初の持ち主の発言へ結ぶ。完了通知から始まった turn は新しい id になり、持ち主が何も打たなければ
-    // 結ぶ先が無いので捨てる。伝言から始まった turn は直前の id を使い回すので、直前の持ち主の発言へ結ばれる。
+    // その turn の id の最初の持ち主の発言（`<turn>:self`）へ結ぶ。その発言がまだ DB に無ければ結ぶ先が無いので捨てる
+    // （完了通知から始まった turn で、持ち主が打つ前に触ったファイルなど）。伝言から始まった turn は直前の id を使い回すので、
+    // 直前の持ち主の発言へ結ばれる。
     const files = batch.flatMap((r) => {
       const p = r.kind === "file" ? projects.get(r.project) : undefined;
       if (r.kind !== "file" || !p) return [];

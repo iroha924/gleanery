@@ -24017,6 +24017,7 @@ function init(dir) {
 
 // server/src/capture.ts
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs4 from "node:fs";
 import os3 from "node:os";
 import path4 from "node:path";
@@ -24501,15 +24502,14 @@ function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoi
 }
 var INJECTED = [
   /^<task-notification>/,
-  /^\d+ background agents were stopped by the user:/,
-  /^Another Claude session sent a message/,
-  /^<cross-session-message[\s>]/,
-  /^<agent-message[\s>]/
+  /^(?:\d+ background agents were|Background agent ".*" was) stopped by the user/,
+  /^(?:Another Claude|A peer) session sent a message/,
+  /^<(?:cross-session|teammate|agent)-message[\s>]/
 ];
-function nextId(session, key) {
+function selfId(session, turn) {
   const dir = path4.join(spoolDir(), "turns");
   fs4.mkdirSync(dir, { recursive: true, mode: 448 });
-  const mark = uuidFrom(session, key);
+  const mark = uuidFrom(session, turn);
   for (let n = 0;; n++) {
     try {
       fs4.writeFileSync(path4.join(dir, `${mark}.${n}`), "", { flag: "wx", mode: 384 });
@@ -24519,14 +24519,14 @@ function nextId(session, key) {
       throw e;
     }
     if (n > 0)
-      return `${key}:${n}`;
+      return `${turn}:self:${n}`;
     const old = Date.now() - 7 * 86400000;
     for (const f of fs4.readdirSync(dir)) {
       const st = fs4.statSync(path4.join(dir, f), { throwIfNoEntry: false });
       if (st && st.mtimeMs < old)
         fs4.rmSync(path4.join(dir, f), { force: true });
     }
-    return key;
+    return `${turn}:self`;
   }
 }
 function answersOf(input2) {
@@ -24585,20 +24585,20 @@ function onHook(host, input2) {
     turn,
     at
   };
-  const say = (key, speaker, raw) => {
+  const say = (id, speaker, raw) => {
     const kept = fit(clean(raw).trim());
     if (!kept.body.trim())
       return;
-    spool({ ...base, kind: "message", id: nextId(base.session, key), speaker, ...kept });
+    spool({ ...base, kind: "message", id, speaker, ...kept });
   };
   if (event === "UserPromptSubmit" && input2.prompt) {
     const prompt = input2.prompt.trimStart();
     if (!INJECTED.some((r) => r.test(prompt)))
-      say(`${turn}:self`, "self", prompt);
+      say(selfId(base.session, turn), "self", prompt);
   }
   if (event === "Stop") {
     if (input2.last_assistant_message)
-      say(`${turn}:assistant`, "assistant", input2.last_assistant_message);
+      say(`${turn}:assistant:${randomUUID()}`, "assistant", input2.last_assistant_message);
     return { flush: true };
   }
   if (event === "PostToolUse") {

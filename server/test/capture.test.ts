@@ -293,10 +293,14 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   const messages = got.filter((x) => x.kind === "message");
   const files = got.filter((x) => x.kind === "file");
   assert.deepEqual(
-    messages.map((m) => (m.kind === "message" ? [m.id, m.speaker, m.project] : [])),
+    messages.map((m) =>
+      m.kind === "message"
+        ? [m.id.replace(/:assistant:[0-9a-f-]{36}$/, ":assistant:<uuid>"), m.speaker, m.project]
+        : [],
+    ),
     [
       ["p1:self", "self", "git:github.com/o/r"],
-      ["p1:assistant", "assistant", "git:github.com/o/r"],
+      ["p1:assistant:<uuid>", "assistant", "git:github.com/o/r"],
     ],
   );
   const said = messages[0];
@@ -310,7 +314,7 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   );
 });
 
-test("通知と伝言は持ち主の発言にせず、同じ turn の id に届いた発言と応答は番号を付けて全部残す", () => {
+test("通知と伝言は持ち主の発言にせず、同じ turn の id に届いた発言と応答は別の id で全部残す", () => {
   reset();
   const base = { session_id: "s1", cwd: repoDir };
   const prompt = (prompt_id: string, prompt: string) =>
@@ -329,7 +333,10 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
     '<agent-message from="review-security">指摘は 3 件</agent-message>',
     "Another Claude session sent a message:\n終わった",
     '<cross-session-message from="codex">終わった</cross-session-message>',
+    '<teammate-message from="tester">終わった</teammate-message>',
     '3 background agents were stopped by the user: "あなたは調査担当です"',
+    'Background agent "あなたは調査担当です" was stopped by the user.',
+    "A peer session sent a message while you were working:\n終わった",
     "やっぱり role も分けて",
     "急ぎで",
   ])
@@ -338,17 +345,16 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
   // 別の session からの伝言で始まる turn は、直前の turn の id を使い回す。
   prompt("p1", "Another Claude session sent a message while you were working:\n確認して");
   stop("伝言も確かめた。");
-  // 通知から始まった turn では、途中で打った発言が最初の発言（ファイルの結び先）になる。空の本文は番号を取らない。
+  // 通知から始まった turn では、途中で打った発言が最初の発言（ファイルの結び先）になる。
   prompt("p2", "  <task-notification>\n</task-notification>");
-  prompt("p2", " \n ");
   prompt("p2", "CI の結果を見て");
+  const messages = spooled().flatMap((m) => (m.kind === "message" ? [m] : []));
+  assert.equal(new Set(messages.map((m) => m.id)).size, messages.length, "同じ id は一意制約で 1 件に潰れる");
   assert.deepEqual(
-    spooled()
-      .map((m) => (m.kind === "message" ? [m.id, m.body] : []))
-      .sort(),
+    messages.map((m) => [m.id.replace(/:assistant:[0-9a-f-]{36}$/, ":assistant:<uuid>"), m.body]).sort(),
     [
-      ["p1:assistant", "作り直した。"],
-      ["p1:assistant:1", "伝言も確かめた。"],
+      ["p1:assistant:<uuid>", "伝言も確かめた。"],
+      ["p1:assistant:<uuid>", "作り直した。"],
       ["p1:self", "DB を作り直す"],
       ["p1:self:1", "やっぱり role も分けて"],
       ["p1:self:2", "急ぎで"],
