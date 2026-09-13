@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "mitos",
-  "version": "0.11.19",
+  "version": "0.11.20",
   "description": "会話を自動で残し、過去の決定・棄却した案・制約・発言を引く。μίτος = 辿れば戻れる糸",
   "author": {
     "name": "iroha924",

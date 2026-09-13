@@ -24191,15 +24191,18 @@ function agentReport(input2) {
   const prompt = input2.prompt ?? "";
   if (input2.hook_event_name !== "UserPromptSubmit" || !/^<task-notification[\s>]/.test(prompt.trimStart()))
     return null;
-  const start = prompt.indexOf("<result>");
-  const end = prompt.indexOf("</result>", start);
-  if (start < 0 || end < 0)
+  const open2 = /^<result>/m.exec(prompt);
+  if (!open2)
     return null;
-  const report = visible(fromEntities(prompt.slice(start + "<result>".length, end))).trim();
+  const start = open2.index + "<result>".length;
+  const end = prompt.indexOf("</result>", start);
+  if (end < 0)
+    return null;
+  const report = visible(fromEntities(prompt.slice(start, end))).trim();
   if (!report)
     return null;
-  const summary = prompt.slice(0, start).match(/<summary>([^<]*)<\/summary>/)?.[1];
-  const head2 = summary ? visible(fromEntities(summary)).trim() : "agent の報告";
+  const summary = prompt.slice(0, open2.index).match(/<summary>([^<]*)<\/summary>/)?.[1];
+  const head2 = summary ? visible(fromEntities(summary)).replace(/\s+/g, " ").trim() : "agent の報告";
   return `${head2}
 ${report.split(`
 `).map((line) => `│ ${line}`).join(`
@@ -24207,7 +24210,7 @@ ${report.split(`
 }
 var ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
 var fromEntities = (s) => s.replace(/&(lt|gt|amp|quot|#39);/g, (whole, name) => ENTITIES[name] ?? whole);
-var visible = (s) => s.replace(/\r\n?|[\p{Zl}\p{Zp}]/gu, `
+var visible = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
 `).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 function answersOf(input2) {
   const response = input2.tool_response;

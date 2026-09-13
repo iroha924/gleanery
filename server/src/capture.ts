@@ -211,14 +211,18 @@ export function agentReport(input: HookInput): string | null {
   const prompt = input.prompt ?? "";
   if (input.hook_event_name !== "UserPromptSubmit" || !/^<task-notification[\s>]/.test(prompt.trimStart()))
     return null;
-  const start = prompt.indexOf("<result>");
+  // 本文は行頭の `<result>` から最初の `</result>` まで（完了通知は `<result>` を行頭に置く。summary の中の
+  // `<result>` を本文の始まりにしない）。見出しはその前の summary からだけ取る（本文の summary を見出しにしない）。
+  const open = /^<result>/m.exec(prompt);
+  if (!open) return null;
+  const start = open.index + "<result>".length;
   const end = prompt.indexOf("</result>", start);
-  if (start < 0 || end < 0) return null;
-  const report = visible(fromEntities(prompt.slice(start + "<result>".length, end))).trim();
+  if (end < 0) return null;
+  const report = visible(fromEntities(prompt.slice(start, end))).trim();
   if (!report) return null;
-  // 見出しは本文より前の summary からだけ取る（本文に書かれた summary を見出しにしない）。
-  const summary = prompt.slice(0, start).match(/<summary>([^<]*)<\/summary>/)?.[1];
-  const head = summary ? visible(fromEntities(summary)).trim() : "agent の報告";
+  const summary = prompt.slice(0, open.index).match(/<summary>([^<]*)<\/summary>/)?.[1];
+  // 見出しは印を付けない 1 行なので、改行を空白にまとめる（印の無い行を作らせない）。
+  const head = summary ? visible(fromEntities(summary)).replace(/\s+/g, " ").trim() : "agent の報告";
   return `${head}\n${report
     .split("\n")
     .map((line) => `│ ${line}`)
@@ -232,10 +236,10 @@ const fromEntities = (s: string): string =>
 
 /**
  * 画面に出す文字だけにする。報告は他人の diff を引用するので、端末を乱す制御文字と、見た目を偽れる書式文字（双方向の
- * 上書き、ゼロ幅、タグ文字）を落とし、改行（CR と行区切り）は LF にする。文字の結合に要る ZWJ・ZWNJ は残す。
+ * 上書き、ゼロ幅、タグ文字）を落とし、改行（CR・VT・FF・NEL・行区切り）は LF にする。文字の結合に要る ZWJ・ZWNJ は残す。
  */
 const visible = (s: string): string =>
-  s.replace(/\r\n?|[\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+  s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 
 /**
  * AskUserQuestion で持ち主が選んだ答えと、答えに添えたメモ。質問と答えの組を持ち主の発言として残す。

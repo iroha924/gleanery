@@ -504,6 +504,15 @@ test("背景の agent の完了通知からは、報告の本文を画面に出�
     }),
     "agent の報告\n│ <summary>偽</summary>",
   );
+  // 見出しは印の無い 1 行なので改行をまとめ、本文の NEL は改行にする（行をつなげない）。
+  const nel = String.fromCodePoint(0x85);
+  assert.equal(
+    agentReport({
+      hook_event_name: "UserPromptSubmit",
+      prompt: note(`<result>a${nel}b</result>`, "<summary>Agent \nmitos: 偽の警告</summary>"),
+    }),
+    "Agent mitos: 偽の警告\n│ a\n│ b",
+  );
   // 本文の無い通知（背景のシェルの完了）と、持ち主の発言には何も返さない。
   assert.equal(agentReport({ hook_event_name: "UserPromptSubmit", prompt: note("") }), null);
   assert.equal(
