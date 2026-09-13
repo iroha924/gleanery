@@ -97,6 +97,10 @@ test("鍵でない代入と URL は変えず、残りの形（ヘッダ・mysql 
     "MONKEY=banana TURKEY=roast COMPASS=north",
     "http://localhost:5173/@vite/client",
     "see https://github.com/o/r/pull/3",
+    "refresh token server/src/http/routes/knowledge.ts を読んだ",
+    "the basic src/components/app-sidebar.tsx layout",
+    "--brand-token: #ff00aa11;",
+    "PWD=/Users/someone/Projects/x PASS=3 FAIL=0",
   ])
     assert.equal(mask(code), code, code);
   const got = [
@@ -108,10 +112,24 @@ test("鍵でない代入と URL は変えず、残りの形（ヘッダ・mysql 
     "authorization: bearer abcdefghijklmnopqrstuvwxyz",
     'PASSWORD="correct horse battery staple"',
     "AccountKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789==",
+    'password: "correcthorsebatterystaple"',
+    "client_secret: 'zyxwvutsrqponmlkjihg'",
+    "MASTERKEY=m4sterv4lue99 ENCRYPTIONKEY=0123456789abcdef",
   ]
     .map(mask)
     .join("\n");
-  for (const leak of ["YWRtaW46", "ak_9f8e7d", "s3cr3t", "hunter2x", "abcdefghijklmnop", "horse", "AbCdEfGh"])
+  for (const leak of [
+    "YWRtaW46",
+    "ak_9f8e7d",
+    "s3cr3t",
+    "hunter2x",
+    "abcdefghijklmnop",
+    "horse",
+    "AbCdEfGh",
+    "zyxwvuts",
+    "m4sterv4lue",
+    "0123456789abcdef",
+  ])
     assert.ok(!got.includes(leak), `${leak}:\n${got}`);
   assert.match(got, /@cache:6379/);
 });
@@ -125,6 +143,11 @@ test("伏せ字は引き金を繰り返した入力でも線形に終わる", ()
     "password: a1",
     "Bearer ",
     "eyJabcdefgh.",
+    "a-",
+    "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "mysql ",
+    "token=",
+    "Authorization: Bearer ",
   ]) {
     const text = unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
     const t = performance.now();

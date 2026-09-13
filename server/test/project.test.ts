@@ -109,6 +109,9 @@ test("名前の対応表が壊れていたら読み飛ばさずに止め、remot
 // 同じ remote のクローンが 2 つあると、並び順で先に来た方へ黙って同期してしまう。
 test("同じ key の置き場所が 2 つあれば選ばない", () => {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-roots-")));
+  // この PC の名前の対応表を読ませない（名前を付けた作業場所が found に混ざる）。
+  const realHome = process.env.HOME;
+  process.env.HOME = tmp;
   try {
     for (const n of ["one", "two"]) {
       const d = path.join(tmp, n);
@@ -131,6 +134,7 @@ test("同じ key の置き場所が 2 つあれば選ばない", () => {
     ]);
     assert.deepEqual([...localRoots(["/no/such/dir"]).found], []);
   } finally {
+    process.env.HOME = realHome;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });

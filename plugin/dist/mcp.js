@@ -39528,6 +39528,8 @@ function messageFilters(q, p) {
   const w = ["m.lexemes is not null"];
   if (q.projects)
     w.push(`c.project_id = any(${p(q.projects)})`);
+  if (q.sessionsOnly)
+    w.push("c.origin <> 'github'");
   if (q.who === "me")
     w.push(SELF);
   else if (q.who === "others")
@@ -39691,13 +39693,13 @@ ${renderHits(w.walls, Math.floor((budget - bytes(lines)) / 2))}` : null
 
 `);
 }
-var REF = /^(?:[ksw]:\d{1,19}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+var REF = /^(?:[ksw]:\d{1,18}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 async function read(db, refs, budget, opts = {}) {
   const each = Math.floor(budget / Math.max(refs.length, 1));
   const scope = opts.projects ?? null;
   const out = [];
   for (const ref of refs) {
-    if (!REF.test(ref) || !ref.startsWith("m:") && BigInt(ref.slice(2)) > 9223372036854775807n) {
+    if (!REF.test(ref)) {
       out.push(`${ref}: 読めない参照（k: / s: / w: は数字、m: は uuid）`);
       continue;
     }

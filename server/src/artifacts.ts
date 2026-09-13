@@ -18,7 +18,7 @@ const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  */
 export const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
 /** manifest は数行の JSON。上限が無いと、巨大なファイル 1 つで日次同期のプロセスごと落ちる（OOM）。 */
-const MAX_MANIFEST = 64 * 1024;
+export const MAX_MANIFEST = 64 * 1024;
 
 export type ArtifactKind = "requirements" | "design";
 export type Artifact = { kind: ArtifactKind; change: string; changeTitle: string };

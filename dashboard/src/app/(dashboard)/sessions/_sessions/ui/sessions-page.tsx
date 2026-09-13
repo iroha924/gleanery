@@ -28,7 +28,14 @@ import { MarkdownText } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,7 +51,6 @@ import {
   loadSessions,
   type SearchMode,
   type SessionArtifact,
-  type SessionDetail,
   type SessionKnowledge,
   type SessionMessage,
   type SessionRow,
@@ -454,7 +460,9 @@ function ArtifactCard({ artifact, onOpen }: { artifact: SessionArtifact; onOpen:
       </span>
       <span className="font-medium leading-snug">{artifact.title}</span>
       <span className="font-mono text-xs break-all text-muted-foreground">{artifact.path}</span>
-      <span className="text-xs text-muted-foreground tabular-nums">同期 {formatDate(artifact.syncedAt)}</span>
+      <span className="text-xs text-muted-foreground tabular-nums">
+        取り込み {formatDate(artifact.syncedAt)}
+      </span>
     </button>
   );
 }
@@ -471,7 +479,7 @@ function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | nul
                   {ARTIFACT_KINDS[artifact.kind].label}
                 </Badge>
                 <span className="text-sm text-muted-foreground tabular-nums">
-                  同期 {formatDate(artifact.syncedAt)}
+                  取り込み {formatDate(artifact.syncedAt)}
                 </span>
               </div>
               <DialogTitle className="text-left">{artifact.title}</DialogTitle>
@@ -521,17 +529,16 @@ function ResumeCommand({ command }: { command: string }) {
   );
 }
 
-function titleOf(detail: SessionDetail): string {
-  const first = detail.messages
-    .find((m) => m.speaker === "self")
-    ?.body.split("\n")[0]
-    ?.slice(0, 160);
-  return first || detail.work[0]?.title || "（持ち主の発言なし）";
-}
-
 function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
   const [selectedSection, setSelectedSection] = useState<Section | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<SessionArtifact | null>(null);
+  // ブラウザの戻るで閉じると onOpenChange が来ない。session が変わったら、開いていた節と成果物を閉じる。
+  const [shownId, setShownId] = useState(id);
+  if (shownId !== id) {
+    setShownId(id);
+    setSelectedSection(null);
+    setSelectedArtifact(null);
+  }
   const detail = useQuery({
     queryKey: ["session", id],
     queryFn: () => loadSession(id as string),
@@ -561,7 +568,9 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                 <Badge variant="info">{hostLabel(d.origin)}</Badge>
                 <span className="text-sm text-muted-foreground">{d.project}</span>
               </div>
-              <DialogTitle className="line-clamp-2 text-left text-lg leading-snug">{titleOf(d)}</DialogTitle>
+              <DialogTitle className="line-clamp-2 text-left text-lg leading-snug">
+                {d.title?.split("\n")[0] ?? "（持ち主の発言なし）"}
+              </DialogTitle>
               <DialogDescription className="space-y-1 text-left">
                 <span className="block font-mono text-sm break-all">Session ID: {d.sessionId}</span>
                 <span className="flex flex-wrap gap-x-4 gap-y-1">
@@ -872,7 +881,8 @@ function SessionRowView({
 }
 
 export function SessionsPage() {
-  const { projectIds } = useProject();
+  const { target } = useProject();
+  const projectId = target ? Number(target) : undefined;
   const router = useRouter();
   const searchParams = useSearchParams();
   const selected = searchParams.get("session");
@@ -881,7 +891,7 @@ export function SessionsPage() {
   const mode: SearchMode = isMode(requestedMode) ? requestedMode : "knowledge";
   const requestedPage = Number(searchParams.get("page") ?? "1");
   const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  const scopeKey = projectIds?.join(",") ?? "all";
+  const scopeKey = projectId ?? "all";
   const previousScope = useRef(scopeKey);
   const restoreRow = useRef<string | null>(null);
   const hrefFor = (nextPage: number, session?: string): string => {
@@ -907,12 +917,12 @@ export function SessionsPage() {
     router.push(hrefFor(next), { scroll: false });
   };
   const sessions = useQuery({
-    queryKey: ["sessions", projectIds, page],
-    queryFn: () => loadSessions(page, projectIds),
+    queryKey: ["sessions", projectId, page],
+    queryFn: () => loadSessions(page, projectId),
   });
   const results = useQuery({
-    queryKey: ["session-search", query, mode, projectIds],
-    queryFn: () => searchSessions(query as string, mode, projectIds),
+    queryKey: ["session-search", query, mode, projectId],
+    queryFn: () => searchSessions(query as string, mode, projectId),
     enabled: query !== undefined,
     staleTime: 60_000,
   });
@@ -952,7 +962,7 @@ export function SessionsPage() {
 
   if (sessions.isPending) return <Skeleton className="h-96 w-full" />;
   if (sessions.error) return <p className="text-base text-dont">{String(sessions.error)}</p>;
-  const showProject = projectIds === undefined;
+  const showProject = projectId === undefined;
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[84rem] flex-col gap-4">
@@ -975,6 +985,18 @@ export function SessionsPage() {
         ) : (
           <SearchResults found={results.data} onOpen={openSession} />
         )
+      ) : sessions.data.items.length === 0 && sessions.data.total > 0 ? (
+        <Empty className="min-h-80 border-0">
+          <EmptyHeader>
+            <EmptyTitle>{sessions.data.page} ページ目はありません</EmptyTitle>
+            <EmptyDescription>セッションは全 {sessions.data.pages} ページです。</EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button type="button" variant="outline" size="sm" onClick={() => goToPage(sessions.data.pages)}>
+              最後のページへ
+            </Button>
+          </EmptyContent>
+        </Empty>
       ) : sessions.data.items.length === 0 ? (
         <Empty className="min-h-80 border-0">
           <EmptyHeader>
@@ -1016,7 +1038,7 @@ export function SessionsPage() {
         </div>
       )}
 
-      {!query && sessions.data.total > 0 && (
+      {!query && sessions.data.items.length > 0 && (
         <nav className="flex shrink-0 items-center justify-between gap-4" aria-label="セッション一覧のページ">
           <p className="text-sm text-muted-foreground">
             {sessions.data.total} 件中 {(sessions.data.page - 1) * sessions.data.pageSize + 1}〜

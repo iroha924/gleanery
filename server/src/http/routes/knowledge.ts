@@ -82,7 +82,7 @@ const app = new Hono()
     const projects = project ? [project] : null;
     const hits: Hit[] =
       mode === "said"
-        ? await searchMessages(pool, env, { question: q, projects, who: "me", limit: 20 })
+        ? await searchMessages(pool, env, { question: q, projects, who: "me", sessionsOnly: true, limit: 20 })
         : await searchKnowledge(pool, env, { question: q, projects, avoid: mode === "avoid", limit: 20 });
     if (hits.length === 0) return c.json([]);
     const [table, id] = mode === "said" ? ["mitos.message", "uuid"] : ["mitos.knowledge", "bigint"];
@@ -127,7 +127,7 @@ const app = new Hono()
     const pool = await db();
     const head = await pool.query(
       `select c.id, c.origin, c.external_id as "sessionId", c.branch, c.started_at as "startedAt",
-              p.id::int as "projectId", p.name as project
+              p.id::int as "projectId", p.name as project, ${TITLE} as title
        from mitos.conversation c join mitos.project p on p.id = c.project_id
        where c.id = $1 and c.origin <> 'github'`,
       [id],

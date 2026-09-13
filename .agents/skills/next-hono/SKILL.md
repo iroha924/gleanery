@@ -30,9 +30,10 @@ Next.jsは `dashboard/node_modules/next/dist/docs/` の対象ガイドを読む�
 - Honoのrouteは全部`/api/*`に置き、Clerkのsession tokenと`MITOS_ALLOWED_USER_ID`の一致を先に通す。
   公開の例外を作らない
 - 画面のAPIは`KNOWLEDGE_DB_URL_RO`（読むだけ）で繋ぐ。書き込みの鍵を`server/src/http/`へ持ち込まない
-- 記録を読む入口は作業場所で絞る。チャット（`/api/chat`）、会議の返答案（`/api/reply`）、全文
+- AIが答えを組み立てる入口は作業場所で絞る。チャット（`/api/chat`）、会議の返答案（`/api/reply`）、全文
   （`/api/read`）は`projects`を必須にし、範囲の外の参照は「無い」と返す。範囲の無指定を「全部」と
-  読まない — 別の仕事の決定が答えに混ざる
+  読まない — 別の仕事の決定が答えに混ざる。人が並べて見る一覧と検索（`/api/sessions`）は「すべて」を許し、
+  各行に作業場所を出す
 - セッション詳細の成果物は、そのsessionの`message_file`のpathと、同じ作業場所で同期された
   `source_item.path`が一致するものだけを返す。任意のpathや別の作業場所の文書を指定して本文を取れる
   入口を作らない

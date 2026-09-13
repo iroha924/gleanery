@@ -101,8 +101,9 @@ export function tail(s: string, n: number): string {
 export const clean = (s: string): string => s.replaceAll("\u0000", "");
 
 // 貼ってしまった鍵を DB・待ち行列・埋め込みの API へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
-// 形は 3 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報。
-// 載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
+// 形は 5 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報、認証ヘッダの値、
+// `mysql -p` のパスワード。載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
+// **どれも入力の長さに対して線形で終わる形に保つ。**フックは 128 KiB までの発言を、trace は上限の無い本文を通す。
 const SECRETS: [RegExp, string][] = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
   [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
@@ -120,29 +121,39 @@ const SECRETS: [RegExp, string][] = [
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"],
+  // ヘッダの外に貼った値。大文字の Bearer と数字を含む値だけ（「refresh token <パス>」を消さない）。
+  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"],
 ];
-// 名前で分かる代入。環境変数の形（大文字）と、設定ファイル・JSON・ヘッダの形（名前が鍵の語で終わる）。
-// **値が変数の参照や型名なら伏せない**（`PASSWORD=$DB_PASSWORD`、`password: string`）。設定ファイル・ヘッダの形は、
-// 数字と英字を両方含む 8 文字以上の値だけを鍵とみなす（コードの `token = getToken()` を消さない）。
-// KEY・PASS・PWD は語の区切り（`_`）の後か単独のときだけ鍵の名前とみなす（MONKEY=banana、COMPASS=north を消さない）。
+const AUTH_HEADER = /(\bAuthorization\s*:\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+// 環境変数の形（大文字の名前への代入）。**値が変数の参照なら伏せない**（`PASSWORD=$DB_PASSWORD`）。
+// KEY は単独か、語の区切り（`_`）か鍵の語（MASTERKEY）の後だけ。PASS・PWD は `_` の後だけ
+// （MONKEY=banana、COMPASS=north と、シェルの作業ディレクトリ PWD=/Users/… を消さない）。
 const ENV_ASSIGN =
-  /\b((?:[A-Z][A-Z0-9_]*_)?(?:API_?KEY|KEY|PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
+  /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
+// 設定ファイル・JSON・ヘッダの形（名前が鍵の語で終わる）。照合は鍵の語から始め、名前の前半は見ない。
+// 値が鍵らしいかは関数で決める（正規表現の先読みで決めると、繰り返した入力で照合が二乗に伸びる）。
 const FIELD_ASSIGN =
-  /(["']?)\b([A-Za-z0-9_-]*(?:api[-_]?key|account[-_]?key|secret(?:[-_]access)?[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?=[^\s"',;]*\d)(?=[^\s"',;]*[A-Za-z])(?![^\s"',;]*[()])[^\s"',;]{8,}\4/gi;
-// `mysql -p<パスワード>`（-p の直後に空白を置かない形だけがパスワードを持つ）。
-const MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]*?\s-p)(?=[^\s-])\S+/g;
+  /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(["']?)([^\s"',;]+)/gi;
+// 引用符で囲んだ値は 8 文字以上なら鍵とみなす。囲まない値は、数字と英字を両方含む 8 文字以上だけ
+// （コードの `token = getToken()`、型注釈の `password: string`、CSS の `--brand-token: #ff00aa` を消さない）。
+const secretValue = (quoted: boolean, v: string): boolean =>
+  v.length >= 8 && !/^[$#]/.test(v) && (quoted || (/\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v)));
+// `mysql -p<パスワード>`（-p の直後に空白を置かない形だけがパスワードを持つ）。探す幅を 1 行 200 字に切って線形に保つ。
+const MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]{0,200}?\s-p)(?=[^\s-])\S+/g;
 // URL の資格情報は、パスワードに @ を含んでも host の直前の @ まで伏せる。どこへ繋いだかは話の中身として残す。
 // userinfo は最初の `/` より前にしか無い（`http://localhost:5173/@vite` のポートを伏せない）。ここで切ると線形で終わる。
 const URL_CREDENTIALS =
   /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 
 export function mask(text: string): string {
-  // 代入と URL を先に伏せる（値ごと消える）。残った裸の鍵を形で伏せる。
+  // 代入・ヘッダ・URL を先に伏せる（値ごと消える）。残った裸の鍵を形で伏せる。
   let out = text
     .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
+    .replace(AUTH_HEADER, "$1[伏せた]")
     .replace(ENV_ASSIGN, "$1$2[伏せた]")
-    .replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]")
+    .replace(FIELD_ASSIGN, (all, name: string, sep: string, quote: string, value: string) =>
+      secretValue(quote !== "", value) ? `${name}${sep}${quote}[伏せた]` : all,
+    )
     .replace(MYSQL_PASSWORD, "$1[伏せた]");
   for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
   return out;

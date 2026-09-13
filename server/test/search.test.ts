@@ -136,6 +136,11 @@ test("発言の検索は索引した発言だけを見て、持ち主の発言�
   assert.match(r.sql[0] ?? "", /m\.lexemes is not null/);
   assert.match(r.sql[0] ?? "", /m\.speaker_kind = 'self' or coalesce\(pe\.is_self, false\)/);
   assert.match(r.sql[0] ?? "", /order by m\.sent_at desc/);
+  assert.doesNotMatch(r.sql[0] ?? "", /origin <> 'github'/);
+  // セッションの検索は GitHub の発言を SQL で落とす（上位 20 件を取ってから落とすと、session の一致が欠ける）。
+  const sessions = recorder();
+  await searchMessages(sessions.db, {}, { projects: [1], who: "me", sessionsOnly: true, limit: 5 });
+  assert.match(sessions.sql[0] ?? "", /c\.origin <> 'github'/);
 });
 
 test("発言の主は、持ち主・呼び名つきの人・AI を分けて書く", () => {

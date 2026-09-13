@@ -263,7 +263,8 @@ export async function syncGithub(
   repo: string,
 ): Promise<string> {
   // snapshot の時刻は DB の時計で取る。PC の時計が進んでいると、その差の分だけ他の PC の同期が止まる。
-  const snapshotAt = (await client.query<{ now: Date }>("select now()")).rows[0]?.now ?? new Date();
+  const snapshotAt = (await client.query<{ now: Date }>("select now()")).rows[0]?.now;
+  if (!snapshotAt) throw new Error("DB の時刻を取れなかった");
   const { items, said } = await collect(cliSource(repo));
 
   const counts = await inTransaction(client, async () => {

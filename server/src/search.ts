@@ -265,6 +265,8 @@ export type MessageQuery = {
   path?: string | undefined;
   since?: string | undefined;
   until?: string | undefined;
+  /** coding session の発言だけ（GitHub の会話を除く）。上位を取ってから落とすと、件数が欠ける */
+  sessionsOnly?: boolean;
   limit: number;
 };
 
@@ -346,6 +348,7 @@ function messageFilters(q: MessageQuery, p: P): string[] {
   // 索引した発言だけ（coding session の AI の応答と自動通知は lexemes を持たない）。
   const w = ["m.lexemes is not null"];
   if (q.projects) w.push(`c.project_id = any(${p(q.projects)})`);
+  if (q.sessionsOnly) w.push("c.origin <> 'github'");
   if (q.who === "me") w.push(SELF);
   else if (q.who === "others") w.push(`not ${SELF} and m.speaker_kind = 'person'`);
   else if (q.who) {
@@ -704,8 +707,11 @@ export function renderWork(w: WorkDetail, budget: number): string {
   return [lines, ...rest].join("\n\n");
 }
 
-/** 参照の形。k: / s: / w: は連番、m: は uuid。**形はここで確かめ、DB の例外を参照の誤りに読み替えない。** */
-export const REF = /^(?:[ksw]:\d{1,19}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+/**
+ * 参照の形。k: / s: / w: は連番、m: は uuid。**形はここで確かめ、DB の例外を参照の誤りに読み替えない。**
+ * 連番は 18 桁まで（bigint の上限は 19 桁で、18 桁までなら型の範囲を越えない。連番がそこまで進むことはない）。
+ */
+export const REF = /^(?:[ksw]:\d{1,18}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 /**
  * 参照を読む。`k:` 知識、`m:` 発言とその前後、`s:` 取り込み元（文書の原文、PR・issue）、`w:` 作業。
@@ -721,8 +727,7 @@ export async function read(
   const scope = opts.projects ?? null;
   const out: string[] = [];
   for (const ref of refs) {
-    // bigint の上限（19 桁）を越える数字は、形が合っても DB の型の誤りになる。参照の誤りとして返す。
-    if (!REF.test(ref) || (!ref.startsWith("m:") && BigInt(ref.slice(2)) > 9223372036854775807n)) {
+    if (!REF.test(ref)) {
       out.push(`${ref}: 読めない参照（k: / s: / w: は数字、m: は uuid）`);
       continue;
     }

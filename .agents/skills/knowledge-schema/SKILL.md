@@ -27,7 +27,8 @@ schemaを変えたら、`comment on schema mitos is 'mitos schema revision N'`�
 `db:reset`を案内する。
 
 `bun run db:reset`はschema `mitos`を消して作り直す。GitHubと文書は`mitos sync`で戻るが、自動記録した
-会話とtraceの記録は戻らない。本番へ当てる前に持ち主へ確かめる。確認はNeonの本番から切ったbranchで行い、
+会話とtraceの記録は戻らない。本番へ当てる前に持ち主へ確かめる。本番に会話を貯め始めた後の最初のschema変更
+では、作り直す代わりにmigrationのrunnerを先に入れる。確認はNeonの本番から切ったbranchで行い、
 `KNOWLEDGE_ENV_DIR`で全部の鍵がbranchを向いていることを先に確かめる。
 
 ## 表の境界
@@ -103,7 +104,8 @@ Neonは往復が80ms前後あるので、書き込みは表ごとに1往復で�
 
 文書同期（`server/src/docs.ts`）は、remoteの既定branchの**commit tree**を読む。作業ツリーは読まない。
 `connector.head_oid`に入れたcommitを持ち、そこからfast-forwardできるcommitだけを自動で入れる。
-巻き戻しとforce-pushは書かずに止め、`mitos sync --cwd <dir> --reset-docs`を案内する。
+前に入れたcommitの祖先（同時に走った別の同期が先に入れた、または巻き戻した）なら何も書かずに成功で終え、
+force-pushで分岐したcommitは書かずに止める。どちらも`mitos sync --cwd <dir> --reset-docs`を案内する。
 投影の規則（節の割り方、前置する文脈）を変えたら`PROJECTION`の定数を上げる。次の同期で全文書が書き直される。
 
 `.mitos/`配下からは、`change.json`がapprovedの`requirements.md`と`design.md`だけを入れる。承認の判定と
@@ -114,7 +116,7 @@ Neonは往復が80ms前後あるので、書き込みは表ごとに1往復で�
   pathと理由だけを出し、ファイルの内容と未知のキー名は出さない
 - 原文は`source_item`（`kind`が`requirements` / `design`、`body`に原文）、検索するのは`knowledge`の
   `document`の節である。節の連結から原文は戻らない
-- セッションとの関連は新しい表を作らず、自動記録の`message_file`（Edit・Writeは`edit`、承認済みの成果物を
+- セッションとの関連は新しい表を作らず、自動記録の`message_file`（Edit・Writeは`edit`、要件定義・設計書を
   Readしたものは`read`）と、同じ作業場所で同期された`source_item.path`の一致で作る。任意のpathや
   別の作業場所の本文を取れる入口にしない
 

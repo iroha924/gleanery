@@ -69,21 +69,18 @@ export const MAX_MESSAGE = 128 * 1024;
 const KEEP = 8 * 1024;
 
 /**
- * 大きさを収め、transform（鍵の伏せ字）をかける。**伏せ字は残す部分にだけかける** — 巨大な入力の全文へ正規表現を
- * 走らせない。切れ目をまたぐ鍵を半端に残さないよう、残す長さの倍の窓で伏せてから切る。
+ * 大きさを収め、鍵を伏せる。**伏せ字は残す部分にだけかける** — 巨大な入力の全文へ正規表現を走らせない。
+ * 切れ目をまたぐ鍵を半端に残さないよう、残す長さの倍の窓で伏せてから切る。
  * 残した本文の大きさは、切り詰めないときは伏せた後の本文と一致させる（表の CHECK）。
  */
-export function fit(
-  body: string,
-  transform: (s: string) => string = (s) => s,
-): { body: string; truncated: boolean; originalBytes: number } {
+export function fit(body: string): { body: string; truncated: boolean; originalBytes: number } {
   const all = bytes(body);
   if (all <= MAX_MESSAGE) {
-    const kept = transform(body);
+    const kept = mask(body);
     return { body: kept, truncated: false, originalBytes: bytes(kept) };
   }
-  const a = head(transform(head(body, KEEP * 2)), KEEP);
-  const z = tail(transform(tail(body, KEEP * 2)), KEEP);
+  const a = head(mask(head(body, KEEP * 2)), KEEP);
+  const z = tail(mask(tail(body, KEEP * 2)), KEEP);
   const cut = all - bytes(a) - bytes(z);
   return {
     body: `${a}\n\n[中央 ${cut.toLocaleString("en-US")} bytes を保存していない]\n\n${z}`,
@@ -210,7 +207,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     at,
   };
   const say = (id: string, speaker: "self" | "assistant", raw: string) => {
-    const kept = fit(clean(raw).trim(), mask);
+    const kept = fit(clean(raw).trim());
     if (!kept.body.trim()) return;
     spool({ ...base, kind: "message", id, speaker, ...kept });
   };
@@ -236,7 +233,8 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     ).flatMap((p) => relativeTo(place.root, p, cwd) ?? []);
     const action = tool === "Read" ? "read" : "edit";
     for (const p of files) {
-      // 読んだファイルは、承認済みの要件定義・設計書だけを残す（画面のセッション詳細が成果物を出す）。
+      // 読んだファイルは、要件定義・設計書だけを残す。画面のセッション詳細は、そのうち承認済みとして同期された
+      // 版だけを出す（draft を読んだ session も、後で承認された成果物に結ばれる）。
       if (action === "read" && !ARTIFACT_PATH.test(p)) continue;
       spool({ ...base, kind: "file", path: p, action });
     }
@@ -527,8 +525,13 @@ export async function flush(
         }
       }
     }
-    // 持ち主の発言が弾かれた turn のファイル記録も一緒に残す（結ぶ先が無いので送っても 0 行になる）。
-    const lost = new Set(bad.flatMap((x) => (x.r.kind === "message" ? [`${x.r.session}\0${x.r.turn}`] : [])));
+    // 持ち主の発言（`<turn>:self`）が弾かれた turn のファイル記録も一緒に残す（ファイルはその発言へ結ぶので、
+    // 送っても 0 行になる）。AI の応答や AskUserQuestion の答えだけが弾かれた turn のファイルは送れている。
+    const lost = new Set(
+      bad.flatMap((x) =>
+        x.r.kind === "message" && x.r.id === `${x.r.turn}:self` ? [`${x.r.session}\0${x.r.turn}`] : [],
+      ),
+    );
     for (const x of known)
       if (x.r.kind === "file" && lost.has(`${x.r.session}\0${x.r.turn}`) && !bad.includes(x)) bad.push(x);
     if (bad.length) {

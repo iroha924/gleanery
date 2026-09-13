@@ -129,7 +129,7 @@ create index message_by_identity on mitos.message (identity_id, sent_at desc) wh
 create index message_self on mitos.message (sent_at desc) where speaker_kind = 'self';
 create index message_lexemes on mitos.message using gin (lexemes);
 
--- その turn で編集したファイル（edit）、読んだ承認済みの要件定義・設計書（read）、レビューで指されたファイル（review）。
+-- その turn で編集したファイル（edit）、読んだ要件定義・設計書（read）、レビューで指されたファイル（review）。
 -- path は project の根からの相対。
 create table mitos.message_file (
   message_id uuid not null references mitos.message (id) on delete cascade,

@@ -81,8 +81,6 @@ async function run(
       if (!rejectsInput(e)) return { embedded, failed, stopped: reason(e) };
     }
     // どれかの本文を受け付けなかった。1 行ずつ送り直し、受け付けない行だけを数える。
-    // **全行が拒まれたら本文の問題ではない**（モデル名や引数の誤り）。数えずに止める — 数えると、設定を直しても
-    // 本文が変わるまで二度と送らない。
     const refused: [Pending, unknown][] = [];
     for (const row of rows) {
       try {
@@ -92,8 +90,19 @@ async function run(
         refused.push([row, e]);
       }
     }
-    if (refused.length === rows.length && rows.length > 1)
-      return { embedded, failed, stopped: `どの本文も受け付けられなかった（${reason(refused[0]?.[1])}）` };
+    // **全行が拒まれたら、本文の問題か要求全体の問題（モデル名や引数の誤り）かを短い本文 1 つで確かめる。**
+    // 要求全体の問題なら数えずに止める — 数えると、設定を直しても本文が変わるまで二度と送らない。
+    if (refused.length === rows.length) {
+      try {
+        await embed(env, ["mitos"], "document");
+      } catch (e) {
+        return {
+          embedded,
+          failed,
+          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${reason(e)}）` : reason(e),
+        };
+      }
+    }
     for (const [row, e] of refused) {
       await reject(db, t, row, e);
       failed++;

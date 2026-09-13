@@ -50,15 +50,15 @@ MCP は読み取り専用の鍵で動く。PR コメントのような外部の�
 
 - 持ち主が打った発言。AskUserQuestion で選んだ答え（質問と答えの組、添えたメモ）
 - AI の最後の応答（turn ごと）
-- その turn で Edit / Write / MultiEdit / NotebookEdit したファイルと、Read した承認済みの要件定義・設計書
-  （Bash で書いた・読んだファイルは入らない）
+- その turn で Edit / Write / MultiEdit / NotebookEdit したファイルと、Read した要件定義・設計書
+  （Bash で書いた・読んだファイルは入らない。セッション詳細に出るのは、そのうち承認済みとして同期された版）
 
 残さないものは、subagent の中の turn、エージェントが起動した子の session（Bash から叩いた `claude -p` など）、
 印の無い `claude -p`（launchd や Codex から起動したもの）、tool の出力、通知、Skill の本文。
 **Codex の会話はまだ自動では残らない**（Codex のフックの入力を測ってから有効にする）。
 
 - 貼ってしまった鍵は、送る前に形で分かるものだけ伏せる（接頭辞の決まった鍵、`KEY=…` や `"password": …` の代入、
-  URL の資格情報、認証ヘッダ）。載っていない形式は伏せられないので、貼らないのが先
+  URL の資格情報、認証ヘッダ、`mysql -p`）。載っていない形式は伏せられないので、貼らないのが先
 - フックは手元の待ち行列（`~/.claude/mitos-spool`）へ書くだけで、turn の終わりに切り離したプロセスがまとめて送る。
   DB に届かない間は待ち行列に残り、次の送信で冪等に送り直す
 - 送れていない・鍵が無い・DB が受け付けなかった記録がある、のどれかなら、**session の開始時に警告が出る**。
@@ -94,8 +94,8 @@ Codex では `$mitos:init`、`$mitos:requirements`、`$mitos:design` と明示�
 
 - **承認状態は `change.json` だけが持つ。**本文の書きぶりからは推測しない。承認は閉じた問いで取り、
   最後の書き込みとして `approved` にする。承認済みを直すときは、本文を触る前に `draft` へ戻す
-- **文書の同期は remote の既定 branch だけを読む。**merge 前の branch の成果物は入らない（その branch の session は
-  作業ツリーのファイルを直接読める）。draft も入らない
+- **文書の同期は remote の既定 branch だけを読む**（remote の無い作業場所は HEAD）。merge 前の branch の成果物は
+  入らない（その branch の session は作業ツリーのファイルを直接読める）。draft も入らない
 - `change.json` の形と状態は `mitos check` が検査する（DB に触らない）。Skill は書くたびに実行する
 
 ### 知っておくと嵌まらないこと
@@ -110,7 +110,7 @@ Codex では `$mitos:init`、`$mitos:requirements`、`$mitos:design` と明示�
 ## ダッシュボード
 
 **先にサイドバーで作業場所を選ぶ。**チャットと会議は、作業場所を 1 つ選んだときだけ動く（範囲を混ぜると、
-別の仕事の決定が答えに入る）。セッションの一覧は「すべて」でも見られる。
+別の仕事の決定が答えに入る）。セッションの一覧と検索は「すべて」でも見られる（各行に作業場所が出る）。
 
 | 画面 | ルート | 何をするところ |
 |---|---|---|
@@ -169,9 +169,11 @@ mitos --version                                  この CLI の版と置き場�
 
 **文書の正は remote の既定 branch である。**作業ツリーを読むと、どの PC の・どの branch の・書きかけの状態が DB に
 入るかが同期した順で決まってしまう。同期は `git fetch origin HEAD` で remote の HEAD を取り、その commit の tree から
-一覧・本文・manifest・更新日を読む。前に入れた commit から **fast-forward できる commit だけを自動で入れ**、
-巻き戻し・force-push・この clone に無い commit は、どちらが正しいかを決められないので書かずに止まる
-（`mitos sync --cwd <dir> --reset-docs` で今の状態に揃える）。remote の無い作業場所は `HEAD` を同じ規則で読む。
+一覧・本文・manifest・更新日を読む。前に入れた commit から **fast-forward できる commit だけを自動で入れる。**
+前に入れた commit の祖先（別の同期が先に新しい commit を入れた、または巻き戻した）なら何も書かずに終える。
+force-push で分岐した commit とこの clone に無い commit は、どちらが正しいかを決められないので書かずに止まる。
+巻き戻しや分岐を入れるときは `mitos sync --cwd <dir> --reset-docs` で今の状態に揃える。remote の無い作業場所は
+`HEAD` を同じ規則で読む。
 
 **成果物を持つ change の `change.json` が壊れていると、そのリポジトリの文書同期を丸ごと止める**
 （README や ADR も入らない）。止めるのは埋め込みと文書の書き込みの前なので、前回の同期結果はそのまま残る。
@@ -199,7 +201,7 @@ db/          schema.sql（DB の正本。今の形を 1 本で表す）
 
 schema の版は schema のコメントに置き、MCP・CLI・画面の API は最初に DB を使うときに `server/src/db.ts` の
 `SCHEMA_REVISION` と突き合わせる。**食い違えば止まる。**適用は `bun run db:apply`、作り直しは `bun run db:reset`
-（接続先の endpoint 名を打ち直させる）。
+（接続先の endpoint 名を打ち直させる）。作り直すと、GitHub と文書は同期で戻るが、自動記録した会話と trace の記録は戻らない。
 
 ### 検索
 
@@ -375,7 +377,7 @@ Claude Code と Codex へは、commit に入った `dist` が GitHub 経由で�
 | 「DB が受け付けなかった記録がある」と出る | `~/.claude/mitos-spool/rejected` の JSON。直してから `~/.claude/mitos-spool` へ戻すと、次の送信で送り直す |
 | 会話がセッションに出ない | その作業場所を `mitos project add` したか（未登録の作業場所の記録は捨てる）。`claude -p` の会話は残らない |
 | `recall` が「登録されていない」と言う | `mitos project add --cwd <repo>`。「どの作業場所か決められない」なら、`cwd` にリポジトリの根を渡していない |
-| 文書の同期が「fast-forward でない」で止まる | remote の既定 branch が巻き戻ったか force-push された、またはこの clone に前の commit が無い。今の状態が正しければ `mitos sync --cwd <repo> --reset-docs` |
+| 文書の同期が「fast-forward でない」で止まる、または「前に入れた commit のほうが新しい」と出る | remote の既定 branch が force-push で分岐したか巻き戻った、またはこの clone に前の commit が無い。今の状態が正しければ `mitos sync --cwd <repo> --reset-docs` |
 | 文書の同期が「remote の既定 branch を取れなかった」で止まる | その PC から `git -C <repo> fetch origin HEAD` が通るか。launchd の環境で資格情報に届いているか |
 | 文書の同期が `.mitos` の問題で止まる | `mitos check --cwd <repo>` が path と理由を出す。直すまで、そのリポジトリの文書は前回の同期のまま |
 | 承認した要件定義・設計書がセッション詳細に出ない | 既定 branch へ merge して同期したか。そのセッションが Edit / Write / Read で触ったか（Bash で触ったものは結ばれない） |

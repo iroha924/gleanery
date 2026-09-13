@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Artifact } from "../src/artifacts.ts";
-import { collectDocs, commitOf, docHash, isAncestor, projectDocs, sections } from "../src/docs.ts";
+import { collectDocs, commitOf, docHash, isAncestor, projectDocs, sections, syncDocs } from "../src/docs.ts";
 import { knowledgeText } from "../src/knowledge.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
@@ -93,7 +93,9 @@ test("見出しの無い本文も 1 件になる", () => {
 });
 
 /** 一時リポジトリを作り、fn に渡す。git は既定の設定を読まない。 */
-function withRepo(fn: (repo: string, git: (...a: string[]) => string) => void): void {
+async function withRepo(
+  fn: (repo: string, git: (...a: string[]) => string) => void | Promise<void>,
+): Promise<void> {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-docs-")));
   try {
     const repo = path.join(dir, "repo");
@@ -102,7 +104,7 @@ function withRepo(fn: (repo: string, git: (...a: string[]) => string) => void): 
     git("config", "user.email", "t@example.com");
     git("config", "user.name", "t");
     fs.writeFileSync(path.join(dir, "outside.env"), "SECRET_TOKEN=sk-live-abc123\n");
-    fn(repo, git);
+    await fn(repo, git);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -115,8 +117,8 @@ const put = (repo: string, rel: string, body: string) => {
 // **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
 // commit の tree では symlink は mode 120000 の項目で、ディレクトリの symlink の先はそもそも tree に無い。
 // 日次同期は無人で走るので、ここが開くと誰も見ていないところで資格情報が出ていく。
-test("commit の tree から読み、symlink の先は本文に入れない", () => {
-  withRepo((repo, git) => {
+test("commit の tree から読み、symlink の先は本文に入れない", async () => {
+  await withRepo((repo, git) => {
     put(repo, "docs/real.md", "# 本物\n中身\n");
     fs.symlinkSync("../../outside.env", path.join(repo, "docs", "leak.md"));
     fs.symlinkSync("../outside.env", path.join(repo, "dirlink"));
@@ -133,8 +135,8 @@ test("commit の tree から読み、symlink の先は本文に入れない", ()
 });
 
 // 作業ツリーを読むと、書きかけの本文や、承認を外している最中の成果物が DB に入る。
-test("作業ツリーの未 commit の編集は読まず、commit した承認だけを見る", () => {
-  withRepo((repo, git) => {
+test("作業ツリーの未 commit の編集は読まず、commit した承認だけを見る", async () => {
+  await withRepo((repo, git) => {
     put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
     put(
       repo,
@@ -162,8 +164,8 @@ test("作業ツリーの未 commit の編集は読まず、commit した承認�
   });
 });
 
-test("commit の中の manifest が不正なら何も返さずに止め、fast-forward かどうかを祖先で見る", () => {
-  withRepo((repo, git) => {
+test("commit の中の manifest が不正なら何も返さずに止め、fast-forward かどうかを祖先で見る", async () => {
+  await withRepo((repo, git) => {
     put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
     put(repo, ".mitos/changes/a/change.json", "{");
     put(repo, ".mitos/changes/a/requirements.md", "# r\n");
@@ -178,6 +180,64 @@ test("commit の中の manifest が不正なら何も返さずに止め、fast-f
     assert.equal(isAncestor(repo, first, second), true);
     assert.equal(isAncestor(repo, second, first), false);
     assert.equal(isAncestor(repo, "0".repeat(40), second), false, "この clone に無い commit");
+  });
+});
+
+test("大文字の拡張子の文書にも最終更新日が付き、大きすぎる manifest は読まずに止める", async () => {
+  await withRepo(async (repo, git) => {
+    put(repo, "README.MD", "# 読んで\n本文\n");
+    git("add", "-A");
+    git("commit", "-qm", "a");
+    const { docs } = collectDocs(repo, commitOf(repo, false));
+    assert.ok(docs.find((d) => d.path === "README.MD")?.at, "README.MD に日付が無い");
+
+    put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
+    put(repo, ".mitos/changes/a/change.json", `{"schema": "mitos/change/1"${" ".repeat(70 * 1024)}}`);
+    put(repo, ".mitos/changes/a/requirements.md", "# r\n");
+    git("add", "-A");
+    git("commit", "-qm", "b");
+    assert.throws(() => collectDocs(repo, commitOf(repo, false)), /change\.json: 大きすぎる/);
+  });
+});
+
+/** 文書の connector に head だけを持つ偽の DB。書き込みの SQL が来たら失敗させる（この経路は何も書かない）。 */
+function headOnly(head: string) {
+  const sql: string[] = [];
+  const query = async (text: string) => {
+    sql.push(text);
+    if (/^(begin|commit|rollback)$/.test(text) || text.startsWith("insert into mitos.connector"))
+      return { rows: [] };
+    if (text.startsWith("select id, head_oid"))
+      return { rows: [{ id: "1", head_oid: head, snapshot_at: null }] };
+    throw new Error(`書かないはずの SQL: ${text}`);
+  };
+  return { sql, client: { query } as never };
+}
+
+// 同じ朝に 2 本の同期が走り、新しい commit を先に入れられた側が失敗を報告しない（祖先へ戻したときも書かない）。
+test("前に入れた commit のほうが新しければ何も書かずに終え、分岐していれば止める", async () => {
+  await withRepo(async (repo, git) => {
+    put(repo, "README.md", "# a\n");
+    git("add", "-A");
+    git("commit", "-qm", "a");
+    const older = commitOf(repo, false);
+    put(repo, "README.md", "# b\n");
+    git("add", "-A");
+    git("commit", "-qm", "b");
+    const newer = commitOf(repo, false);
+    git("checkout", "-q", older);
+    const behind = headOnly(newer);
+    assert.match(
+      await syncDocs(behind.client, 1, repo, { remote: false }),
+      /前に入れた commit（.{8}）のほうが新しいので、何も書かなかった/,
+    );
+    assert.ok(behind.sql.includes("commit"));
+
+    git("checkout", "-q", "-b", "other");
+    put(repo, "README.md", "# c\n");
+    git("add", "-A");
+    git("commit", "-qm", "c");
+    await assert.rejects(syncDocs(headOnly(newer).client, 1, repo, { remote: false }), /fast-forward でない/);
   });
 });
 

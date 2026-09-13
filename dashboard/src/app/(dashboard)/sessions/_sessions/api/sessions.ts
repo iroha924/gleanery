@@ -67,7 +67,7 @@ export type SessionArtifact = {
   change: string;
   path: string;
   title: string;
-  /** 作業場所の文書同期が最後に成功した時刻。commit 時刻ではない */
+  /** この版を取り込んだ時刻（本文が変わった同期でだけ進む）。commit 時刻ではない */
   syncedAt: string;
   content: string;
 };
@@ -80,6 +80,8 @@ export type SessionDetail = {
   startedAt: string;
   projectId: number;
   project: string;
+  /** 一覧と同じ題（持ち主の最初の発言、無ければ結んだ作業の題） */
+  title: string | null;
   messages: SessionMessage[];
   knowledge: SessionKnowledge[];
   work: SessionWork[];
@@ -107,18 +109,19 @@ export type FoundSession = {
 /** knowledge は判断、avoid は通ってはいけない道、said は持ち主の発言。 */
 export type SearchMode = "knowledge" | "avoid" | "said";
 
-const withProject = (params: URLSearchParams, projectIds: number[] | undefined): string => {
-  if (projectIds?.[0] !== undefined) params.set("project", String(projectIds[0]));
+/** project を省くと全部の作業場所。 */
+const withProject = (params: URLSearchParams, project: number | undefined): string => {
+  if (project !== undefined) params.set("project", String(project));
   return `?${params}`;
 };
 
-export const loadSessions = (page: number, projectIds?: number[]): Promise<SessionsPage> =>
+export const loadSessions = (page: number, project?: number): Promise<SessionsPage> =>
   get<SessionsPage>(
-    `/api/sessions${withProject(new URLSearchParams({ page: String(page), pageSize: "20" }), projectIds)}`,
+    `/api/sessions${withProject(new URLSearchParams({ page: String(page), pageSize: "20" }), project)}`,
   );
 
 export const loadSession = (id: string): Promise<SessionDetail> =>
   get<SessionDetail>(`/api/sessions/${encodeURIComponent(id)}`);
 
-export const searchSessions = (q: string, mode: SearchMode, projectIds?: number[]): Promise<FoundSession[]> =>
-  get<FoundSession[]>(`/api/sessions/search${withProject(new URLSearchParams({ q, mode }), projectIds)}`);
+export const searchSessions = (q: string, mode: SearchMode, project?: number): Promise<FoundSession[]> =>
+  get<FoundSession[]>(`/api/sessions/search${withProject(new URLSearchParams({ q, mode }), project)}`);

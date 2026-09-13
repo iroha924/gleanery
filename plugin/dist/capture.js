@@ -24012,14 +24012,16 @@ var SECRETS = [
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"]
+  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"]
 ];
-var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API_?KEY|KEY|PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-var FIELD_ASSIGN = /(["']?)\b([A-Za-z0-9_-]*(?:api[-_]?key|account[-_]?key|secret(?:[-_]access)?[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?=[^\s"',;]*\d)(?=[^\s"',;]*[A-Za-z])(?![^\s"',;]*[()])[^\s"',;]{8,}\4/gi;
-var MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]*?\s-p)(?=[^\s-])\S+/g;
+var AUTH_HEADER = /(\bAuthorization\s*:\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
+var FIELD_ASSIGN = /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(["']?)([^\s"',;]+)/gi;
+var secretValue = (quoted, v) => v.length >= 8 && !/^[$#]/.test(v) && (quoted || /\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v));
+var MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]{0,200}?\s-p)(?=[^\s-])\S+/g;
 var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 function mask(text) {
-  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]").replace(MYSQL_PASSWORD, "$1[伏せた]");
+  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, (all, name, sep, quote2, value) => secretValue(quote2 !== "", value) ? `${name}${sep}${quote2}[伏せた]` : all).replace(MYSQL_PASSWORD, "$1[伏せた]");
   for (const [re, what] of SECRETS)
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
@@ -24041,14 +24043,14 @@ var stateFile = () => path3.join(os3.homedir(), ".claude", "mitos-capture.json")
 var rejectedDir = () => path3.join(spoolDir(), "rejected");
 var MAX_MESSAGE = 128 * 1024;
 var KEEP = 8 * 1024;
-function fit(body, transform2 = (s) => s) {
+function fit(body) {
   const all = bytes(body);
   if (all <= MAX_MESSAGE) {
-    const kept = transform2(body);
+    const kept = mask(body);
     return { body: kept, truncated: false, originalBytes: bytes(kept) };
   }
-  const a = head(transform2(head(body, KEEP * 2)), KEEP);
-  const z2 = tail(transform2(tail(body, KEEP * 2)), KEEP);
+  const a = head(mask(head(body, KEEP * 2)), KEEP);
+  const z2 = tail(mask(tail(body, KEEP * 2)), KEEP);
   const cut = all - bytes(a) - bytes(z2);
   return {
     body: `${a}
@@ -24142,7 +24144,7 @@ function onHook(host, input2) {
     at
   };
   const say = (id, speaker, raw) => {
-    const kept = fit(clean(raw).trim(), mask);
+    const kept = fit(clean(raw).trim());
     if (!kept.body.trim())
       return;
     spool({ ...base, kind: "message", id, speaker, ...kept });
@@ -24383,7 +24385,7 @@ async function flush(env) {
         }
       }
     }
-    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" ? [`${x.r.session}\x00${x.r.turn}`] : []));
+    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" && x.r.id === `${x.r.turn}:self` ? [`${x.r.session}\x00${x.r.turn}`] : []));
     for (const x of known)
       if (x.r.kind === "file" && lost.has(`${x.r.session}\x00${x.r.turn}`) && !bad.includes(x))
         bad.push(x);

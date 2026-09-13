@@ -78,13 +78,28 @@ test("本文を受け付けない行だけを数え、残りは埋める", async
 });
 
 // モデル名や引数の誤りは全部の本文を 400 にする。数えると、設定を直しても本文が変わるまで二度と送らない。
-test("全行が拒まれたら要求全体の問題とみなし、数えずに止める", async () => {
+test("短い本文も拒まれるなら要求全体の問題とみなし、行が 1 つでも数えずに止める", async () => {
+  const restore = stubVoyage({ status: 400 });
+  try {
+    for (const ids of [["1", "2", "3"], ["1"]]) {
+      const f = fakeDb(ids);
+      const r = await fillKnowledge(f.db, { VOYAGE_API_KEY: "k" });
+      assert.match(r.stopped ?? "", /どの本文も受け付けられなかった/);
+      assert.deepEqual(f.rejected, []);
+    }
+  } finally {
+    restore();
+  }
+});
+
+// 未処理が不正な行だけでも、行の問題なら数える（数えないと、毎回の同期が「止めた」と報告し続ける）。
+test("全行が拒まれても短い本文が通るなら、行の問題として数える", async () => {
   const restore = stubVoyage({ bad: ["本文"] });
   try {
-    const f = fakeDb(["1", "2", "3"]);
+    const f = fakeDb(["1", "2"]);
     const r = await fillKnowledge(f.db, { VOYAGE_API_KEY: "k" });
-    assert.match(r.stopped ?? "", /どの本文も受け付けられなかった/);
-    assert.deepEqual(f.rejected, []);
+    assert.deepEqual([r.embedded, r.failed, r.stopped], [0, 2, undefined]);
+    assert.deepEqual(f.rejected.sort(), ["1", "2"]);
   } finally {
     restore();
   }

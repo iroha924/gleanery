@@ -24270,14 +24270,16 @@ var SECRETS = [
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\b(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"]
+  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"]
 ];
-var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API_?KEY|KEY|PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-var FIELD_ASSIGN = /(["']?)\b([A-Za-z0-9_-]*(?:api[-_]?key|account[-_]?key|secret(?:[-_]access)?[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?=[^\s"',;]*\d)(?=[^\s"',;]*[A-Za-z])(?![^\s"',;]*[()])[^\s"',;]{8,}\4/gi;
-var MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]*?\s-p)(?=[^\s-])\S+/g;
+var AUTH_HEADER = /(\bAuthorization\s*:\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
+var FIELD_ASSIGN = /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(["']?)([^\s"',;]+)/gi;
+var secretValue = (quoted, v) => v.length >= 8 && !/^[$#]/.test(v) && (quoted || /\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v));
+var MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]{0,200}?\s-p)(?=[^\s-])\S+/g;
 var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 function mask(text) {
-  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]").replace(MYSQL_PASSWORD, "$1[伏せた]");
+  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, (all, name, sep, quote2, value) => secretValue(quote2 !== "", value) ? `${name}${sep}${quote2}[伏せた]` : all).replace(MYSQL_PASSWORD, "$1[伏せた]");
   for (const [re, what] of SECRETS)
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
@@ -24380,14 +24382,14 @@ var stateFile = () => path4.join(os3.homedir(), ".claude", "mitos-capture.json")
 var rejectedDir = () => path4.join(spoolDir(), "rejected");
 var MAX_MESSAGE = 128 * 1024;
 var KEEP = 8 * 1024;
-function fit(body, transform2 = (s) => s) {
+function fit(body) {
   const all = bytes(body);
   if (all <= MAX_MESSAGE) {
-    const kept = transform2(body);
+    const kept = mask(body);
     return { body: kept, truncated: false, originalBytes: bytes(kept) };
   }
-  const a = head(transform2(head(body, KEEP * 2)), KEEP);
-  const z2 = tail(transform2(tail(body, KEEP * 2)), KEEP);
+  const a = head(mask(head(body, KEEP * 2)), KEEP);
+  const z2 = tail(mask(tail(body, KEEP * 2)), KEEP);
   const cut = all - bytes(a) - bytes(z2);
   return {
     body: `${a}
@@ -24481,7 +24483,7 @@ function onHook(host, input2) {
     at
   };
   const say = (id, speaker, raw) => {
-    const kept = fit(clean(raw).trim(), mask);
+    const kept = fit(clean(raw).trim());
     if (!kept.body.trim())
       return;
     spool({ ...base, kind: "message", id, speaker, ...kept });
@@ -24722,7 +24724,7 @@ async function flush(env) {
         }
       }
     }
-    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" ? [`${x.r.session}\x00${x.r.turn}`] : []));
+    const lost = new Set(bad.flatMap((x) => x.r.kind === "message" && x.r.id === `${x.r.turn}:self` ? [`${x.r.session}\x00${x.r.turn}`] : []));
     for (const x of known)
       if (x.r.kind === "file" && lost.has(`${x.r.session}\x00${x.r.turn}`) && !bad.includes(x))
         bad.push(x);
@@ -24854,11 +24856,11 @@ function sections(rel, body) {
   flush2();
   return out;
 }
-var git2 = (root, args, input2, timeout = 60000) => execFileSync3("git", ["-C", root, ...args], {
+var git2 = (root, args, input2) => execFileSync3("git", ["-C", root, ...args], {
   input: input2,
   maxBuffer: 256 * 1024 * 1024,
   stdio: ["pipe", "pipe", "pipe"],
-  timeout,
+  timeout: 60000,
   env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
 });
 function commitOf(root, remote) {
@@ -24873,7 +24875,8 @@ function commitOf(root, remote) {
         "+HEAD:refs/mitos/docs-head"
       ]);
     } catch (e) {
-      const detail = e.stderr?.toString().trim().split(`
+      const err = e;
+      const detail = err.code === "ETIMEDOUT" ? "60 秒で終わらなかった" : err.stderr?.toString().trim().split(`
 `).at(-1) ?? "";
       throw new Error(`remote の既定 branch を取れなかった（${detail}）。文書は前回の同期のまま`);
     }
@@ -24951,22 +24954,17 @@ function snapshotOf(tree, blobs) {
 }
 function lastTouched(root, commit) {
   const at = new Map;
-  let out;
-  try {
-    out = git2(root, [
-      "-c",
-      "core.quotepath=false",
-      "log",
-      commit,
-      "--format=@%aI",
-      "--name-only",
-      "--",
-      "*.md",
-      "*.mdx"
-    ]).toString("utf8");
-  } catch {
-    return at;
-  }
+  const out = git2(root, [
+    "-c",
+    "core.quotepath=false",
+    "log",
+    commit,
+    "--format=@%aI",
+    "--name-only",
+    "--",
+    ":(icase)*.md",
+    ":(icase)*.mdx"
+  ]).toString("utf8");
   let cur = "";
   for (const line of out.split(`
 `)) {
@@ -25006,10 +25004,10 @@ function collectDocs(root, commit) {
   const tree = treeOf(root, commit);
   const md = [...tree.entries].filter(([rel]) => /\.mdx?$/i.test(rel));
   const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
-  const manifests = [...tree.entries].filter(([rel, e]) => rel.startsWith(".mitos/") && rel.endsWith(".json") && FILE_MODES.has(e.mode));
-  const blobs = blobsOf(root, [...readable, ...manifests].map(([, e]) => e.oid));
-  const bodies = new Map(readable.map(([rel, e]) => [rel, (blobs.get(e.oid) ?? Buffer.alloc(0)).toString("utf8")]));
-  const { include, problems } = selectArtifacts(snapshotOf(tree, blobs), [...bodies.keys()]);
+  const manifests = [...tree.entries].filter(([rel, e]) => rel.startsWith(".mitos/") && rel.endsWith(".json") && FILE_MODES.has(e.mode) && e.size <= MAX_MANIFEST);
+  const snap = snapshotOf(tree, blobsOf(root, [...readable, ...manifests].map(([, e]) => e.oid)));
+  const bodies = new Map(readable.map(([rel]) => [rel, snap.read(rel)]));
+  const { include, problems } = selectArtifacts(snap, [...bodies.keys()]);
   if (problems.length) {
     throw new Error(`.mitos が不正なので、この作業場所の文書を同期しない（前回の状態を保つ）:
 ${problems.map((p) => `  ${p.path}: ${p.reason}`).join(`
@@ -25024,8 +25022,11 @@ async function syncDocs(client, projectId2, root, opts) {
   const done = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId2, "docs");
     const before = connector.headOid;
-    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))
-      return { refused: before, changed: 0, removed: 0 };
+    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit)) {
+      if (isAncestor(root, commit, before))
+        return { refused: null, newer: before, changed: 0, removed: 0 };
+      return { refused: before, newer: null, changed: 0, removed: 0 };
+    }
     const known = new Map((await client.query("select external_id, content_hash from mitos.source_item where connector_id = $1", [connector.id])).rows.map((r) => [r.external_id, r.content_hash]));
     const changed = docs.filter((d) => !known.get(d.path)?.equals(docHash(d)));
     if (changed.length) {
@@ -25094,10 +25095,12 @@ ${s.text}`)
     }
     const removed = await client.query("delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))", [connector.id, docs.map((d) => d.path)]);
     await client.query("update mitos.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1", [connector.id, commit]);
-    return { refused: null, changed: changed.length, removed: removed.rowCount ?? 0 };
+    return { refused: null, newer: null, changed: changed.length, removed: removed.rowCount ?? 0 };
   });
   if (done.refused)
-    throw new Error(`前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` + "fast-forward でないので書かなかった（巻き戻し・force-push・branch の切り替え・この clone に無い）。" + `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``);
+    throw new Error(`前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` + "fast-forward でないので書かなかった（force-push で分岐した・分岐した branch へ切り替えた・この clone に無い）。" + `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``);
+  if (done.newer)
+    return `前に入れた commit（${done.newer.slice(0, 8)}）のほうが新しいので、何も書かなかった（別の同期が先に入れたか、` + `巻き戻した）。巻き戻しを入れるなら \`mitos sync --cwd ${root} --reset-docs\``;
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
     `文書 ${docs.length} 本・節 ${sectionCount} 件`,
@@ -25157,8 +25160,17 @@ async function run(db, env, t, load) {
         refused.push([row, e]);
       }
     }
-    if (refused.length === rows.length && rows.length > 1)
-      return { embedded, failed, stopped: `どの本文も受け付けられなかった（${reason(refused[0]?.[1])}）` };
+    if (refused.length === rows.length) {
+      try {
+        await embed(env, ["mitos"], "document");
+      } catch (e) {
+        return {
+          embedded,
+          failed,
+          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${reason(e)}）` : reason(e)
+        };
+      }
+    }
     for (const [row, e] of refused) {
       await reject(db, t, row, e);
       failed++;
@@ -25339,7 +25351,9 @@ var itemHash = (i) => sha256(JSON.stringify([
   i.closedAt
 ]));
 async function syncGithub(client, projectId2, projectName, repo) {
-  const snapshotAt = (await client.query("select now()")).rows[0]?.now ?? new Date;
+  const snapshotAt = (await client.query("select now()")).rows[0]?.now;
+  if (!snapshotAt)
+    throw new Error("DB の時刻を取れなかった");
   const { items, said } = await collect(cliSource(repo));
   const counts = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId2, "github");
@@ -25982,6 +25996,8 @@ function messageFilters(q, p) {
   const w = ["m.lexemes is not null"];
   if (q.projects)
     w.push(`c.project_id = any(${p(q.projects)})`);
+  if (q.sessionsOnly)
+    w.push("c.origin <> 'github'");
   if (q.who === "me")
     w.push(SELF);
   else if (q.who === "others")
