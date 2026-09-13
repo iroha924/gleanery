@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { expandNames, type Person, runTool, SYSTEM } from "../src/chat.ts";
+import { expandNames, runTool, SYSTEM } from "../src/chat.ts";
+import type { Person } from "../src/search.ts";
 
 const people: Person[] = [
   { display: "◯◯さん", handles: ["reviewer-a", "レビュアー A"], isSelf: false },
@@ -26,12 +27,56 @@ test("質問者本人と、表に無い名前の扱いを渡す", () => {
 
 const recorder = () => {
   const sql: string[] = [];
-  const query = async (s: string) => {
+  const params: unknown[][] = [];
+  const query = async (s: string, p: unknown[] = []) => {
     sql.push(s);
+    params.push(p);
     return { rows: s.includes("count(*)") ? [{ n: "0" }] : [] };
   };
-  return { sql, db: { query } as never };
+  return { sql, params, db: { query } as never };
 };
+
+// 記録に紛れた命令文が read で別の作業場所を開かせても、選んだ作業場所の外は「無い」になる。
+test("read は選んだ作業場所の外を読ませず、読んだ参照を 1 件ずつ根拠に載せる", async () => {
+  const r = recorder();
+  const sources: Parameters<typeof runTool>[4] = [];
+  const out = JSON.parse(
+    await runTool(
+      r.db,
+      {},
+      [3],
+      { name: "read", arguments: JSON.stringify({ refs: ["k:1", "k:2", "k:1"] }) },
+      sources,
+    ),
+  );
+  assert.deepEqual(
+    out.rows.map((x: { n: number; ref: string }) => [x.n, x.ref]),
+    [
+      [1, "k:1"],
+      [2, "k:2"],
+    ],
+  );
+  assert.equal(sources.length, 2);
+  assert.ok(
+    r.params.every((p) => p.some((v) => Array.isArray(v) && v[0] === 3)),
+    "どの問い合わせも範囲を持つ",
+  );
+});
+
+test("暦にない日付は、モデルが直せる形で返す", async () => {
+  const r = recorder();
+  const out = JSON.parse(
+    await runTool(
+      r.db,
+      {},
+      [3],
+      { name: "list_items", arguments: JSON.stringify({ since: "2026-02-30" }) },
+      [],
+    ),
+  );
+  assert.match(out.error, /実在する YYYY-MM-DD/);
+  assert.equal(r.sql.length, 0);
+});
 
 // AI 向けの出口を直接叩く。関数が正しくても、ここで組み立てる引数が違えばモデルには届かない。
 test("「私はなんて言った？」は持ち主の発言を引き、作業場所は呼び出し側が決める", async () => {

@@ -1,0 +1,60 @@
+{
+  "schema": "trace/1",
+  "session": { "host": "claude-code", "id": "4f2bfe2e-6941-4310-8110-1af8c2245429", "branch": "feat/rebuild" },
+  "work": {
+    "key": "rebuild",
+    "title": "mitos の作り直し",
+    "goal": "13 表の schema の上で、自動記録・recall・read・check_path が Neon の branch で通る",
+    "current": "サーバー側を書き終え、branch で E2E を回した",
+    "next": ["plugin のフックと Skill を作り直す", "人: 本番を空にする前に確認する"],
+    "status": "active"
+  },
+  "items": [
+    {
+      "key": "gh-only",
+      "kind": "decision",
+      "status": "accepted",
+      "at": "2026-09-13T11:00:00+09:00",
+      "text": "GitHub の取り込みは gh の 1 経路にする",
+      "context": "持ち主 1 人で gh auth があり、同期先の Neon はどの PC からも引ける",
+      "options": [
+        { "text": "gh の 1 経路", "chosen": true },
+        { "text": "GitHub App と webhook", "chosen": false, "why": "967 行と secret 5 つを持つ割に、文書の同期はどのみち PC が要る" }
+      ],
+      "confirmation": "server/src に GitHub App の実装が無い",
+      "downsides": ["数分以内の反映は無くなる（PC の日次同期か mitos sync）"]
+    },
+    {
+      "key": "capture-no-conflict-target",
+      "kind": "constraint",
+      "status": "active",
+      "at": "2026-09-13T12:30:00+09:00",
+      "text": "自動記録の insert は on conflict do nothing に衝突先の列を書かない（書くと SELECT 権限が要り、capture の鍵で拒否される）",
+      "files": [{ "path": "server/src/capture.ts", "role": "applies_to" }],
+      "confidence": "fact",
+      "refs": ["cmd:node roles.mjs"]
+    },
+    {
+      "key": "local-docker",
+      "kind": "dead_end",
+      "at": "2026-09-13T12:00:00+09:00",
+      "text": "手元の Docker で schema を先に試すのはやめた。DB は Neon だけで、検証も Neon の branch で行う"
+    },
+    {
+      "key": "sync-idempotent",
+      "kind": "verification",
+      "status": "passed",
+      "at": "2026-09-13T12:40:00+09:00",
+      "text": "変わっていない同期で、書き込みが取り込み元の 2 行だけになる",
+      "command": "mitos sync（2 回目）と pg_stat_user_tables の差",
+      "verifies": "gh-only"
+    },
+    {
+      "key": "codex-subagent-prompt",
+      "kind": "question",
+      "status": "blocking",
+      "at": "2026-09-13T12:45:00+09:00",
+      "text": "Codex の subagent の prompt は UserPromptSubmit を発火するか（自動記録を Codex で有効にする前に測る）"
+    }
+  ]
+}

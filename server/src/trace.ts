@@ -9,8 +9,8 @@
 import type pg from "pg";
 import { z } from "zod";
 import { EMBED_MODEL, type Env, inTransaction } from "./db.ts";
-import { fillKnowledge } from "./embeddings.ts";
-import { conversationId, knowledgeText } from "./knowledge.ts";
+import { type Filled, fillKnowledge } from "./embeddings.ts";
+import { conversationId, knowledgeText, STATUSES } from "./knowledge.ts";
 import { sha256, tsvector } from "./text.ts";
 
 const KEY = /^[a-z0-9][a-z0-9._-]*$/;
@@ -47,7 +47,7 @@ const decision = z
   .object({
     ...common,
     kind: z.literal("decision"),
-    status: z.enum(["proposed", "accepted", "rejected", "superseded"]),
+    status: z.enum(STATUSES.decision),
     /** そのとき働いていた力。なぜこの決定が要ったか */
     context: text,
     options: z.array(z.object({ text, chosen: z.boolean(), why: text.optional() }).strict()).min(1),
@@ -64,7 +64,7 @@ const verification = z
   .object({
     ...common,
     kind: z.literal("verification"),
-    status: z.enum(["passed", "failed", "not_run"]),
+    status: z.enum(STATUSES.verification),
     command: text.optional(),
     /** 実行しなかった理由（not_run のとき） */
     reason: text.optional(),
@@ -74,13 +74,14 @@ const verification = z
   .strict();
 
 const question = z
-  .object({ ...common, kind: z.literal("question"), status: z.enum(["open", "blocking", "resolved"]) })
+  .object({ ...common, kind: z.literal("question"), status: z.enum(STATUSES.question) })
   .strict();
+// 制約・やらないこと・負債は同じ状態を持つ（knowledge.ts の STATUSES）。
 const boundary = z
   .object({
     ...common,
     kind: z.enum(["constraint", "non_goal", "debt"]),
-    status: z.enum(["active", "retired"]),
+    status: z.enum(STATUSES.constraint),
   })
   .strict();
 const event = z.object({ ...common, kind: z.enum(["dead_end", "finding"]) }).strict();
@@ -150,17 +151,16 @@ export const traceSchema = z
         local(i.verifies, "verifies");
       }
     });
-    // superseded と書いた決定は、この記録の別の決定が覆していなければならない（後継の無い superseded は迷子になる）。
+    // superseded と、この記録の中で覆されたことは同じことを 2 通りに書いている。食い違えば止める
+    // （後継の無い superseded は迷子になり、覆されたのに有効のままの決定は DB の CHECK で落ちる）。
     for (const [n, i] of t.items.entries()) {
-      if (i.kind === "decision" && i.status === "superseded") {
-        const by = t.items.some((x) => x.kind === "decision" && x.supersedes === i.key);
-        if (!by)
-          ctx.addIssue({
-            code: "custom",
-            message: "superseded にするなら、覆した決定の supersedes でこの key を指す",
-            path: ["items", n, "status"],
-          });
-      }
+      if (i.kind !== "decision") continue;
+      const by = t.items.find((x) => x.kind === "decision" && x.supersedes === i.key);
+      const issue = (message: string) =>
+        ctx.addIssue({ code: "custom", message, path: ["items", n, "status"] });
+      if (i.status === "superseded" && !by)
+        issue("superseded にするなら、覆した決定の supersedes でこの key を指す");
+      if (by && i.status !== "superseded") issue(`${by.key} が覆しているので、status は superseded にする`);
     }
   });
 
@@ -264,18 +264,48 @@ export function rows(t: Trace): Row[] {
   return out;
 }
 
+/** 知識の行を 1 往復で書く形。**変わった行だけを書き**、全部の行の id を返す（子の decision_id に要る）。 */
+const UPSERT = `with incoming as (
+    select * from jsonb_to_recordset($3::jsonb) as t(
+      source_key text, kind text, status text, confidence text, decision_id bigint, superseded_by_id bigint,
+      work_item_id bigint, heading text, body text, reason text, confirmation text, command text,
+      downsides text[], refs text[], occurred_at timestamptz, content_hash text, lexemes text)
+  ), written as (
+    insert into mitos.knowledge (project_id, conversation_id, work_item_id, source_key, kind, status, confidence,
+                                 decision_id, superseded_by_id, heading, body, reason, confirmation, command,
+                                 downsides, refs, occurred_at, content_hash, lexemes)
+    select $1, $2, t.work_item_id, t.source_key, t.kind, t.status, t.confidence, t.decision_id, t.superseded_by_id,
+           t.heading, t.body, t.reason, t.confirmation, t.command, t.downsides, t.refs, t.occurred_at,
+           decode(t.content_hash, 'hex'), t.lexemes::tsvector
+    from incoming t
+    on conflict (project_id, source_key) do update set
+      conversation_id = excluded.conversation_id, work_item_id = excluded.work_item_id, kind = excluded.kind,
+      status = excluded.status, confidence = excluded.confidence, decision_id = excluded.decision_id,
+      superseded_by_id = excluded.superseded_by_id, heading = excluded.heading, body = excluded.body,
+      reason = excluded.reason, confirmation = excluded.confirmation, command = excluded.command,
+      downsides = excluded.downsides, refs = excluded.refs, occurred_at = excluded.occurred_at,
+      content_hash = excluded.content_hash, lexemes = excluded.lexemes
+    where mitos.knowledge.content_hash <> excluded.content_hash
+    returning id, source_key
+  )
+  select id::text, source_key, true as written from written
+  union all
+  select k.id::text, k.source_key, false from mitos.knowledge k
+  where k.project_id = $1 and k.source_key in (select source_key from incoming)
+    and k.source_key not in (select source_key from written)`;
+
 /** 記録を入れる。同じ session の同じ key は上書きし、書かれていない要素は残す（後から足した trace は追記になる）。 */
 export async function saveTrace(
   client: pg.Client,
   env: Env,
   projectId: number,
   t: Trace,
-): Promise<{ written: number; superseded: number; embedded: number }> {
+): Promise<{ written: number; superseded: number; embedding: Filled }> {
   const all = rows(t);
-  const heading = t.work?.title ?? null;
   const conversation = conversationId(projectId, t.session.host, t.session.id);
-  const startedAt =
-    t.session.startedAt ?? [...t.items.map((i) => i.at)].sort()[0] ?? new Date().toISOString();
+  // 時刻は文字列ではなく時点で比べる（+09:00 と Z が混ざると辞書順は最早にならない）。
+  const earliest = t.items.map((i) => i.at).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
+  const startedAt = t.session.startedAt ?? earliest ?? new Date().toISOString();
 
   const result = await inTransaction(client, async () => {
     // 自動記録がこの session を先に作っていれば、そのまま使う（id は同じ規則で決まる）。
@@ -310,8 +340,12 @@ export async function saveTrace(
     // 別の session の決定を指す参照を、ここで引く。無ければ止める（壊れた参照を黙って落とさない）。
     const idOf = new Map<string, string>();
     const outside = [
-      ...new Set(all.flatMap((r) => (r.parent && !all.some((x) => x.key === r.parent) ? [r.parent] : []))),
-      ...t.items.flatMap((i) => (i.kind === "decision" && i.supersedes ? [sourceKey(t, i.supersedes)] : [])),
+      ...new Set([
+        ...all.flatMap((r) => (r.parent && !all.some((x) => x.key === r.parent) ? [r.parent] : [])),
+        ...t.items.flatMap((i) =>
+          i.kind === "decision" && i.supersedes ? [sourceKey(t, i.supersedes)] : [],
+        ),
+      ]),
     ].filter((k) => !all.some((x) => x.key === k));
     if (outside.length) {
       const found = await client.query<{ id: string; source_key: string }>(
@@ -324,13 +358,20 @@ export async function saveTrace(
     }
 
     // **DB 側の覆しを優先する。**別の session が後で覆した決定を、古い session の再 trace が「採用」に戻さない。
-    const prior = await client.query<{ source_key: string; superseded_by_id: string | null }>(
-      "select source_key, superseded_by_id from mitos.knowledge where project_id = $1 and source_key = any($2)",
+    // work を省いた再 trace は、既に結んだ作業（とその題の見出し）から要素を外さない。
+    const prior = await client.query<{
+      source_key: string;
+      superseded_by_id: string | null;
+      work_item_id: string | null;
+      heading: string | null;
+    }>(
+      "select source_key, superseded_by_id, work_item_id, heading from mitos.knowledge where project_id = $1 and source_key = any($2)",
       [projectId, all.map((r) => r.key)],
     );
     const laterBy = new Map(
       prior.rows.flatMap((p) => (p.superseded_by_id ? [[p.source_key, p.superseded_by_id]] : [])),
     );
+    const priorOf = new Map(prior.rows.map((p) => [p.source_key, p]));
     for (const r of all) {
       if (r.kind === "decision" && laterBy.has(r.key) && !r.supersededBy) r.status = "superseded";
       if (r.kind === "option" && r.status === "chosen" && r.parent && laterBy.has(r.parent))
@@ -339,92 +380,107 @@ export async function saveTrace(
 
     // 書く順: 後継の決定 → 覆された決定 → 案と検証。superseded の行は後継の id を持って入る（表の CHECK）。
     const decisions = all.filter((r) => r.kind === "decision");
-    const ordered: Row[] = [];
+    const layers: Row[][] = [];
     const placed = new Set<string>();
-    while (ordered.length < decisions.length) {
+    while (placed.size < decisions.length) {
       const next = decisions.filter(
         (d) => !placed.has(d.key) && (!d.supersededBy || placed.has(d.supersededBy)),
       );
       if (next.length === 0) throw new Error("この記録の決定が互いに覆し合っている");
-      for (const d of next) {
-        ordered.push(d);
-        placed.add(d.key);
-      }
+      for (const d of next) placed.add(d.key);
+      layers.push(next);
     }
-    ordered.push(...all.filter((r) => r.kind !== "decision"));
-    let written = 0;
-    for (const r of ordered) {
-      const parentId = r.parent ? (idOf.get(r.parent) ?? null) : null;
-      const supersededById = r.supersededBy
-        ? (idOf.get(r.supersededBy) ?? null)
-        : (laterBy.get(r.key) ?? null);
-      const embedText = knowledgeText({ kind: r.kind, heading, body: r.body, reason: r.reason });
-      const hash = sha256(JSON.stringify([r, heading, workId, parentId, supersededById, embedText]));
-      const k = await client.query<{ id: string }>(
-        `insert into mitos.knowledge (project_id, conversation_id, work_item_id, source_key, kind, status, confidence,
-                                      decision_id, superseded_by_id, heading, body, reason, confirmation, command,
-                                      downsides, refs, occurred_at, content_hash, lexemes)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $19, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::tsvector)
-         on conflict (project_id, source_key) do update set
-           conversation_id = excluded.conversation_id, work_item_id = excluded.work_item_id, kind = excluded.kind,
-           status = excluded.status, confidence = excluded.confidence, decision_id = excluded.decision_id,
-           superseded_by_id = excluded.superseded_by_id, heading = excluded.heading, body = excluded.body,
-           reason = excluded.reason, confirmation = excluded.confirmation, command = excluded.command,
-           downsides = excluded.downsides, refs = excluded.refs, occurred_at = excluded.occurred_at,
-           content_hash = excluded.content_hash, lexemes = excluded.lexemes
-         where mitos.knowledge.content_hash <> excluded.content_hash
-         returning id`,
-        [
-          projectId,
-          conversation,
-          workId,
-          r.key,
-          r.kind,
-          r.status,
-          r.confidence,
-          parentId,
-          heading,
-          r.body,
-          r.reason,
-          r.confirmation,
-          r.command,
-          r.downsides,
-          r.refs,
-          r.at,
-          hash,
-          tsvector([heading, r.body, r.reason].filter(Boolean).join("\n")),
-          supersededById,
-        ],
-      );
-      let id = k.rows[0]?.id;
-      if (!id) {
-        // 変わっていない行。id だけ引く（子の decision_id に要る）。
-        const same = await client.query<{ id: string }>(
-          "select id from mitos.knowledge where project_id = $1 and source_key = $2",
-          [projectId, r.key],
-        );
-        id = same.rows[0]?.id;
-        if (!id) throw new Error(`知識を書けなかった: ${r.key}`);
-        idOf.set(r.key, id);
-        continue;
+    layers.push(all.filter((r) => r.kind !== "decision"));
+
+    const written: { id: string; row: Row; embedText: string }[] = [];
+    for (const layer of layers) {
+      if (layer.length === 0) continue;
+      const payload = layer.map((r) => {
+        const parentId = r.parent ? (idOf.get(r.parent) ?? null) : null;
+        const supersededById = r.supersededBy
+          ? (idOf.get(r.supersededBy) ?? null)
+          : (laterBy.get(r.key) ?? null);
+        const work = workId ?? priorOf.get(r.key)?.work_item_id ?? null;
+        const heading = t.work ? t.work.title : (priorOf.get(r.key)?.heading ?? null);
+        const embedText = knowledgeText({ kind: r.kind, heading, body: r.body, reason: r.reason });
+        return {
+          row: r,
+          embedText,
+          json: {
+            source_key: r.key,
+            kind: r.kind,
+            status: r.status,
+            confidence: r.confidence,
+            decision_id: parentId,
+            superseded_by_id: supersededById,
+            work_item_id: work,
+            heading,
+            body: r.body,
+            reason: r.reason,
+            confirmation: r.confirmation,
+            command: r.command,
+            downsides: r.downsides,
+            refs: r.refs,
+            occurred_at: r.at,
+            content_hash: sha256(
+              JSON.stringify([r, heading, work, parentId, supersededById, embedText]),
+            ).toString("hex"),
+            lexemes: tsvector([heading, r.body, r.reason].filter(Boolean).join("\n")),
+          },
+        };
+      });
+      const got = await client.query<{ id: string; source_key: string; written: boolean }>(UPSERT, [
+        projectId,
+        conversation,
+        JSON.stringify(payload.map((x) => x.json)),
+      ]);
+      const byKey = new Map(payload.map((x) => [x.row.key, x]));
+      for (const g of got.rows) {
+        idOf.set(g.source_key, g.id);
+        const x = byKey.get(g.source_key);
+        if (g.written && x) written.push({ id: g.id, row: x.row, embedText: x.embedText });
       }
-      idOf.set(r.key, id);
-      written++;
-      await client.query("delete from mitos.knowledge_file where knowledge_id = $1", [id]);
-      for (const f of r.files) {
+      const lost = layer.filter((r) => !idOf.has(r.key));
+      if (lost.length) throw new Error(`知識を書けなかった: ${lost.map((r) => r.key).join(" / ")}`);
+    }
+
+    // 決定を書き直したら、その決定の案は入力の案で置き換える。書き直した案の数が減っても、古い案を棄却として残さない。
+    const decisionIds = decisions.map((d) => idOf.get(d.key)).filter((x): x is string => Boolean(x));
+    if (decisionIds.length) {
+      await client.query(
+        `delete from mitos.knowledge where project_id = $1 and kind = 'option' and decision_id = any($2::bigint[])
+           and not (source_key = any($3))`,
+        [projectId, decisionIds, all.filter((r) => r.kind === "option").map((r) => r.key)],
+      );
+    }
+
+    // ファイルと埋め込みは書き直した行の分だけ。
+    if (written.length) {
+      const ids = written.map((w) => w.id);
+      await client.query("delete from mitos.knowledge_file where knowledge_id = any($1::bigint[])", [ids]);
+      const files = written.flatMap((w) => w.row.files.map((f) => ({ id: w.id, ...f })));
+      if (files.length) {
         await client.query(
-          `insert into mitos.knowledge_file (knowledge_id, path, role, line_start, line_end) values ($1, $2, $3, $4, $4)
+          `insert into mitos.knowledge_file (knowledge_id, path, role, line_start, line_end)
+           select t.id, t.path, t.role, t.line, t.line from unnest($1::bigint[], $2::text[], $3::text[], $4::int[])
+             as t(id, path, role, line)
            on conflict do nothing`,
-          [id, f.path, f.role, f.line ?? null],
+          [
+            files.map((f) => f.id),
+            files.map((f) => f.path),
+            files.map((f) => f.role),
+            files.map((f) => f.line ?? null),
+          ],
         );
       }
       await client.query(
-        `insert into mitos.knowledge_embedding (knowledge_id, model, source_hash, status) values ($1, $2, $3, 'pending')
+        `insert into mitos.knowledge_embedding (knowledge_id, model, source_hash, status)
+         select t.id, $3, t.hash, 'pending' from unnest($1::bigint[], $2::bytea[]) as t(id, hash)
          on conflict (knowledge_id) do update set
            source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0, last_error = null,
            updated_at = now()
          where mitos.knowledge_embedding.source_hash <> excluded.source_hash`,
-        [id, EMBED_MODEL, sha256(embedText)],
+        [ids, written.map((w) => sha256(w.embedText)), EMBED_MODEL],
       );
     }
 
@@ -459,9 +515,8 @@ export async function saveTrace(
         );
       }
     }
-    return { written, superseded };
+    return { written: written.length, superseded };
   });
 
-  const filled = await fillKnowledge(client, env);
-  return { ...result, embedded: filled.embedded };
+  return { ...result, embedding: await fillKnowledge(client, env) };
 }

@@ -1,6 +1,6 @@
 ---
 name: review-validator
-description: 再現の伴わないコードレビュー finding を 1 件だけ、誤りだと証明しにいくことで独立に裁定する。レビューが再現なしの finding を返してきた時に使用。複数レビュアーの結論が食い違う finding を決着させたい時に使用。修正コストの高い finding に着手する前に妥当性を確かめたい時に使用。主張（ファイル、行、失敗シナリオ）だけを渡し、レビュアーの思考にも依頼元の会話にもアクセスさせないため、fork ではなく必ず新規エージェントとして起動すること。誠実な反証の試みを生き延びた finding は対処する価値があるが、誰も壊そうとしていない finding にその価値はない。判定は CONFIRMED / PLAUSIBLE / REFUTED の 3 値で返し、確定できないものを棄却へ丸めない。
+description: 再現の伴わないレビューの指摘を 1 件だけ、誤りだと証明しにいって CONFIRMED / PLAUSIBLE / REFUTED で裁定する。fork にせず新規エージェントとして起動し、主張（ファイル・行・失敗の筋書き）だけを渡す。
 tools: Read, Grep, Glob, Bash
 model: opus
 effort: high

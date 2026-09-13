@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { identify, localRoots, normalizeRemote, patchPaths, relativeTo } from "../src/project.ts";
+import { identify, localRoots, nameLocal, normalizeRemote, patchPaths, relativeTo } from "../src/project.ts";
 
 test("ssh と https の remote が同じ key へ揃う", () => {
   const want = "github.com/iroha924/hir4ta-developer";
@@ -75,6 +75,35 @@ test("相対パスは根からの形にし、根の外は null", () => {
   assert.equal(relativeTo("/w/repo", "/w/other/x.ts"), null);
   assert.equal(relativeTo("/w/repo", "../x.ts"), null);
   assert.equal(relativeTo("/w/repo", "/w/repo"), null);
+  // `..` で始まる名前は根の中にある。
+  assert.equal(relativeTo("/w/repo", "/w/repo/..config/a.ts"), "..config/a.ts");
+  assert.equal(relativeTo("/w/repo", "/w/repo/..."), "...");
+});
+
+// 空とみなして書き戻すと、ほかの作業場所の名前が全部消える。
+test("名前の対応表が壊れていたら読み飛ばさずに止め、remote のある場所には名前を付けない", () => {
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-map-")));
+  const realHome = process.env.HOME;
+  process.env.HOME = home;
+  const r = repo(null);
+  try {
+    fs.mkdirSync(path.join(home, ".claude"));
+    fs.writeFileSync(path.join(home, ".claude", "mitos-projects.json"), '{"/x": "a",');
+    assert.throws(() => nameLocal(r.dir, "notes"), /JSON の対応表として読めない/);
+    assert.throws(() => identify(r.dir), /JSON の対応表として読めない/);
+    fs.rmSync(path.join(home, ".claude", "mitos-projects.json"));
+    const remote = repo("git@github.com:o/r.git");
+    try {
+      assert.throws(() => nameLocal(remote.dir, "notes"), /git remote を持つ/);
+    } finally {
+      remote.done();
+    }
+    assert.equal(nameLocal(r.dir, "notes").key, "local:notes");
+  } finally {
+    r.done();
+    process.env.HOME = realHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 // 同じ remote のクローンが 2 つあると、並び順で先に来た方へ黙って同期してしまう。

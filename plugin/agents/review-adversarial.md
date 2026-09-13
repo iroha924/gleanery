@@ -1,6 +1,6 @@
 ---
 name: review-adversarial
-description: 言語を問わず、diff に対して「何が壊れうるか」を突きつける — 正しさのバグ、境界、競合状態、暗黙の失敗、運用上の穴、そして主張どおりに検証していないテスト。セキュリティは対象外（review-security）、規約準拠も対象外（review-conventions）、冗長さも対象外（review-cleanup）。変更を生んだ思考を記憶していない状態にするため、fork ではなく必ず新規エージェントとして起動すること。範囲と変更ファイル一覧を渡せば diff は自分で読む。依頼元の会話にはアクセスできない。
+description: diff の正しさ（境界・競合・暗黙の失敗・主張どおりに検証していないテスト）を突きつける独立レビュアー。fork にせず新規エージェントとして起動し、範囲と変更ファイル一覧だけを渡す。
 tools: Read, Grep, Glob, Bash
 model: opus
 effort: xhigh

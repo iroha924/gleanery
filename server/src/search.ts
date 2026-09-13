@@ -6,6 +6,7 @@
 // 再ランクと埋め込みが落ちても検索は返す（語彙側だけ、または融合の順で）。
 
 import crypto from "node:crypto";
+import { z } from "zod";
 import { type Db, type Env, embed, RERANK_MODEL, vec } from "./db.ts";
 import { KINDS, labelOf } from "./knowledge.ts";
 import { bytes, head, tsquery } from "./text.ts";
@@ -47,11 +48,19 @@ const params = (): [unknown[], P] => {
   return [values, (v) => `$${values.push(v)}`];
 };
 
+/** 日付の形。暦にない日（2026-02-30）も弾く。MCP の入力の検査にも使う。 */
+export const DAY = z.iso.date();
+
 // 日付は日本時間の丸一日として読む。DB は UTC なので、そのまま比べるとその朝の分が落ちる。
+// **ここで確かめてから SQL へ渡す。**暦にない日は DB の例外になり、呼び出し側の誤りと区別できない。
+const day = (d: string): string => {
+  if (!DAY.safeParse(d).success) throw new RangeError(`日付は実在する YYYY-MM-DD（日本時間）にする: ${d}`);
+  return d;
+};
 const since = (col: string, d: string, p: P) =>
-  `${col} >= (${p(d)}::date)::timestamp at time zone 'Asia/Tokyo'`;
+  `${col} >= (${p(day(d))}::date)::timestamp at time zone 'Asia/Tokyo'`;
 const until = (col: string, d: string, p: P) =>
-  `${col} < ((${p(d)}::date) + 1)::timestamp at time zone 'Asia/Tokyo'`;
+  `${col} < ((${p(day(d))}::date) + 1)::timestamp at time zone 'Asia/Tokyo'`;
 
 /** 尺度の違う並びを、順位だけで混ぜる（Reciprocal Rank Fusion）。 */
 export function fuse<T extends { ref: string }>(lists: T[][], k = 60): T[] {
@@ -66,14 +75,30 @@ export function fuse<T extends { ref: string }>(lists: T[][], k = 60): T[] {
   return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
 }
 
-async function queryVector(env: Env, question: string, given?: number[]): Promise<number[] | null> {
-  if (given) return given;
+async function queryVector(env: Env, question: string): Promise<number[] | null> {
   try {
     return (await embed(env, [question], "query"))[0] ?? null;
   } catch {
     // 埋め込みが落ちても語彙側で返す。
     return null;
   }
+}
+
+/**
+ * 語彙側と意味側を並べて引く。**両方を同じ tick で Promise.all へ渡す。**語彙側を先に投げて埋め込みを await すると、
+ * その間の reject に受け手が無く、Node はプロセスごと落とす（MCP サーバーが終わる）。
+ */
+async function both<R>(
+  env: Env,
+  question: string,
+  lexical: (() => Promise<{ rows: R[] }>) | null,
+  dense: (v: number[]) => Promise<{ rows: R[] }>,
+): Promise<[R[], R[]]> {
+  const [lex, den] = await Promise.all([
+    lexical ? lexical() : { rows: [] },
+    queryVector(env, question).then((v) => (v ? dense(v) : { rows: [] })),
+  ]);
+  return [lex.rows, den.rows];
 }
 
 /** 札を前置して再ランクする。**札が無いと、棄却した案が文字面の近さで 1 位に来る。** */
@@ -121,7 +146,6 @@ export type KnowledgeQuery = {
   since?: string | undefined;
   until?: string | undefined;
   limit: number;
-  queryVector?: number[] | undefined;
 };
 
 type KnowledgeRow = {
@@ -176,8 +200,9 @@ function knowledgeFilters(q: KnowledgeQuery, p: P): string[] {
   w.push(kinds?.length ? `k.kind = any(${p(kinds)})` : "k.kind <> 'document'");
   if (q.avoid) w.push("k.stance = 'dont'");
   else {
-    // 通常の検索は、いま有効な知識だけ。覆された決定・当時の案・外した制約・解決した問いは avoid で引く。
-    // 採った案は決定と同じ内容なので、決定だけを返す。
+    // 通常の検索は、いま有効な知識だけ。覆された決定と当時の案は avoid で引く（再提案を止めるため）。
+    // 外した制約と解決した問いはどの検索にも出さない（read と画面のセッション詳細で読む）。外した理由は
+    // 決定として残す（trace の Skill）。採った案は決定と同じ内容なので、決定だけを返す。
     w.push("not (k.kind = 'decision' and k.status = 'superseded')");
     w.push("not (k.kind = 'option' and k.status in ('chosen', 'was_chosen'))");
     w.push("coalesce(k.status, '') not in ('retired', 'resolved')");
@@ -193,52 +218,50 @@ function knowledgeFilters(q: KnowledgeQuery, p: P): string[] {
 
 /** 判断と文書を探す。 */
 export async function searchKnowledge(db: Db, env: Env, q: KnowledgeQuery): Promise<Hit[]> {
+  // 絞り込みを先に組む（日付の誤りをここで投げる）。
+  knowledgeFilters(q, params()[1]);
   const words = tsquery(q.question);
-  const lexical = words
-    ? (() => {
-        const [v, p] = params();
-        const w = knowledgeFilters(q, p);
-        const t = p(words);
-        return db.query<KnowledgeRow>(
-          `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
-           where ${[...w, `k.lexemes @@ ${t}::tsquery`].join(" and ")}
-           order by ts_rank_cd(k.lexemes, ${t}::tsquery) desc, k.occurred_at desc limit ${p(POOL)}`,
-          v,
-        );
-      })()
-    : Promise.resolve({ rows: [] as KnowledgeRow[] });
-  const qv = await queryVector(env, q.question, q.queryVector);
-  const dense = qv
-    ? (() => {
-        const [v, p] = params();
-        const w = knowledgeFilters(q, p);
-        return db.query<KnowledgeRow>(
-          `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
-           join mitos.knowledge_embedding e on e.knowledge_id = k.id and e.status = 'ready'
-           where ${w.join(" and ")}
-           order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
-          v,
-        );
-      })()
-    : Promise.resolve({ rows: [] as KnowledgeRow[] });
-  const [lex, den] = await Promise.all([lexical, dense]);
-  const fused = fuse([den.rows.map(knowledgeHit), lex.rows.map(knowledgeHit)]);
-  return rerank(env, q.question, fused, q.limit);
+  const [lex, den] = await both(
+    env,
+    q.question,
+    words
+      ? () => {
+          const [v, p] = params();
+          const w = knowledgeFilters(q, p);
+          const t = p(words);
+          return db.query<KnowledgeRow>(
+            `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
+             where ${[...w, `k.lexemes @@ ${t}::tsquery`].join(" and ")}
+             order by ts_rank_cd(k.lexemes, ${t}::tsquery) desc, k.occurred_at desc limit ${p(POOL)}`,
+            v,
+          );
+        }
+      : null,
+    (qv) => {
+      const [v, p] = params();
+      const w = knowledgeFilters(q, p);
+      return db.query<KnowledgeRow>(
+        `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
+         join mitos.knowledge_embedding e on e.knowledge_id = k.id and e.status = 'ready'
+         where ${w.join(" and ")}
+         order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
+        v,
+      );
+    },
+  );
+  return rerank(env, q.question, fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]), q.limit);
 }
 
 export type MessageQuery = {
   /** 省くと新しい順 */
   question?: string | undefined;
   projects: Scope;
-  /** self は持ち主、person は持ち主以外の人。省くと両方 */
-  speaker?: "self" | "person" | undefined;
-  /** 呼び名かハンドル */
-  person?: string | undefined;
+  /** me は持ち主、others は持ち主以外の人、それ以外は呼び名かハンドル。省くと誰でも */
+  who?: string | undefined;
   path?: string | undefined;
   since?: string | undefined;
   until?: string | undefined;
   limit: number;
-  queryVector?: number[] | undefined;
 };
 
 type MessageRow = {
@@ -318,10 +341,10 @@ function messageFilters(q: MessageQuery, p: P): string[] {
   // 索引した発言だけ（coding session の AI の応答と自動通知は lexemes を持たない）。
   const w = ["m.lexemes is not null"];
   if (q.projects) w.push(`c.project_id = any(${p(q.projects)})`);
-  if (q.speaker === "self") w.push(SELF);
-  if (q.speaker === "person") w.push(`not ${SELF} and m.speaker_kind = 'person'`);
-  if (q.person) {
-    const x = p(q.person);
+  if (q.who === "me") w.push(SELF);
+  else if (q.who === "others") w.push(`not ${SELF} and m.speaker_kind = 'person'`);
+  else if (q.who) {
+    const x = p(q.who.replace(/^@/, ""));
     w.push(`(lower(i.handle) = lower(${x}) or pe.display_name = ${x})`);
   }
   if (q.path)
@@ -342,37 +365,38 @@ export async function searchMessages(db: Db, env: Env, q: MessageQuery): Promise
     );
     return r.rows.map(messageHit);
   }
+  messageFilters(q, params()[1]);
   const question = q.question;
   const words = tsquery(question);
-  const lexical = words
-    ? (() => {
-        const [v, p] = params();
-        const w = messageFilters(q, p);
-        const t = p(words);
-        return db.query<MessageRow>(
-          `select ${MESSAGE_COLS} ${MESSAGE_FROM}
-           where ${[...w, `m.lexemes @@ ${t}::tsquery`].join(" and ")}
-           order by ts_rank_cd(m.lexemes, ${t}::tsquery) desc, m.sent_at desc limit ${p(POOL)}`,
-          v,
-        );
-      })()
-    : Promise.resolve({ rows: [] as MessageRow[] });
-  const qv = await queryVector(env, question, q.queryVector);
-  const dense = qv
-    ? (() => {
-        const [v, p] = params();
-        const w = messageFilters(q, p);
-        return db.query<MessageRow>(
-          `select ${MESSAGE_COLS} ${MESSAGE_FROM}
-           join mitos.message_embedding e on e.message_id = m.id and e.status = 'ready'
-           where ${w.join(" and ")}
-           order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
-          v,
-        );
-      })()
-    : Promise.resolve({ rows: [] as MessageRow[] });
-  const [lex, den] = await Promise.all([lexical, dense]);
-  return rerank(env, question, fuse([den.rows.map(messageHit), lex.rows.map(messageHit)]), q.limit);
+  const [lex, den] = await both(
+    env,
+    question,
+    words
+      ? () => {
+          const [v, p] = params();
+          const w = messageFilters(q, p);
+          const t = p(words);
+          return db.query<MessageRow>(
+            `select ${MESSAGE_COLS} ${MESSAGE_FROM}
+             where ${[...w, `m.lexemes @@ ${t}::tsquery`].join(" and ")}
+             order by ts_rank_cd(m.lexemes, ${t}::tsquery) desc, m.sent_at desc limit ${p(POOL)}`,
+            v,
+          );
+        }
+      : null,
+    (qv) => {
+      const [v, p] = params();
+      const w = messageFilters(q, p);
+      return db.query<MessageRow>(
+        `select ${MESSAGE_COLS} ${MESSAGE_FROM}
+         join mitos.message_embedding e on e.message_id = m.id and e.status = 'ready'
+         where ${w.join(" and ")}
+         order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
+        v,
+      );
+    },
+  );
+  return rerank(env, question, fuse([den.map(messageHit), lex.map(messageHit)]), q.limit);
 }
 
 export type Work = {
@@ -425,7 +449,7 @@ export async function openWork(db: Db, projects: Scope, limit = 3): Promise<Work
 }
 
 /** 作業 1 件の、再開に要るもの全部。 */
-export async function workDetail(db: Db, id: string): Promise<WorkDetail | null> {
+export async function workDetail(db: Db, id: string, projects: Scope = null): Promise<WorkDetail | null> {
   const w = await db.query<{
     id: string;
     project: string;
@@ -437,8 +461,9 @@ export async function workDetail(db: Db, id: string): Promise<WorkDetail | null>
     updated_at: Date;
   }>(
     `select w.id::text, p.name as project, w.title, w.goal, w.current, w.next, w.status, w.updated_at
-     from mitos.work_item w join mitos.project p on p.id = w.project_id where w.id = $1`,
-    [id],
+     from mitos.work_item w join mitos.project p on p.id = w.project_id
+     where w.id = $1 and ($2::bigint[] is null or w.project_id = any($2))`,
+    [id, projects],
   );
   const row = w.rows[0];
   if (!row) return null;
@@ -503,11 +528,17 @@ export type Item = {
   author: string | null;
   url: string | null;
   createdAt: Date | null;
+  /** マージした（PR）か閉じた時刻。開いているものは null */
+  closedAt: Date | null;
   updatedAt: Date | null;
   project: string;
 };
 
-/** PR・issue を条件で並べる。「私の最新のマージ済み PR」は意味検索ではなく絞り込みと並び替え。 */
+/**
+ * PR・issue を条件で並べる。「私の最新のマージ済み PR」は意味検索ではなく絞り込みと並び替え。
+ * **日付の軸は状態で決まる。**merged / closed を聞いたらマージ・クローズした日、それ以外は作成日で絞って新しい順に並べる。
+ * 「先週マージした PR」を作成日で絞ると、先週より前に作って先週マージしたものが落ちる。
+ */
 export async function listItems(
   db: Db,
   q: {
@@ -535,8 +566,9 @@ export async function listItems(
       `(lower(i.handle) = lower(${x}) or pe.display_name = ${x} or (${x} in ('私', 'me') and coalesce(pe.is_self, false)))`,
     );
   }
-  if (q.since) w.push(since("coalesce(s.source_created_at, s.synced_at)", q.since, p));
-  if (q.until) w.push(until("coalesce(s.source_created_at, s.synced_at)", q.until, p));
+  const at = q.state === "merged" || q.state === "closed" ? "s.closed_at" : "s.source_created_at";
+  if (q.since) w.push(since(at, q.since, p));
+  if (q.until) w.push(until(at, q.until, p));
   const from = `from mitos.source_item s
     join mitos.connector cn on cn.id = s.connector_id
     join mitos.project pr on pr.id = cn.project_id
@@ -553,12 +585,13 @@ export async function listItems(
     handle: string | null;
     url: string | null;
     source_created_at: Date | null;
+    closed_at: Date | null;
     source_updated_at: Date | null;
     project: string;
   }>(
-    `select s.id::text, s.kind, s.external_id, s.title, s.state, i.handle, s.url, s.source_created_at,
+    `select s.id::text, s.kind, s.external_id, s.title, s.state, i.handle, s.url, s.source_created_at, s.closed_at,
             s.source_updated_at, pr.name as project
-     ${from} order by s.source_updated_at desc nulls last limit ${p(q.limit)} offset ${p(q.offset ?? 0)}`,
+     ${from} order by ${at} desc nulls last, s.id desc limit ${p(q.limit)} offset ${p(q.offset ?? 0)}`,
     v,
   );
   return {
@@ -572,10 +605,24 @@ export async function listItems(
       author: x.handle,
       url: x.url,
       createdAt: x.source_created_at,
+      closedAt: x.closed_at,
       updatedAt: x.source_updated_at,
       project: x.project,
     })),
   };
+}
+
+/** 名簿の 1 行。**推論しない** — 人が `mitos who` で入れたものだけ。 */
+export type Person = { display: string; handles: string[]; isSelf: boolean };
+
+export async function directory(db: Db): Promise<Person[]> {
+  const r = await db.query<{ display_name: string; is_self: boolean; handles: string[] }>(
+    `select pe.display_name, pe.is_self,
+            coalesce(array_agg(i.handle order by i.handle) filter (where i.id is not null), '{}') as handles
+     from mitos.person pe left join mitos.person_identity i on i.person_id = pe.id
+     group by pe.id order by pe.is_self desc, pe.display_name`,
+  );
+  return r.rows.map((p) => ({ display: p.display_name, handles: p.handles, isSelf: p.is_self }));
 }
 
 // ---- 読む側へ渡す形 ----
@@ -592,7 +639,8 @@ export function framed(body: string): string {
   );
 }
 
-const day = (d: Date | null): string => (d ? d.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }) : "");
+const dateOf = (d: Date | null): string =>
+  d ? d.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }) : "";
 const cut = (s: string, n: number): string => {
   const h = head(s, n);
   return h.length < s.length ? `${h}…（続きは read で読む）` : s;
@@ -609,7 +657,7 @@ export function renderHit(h: Hit, perRow = 900): string {
     h.truncated
       ? `  ※ 一部だけを保存した発言（元は ${h.originalBytes?.toLocaleString("en-US")} bytes）。全体の結論を断定しない`
       : null,
-    `  出自: ${[h.project, h.context, day(h.at), h.url, h.ref].filter(Boolean).join(" / ")}`,
+    `  出自: ${[h.project, h.context, dateOf(h.at), h.url, h.ref].filter(Boolean).join(" / ")}`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -633,7 +681,7 @@ export function renderHits(hits: Hit[], budget: number): string {
 
 export function renderWork(w: WorkDetail, budget: number): string {
   const lines = [
-    `## ${w.title}（${w.project} / ${w.status} / ${day(w.updatedAt)} 更新 / ${w.ref}）`,
+    `## ${w.title}（${w.project} / ${w.status} / ${dateOf(w.updatedAt)} 更新 / ${w.ref}）`,
     `目指すところ: ${w.goal}`,
     `いまの状況: ${w.current}`,
     w.next.length ? `次にやること:\n${w.next.map((n) => `  - ${n}`).join("\n")}` : null,
@@ -651,33 +699,40 @@ export function renderWork(w: WorkDetail, budget: number): string {
   return [lines, ...rest].join("\n\n");
 }
 
-/** 参照を読む。`k:` 知識、`m:` 発言とその前後、`s:` 取り込み元（文書の原文、PR・issue）、`w:` 作業。 */
-export async function read(db: Db, refs: string[], budget: number, around = 3): Promise<string> {
+/** 参照の形。k: / s: / w: は連番、m: は uuid。**形はここで確かめ、DB の例外を参照の誤りに読み替えない。** */
+export const REF = /^(?:[ksw]:\d{1,18}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+
+/**
+ * 参照を読む。`k:` 知識、`m:` 発言とその前後、`s:` 取り込み元（文書の原文、PR・issue）、`w:` 作業。
+ * projects を渡すと、その作業場所の外の参照は「無い」と返す（画面のチャットは選んだ作業場所の外を読ませない）。
+ */
+export async function read(
+  db: Db,
+  refs: string[],
+  budget: number,
+  opts: { projects?: Scope; around?: number } = {},
+): Promise<string> {
   const each = Math.floor(budget / Math.max(refs.length, 1));
+  const scope = opts.projects ?? null;
   const out: string[] = [];
   for (const ref of refs) {
-    const [kind, id] = [ref.slice(0, 1), ref.slice(2)];
-    if (ref[1] !== ":" || !id) {
-      out.push(`${ref}: 読めない参照（k: / m: / s: / w: に続けて id）`);
+    if (!REF.test(ref)) {
+      out.push(`${ref}: 読めない参照（k: / s: / w: は数字、m: は uuid）`);
       continue;
     }
-    try {
-      if (kind === "k") out.push(await readKnowledge(db, id, each));
-      else if (kind === "m") out.push(await readMessage(db, id, each, around));
-      else if (kind === "s") out.push(await readSource(db, id, each));
-      else if (kind === "w") {
-        const w = await workDetail(db, id);
-        out.push(w ? renderWork(w, each) : `${ref}: 無い`);
-      } else out.push(`${ref}: 読めない参照（k: / m: / s: / w: に続けて id）`);
-    } catch {
-      // id の形が違う（uuid でない m: など）。DB の型の誤りは参照の誤りとして返す。
-      out.push(`${ref}: 読めない参照`);
+    const id = ref.slice(2);
+    if (ref.startsWith("k:")) out.push(await readKnowledge(db, id, each, scope));
+    else if (ref.startsWith("m:")) out.push(await readMessage(db, id, each, opts.around ?? 3, scope));
+    else if (ref.startsWith("s:")) out.push(await readSource(db, id, each, scope));
+    else {
+      const w = await workDetail(db, id, scope);
+      out.push(w ? renderWork(w, each) : `${ref}: 無い`);
     }
   }
   return out.join("\n\n");
 }
 
-async function readKnowledge(db: Db, id: string, budget: number): Promise<string> {
+async function readKnowledge(db: Db, id: string, budget: number, projects: Scope): Promise<string> {
   const r = await db.query<
     KnowledgeRow & {
       refs: string[];
@@ -688,8 +743,9 @@ async function readKnowledge(db: Db, id: string, budget: number): Promise<string
     }
   >(
     `select ${KNOWLEDGE_COLS}, k.refs, k.confidence, c.origin, c.external_id as session, k.decision_id::text
-     ${KNOWLEDGE_FROM} left join mitos.conversation c on c.id = k.conversation_id where k.id = $1`,
-    [id],
+     ${KNOWLEDGE_FROM} left join mitos.conversation c on c.id = k.conversation_id
+     where k.id = $1 and ($2::bigint[] is null or k.project_id = any($2))`,
+    [id, projects],
   );
   const k = r.rows[0];
   if (!k) return `k:${id}: 無い`;
@@ -715,22 +771,32 @@ async function readKnowledge(db: Db, id: string, budget: number): Promise<string
   return head(lines.filter(Boolean).join("\n"), budget);
 }
 
-async function readMessage(db: Db, id: string, budget: number, around: number): Promise<string> {
+async function readMessage(
+  db: Db,
+  id: string,
+  budget: number,
+  around: number,
+  projects: Scope,
+): Promise<string> {
   const target = await db.query<{ conversation_id: string; sent_at: Date }>(
-    "select conversation_id, sent_at from mitos.message where id = $1",
-    [id],
+    `select m.conversation_id, m.sent_at from mitos.message m join mitos.conversation c on c.id = m.conversation_id
+     where m.id = $1 and ($2::bigint[] is null or c.project_id = any($2))`,
+    [id, projects],
   );
   const t = target.rows[0];
   if (!t) return `m:${id}: 無い`;
   // 前後の turn も読む。AI の応答（索引していない）もここでは出す — 「それでいい」が何を指したかが分かる。
+  // 並びは (sent_at, id)。同じ時刻の発言が並んでも、対象の発言が前後の件数の上限で落ちない。
   const r = await db.query<MessageRow & { paths: string[] }>(
     `(select ${MESSAGE_COLS}, array(select f.path from mitos.message_file f where f.message_id = m.id order by f.path) as paths
-      ${MESSAGE_FROM} where m.conversation_id = $1 and m.sent_at < $2 order by m.sent_at desc limit $3)
+      ${MESSAGE_FROM} where m.conversation_id = $1 and (m.sent_at, m.id) < ($2, $5::uuid)
+      order by m.sent_at desc, m.id desc limit $3)
      union all
      (select ${MESSAGE_COLS}, array(select f.path from mitos.message_file f where f.message_id = m.id order by f.path) as paths
-      ${MESSAGE_FROM} where m.conversation_id = $1 and m.sent_at >= $2 order by m.sent_at limit $4)
-     order by sent_at`,
-    [t.conversation_id, t.sent_at, around, around + 1],
+      ${MESSAGE_FROM} where m.conversation_id = $1 and (m.sent_at, m.id) >= ($2, $5::uuid)
+      order by m.sent_at, m.id limit $4)
+     order by sent_at, id`,
+    [t.conversation_id, t.sent_at, around, around + 1, id],
   );
   const per = Math.floor(budget / Math.max(r.rows.length, 1));
   return r.rows
@@ -742,7 +808,7 @@ async function readMessage(db: Db, id: string, budget: number, around: number): 
     .join("\n\n");
 }
 
-async function readSource(db: Db, id: string, budget: number): Promise<string> {
+async function readSource(db: Db, id: string, budget: number, projects: Scope): Promise<string> {
   const r = await db.query<{
     kind: string;
     external_id: string;
@@ -761,8 +827,8 @@ async function readSource(db: Db, id: string, budget: number): Promise<string> {
      from mitos.source_item s join mitos.connector cn on cn.id = s.connector_id
      join mitos.project p on p.id = cn.project_id
      left join mitos.conversation c on c.source_item_id = s.id
-     where s.id = $1`,
-    [id],
+     where s.id = $1 and ($2::bigint[] is null or cn.project_id = any($2))`,
+    [id, projects],
   );
   const s = r.rows[0];
   if (!s) return `s:${id}: 無い`;
@@ -771,7 +837,7 @@ async function readSource(db: Db, id: string, budget: number): Promise<string> {
       s.kind === "document"
         ? s.title
         : `${s.metadata.changeTitle ?? s.title}（${s.kind === "requirements" ? "要件定義" : "設計書"}）`;
-    return `${labelOf({ kind: "document", status: null, source_kind: s.kind, path: s.path })}${title}\n  出自: ${s.project} / ${s.path} / ${day(s.source_updated_at)}\n\n${cut(s.body, budget)}`;
+    return `${labelOf({ kind: "document", status: null, source_kind: s.kind, path: s.path })}${title}\n  出自: ${s.project} / ${s.path} / ${dateOf(s.source_updated_at)}\n\n${cut(s.body, budget)}`;
   }
   const first = s.conversation
     ? await db.query<{ body: string }>(
@@ -781,7 +847,7 @@ async function readSource(db: Db, id: string, budget: number): Promise<string> {
     : { rows: [] };
   return [
     `【${s.kind === "pull_request" ? "PR" : "issue"}】#${s.external_id} ${s.title}（${s.state}）`,
-    `  出自: ${s.project} / ${day(s.source_updated_at)} 更新 / ${s.url}`,
+    `  出自: ${s.project} / ${dateOf(s.source_updated_at)} 更新 / ${s.url}`,
     first.rows[0] ? `\n${cut(first.rows[0].body, budget - 400)}` : null,
   ]
     .filter(Boolean)

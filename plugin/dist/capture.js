@@ -5079,6 +5079,7 @@ var require_lib2 = __commonJS(function(exports, module) {
 });
 
 // server/src/capture.ts
+import { spawn } from "node:child_process";
 import fs3 from "node:fs";
 import os3 from "node:os";
 import path3 from "node:path";
@@ -23708,12 +23709,23 @@ var git = (dir, ...args) => {
   }
 };
 function localMap() {
+  let raw;
   try {
-    const m = JSON.parse(fs.readFileSync(localFile(), "utf8"));
-    return m && typeof m === "object" ? m : {};
-  } catch {
-    return {};
+    raw = fs.readFileSync(localFile(), "utf8");
+  } catch (e) {
+    if (e.code === "ENOENT")
+      return {};
+    throw e;
   }
+  let m;
+  try {
+    m = JSON.parse(raw);
+  } catch {
+    m = null;
+  }
+  if (!m || typeof m !== "object" || Array.isArray(m))
+    throw new Error(`${localFile()} が JSON の対応表として読めない。直すか消してから、名前を付け直す`);
+  return m;
 }
 function identify(dir) {
   const given = path.resolve(dir);
@@ -23734,7 +23746,7 @@ function identify(dir) {
 function relativeTo(root, file2, cwd = root) {
   const abs = path.resolve(cwd, file2);
   const rel = path.relative(root, abs);
-  if (!rel || rel.startsWith("..") || path.isAbsolute(rel))
+  if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel))
     return null;
   return rel.split(path.sep).join("/");
 }
@@ -23857,6 +23869,13 @@ async function inTransaction(client, fn) {
 }
 var VOYAGE = "https://api.voyageai.com/v1/embeddings";
 var EMBED_MODEL = "voyage-4-large";
+class VoyageError extends Error {
+  status;
+  constructor(message, status) {
+    super(message);
+    this.status = status;
+  }
+}
 async function embed(env, texts, inputType) {
   if (!env.VOYAGE_API_KEY)
     throw new Error("VOYAGE_API_KEY が無い");
@@ -23894,7 +23913,7 @@ async function embed(env, texts, inputType) {
       })
     });
     if (!res.ok)
-      throw new Error(`Voyage が ${res.status}: ${(await res.text()).slice(0, 300)}`);
+      throw new VoyageError(`Voyage が ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status);
     const json2 = await res.json();
     for (const d of json2.data.sort((a, b) => a.index - b.index))
       out.push(d.embedding);
@@ -23990,6 +24009,7 @@ var conversationId = (projectId, origin, externalId) => uuidFrom(String(projectI
 // server/src/capture.ts
 var spoolDir = () => path3.join(os3.homedir(), ".claude", "mitos-spool");
 var stateFile = () => path3.join(os3.homedir(), ".claude", "mitos-capture.json");
+var rejectedDir = () => path3.join(spoolDir(), "rejected");
 var MAX_MESSAGE = 128 * 1024;
 var KEEP = 8 * 1024;
 function fit(body) {
@@ -24012,18 +24032,30 @@ ${z2}`,
 var SECRETS = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
   [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
+  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
+  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
   [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
+  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
+  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
   [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
   [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"]
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/g, "Bearer トークン"]
 ];
+var ENV_ASSIGN = /\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*=\s*)(["']?)[^\s"']+\3/g;
+var FIELD_ASSIGN = /(["']?)\b([A-Za-z0-9_]*(?:api_?key|secret(?:_access)?_?key|access_?key|private_?key|client_?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?!\[伏せた)[^\s"',;]{6,}\4/gi;
+var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]+:)\S*@([^@\s/?#]+)/g;
 function mask(text) {
-  let out = text;
+  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]");
   for (const [re, what] of SECRETS)
     out = out.replace(re, `[伏せた: ${what}]`);
-  return out.replace(/\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^:\s/@]+:)[^@\s]+@/g, "$1[伏せた]@");
+  return out;
 }
 function spool(record2) {
   const dir = spoolDir();
@@ -24043,18 +24075,25 @@ var branchOf = (root) => {
     return null;
   }
 };
-function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION) {
+function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT) {
   if (!input2.session_id || input2.agent_id)
     return false;
-  return parent === undefined || parent === "" || parent === input2.session_id;
+  if (parent)
+    return parent === input2.session_id;
+  return entrypoint !== "sdk-cli";
 }
 function answersOf(input2) {
   const response = input2.tool_response;
   const answers = response?.answers ?? input2.tool_input?.answers;
   if (!answers || typeof answers !== "object")
     return null;
-  const lines = Object.entries(answers).map(([q, a]) => `Q: ${q}
-A: ${Array.isArray(a) ? a.join(" / ") : String(a)}`);
+  const lines = Object.entries(answers).map(([q, a]) => {
+    const notes = response?.annotations?.[q]?.notes;
+    const memo2 = typeof notes === "string" && notes.trim() ? `
+メモ: ${notes.trim()}` : "";
+    return `Q: ${q}
+A: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo2}`;
+  });
   return lines.length ? lines.join(`
 
 `) : null;
@@ -24126,23 +24165,35 @@ function writeState(s) {
   } catch {}
 }
 function readState() {
-  let pending = 0;
+  const count = (dir) => {
+    try {
+      return fs3.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
+    } catch {
+      return 0;
+    }
+  };
+  const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
   try {
-    pending = fs3.readdirSync(spoolDir()).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
-  } catch {}
-  try {
-    return { ...JSON.parse(fs3.readFileSync(stateFile(), "utf8")), pending };
+    return { ...JSON.parse(fs3.readFileSync(stateFile(), "utf8")), ...counts };
   } catch {
-    return { pending };
+    return counts;
   }
 }
 function lock() {
   const file2 = path3.join(spoolDir(), ".lock");
+  fs3.mkdirSync(spoolDir(), { recursive: true, mode: 448 });
+  const holder = Number(fs3.readFileSync(file2, { encoding: "utf8", flag: "a+" }) || 0);
+  const st = fs3.statSync(file2, { throwIfNoEntry: false });
+  const alive = (() => {
+    try {
+      return holder > 0 && process.kill(holder, 0);
+    } catch {
+      return false;
+    }
+  })();
+  if (!alive || st && Date.now() - st.mtimeMs > 5 * 60000)
+    fs3.rmSync(file2, { force: true });
   try {
-    fs3.mkdirSync(spoolDir(), { recursive: true, mode: 448 });
-    const st = fs3.statSync(file2, { throwIfNoEntry: false });
-    if (st && Date.now() - st.mtimeMs > 5 * 60000)
-      fs3.rmSync(file2, { force: true });
     fs3.writeFileSync(file2, String(process.pid), { flag: "wx" });
     return () => fs3.rmSync(file2, { force: true });
   } catch {
@@ -24150,16 +24201,108 @@ function lock() {
   }
 }
 var BATCH = 500;
+async function write(db, batch, projects, vectors) {
+  return inTransaction(db, async () => {
+    const conversations = new Map;
+    for (const r of batch) {
+      const p = projects.get(r.project);
+      if (!p)
+        continue;
+      const id = conversationId(p.id, r.host, r.session);
+      const prev = conversations.get(id);
+      if (!prev || Date.parse(r.at) < Date.parse(prev.at))
+        conversations.set(id, {
+          project: p.id,
+          host: r.host,
+          session: r.session,
+          branch: r.branch,
+          at: r.at
+        });
+    }
+    const c = [...conversations];
+    await db.query(`insert into mitos.conversation (id, project_id, origin, external_id, branch, started_at)
+       select * from unnest($1::uuid[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
+       on conflict do nothing`, [
+      c.map(([id]) => id),
+      c.map(([, v]) => v.project),
+      c.map(([, v]) => v.host),
+      c.map(([, v]) => v.session),
+      c.map(([, v]) => v.branch),
+      c.map(([, v]) => v.at)
+    ]);
+    const messages = batch.flatMap((m) => {
+      const p = m.kind === "message" ? projects.get(m.project) : undefined;
+      if (m.kind !== "message" || !p)
+        return [];
+      const conversation = conversationId(p.id, m.host, m.session);
+      return [
+        { m, conversation, id: uuidFrom(conversation, m.id), indexed: indexesMessage(m.host, m.speaker) }
+      ];
+    });
+    const inserted = await db.query(`insert into mitos.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
+                                  original_bytes, sent_at, content_hash, lexemes)
+       select t.id, t.conversation, t.external, t.turn, t.speaker, t.body, t.truncated, t.bytes, t.at, t.hash,
+              t.lex::tsvector
+       from unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[],
+                   $8::int[], $9::timestamptz[], $10::bytea[], $11::text[])
+         as t(id, conversation, external, turn, speaker, body, truncated, bytes, at, hash, lex)
+       on conflict do nothing`, [
+      messages.map((x) => x.id),
+      messages.map((x) => x.conversation),
+      messages.map((x) => x.m.id),
+      messages.map((x) => x.m.turn),
+      messages.map((x) => x.m.speaker),
+      messages.map((x) => x.m.body),
+      messages.map((x) => x.m.truncated),
+      messages.map((x) => x.m.originalBytes),
+      messages.map((x) => x.m.at),
+      messages.map((x) => sha256(x.m.body)),
+      messages.map((x) => x.indexed ? tsvector(x.m.body) : null)
+    ]);
+    const embedded = messages.flatMap((x) => {
+      const e = vectors.get(x.m);
+      return e ? [{ id: x.id, text: e.text, v: e.v }] : [];
+    });
+    await db.query(`insert into mitos.message_embedding (message_id, model, source_hash, status, embedding)
+       select t.id, $5, t.hash, t.status, t.v::extensions.halfvec
+       from unnest($1::uuid[], $2::bytea[], $3::text[], $4::text[]) as t(id, hash, status, v)
+       on conflict do nothing`, [
+      embedded.map((x) => x.id),
+      embedded.map((x) => sha256(x.text)),
+      embedded.map((x) => x.v ? "ready" : "pending"),
+      embedded.map((x) => x.v ? vec(x.v) : null),
+      EMBED_MODEL
+    ]);
+    const files = batch.flatMap((r) => {
+      const p = r.kind === "file" ? projects.get(r.project) : undefined;
+      if (r.kind !== "file" || !p)
+        return [];
+      return [
+        {
+          message: uuidFrom(conversationId(p.id, r.host, r.session), `${r.turn}:self`),
+          path: r.path,
+          action: r.action
+        }
+      ];
+    });
+    await db.query(`insert into mitos.message_file (message_id, path, action)
+       select t.message, t.path, t.action from unnest($1::uuid[], $2::text[], $3::text[]) as t(message, path, action)
+       where exists (select 1 from mitos.message m where m.id = t.message)
+       on conflict do nothing`, [files.map((f) => f.message), files.map((f) => f.path), files.map((f) => f.action)]);
+    return inserted.rowCount ?? 0;
+  });
+}
+var rejected = (e) => /^2[23]/.test(String(e.code ?? ""));
 async function flush(env) {
   const unlock = lock();
   if (!unlock)
-    return { sent: 0, dropped: 0 };
+    return { sent: 0, dropped: 0, rejected: 0, busy: true };
   const dir = spoolDir();
   let client = null;
   try {
     const names = fs3.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).sort().slice(0, BATCH);
     if (names.length === 0)
-      return { sent: 0, dropped: 0 };
+      return { sent: 0, dropped: 0, rejected: 0 };
     const records = [];
     for (const name of names) {
       try {
@@ -24173,8 +24316,7 @@ async function flush(env) {
     const projects = new Map((await db.query("select id, key, name from mitos.project where key = any($1)", [[...new Set(records.map((x) => x.r.project))]])).rows.map((p) => [p.key, { id: Number(p.id), name: p.name }]));
     const known = records.filter((x) => projects.has(x.r.project));
     const dropped = records.length - known.length;
-    const messages = known.flatMap((x) => x.r.kind === "message" ? [x.r] : []);
-    const toEmbed = messages.filter((m) => indexesMessage(m.host, m.speaker));
+    const toEmbed = known.flatMap((x) => x.r.kind === "message" && indexesMessage(x.r.host, x.r.speaker) ? [x.r] : []);
     const texts = toEmbed.map((m) => messageText({
       body: m.body,
       speakerKind: m.speaker,
@@ -24190,73 +24332,34 @@ async function flush(env) {
       vectors = null;
     }
     const vectorOf = new Map(toEmbed.map((m, n) => [m, { text: texts[n] ?? "", v: vectors?.[n] }]));
-    let added = 0;
-    await inTransaction(db, async () => {
-      const conversations = new Map;
-      for (const { r } of known) {
-        const p = projects.get(r.project);
-        if (!p)
-          continue;
-        const id = conversationId(p.id, r.host, r.session);
-        const prev = conversations.get(id);
-        if (!prev || r.at < prev.at)
-          conversations.set(id, {
-            project: p.id,
-            host: r.host,
-            session: r.session,
-            branch: r.branch,
-            at: r.at
-          });
+    let sent = 0;
+    const bad = [];
+    try {
+      sent = await write(db, known.map((x) => x.r), projects, vectorOf);
+    } catch (e) {
+      if (!rejected(e))
+        throw e;
+      for (const x of known) {
+        try {
+          sent += await write(db, [x.r], projects, vectorOf);
+        } catch (e2) {
+          if (!rejected(e2))
+            throw e2;
+          bad.push(x);
+        }
       }
-      for (const [id, v] of conversations) {
-        await db.query(`insert into mitos.conversation (id, project_id, origin, external_id, branch, started_at)
-           values ($1, $2, $3, $4, $5, $6) on conflict do nothing`, [id, v.project, v.host, v.session, v.branch, v.at]);
-      }
-      for (const m of messages) {
-        const p = projects.get(m.project);
-        if (!p)
-          continue;
-        const conversation = conversationId(p.id, m.host, m.session);
-        const id = uuidFrom(conversation, m.id);
-        const indexed = indexesMessage(m.host, m.speaker);
-        const inserted = await db.query(`insert into mitos.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
-                                      original_bytes, sent_at, content_hash, lexemes)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::tsvector) on conflict do nothing`, [
-          id,
-          conversation,
-          m.id,
-          m.turn,
-          m.speaker,
-          m.body,
-          m.truncated,
-          m.originalBytes,
-          m.at,
-          sha256(m.body),
-          indexed ? tsvector(m.body) : null
-        ]);
-        added += inserted.rowCount ?? 0;
-        const e = vectorOf.get(m);
-        if (!e)
-          continue;
-        const { text, v } = e;
-        await db.query(`insert into mitos.message_embedding (message_id, model, source_hash, status, embedding)
-           values ($1, $2, $3, $4, $5::extensions.halfvec) on conflict do nothing`, [id, EMBED_MODEL, sha256(text), v ? "ready" : "pending", v ? vec(v) : null]);
-      }
-      for (const { r } of known) {
-        if (r.kind !== "file")
-          continue;
-        const p = projects.get(r.project);
-        if (!p)
-          continue;
-        const conversation = conversationId(p.id, r.host, r.session);
-        await db.query(`insert into mitos.message_file (message_id, path, action)
-           select $1, $2, $3 where exists (select 1 from mitos.message where id = $1) on conflict do nothing`, [uuidFrom(conversation, `${r.turn}:self`), r.path, r.action]);
-      }
-    });
+    }
+    if (bad.length) {
+      fs3.mkdirSync(rejectedDir(), { recursive: true, mode: 448 });
+      for (const x of bad)
+        fs3.renameSync(path3.join(dir, x.name), path3.join(rejectedDir(), x.name));
+    }
+    const moved = new Set(bad.map((x) => x.name));
     for (const x of records)
-      fs3.rmSync(path3.join(dir, x.name), { force: true });
+      if (!moved.has(x.name))
+        fs3.rmSync(path3.join(dir, x.name), { force: true });
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
-    return { sent: added, dropped };
+    return { sent, dropped, rejected: bad.length };
   } catch (e) {
     writeState({
       flushedAt: new Date().toISOString(),
@@ -24269,13 +24372,17 @@ async function flush(env) {
   }
 }
 async function main() {
+  if (process.argv[2] === "--flush") {
+    await flush(loadEnv());
+    return;
+  }
   const host = process.argv[2] === "codex" ? "codex" : "claude-code";
   let raw = "";
   for await (const chunk of process.stdin)
     raw += chunk;
   const { flush: send } = onHook(host, JSON.parse(raw || "{}"));
   if (send)
-    await flush(loadEnv());
+    spawn(process.execPath, [process.argv[1] ?? "", "--flush"], { detached: true, stdio: "ignore" }).unref();
 }
 if (process.argv[1] && /capture\.(ts|js)$/.test(process.argv[1])) {
   main().catch(() => {});
@@ -24289,5 +24396,6 @@ export {
   mask,
   onHook,
   readState,
+  rejectedDir,
   spoolDir
 };

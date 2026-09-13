@@ -17,13 +17,18 @@ import {
 import { bytes } from "../src/text.ts";
 
 // 別の agent 向けの prompt が「持ち主の発言」として DB の大半を占めた先行事例がある。見分けに推測を使わない。
-test("subagent と、エージェントが起動した子の turn は持ち主の発言にしない", () => {
-  assert.equal(isOwnerTurn({ session_id: "s1" }, undefined), true, "印の無い session は持ち主");
-  assert.equal(isOwnerTurn({ session_id: "s1" }, "s1"), true, "自分が書いた印は自分の id と一致する");
-  assert.equal(isOwnerTurn({ session_id: "child" }, "s1"), false, "親の印を継いだ子");
-  assert.equal(isOwnerTurn({ session_id: "s1" }, "none"), false, "mitos が起動した headless");
-  assert.equal(isOwnerTurn({ session_id: "s1", agent_id: "a1" }, undefined), false, "subagent");
-  assert.equal(isOwnerTurn({}, undefined), false, "session の分からない入力");
+test("subagent と、エージェントが起動した子と、印を継がない headless の turn は持ち主の発言にしない", () => {
+  assert.equal(isOwnerTurn({ session_id: "s1" }, undefined, "cli"), true, "人が打つ session");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "s1", "cli"), true, "自分が書いた印は自分の id と一致する");
+  assert.equal(isOwnerTurn({ session_id: "child" }, "s1", "sdk-cli"), false, "親の印を継いだ子");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"), false, "mitos が起動した headless");
+  assert.equal(
+    isOwnerTurn({ session_id: "s1" }, undefined, "sdk-cli"),
+    false,
+    "launchd や Codex から起動した claude -p",
+  );
+  assert.equal(isOwnerTurn({ session_id: "s1", agent_id: "a1" }, undefined, "cli"), false, "subagent");
+  assert.equal(isOwnerTurn({}, undefined, "cli"), false, "session の分からない入力");
 });
 
 test("128 KiB を超えた発言は冒頭と末尾だけを残し、元の大きさを持つ", () => {
@@ -55,10 +60,52 @@ test("形の決まった鍵だけを伏せ、接続文字列はパスワード�
   assert.match(got, /ふつうの文: sk は短いので伏せない、pa-ge も伏せない/);
 });
 
+// レビューで素通りを再現した形。代入の名前で分かるもの、接頭辞の決まったもの、@ を含むパスワード。
+test("よく貼られる鍵の形と、名前で分かる代入を伏せる", () => {
+  const cases = [
+    "PGPASSWORD=npg_AbCdEf123456",
+    "npg_AbCdEf123456XY を貼った",
+    "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123456",
+    "Authorization: Bearer 0123456789abcdefghijABCDEFGHIJ",
+    "AIzaSyA1234567890abcdefghijklmnopqrstuv",
+    "npm_abcdefghijklmnopqrstuvwxyz0123456789",
+    "glpat-abcdefghij1234567890",
+    "rk_live_abcdefghijklmnop1234",
+    "whsec_abcdefghijklmnopqrstuvwxyz",
+    '{"password": "hunter2-example"}',
+    "postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb",
+  ];
+  const secrets = [
+    "npg_AbCdEf",
+    "wJalrXUtn",
+    "eyJhbGci",
+    "0123456789abcdefghij",
+    "AIzaSy",
+    "npm_abc",
+    "glpat-",
+    "rk_live_",
+    "whsec_",
+    "hunter2",
+    "ab@cdEFGH",
+  ];
+  const got = cases.map(mask).join("\n");
+  for (const leak of secrets) assert.ok(!got.includes(leak), `${leak} が残った:\n${got}`);
+  assert.match(got, /@ep-x\.neon\.tech\/neondb/, "どこへ繋いだかは残す");
+  const plain = "max_tokens: 5000 と keyboard の key の話。const token = await getToken();";
+  assert.equal(mask(plain), plain, "鍵でない文は変えない");
+});
+
 test("AskUserQuestion の答えを、質問と答えの組にする", () => {
   assert.equal(
     answersOf({ tool_response: { answers: { "全部推奨で？": "推奨", 選ぶもの: ["A", "B"] } } }),
     "Q: 全部推奨で？\nA: 推奨\n\nQ: 選ぶもの\nA: A / B",
+  );
+  assert.equal(
+    answersOf({
+      tool_response: { answers: { 進め方: "推奨" }, annotations: { 進め方: { notes: "全部推奨で" } } },
+    }),
+    "Q: 進め方\nA: 推奨\nメモ: 全部推奨で",
   );
   assert.equal(answersOf({ tool_response: {} }), null);
 });
@@ -69,8 +116,9 @@ const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-captur
 const realHome = process.env.HOME;
 const repoDir = path.join(home, "repo");
 before(() => {
-  // この試験を Claude Code の Bash から走らせると、親の session の印を継いでいる。
+  // この試験を Claude Code の Bash から走らせると、親の session の印と入口を継いでいる。
   delete process.env.MITOS_PARENT_SESSION;
+  delete process.env.CLAUDE_CODE_ENTRYPOINT;
   process.env.HOME = home;
   execFileSync("git", ["init", "-q", repoDir], { stdio: "ignore" });
   fs.mkdirSync(path.join(repoDir, "server"));

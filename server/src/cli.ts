@@ -8,14 +8,15 @@ import { parseArgs } from "node:util";
 import type pg from "pg";
 import { check, init } from "./artifacts.ts";
 import { flush, readState } from "./capture.ts";
-import { checkSchema, connect, type Env, KEY, loadEnv, type Role } from "./db.ts";
+import { checkSchema, connect, type Env, inTransaction, KEY, loadEnv, type Role } from "./db.ts";
 import { syncDocs } from "./docs.ts";
-import { fillKnowledge, fillMessages } from "./embeddings.ts";
+import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { observe, ROOT, report, versionAt } from "./plugin.ts";
 import { identify, localRoots, nameLocal, type Place, projectId } from "./project.ts";
 import {
+  directory,
   framed,
   openWork,
   renderHits,
@@ -35,7 +36,7 @@ const USAGE = `使い方:
   mitos search <質問> [--avoid] [--said me|others|<名前>] [--all] [--cwd <dir>] [--limit N]
                                                    引けるかを確かめる（--said は発言を探す）
   mitos who [<呼び名> <ハンドル>... [--me]]         GitHub のハンドルと人を結ぶ（--me は持ち主）
-  mitos trace context                              いまの session の会話と、進行中の作業を出す（trace の材料）
+  mitos trace context [--host claude-code|codex]   いまの session の会話と、進行中の作業を出す（trace の材料）
   mitos trace check <trace.json>                   trace の記録の形を確かめる（DB に触らない）
   mitos trace save <trace.json>                    trace の記録を入れる
   mitos capture flush                              自動記録の待ち行列を DB へ送る
@@ -50,6 +51,7 @@ const USAGE = `使い方:
 // 引数の解釈を自前で書かない。手書きのループは知らないフラグと `--name=値` を黙って捨てる。
 const OPTIONS = {
   cwd: { type: "string" },
+  host: { type: "string" },
   name: { type: "string" },
   limit: { type: "string" },
   all: { type: "boolean" },
@@ -89,48 +91,67 @@ async function registered(c: pg.Client, place: Place): Promise<number> {
 const githubRepo = (key: string): string | null =>
   key.match(/^git:github\.com\/([^/]+\/[^/]+)$/)?.[1] ?? null;
 
-/** 1 つの作業場所を同期する。失敗は取り込み元の last_error に残し、doctor と画面が出す。 */
-async function syncOne(c: pg.Client, env: Env, id: number, place: Place): Promise<string[]> {
+/**
+ * 1 つの作業場所を同期する。**GitHub と文書は互いに独立**なので、片方が落ちてももう片方は回す。
+ * 失敗は取り込み元の last_error に残し（doctor と画面が出す）、最後にまとめて投げる。
+ */
+async function syncOne(c: pg.Client, id: number, place: Place): Promise<string[]> {
   const out: string[] = [];
-  const fail = async (provider: string, e: unknown) => {
-    const message = e instanceof Error ? e.message : String(e);
-    await c
-      .query("update mitos.connector set last_error = $3 where project_id = $1 and provider = $2", [
-        id,
-        provider,
-        message.slice(0, 500),
-      ])
-      .catch(() => {});
-    throw new Error(`${place.name} の ${provider}: ${message}`);
+  const failed: string[] = [];
+  const run = async (provider: "github" | "docs", label: string, fn: () => Promise<string>) => {
+    try {
+      out.push(`${label}: ${await fn()}`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await c
+        .query("update mitos.connector set last_error = $3 where project_id = $1 and provider = $2", [
+          id,
+          provider,
+          message.slice(0, 500),
+        ])
+        .catch(() => {});
+      failed.push(`${place.name} の ${provider}: ${message}`);
+    }
   };
   const repo = githubRepo(place.key);
-  if (repo) {
-    try {
-      out.push(`GitHub: ${await syncGithub(c, env, id, place.name, repo)}`);
-    } catch (e) {
-      await fail("github", e);
-    }
-  }
-  if (fs.existsSync(path.join(place.root, ".git"))) {
-    try {
-      out.push(`文書: ${await syncDocs(c, env, id, place.root)}`);
-    } catch (e) {
-      await fail("docs", e);
-    }
-  }
+  if (repo) await run("github", "GitHub", () => syncGithub(c, id, place.name, repo));
+  if (fs.existsSync(path.join(place.root, ".git")))
+    await run("docs", "文書", () => syncDocs(c, id, place.root));
+  if (failed.length) throw new Error([...out, ...failed].join("\n  "));
   return out;
 }
 
-const hostSession = (): { host: "claude-code" | "codex"; id: string } | null => {
-  if (process.env.CLAUDE_CODE_SESSION_ID)
-    return { host: "claude-code", id: process.env.CLAUDE_CODE_SESSION_ID };
-  const codex = process.env.CODEX_THREAD_ID ?? process.env.CODEX_SESSION_ID;
-  return codex ? { host: "codex", id: codex } : null;
+type Host = "claude-code" | "codex";
+const SESSION_ENV: Record<Host, string[]> = {
+  "claude-code": ["CLAUDE_CODE_SESSION_ID"],
+  codex: ["CODEX_THREAD_ID", "CODEX_SESSION_ID"],
 };
 
-async function traceContext(env: Env, cwd: string): Promise<string> {
-  const session = hostSession();
-  if (!session) throw new Error("いまの session の id が分からない（Claude Code か Codex の中で実行する）");
+/**
+ * いまの session。**両方のホストの id が環境にあれば決めない**（Claude Code の Bash から起動した Codex は
+ * CLAUDE_CODE_SESSION_ID を継ぐ。先に見つかった方を使うと、別のホストの session を読んで書く）。
+ */
+function hostSession(host?: string): { host: Host; id: string } {
+  if (host !== undefined && !(host in SESSION_ENV))
+    throw new Error(`--host は claude-code か codex: ${host}`);
+  const found = (Object.keys(SESSION_ENV) as Host[]).flatMap((h) => {
+    const id = SESSION_ENV[h].map((k) => process.env[k]).find(Boolean);
+    return id && (!host || h === host) ? [{ host: h, id }] : [];
+  });
+  if (found.length === 1 && found[0]) return found[0];
+  if (found.length > 1)
+    throw new Error(
+      "Claude Code と Codex の両方の session が環境にある。自分のホストを --host claude-code か --host codex で指定する",
+    );
+  throw new Error(
+    host
+      ? `${host} の session の id が環境に無い（${SESSION_ENV[host as Host].join(" / ")}）`
+      : "いまの session の id が分からない（Claude Code か Codex の中で実行する）",
+  );
+}
+
+async function traceContext(env: Env, cwd: string, host?: string): Promise<string> {
+  const session = hostSession(host);
   // 待ち行列に残っている分を先に送る。送れなくても続ける（会話は自分の文脈から書ける）。
   await flush(env).catch(() => {});
   const place = placeOf(cwd);
@@ -200,11 +221,10 @@ async function doctor(env: Env, cwd: string): Promise<void> {
   // DB より先に出す。版の食い違いは DB と無関係に見たい。
   for (const line of report(observe(identify(cwd)?.root ?? cwd))) console.log(line);
   console.log("");
-  for (const role of ["reader", "ingest", "capture", "owner"] as const) {
-    const has = Boolean(env[KEY[role]]);
-    const note = role === "owner" ? "（schema の適用だけに使う。無くてよい）" : "";
-    if (!has) {
-      console.log(`${KEY[role].padEnd(26)} 無い${note}`);
+  // owner の鍵は schema の適用にしか使わないので、ここでは繋がない（DDL の鍵を使う場面を増やさない）。
+  for (const role of ["reader", "ingest", "capture"] as const) {
+    if (!env[KEY[role]]) {
+      console.log(`${KEY[role].padEnd(26)} 無い`);
       continue;
     }
     try {
@@ -227,7 +247,9 @@ async function doctor(env: Env, cwd: string): Promise<void> {
   console.log(
     `自動記録                   待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
       s.error ? ` / 失敗: ${s.error}` : ""
-    }${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}`,
+    }${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${
+      s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（~/.claude/mitos-spool/rejected）` : ""
+    }`,
   );
   if (!env[KEY.reader]) return;
   await withDb(env, "reader", async (c) => {
@@ -340,11 +362,20 @@ async function main(): Promise<void> {
       console.log("まだ記録が無い（編集フックが一度も走っていない）。");
       return;
     }
+    // 途中で切れた行（書いている最中に止まったプロセス）は飛ばす。1 行のために全体を読めなくしない。
     const rows = fs
       .readFileSync(log, "utf8")
       .split("\n")
-      .filter((l) => l.startsWith("{"))
-      .map((l) => JSON.parse(l) as { at: string; files: string[]; shown: number });
+      .flatMap((l) => {
+        try {
+          const r = JSON.parse(l) as { at?: unknown; shown?: unknown };
+          return typeof r.at === "string" && typeof r.shown === "number"
+            ? [{ at: r.at, shown: r.shown }]
+            : [];
+        } catch {
+          return [];
+        }
+      });
     const shown = rows.filter((r) => r.shown > 0);
     console.log(`フックが走った編集   ${rows.length} 回`);
     console.log(
@@ -360,14 +391,22 @@ async function main(): Promise<void> {
   if (cmd === "capture") {
     if (rest[0] !== "flush") throw new Error(`mitos capture flush だけがある\n\n${USAGE}`);
     const r = await flush(env);
+    if (r.busy) {
+      console.log("別の送信が走っているので何もしなかった（終われば待ち行列は空になる）");
+      return;
+    }
     console.log(
-      `新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}`,
+      `新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${
+        r.rejected
+          ? ` / DB が受け付けなかった ${r.rejected} 件（~/.claude/mitos-spool/rejected に残した）`
+          : ""
+      }`,
     );
     return;
   }
   if (cmd === "trace") {
     if (rest[0] === "context") {
-      console.log(framed(await traceContext(env, cwd)));
+      console.log(framed(await traceContext(env, cwd, opt.host)));
       return;
     }
     if (rest[0] !== "save" || !rest[1])
@@ -375,12 +414,23 @@ async function main(): Promise<void> {
     const r = checkTrace(JSON.parse(fs.readFileSync(rest[1], "utf8")));
     if (!r.trace) throw new Error(`記録の形が通らない:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
     const trace = r.trace;
+    // 書けるのはいまの session の記録だけ。ファイルの session を信じると、別の session の決定や制約を上書きできる。
+    const now = hostSession(trace.session.host);
+    if (now.id !== trace.session.id)
+      throw new Error(
+        `記録の session（${trace.session.id}）が、いまの ${now.host} の session（${now.id}）と違う。trace context が出した session を書く`,
+      );
     const place = placeOf(cwd);
     await withDb(env, "ingest", async (c) => {
       const id = await registered(c, place);
       const saved = await saveTrace(c, env, id, trace);
       console.log(
-        `入れた: 書き直した要素 ${saved.written} 件${saved.superseded ? ` / 覆した決定 ${saved.superseded} 件` : ""} / 埋め込み ${saved.embedded} 件`,
+        [
+          `入れた: 書き直した要素 ${saved.written} 件${saved.superseded ? ` / 覆した決定 ${saved.superseded} 件` : ""}`,
+          describeFill("埋め込み", saved.embedding),
+        ]
+          .filter(Boolean)
+          .join(" / "),
       );
     });
     return;
@@ -472,6 +522,7 @@ async function main(): Promise<void> {
     let done = 0;
     await withDb(env, "ingest", async (c) => {
       const only = opt.cwd ? placeOf(cwd) : null;
+      if (only) await registered(c, only);
       const { found, ambiguous } = localRoots();
       const projects = await c.query<{ id: string; key: string; name: string }>(
         "select id, key, name from mitos.project order by name",
@@ -486,7 +537,7 @@ async function main(): Promise<void> {
           continue;
         }
         try {
-          for (const line of await syncOne(c, env, Number(p.id), { key: p.key, root, name: p.name })) {
+          for (const line of await syncOne(c, Number(p.id), { key: p.key, root, name: p.name })) {
             console.log(`${p.name} / ${line}`);
           }
           done++;
@@ -496,11 +547,12 @@ async function main(): Promise<void> {
           console.error(`  ${e instanceof Error ? e.message : e}`);
         }
       }
-      // 前回までに取り損ねた埋め込み（自動記録の分を含む）をここで埋める。
-      const k = await fillKnowledge(c, env);
-      const m = await fillMessages(c, env);
-      if (k.embedded + m.embedded)
-        console.log(`取り残していた埋め込み: 知識 ${k.embedded} 件 / 発言 ${m.embedded} 件`);
+      // 埋め込みは全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
+      for (const line of [
+        describeFill("知識の埋め込み", await fillKnowledge(c, env)),
+        describeFill("発言の埋め込み", await fillMessages(c, env)),
+      ])
+        if (line) console.log(line);
     });
     console.log(
       `==== 同期おわり ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} 秒 / 成功 ${done} ====`,
@@ -519,13 +571,7 @@ async function main(): Promise<void> {
     await withDb(env, "reader", async (c) => {
       const projects = place ? [await registered(c, place)] : null;
       const hits = opt.said
-        ? await searchMessages(c, env, {
-            question: question || undefined,
-            projects,
-            speaker: opt.said === "me" ? "self" : opt.said === "others" ? "person" : undefined,
-            person: opt.said === "me" || opt.said === "others" ? undefined : opt.said,
-            limit,
-          })
+        ? await searchMessages(c, env, { question: question || undefined, projects, who: opt.said, limit })
         : await searchKnowledge(c, env, { question, projects, avoid: opt.avoid, limit });
       // この出力は Skill の許可済みコマンド経由でエージェントの文脈へ入る。枠を通す。
       console.log(hits.length ? framed(renderHits(hits, 16 * 1024)) : "該当なし。");
@@ -536,14 +582,10 @@ async function main(): Promise<void> {
   if (cmd === "who") {
     await withDb(env, rest.length ? "ingest" : "reader", async (c) => {
       if (rest.length === 0) {
-        const people = await c.query<{ display_name: string; is_self: boolean; handles: string[] }>(
-          `select pe.display_name, pe.is_self, coalesce(array_agg(i.handle order by i.handle) filter (where i.id is not null), '{}') as handles
-           from mitos.person pe left join mitos.person_identity i on i.person_id = pe.id
-           group by pe.id order by pe.is_self desc, pe.display_name`,
-        );
-        if (people.rows.length === 0) console.log("名簿は空。`mitos who <呼び名> <ハンドル>...` で入れる");
-        for (const p of people.rows)
-          console.log(`${p.is_self ? "→ " : "  "}${p.display_name.padEnd(12)} ${p.handles.join(" / ")}`);
+        const people = await directory(c);
+        if (people.length === 0) console.log("名簿は空。`mitos who <呼び名> <ハンドル>...` で入れる");
+        for (const p of people)
+          console.log(`${p.isSelf ? "→ " : "  "}${p.display.padEnd(12)} ${p.handles.join(" / ")}`);
         const unknown = await c.query<{ handle: string; n: string }>(
           `select i.handle, count(m.id) as n from mitos.person_identity i
            left join mitos.message m on m.identity_id = i.id
@@ -558,17 +600,20 @@ async function main(): Promise<void> {
       const [display, ...handles] = rest;
       if (!display || handles.length === 0)
         throw new Error(`呼び名と、GitHub のハンドルを 1 つ以上指定する\n\n${USAGE}`);
-      if (opt.me) await c.query("update mitos.person set is_self = false where is_self");
-      const pe = await c.query<{ id: string }>(
-        `insert into mitos.person (display_name, is_self) values ($1, $2)
-         on conflict (display_name) do update set is_self = mitos.person.is_self or excluded.is_self returning id`,
-        [display, opt.me === true],
-      );
-      const linked = await c.query<{ handle: string }>(
-        `update mitos.person_identity set person_id = $1
-         where provider = 'github' and lower(handle) = any($2) returning handle`,
-        [pe.rows[0]?.id, handles.map((h) => h.replace(/^@/, "").toLowerCase())],
-      );
+      // 持ち主の付け替えは 1 つの transaction で。途中で落ちると持ち主が 0 人になる。
+      const linked = await inTransaction(c, async () => {
+        if (opt.me) await c.query("update mitos.person set is_self = false where is_self");
+        const pe = await c.query<{ id: string }>(
+          `insert into mitos.person (display_name, is_self) values ($1, $2)
+           on conflict (display_name) do update set is_self = mitos.person.is_self or excluded.is_self returning id`,
+          [display, opt.me === true],
+        );
+        return c.query<{ handle: string }>(
+          `update mitos.person_identity set person_id = $1
+           where provider = 'github' and lower(handle) = any($2) returning handle`,
+          [pe.rows[0]?.id, handles.map((h) => h.replace(/^@/, "").toLowerCase())],
+        );
+      });
       const missing = handles.filter(
         (h) => !linked.rows.some((l) => l.handle.toLowerCase() === h.replace(/^@/, "").toLowerCase()),
       );

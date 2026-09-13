@@ -9,10 +9,9 @@ import fs from "node:fs";
 import path from "node:path";
 import type pg from "pg";
 import { type Artifact, selectArtifacts, underMitos } from "./artifacts.ts";
-import { EMBED_MODEL, type Env, inTransaction } from "./db.ts";
-import { fillKnowledge } from "./embeddings.ts";
+import { EMBED_MODEL, inTransaction } from "./db.ts";
 import { knowledgeText } from "./knowledge.ts";
-import { connectorOf } from "./project.ts";
+import { connectorOf, isStale } from "./project.ts";
 import { clean, sha256, tsvector } from "./text.ts";
 
 export type Section = {
@@ -40,6 +39,8 @@ const slug = (s: string): string =>
 
 /**
  * 見出しで節に割る。**コードフェンスの中は見ない。**シェルのコメントや frontmatter の区切りが見出しに化ける。
+ * フェンスは開いたときと同じ文字で、同じ長さ以上の、info の無い行でだけ閉じる（CommonMark）。
+ * 4 つのバッククォートで囲んだ例の中の 3 つのバッククォートで閉じたと読むと、例の中の見出しが節になる。
  */
 export function sections(rel: string, body: string): Section[] {
   // JS の `.` は `\r` を行終端として扱うので、CRLF の見出しが一致しない。BOM は先頭の見出しを落とす。
@@ -89,10 +90,11 @@ export function sections(rel: string, body: string): Section[] {
   };
 
   for (const line of lines) {
-    const f = line.match(/^\s*(```+|~~~+)/);
+    const f = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
     if (f?.[1]) {
-      if (fence === null) fence = f[1][0] ?? "`";
-      else if (line.trimStart().startsWith(fence)) fence = null;
+      const mark = f[1];
+      if (fence === null) fence = mark;
+      else if (mark[0] === fence[0] && mark.length >= fence.length && !f[2]?.trim()) fence = null;
       cur.buf.push(line);
       continue;
     }
@@ -161,8 +163,11 @@ export function markdownFiles(dir: string): { files: string[]; symlinks: number 
       const full = path.join(dir, rel);
       st = fs.lstatSync(full);
       real = fs.realpathSync(full);
-    } catch {
-      continue; // git は追っているが手元に無い（sparse checkout、消したまま未コミット）
+    } catch (e) {
+      // 手元に無い（消したまま未コミット）ものだけを「無い」とする。**それ以外の失敗は投げる**
+      // — 一覧から黙って外すと、同期がその文書を消えたものとして DB から消す。
+      if (missing(e)) continue;
+      throw e;
     }
     if (st.isSymbolicLink() || !(real === base || real.startsWith(`${base}${path.sep}`))) {
       symlinks++;
@@ -173,6 +178,9 @@ export function markdownFiles(dir: string): { files: string[]; symlinks: number 
   }
   return { files, symlinks };
 }
+
+const missing = (e: unknown): boolean =>
+  ["ENOENT", "ENOTDIR"].includes((e as NodeJS.ErrnoException).code ?? "");
 
 export type Doc = {
   path: string;
@@ -216,22 +224,35 @@ export const docHash = (d: Doc): Buffer =>
 
 const CHUNK = 500;
 
-/** 1 つの作業場所の文書を同期する。git の一覧は完全なので、一覧から消えた文書は行ごと消す。 */
-export async function syncDocs(
-  client: pg.Client,
-  env: Env,
-  projectId: number,
-  root: string,
-  say: (m: string) => void = () => {},
-): Promise<string> {
+/** HEAD の commit 時刻（committer）。commit の無いリポジトリは null。 */
+function headTime(dir: string): Date | null {
+  try {
+    const out = execFileSync("git", ["-C", dir, "log", "-1", "--format=%cI"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    return out ? new Date(out) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 1 つの作業場所の文書を同期する。git の一覧は完全なので、一覧から消えた文書は行ごと消す。
+ * **既に入っている状態より古い作業ツリーからは書かない**（別の PC の古い clone、先に読み始めて遅れて commit した同期）。
+ */
+export async function syncDocs(client: pg.Client, projectId: number, root: string): Promise<string> {
+  const snapshotAt = new Date();
+  const headAt = headTime(root);
   const { files, symlinks } = markdownFiles(root);
   const at = lastTouched(root);
   const bodies = new Map<string, string>();
   for (const rel of files) {
     try {
       bodies.set(rel, fs.readFileSync(path.join(root, rel), "utf8"));
-    } catch {
-      // 列挙と読み取りの間に消えた
+    } catch (e) {
+      if (missing(e)) continue; // 列挙と読み取りの間に消えた
+      throw e;
     }
   }
   // **本文を読み終えてから manifest を読む。**再編集は draft を書いてから本文を触るので、この順なら
@@ -246,58 +267,72 @@ export async function syncDocs(
   }
   const docs = projectDocs(bodies, include, at);
 
-  const { changed, removed } = await inTransaction(client, async () => {
-    const connectorId = await connectorOf(client, projectId, "docs");
+  const done = await inTransaction(client, async () => {
+    const connector = await connectorOf(client, projectId, "docs");
+    if (isStale(connector, snapshotAt, headAt)) return null;
     const known = new Map(
       (
-        await client.query<{ id: string; external_id: string; content_hash: Buffer }>(
-          "select id, external_id, content_hash from mitos.source_item where connector_id = $1",
-          [connectorId],
+        await client.query<{ external_id: string; content_hash: Buffer }>(
+          "select external_id, content_hash from mitos.source_item where connector_id = $1",
+          [connector.id],
         )
-      ).rows.map((r) => [r.external_id, r]),
+      ).rows.map((r) => [r.external_id, r.content_hash]),
     );
-    const changed = docs.filter((d) => !known.get(d.path)?.content_hash.equals(docHash(d)));
+    const changed = docs.filter((d) => !known.get(d.path)?.equals(docHash(d)));
 
-    for (const d of changed) {
-      const item = await client.query<{ id: string }>(
+    if (changed.length) {
+      const items = await client.query<{ id: string; external_id: string }>(
         `insert into mitos.source_item (connector_id, external_id, kind, title, path, body, source_updated_at,
                                         content_hash, metadata, synced_at)
-         values ($1, $2, $3, $4, $2, $5, $6, $7, $8, now())
+         select $1, t.path, t.kind, t.title, t.path, t.body, t.at, decode(t.hash, 'hex'), t.metadata, now()
+         from jsonb_to_recordset($2::jsonb) as t(path text, kind text, title text, body text, at timestamptz,
+                                                 hash text, metadata jsonb)
          on conflict (connector_id, external_id) do update set
            kind = excluded.kind, title = excluded.title, body = excluded.body,
            source_updated_at = excluded.source_updated_at, content_hash = excluded.content_hash,
            metadata = excluded.metadata, synced_at = now()
-         returning id`,
+         returning id, external_id`,
         [
-          connectorId,
-          d.path,
-          d.kind,
-          d.title,
-          d.body,
-          d.at,
-          docHash(d),
+          connector.id,
           JSON.stringify(
-            d.artifact ? { change: d.artifact.change, changeTitle: d.artifact.changeTitle } : {},
+            changed.map((d) => ({
+              path: d.path,
+              kind: d.kind,
+              title: d.title,
+              body: d.body,
+              at: d.at,
+              hash: docHash(d).toString("hex"),
+              metadata: d.artifact ? { change: d.artifact.change, changeTitle: d.artifact.changeTitle } : {},
+            })),
           ),
         ],
       );
-      const sourceId = item.rows[0]?.id;
-      if (!sourceId) throw new Error(`文書を書けなかった: ${d.path}`);
+      const sourceOf = new Map(items.rows.map((r) => [r.external_id, r.id]));
+      const sections = changed.flatMap((d) =>
+        d.sections.map((s) => {
+          const row = { kind: "document", heading: s.trail, body: s.text, reason: null };
+          return {
+            s,
+            source: sourceOf.get(d.path),
+            at: d.at,
+            hash: sha256(knowledgeText(row)),
+            lex: tsvector(`${s.trail}\n${s.text}`),
+          };
+        }),
+      );
       // 節が消えた・key が変わったものを先に消す。残すと撤回した記述が検索で返る。
       await client.query(
-        "delete from mitos.knowledge where source_item_id = $1 and not (source_key = any($2))",
-        [sourceId, d.sections.map((s) => s.key)],
+        "delete from mitos.knowledge where source_item_id = any($1::bigint[]) and not (source_key = any($2))",
+        [[...sourceOf.values()], sections.map((x) => x.s.key)],
       );
-      for (let i = 0; i < d.sections.length; i += CHUNK) {
-        const part = d.sections.slice(i, i + CHUNK).map((s) => {
-          const row = { kind: "document", heading: s.trail, body: s.text, reason: null };
-          return { s, hash: sha256(knowledgeText(row)), lex: tsvector(`${s.trail}\n${s.text}`) };
-        });
+      for (let i = 0; i < sections.length; i += CHUNK) {
+        const part = sections.slice(i, i + CHUNK);
         const written = await client.query<{ id: string; content_hash: Buffer }>(
           `insert into mitos.knowledge (project_id, source_item_id, source_key, kind, heading, body, occurred_at,
                                         content_hash, lexemes)
-           select $1, $2, t.key, 'document', t.heading, t.body, coalesce($3::timestamptz, now()), t.hash, t.lex::tsvector
-           from unnest($4::text[], $5::text[], $6::text[], $7::bytea[], $8::text[]) as t(key, heading, body, hash, lex)
+           select $1, t.source, t.key, 'document', t.heading, t.body, coalesce(t.at, now()), t.hash, t.lex::tsvector
+           from unnest($2::bigint[], $3::text[], $4::text[], $5::text[], $6::timestamptz[], $7::bytea[], $8::text[])
+             as t(source, key, heading, body, at, hash, lex)
            on conflict (project_id, source_key) do update set
              source_item_id = excluded.source_item_id, heading = excluded.heading, body = excluded.body,
              occurred_at = excluded.occurred_at, content_hash = excluded.content_hash, lexemes = excluded.lexemes
@@ -305,11 +340,11 @@ export async function syncDocs(
            returning id, content_hash`,
           [
             projectId,
-            sourceId,
-            d.at,
+            part.map((x) => x.source),
             part.map((x) => x.s.key),
             part.map((x) => x.s.trail),
             part.map((x) => x.s.text),
+            part.map((x) => x.at),
             part.map((x) => x.hash),
             part.map((x) => x.lex),
           ],
@@ -326,26 +361,24 @@ export async function syncDocs(
       }
     }
     // git の一覧は完全なので、一覧から消えた文書（承認を外した成果物を含む）は行ごと消す。
-    const live = docs.map((d) => d.path);
     const removed = await client.query(
       "delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))",
-      [connectorId, live],
+      [connector.id, docs.map((d) => d.path)],
     );
     await client.query(
-      "update mitos.connector set last_success_at = now(), last_error = null where id = $1",
-      [connectorId],
+      `update mitos.connector set head_at = $2, snapshot_at = $3, last_success_at = now(), last_error = null
+       where id = $1`,
+      [connector.id, headAt, snapshotAt],
     );
-    return { changed, removed: removed.rowCount ?? 0 };
+    return { changed: changed.length, removed: removed.rowCount ?? 0 };
   });
 
+  if (!done) return "飛ばした（この作業ツリーは、既に入っている状態より古い。pull してから同期する）";
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
-  say(`文書 ${docs.length} 本 / 節 ${sectionCount} 件 / 書き直した文書 ${changed.length} 本`);
-  const filled = await fillKnowledge(client, env);
   return [
     `文書 ${docs.length} 本・節 ${sectionCount} 件`,
-    `書き直した ${changed.length} 本`,
-    removed ? `消えた ${removed} 本` : null,
-    `埋め込み ${filled.embedded} 件${filled.failed ? `（失敗 ${filled.failed} 件。次の同期で取り直す）` : ""}`,
+    `書き直した ${done.changed} 本`,
+    done.removed ? `消えた ${done.removed} 本` : null,
     symlinks ? `symlink を飛ばした ${symlinks} 件` : null,
   ]
     .filter(Boolean)

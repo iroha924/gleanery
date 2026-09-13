@@ -13,6 +13,7 @@ const source: GithubSource = {
       user: user("alice", 1),
       state: "closed",
       merged_at: "2026-09-11T02:00:00Z",
+      closed_at: "2026-09-11T02:00:00Z",
       created_at: "2026-09-10T02:00:00Z",
       updated_at: "2026-09-11T02:00:00Z",
       html_url: "https://github.com/acme/app/pull/12",
@@ -24,6 +25,7 @@ const source: GithubSource = {
       user: user("release-bot[bot]", 9),
       state: "closed",
       merged_at: "2026-09-12T02:00:00Z",
+      closed_at: "2026-09-12T02:00:00Z",
       created_at: "2026-09-12T01:00:00Z",
       updated_at: "2026-09-12T02:00:00Z",
       html_url: "https://github.com/acme/app/pull/13",
@@ -37,6 +39,7 @@ const source: GithubSource = {
       body: "x",
       user: user("alice", 1),
       state: "closed",
+      closed_at: "",
       created_at: "",
       updated_at: "",
       html_url: "",
@@ -48,6 +51,7 @@ const source: GithubSource = {
       body: "決めたこと",
       user: user("bob", 2),
       state: "open",
+      closed_at: null,
       created_at: "2026-09-01T00:00:00Z",
       updated_at: "2026-09-02T00:00:00Z",
       html_url: "https://github.com/acme/app/issues/20",
@@ -58,6 +62,7 @@ const source: GithubSource = {
       body: "自動",
       user: user("report[bot]", 8),
       state: "open",
+      closed_at: null,
       created_at: "2026-09-01T00:00:00Z",
       updated_at: "2026-09-01T00:00:00Z",
       html_url: "",
@@ -148,6 +153,45 @@ test("PR・issue を今の状態に揃え、bot が作った issue と自動通�
     (got.said.get(20) ?? []).map((s) => s.externalId),
     ["body", "c:41"],
   );
+});
+
+// NUL が 1 つあると PostgreSQL の text に入らず、同期の transaction ごと毎日落ちる。
+test("GitHub から来た題・handle・URL・path の NUL を落とし、マージ・クローズの時刻を持つ", async () => {
+  const nul = "\u0000";
+  const got = await collect({
+    pulls: async () => [
+      {
+        number: 1,
+        title: `題${nul}`,
+        body: "本文",
+        user: { id: 1, login: `al${nul}ice` },
+        state: "closed",
+        merged_at: null,
+        closed_at: "2026-09-03T00:00:00Z",
+        created_at: "2026-09-01T00:00:00Z",
+        updated_at: "2026-09-05T00:00:00Z",
+        html_url: `https://x/${nul}1`,
+      },
+    ],
+    issues: async () => [],
+    reviewComments: async () => [
+      {
+        id: 5,
+        user: { id: 2, login: "bob" },
+        body: "ここは直す",
+        path: `a${nul}.ts`,
+        line: 3,
+        created_at: "2026-09-02T00:00:00Z",
+        html_url: `https://x/${nul}r5`,
+        pull_request_url: "https://api/x/pulls/1",
+      },
+    ],
+    issueComments: async () => [],
+  });
+  const all = JSON.stringify(got.items) + JSON.stringify([...got.said.values()]);
+  assert.ok(!all.includes("\\u0000"), all);
+  assert.equal(got.items[0]?.closedAt, "2026-09-03T00:00:00Z", "マージせず閉じた PR は閉じた時刻");
+  assert.equal(got.items[0]?.state, "closed");
 });
 
 test("発言者の種類は名前で決める", () => {

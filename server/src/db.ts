@@ -167,6 +167,15 @@ const VOYAGE = "https://api.voyageai.com/v1/embeddings";
 export const EMBED_MODEL = "voyage-4-large";
 export const RERANK_MODEL = "rerank-3";
 
+/** Voyage が HTTP のエラーを返した。status で「本文を受け付けない」と「鍵・上限・障害」を分ける。 */
+export class VoyageError extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 /**
  * 埋め込みを取る。**input_type を省略しない。**Voyage は query と document で前置プロンプトを変える。
  */
@@ -205,7 +214,8 @@ export async function embed(env: Env, texts: string[], inputType: "query" | "doc
         output_dtype: "float",
       }),
     });
-    if (!res.ok) throw new Error(`Voyage が ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok)
+      throw new VoyageError(`Voyage が ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status);
     const json = (await res.json()) as { data: { index: number; embedding: number[] }[] };
     for (const d of json.data.sort((a, b) => a.index - b.index)) out.push(d.embedding);
   }

@@ -6,14 +6,14 @@
 // PR・issue 1 件が 1 つの会話で、本文・コメント・レビューの指摘がそれぞれ 1 発言になる。
 // レビューの返信は reply_to で親を指し、指されたファイルは message_file に置く（「このファイルについて」で引く）。
 // **一覧は毎回全部取る。**消えたコメントと PR を反映するには完全な一覧が要り、持ち主のリポジトリなら数秒で済む。
-// 書き込みは内容の hash が変わった行だけにする。
+// 書き込みは内容の hash が変わった行だけにし、表ごとに 1 往復でまとめて書く（Neon まで 1 往復 80ms 前後ある）。
+// GitHub から来た文字列は全部 clean() を通す（NUL が 1 つあると transaction ごと落ち、毎日の同期が止まる）。
 
 import { execFileSync } from "node:child_process";
 import type pg from "pg";
-import { EMBED_MODEL, type Env, inTransaction } from "./db.ts";
-import { fillMessages } from "./embeddings.ts";
+import { EMBED_MODEL, inTransaction } from "./db.ts";
 import { conversationId, indexesMessage, messageText } from "./knowledge.ts";
-import { connectorOf } from "./project.ts";
+import { connectorOf, isStale } from "./project.ts";
 import { clean, sha256, tsvector, uuidFrom } from "./text.ts";
 
 type User = { id: number; login: string } | null;
@@ -25,6 +25,7 @@ export type Pull = {
   user: User;
   state: string;
   merged_at: string | null;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
   html_url: string;
@@ -36,6 +37,7 @@ export type RawIssue = {
   body: string | null;
   user: User;
   state: string;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
   html_url: string;
@@ -120,6 +122,8 @@ export type Item = {
   author: User;
   createdAt: string;
   updatedAt: string;
+  /** マージした（PR）か閉じた時刻。開いているものは null */
+  closedAt: string | null;
 };
 
 export type Said = {
@@ -141,6 +145,7 @@ export async function collect(source: GithubSource): Promise<Collected> {
   const items = new Map<number, Item>();
   const said = new Map<number, Said[]>();
   const push = (n: number, s: Said) => said.set(n, [...(said.get(n) ?? []), s]);
+  const who = (u: User): User => (u ? { id: u.id, login: clean(u.login) } : null);
   const body = (n: number, author: User, text: string | null, at: string, url: string) => {
     const t = clean(text ?? "").trim();
     if (!t || !author) return;
@@ -158,32 +163,38 @@ export async function collect(source: GithubSource): Promise<Collected> {
 
   for (const p of await source.pulls()) {
     // **bot が作った PR も入れる。**リリース PR は release-bot 名義で、落とすと「いつ何を出したか」が消える。
+    const state = p.merged_at ? "merged" : p.state === "open" ? "open" : "closed";
+    const url = clean(p.html_url);
     items.set(p.number, {
       kind: "pull_request",
       number: p.number,
-      title: p.title,
-      state: p.merged_at ? "merged" : p.state === "open" ? "open" : "closed",
-      url: p.html_url,
-      author: p.user,
+      title: clean(p.title),
+      state,
+      url,
+      author: who(p.user),
       createdAt: p.created_at,
       updatedAt: p.updated_at,
+      closedAt: state === "open" ? null : (p.merged_at ?? p.closed_at ?? p.updated_at),
     });
-    body(p.number, p.user, p.body, p.created_at, p.html_url);
+    body(p.number, who(p.user), p.body, p.created_at, url);
   }
   for (const i of await source.issues()) {
     // issues エンドポイントは PR も返す。**bot が作った issue は入れない**（定期レポートが並ぶだけになる）。
     if (i.pull_request || speakerOf(i.user?.login ?? "") === "bot") continue;
+    const state = i.state === "open" ? "open" : "closed";
+    const url = clean(i.html_url);
     items.set(i.number, {
       kind: "issue",
       number: i.number,
-      title: i.title,
-      state: i.state === "open" ? "open" : "closed",
-      url: i.html_url,
-      author: i.user,
+      title: clean(i.title),
+      state,
+      url,
+      author: who(i.user),
       createdAt: i.created_at,
       updatedAt: i.updated_at,
+      closedAt: state === "open" ? null : (i.closed_at ?? i.updated_at),
     });
-    body(i.number, i.user, i.body, i.created_at, i.html_url);
+    body(i.number, who(i.user), i.body, i.created_at, url);
   }
 
   const keep = (author: User, text: string) =>
@@ -194,12 +205,12 @@ export async function collect(source: GithubSource): Promise<Collected> {
     push(n, {
       externalId: `r:${r.id}`,
       replyTo: r.in_reply_to_id ? `r:${r.in_reply_to_id}` : null,
-      author: r.user,
+      author: who(r.user),
       speaker: speakerOf(r.user?.login ?? ""),
       body: clean(r.body).trim(),
-      url: r.html_url,
+      url: clean(r.html_url),
       at: r.created_at,
-      file: { path: r.path, line: r.line ?? null, startLine: r.start_line ?? null },
+      file: { path: clean(r.path), line: r.line ?? null, startLine: r.start_line ?? null },
     });
   }
   for (const c of await source.issueComments()) {
@@ -208,10 +219,10 @@ export async function collect(source: GithubSource): Promise<Collected> {
     push(n, {
       externalId: `c:${c.id}`,
       replyTo: null,
-      author: c.user,
+      author: who(c.user),
       speaker: speakerOf(c.user?.login ?? ""),
       body: clean(c.body).trim(),
-      url: c.html_url,
+      url: clean(c.html_url),
       at: c.created_at,
       file: null,
     });
@@ -225,23 +236,35 @@ export async function collect(source: GithubSource): Promise<Collected> {
 }
 
 const itemHash = (i: Item): Buffer =>
-  sha256(JSON.stringify([i.kind, i.title, i.state, i.url, i.author?.id ?? null, i.createdAt, i.updatedAt]));
+  sha256(
+    JSON.stringify([
+      i.kind,
+      i.title,
+      i.state,
+      i.url,
+      i.author?.id ?? null,
+      i.createdAt,
+      i.updatedAt,
+      i.closedAt,
+    ]),
+  );
 
-/** 1 つの作業場所の GitHub を同期する。repo は `owner/name`。 */
+/**
+ * 1 つの作業場所の GitHub を同期する。repo は `owner/name`。
+ * **読み始めた時刻が、既に入っている snapshot より古ければ書かない**（遅れて commit した同期が新しい状態を巻き戻さない）。
+ */
 export async function syncGithub(
   client: pg.Client,
-  env: Env,
   projectId: number,
   projectName: string,
   repo: string,
-  source: GithubSource = cliSource(repo),
-  say: (m: string) => void = () => {},
 ): Promise<string> {
-  const { items, said } = await collect(source);
-  say(`PR・issue ${items.length} 件を集めた`);
+  const snapshotAt = new Date();
+  const { items, said } = await collect(cliSource(repo));
 
   const counts = await inTransaction(client, async () => {
-    const connectorId = await connectorOf(client, projectId, "github");
+    const connector = await connectorOf(client, projectId, "github");
+    if (isStale(connector, snapshotAt)) return null;
 
     // 発言者。login は変えられるので user id で結び、handle は今の login に揃える。
     const users = new Map<number, string>();
@@ -269,7 +292,7 @@ export async function syncGithub(
       (
         await client.query<{ id: string; external_id: string; content_hash: Buffer }>(
           "select id, external_id, content_hash from mitos.source_item where connector_id = $1",
-          [connectorId],
+          [connector.id],
         )
       ).rows.map((r) => [r.external_id, r]),
     );
@@ -281,56 +304,60 @@ export async function syncGithub(
            join mitos.conversation c on c.id = m.conversation_id
            join mitos.source_item s on s.id = c.source_item_id
            where s.connector_id = $1`,
-          [connectorId],
+          [connector.id],
         )
       ).rows.map((r) => [r.id, r.content_hash]),
     );
+
+    const sourceId = new Map([...known].map(([n, r]) => [n, r.id]));
+    const changedItems = items.filter((i) => !known.get(String(i.number))?.content_hash.equals(itemHash(i)));
+    if (changedItems.length) {
+      const r = await client.query<{ id: string; external_id: string }>(
+        `insert into mitos.source_item (connector_id, external_id, kind, title, state, url, author_identity_id,
+                                        source_created_at, source_updated_at, closed_at, content_hash, synced_at)
+         select $1, t.number, t.kind, t.title, t.state, t.url, t.author, t.created, t.updated, t.closed,
+                decode(t.hash, 'hex'), now()
+         from jsonb_to_recordset($2::jsonb) as t(number text, kind text, title text, state text, url text,
+                                                 author bigint, created timestamptz, updated timestamptz,
+                                                 closed timestamptz, hash text)
+         on conflict (connector_id, external_id) do update set
+           kind = excluded.kind, title = excluded.title, state = excluded.state, url = excluded.url,
+           author_identity_id = excluded.author_identity_id, source_created_at = excluded.source_created_at,
+           source_updated_at = excluded.source_updated_at, closed_at = excluded.closed_at,
+           content_hash = excluded.content_hash, synced_at = now()
+         returning id, external_id`,
+        [
+          connector.id,
+          JSON.stringify(
+            changedItems.map((i) => ({
+              number: String(i.number),
+              kind: i.kind,
+              title: i.title,
+              state: i.state,
+              url: i.url,
+              author: identity(i.author),
+              created: i.createdAt,
+              updated: i.updatedAt,
+              closed: i.closedAt,
+              hash: itemHash(i).toString("hex"),
+            })),
+          ),
+        ],
+      );
+      for (const x of r.rows) sourceId.set(x.external_id, x.id);
+    }
+
+    // 変わった発言だけを集める。返信は同じ文で親を書くので順は問わない（外部キーは文の終わりで確かめられる）。
     const live = new Set<string>();
-
-    let itemsWritten = 0;
-    let messagesWritten = 0;
-    let messagesRemoved = 0;
+    const conversations = new Map<string, { source: string; external: string; at: string }>();
+    const messages = [];
     for (const item of items) {
-      const hash = itemHash(item);
-      let sourceId = known.get(String(item.number))?.id;
-      if (!sourceId || !known.get(String(item.number))?.content_hash.equals(hash)) {
-        const r = await client.query<{ id: string }>(
-          `insert into mitos.source_item (connector_id, external_id, kind, title, state, url, author_identity_id,
-                                          source_created_at, source_updated_at, content_hash, synced_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
-           on conflict (connector_id, external_id) do update set
-             kind = excluded.kind, title = excluded.title, state = excluded.state, url = excluded.url,
-             author_identity_id = excluded.author_identity_id, source_created_at = excluded.source_created_at,
-             source_updated_at = excluded.source_updated_at, content_hash = excluded.content_hash, synced_at = now()
-           returning id`,
-          [
-            connectorId,
-            String(item.number),
-            item.kind,
-            item.title,
-            item.state,
-            item.url,
-            identity(item.author),
-            item.createdAt,
-            item.updatedAt,
-            hash,
-          ],
-        );
-        sourceId = r.rows[0]?.id;
-        itemsWritten++;
-      }
-      if (!sourceId) throw new Error(`PR・issue を書けなかった: #${item.number}`);
-
+      const source = sourceId.get(String(item.number));
+      if (!source) throw new Error(`PR・issue を書けなかった: #${item.number}`);
       const conversation = conversationId(projectId, "github", `${repo}#${item.number}`);
-      const list = said.get(item.number) ?? [];
-      let opened = false;
-      // 返信は親より後に書く（reply_to の外部キー）。GitHub の返信は親より新しいので、時刻順で足りる。
-      const ordered = [...list].sort((a, b) => a.at.localeCompare(b.at));
-      for (const s of ordered) {
+      for (const s of said.get(item.number) ?? []) {
         const messageId = uuidFrom(conversation, s.externalId);
         live.add(messageId);
-        const replyTo = s.replyTo ? uuidFrom(conversation, s.replyTo) : null;
-        const indexed = indexesMessage("github", s.speaker);
         const embedText = messageText({
           body: s.body,
           speakerKind: s.speaker,
@@ -352,81 +379,115 @@ export async function syncGithub(
           ]),
         );
         if (stored.get(messageId)?.equals(hash)) continue;
-        if (!opened) {
-          await client.query(
-            `insert into mitos.conversation (id, project_id, source_item_id, origin, external_id, started_at)
-             values ($1, $2, $3, 'github', $4, $5) on conflict (id) do nothing`,
-            [conversation, projectId, sourceId, `${repo}#${item.number}`, item.createdAt],
-          );
-          opened = true;
-        }
-        await client.query(
-          `insert into mitos.message (id, conversation_id, external_id, reply_to_id, speaker_kind, identity_id, body,
-                                      original_bytes, url, sent_at, content_hash, lexemes)
-           values ($1, $2, $3, $4, $5, $6, $7, octet_length($7), $8, $9, $10, $11::tsvector)
-           on conflict (id) do update set
-             reply_to_id = excluded.reply_to_id, speaker_kind = excluded.speaker_kind,
-             identity_id = excluded.identity_id, body = excluded.body, original_bytes = excluded.original_bytes,
-             url = excluded.url, sent_at = excluded.sent_at, content_hash = excluded.content_hash,
-             lexemes = excluded.lexemes`,
-          [
-            messageId,
+        conversations.set(conversation, { source, external: `${repo}#${item.number}`, at: item.createdAt });
+        const indexed = indexesMessage("github", s.speaker);
+        messages.push({
+          s,
+          indexed,
+          embedText,
+          json: {
+            id: messageId,
             conversation,
-            s.externalId,
-            replyTo,
-            s.speaker,
-            identity(s.author),
-            s.body,
-            s.url,
-            s.at,
-            hash,
-            indexed ? tsvector(`${item.title}\n${s.file?.path ?? ""}\n${s.body}`) : null,
+            external: s.externalId,
+            reply: s.replyTo ? uuidFrom(conversation, s.replyTo) : null,
+            speaker: s.speaker,
+            identity: identity(s.author),
+            body: s.body,
+            url: s.url,
+            at: s.at,
+            hash: hash.toString("hex"),
+            lex: indexed ? tsvector(`${item.title}\n${s.file?.path ?? ""}\n${s.body}`) : null,
+          },
+        });
+      }
+    }
+    if (conversations.size) {
+      const c = [...conversations];
+      await client.query(
+        `insert into mitos.conversation (id, project_id, source_item_id, origin, external_id, started_at)
+         select t.id, $1, t.source, 'github', t.external, t.at
+         from unnest($2::uuid[], $3::bigint[], $4::text[], $5::timestamptz[]) as t(id, source, external, at)
+         on conflict (id) do nothing`,
+        [
+          projectId,
+          c.map(([id]) => id),
+          c.map(([, v]) => v.source),
+          c.map(([, v]) => v.external),
+          c.map(([, v]) => v.at),
+        ],
+      );
+    }
+    if (messages.length) {
+      await client.query(
+        `insert into mitos.message (id, conversation_id, external_id, reply_to_id, speaker_kind, identity_id, body,
+                                    original_bytes, url, sent_at, content_hash, lexemes)
+         select t.id, t.conversation, t.external, t.reply, t.speaker, t.identity, t.body, octet_length(t.body), t.url,
+                t.at, decode(t.hash, 'hex'), t.lex::tsvector
+         from jsonb_to_recordset($1::jsonb) as t(id uuid, conversation uuid, external text, reply uuid, speaker text,
+                                                 identity bigint, body text, url text, at timestamptz, hash text,
+                                                 lex text)
+         on conflict (id) do update set
+           reply_to_id = excluded.reply_to_id, speaker_kind = excluded.speaker_kind,
+           identity_id = excluded.identity_id, body = excluded.body, original_bytes = excluded.original_bytes,
+           url = excluded.url, sent_at = excluded.sent_at, content_hash = excluded.content_hash,
+           lexemes = excluded.lexemes`,
+        [JSON.stringify(messages.map((m) => m.json))],
+      );
+      const written = messages.map((m) => m.json.id);
+      await client.query("delete from mitos.message_file where message_id = any($1::uuid[])", [written]);
+      const files = messages.flatMap((m) => (m.s.file ? [{ id: m.json.id, ...m.s.file }] : []));
+      if (files.length) {
+        await client.query(
+          `insert into mitos.message_file (message_id, path, action, line_start, line_end)
+           select t.id, t.path, 'review', t.first, t.last
+           from unnest($1::uuid[], $2::text[], $3::int[], $4::int[]) as t(id, path, first, last)`,
+          [
+            files.map((f) => f.id),
+            files.map((f) => f.path),
+            files.map((f) => f.startLine ?? f.line),
+            files.map((f) => f.line ?? f.startLine),
           ],
         );
-        await client.query("delete from mitos.message_file where message_id = $1", [messageId]);
-        if (s.file) {
-          await client.query(
-            `insert into mitos.message_file (message_id, path, action, line_start, line_end)
-             values ($1, $2, 'review', $3, $4)`,
-            [messageId, s.file.path, s.file.startLine ?? s.file.line, s.file.line ?? s.file.startLine],
-          );
-        }
-        if (indexed) {
-          await client.query(
-            `insert into mitos.message_embedding (message_id, model, source_hash, status) values ($1, $2, $3, 'pending')
-             on conflict (message_id) do update set
-               source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0,
-               last_error = null, updated_at = now()
-             where mitos.message_embedding.source_hash <> excluded.source_hash`,
-            [messageId, EMBED_MODEL, sha256(embedText)],
-          );
-        }
-        messagesWritten++;
+      }
+      const embed = messages.filter((m) => m.indexed);
+      if (embed.length) {
+        await client.query(
+          `insert into mitos.message_embedding (message_id, model, source_hash, status)
+           select t.id, $3, t.hash, 'pending' from unnest($1::uuid[], $2::bytea[]) as t(id, hash)
+           on conflict (message_id) do update set
+             source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0,
+             last_error = null, updated_at = now()
+           where mitos.message_embedding.source_hash <> excluded.source_hash`,
+          [embed.map((m) => m.json.id), embed.map((m) => sha256(m.embedText)), EMBED_MODEL],
+        );
       }
     }
     // GitHub で消されたコメントは消す。一覧は完全なもの（取れなかったら collect が投げてここに来ない）。
     const gone = [...stored.keys()].filter((id) => !live.has(id));
-    if (gone.length) {
-      const r = await client.query("delete from mitos.message where id = any($1::uuid[])", [gone]);
-      messagesRemoved = r.rowCount ?? 0;
-    }
+    const messagesRemoved = gone.length
+      ? ((await client.query("delete from mitos.message where id = any($1::uuid[])", [gone])).rowCount ?? 0)
+      : 0;
     // 一覧から消えた PR・issue（削除された、別のリポジトリへ移された）は行ごと消す。
     const removed = await client.query(
       "delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))",
-      [connectorId, items.map((i) => String(i.number))],
+      [connector.id, items.map((i) => String(i.number))],
     );
     await client.query(
-      "update mitos.connector set last_success_at = now(), last_error = null where id = $1",
-      [connectorId],
+      "update mitos.connector set snapshot_at = $2, last_success_at = now(), last_error = null where id = $1",
+      [connector.id, snapshotAt],
     );
-    return { itemsWritten, messagesWritten, messagesRemoved, itemsRemoved: removed.rowCount ?? 0 };
+    return {
+      itemsWritten: changedItems.length,
+      messagesWritten: messages.length,
+      messagesRemoved,
+      itemsRemoved: removed.rowCount ?? 0,
+    };
   });
 
-  const filled = await fillMessages(client, env);
+  if (!counts) return "飛ばした（読み始めた後に、別の同期がより新しい状態を入れた）";
   const total = [...said.values()].reduce((n, l) => n + l.length, 0);
   return [
     `PR・issue ${items.length} 件（書き直した ${counts.itemsWritten} 件${counts.itemsRemoved ? ` / 消えた ${counts.itemsRemoved} 件` : ""}）`,
     `発言 ${total} 件（書き直した ${counts.messagesWritten} 件${counts.messagesRemoved ? ` / 消えた ${counts.messagesRemoved} 件` : ""}）`,
-    `埋め込み ${filled.embedded} 件${filled.failed ? `（失敗 ${filled.failed} 件。次の同期で取り直す）` : ""}`,
   ].join(" / ");
 }

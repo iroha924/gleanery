@@ -81,8 +81,8 @@ async function reset(): Promise<void> {
 }
 
 /** env ファイルの鍵を書き換える。ほかの行（コメントと別の鍵）は残す。 */
-export function rewriteEnv(body: string, set: Record<string, string>, drop: string[]): string {
-  const names = new Set([...Object.keys(set), ...drop]);
+export function rewriteEnv(body: string, set: Record<string, string>): string {
+  const names = new Set(Object.keys(set));
   const kept = body
     .split("\n")
     .filter((line) => !names.has(line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=/)?.[1] ?? ""));
@@ -90,12 +90,19 @@ export function rewriteEnv(body: string, set: Record<string, string>, drop: stri
   return `${[...kept, ...Object.entries(set).map(([k, v]) => `${k}=${v}`)].join("\n")}\n`;
 }
 
+/**
+ * 3 つのロールに新しいパスワードを付け、接続文字列を env ファイルへ書く。
+ * **どの時点で止まっても鍵を失わない順にする。**ロールごとに、新しい鍵を書いた 0600 の一時ファイルを先に作り、
+ * パスワードを変え、通ってから一時ファイルで置き換える（既存のファイルの権限にも引きずられない）。
+ * Neon はパスワードの変更を control plane へ渡すので、transaction で巻き戻せる保証が無い。
+ * Neon は平文のパスワードしか受け付けない（SCRAM の verifier を渡すと control plane が 400 を返す。実測）。
+ */
 async function roles(file: string): Promise<void> {
   const env = loadEnv();
   const owner = env[KEY.owner];
   const t = target(owner);
   const c = await connect(env, "owner");
-  const set: Record<string, string> = {};
+  const done: string[] = [];
   try {
     for (const [role, name] of [
       ["reader", "mitos_reader"],
@@ -104,22 +111,34 @@ async function roles(file: string): Promise<void> {
     ] as const) {
       // base64url は ' を含まないので、そのまま文字列リテラルに置ける（alter role はパラメータを取れない）。
       const password = crypto.randomBytes(24).toString("base64url");
-      await c.query(`alter role ${name} with login password '${password}'`);
       const u = new URL(owner as string);
       u.username = name;
       u.password = password;
-      set[KEY[role]] = u.toString();
+      const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+      const tmp = `${file}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, rewriteEnv(before, { [KEY[role]]: u.toString() }), { mode: 0o600, flag: "wx" });
+      try {
+        await c.query(`alter role ${name} with login password '${password}'`);
+      } catch (e) {
+        fs.rmSync(tmp, { force: true });
+        throw e;
+      }
+      try {
+        fs.renameSync(tmp, file);
+      } catch (e) {
+        throw new Error(
+          `${name} のパスワードは変えたが ${file} を置き換えられなかった。新しい鍵は ${tmp} にある（0600）: ${e instanceof Error ? e.message : e}`,
+        );
+      }
+      done.push(KEY[role]);
     }
   } finally {
     await c.end();
+    if (done.length)
+      console.log(
+        `${t.endpoint} のロールに新しいパスワードを付け、${done.join(" / ")} を ${file} に書いた。`,
+      );
   }
-  const before = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-  fs.writeFileSync(file, rewriteEnv(before, set, ["KNOWLEDGE_DB_URL_CFG", "KNOWLEDGE_DB_URL_GITHUB"]), {
-    mode: 0o600,
-  });
-  console.log(
-    `${t.endpoint} の 3 つのロールに新しいパスワードを付け、${Object.keys(set).join(" / ")} を ${file} に書いた。`,
-  );
   console.log(
     "ほかの PC の knowledge.env と、Vercel の KNOWLEDGE_DB_URL_RO も同じ値へ差し替える（値は表示しない）。",
   );

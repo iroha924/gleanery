@@ -5,9 +5,6 @@ set -eu
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT=$(CDPATH= cd -- "$DIR/.." && pwd)
 case "${1:-}" in
-  session-start) exec "$DIR/session-start" "$ROOT" ;;
-  prompt-submit) exec "$DIR/prompt-submit" ;;
-  session-end)   exec "$DIR/session-end" ;;
-  check-path)    exec node "$ROOT/dist/hook-check-path.js" ;;
-  *)             exit 0 ;;
+  capture) exec node "$ROOT/dist/capture.js" "${2:-claude}" ;;
+  *)       exit 0 ;;
 esac

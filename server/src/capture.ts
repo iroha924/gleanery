@@ -5,26 +5,32 @@
 // DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は決定的に作る）。
 //
 // **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
-// 「利用者の発言」として DB の 97.2% を占めた。見分けは 2 つだけで、どちらも推測をしない。
+// 「利用者の発言」として DB の 97.2% を占めた。見分けは 3 つで、どれも推測をしない。
 //   - subagent の中の turn は hook 入力に agent_id が付く
 //   - エージェントが起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
 //     CLAUDE_ENV_FILE に書いた MITOS_PARENT_SESSION を継ぐ。自分の session id と違えば子である。
 //     mitos 自身が起動する headless は MITOS_PARENT_SESSION=none を明示する
+//   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
+//     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
 // 値を「その session の id」にしてあるのは、この変数が将来 hook 自身の環境へ届く仕様になっても、
 // 持ち主の session では自分の id と一致して記録が止まらないようにするため。
 
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type pg from "pg";
 import { ARTIFACT_PATH } from "./artifacts.ts";
 import { connect, EMBED_MODEL, type Env, embed, inTransaction, loadEnv, vec } from "./db.ts";
-import { conversationId, indexesMessage, messageText } from "./knowledge.ts";
+import { conversationId, type FileAction, indexesMessage, messageText } from "./knowledge.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
 import { bytes, clean, head, sha256, tail, tsvector, uuidFrom } from "./text.ts";
 
 // 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の待ち行列を触らない）。
 export const spoolDir = (): string => path.join(os.homedir(), ".claude", "mitos-spool");
 const stateFile = (): string => path.join(os.homedir(), ".claude", "mitos-capture.json");
+/** DB が受け付けなかった記録。消さずにここへ移し、doctor が数を出す（直してから戻せば送り直せる）。 */
+export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
 
 type Host = "claude-code" | "codex";
 
@@ -54,7 +60,7 @@ export type Spooled =
       branch: string | null;
       turn: string;
       path: string;
-      action: "edit" | "read";
+      action: Exclude<FileAction, "review">;
       at: string;
     };
 
@@ -75,25 +81,45 @@ export function fit(body: string): { body: string; truncated: boolean; originalB
   };
 }
 
-// 貼ってしまった鍵を DB と待ち行列へ入れない。形の決まった鍵だけを伏せる（推測で文を消さない）。
+// 貼ってしまった鍵を DB・待ち行列・埋め込みの API へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
+// 形は 3 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報。
+// 載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
 const SECRETS: [RegExp, string][] = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
   [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\bsk_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
+  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
+  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
   [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
+  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
+  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
   [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
   [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]{20,}/g, "Bearer トークン"],
 ];
+// 名前で分かる代入。環境変数の形（大文字）と、設定ファイル・JSON の形（名前が鍵の語で終わる）の 2 つ。
+const ENV_ASSIGN =
+  /\b([A-Z][A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|PWD|CREDENTIALS?))(\s*=\s*)(["']?)[^\s"']+\3/g;
+const FIELD_ASSIGN =
+  /(["']?)\b([A-Za-z0-9_]*(?:api_?key|secret(?:_access)?_?key|access_?key|private_?key|client_?secret|secret|token|password|passwd))\1(\s*[:=]\s*)(["']?)(?!\[伏せた)[^\s"',;]{6,}\4/gi;
+// URL の資格情報は、パスワードに @ を含んでも host の直前の @ まで伏せる。どこへ繋いだかは話の中身として残す。
+const URL_CREDENTIALS =
+  /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]+:)\S*@([^@\s/?#]+)/g;
+
 export function mask(text: string): string {
-  let out = text;
+  // 代入と URL を先に伏せる（値ごと消える）。残った裸の鍵を形で伏せる。
+  let out = text
+    .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
+    .replace(ENV_ASSIGN, "$1$2[伏せた]")
+    .replace(FIELD_ASSIGN, "$1$2$1$3[伏せた]");
   for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
-  // 接続文字列はパスワードだけを伏せる（どこへ繋いだかは話の中身として残す）。
-  return out.replace(
-    /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^:\s/@]+:)[^@\s]+@/g,
-    "$1[伏せた]@",
-  );
+  return out;
 }
 
 function spool(record: Spooled): void {
@@ -141,20 +167,32 @@ type HookInput = {
   tool_response?: unknown;
 };
 
-/** 持ち主の turn か。subagent と、エージェントが起動した子を外す。 */
-export function isOwnerTurn(input: HookInput, parent = process.env.MITOS_PARENT_SESSION): boolean {
+/** 持ち主の turn か。subagent と、エージェントが起動した子と、印を継がない headless を外す。 */
+export function isOwnerTurn(
+  input: HookInput,
+  parent = process.env.MITOS_PARENT_SESSION,
+  entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT,
+): boolean {
   if (!input.session_id || input.agent_id) return false;
-  return parent === undefined || parent === "" || parent === input.session_id;
+  if (parent) return parent === input.session_id;
+  return entrypoint !== "sdk-cli";
 }
 
-/** AskUserQuestion で持ち主が選んだ答え。質問と答えの組を持ち主の発言として残す。 */
+/**
+ * AskUserQuestion で持ち主が選んだ答えと、答えに添えたメモ。質問と答えの組を持ち主の発言として残す。
+ * tool_response は `{ questions, answers: {質問: 答え}, annotations: {質問: { notes }} }`（transcript の実物で確認）。
+ */
 export function answersOf(input: HookInput): string | null {
-  const response = input.tool_response as { answers?: Record<string, unknown> } | undefined;
+  const response = input.tool_response as
+    | { answers?: Record<string, unknown>; annotations?: Record<string, { notes?: unknown }> }
+    | undefined;
   const answers = response?.answers ?? (input.tool_input?.answers as Record<string, unknown> | undefined);
   if (!answers || typeof answers !== "object") return null;
-  const lines = Object.entries(answers).map(
-    ([q, a]) => `Q: ${q}\nA: ${Array.isArray(a) ? a.join(" / ") : String(a)}`,
-  );
+  const lines = Object.entries(answers).map(([q, a]) => {
+    const notes = response?.annotations?.[q]?.notes;
+    const memo = typeof notes === "string" && notes.trim() ? `\nメモ: ${notes.trim()}` : "";
+    return `Q: ${q}\nA: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo}`;
+  });
   return lines.length ? lines.join("\n\n") : null;
 }
 
@@ -229,27 +267,41 @@ function writeState(s: State): void {
   }
 }
 
-export function readState(): State & { pending: number } {
-  let pending = 0;
+export function readState(): State & { pending: number; rejected: number } {
+  const count = (dir: string) => {
+    try {
+      return fs.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
+    } catch {
+      return 0; // まだ無い
+    }
+  };
+  const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
   try {
-    pending = fs.readdirSync(spoolDir()).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
+    return { ...(JSON.parse(fs.readFileSync(stateFile(), "utf8")) as State), ...counts };
   } catch {
-    // 待ち行列がまだ無い
-  }
-  try {
-    return { ...(JSON.parse(fs.readFileSync(stateFile(), "utf8")) as State), pending };
-  } catch {
-    return { pending };
+    return counts;
   }
 }
 
-/** 同時に 2 つ走らせない。前の送信が死んで残した鍵は 5 分で捨てる。 */
+/**
+ * 同時に 2 つ走らせない。鍵には持ち主の pid を書き、そのプロセスがもう居なければすぐ取り直す
+ * （`-p` の終了で殺された送信が鍵を残すと、次の送信が黙って空振りする。実測で起きた）。
+ * pid が別のプロセスに使い回された場合に備えて、5 分より古い鍵も取り直す。
+ */
 function lock(): (() => void) | null {
   const file = path.join(spoolDir(), ".lock");
+  fs.mkdirSync(spoolDir(), { recursive: true, mode: 0o700 });
+  const holder = Number(fs.readFileSync(file, { encoding: "utf8", flag: "a+" }) || 0);
+  const st = fs.statSync(file, { throwIfNoEntry: false });
+  const alive = (() => {
+    try {
+      return holder > 0 && process.kill(holder, 0);
+    } catch {
+      return false;
+    }
+  })();
+  if (!alive || (st && Date.now() - st.mtimeMs > 5 * 60_000)) fs.rmSync(file, { force: true });
   try {
-    fs.mkdirSync(spoolDir(), { recursive: true, mode: 0o700 });
-    const st = fs.statSync(file, { throwIfNoEntry: false });
-    if (st && Date.now() - st.mtimeMs > 5 * 60_000) fs.rmSync(file, { force: true });
     fs.writeFileSync(file, String(process.pid), { flag: "wx" });
     return () => fs.rmSync(file, { force: true });
   } catch {
@@ -259,23 +311,150 @@ function lock(): (() => void) | null {
 
 const BATCH = 500;
 
+type Project = { id: number; name: string };
+type Vectors = Map<Spooled, { text: string; v: number[] | undefined }>;
+
+/**
+ * 記録の束を 1 つの transaction で書く。**表ごとに 1 往復**（Neon まで 1 往復 80ms 前後ある）。
+ * **衝突先の列を書かない（`on conflict do nothing`）。**列を書くと PostgreSQL はその列の SELECT 権限を求め、
+ * 本文を読めない capture の鍵では拒否される。id は決定的に作るので、どの一意制約に当たっても「もう入っている」。
+ */
+async function write(
+  db: pg.Client,
+  batch: Spooled[],
+  projects: Map<string, Project>,
+  vectors: Vectors,
+): Promise<number> {
+  return inTransaction(db, async () => {
+    const conversations = new Map<
+      string,
+      { project: number; host: Host; session: string; branch: string | null; at: string }
+    >();
+    for (const r of batch) {
+      const p = projects.get(r.project);
+      if (!p) continue;
+      const id = conversationId(p.id, r.host, r.session);
+      const prev = conversations.get(id);
+      if (!prev || Date.parse(r.at) < Date.parse(prev.at))
+        conversations.set(id, {
+          project: p.id,
+          host: r.host,
+          session: r.session,
+          branch: r.branch,
+          at: r.at,
+        });
+    }
+    const c = [...conversations];
+    await db.query(
+      `insert into mitos.conversation (id, project_id, origin, external_id, branch, started_at)
+       select * from unnest($1::uuid[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
+       on conflict do nothing`,
+      [
+        c.map(([id]) => id),
+        c.map(([, v]) => v.project),
+        c.map(([, v]) => v.host),
+        c.map(([, v]) => v.session),
+        c.map(([, v]) => v.branch),
+        c.map(([, v]) => v.at),
+      ],
+    );
+    const messages = batch.flatMap((m) => {
+      const p = m.kind === "message" ? projects.get(m.project) : undefined;
+      if (m.kind !== "message" || !p) return [];
+      const conversation = conversationId(p.id, m.host, m.session);
+      return [
+        { m, conversation, id: uuidFrom(conversation, m.id), indexed: indexesMessage(m.host, m.speaker) },
+      ];
+    });
+    const inserted = await db.query(
+      `insert into mitos.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
+                                  original_bytes, sent_at, content_hash, lexemes)
+       select t.id, t.conversation, t.external, t.turn, t.speaker, t.body, t.truncated, t.bytes, t.at, t.hash,
+              t.lex::tsvector
+       from unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[],
+                   $8::int[], $9::timestamptz[], $10::bytea[], $11::text[])
+         as t(id, conversation, external, turn, speaker, body, truncated, bytes, at, hash, lex)
+       on conflict do nothing`,
+      [
+        messages.map((x) => x.id),
+        messages.map((x) => x.conversation),
+        messages.map((x) => x.m.id),
+        messages.map((x) => x.m.turn),
+        messages.map((x) => x.m.speaker),
+        messages.map((x) => x.m.body),
+        messages.map((x) => x.m.truncated),
+        messages.map((x) => x.m.originalBytes),
+        messages.map((x) => x.m.at),
+        messages.map((x) => sha256(x.m.body)),
+        messages.map((x) => (x.indexed ? tsvector(x.m.body) : null)),
+      ],
+    );
+    // 埋め込みが取れなかった発言は pending で入れ、次の同期（ingest の鍵）が取り直す。
+    const embedded = messages.flatMap((x) => {
+      const e = vectors.get(x.m);
+      return e ? [{ id: x.id, text: e.text, v: e.v }] : [];
+    });
+    await db.query(
+      `insert into mitos.message_embedding (message_id, model, source_hash, status, embedding)
+       select t.id, $5, t.hash, t.status, t.v::extensions.halfvec
+       from unnest($1::uuid[], $2::bytea[], $3::text[], $4::text[]) as t(id, hash, status, v)
+       on conflict do nothing`,
+      [
+        embedded.map((x) => x.id),
+        embedded.map((x) => sha256(x.text)),
+        embedded.map((x) => (x.v ? "ready" : "pending")),
+        embedded.map((x) => (x.v ? vec(x.v) : null)),
+        EMBED_MODEL,
+      ],
+    );
+    // その turn の持ち主の発言へ結ぶ。発言が無い turn（通知から始まった turn）は結ぶ先が無いので捨てる。
+    const files = batch.flatMap((r) => {
+      const p = r.kind === "file" ? projects.get(r.project) : undefined;
+      if (r.kind !== "file" || !p) return [];
+      return [
+        {
+          message: uuidFrom(conversationId(p.id, r.host, r.session), `${r.turn}:self`),
+          path: r.path,
+          action: r.action,
+        },
+      ];
+    });
+    await db.query(
+      `insert into mitos.message_file (message_id, path, action)
+       select t.message, t.path, t.action from unnest($1::uuid[], $2::text[], $3::text[]) as t(message, path, action)
+       where exists (select 1 from mitos.message m where m.id = t.message)
+       on conflict do nothing`,
+      [files.map((f) => f.message), files.map((f) => f.path), files.map((f) => f.action)],
+    );
+    return inserted.rowCount ?? 0;
+  });
+}
+
+/** DB が中身を受け付けなかった（型・値の域・制約）。送り直しても同じ結果になる。 */
+const rejected = (e: unknown): boolean => /^2[23]/.test(String((e as { code?: unknown }).code ?? ""));
+
 /**
  * 待ち行列を DB へ送る。**鍵は capture（追記だけ）。**同じものを 2 回送っても行は増えない。
  * 登録されていない作業場所の記録は捨てる（記録するのは `mitos project add` した作業場所だけ）。
+ * **1 件の不正な記録で、以後の記録を止めない。**束が値の誤りで落ちたら 1 件ずつ送り直し、落ちた記録だけを
+ * rejected/ へ移す（消さない）。接続断などの失敗は、束ごと待ち行列に残して次の送信で送り直す。
+ *
+ * sent は新しく入った発言の数（送り直した分は数えない）。busy は別の送信が走っていて何もしなかったとき。
  */
-/** sent は新しく入った発言の数（送り直した分は数えない）。 */
-export async function flush(env: Env): Promise<{ sent: number; dropped: number }> {
+export async function flush(
+  env: Env,
+): Promise<{ sent: number; dropped: number; rejected: number; busy?: boolean }> {
   const unlock = lock();
-  if (!unlock) return { sent: 0, dropped: 0 };
+  if (!unlock) return { sent: 0, dropped: 0, rejected: 0, busy: true };
   const dir = spoolDir();
-  let client: Awaited<ReturnType<typeof connect>> | null = null;
+  let client: pg.Client | null = null;
   try {
     const names = fs
       .readdirSync(dir)
       .filter((f) => f.endsWith(".json") && !f.startsWith("."))
       .sort()
       .slice(0, BATCH);
-    if (names.length === 0) return { sent: 0, dropped: 0 };
+    if (names.length === 0) return { sent: 0, dropped: 0, rejected: 0 };
     const records: { name: string; r: Spooled }[] = [];
     for (const name of names) {
       try {
@@ -297,9 +476,10 @@ export async function flush(env: Env): Promise<{ sent: number; dropped: number }
     const known = records.filter((x) => projects.has(x.r.project));
     const dropped = records.length - known.length;
 
-    // 埋め込みは transaction の前に取る。落ちたら pending で入れ、次の同期（ingest の鍵）が取り直す。
-    const messages = known.flatMap((x) => (x.r.kind === "message" ? [x.r] : []));
-    const toEmbed = messages.filter((m) => indexesMessage(m.host, m.speaker));
+    // 埋め込みは transaction の前に取る。落ちたら pending で入れ、次の同期が取り直す。
+    const toEmbed = known.flatMap((x) =>
+      x.r.kind === "message" && indexesMessage(x.r.host, x.r.speaker) ? [x.r] : [],
+    );
     const texts = toEmbed.map((m) =>
       messageText({
         body: m.body,
@@ -316,87 +496,37 @@ export async function flush(env: Env): Promise<{ sent: number; dropped: number }
     } catch {
       vectors = null;
     }
+    const vectorOf: Vectors = new Map(toEmbed.map((m, n) => [m, { text: texts[n] ?? "", v: vectors?.[n] }]));
 
-    const vectorOf = new Map(toEmbed.map((m, n) => [m, { text: texts[n] ?? "", v: vectors?.[n] }]));
-    let added = 0;
-    // **衝突先の列を書かない（`on conflict do nothing`）。**列を書くと PostgreSQL はその列の SELECT 権限を求め、
-    // 本文を読めない capture の鍵では拒否される。id は決定的に作るので、どの一意制約に当たっても「もう入っている」。
-    await inTransaction(db, async () => {
-      const conversations = new Map<
-        string,
-        { project: number; host: Host; session: string; branch: string | null; at: string }
-      >();
-      for (const { r } of known) {
-        const p = projects.get(r.project);
-        if (!p) continue;
-        const id = conversationId(p.id, r.host, r.session);
-        const prev = conversations.get(id);
-        if (!prev || r.at < prev.at)
-          conversations.set(id, {
-            project: p.id,
-            host: r.host,
-            session: r.session,
-            branch: r.branch,
-            at: r.at,
-          });
+    let sent = 0;
+    const bad: { name: string; r: Spooled }[] = [];
+    try {
+      sent = await write(
+        db,
+        known.map((x) => x.r),
+        projects,
+        vectorOf,
+      );
+    } catch (e) {
+      if (!rejected(e)) throw e;
+      // 記録の順（名前は時刻順）に 1 件ずつ。発言がファイルより先に入るので、ファイルの結び先が在る。
+      for (const x of known) {
+        try {
+          sent += await write(db, [x.r], projects, vectorOf);
+        } catch (e2) {
+          if (!rejected(e2)) throw e2;
+          bad.push(x);
+        }
       }
-      for (const [id, v] of conversations) {
-        await db.query(
-          `insert into mitos.conversation (id, project_id, origin, external_id, branch, started_at)
-           values ($1, $2, $3, $4, $5, $6) on conflict do nothing`,
-          [id, v.project, v.host, v.session, v.branch, v.at],
-        );
-      }
-      for (const m of messages) {
-        const p = projects.get(m.project);
-        if (!p) continue;
-        const conversation = conversationId(p.id, m.host, m.session);
-        const id = uuidFrom(conversation, m.id);
-        const indexed = indexesMessage(m.host, m.speaker);
-        const inserted = await db.query(
-          `insert into mitos.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
-                                      original_bytes, sent_at, content_hash, lexemes)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::tsvector) on conflict do nothing`,
-          [
-            id,
-            conversation,
-            m.id,
-            m.turn,
-            m.speaker,
-            m.body,
-            m.truncated,
-            m.originalBytes,
-            m.at,
-            sha256(m.body),
-            indexed ? tsvector(m.body) : null,
-          ],
-        );
-        added += inserted.rowCount ?? 0;
-        const e = vectorOf.get(m);
-        if (!e) continue;
-        const { text, v } = e;
-        await db.query(
-          `insert into mitos.message_embedding (message_id, model, source_hash, status, embedding)
-           values ($1, $2, $3, $4, $5::extensions.halfvec) on conflict do nothing`,
-          [id, EMBED_MODEL, sha256(text), v ? "ready" : "pending", v ? vec(v) : null],
-        );
-      }
-      for (const { r } of known) {
-        if (r.kind !== "file") continue;
-        const p = projects.get(r.project);
-        if (!p) continue;
-        const conversation = conversationId(p.id, r.host, r.session);
-        // その turn の持ち主の発言へ結ぶ。発言が無い turn（通知から始まった turn）は結ぶ先が無いので捨てる。
-        await db.query(
-          `insert into mitos.message_file (message_id, path, action)
-           select $1, $2, $3 where exists (select 1 from mitos.message where id = $1) on conflict do nothing`,
-          [uuidFrom(conversation, `${r.turn}:self`), r.path, r.action],
-        );
-      }
-    });
-    for (const x of records) fs.rmSync(path.join(dir, x.name), { force: true });
+    }
+    if (bad.length) {
+      fs.mkdirSync(rejectedDir(), { recursive: true, mode: 0o700 });
+      for (const x of bad) fs.renameSync(path.join(dir, x.name), path.join(rejectedDir(), x.name));
+    }
+    const moved = new Set(bad.map((x) => x.name));
+    for (const x of records) if (!moved.has(x.name)) fs.rmSync(path.join(dir, x.name), { force: true });
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
-    return { sent: added, dropped };
+    return { sent, dropped, rejected: bad.length };
   } catch (e) {
     writeState({
       flushedAt: new Date().toISOString(),
@@ -410,11 +540,18 @@ export async function flush(env: Env): Promise<{ sent: number; dropped: number }
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "--flush") {
+    await flush(loadEnv());
+    return;
+  }
   const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
   const { flush: send } = onHook(host, JSON.parse(raw || "{}") as HookInput);
-  if (send) await flush(loadEnv());
+  // 送信は session から切り離したプロセスで行う。フックのプロセスのままだと、session の終わりに
+  // ホストが殺し（`-p` では公式にそうなる）、最後の turn が次の送信まで届かない。
+  if (send)
+    spawn(process.execPath, [process.argv[1] ?? "", "--flush"], { detached: true, stdio: "ignore" }).unref();
 }
 
 // フックとして起動されたときだけ動く（テストと CLI は関数だけを使う）。

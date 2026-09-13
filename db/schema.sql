@@ -3,8 +3,8 @@
 -- 境界は 3 つ。取り込み元の今の状態（connector / source_item）、逐語の会話（conversation / message）、
 -- 検索する知識（knowledge）。作業の現在地（work_item）は更新される状態なので知識とは表を分ける。
 --
--- 版は schema のコメントに置く。MCP と CLI は起動時に server/src/db.ts の SCHEMA_REVISION と突き合わせ、
--- 食い違えば止まる。適用と作り直しは `bun run db:apply` / `bun run db:reset`（server/src/admin.ts）。
+-- 版は schema のコメントに置く。MCP・CLI・画面の API は最初に DB を使うときに server/src/db.ts の SCHEMA_REVISION と
+-- 突き合わせ、食い違えば止まる。適用と作り直しは `bun run db:apply` / `bun run db:reset`（server/src/admin.ts）。
 -- 名前は常に schema を付けて書く。接続ごとの search_path に依存しない。
 
 create schema if not exists extensions;
@@ -42,12 +42,15 @@ create table mitos.person_identity (
 );
 create index person_identity_handle on mitos.person_identity (provider, lower(handle));
 
--- 取り込み元ごとの同期位置と直近の成否。secret は置かない（同期する PC の環境にある）。
+-- 取り込み元ごとの、最後に入れた snapshot と直近の成否。secret は置かない（同期する PC の環境にある）。
+-- 同期は、自分の snapshot がここより古ければ書かずに止まる。遅れて commit した同期や、別の PC の古い clone が
+-- 新しい状態を巻き戻さないため。文書は HEAD の commit 時刻（head_at）を先に比べ、同じなら読んだ時刻で比べる。
 create table mitos.connector (
   id bigint generated always as identity primary key,
   project_id bigint not null references mitos.project (id) on delete cascade,
   provider text not null check (provider in ('github', 'docs')),
-  cursor jsonb not null default '{}' check (jsonb_typeof(cursor) = 'object'),
+  head_at timestamptz check (head_at is null or provider = 'docs'),
+  snapshot_at timestamptz,
   last_success_at timestamptz,
   last_error text,
   unique (project_id, provider)
@@ -68,6 +71,8 @@ create table mitos.source_item (
   author_identity_id bigint references mitos.person_identity (id) on delete set null,
   source_created_at timestamptz,
   source_updated_at timestamptz,
+  -- PR はマージした時刻（マージせず閉じたなら閉じた時刻）、issue は閉じた時刻。開いているものと文書は null。
+  closed_at timestamptz,
   content_hash bytea not null check (octet_length(content_hash) = 32),
   metadata jsonb not null default '{}' check (jsonb_typeof(metadata) = 'object'),
   synced_at timestamptz not null default now(),
@@ -75,7 +80,8 @@ create table mitos.source_item (
   check (
     case
       when kind in ('document', 'requirements', 'design') then path is not null and body is not null and state is null
-      else path is null and body is null and state in ('open', 'merged', 'closed')
+        and closed_at is null
+      else path is null and body is null and state in ('open', 'merged', 'closed') and (state = 'open') = (closed_at is null)
     end
   )
 );
@@ -105,7 +111,7 @@ create table mitos.message (
   external_id text not null,
   turn_id text,
   reply_to_id uuid references mitos.message (id) on delete set null,
-  speaker_kind text not null check (speaker_kind in ('self', 'person', 'assistant', 'bot', 'unknown')),
+  speaker_kind text not null check (speaker_kind in ('self', 'person', 'assistant', 'bot')),
   identity_id bigint references mitos.person_identity (id) on delete set null,
   body text not null check (body <> ''),
   truncated boolean not null default false,
@@ -123,11 +129,12 @@ create index message_by_identity on mitos.message (identity_id, sent_at desc) wh
 create index message_self on mitos.message (sent_at desc) where speaker_kind = 'self';
 create index message_lexemes on mitos.message using gin (lexemes);
 
--- その turn で編集したファイルと、レビューで指されたファイル。path は project の根からの相対。
+-- その turn で編集したファイル（edit）、読んだ承認済みの要件定義・設計書（read）、レビューで指されたファイル（review）。
+-- path は project の根からの相対。
 create table mitos.message_file (
   message_id uuid not null references mitos.message (id) on delete cascade,
   path text not null check (path <> '' and path !~ '^/' and path !~ '(^|/)\.\.(/|$)'),
-  action text not null check (action in ('edit', 'review')),
+  action text not null check (action in ('edit', 'read', 'review')),
   line_start integer check (line_start > 0),
   line_end integer check (line_end >= line_start),
   primary key (message_id, path, action)
@@ -263,7 +270,7 @@ create table mitos.knowledge_embedding (
 --   mitos_reader  読むだけ。MCP・画面の API
 --   mitos_ingest  取り込みと trace。CLI の sync / trace / who / project
 --   mitos_capture 会話の自動記録。追記だけで、既存の行を読めも書き換えもしない
--- パスワードは持たせない。鍵は scripts/db-roles.mjs が作り、~/.claude/knowledge.env へ直接書く。
+-- ここではパスワードを付けない。鍵は `bun run db:roles`（server/src/admin.ts）が作り、env ファイルへ直接書く。
 do $$
 declare
   r text;
@@ -284,6 +291,11 @@ grant select, insert, update, delete on all tables in schema mitos to mitos_inge
 grant usage on all sequences in schema mitos to mitos_ingest;
 
 -- capture が読めるのは、作業場所の対応（id・key・名前）と、ファイルを結ぶ先の発言が在るかだけ。本文は読めない。
+-- 書けるのは自動記録が埋める列だけ。GitHub の会話や他人の発言（source_item・identity）を指す列は書けない。
 grant select (id, key, name) on mitos.project to mitos_capture;
 grant select (id) on mitos.message to mitos_capture;
-grant insert on mitos.conversation, mitos.message, mitos.message_file, mitos.message_embedding to mitos_capture;
+grant insert (id, project_id, origin, external_id, branch, started_at) on mitos.conversation to mitos_capture;
+grant insert (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated, original_bytes, sent_at,
+              content_hash, lexemes) on mitos.message to mitos_capture;
+grant insert (message_id, path, action) on mitos.message_file to mitos_capture;
+grant insert (message_id, model, source_hash, status, embedding) on mitos.message_embedding to mitos_capture;

@@ -1,6 +1,7 @@
 // 知識の種類と、それを読む側へ渡す札と、埋め込みへ渡す文。
 //
-// 種類と状態の組は db/schema.sql の knowledge の CHECK が正本で、ここはその写し。
+// 種類と状態の組、発言の主、会話の出どころ、ファイルとの関係は db/schema.sql の CHECK が正本で、ここはその写し
+// （scripts/check-pairs.mjs が突き合わせる）。コードはこの写しだけを参照する。
 // 札は再ランクと AI が意味を見分ける手がかりになる。素の本文だけを渡すと、棄却した案が
 // 文字面の近さで 1 位に来る（「自動発火する？」に『自動発火もさせる』を返した実測がある）。
 
@@ -31,7 +32,19 @@ export const STATUSES = {
   dead_end: null,
   finding: null,
   document: null,
-} as const satisfies Record<Kind, readonly string[] | null>;
+} as const satisfies Record<Kind, readonly [string, ...string[]] | null>;
+
+/** message.speaker_kind。self は持ち主、assistant は AI、bot は推論を含まない自動通知。 */
+export const SPEAKERS = ["self", "person", "assistant", "bot"] as const;
+export type SpeakerKind = (typeof SPEAKERS)[number];
+
+/** conversation.origin。 */
+export const ORIGINS = ["claude-code", "codex", "github"] as const;
+export type Origin = (typeof ORIGINS)[number];
+
+/** message_file.action。edit は編集、read は読んだ承認済みの成果物、review はレビューで指されたファイル。 */
+export const FILE_ACTIONS = ["edit", "read", "review"] as const;
+export type FileAction = (typeof FILE_ACTIONS)[number];
 
 /** 埋め込みの前置きに使う、種類の呼び名。 */
 export const KIND_WORD: Record<Kind, string> = {
@@ -47,28 +60,35 @@ export const KIND_WORD: Record<Kind, string> = {
   document: "文書",
 };
 
-const LABEL: Record<string, string> = {
-  "decision/accepted": "【採用した決定】",
-  "decision/proposed": "【提案どまり。まだ決まっていない】",
-  "decision/rejected": "【却下した決定。採用していない】",
-  "decision/superseded": "【後で覆した決定。もう有効ではない】",
-  "option/chosen": "【採用した案】",
-  "option/rejected": "【棄却した案】",
-  "option/was_chosen": "【当時は採った案。その決定はもう有効ではない】",
-  "constraint/active": "【変えてはいけない制約】",
-  "constraint/retired": "【外した制約】",
-  "non_goal/active": "【やらないと決めたこと】",
-  "non_goal/retired": "【やらないことから外したこと】",
-  "debt/active": "【意図して残した負債。直しにいかない】",
-  "debt/retired": "【返済した負債】",
-  "dead_end/": "【試して駄目だった】",
-  "finding/": "【分かったこと】",
-  "verification/passed": "【検証・通った】",
-  "verification/failed": "【検証・落ちた。直っていない】",
-  "verification/not_run": "【検証・未実行。確かめていない】",
-  "question/open": "【未解決の問い】",
-  "question/blocking": "【作業を止めている問い】",
-  "question/resolved": "【解決した問い】",
+// 状態を持つ種類は全部の状態に、持たない種類は 1 つの札を持つ（型が漏れを止める）。文書の札は置き場所で決める。
+type Labels = {
+  [K in Exclude<Kind, "document">]: (typeof STATUSES)[K] extends readonly (infer S extends string)[]
+    ? Record<S, string>
+    : string;
+};
+const LABEL: Labels = {
+  decision: {
+    accepted: "【採用した決定】",
+    proposed: "【提案どまり。まだ決まっていない】",
+    rejected: "【却下した決定。採用していない】",
+    superseded: "【後で覆した決定。もう有効ではない】",
+  },
+  option: {
+    chosen: "【採用した案】",
+    rejected: "【棄却した案】",
+    was_chosen: "【当時は採った案。その決定はもう有効ではない】",
+  },
+  constraint: { active: "【変えてはいけない制約】", retired: "【外した制約】" },
+  non_goal: { active: "【やらないと決めたこと】", retired: "【やらないことから外したこと】" },
+  debt: { active: "【意図して残した負債。直しにいかない】", retired: "【返済した負債】" },
+  dead_end: "【試して駄目だった】",
+  finding: "【分かったこと】",
+  verification: {
+    passed: "【検証・通った】",
+    failed: "【検証・落ちた。直っていない】",
+    not_run: "【検証・未実行。確かめていない】",
+  },
+  question: { open: "【未解決の問い】", blocking: "【作業を止めている問い】", resolved: "【解決した問い】" },
 };
 
 /** 文書の札は、置き場所から決める。承認済みの要件定義・設計書と ADR は、説明文と重みが違う。 */
@@ -87,7 +107,8 @@ export function labelOf(k: {
   path?: string | null;
 }): string {
   if (k.kind === "document") return documentLabel(k.source_kind, k.path);
-  return LABEL[`${k.kind}/${k.status ?? ""}`] ?? "";
+  const l = (LABEL as Record<string, string | Record<string, string>>)[k.kind];
+  return typeof l === "string" ? l : ((k.status && l?.[k.status]) ?? "");
 }
 
 /** 埋め込む文。**何の作業の、どの種類の話かを前置する。**断片だけでは文脈が失われる。 */

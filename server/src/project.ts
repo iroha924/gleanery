@@ -48,13 +48,24 @@ const git = (dir: string, ...args: string[]): string | null => {
   }
 };
 
+/** 名前を付けた作業場所の対応表。**壊れていたら空とみなさない**（空として書き戻すと、ほかの対応が全部消える）。 */
 function localMap(): Record<string, string> {
+  let raw: string;
   try {
-    const m = JSON.parse(fs.readFileSync(localFile(), "utf8")) as unknown;
-    return m && typeof m === "object" ? (m as Record<string, string>) : {};
-  } catch {
-    return {};
+    raw = fs.readFileSync(localFile(), "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw e;
   }
+  let m: unknown;
+  try {
+    m = JSON.parse(raw);
+  } catch {
+    m = null;
+  }
+  if (!m || typeof m !== "object" || Array.isArray(m))
+    throw new Error(`${localFile()} が JSON の対応表として読めない。直すか消してから、名前を付け直す`);
+  return m as Record<string, string>;
 }
 
 /** リポジトリの根。git の外なら dir そのもの。 */
@@ -83,6 +94,12 @@ export function identify(dir: string): Place | null {
 /** remote の無い作業場所に、この PC で名前を付ける。 */
 export function nameLocal(dir: string, name: string): Place {
   if (!LOCAL_KEY.test(name)) throw new Error(`名前は小文字英数字と . _ - だけにする: ${name}`);
+  // remote があれば key は remote から決まり、名前の key は二度と引かれない（登録しても届かない行になる）。
+  const place = identify(dir);
+  if (place?.key.startsWith("git:"))
+    throw new Error(
+      `${place.root} は git remote を持つので、key は ${place.key} になる。--name を外して登録する`,
+    );
   const root = rootOf(dir);
   const m = localMap();
   m[root] = name;
@@ -134,23 +151,43 @@ export function localRoots(roots = [path.join(os.homedir(), "Projects")]): {
 export function relativeTo(root: string, file: string, cwd = root): string | null {
   const abs = path.resolve(cwd, file);
   const rel = path.relative(root, abs);
-  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return null;
+  // `..config` のような名前は根の中にある。外へ出るのは `..` そのものか `../` で始まるものだけ。
+  if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
   return rel.split(path.sep).join("/");
 }
 
-/** 取り込み元の行。無ければ作る。同期の成否はここへ書く（`mitos doctor` と画面が最後の同期を出す）。 */
-export async function connectorOf(db: Db, projectId: number, provider: "github" | "docs"): Promise<string> {
+export type Connector = { id: string; headAt: Date | null; snapshotAt: Date | null };
+
+/**
+ * 取り込み元の行。無ければ作る。**transaction の中で呼び、行を掴む**（同じ取り込み元の同期の commit を 1 本ずつにする）。
+ * 同期の成否と、最後に入れた snapshot はここへ書く（`mitos doctor` と画面が最後の同期を出す）。
+ */
+export async function connectorOf(
+  db: Db,
+  projectId: number,
+  provider: "github" | "docs",
+): Promise<Connector> {
   await db.query(
     "insert into mitos.connector (project_id, provider) values ($1, $2) on conflict (project_id, provider) do nothing",
     [projectId, provider],
   );
-  const r = await db.query<{ id: string }>(
-    "select id from mitos.connector where project_id = $1 and provider = $2",
+  const r = await db.query<{ id: string; head_at: Date | null; snapshot_at: Date | null }>(
+    "select id, head_at, snapshot_at from mitos.connector where project_id = $1 and provider = $2 for update",
     [projectId, provider],
   );
-  const id = r.rows[0]?.id;
-  if (!id) throw new Error(`取り込み元を作れなかった: ${provider}`);
-  return id;
+  const row = r.rows[0];
+  if (!row) throw new Error(`取り込み元を作れなかった: ${provider}`);
+  return { id: row.id, headAt: row.head_at, snapshotAt: row.snapshot_at };
+}
+
+/**
+ * この snapshot が、既に入っているものより古いか。古ければ書かない（新しい状態を巻き戻さない）。
+ * head は文書の HEAD の commit 時刻で、先に比べる（別の PC の古い clone）。同じなら読み始めた時刻で比べる（遅れた同期）。
+ */
+export function isStale(stored: Connector, snapshotAt: Date, headAt: Date | null = null): boolean {
+  const h = (d: Date | null) => d?.getTime() ?? Number.NEGATIVE_INFINITY;
+  if (h(headAt) !== h(stored.headAt)) return h(headAt) < h(stored.headAt);
+  return stored.snapshotAt !== null && snapshotAt.getTime() < stored.snapshotAt.getTime();
 }
 
 /** Codex の apply_patch は編集先を patch の見出しに書く。見出しの 4 形だけを読む（本文は読まない）。 */

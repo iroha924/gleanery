@@ -4,6 +4,8 @@ import {
   framed,
   fuse,
   type Hit,
+  listItems,
+  read,
   renderHits,
   searchKnowledge,
   searchMessages,
@@ -83,12 +85,28 @@ test("融合は参照ごとに順位を足し合わせる", () => {
 
 const recorder = () => {
   const sql: string[] = [];
-  const query = async (s: string) => {
+  const params: unknown[][] = [];
+  const query = async (s: string, p: unknown[] = []) => {
     sql.push(s);
+    params.push(p);
     return { rows: [] };
   };
-  return { sql, db: { query } as never };
+  return { sql, params, db: { query } as never };
 };
+
+/** Voyage の埋め込みだけを差し替える（外部 API）。ms 待ってから 1024 次元を返す。 */
+function stubVoyage(ms = 0): () => void {
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    await new Promise((r) => setTimeout(r, ms));
+    if (String(url).endsWith("/embeddings"))
+      return new Response(JSON.stringify({ data: [{ index: 0, embedding: Array(1024).fill(0.01) }] }));
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
+  return () => {
+    globalThis.fetch = real;
+  };
+}
 
 // 文書は決定を押し出す（入れると top1 が 80% から 35% に落ちた実測がある）。覆された決定は正解候補から外す。
 test("通常の検索は文書と覆された決定を外し、avoid は通ってはいけない道だけを引く", async () => {
@@ -113,7 +131,7 @@ test("通常の検索は文書と覆された決定を外し、avoid は通っ�
 // coding session の AI の応答は索引しない。「私はなんて言った？」の候補を押し出すため。
 test("発言の検索は索引した発言だけを見て、持ち主の発言には GitHub の本人アカウントも含める", async () => {
   const r = recorder();
-  await searchMessages(r.db, {}, { projects: [1], speaker: "self", limit: 5 });
+  await searchMessages(r.db, {}, { projects: [1], who: "me", limit: 5 });
   assert.match(r.sql[0] ?? "", /m\.lexemes is not null/);
   assert.match(r.sql[0] ?? "", /m\.speaker_kind = 'self' or coalesce\(pe\.is_self, false\)/);
   assert.match(r.sql[0] ?? "", /order by m\.sent_at desc/);
@@ -145,10 +163,89 @@ test("発言の主は、持ち主・呼び名つきの人・AI を分けて書�
 
 // どのロールの接続も search_path を持たない。pgvector の演算子は extensions にあるので、schema を付けないと見つからない。
 test("意味側の検索は pgvector の演算子を schema 付きで書く", async () => {
+  const restore = stubVoyage();
+  try {
+    const r = recorder();
+    await searchKnowledge(r.db, { VOYAGE_API_KEY: "k" }, { question: "x", projects: [1], limit: 5 });
+    await searchMessages(r.db, { VOYAGE_API_KEY: "k" }, { question: "x", projects: [1], limit: 5 });
+    const dense = r.sql.filter((s) => s.includes("embedding"));
+    assert.equal(dense.length, 2);
+    for (const s of dense) assert.match(s, /operator\(extensions\.<#>\) \$\d+::extensions\.halfvec/);
+  } finally {
+    restore();
+  }
+});
+
+// 語彙側を先に投げて埋め込みを待つと、その間の reject に受け手が無く、Node が MCP サーバーごと落とす。
+test("埋め込みを待つ間に語彙側が落ちても、未処理の reject にならず呼び出し側へ返る", async () => {
+  const restore = stubVoyage(50);
+  const unhandled: unknown[] = [];
+  const spy = (e: unknown) => unhandled.push(e);
+  process.on("unhandledRejection", spy);
+  try {
+    const db = { query: async () => Promise.reject(new Error("接続が切れた")) } as never;
+    await assert.rejects(
+      searchKnowledge(db, { VOYAGE_API_KEY: "k" }, { question: "認証", projects: [1], limit: 5 }),
+      /接続が切れた/,
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", spy);
+    restore();
+  }
+});
+
+test("暦にない日付は SQL を投げる前に止める", async () => {
+  for (const bad of ["2026-02-30", "2026-13-01", "2026-9-1"]) {
+    const r = recorder();
+    await assert.rejects(
+      searchKnowledge(r.db, {}, { question: "x", projects: [1], since: bad, limit: 5 }),
+      RangeError,
+    );
+    await assert.rejects(searchMessages(r.db, {}, { projects: [1], until: bad, limit: 5 }), RangeError);
+    await assert.rejects(listItems(r.db, { projects: [1], since: bad, limit: 5 }), RangeError);
+    assert.equal(r.sql.length, 0, bad);
+  }
+});
+
+test("read は参照の形を先に確かめ、範囲を渡すと作業場所で絞り、DB の失敗は隠さない", async () => {
   const r = recorder();
-  await searchKnowledge(r.db, {}, { question: "x", projects: [1], limit: 5, queryVector: [0.1, 0.2] });
-  await searchMessages(r.db, {}, { question: "x", projects: [1], limit: 5, queryVector: [0.1, 0.2] });
-  const dense = r.sql.filter((s) => s.includes("embedding"));
-  assert.equal(dense.length, 2);
-  for (const s of dense) assert.match(s, /operator\(extensions\.<#>\) \$\d+::extensions\.halfvec/);
+  const out = await read(r.db, ["k:abc", "m:12", "x:1"], 4096);
+  assert.equal(r.sql.length, 0, "形の違う参照で DB に問い合わせない");
+  assert.equal(out.split("読めない参照").length - 1, 3);
+
+  await read(r.db, ["k:12", "m:00000000-0000-8000-8000-000000000001", "s:3", "w:4"], 4096, { projects: [7] });
+  assert.ok(
+    r.params.every((p) => p.some((v) => Array.isArray(v) && v[0] === 7)),
+    "どの問い合わせも範囲を持つ",
+  );
+
+  const down = { query: async () => Promise.reject(new Error("timeout")) } as never;
+  await assert.rejects(read(down, ["k:12"], 4096), /timeout/);
+});
+
+// 同じ時刻の発言が前後の上限を超えて並んでも、対象の発言を落とさない。
+test("前後の発言は時刻と id の組で切る", async () => {
+  const sql: string[] = [];
+  const db = {
+    query: async (s: string) => {
+      sql.push(s);
+      return { rows: sql.length === 1 ? [{ conversation_id: "c", sent_at: new Date() }] : [] };
+    },
+  } as never;
+  await read(db, ["m:00000000-0000-8000-8000-000000000001"], 4096);
+  assert.match(sql[1] ?? "", /\(m\.sent_at, m\.id\) < \(\$2, \$5::uuid\)/);
+  assert.match(sql[1] ?? "", /\(m\.sent_at, m\.id\) >= \(\$2, \$5::uuid\)/);
+});
+
+// 「先週マージした PR」を作成日で絞ると、先週より前に作って先週マージしたものが落ちる。
+test("PR・issue はマージ・クローズを聞いたらその日で絞って並べ、それ以外は作成日", async () => {
+  const merged = recorder();
+  await listItems(merged.db, { projects: [1], state: "merged", since: "2026-09-01", limit: 5 });
+  assert.match(merged.sql[1] ?? "", /s\.closed_at >= /);
+  assert.match(merged.sql[1] ?? "", /order by s\.closed_at desc/);
+  const open = recorder();
+  await listItems(open.db, { projects: [1], state: "open", limit: 5 });
+  assert.match(open.sql[1] ?? "", /order by s\.source_created_at desc/);
 });

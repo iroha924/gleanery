@@ -126,6 +126,16 @@ test("superseded は、この記録の別の決定が覆していなければな
   assert.equal(out.find((x) => x.key === "claude-code:s1#d-halfvec:o1")?.status, "was_chosen");
 });
 
+// 同じ記録で覆したのに有効のまま書くと、check を通って save だけが DB の CHECK で落ちる。
+test("この記録の中で覆された決定は superseded でなければならない", () => {
+  assert.match(
+    problems(
+      base([decision(), decision({ key: "d-vector", text: "vector に戻す", supersedes: "d-halfvec" })]),
+    ),
+    /d-vector が覆しているので、status は superseded にする/,
+  );
+});
+
 test("知らない欄と、形の違う日時・パスを弾く", () => {
   assert.match(problems(base([decision({ extra: 1 })])), /Unrecognized key|extra/);
   assert.match(problems(base([decision({ at: "2026-09-13" })])), /ISO 8601/);

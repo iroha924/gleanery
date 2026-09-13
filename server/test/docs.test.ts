@@ -20,6 +20,19 @@ test("コードフェンスの中の見出しでは割らない", () => {
   assert.match(out[0]?.text ?? "", /続き/);
 });
 
+// 4 つのバッククォートの例の中の 3 つのバッククォートで閉じたと読むと、例の中の見出しが節になる。
+test("フェンスは同じ文字で同じ長さ以上の、info の無い行でだけ閉じる", () => {
+  const md = ["## 書き方", "````md", "```ts", "# 例の中の見出し", "```", "````", "", "## 次", "本文"].join(
+    "\n",
+  );
+  const out = sections("a.md", md);
+  assert.deepEqual(
+    out.map((s) => s.title),
+    ["書き方", "次"],
+  );
+  assert.equal(sections("b.md", ["## a", "```ts", "```ts", "# 中", "```"].join("\n")).length, 1);
+});
+
 test("チルダのフェンスも見る", () => {
   const out = sections("a.md", ["## 節", "~~~", "### 中の見出し", "~~~"].join("\n"));
   assert.equal(out.length, 1);

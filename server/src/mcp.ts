@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// 過去の判断・会話・文書を Claude Code と Codex から引く MCP サーバー。**読み取りしかしない。**
+// 過去の判断・会話・文書を Claude Code と Codex から引く MCP サーバー。**DB は読むだけ**（reader の鍵）。
+// 手元に書くのは、check_path がフックの効き目を測る ~/.claude/mitos-advice.jsonl だけ。
 //
 // 汎用の Postgres MCP では意味検索ができない（質問を埋め込むのに Voyage を呼ぶ必要がある）ので自前で持つ。
 // tool は 3 つ。recall（探す）、read（参照を読む）、check_path（編集の前に、そのファイルにかかる制約を引く）。
@@ -15,6 +16,7 @@ import { KINDS } from "./knowledge.ts";
 import { ROOT, versionAt } from "./plugin.ts";
 import { identify, type Place, patchPaths, projectId, relativeTo } from "./project.ts";
 import {
+  DAY,
   framed,
   openWork,
   type PathRule,
@@ -38,16 +40,21 @@ const READ_BYTES = 8 * 1024;
 const PATH_BYTES = 2 * 1024;
 
 type Here = { place: Place | null; id: number | null };
-const known = new Map<string, number>();
+
+// 作業場所の id と、制約の索引は 5 分で読み直す。編集のたびに DB へ繋がないため。
+// 読み直さないと、forget して登録し直した作業場所へ古い id で問い続ける。
+const TTL = 5 * 60_000;
+const known = new Map<string, { at: number; id: number }>();
 
 /** cwd の作業場所。**未登録なら全部を見ない**（無関係な作業場所の決定が混ざる）。 */
 async function here(cwd?: string): Promise<Here> {
   const place = identify(cwd ?? process.cwd());
   if (!place) return { place: null, id: null };
   const cached = known.get(place.key);
-  if (cached !== undefined) return { place, id: cached };
+  if (cached && Date.now() - cached.at < TTL) return { place, id: cached.id };
   const id = await projectId(await db(), place.key);
-  if (id !== null) known.set(place.key, id);
+  if (id === null) known.delete(place.key);
+  else known.set(place.key, { at: Date.now(), id });
   return { place, id };
 }
 
@@ -63,7 +70,7 @@ const server = new McpServer(
   {
     // Claude Code は tool search が既定で有効で、開始時にモデルが見るのは tool 名とこれだけになる。
     instructions: [
-      "過去の判断・会話・文書を引く（読み取りだけ）。",
+      "過去の判断・会話・文書を引く（DB は読むだけ）。",
       "方針を決める前や実装に入る前は recall。棄却済みか確かめるなら mode: avoid。",
       "「私は／◯◯さんはなんて言った？」は mode: said、「続きをやる」は mode: resume。",
       "詳しくは結果の参照（k: / m: / s: / w:）を read に渡す。",
@@ -73,7 +80,7 @@ const server = new McpServer(
 );
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD（日本時間の日付）");
+const day = DAY.describe("YYYY-MM-DD（日本時間の日付。この日を含む）");
 
 server.registerTool(
   "recall",
@@ -138,12 +145,10 @@ server.registerTool(
       );
     }
     if (mode === "said") {
-      const who = a.who ?? "me";
       const hits = await searchMessages(pool, env, {
         question: a.question,
         projects,
-        speaker: who === "me" ? "self" : who === "others" ? "person" : undefined,
-        person: who === "me" || who === "others" ? undefined : who,
+        who: a.who ?? "me",
         path: file,
         since: a.since,
         until: a.until,
@@ -183,8 +188,8 @@ server.registerTool(
 //
 // 編集フック（PreToolUse の mcp_tool）からも呼ばれる。**編集のたびに DB へ繋がない。**
 // 作業場所ごとの索引をメモリに持ち、5 分で読み直す。当たらなければ何も返さない（文脈を使わない）。
+// **確かめられなかったことを「制約なし」と言わない。**DB に届かないときはそう返す。
 
-const TTL = 5 * 60_000;
 const index = new Map<number, { at: number; rules: Map<string, PathRule[]> }>();
 const ADVICE = path.join(os.homedir(), ".claude", "mitos-advice.jsonl");
 
@@ -253,9 +258,11 @@ server.registerTool(
           ),
         ),
       );
-    } catch {
-      // 何が起きても編集は止めない。
-      return reply("");
+    } catch (e) {
+      // 編集は止めない（フックは許可を決めない）。ただし確かめていないことは伝える。
+      return reply(
+        `mitos: このファイルにかかる制約を確かめられなかった（${e instanceof Error ? head(e.message, 200) : "不明"}）。`,
+      );
     }
   },
 );

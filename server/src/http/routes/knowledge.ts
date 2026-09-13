@@ -2,9 +2,9 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import { labelOf } from "../../knowledge.ts";
-import { read } from "../../search.ts";
+import { REF, read } from "../../search.ts";
 import { db } from "../runtime.ts";
-import { positiveId, uuidParamSchema } from "../validation.ts";
+import { positiveId, positiveIds, uuidParamSchema } from "../validation.ts";
 
 const conversationsQuery = z.object({
   project: positiveId.optional(),
@@ -12,7 +12,14 @@ const conversationsQuery = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(30),
 });
 
-const refQuery = z.object({ ref: z.string().regex(/^[kmsw]:[0-9a-f-]{1,40}$/) });
+// どの作業場所について読むかは画面が持つ（チャットで選んだ作業場所）。その外の参照は「無い」と返す。
+const refQuery = z.object({
+  ref: z.string().regex(REF),
+  projects: z
+    .string()
+    .transform((v) => v.split(",").map(Number))
+    .pipe(positiveIds.min(1)),
+});
 
 const app = new Hono()
   .get("/projects", async (c) => {
@@ -109,8 +116,8 @@ const app = new Hono()
   })
   // チャットの根拠を開いたときの全文。MCP の read と同じ関数を通す。
   .get("/read", zValidator("query", refQuery), async (c) => {
-    const text = await read(await db(), [c.req.valid("query").ref], 16 * 1024);
-    return c.json({ text });
+    const { ref, projects } = c.req.valid("query");
+    return c.json({ text: await read(await db(), [ref], 16 * 1024, { projects }) });
   });
 
 export default app;

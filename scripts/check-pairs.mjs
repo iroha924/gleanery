@@ -25,31 +25,46 @@ const grab = (file, re, what) => {
   }
   return m[1];
 };
+/** 引用符で囲んだ語を並べる。1 つも無ければ取り出しの失敗として報告する。 */
+const words = (text, quote, what) => {
+  const got = [...(text ?? "").matchAll(new RegExp(`${quote}([a-z_-]+)${quote}`, "g"))].map((m) => m[1]);
+  if (text !== null && got.length === 0) fail.push(`${what} から値を 1 つも取り出せない`);
+  return got;
+};
+const same = (a, b) => [...a].sort().join() === [...b].sort().join();
 
-// ---- 知識の種類と状態が、DB の CHECK とコードで揃っているか ----
+// ---- 値の域が、DB の CHECK とコードで揃っているか ----
 //
-// 正本は db/schema.sql の knowledge の CHECK。コード側（server/src/knowledge.ts）は MCP の入力、画面のチャットの道具、
-// 札が読む写し。**片方に足してもう片方を忘れた**を捕まえる。DB だけに足すと検索の札が空になり、
-// コードだけに足すと取り込みが CHECK で落ちる。
+// 正本は db/schema.sql の CHECK。コード側（server/src/knowledge.ts）の写しを、MCP の入力・trace の検査・札・
+// 自動記録と取り込みの型が参照する（札の表は型で全部の状態を持たされる）。**片方に足してもう片方を忘れた**を捕まえる。
+// DB だけに足すと検索の札が空になり、コードだけに足すと取り込みや自動記録が CHECK で落ちる
+// （Read した成果物を action 'read' で送り、CHECK が edit / review しか許さずに自動記録が止まった実例がある）。
 const schema = read("db/schema.sql");
 const knowledgeTable = schema.slice(
   schema.indexOf("create table mitos.knowledge ("),
   schema.indexOf("create index knowledge_listing"),
 );
-const dbKinds = grab("db/schema.sql", /kind in \(([^)]*)\)\s*\),\s*status text/, "knowledge.kind の CHECK")
-  ?.match(/'([a-z_]+)'/g)
-  ?.map((x) => x.replaceAll("'", ""));
-const codeKinds = grab(
-  "server/src/knowledge.ts",
-  /export const KINDS = \[([^\]]*)\]/,
-  "knowledge.ts の KINDS",
-)
-  ?.match(/"([a-z_]+)"/g)
-  ?.map((x) => x.replaceAll('"', ""));
-if (dbKinds && codeKinds && [...dbKinds].sort().join() !== [...codeKinds].sort().join()) {
-  fail.push(
-    `知識の種類が揃っていない: DB は ${dbKinds.join(" / ")}、knowledge.ts は ${codeKinds.join(" / ")}`,
+const PAIRS = [
+  ["knowledge.kind", /kind in \(([^)]*)\)\s*\),\s*status text/, "KINDS"],
+  ["message.speaker_kind", /speaker_kind text not null check \(speaker_kind in \(([^)]*)\)\)/, "SPEAKERS"],
+  ["conversation.origin", /origin text not null check \(origin in \(([^)]*)\)\)/, "ORIGINS"],
+  ["message_file.action", /action text not null check \(action in \(([^)]*)\)\)/, "FILE_ACTIONS"],
+];
+for (const [column, re, constant] of PAIRS) {
+  const db = words(grab("db/schema.sql", re, `${column} の CHECK`), "'", `${column} の CHECK`);
+  const code = words(
+    grab(
+      "server/src/knowledge.ts",
+      new RegExp(`export const ${constant} = \\[([^\\]]*)\\]`),
+      `knowledge.ts の ${constant}`,
+    ),
+    '"',
+    `knowledge.ts の ${constant}`,
   );
+  if (db.length && code.length && !same(db, code))
+    fail.push(
+      `${column} が揃っていない: DB は ${db.join(" / ")}、knowledge.ts の ${constant} は ${code.join(" / ")}`,
+    );
 }
 const dbStatuses = Object.fromEntries(
   [...knowledgeTable.matchAll(/when '([a-z_]+)' then status is not null and status in \(([^)]*)\)/g)].map(
@@ -91,38 +106,23 @@ for (const kind of new Set([...Object.keys(dbStatuses), ...Object.keys(codeStatu
   }
 }
 
-// ---- 成果物の path の形が、同期・trace・画面で揃っているか ----
+// ---- 成果物の種別が、同期と画面で揃っているか ----
 //
-// 同期（server/src/artifacts.ts）が承認を判定する path と、trace（collect.mjs）がセッションへ結ぶ path は
-// 同じ集合でなければならない。片方だけ変えると、結んだのに表示されない、または承認を通らない path が結ばれる。
-const artifactPatterns = {
-  "server/src/artifacts.ts（同期と API）": grab(
-    "server/src/artifacts.ts",
-    /const ARTIFACT_PATH = (\/.*\/);/,
-    "server の ARTIFACT_PATH",
-  ),
-  "plugin/skills/trace/lib/collect.mjs（trace）": grab(
-    "plugin/skills/trace/lib/collect.mjs",
-    /export const ARTIFACT = (\/.*\/);/,
-    "trace の ARTIFACT",
-  ),
-};
-if (new Set(Object.values(artifactPatterns).filter(Boolean)).size > 1) {
-  fail.push(
-    `成果物の path の形が揃っていない。次を同じ正規表現にする:\n    ${Object.entries(artifactPatterns)
-      .map(([where, re]) => `${where}: ${re}`)
-      .join("\n    ")}`,
-  );
-}
-const pathKinds = Object.values(artifactPatterns)[0]
-  ?.match(/\(([a-z|]+)\)\\\.md/)?.[1]
-  ?.split("|");
+// 同期（server/src/artifacts.ts）が承認を判定する path の種別と、画面が出す成果物の種別は同じ集合でなければならない。
+// 自動記録は同じ ARTIFACT_PATH を読み込むので、ここでは突き合わせない。
+const artifactPattern = grab(
+  "server/src/artifacts.ts",
+  /export const ARTIFACT_PATH = (\/.*\/);/,
+  "server の ARTIFACT_PATH",
+);
+const pathKinds = artifactPattern?.match(/\(([a-z|]+)\)\\\.md/)?.[1]?.split("|");
+if (artifactPattern && !pathKinds?.length) fail.push("ARTIFACT_PATH から成果物の種別を取り出せない");
 const screenKinds = grab(
   "dashboard/src/app/(dashboard)/sessions/_sessions/api/sessions.ts",
   /kind: ((?:"[a-z]+"(?: \| )?)+);/,
   "画面の SessionArtifact.kind",
 )?.match(/[a-z]+/g);
-if (pathKinds && screenKinds && pathKinds.sort().join() !== [...screenKinds].sort().join()) {
+if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
   fail.push(
     `成果物の種別が揃っていない: path は ${pathKinds.join(" / ")}、画面の SessionArtifact.kind は ${screenKinds.join(" / ")}`,
   );

@@ -186,7 +186,7 @@ mitos sync [--cwd <dir>]                         この PC にある作業場所
 mitos search <質問> [--avoid] [--said me|others|<名前>] [--all] [--cwd <dir>] [--limit N]
                                                  引けるかを確かめる（--said は発言を探す）
 mitos who [<呼び名> <ハンドル>... [--me]]         GitHub のハンドルと人を結ぶ（--me は持ち主）
-mitos trace context                              いまの session の会話と、進行中の作業を出す（trace の材料）
+mitos trace context [--host claude-code|codex]   いまの session の会話と、進行中の作業を出す（trace の材料）
 mitos trace check <trace.json>                   trace の記録の形を確かめる（DB に触らない）
 mitos trace save <trace.json>                    trace の記録を入れる
 mitos capture flush                              自動記録の待ち行列を DB へ送る

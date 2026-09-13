@@ -61,14 +61,11 @@ test("env ファイルは指定した鍵だけを書き換え、ほかの行と�
     "# mitos",
     "KNOWLEDGE_DB_URL=owner",
     "export KNOWLEDGE_DB_URL_RO=old",
-    "KNOWLEDGE_DB_URL_CFG=legacy",
     "VOYAGE_API_KEY=v",
     "",
   ].join("\n");
   assert.equal(
-    rewriteEnv(before, { KNOWLEDGE_DB_URL_RO: "new", KNOWLEDGE_DB_URL_INGEST: "i" }, [
-      "KNOWLEDGE_DB_URL_CFG",
-    ]),
+    rewriteEnv(before, { KNOWLEDGE_DB_URL_RO: "new", KNOWLEDGE_DB_URL_INGEST: "i" }),
     [
       "# mitos",
       "KNOWLEDGE_DB_URL=owner",
