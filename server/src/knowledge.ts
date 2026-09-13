@@ -41,7 +41,7 @@ export type SpeakerKind = (typeof SPEAKERS)[number];
 export const ORIGINS = ["claude-code", "codex", "github"] as const;
 export type Origin = (typeof ORIGINS)[number];
 
-// edit は編集、read は読んだ承認済みの成果物、review はレビューで指されたファイル。
+// edit は編集、read は読んだ要件定義・設計書（承認は問わない）、review はレビューで指されたファイル。
 export const FILE_ACTIONS = ["edit", "read", "review"] as const;
 export type FileAction = (typeof FILE_ACTIONS)[number];
 

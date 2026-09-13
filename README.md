@@ -170,10 +170,9 @@ mitos --version                                  この CLI の版と置き場�
 **文書の正は remote の既定 branch である。**作業ツリーを読むと、どの PC の・どの branch の・書きかけの状態が DB に
 入るかが同期した順で決まってしまう。同期は `git fetch origin HEAD` で remote の HEAD を取り、その commit の tree から
 一覧・本文・manifest・更新日を読む。前に入れた commit から **fast-forward できる commit だけを自動で入れる。**
-前に入れた commit の祖先（別の同期が先に新しい commit を入れた、または巻き戻した）なら何も書かずに終える。
-force-push で分岐した commit とこの clone に無い commit は、どちらが正しいかを決められないので書かずに止まる。
-巻き戻しや分岐を入れるときは `mitos sync --cwd <dir> --reset-docs` で今の状態に揃える。remote の無い作業場所は
-`HEAD` を同じ規則で読む。
+そうでなければ一度だけ取り直し、前に入れた commit 以降まで進んでいれば（同時に走った別の同期が先に入れた）何も書かずに
+終える。進んでいなければ、巻き戻し・force-push・分岐した branch への切り替えで、どちらが正しいかを決められないので
+書かずに止まる（`mitos sync --cwd <dir> --reset-docs` で今の状態に揃える）。remote の無い作業場所は `HEAD` を同じ規則で読む。
 
 **成果物を持つ change の `change.json` が壊れていると、そのリポジトリの文書同期を丸ごと止める**
 （README や ADR も入らない）。止めるのは埋め込みと文書の書き込みの前なので、前回の同期結果はそのまま残る。
@@ -377,7 +376,7 @@ Claude Code と Codex へは、commit に入った `dist` が GitHub 経由で�
 | 「DB が受け付けなかった記録がある」と出る | `~/.claude/mitos-spool/rejected` の JSON。直してから `~/.claude/mitos-spool` へ戻すと、次の送信で送り直す |
 | 会話がセッションに出ない | その作業場所を `mitos project add` したか（未登録の作業場所の記録は捨てる）。`claude -p` の会話は残らない |
 | `recall` が「登録されていない」と言う | `mitos project add --cwd <repo>`。「どの作業場所か決められない」なら、`cwd` にリポジトリの根を渡していない |
-| 文書の同期が「fast-forward でない」で止まる、または「前に入れた commit のほうが新しい」と出る | remote の既定 branch が force-push で分岐したか巻き戻った、またはこの clone に前の commit が無い。今の状態が正しければ `mitos sync --cwd <repo> --reset-docs` |
+| 文書の同期が「fast-forward でない」で止まる | remote の既定 branch が巻き戻ったか force-push された（remote の無い作業場所なら、古い commit や分岐した branch を checkout している）。今の状態が正しければ `mitos sync --cwd <repo> --reset-docs` |
 | 文書の同期が「remote の既定 branch を取れなかった」で止まる | その PC から `git -C <repo> fetch origin HEAD` が通るか。launchd の環境で資格情報に届いているか |
 | 文書の同期が `.mitos` の問題で止まる | `mitos check --cwd <repo>` が path と理由を出す。直すまで、そのリポジトリの文書は前回の同期のまま |
 | 承認した要件定義・設計書がセッション詳細に出ない | 既定 branch へ merge して同期したか。そのセッションが Edit / Write / Read で触ったか（Bash で触ったものは結ばれない） |

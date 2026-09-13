@@ -67,7 +67,7 @@ export type SessionArtifact = {
   change: string;
   path: string;
   title: string;
-  /** この版を取り込んだ時刻（本文が変わった同期でだけ進む）。commit 時刻ではない */
+  /** この版を取り込んだ時刻（文書の本文・題・最終更新日が変わった同期で進む）。commit 時刻ではない */
   syncedAt: string;
   content: string;
 };

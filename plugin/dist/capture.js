@@ -23996,7 +23996,6 @@ function tail(s, n) {
 }
 var clean = (s) => s.replaceAll("\x00", "");
 var SECRETS = [
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "秘密鍵"],
   [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
   [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
   [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
@@ -24012,16 +24011,51 @@ var SECRETS = [
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"]
+  [/\bbearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"]
 ];
-var AUTH_HEADER = /(\bAuthorization\s*:\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+var AUTH_HEADER = /(\bAuthorization["']?\s*[:=]\s*["']?\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
 var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-var FIELD_ASSIGN = /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(["']?)([^\s"',;]+)/gi;
-var secretValue = (quoted, v) => v.length >= 8 && !/^[$#]/.test(v) && (quoted || /\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v));
-var MYSQL_PASSWORD = /(\bmysql(?:dump|admin)?\b[^\n]{0,200}?\s-p)(?=[^\s-])\S+/g;
+var FIELD_ASSIGN = /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(?:"([^"\n]{0,512})"|'([^'\n]{0,512})'|([^\s"',;&]+))/gi;
+function secretValue(quoted, v) {
+  if (v.length < 8 || /^\$(?:\{|[A-Za-z_])/.test(v))
+    return false;
+  if (!quoted)
+    return !/^[#$]/.test(v) && /\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v);
+  if (!/^[\x21-\x7e]+$/.test(v))
+    return false;
+  return /[^A-Za-z_-]/.test(v) || v.length >= 16 && !/[_-]/.test(v);
+}
+var MYSQL_LINE = /\bmysql(?:dump|admin)?\b[^\n]*/g;
+var MYSQL_PASSWORD = /(\s-p)(?=[^\s-])\S+/g;
 var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
+var KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
+var KEY_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
+function maskPrivateKeys(text) {
+  const ends = [...text.matchAll(KEY_END)].map((m) => [m.index, m.index + m[0].length]);
+  if (ends.length === 0)
+    return text;
+  let out = "";
+  let last = 0;
+  let e = 0;
+  for (const m of text.matchAll(KEY_BEGIN)) {
+    const after = m.index + m[0].length;
+    if (m.index < last)
+      continue;
+    while (e < ends.length && (ends[e]?.[0] ?? 0) < after)
+      e++;
+    const end = ends[e];
+    if (!end)
+      break;
+    out += `${text.slice(last, m.index)}[伏せた: 秘密鍵]`;
+    last = end[1];
+  }
+  return out + text.slice(last);
+}
 function mask(text) {
-  let out = text.replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, (all, name, sep, quote2, value) => secretValue(quote2 !== "", value) ? `${name}${sep}${quote2}[伏せた]` : all).replace(MYSQL_PASSWORD, "$1[伏せた]");
+  let out = maskPrivateKeys(text).replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, (all, name, sep, dq, sq, bare) => {
+    const quote2 = dq !== undefined ? '"' : sq !== undefined ? "'" : "";
+    return secretValue(quote2 !== "", dq ?? sq ?? bare ?? "") ? `${name}${sep}${quote2}[伏せた]${quote2}` : all;
+  }).replace(MYSQL_LINE, (line) => line.replace(MYSQL_PASSWORD, "$1[伏せた]"));
   for (const [re, what] of SECRETS)
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;

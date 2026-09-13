@@ -132,15 +132,15 @@ export function useChat() {
     setDraft("");
     setBusy(true);
     pendingQuestion.current = question;
-    // 文脈にするのは答えまで返った往復の直近 4 往復だけ（サーバーの /api/chat は history を 8 件までしか受けない）。
-    // 止めた往復と失敗した往復は送らない。
+    // 文脈にするのは答えまで返った往復の直近 4 往復だけ。止めた往復と失敗した往復は送らない。
+    // サーバーの /api/chat は history を 8 件、1 件 50,000 字までしか受けない（越えると以後の質問が全部 400 になる）。
     const history = turns
       .flatMap((turn, index) => {
         const question = turns[index - 1];
         if (turn.role !== "assistant" || !question || turn.stopped || turn.error || !turn.content) return [];
         return [
-          { role: "user" as const, content: question.content },
-          { role: "assistant" as const, content: turn.content },
+          { role: "user" as const, content: question.content.slice(0, 50_000) },
+          { role: "assistant" as const, content: turn.content.slice(0, 50_000) },
         ];
       })
       .slice(-8);

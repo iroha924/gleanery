@@ -35,108 +35,95 @@ test("128 KiB を超えた発言は冒頭と末尾だけを残し、元の大き
   assert.ok(bytes(big) > MAX_MESSAGE);
 });
 
-test("形の決まった鍵だけを伏せ、接続文字列はパスワードだけを伏せる", () => {
-  const got = mask(
-    [
-      "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123",
-      "VOYAGE=pa-abcdefghijklmnopqrstuvwxyz0123",
-      "gh: ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-      "url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db",
-      "ふつうの文: sk は短いので伏せない、pa-ge も伏せない",
-    ].join("\n"),
+// [入力, 残ってはいけない断片]。レビューで素通りを再現した形を足していく。
+const LEAKS: [string, string][] = [
+  ["OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123", "sk-proj-abc"],
+  ["VOYAGE=pa-abcdefghijklmnopqrstuvwxyz0123", "pa-abcdef"],
+  ["gh: ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abc"],
+  ["url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db", "s3cr3t"],
+  ["PGPASSWORD=npg_AbCdEf123456", "npg_AbCdEf"],
+  ["npg_AbCdEf123456XY を貼った", "npg_AbCdEf"],
+  ["aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "wJalrXUtn"],
+  ["Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123456", "eyJhbGci"],
+  ["Authorization: Bearer 0123456789abcdefghijABCDEFGHIJ", "0123456789abcdefghij"],
+  ["AIzaSyA1234567890abcdefghijklmnopqrstuv", "AIzaSy"],
+  ["npm_abcdefghijklmnopqrstuvwxyz0123456789", "npm_abc"],
+  ["glpat-abcdefghij1234567890", "glpat-"],
+  ["rk_live_abcdefghijklmnop1234", "rk_live_"],
+  ["whsec_abcdefghijklmnopqrstuvwxyz", "whsec_"],
+  ['{"password": "hunter2-example"}', "hunter2"],
+  ["postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb", "ab@cdEFGH"],
+  ["Authorization: Basic YWRtaW46c3dvcmRmaXNoMTIz", "YWRtaW46"],
+  ["X-API-Key: ak_9f8e7d6c5b4a3", "ak_9f8e7d"],
+  ["DB_PASS=s3cr3t-value", "s3cr3t"],
+  ["mysql -u root -phunter2x db", "hunter2x"],
+  ["redis://:hunter2x@cache:6379", "hunter2x"],
+  ["authorization: bearer abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnop"],
+  ['PASSWORD="correct horse battery staple"', "horse"],
+  ["AccountKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789==", "AbCdEfGh"],
+  ['password: "correcthorsebatterystaple"', "correcthorse"],
+  ["client_secret: 'zyxwvutsrqponmlkjihg'", "zyxwvuts"],
+  ["MASTERKEY=m4sterv4lue99", "m4sterv4lue"],
+  ["ENCRYPTIONKEY=0123456789abcdef", "0123456789abcdef"],
+  ['{"Authorization": "Basic dXNlcjpwYXNzd29yZDEyMw=="}', "dXNlcjpw"],
+  ["headers={'Authorization': 'Token 9944b09199c62bcf9418ad846dd0e4bbdfc6ee4b'}", "9944b091"],
+  ['Authorization: "Bearer abcdefghijklmnopqrstuvwx"', "abcdefghijklmnop"],
+  ['-H "X-Auth: bearer 0123456789abcdefghij"', "0123456789abcdefghij"],
+  ["?refresh_token=$RT&client_secret=GOCSPX-abcdef123456", "GOCSPX-abc"],
+  ["token=getToken()&password=s3cr3tpass1", "s3cr3tpass"],
+  ['"password": "$2b$10$abcdefghijklmnopqrstuv"', "abcdefghijklmnop"],
+  [
+    `mysqldump --single-transaction --routines --triggers --events --set-gtid-purged=OFF ${"--x ".repeat(60)}-pS3cr3tPass dbname`,
+    "S3cr3tPass",
+  ],
+  ["-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----", "MIIEowIB"],
+];
+
+// 伏せた文は元に戻せない。コードの型注釈・変数の参照・画面の文言・パスを鍵とみなして消すと、会話の中身が失われる。
+const KEEPS = [
+  "ふつうの文: sk は短いので伏せない、pa-ge も伏せない",
+  "max_tokens: 5000 と keyboard の key の話。const token = await getToken();",
+  "password: string;",
+  "const token = await getToken();",
+  "apiKey: process.env.API_KEY",
+  "PASSWORD=$DB_PASSWORD",
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: テンプレートの参照を文字として貼った形を試す
+  'token: "${process.env.TOKEN}"',
+  "MONKEY=banana TURKEY=roast COMPASS=north",
+  "http://localhost:5173/@vite/client",
+  "see https://github.com/o/r/pull/3",
+  "refresh token server/src/http/routes/knowledge.ts を読んだ",
+  "the basic src/components/app-sidebar.tsx layout",
+  "--brand-token: #ff00aa11;",
+  "PWD=/Users/someone/Projects/x PASS=3 FAIL=0",
+  '{ password: "Required" }',
+  '{ password: "Password is required" }',
+  'password: "パスワードを入力してください"',
+  '{"token": "refresh_token"}',
+];
+
+test("形の決まった鍵と、名前で分かる代入・ヘッダ・URL の資格情報・mysql -p・秘密鍵を伏せる", () => {
+  for (const [input, leak] of LEAKS)
+    assert.ok(!mask(input).includes(leak), `${leak} が残った: ${mask(input)}`);
+  assert.match(
+    mask("url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db"),
+    /mitos_reader:\[伏せた\]@ep-x\.neon\.tech\/db/,
   );
-  for (const leak of ["sk-proj-abc", "pa-abcdef", "ghp_abc", "s3cr3t"])
-    assert.ok(!got.includes(leak), `${leak} が残った`);
-  assert.match(got, /postgres:\/\/mitos_reader:\[伏せた\]@ep-x\.neon\.tech\/db/);
-  assert.match(got, /ふつうの文: sk は短いので伏せない、pa-ge も伏せない/);
+  assert.match(
+    mask("postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb"),
+    /@ep-x\.neon\.tech\/neondb/,
+  );
+  assert.match(mask("redis://:hunter2x@cache:6379"), /@cache:6379/, "どこへ繋いだかは残す");
+  assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[伏せた]"}', "引用符を残す");
 });
 
-// レビューで素通りを再現した形。代入の名前で分かるもの、接頭辞の決まったもの、@ を含むパスワード。
-test("よく貼られる鍵の形と、名前で分かる代入を伏せる", () => {
-  const cases = [
-    "PGPASSWORD=npg_AbCdEf123456",
-    "npg_AbCdEf123456XY を貼った",
-    "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
-    "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcDEF123456",
-    "Authorization: Bearer 0123456789abcdefghijABCDEFGHIJ",
-    "AIzaSyA1234567890abcdefghijklmnopqrstuv",
-    "npm_abcdefghijklmnopqrstuvwxyz0123456789",
-    "glpat-abcdefghij1234567890",
-    "rk_live_abcdefghijklmnop1234",
-    "whsec_abcdefghijklmnopqrstuvwxyz",
-    '{"password": "hunter2-example"}',
-    "postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb",
-  ];
-  const secrets = [
-    "npg_AbCdEf",
-    "wJalrXUtn",
-    "eyJhbGci",
-    "0123456789abcdefghij",
-    "AIzaSy",
-    "npm_abc",
-    "glpat-",
-    "rk_live_",
-    "whsec_",
-    "hunter2",
-    "ab@cdEFGH",
-  ];
-  const got = cases.map(mask).join("\n");
-  for (const leak of secrets) assert.ok(!got.includes(leak), `${leak} が残った:\n${got}`);
-  assert.match(got, /@ep-x\.neon\.tech\/neondb/, "どこへ繋いだかは残す");
-  const plain = "max_tokens: 5000 と keyboard の key の話。const token = await getToken();";
-  assert.equal(mask(plain), plain, "鍵でない文は変えない");
+test("鍵でない代入・画面の文言・パス・URL は変えない", () => {
+  for (const text of KEEPS) assert.equal(mask(text), text, text);
 });
 
-// 伏せた文は元に戻せない。コードの型注釈や変数の参照を鍵とみなして消すと、会話の中身が失われる。
-test("鍵でない代入と URL は変えず、残りの形（ヘッダ・mysql -p・ユーザー名の無い URL）は伏せる", () => {
-  for (const code of [
-    "password: string;",
-    "const token = await getToken();",
-    "apiKey: process.env.API_KEY",
-    "PASSWORD=$DB_PASSWORD",
-    "MONKEY=banana TURKEY=roast COMPASS=north",
-    "http://localhost:5173/@vite/client",
-    "see https://github.com/o/r/pull/3",
-    "refresh token server/src/http/routes/knowledge.ts を読んだ",
-    "the basic src/components/app-sidebar.tsx layout",
-    "--brand-token: #ff00aa11;",
-    "PWD=/Users/someone/Projects/x PASS=3 FAIL=0",
-  ])
-    assert.equal(mask(code), code, code);
-  const got = [
-    "Authorization: Basic YWRtaW46c3dvcmRmaXNoMTIz",
-    "X-API-Key: ak_9f8e7d6c5b4a3",
-    "DB_PASS=s3cr3t-value",
-    "mysql -u root -phunter2x db",
-    "redis://:hunter2x@cache:6379",
-    "authorization: bearer abcdefghijklmnopqrstuvwxyz",
-    'PASSWORD="correct horse battery staple"',
-    "AccountKey=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789==",
-    'password: "correcthorsebatterystaple"',
-    "client_secret: 'zyxwvutsrqponmlkjihg'",
-    "MASTERKEY=m4sterv4lue99 ENCRYPTIONKEY=0123456789abcdef",
-  ]
-    .map(mask)
-    .join("\n");
-  for (const leak of [
-    "YWRtaW46",
-    "ak_9f8e7d",
-    "s3cr3t",
-    "hunter2x",
-    "abcdefghijklmnop",
-    "horse",
-    "AbCdEfGh",
-    "zyxwvuts",
-    "m4sterv4lue",
-    "0123456789abcdef",
-  ])
-    assert.ok(!got.includes(leak), `${leak}:\n${got}`);
-  assert.match(got, /@cache:6379/);
-});
-
-// 伏せ字は発言の全文へかける。引き金を繰り返しただけの入力で、フックが何秒も止まらない。
+// 伏せ字は発言の全文へかける。引き金を繰り返しただけの入力で、フックや trace の保存が何秒も止まらない。
 test("伏せ字は引き金を繰り返した入力でも線形に終わる", () => {
-  const N = 128 * 1024;
+  const N = 512 * 1024;
   for (const unit of [
     "postgres://u:",
     "-----BEGIN RSA PRIVATE KEY-----",
@@ -147,12 +134,13 @@ test("伏せ字は引き金を繰り返した入力でも線形に終わる", ()
     "0f8fad5b-d9cb-469f-a165-70867728950e",
     "mysql ",
     "token=",
+    'token: "',
     "Authorization: Bearer ",
   ]) {
     const text = unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
     const t = performance.now();
     mask(text);
-    assert.ok(performance.now() - t < 300, `${unit}: ${(performance.now() - t).toFixed(0)} ms`);
+    assert.ok(performance.now() - t < 500, `${unit}: ${(performance.now() - t).toFixed(0)} ms`);
   }
 });
 
@@ -220,7 +208,7 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
     tool_name: "Edit",
     tool_input: { file_path: path.join(repoDir, "db", "schema.sql") },
   });
-  // リポジトリの外と、承認済みの成果物でない読み込みは残さない。
+  // リポジトリの外と、要件定義・設計書でない読み込みは残さない（承認されているかは問わない）。
   onHook("claude-code", {
     ...base,
     hook_event_name: "PostToolUse",

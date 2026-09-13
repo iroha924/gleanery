@@ -345,10 +345,11 @@ export function collectDocs(root: string, commit: string): { docs: Doc[]; skippe
 /**
  * 1 つの作業場所の文書を同期する。tree の一覧は完全なので、一覧から消えた文書は行ごと消す。
  *
- * **自動で進めるのは fast-forward だけ。**前に入れた commit がこの commit の子孫なら（同時に走った別の同期が先に
- * 入れたか、祖先へ巻き戻した）、何も書かずに終わり、失敗にはしない — 前者は害が無く、巻き戻しは祖先関係からは
- * 前者と区別できないので案内だけ出す。どちらでもなければ（force-push で分岐・この clone に無い）、どちらが正しいかを
- * 決められないので書かずに止まる。今の状態に揃えるのは人の操作（reset）だけ。
+ * **自動で進めるのは fast-forward だけ。**そうでなければ一度だけ取り直す。前に入れた commit 以降まで進んでいれば、
+ * 同時に走った別の同期が新しい commit を先に入れたので、何も書かずに終える（別の PC が入れた commit は、取り直すまで
+ * この clone に無い）。進んでいなければ巻き戻し・force-push・分岐した branch への切り替えで、どちらが正しいかを
+ * 決められないので書かずに止まる（止まれば doctor と画面に出る。漏れた文書を巻き戻して消したときに黙って残さない）。
+ * 今の状態に揃えるのは人の操作（reset）だけ。
  */
 export async function syncDocs(
   client: pg.Client,
@@ -363,7 +364,9 @@ export async function syncDocs(
     const connector = await connectorOf(client, projectId, "docs");
     const before = connector.headOid;
     if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit)) {
-      if (isAncestor(root, commit, before)) return { refused: null, newer: before, changed: 0, removed: 0 };
+      const latest = commitOf(root, opts.remote);
+      if (latest === before || isAncestor(root, before, latest))
+        return { refused: null, newer: before, changed: 0, removed: 0 };
       return { refused: before, newer: null, changed: 0, removed: 0 };
     }
     const known = new Map(
@@ -471,14 +474,11 @@ export async function syncDocs(
   if (done.refused)
     throw new Error(
       `前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` +
-        "fast-forward でないので書かなかった（force-push で分岐した・分岐した branch へ切り替えた・この clone に無い）。" +
+        "fast-forward でないので書かなかった（巻き戻し・force-push・分岐した branch への切り替え）。" +
         `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``,
     );
   if (done.newer)
-    return (
-      `前に入れた commit（${done.newer.slice(0, 8)}）のほうが新しいので、何も書かなかった（別の同期が先に入れたか、` +
-      `巻き戻した）。巻き戻しを入れるなら \`mitos sync --cwd ${root} --reset-docs\``
-    );
+    return `別の同期が新しい commit（${done.newer.slice(0, 8)}）を先に入れていたので、何も書かなかった`;
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
     `文書 ${docs.length} 本・節 ${sectionCount} 件`,

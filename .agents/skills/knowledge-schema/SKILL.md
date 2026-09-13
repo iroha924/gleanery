@@ -104,8 +104,9 @@ Neonは往復が80ms前後あるので、書き込みは表ごとに1往復で�
 
 文書同期（`server/src/docs.ts`）は、remoteの既定branchの**commit tree**を読む。作業ツリーは読まない。
 `connector.head_oid`に入れたcommitを持ち、そこからfast-forwardできるcommitだけを自動で入れる。
-前に入れたcommitの祖先（同時に走った別の同期が先に入れた、または巻き戻した）なら何も書かずに成功で終え、
-force-pushで分岐したcommitは書かずに止める。どちらも`mitos sync --cwd <dir> --reset-docs`を案内する。
+fast-forwardでなければ一度だけ取り直し、前に入れたcommit以降まで進んでいれば（同時に走った別の同期が先に入れた）
+何も書かずに終える。進んでいなければ巻き戻し・force-pushとして書かずに止め、`mitos sync --cwd <dir> --reset-docs`を
+案内する。巻き戻しを成功扱いにしない — 漏れた文書を巻き戻して消したときに、検索に黙って残る。
 投影の規則（節の割り方、前置する文脈）を変えたら`PROJECTION`の定数を上げる。次の同期で全文書が書き直される。
 
 `.mitos/`配下からは、`change.json`がapprovedの`requirements.md`と`design.md`だけを入れる。承認の判定と

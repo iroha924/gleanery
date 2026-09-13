@@ -532,7 +532,7 @@ function ResumeCommand({ command }: { command: string }) {
 function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
   const [selectedSection, setSelectedSection] = useState<Section | null>(null);
   const [selectedArtifact, setSelectedArtifact] = useState<SessionArtifact | null>(null);
-  // ブラウザの戻るで閉じると onOpenChange が来ない。session が変わったら、開いていた節と成果物を閉じる。
+  // 閉じる経路（ボタン・Esc・ブラウザの戻る）はどれも id を変える。session が変わったら、開いていた節と成果物を閉じる。
   const [shownId, setShownId] = useState(id);
   if (shownId !== id) {
     setShownId(id);
@@ -544,21 +544,16 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
     queryFn: () => loadSession(id as string),
     enabled: id !== null,
   });
-  const closeDialog = () => {
-    setSelectedSection(null);
-    setSelectedArtifact(null);
-    onClose();
-  };
   const d = detail.data;
   const decisions = d?.knowledge.filter((k) => k.kind !== "option") ?? [];
   const lastAt = d?.messages.at(-1)?.sentAt ?? null;
   const said = d?.messages.filter((m) => m.speaker === "self").length ?? 0;
 
   return (
-    <Dialog open={id !== null} onOpenChange={(open) => !open && closeDialog()}>
+    <Dialog open={id !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="grid max-h-[88vh] grid-rows-[auto_minmax(0,1fr)] gap-5 overflow-hidden p-6 sm:max-w-[58rem]">
         <DialogHeader className="pr-8">
-          <Button type="button" variant="ghost" size="sm" className="-ml-2 w-fit" onClick={closeDialog}>
+          <Button type="button" variant="ghost" size="sm" className="-ml-2 w-fit" onClick={onClose}>
             <ArrowLeftIcon />
             一覧へ戻る
           </Button>

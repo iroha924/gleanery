@@ -183,7 +183,7 @@ test("commit の中の manifest が不正なら何も返さずに止め、fast-f
   });
 });
 
-test("大文字の拡張子の文書にも最終更新日が付き、大きすぎる manifest は読まずに止める", async () => {
+test("大文字の拡張子の文書にも最終更新日が付き、大きすぎる manifest は大きさだけで止める", async () => {
   await withRepo(async (repo, git) => {
     put(repo, "README.MD", "# 読んで\n本文\n");
     git("add", "-A");
@@ -200,22 +200,27 @@ test("大文字の拡張子の文書にも最終更新日が付き、大きす�
   });
 });
 
-/** 文書の connector に head だけを持つ偽の DB。書き込みの SQL が来たら失敗させる（この経路は何も書かない）。 */
-function headOnly(head: string) {
+/**
+ * 文書の connector に head だけを持つ偽の DB。書き込みの SQL が来たら失敗させる（この経路は何も書かない）。
+ * onRead は connector を読んだ瞬間に走る（その間に別の同期が新しい commit を入れた、を再現する）。
+ */
+function headOnly(head: string, onRead: () => void = () => {}) {
   const sql: string[] = [];
   const query = async (text: string) => {
     sql.push(text);
     if (/^(begin|commit|rollback)$/.test(text) || text.startsWith("insert into mitos.connector"))
       return { rows: [] };
-    if (text.startsWith("select id, head_oid"))
+    if (text.startsWith("select id, head_oid")) {
+      onRead();
       return { rows: [{ id: "1", head_oid: head, snapshot_at: null }] };
+    }
     throw new Error(`書かないはずの SQL: ${text}`);
   };
   return { sql, client: { query } as never };
 }
 
-// 同じ朝に 2 本の同期が走り、新しい commit を先に入れられた側が失敗を報告しない（祖先へ戻したときも書かない）。
-test("前に入れた commit のほうが新しければ何も書かずに終え、分岐していれば止める", async () => {
+// 同じ朝に 2 本の同期が走り、新しい commit を先に入れられた側が失敗を報告しない。巻き戻しと分岐は止めて、画面に出す。
+test("取り直して前に入れた commit まで進んでいれば何も書かずに終え、巻き戻しと分岐は止める", async () => {
   await withRepo(async (repo, git) => {
     put(repo, "README.md", "# a\n");
     git("add", "-A");
@@ -225,13 +230,17 @@ test("前に入れた commit のほうが新しければ何も書かずに終え
     git("add", "-A");
     git("commit", "-qm", "b");
     const newer = commitOf(repo, false);
+
     git("checkout", "-q", older);
-    const behind = headOnly(newer);
+    const raced = headOnly(newer, () => git("checkout", "-q", newer));
     assert.match(
-      await syncDocs(behind.client, 1, repo, { remote: false }),
-      /前に入れた commit（.{8}）のほうが新しいので、何も書かなかった/,
+      await syncDocs(raced.client, 1, repo, { remote: false }),
+      /新しい commit（.{8}）を先に入れていた/,
     );
-    assert.ok(behind.sql.includes("commit"));
+    assert.ok(raced.sql.includes("commit"));
+
+    git("checkout", "-q", older);
+    await assert.rejects(syncDocs(headOnly(newer).client, 1, repo, { remote: false }), /fast-forward でない/);
 
     git("checkout", "-q", "-b", "other");
     put(repo, "README.md", "# c\n");
