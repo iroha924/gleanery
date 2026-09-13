@@ -8,7 +8,7 @@ Claude CodeとCodexが同じ不変条件を読み、作業に必要な手順だ�
 | 種類 | 正本 | loadされる時点 |
 |---|---|---|
 | 全作業の不変条件 | `AGENTS.md` | 毎session |
-| 人向け説明・command・troubleshooting | `README.md` | 必要時に読む |
+| 人向け説明・command・setup | `README.md` | 必要時に読む |
 | mitos自身の開発手順 | `.agents/skills/` | repository内でSkillが選ばれた時 |
 | Claude CodeのSkill discovery | `.claude/skills/`のsymlink | Skill metadataは起動時、本文は選択時 |
 | plugin利用者へ配るSkill | `plugin/skills/` | pluginをinstallした環境 |
@@ -28,11 +28,11 @@ Claude Codeもsymlink先のSkillを読めるので、`.claude/skills/`には同�
 | 元の内容 | 分類 | 現在の場所 |
 |---|---|---|
 | runtime、権限、Next/Honoの境界 | 常時必要 | `AGENTS.md` |
-| setup、全command、新しいPC、DB運用 | 人向け | `README.md` |
+| setup、鍵、全command、新しいPC | 人向け | `README.md` |
 | Vercel、Clerk本番、DNS、環境変数 | 手順 | `deploy` Skill |
 | MCP bundle、manifest version、到達確認 | 手順 | `plugin-release` Skill |
 | Next.js、Hono、Clerkの実装規約 | 手順 | `next-hono` Skill |
-| DB schema、role、知識の種類、取り込み | 手順 | `knowledge-schema` Skill |
+| DB schema、role、埋め込みと索引、知識の種類、取り込み | 手順 | `knowledge-schema` Skill |
 | plugin review Agent固有の配布と解決 | 手順 | `plugin-agent-authoring` Skill |
 | 対になる出口と、それを守る検査 | 配置の根拠 | このdocument |
 

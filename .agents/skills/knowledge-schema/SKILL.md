@@ -48,6 +48,17 @@ schemaを変えたら、`comment on schema mitos is 'mitos schema revision N'`�
 消えたと完全な一覧で確かめられた取り込み元の項目は行ごと消す。`deleted_at`や墓標を置かない。
 覆した決定は消さず、`status = 'superseded'`にして`superseded_by_id`で後継を指す（消すと再提案される）。
 
+## 埋め込みと索引
+
+埋め込みは`voyage-4-large`の`halfvec(1024)`で、近似索引を置かずに全件比較する。どれも2026-09-13に、
+旧本番の記録から作った100問とNeonのbranchで測って決めた。
+
+- `halfvec`: float32と比べて上位20件の99.45%が一致し、正解の取りこぼしは増えなかった（上位5件に入った数92対91）
+- 語彙側は`tsvector`: 語彙側だけならBM25が上（55対50）だが、融合してrerankまで通すと差が無い（97対96）。
+  語彙側の役目は意味側が落とした正解をrerankの候補へ入れること（97→99）で、それは`tsvector`で足りる
+- 全件比較: 絞り込んだ後の比較が1万行でp95 23ms、5万行で118ms、10万行で371ms。近似索引は絞り込みの後に
+  件数が欠けるので、埋め込みの行が5万に近づくまでHNSWを足さない（先にDBの容量が上限に近づくこともある）
+
 ## 値の域を変えるとき
 
 正本はschemaのCHECKで、写しは`server/src/knowledge.ts`の`KINDS`・`STATUSES`・`SPEAKERS`・`ORIGINS`・

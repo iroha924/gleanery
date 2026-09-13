@@ -67,8 +67,8 @@ bun run verify:ai   # AGENTS、repository開発Skill、plugin Skill・Agentの�
 bun run bundle      # MCP、CLI、自動記録のplugin配布物を更新する
 ```
 
-個別command、setup、運用、障害対応はREADMEを読む。pre-commitは変更対象の軽い検査、pre-pushとCIは
-`bun run verify`を実行する。
+個別command、setup、運用はREADMEを読み、障害の切り分けは`mitos doctor`から始める。pre-commitは
+変更対象の軽い検査、pre-pushとCIは`bun run verify`を実行する。
 
 ## 外へ出す文章
 
@@ -77,7 +77,7 @@ PRは`.github/pull_request_template.md`、issueは`.github/ISSUE_TEMPLATE/`を�
 
 ## 参照先
 
-- `README.md`: 全体像、DB、鍵とrole、setup、全command、新しいPC、troubleshooting
+- `README.md`: 全体像、鍵、setup、全command、新しいPC
 - `dashboard/AGENTS.md`: installed Next.js版が生成した規約
 - `plugin/skills/trace/SKILL.md`: 判断を記録する契約
 - `server/src/capture.ts`: 会話を自動記録する範囲（持ち主の判定、残すものと残さないもの）

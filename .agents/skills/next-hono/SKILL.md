@@ -57,7 +57,9 @@ JSON、query、param、multipartは`@hono/zod-validator`とZodでhandlerより�
 `c.req.valid()`の値だけを使う。不正入力がDBや外部APIへ到達しないテストを置く。
 
 Hono RPCは使わず、dashboardから`server/src`の型をimportしない。直接共有は独立したtsconfigと依存を
-結合し、実測で型検査のinstantiationとメモリが増えた。詳細はREADME「API の置き方」。
+結合する。2026-09-11に最小構成で測ると、TypeScriptが読むfileは1,137から1,445、型のinstantiationは
+312,715から672,220、メモリは266 MBから376 MBへ増えた。境界の正本はサーバーのZod schemaとし、画面側の型は
+各画面の`api/`に1回だけ書く。
 
 ## 検証
 
