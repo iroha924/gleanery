@@ -181,6 +181,8 @@ mitos --version                                  この CLI の版と置き場�
 
 ## 仕組み
 
+構成・自動記録・同期・検索・trace の流れは [docs/diagrams/](docs/diagrams/README.md) に図がある。
+
 ```
 server/      取り込み・検索・チャット・MCP・自動記録・CLI・画面の API（テストは node:test）
 dashboard/   Next.js App Router + React + shadcn
