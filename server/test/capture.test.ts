@@ -495,21 +495,31 @@ test("フックの入力は、多バイト文字が塊の境目で割れても�
 
 test("記録のフックを起動すると、標準入力の持ち主の発言が待ち行列に入る", () => {
   // 入口の判定と main の配線を通す。main は例外を握りつぶすので、壊れても記録が黙って止まるだけになる。
-  reset();
-  execFileSync(process.execPath, [path.join(import.meta.dirname, "..", "src", "capture.ts")], {
-    input: JSON.stringify({
-      hook_event_name: "UserPromptSubmit",
-      session_id: "s1",
-      prompt_id: "p1",
-      cwd: repoDir,
-      prompt: "境界",
-    }),
-    env: { ...process.env, HOME: home },
-  });
-  assert.deepEqual(
-    spooled().flatMap((m) => (m.kind === "message" ? [m.body] : [])),
-    ["境界"],
-  );
+  // 本番のフックが起動するのはバンドルした dist/capture.js なので、ソースと両方を通す。
+  const entries = [
+    path.join(import.meta.dirname, "..", "src", "capture.ts"),
+    path.join(import.meta.dirname, "..", "..", "plugin", "dist", "capture.js"),
+  ];
+  for (const entry of entries) {
+    reset();
+    execFileSync(process.execPath, [entry], {
+      input: JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        session_id: "s1",
+        prompt_id: "p1",
+        cwd: repoDir,
+        prompt: "境界",
+      }),
+      env: { ...process.env, HOME: home },
+      // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
+      timeout: 10_000,
+    });
+    assert.deepEqual(
+      spooled().flatMap((m) => (m.kind === "message" ? [[m.host, m.body]] : [])),
+      [["claude-code", "境界"]],
+      entry,
+    );
+  }
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {
