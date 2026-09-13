@@ -346,7 +346,14 @@ async function doctor(env: Env, cwd: string): Promise<void> {
   // 件数は行の数で数え、名前だけ重ねない（同じ名前の Codex の cache や作業場所が複数あっても件数は減らさない）。
   console.log(
     foot(
-      issues.length ? `直すもの ${issues.length} 件: ${[...new Set(issues)].join(" / ")}` : "直すものは無い",
+      issues.length
+        ? `直すもの ${issues.length} 件: ${[...new Set(issues)]
+            .map((name) => {
+              const n = issues.filter((x) => x === name).length;
+              return n > 1 ? `${name} ×${n}` : name;
+            })
+            .join(" / ")}`
+        : "直すものは無い",
     ),
   );
 }
@@ -720,7 +727,9 @@ async function main(): Promise<void> {
           panel(
             "mitos who",
             [
-              ...people.map((p) => `${p.isSelf ? "→ " : "  "}${pad(p.display, 12)}${p.handles.join(" / ")}`),
+              ...people.map(
+                (p) => `${p.isSelf ? "→ " : "  "}${pad(plain(p.display), 12)}${p.handles.join(" / ")}`,
+              ),
               ...(unknown.rows.length
                 ? [
                     "",
@@ -760,7 +769,7 @@ async function main(): Promise<void> {
           missing.length
             ? [`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`]
             : [],
-          `名簿に入れた: ${display}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`,
+          `名簿に入れた: ${plain(display).replace(/\s+/g, " ")}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`,
         ),
       );
     });
@@ -771,10 +780,20 @@ async function main(): Promise<void> {
 main().catch((e: unknown) => {
   // 見出しは打った引数の先頭 2 つまで（サブコマンドを持つコマンドでも、どれが止まったか分かる）。
   // 見出しには行頭の印が付かないので、改行を空白にまとめて 1 行にする（引数から偽の締めの行を作らせない）。
-  const typed = process.argv
-    .slice(2, 4)
-    .filter((a) => !a.startsWith("-"))
-    .join(" ");
+  let typed = "";
+  try {
+    // フラグとその値を除いた、コマンドとサブコマンド（フラグの値をコマンド名として出さない）。
+    typed = parseArgs({
+      args: process.argv.slice(2),
+      options: OPTIONS,
+      strict: false,
+      allowPositionals: true,
+    })
+      .positionals.slice(0, 2)
+      .join(" ");
+  } catch {
+    // 引数を解釈できないときは、見出しを mitos だけにする
+  }
   console.error(
     panel(
       plain(`mitos ${typed}`).replace(/\s+/g, " ").trim(),

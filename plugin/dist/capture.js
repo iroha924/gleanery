@@ -24316,7 +24316,8 @@ function readState() {
     if (parsed && typeof parsed === "object")
       state = parsed;
   } catch {}
-  return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
+  const error61 = typeof state.error === "string" ? state.error || "理由の分からない失敗" : null;
+  return { ...state, ...counts, stuck: error61 && counts.pending > 0 ? error61 : null };
 }
 function lock() {
   const file2 = path3.join(spoolDir(), ".lock");
@@ -24529,9 +24530,11 @@ async function flush(env) {
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).join(" / ") : "";
     writeState({
       flushedAt: new Date().toISOString(),
-      error: e instanceof Error ? e.message.slice(0, 300) : String(e)
+      error: (message || inner || "理由の分からない失敗").slice(0, 300)
     });
     throw e;
   } finally {

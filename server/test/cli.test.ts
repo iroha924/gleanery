@@ -39,6 +39,11 @@ test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落�
   assert.match(r.out, /知らないコマンド: frobnicate/);
   // エラーの見出しはサブコマンドまで出し、引数に仕込んだ改行で印の無い偽の締めの行を作らせない。
   assert.match(run("trace", "check").out, /^✦ mitos trace check$/m);
+  assert.match(
+    run("trace", "--cwd", "/nonexistent", "check").out,
+    /^✦ mitos trace check$/m,
+    "フラグの値を見出しにしない",
+  );
   const forged = run("x\n╰─ ✓ 直すものは無い");
   assert.doesNotMatch(forged.out, /^╰─ ✓ 直すものは無い$/m, forged.out);
   assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");

@@ -24665,7 +24665,8 @@ function readState() {
     if (parsed && typeof parsed === "object")
       state = parsed;
   } catch {}
-  return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
+  const error61 = typeof state.error === "string" ? state.error || "理由の分からない失敗" : null;
+  return { ...state, ...counts, stuck: error61 && counts.pending > 0 ? error61 : null };
 }
 function lock() {
   const file2 = path4.join(spoolDir(), ".lock");
@@ -24878,9 +24879,11 @@ async function flush(env) {
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).join(" / ") : "";
     writeState({
       flushedAt: new Date().toISOString(),
-      error: e instanceof Error ? e.message.slice(0, 300) : String(e)
+      error: (message || inner || "理由の分からない失敗").slice(0, 300)
     });
     throw e;
   } finally {
@@ -26900,7 +26903,10 @@ ${rule("作業場所")}`);
       say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
     }
   }
-  console.log(foot(issues.length ? `直すもの ${issues.length} 件: ${[...new Set(issues)].join(" / ")}` : "直すものは無い"));
+  console.log(foot(issues.length ? `直すもの ${issues.length} 件: ${[...new Set(issues)].map((name) => {
+    const n = issues.filter((x) => x === name).length;
+    return n > 1 ? `${name} ×${n}` : name;
+  }).join(" / ")}` : "直すものは無い"));
 }
 async function main2() {
   const argv = process.argv.slice(2);
@@ -27158,7 +27164,7 @@ ${USAGE}`);
            left join mitos.message m on m.identity_id = i.id
            where i.person_id is null group by i.id order by count(m.id) desc limit 20`);
         console.log(panel("mitos who", [
-          ...people.map((p) => `${p.isSelf ? "→ " : "  "}${pad(p.display, 12)}${p.handles.join(" / ")}`),
+          ...people.map((p) => `${p.isSelf ? "→ " : "  "}${pad(plain(p.display), 12)}${p.handles.join(" / ")}`),
           ...unknown2.rows.length ? [
             "",
             "まだ誰か決めていないハンドル（発言の多い順）:",
@@ -27181,13 +27187,21 @@ ${USAGE}`);
            where provider = 'github' and lower(handle) = any($2) returning handle`, [pe.rows[0]?.id, handles.map((h) => h.replace(/^@/, "").toLowerCase())]);
       });
       const missing = handles.filter((h) => !linked.rows.some((l) => l.handle.toLowerCase() === h.replace(/^@/, "").toLowerCase()));
-      console.log(panel("mitos who", missing.length ? [`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`] : [], `名簿に入れた: ${display}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`));
+      console.log(panel("mitos who", missing.length ? [`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`] : [], `名簿に入れた: ${plain(display).replace(/\s+/g, " ")}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`));
     });
     return;
   }
 }
 main2().catch((e) => {
-  const typed = process.argv.slice(2, 4).filter((a) => !a.startsWith("-")).join(" ");
+  let typed = "";
+  try {
+    typed = parseArgs({
+      args: process.argv.slice(2),
+      options: OPTIONS,
+      strict: false,
+      allowPositionals: true
+    }).positionals.slice(0, 2).join(" ");
+  } catch {}
   console.error(panel(plain(`mitos ${typed}`).replace(/\s+/g, " ").trim(), [plain(e instanceof Error ? e.message : String(e))], `${mark("fail")} 止まった`));
   process.exit(1);
 });

@@ -142,18 +142,18 @@ const marks = Object.fromEntries(
   ].map((m) => [m[1], m[2]]),
 );
 if (Object.keys(LEDGER).every((k) => marks[k])) {
-  const glyphs = Object.values(marks).join("");
-  const used = [
-    ...read("plugin/skills/review/SKILL.md").matchAll(
-      new RegExp(`\`?([${glyphs}])\`? (${Object.values(LEDGER).join("|")})`, "g"),
-    ),
+  const states = Object.values(LEDGER).join("|");
+  const review = read("plugin/skills/review/SKILL.md");
+  // 凡例は印の字を問わずに取り出す（MARKS に無い字を書いたら、それを食い違いとして出す）。表は「| 印 状態」のセルを見る。
+  const legend = [
+    ...(
+      grab("plugin/skills/review/SKILL.md", /状態は印（(.*?)）/, "review Skill の台帳の凡例") ?? ""
+    ).matchAll(new RegExp(`\`([^\`]+)\` (${states})`, "g")),
   ];
-  const missing = Object.values(LEDGER).filter((state) => !used.some((m) => m[2] === state));
-  if (missing.length)
-    fail.push(
-      `review Skill に、印の付いた ${missing.join(" / ")} が無い（凡例が消えたか、印が panel.ts と違う）`,
-    );
-  for (const [, glyph, state] of used) {
+  const cells = [...review.matchAll(new RegExp(`\\| (\\S) (${states})`, "g"))];
+  const missing = Object.values(LEDGER).filter((state) => !legend.some((m) => m[2] === state));
+  if (missing.length) fail.push(`review Skill の台帳の凡例に ${missing.join(" / ")} の印が無い`);
+  for (const [, glyph, state] of [...legend, ...cells]) {
     const key = Object.keys(LEDGER).find((k) => LEDGER[k] === state);
     if (marks[key] !== glyph)
       fail.push(`review Skill が「${state}」に ${glyph} を書いている。panel.ts の ${key} は ${marks[key]}`);

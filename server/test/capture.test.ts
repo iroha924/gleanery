@@ -535,7 +535,7 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
   reset();
   const file = path.join(home, ".claude", "mitos-capture.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  for (const body of ["null", "{", "3"]) {
+  for (const body of ["null", "{", "3", '{"error":1}', '{"error":{"a":1}}']) {
     fs.writeFileSync(file, body);
     assert.equal(readState().stuck, null, body);
   }
@@ -544,6 +544,10 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
   fs.mkdirSync(spoolDir(), { recursive: true });
   fs.writeFileSync(path.join(spoolDir(), "1.json"), "{}");
   assert.equal(readState().stuck, "auth");
+  // 理由の文が空の失敗も、送れていないことに変わりはない。
+  fs.writeFileSync(file, JSON.stringify({ error: "" }));
+  assert.equal(readState().stuck, "理由の分からない失敗");
+  assert.match(captureNotice({ KNOWLEDGE_DB_URL_CAPTURE: "x" }) ?? "", /送れていない/);
   reset();
   fs.rmSync(file);
 });

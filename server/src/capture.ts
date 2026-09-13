@@ -343,7 +343,9 @@ export function readState(): State & { pending: number; rejected: number; stuck:
   } catch {
     // まだ送っていないか、書きかけで壊れていて読めない
   }
-  return { ...state, ...counts, stuck: state.error && counts.pending > 0 ? state.error : null };
+  // error は送信の失敗で文字列、成功で null。文字列でないものは読めなかった扱いにする（外から書き換えられても落ちない）。
+  const error = typeof state.error === "string" ? state.error || "理由の分からない失敗" : null;
+  return { ...state, ...counts, stuck: error && counts.pending > 0 ? error : null };
 }
 
 /**
@@ -629,9 +631,15 @@ export async function flush(
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
+    // pg は、複数のアドレスへの接続がすべて拒まれると理由の文が空の AggregateError を返す。そのときは下のエラーの理由を拾う。
+    const message = e instanceof Error ? e.message : String(e);
+    const inner =
+      e instanceof AggregateError
+        ? e.errors.map((x: unknown) => (x instanceof Error ? x.message : String(x))).join(" / ")
+        : "";
     writeState({
       flushedAt: new Date().toISOString(),
-      error: e instanceof Error ? e.message.slice(0, 300) : String(e),
+      error: (message || inner || "理由の分からない失敗").slice(0, 300),
     });
     throw e;
   } finally {
