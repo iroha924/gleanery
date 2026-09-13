@@ -128,6 +128,7 @@ type HookInput = {
   prompt_id?: string;
   turn_id?: string;
   agent_id?: string;
+  agent_type?: string;
   cwd?: string;
   prompt?: string;
   last_assistant_message?: string | null;
@@ -245,6 +246,19 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
       fs.appendFileSync(file, `export MITOS_PARENT_SESSION=${input.session_id}\n`);
     }
     return { flush: false, notice: captureNotice(loadEnv()) };
+  }
+  if (event === "SubagentStop") {
+    // レビュアー（hooks.json の matcher が mitos:review-* に絞る）の生の報告を、終わった時点で持ち主の画面に出す。
+    // systemMessage はモデルの文脈に入らないので、親の Claude の判断は変えない。レビュアーは他人の diff を引用するので、
+    // 端末を乱す制御文字は落とす。
+    const report = (input.last_assistant_message ?? "")
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: 端末を乱す制御文字を落とすための範囲
+      .replace(/[ ---]/g, "")
+      .trim();
+    return {
+      flush: false,
+      notice: report ? `${input.agent_type ?? "レビュアー"} の報告\n\n${report}` : null,
+    };
   }
   if (!isOwnerTurn(input)) return { flush: false };
   const place = identify(input.cwd ?? process.cwd());

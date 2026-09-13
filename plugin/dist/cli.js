@@ -24564,6 +24564,15 @@ function onHook(host, input2) {
     }
     return { flush: false, notice: captureNotice(loadEnv()) };
   }
+  if (event === "SubagentStop") {
+    const report = (input2.last_assistant_message ?? "").replace(/[ ---]/g, "").trim();
+    return {
+      flush: false,
+      notice: report ? `${input2.agent_type ?? "レビュアー"} の報告
+
+${report}` : null
+    };
+  }
   if (!isOwnerTurn(input2))
     return { flush: false };
   const place = identify(input2.cwd ?? process.cwd());

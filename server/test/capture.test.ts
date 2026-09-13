@@ -479,6 +479,25 @@ test("エージェントが起動した子と、作業場所の外の session �
   assert.deepEqual(spooled(), []);
 });
 
+test("レビュアーが終わったら、その生の報告を持ち主の画面へ出し、会話としては残さない", () => {
+  reset();
+  const r = onHook("claude-code", {
+    session_id: "s1",
+    agent_id: "a1",
+    agent_type: "mitos:review-security",
+    cwd: repoDir,
+    hook_event_name: "SubagentStop",
+    last_assistant_message: "verdict: pass\n[31mfindings: 0[0m\r\n",
+  });
+  assert.deepEqual(r, {
+    flush: false,
+    notice: "mitos:review-security の報告\n\nverdict: pass\n[31mfindings: 0[0m",
+  });
+  assert.deepEqual(spooled(), []);
+  const empty = onHook("claude-code", { session_id: "s1", agent_id: "a1", hook_event_name: "SubagentStop" });
+  assert.equal(empty.notice, null, "報告が空なら何も出さない");
+});
+
 test("SessionStart は、この session の id を子へ継がせる", () => {
   const file = path.join(home, "env-file");
   fs.writeFileSync(file, "");
