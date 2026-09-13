@@ -2,7 +2,7 @@
 // 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、触ったファイルを残す。
 // 背景の agent の完了通知が届いたときは、その報告を持ち主の画面へ出す（`--show`。記録はしない）。
 //
-// **フックは手元の待ち行列へ書くだけにする。**網へは Stop のときにまとめて送る（async のフックなので待たせない）。
+// **記録のフックは手元の待ち行列へ書くだけにする。**網へは Stop のときにまとめて送る（async のフックなので待たせない）。
 // DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は入力から決定的に作る）。
 //
 // **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
@@ -205,26 +205,37 @@ function lastSaid(session: string): string | null {
  * 背景の agent の完了通知から、持ち主の画面へ出す報告を作る（`--show` の同期フックが出す）。報告の本文は完了通知の
  * `<result>` にしか無く、親の Claude には届くが持ち主の画面には出ない。本文の無い通知（背景のシェルの完了など）は出さない。
  * subagent の SubagentStop や ReportFindings で返した表示は、持ち主の画面に出なかった（実測 2026-09-13、2.1.269）。
+ * 本文の各行の頭に `│ ` を付け、agent が返した引用だと見分けられるようにする（mitos 自身の警告と同じ見た目にしない）。
  */
 export function agentReport(input: HookInput): string | null {
   const prompt = input.prompt ?? "";
-  if (input.hook_event_name !== "UserPromptSubmit" || !prompt.trimStart().startsWith("<task-notification"))
+  if (input.hook_event_name !== "UserPromptSubmit" || !/^<task-notification[\s>]/.test(prompt.trimStart()))
     return null;
   const start = prompt.indexOf("<result>");
-  const end = prompt.lastIndexOf("</result>");
-  if (start < 0 || end < start) return null;
-  const report = visible(prompt.slice(start + "<result>".length, end)).trim();
+  const end = prompt.indexOf("</result>", start);
+  if (start < 0 || end < 0) return null;
+  const report = visible(fromEntities(prompt.slice(start + "<result>".length, end))).trim();
   if (!report) return null;
-  const summary = prompt.match(/<summary>([^<]*)<\/summary>/)?.[1]?.trim();
-  return summary ? `${visible(summary)}\n\n${report}` : report;
+  // 見出しは本文より前の summary からだけ取る（本文に書かれた summary を見出しにしない）。
+  const summary = prompt.slice(0, start).match(/<summary>([^<]*)<\/summary>/)?.[1];
+  const head = summary ? visible(fromEntities(summary)).trim() : "agent の報告";
+  return `${head}\n${report
+    .split("\n")
+    .map((line) => `│ ${line}`)
+    .join("\n")}`;
 }
+
+/** 完了通知は本文の `<` `>` `&` を実体参照にして渡す（transcript の実物で確認）。1 回の置き換えで元の文字に戻す。 */
+const ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
+const fromEntities = (s: string): string =>
+  s.replace(/&(lt|gt|amp|quot|#39);/g, (whole, name: string) => ENTITIES[name] ?? whole);
 
 /**
  * 画面に出す文字だけにする。報告は他人の diff を引用するので、端末を乱す制御文字と、見た目を偽れる書式文字（双方向の
- * 上書き、ゼロ幅、タグ文字）を落とし、行区切りは改行にする。文字の結合に要る ZWJ・ZWNJ は残す。
+ * 上書き、ゼロ幅、タグ文字）を落とし、改行（CR と行区切り）は LF にする。文字の結合に要る ZWJ・ZWNJ は残す。
  */
 const visible = (s: string): string =>
-  s.replace(/[\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+  s.replace(/\r\n?|[\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 
 /**
  * AskUserQuestion で持ち主が選んだ答えと、答えに添えたメモ。質問と答えの組を持ち主の発言として残す。

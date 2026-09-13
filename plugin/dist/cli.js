@@ -24528,21 +24528,25 @@ function lastSaid(session) {
 }
 function agentReport(input2) {
   const prompt = input2.prompt ?? "";
-  if (input2.hook_event_name !== "UserPromptSubmit" || !prompt.trimStart().startsWith("<task-notification"))
+  if (input2.hook_event_name !== "UserPromptSubmit" || !/^<task-notification[\s>]/.test(prompt.trimStart()))
     return null;
   const start = prompt.indexOf("<result>");
-  const end = prompt.lastIndexOf("</result>");
-  if (start < 0 || end < start)
+  const end = prompt.indexOf("</result>", start);
+  if (start < 0 || end < 0)
     return null;
-  const report = visible(prompt.slice(start + "<result>".length, end)).trim();
+  const report = visible(fromEntities(prompt.slice(start + "<result>".length, end))).trim();
   if (!report)
     return null;
-  const summary = prompt.match(/<summary>([^<]*)<\/summary>/)?.[1]?.trim();
-  return summary ? `${visible(summary)}
-
-${report}` : report;
+  const summary = prompt.slice(0, start).match(/<summary>([^<]*)<\/summary>/)?.[1];
+  const head2 = summary ? visible(fromEntities(summary)).trim() : "agent の報告";
+  return `${head2}
+${report.split(`
+`).map((line) => `│ ${line}`).join(`
+`)}`;
 }
-var visible = (s) => s.replace(/[\p{Zl}\p{Zp}]/gu, `
+var ENTITIES = { lt: "<", gt: ">", amp: "&", quot: '"', "#39": "'" };
+var fromEntities = (s) => s.replace(/&(lt|gt|amp|quot|#39);/g, (whole, name) => ENTITIES[name] ?? whole);
+var visible = (s) => s.replace(/\r\n?|[\p{Zl}\p{Zp}]/gu, `
 `).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 function answersOf(input2) {
   const response = input2.tool_response;
