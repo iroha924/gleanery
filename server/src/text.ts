@@ -122,24 +122,37 @@ const SECRETS: [RegExp, string][] = [
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
   [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
   // ヘッダの外に貼った値。大文字の Bearer と数字を含む値だけ（「the bearer src/app/v2/route.ts」を消さない）。
-  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"],
+  [/\b(?:Bearer|BEARER)\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"],
 ];
 // Authorization ヘッダの値。ヘッダ・JSON・コードの形（`"Authorization": "Basic …"`）を同じに扱う。
 const AUTH_HEADER =
   /(\bAuthorization["']?\s*[:=]\s*(?:["']\s*)?(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
-// ほかの名前のヘッダに入れた bearer の値（`-H "X-Auth: bearer …"`）。
-const HEADER_BEARER = /(:[ \t]*bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
+// ほかの名前のヘッダに入れた bearer の値（`-H "X-Auth: bearer …"`、`{"X-Auth": "bearer …"}`）。
+const HEADER_BEARER = /(:[ \t]*(?:["'][ \t]*)?bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
 // 環境変数の形（大文字の名前への代入）。**値が変数の参照なら伏せない**（`PASSWORD=$DB_PASSWORD`）。
 // KEY は単独か、語の区切り（`_`）か鍵の語（MASTERKEY）の後だけ。PASS・PWD は `_` の後だけ
 // （MONKEY=banana、COMPASS=north と、シェルの作業ディレクトリ PWD=/Users/… を消さない）。
 const ENV_ASSIGN =
   /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-// 設定ファイル・JSON・ヘッダ・URL の形（名前が鍵の語で終わる）。照合は鍵の語から始め、名前の前半は見ない。
+// 設定ファイル・JSON・ヘッダ・URL・コードの形（名前が鍵の語で終わる。`:` `=` `:=` `=>`）。照合は鍵の語から始め、
+// 名前の前半は見ない。
 const FIELD_NAME =
-  /(?:api|account|access|private|secret)[-_]?key["']?\s*[:=]\s*|(?:secret|token|passw(?:or)?d)["']?\s*[:=]\s*/gi;
-/** 値として読む長さの上限。越える値は判定しない（窓を切らないと、値の中の鍵の語ごとに末尾まで読み直す）。 */
-const MAX_VALUE = 4096;
-const BARE_VALUE = new RegExp(`[^\\s"',;]{1,${MAX_VALUE}}`, "y");
+  /(?:(?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)["']?\s*(?::=|=>|[:=])\s*/gi;
+/** 引用符で囲んだ値として読む長さの上限。越える値は判定しない。 */
+const MAX_QUOTED = 4096;
+/**
+ * 囲まない値は、先頭の 256 字で鍵らしいかを決め、伏せるときだけ続きを最後まで読む（鍵の語ごとに長く読み直さない）。
+ * URL の次の引数（`&user=…`）は値に含めない。パスワードの中の `&`（`Xk9&mZ2p`）は値に含める。
+ */
+const BARE_HEAD = /[^\s"',;)]{1,256}/y;
+const BARE_REST = /[^\s"',;)]*/y;
+const NEXT_PARAM = /&[A-Za-z_][\w.-]*=/;
+const bareAt = (re: RegExp, text: string, at: number): string => {
+  re.lastIndex = at;
+  const v = re.exec(text)?.[0] ?? "";
+  const cut = v.search(NEXT_PARAM);
+  return cut < 0 ? v : v.slice(0, cut);
+};
 /**
  * 代入の値が鍵らしいか。**鍵の名前に付いた値は、伏せる側に倒す**（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
  *   変数の参照（`${…}`、`$NAME`）は伏せない
@@ -156,7 +169,7 @@ function secretValue(quoted: boolean, v: string): boolean {
 
 /**
  * 鍵の名前への代入を伏せる。**伏せなかった値の中も続けて見る**（`?refresh_token=$RT&client_secret=…` の後ろの鍵、
- * `"token": "curl -d password=…"` の中の鍵）。値は窓（MAX_VALUE）の中だけを読むので、線形で終わる。
+ * `"token": "run it with password='…'"` の中の鍵）。伏せた値は読み飛ばすので、読む量は入力の長さに比例する。
  */
 function maskFields(text: string): string {
   let out = "";
@@ -168,16 +181,16 @@ function maskFields(text: string): string {
     let quote = "";
     let value: string;
     if (q === '"' || q === "'") {
-      const window = text.slice(at + 1, at + 2 + MAX_VALUE);
-      const close = window.indexOf(q);
-      if (close < 0 || window.slice(0, close).includes("\n")) continue;
+      const close = text.indexOf(q, at + 1);
+      if (close < 0 || close - at - 1 > MAX_QUOTED) continue;
+      value = text.slice(at + 1, close);
+      if (value.includes("\n")) continue;
       quote = q;
-      value = window.slice(0, close);
     } else {
-      BARE_VALUE.lastIndex = at;
-      value = BARE_VALUE.exec(text)?.[0] ?? "";
+      value = bareAt(BARE_HEAD, text, at);
     }
     if (!secretValue(quote !== "", value)) continue;
+    if (!quote && value.length === 256) value += bareAt(BARE_REST, text, at + 256);
     out += `${text.slice(last, at)}${quote}[伏せた]`;
     last = at + quote.length + value.length;
     FIELD_NAME.lastIndex = last;
@@ -186,8 +199,9 @@ function maskFields(text: string): string {
 }
 
 // `mysql -p<パスワード>`（-p の直後に空白を置かない形だけがパスワードを持つ）。同じコマンドの中（`&&` `;` `|` と
-// 改行まで。`\` で継いだ行は続き）の最初の -p だけを伏せる（後ろの `ssh -p2222`、`cp -pr` を消さない）。
-const MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:[^\n;&|\\]|\\\n|\\(?!\n))*/g;
+// 改行まで。引用符の中の区切りは区切りでなく、`\` で継いだ行は続き）の最初の -p だけを伏せる
+// （後ろの `ssh -p2222`、`cp -pr` を消さない）。
+const MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:'[^'\n]*'|"[^"\n]*"|[^\n;&|\\'"]|\\\r?\n|\\(?!\r?\n))*/g;
 const MYSQL_PASSWORD = /(\s-p)(?:'[^'\n]*'|"[^"\n]*"|(?=[^\s-])\S+)/;
 // URL の資格情報は、パスワードに @ を含んでも host の直前の @ まで伏せる。どこへ繋いだかは話の中身として残す。
 // userinfo は最初の `/` より前にしか無い（`http://localhost:5173/@vite` のポートを伏せない）。ここで切ると線形で終わる。

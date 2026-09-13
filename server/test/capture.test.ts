@@ -92,6 +92,17 @@ const LEAKS: [string, string][] = [
   ["mysql \\\n  -u root \\\n  -phunter2x db", "hunter2x"],
   ["mysql -u root -p'correct horse battery' db", "horse"],
   ["X-Auth: bearer abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnop"],
+  ['{"X-Auth": "bearer abc123def456ghi789jk"}', "abc123def456"],
+  ["BEARER 0123456789abcdefghij", "0123456789abcdefghij"],
+  ['mysql -u root -e "SHOW DATABASES;" -pS3cretPw9', "S3cretPw9"],
+  ["mysql -u root -p'Tr0ub;4dor&3' db", "4dor"],
+  ['mysql -p"s3cr&et|pw" db', "et|pw"],
+  ["mysql \\\r\n  -u root \\\r\n  -phunter2x db", "hunter2x"],
+  [`id_token=${"A1b2C3".repeat(900)}xyzEND&state=x`, "xyzEND"],
+  ['"token": "run it with password=\'letmeinnow\' please"', "letmeinnow"],
+  ['password := "Tr0ub4dor33"', "Tr0ub4dor33"],
+  ["'password' => 'Tr0ub4dor33'", "Tr0ub4dor33"],
+  ["(password=Tr0ub4dor33)", "Tr0ub4dor33"],
 ];
 
 // 伏せた文は元に戻せない。コードの型注釈・変数の参照・画面の文言・パスを鍵とみなして消すと、会話の中身が失われる。
@@ -133,6 +144,11 @@ test("形の決まった鍵と、名前で分かる代入・ヘッダ・URL の�
   assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[伏せた]"}', "引用符を残す");
   // 鍵の名前に付いた引用符の値は、文言でも伏せる側に倒す（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
   assert.equal(mask('{ password: "Required" }'), '{ password: "[伏せた]" }');
+  // URL の次の引数は値に含めない（伏せた値の後ろを消さない）。
+  assert.equal(
+    mask("?access_token=abc123def456&user=alice&page=2"),
+    "?access_token=[伏せた]&user=alice&page=2",
+  );
   // 同じコマンドの最初の -p だけ。後ろの別のコマンドの -p は消さない。
   const chained = mask("mysql -u root -phunter2x db && ssh -p2222 host && cp -pr src dst");
   assert.ok(

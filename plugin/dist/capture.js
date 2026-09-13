@@ -24011,14 +24011,22 @@ var SECRETS = [
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
   [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"]
+  [/\b(?:Bearer|BEARER)\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"]
 ];
 var AUTH_HEADER = /(\bAuthorization["']?\s*[:=]\s*(?:["']\s*)?(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
-var HEADER_BEARER = /(:[ \t]*bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
+var HEADER_BEARER = /(:[ \t]*(?:["'][ \t]*)?bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
 var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-var FIELD_NAME = /(?:api|account|access|private|secret)[-_]?key["']?\s*[:=]\s*|(?:secret|token|passw(?:or)?d)["']?\s*[:=]\s*/gi;
-var MAX_VALUE = 4096;
-var BARE_VALUE = new RegExp(`[^\\s"',;]{1,${MAX_VALUE}}`, "y");
+var FIELD_NAME = /(?:(?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)["']?\s*(?::=|=>|[:=])\s*/gi;
+var MAX_QUOTED = 4096;
+var BARE_HEAD = /[^\s"',;)]{1,256}/y;
+var BARE_REST = /[^\s"',;)]*/y;
+var NEXT_PARAM = /&[A-Za-z_][\w.-]*=/;
+var bareAt = (re, text, at) => {
+  re.lastIndex = at;
+  const v = re.exec(text)?.[0] ?? "";
+  const cut = v.search(NEXT_PARAM);
+  return cut < 0 ? v : v.slice(0, cut);
+};
 function secretValue(quoted, v) {
   if (v.length < 8 || /^\$(?:\{|[A-Za-z_])/.test(v))
     return false;
@@ -24038,26 +24046,28 @@ function maskFields(text) {
     let quote2 = "";
     let value;
     if (q === '"' || q === "'") {
-      const window = text.slice(at + 1, at + 2 + MAX_VALUE);
-      const close = window.indexOf(q);
-      if (close < 0 || window.slice(0, close).includes(`
+      const close = text.indexOf(q, at + 1);
+      if (close < 0 || close - at - 1 > MAX_QUOTED)
+        continue;
+      value = text.slice(at + 1, close);
+      if (value.includes(`
 `))
         continue;
       quote2 = q;
-      value = window.slice(0, close);
     } else {
-      BARE_VALUE.lastIndex = at;
-      value = BARE_VALUE.exec(text)?.[0] ?? "";
+      value = bareAt(BARE_HEAD, text, at);
     }
     if (!secretValue(quote2 !== "", value))
       continue;
+    if (!quote2 && value.length === 256)
+      value += bareAt(BARE_REST, text, at + 256);
     out += `${text.slice(last, at)}${quote2}[伏せた]`;
     last = at + quote2.length + value.length;
     FIELD_NAME.lastIndex = last;
   }
   return out + text.slice(last);
 }
-var MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:[^\n;&|\\]|\\\n|\\(?!\n))*/g;
+var MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:'[^'\n]*'|"[^"\n]*"|[^\n;&|\\'"]|\\\r?\n|\\(?!\r?\n))*/g;
 var MYSQL_PASSWORD = /(\s-p)(?:'[^'\n]*'|"[^"\n]*"|(?=[^\s-])\S+)/;
 var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 var KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
