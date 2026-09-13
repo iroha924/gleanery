@@ -386,6 +386,21 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
   );
 });
 
+test("包みで始まっても、持ち主が続けて打った問いは残し、閉じタグの多い入力でも照合は線形に終わる", () => {
+  reset();
+  const base = { session_id: "s1", prompt_id: "p1", cwd: repoDir, hook_event_name: "UserPromptSubmit" };
+  const big = `<task-notification>${"</task-notification> x".repeat(20_000)}`;
+  const started = performance.now();
+  for (const prompt of [
+    "<task-notification> って何？",
+    "<task-notification>\n<status>failed</status>\n</task-notification>\nこれ何で落ちた？",
+    big,
+  ])
+    onHook("claude-code", { ...base, prompt });
+  assert.ok(performance.now() - started < 1000, `${Math.round(performance.now() - started)}ms かかった`);
+  assert.equal(spooled().filter((m) => m.kind === "message").length, 3);
+});
+
 test("エージェントが起動した子と、作業場所の外の session は何も書かない", () => {
   reset();
   process.env.MITOS_PARENT_SESSION = "parent";

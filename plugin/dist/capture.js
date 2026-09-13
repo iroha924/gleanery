@@ -24161,7 +24161,7 @@ function isOwnerTurn(input2, parent = process.env.MITOS_PARENT_SESSION, entrypoi
   return entrypoint !== "sdk-cli";
 }
 var INJECTED = [
-  /^<(?:task-notification|channel|cross-session-message|teammate-message|agent-message)[\s>]/,
+  /^<(task-notification|channel|cross-session-message|teammate-message|agent-message)[\s>][\s\S]*<\/\1>\s*$/,
   /^(?:\d+ background agents were|Background agent ".*" was) stopped by the user/,
   /^(?:Another Claude|A peer) session sent a message/
 ];

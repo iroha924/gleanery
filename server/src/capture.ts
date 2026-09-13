@@ -13,8 +13,8 @@
 //     この変数が将来 hook 自身の環境へ届く仕様になっても、持ち主の session では自分の id と一致して記録が止まらないようにするため）
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
 //     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
-//   - 持ち主の session の中でも、背景タスクの完了・停止の通知と、subagent・別の session からの伝言が UserPromptSubmit に
-//     届く（通知は 2.1.269 で実測）。決まった形（INJECTED）で外す
+//   - 持ち主の session の中でも、背景タスクの完了・停止の通知と、channel・subagent・teammate・別の session からの伝言が
+//     UserPromptSubmit に届く（通知は 2.1.269 で実測）。決まった形（INJECTED）で外す
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -153,9 +153,11 @@ export function isOwnerTurn(
  * 背景タスクの完了通知、背景 agent を止めた通知、channel・別の session・subagent・teammate からの伝言で、どれも
  * Claude Code 2.1.270 の実行ファイルにある文面（完了通知・止めた通知・伝言は手元の transcript にも実物がある）。
  * **載っていない形は持ち主の発言として入る**（`/loop` で起きたときの prompt も、印の無い本文だけが届くので外せない）。
+ * 包みは、prompt 全体が 1 つの包みのときだけ外す（手元の transcript の 510 件はすべて閉じタグで終わっていた）。
+ * 書き出しだけで外すと、「<task-notification> って何？」や、通知を貼って続けた持ち主の問いまで捨てる。
  */
 const INJECTED = [
-  /^<(?:task-notification|channel|cross-session-message|teammate-message|agent-message)[\s>]/,
+  /^<(task-notification|channel|cross-session-message|teammate-message|agent-message)[\s>][\s\S]*<\/\1>\s*$/,
   /^(?:\d+ background agents were|Background agent ".*" was) stopped by the user/,
   /^(?:Another Claude|A peer) session sent a message/,
 ];
