@@ -624,16 +624,20 @@ export async function flush(
   }
 }
 
+/** フックの入力を読む。塊ごとに文字へ変えると、境目で割れた多バイト文字が化けるので、文字として読ませる。 */
+export async function readInput(stream: NodeJS.ReadableStream): Promise<HookInput> {
+  stream.setEncoding("utf8");
+  let raw = "";
+  for await (const chunk of stream) raw += chunk;
+  return JSON.parse(raw || "{}") as HookInput;
+}
+
 async function main(): Promise<void> {
   if (process.argv[2] === "--flush") {
     await flush(loadEnv());
     return;
   }
-  // 塊ごとに文字へ変えると、境目で割れた多バイト文字が化ける。文字として読ませる。
-  process.stdin.setEncoding("utf8");
-  let raw = "";
-  for await (const chunk of process.stdin) raw += chunk;
-  const input = JSON.parse(raw || "{}") as HookInput;
+  const input = await readInput(process.stdin);
   const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
   const { flush: send, notice } = onHook(host, input);
   // systemMessage は持ち主に見える警告で、モデルの文脈には入らない。

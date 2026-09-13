@@ -24865,16 +24865,19 @@ async function flush(env) {
     unlock();
   }
 }
+async function readInput(stream) {
+  stream.setEncoding("utf8");
+  let raw = "";
+  for await (const chunk of stream)
+    raw += chunk;
+  return JSON.parse(raw || "{}");
+}
 async function main() {
   if (process.argv[2] === "--flush") {
     await flush(loadEnv());
     return;
   }
-  process.stdin.setEncoding("utf8");
-  let raw = "";
-  for await (const chunk of process.stdin)
-    raw += chunk;
-  const input2 = JSON.parse(raw || "{}");
+  const input2 = await readInput(process.stdin);
   const host = process.argv[2] === "codex" ? "codex" : "claude-code";
   const { flush: send, notice } = onHook(host, input2);
   if (notice)

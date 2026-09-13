@@ -143,7 +143,7 @@ A="../../agents"
 |---|---|---|
 | 立て方 | `Agent` ツール。`subagent_type` に **`mitos:` を付けた名前**（`mitos:review-adversarial`）を渡す（**`fork` にしない**） | `spawn_agent`。`$A/<名>.md` を `Read` し、**フロントマターを除いた本文をそのままプロンプトに渡す** |
 | 深さの固定 | 定義の `effort` が効く | `spawn_agent` の **`reasoning_effort`** に、定義の `effort` と同じ値を渡す |
-| 回収 | 完了通知 | `wait_agent` |
+| 回収 | 完了通知（前面で返ったときはツールの戻り値） | `wait_agent` |
 
 **`effort` を渡し忘れない。**渡さないと、**セッションがたまたま浅い日にレビューだけ浅くなる。**
 定義のフロントマターに書いてある値が正本である。

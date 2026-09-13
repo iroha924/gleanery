@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 import {
@@ -11,6 +12,7 @@ import {
   isOwnerTurn,
   MAX_MESSAGE,
   onHook,
+  readInput,
   type Spooled,
   spoolDir,
   write,
@@ -479,32 +481,14 @@ test("エージェントが起動した子と、作業場所の外の session �
   assert.deepEqual(spooled(), []);
 });
 
-test("記録のフックは、多バイト文字が標準入力の塊の境目で割れても化けずに読む", async () => {
-  reset();
-  // 標準入力は塊で届く。塊ごとに文字へ変えると、境目で割れた多バイト文字が置き換え文字になる。
-  // 「境」の 3 バイトの途中で 2 回に分けて書き、境目を確実に作る。
-  const input = Buffer.from(
-    JSON.stringify({
-      hook_event_name: "UserPromptSubmit",
-      session_id: "s1",
-      prompt_id: "p1",
-      cwd: repoDir,
-      prompt: "境界",
-    }),
-  );
+test("フックの入力は、多バイト文字が塊の境目で割れても化けずに読む", async () => {
+  // 標準入力は塊で届く。「境」の 3 バイトの途中で塊を分け、境目を確実に作る。
+  const input = Buffer.from(JSON.stringify({ prompt: "境界" }));
   const cut = input.indexOf(Buffer.from("境")) + 1;
-  const child = spawn(process.execPath, [path.join(import.meta.dirname, "..", "src", "capture.ts")], {
-    env: { ...process.env, HOME: home },
-    stdio: ["pipe", "ignore", "ignore"],
-  });
-  child.stdin.write(input.subarray(0, cut));
-  await new Promise((r) => setTimeout(r, 200));
-  child.stdin.end(input.subarray(cut));
-  await new Promise((r) => child.on("close", r));
-  assert.deepEqual(
-    spooled().flatMap((m) => (m.kind === "message" ? [m.body] : [])),
-    ["境界"],
+  const got = await readInput(
+    Readable.from([input.subarray(0, cut), input.subarray(cut)], { objectMode: false }),
   );
+  assert.equal(got.prompt, "境界");
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {
