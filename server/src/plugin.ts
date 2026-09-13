@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { type Mark, mark, pad } from "./panel.ts";
 
 const MANIFEST = path.join(".claude-plugin", "plugin.json");
 
@@ -289,17 +290,22 @@ const RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "
  * 実行中の CLI は基準にしない。古い session の PATH にある cache の CLI を基準にすると、
  * 新しいほうを「古い」と言う逆転が起きる。
  */
-export function report(s: Seen, now = new Date()): string[] {
+export function report(s: Seen, now = new Date()): { lines: string[]; issues: string[] } {
   const lines: string[] = [];
+  const issues: string[] = [];
   const todo = new Set<keyof typeof UPDATE>();
   const home = os.homedir();
   const short = (p: string) => (p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p);
-  // padEnd は全角も 1 桁に数えるので、端末の表示幅で揃える。
-  const pad = (t: string, n: number) =>
-    t + " ".repeat(Math.max(1, n - [...t].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 0xff ? 2 : 1), 0)));
-  const say = (label: string, text: string) => lines.push(`${pad(`  ${label}`, 21)}${text}`);
+  const say = (m: Mark, label: string, text: string) => {
+    if (m === "warn" || m === "fail") issues.push(label);
+    lines.push(`  ${mark(m)} ${pad(label, 19)}${text}`);
+  };
   const row = (label: string, i: Install | null, note?: string, aside = "") =>
-    say(label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
+    say(
+      note ? "warn" : "ok",
+      label,
+      `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`,
+    );
   const base = s.repository;
 
   /**
@@ -324,19 +330,19 @@ export function report(s: Seen, now = new Date()): string[] {
 
   lines.push("plugin の版");
   if (base) row("repository", base);
-  else say("repository", "見えない（mitos の repository の中で実行すると比べられる）");
+  else say("none", "repository", "見えない（mitos の repository の中で実行すると比べられる）");
 
   row("この CLI", s.cli, against(s.cli).note);
 
-  if (s.claude === "unknown") say("Claude Code", "不明（claude plugin list --json が使えない）");
-  else if (s.claude === null) say("Claude Code", "導入されていない");
+  if (s.claude === "unknown") say("none", "Claude Code", "不明（claude plugin list --json が使えない）");
+  else if (s.claude === null) say("none", "Claude Code", "導入されていない");
   else {
     const { note, update } = against(s.claude);
     if (update) todo.add("claude");
     row("Claude Code", s.claude, note);
   }
 
-  if (s.codex.length === 0) say("Codex", `見つからない（${short(s.codexCache)} を見た）`);
+  if (s.codex.length === 0) say("none", "Codex", `見つからない（${short(s.codexCache)} を見た）`);
   for (const x of s.codex) {
     // 入れ直すと Codex は旧版の cache を消す（codex-cli 0.153.4 で観測）。
     const { note, update } =
@@ -351,12 +357,12 @@ export function report(s: Seen, now = new Date()): string[] {
   const x = s.codex.length === 1 ? s.codex[0] : undefined;
   if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
     if (fs.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
-      lines.push("  ← Claude Code と Codex で同じ版なのに中身が違う");
+      say("warn", "Claude Code と Codex", "同じ版なのに中身が違う");
     }
   }
 
-  if (s.running === null) say("実行中の MCP", "不明（ps が使えない）");
-  else if (s.running.length === 0) say("実行中の MCP", "無い");
+  if (s.running === null) say("none", "実行中の MCP", "不明（ps が使えない）");
+  else if (s.running.length === 0) say("none", "実行中の MCP", "無い");
   for (const r of s.running ?? []) {
     const when = r.started
       .toLocaleString("sv-SE")
@@ -392,5 +398,5 @@ export function report(s: Seen, now = new Date()): string[] {
       "    届く中身は各ホストの marketplace の取得元で決まる。GitHub から取る設定なら、push していない変更は届かない",
     );
   }
-  return lines;
+  return { lines, issues };
 }

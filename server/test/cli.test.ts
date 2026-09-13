@@ -83,7 +83,7 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
   try {
     const first = run("init", "--cwd", dir);
     assert.equal(first.code, 0, first.out);
-    assert.match(first.out, /\.mitos を作った/);
+    assert.equal(first.out, `✦ mitos init\n╰─ .mitos を作った: ${dir}\n`);
     assert.match(run("init", "--cwd", dir).out, /既に初期化済み/);
     assert.equal(run("check", "--cwd", dir).code, 0);
     for (const [bad, want] of [
@@ -98,7 +98,9 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
     fs.writeFileSync(path.join(dir, ".mitos/changes/a/change.json"), "{");
     const broken = run("check", "--cwd", dir);
     assert.equal(broken.code, 1, broken.out);
-    assert.match(broken.out, /change\.json: JSON として読めない/);
+    assert.match(broken.out, /^│ ✗ .*change\.json: JSON として読めない$/m);
+    // 端末でない出力先（launchd のログ、Skill が読む出力）には色の制御文字を混ぜない。
+    assert.equal(broken.out.includes(String.fromCodePoint(0x1b)), false, broken.out);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

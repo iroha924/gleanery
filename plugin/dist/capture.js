@@ -24110,6 +24110,15 @@ ${m.body}`;
 var indexesMessage = (origin, speakerKind) => speakerKind !== "bot" && !(origin !== "github" && speakerKind === "assistant");
 var conversationId = (projectId, origin, externalId) => uuidFrom(String(projectId), origin, externalId);
 
+// server/src/panel.ts
+var title = (text) => `✦ ${text}`;
+var rule = (text) => text.split(`
+`).map((line) => line ? `│ ${line}` : "│").join(`
+`);
+var foot = (text) => `╰─ ${text}`;
+var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
+`);
+
 // server/src/capture.ts
 var spoolDir = () => path3.join(os3.homedir(), ".claude", "mitos-spool");
 var stateFile = () => path3.join(os3.homedir(), ".claude", "mitos-capture.json");
@@ -24205,12 +24214,12 @@ A: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo2}`;
 }
 function captureNotice(env) {
   if (!env[KEY.capture])
-    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
   if (s.error && s.pending > 0)
-    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${s.error.slice(0, 120)}`], "mitos doctor で確かめる");
   if (s.rejected > 0)
-    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`, [rejectedDir()], "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる");
   return null;
 }
 function onHook(host, input2) {

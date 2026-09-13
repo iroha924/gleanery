@@ -118,16 +118,19 @@ test("ps の出力から node …/dist/mcp.js だけを拾う", () => {
 
 test("repository より古い導入は両ホストとも更新手順を出す", () => {
   const repository = plugin("r1/plugin", "0.10.19");
-  const out = report(
+  const r = report(
     seen({
       repository,
       cli: repository,
       claude: plugin("claude/plugins/cache/mitos/mitos/0.10.18", "0.10.18"),
       codex: [plugin("codex/plugins/cache/mitos/mitos/0.10.18", "0.10.18")],
     }),
-  ).join("\n");
-  assert.match(out, /Claude Code .*← repository（0\.10\.19）より古い/);
-  assert.match(out, /Codex .*← repository（0\.10\.19）より古い/);
+  );
+  const out = r.lines.join("\n");
+  assert.match(out, /△ Claude Code .*← repository（0\.10\.19）より古い/);
+  assert.match(out, /△ Codex .*← repository（0\.10\.19）より古い/);
+  assert.match(out, /✓ repository /);
+  assert.deepEqual(r.issues, ["Claude Code", "Codex"], "直すものは食い違った導入だけ");
   assert.match(
     out,
     /Claude Code: claude plugin marketplace update mitos && claude plugin update mitos@mitos/,
@@ -149,9 +152,9 @@ test("古い cache の CLI から実行しても、新しい導入を古いと�
       claude: plugin("claude/plugins/cache/mitos/mitos/0.10.19", "0.10.19"),
     }),
   );
-  assert.match(out.find((l) => l.includes("この CLI")) ?? "", /← repository（0\.10\.19）より古い/);
-  assert.doesNotMatch(out.find((l) => l.includes("Claude Code")) ?? "", /←/);
-  assert.ok(!out.some((l) => l.includes("更新するには")));
+  assert.match(out.lines.find((l) => l.includes("この CLI")) ?? "", /← repository（0\.10\.19）より古い/);
+  assert.doesNotMatch(out.lines.find((l) => l.includes("Claude Code")) ?? "", /←/);
+  assert.ok(!out.lines.some((l) => l.includes("更新するには")));
 });
 
 test("同じ版で中身が違えば、repository の CLI だけ新しい状態として出す", () => {
@@ -162,7 +165,7 @@ test("同じ版で中身が違えば、repository の CLI だけ新しい状態�
       cli: repository,
       codex: [plugin("codex/plugins/cache/mitos/mitos/0.10.18c", "0.10.18", "old")],
     }),
-  ).join("\n");
+  ).lines.join("\n");
   assert.match(
     out,
     /Codex .*同じ版なのに中身が違う（dist\/mcp\.js）。repository の変更は、版を上げて main へ入れるまで届かない/,
@@ -177,7 +180,7 @@ test("導入側のほうが新しければ、更新手順を出さず checkout �
       repository: plugin("r4/plugin", "0.10.18"),
       claude: plugin("claude4/plugins/cache/mitos/mitos/0.10.19", "0.10.19"),
     }),
-  ).join("\n");
+  ).lines.join("\n");
   assert.match(out, /Claude Code .*← repository（0\.10\.18）より新しい。repository の checkout が古い/);
   assert.doesNotMatch(out, /更新するには/);
 });
@@ -188,7 +191,7 @@ test("repository が見えず Claude の導入先が消えていても落ちな�
       claude: { version: "0.10.18", root: path.join(tmp, "claude5", "missing") },
       codex: [plugin("codex5/plugins/cache/mitos/mitos/0.10.18", "0.10.18")],
     }),
-  ).join("\n");
+  ).lines.join("\n");
   assert.match(out, /Claude Code .*← 導入先が無い/);
 });
 
@@ -220,7 +223,7 @@ test("実行中の MCP は起動元の状態と導入済みの版で判定する
       ],
     }),
   );
-  const line = (pid: number) => out.find((l) => l.includes(`MCP pid ${pid} `)) ?? "";
+  const line = (pid: number) => out.lines.find((l) => l.includes(`MCP pid ${pid} `)) ?? "";
   assert.doesNotMatch(line(1), /←/);
   assert.match(line(2), /← 導入済みの 0\.10\.19 より古い。\/reload-plugins か session の張り直しで直す/);
   assert.match(line(3), /← Claude Code が更新で置き換えた版/);
@@ -255,17 +258,19 @@ test("実行中の MCP を起動元から特定し、同じ場所に作り直さ
 test("導入先が消えていれば repository が見えなくても出す", () => {
   const out = report(
     seen({ claude: { version: "0.10.18", root: path.join(tmp, "claude3", "missing") } }),
-  ).join("\n");
+  ).lines.join("\n");
   assert.match(out, /Claude Code .*← 導入先が無い。Skill のパスも無効/);
   assert.match(out, /Claude Code: claude plugin marketplace update mitos/);
 });
 
 test("観測できないものは無いと言わず不明と出す", () => {
-  const out = report(seen({ claude: "unknown", running: null })).join("\n");
-  assert.match(out, /Claude Code\s+不明/);
-  assert.match(out, /実行中の MCP\s+不明/);
-  assert.match(out, /repository\s+見えない/);
-  assert.match(out, /Codex\s+見つからない/);
+  const r = report(seen({ claude: "unknown", running: null }));
+  const out = r.lines.join("\n");
+  assert.match(out, /○ Claude Code\s+不明/);
+  assert.match(out, /○ 実行中の MCP\s+不明/);
+  assert.match(out, /○ repository\s+見えない/);
+  assert.match(out, /○ Codex\s+見つからない/);
+  assert.deepEqual(r.issues, [], "観測できないことは直すものに数えない");
 });
 
 test("mitos --version は manifest の版を出す", () => {

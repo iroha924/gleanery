@@ -39759,8 +39759,8 @@ async function readMessage(db, id, budget, around, projects) {
   const per = Math.floor(budget / Math.max(r.rows.length, 1));
   return r.rows.map((m) => {
     const h = messageHit(m);
-    const mark = m.id === id ? "▶ " : "";
-    return `${mark}${renderHit(h, per)}${m.paths.length ? `
+    const mark2 = m.id === id ? "▶ " : "";
+    return `${mark2}${renderHit(h, per)}${m.paths.length ? `
   触ったファイル: ${m.paths.join(" / ")}` : ""}`;
   }).join(`
 

@@ -24,6 +24,7 @@ import type pg from "pg";
 import { ARTIFACT_PATH } from "./artifacts.ts";
 import { connect, EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, vec } from "./db.ts";
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
+import { panel } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
 import { bytes, clean, head, mask, sha256, tail, tsvector, uuidFrom } from "./text.ts";
 
@@ -225,12 +226,20 @@ export function answersOf(input: HookInput): string | null {
  */
 export function captureNotice(env: Env): string | null {
   if (!env[KEY.capture])
-    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
   if (s.error && s.pending > 0)
-    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+    return panel(
+      "mitos: 自動記録を送れていない",
+      [`待ち ${s.pending} 件 / 最後の失敗: ${s.error.slice(0, 120)}`],
+      "mitos doctor で確かめる",
+    );
   if (s.rejected > 0)
-    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+    return panel(
+      `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`,
+      [rejectedDir()],
+      "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる",
+    );
   return null;
 }
 

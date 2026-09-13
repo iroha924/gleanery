@@ -24449,6 +24449,25 @@ ${m.body}`;
 var indexesMessage = (origin, speakerKind) => speakerKind !== "bot" && !(origin !== "github" && speakerKind === "assistant");
 var conversationId = (projectId2, origin, externalId) => uuidFrom(String(projectId2), origin, externalId);
 
+// server/src/panel.ts
+import { styleText } from "node:util";
+var MARKS = {
+  ok: ["✓", "green"],
+  warn: ["△", "yellow"],
+  fail: ["✗", "red"],
+  none: ["○", "gray"]
+};
+var mark = (m, stream = process.stdout) => styleText(MARKS[m][1], MARKS[m][0], { stream });
+var title = (text) => `✦ ${text}`;
+var rule = (text) => text.split(`
+`).map((line) => line ? `│ ${line}` : "│").join(`
+`);
+var foot = (text) => `╰─ ${text}`;
+var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
+`);
+var width = (text) => [...text].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0);
+var pad = (text, to) => text + " ".repeat(Math.max(1, to - width(text)));
+
 // server/src/capture.ts
 var spoolDir = () => path4.join(os3.homedir(), ".claude", "mitos-spool");
 var stateFile = () => path4.join(os3.homedir(), ".claude", "mitos-capture.json");
@@ -24544,12 +24563,12 @@ A: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo2}`;
 }
 function captureNotice(env) {
   if (!env[KEY.capture])
-    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
   if (s.error && s.pending > 0)
-    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${s.error.slice(0, 120)}`], "mitos doctor で確かめる");
   if (s.rejected > 0)
-    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`, [rejectedDir()], "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる");
   return null;
 }
 function onHook(host, input2) {
@@ -24947,10 +24966,10 @@ function sections(rel, body) {
   for (const line of lines) {
     const f = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
     if (f?.[1]) {
-      const mark = f[1];
+      const mark2 = f[1];
       if (fence === null)
-        fence = mark;
-      else if (mark[0] === fence[0] && mark.length >= fence.length && !f[2]?.trim())
+        fence = mark2;
+      else if (mark2[0] === fence[0] && mark2.length >= fence.length && !f[2]?.trim())
         fence = null;
       cur.buf.push(line);
       continue;
@@ -24962,10 +24981,10 @@ function sections(rel, body) {
     }
     flush2();
     const level = h[1].length;
-    const title = h[2].trim();
+    const title2 = h[2].trim();
     trail.length = level - 1;
-    trail[level - 1] = title;
-    cur = { title, level, trail: [rel, ...trail.filter(Boolean)].join(" > "), buf: [line] };
+    trail[level - 1] = title2;
+    cur = { title: title2, level, trail: [rel, ...trail.filter(Boolean)].join(" > "), buf: [line] };
   }
   flush2();
   return out;
@@ -25098,11 +25117,11 @@ function projectDocs(bodies, include, at) {
     const body = clean(raw);
     if (!body.trim())
       continue;
-    const title = body.match(/^#\s+(\S.*)$/m)?.[1]?.trim() ?? path5.basename(rel);
+    const title2 = body.match(/^#\s+(\S.*)$/m)?.[1]?.trim() ?? path5.basename(rel);
     out.push({
       path: rel,
       kind: artifact?.kind ?? "document",
-      title,
+      title: title2,
       body,
       at: at.get(rel) ?? null,
       artifact,
@@ -25828,12 +25847,16 @@ var UPDATE = {
 var RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "Codex の開き直し" };
 function report(s, now = new Date) {
   const lines = [];
+  const issues = [];
   const todo = new Set;
   const home = os4.homedir();
   const short = (p) => p.startsWith(`${home}/`) ? `~${p.slice(home.length)}` : p;
-  const pad = (t, n) => t + " ".repeat(Math.max(1, n - [...t].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0)));
-  const say = (label, text) => lines.push(`${pad(`  ${label}`, 21)}${text}`);
-  const row = (label, i, note, aside = "") => say(label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
+  const say = (m, label, text) => {
+    if (m === "warn" || m === "fail")
+      issues.push(label);
+    lines.push(`  ${mark(m)} ${pad(label, 19)}${text}`);
+  };
+  const row = (label, i, note, aside = "") => say(note ? "warn" : "ok", label, `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`);
   const base = s.repository;
   const against = (i) => {
     if (!fs5.existsSync(i.root))
@@ -25859,12 +25882,12 @@ function report(s, now = new Date) {
   if (base)
     row("repository", base);
   else
-    say("repository", "見えない（mitos の repository の中で実行すると比べられる）");
+    say("none", "repository", "見えない（mitos の repository の中で実行すると比べられる）");
   row("この CLI", s.cli, against(s.cli).note);
   if (s.claude === "unknown")
-    say("Claude Code", "不明（claude plugin list --json が使えない）");
+    say("none", "Claude Code", "不明（claude plugin list --json が使えない）");
   else if (s.claude === null)
-    say("Claude Code", "導入されていない");
+    say("none", "Claude Code", "導入されていない");
   else {
     const { note, update } = against(s.claude);
     if (update)
@@ -25872,7 +25895,7 @@ function report(s, now = new Date) {
     row("Claude Code", s.claude, note);
   }
   if (s.codex.length === 0)
-    say("Codex", `見つからない（${short(s.codexCache)} を見た）`);
+    say("none", "Codex", `見つからない（${short(s.codexCache)} を見た）`);
   for (const x2 of s.codex) {
     const { note, update } = s.codex.length > 1 ? { note: "cache が複数ある。どれを使うかは Codex が決める", update: true } : against(x2);
     if (update)
@@ -25882,13 +25905,13 @@ function report(s, now = new Date) {
   const x = s.codex.length === 1 ? s.codex[0] : undefined;
   if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
     if (fs5.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
-      lines.push("  ← Claude Code と Codex で同じ版なのに中身が違う");
+      say("warn", "Claude Code と Codex", "同じ版なのに中身が違う");
     }
   }
   if (s.running === null)
-    say("実行中の MCP", "不明（ps が使えない）");
+    say("none", "実行中の MCP", "不明（ps が使えない）");
   else if (s.running.length === 0)
-    say("実行中の MCP", "無い");
+    say("none", "実行中の MCP", "無い");
   for (const r of s.running ?? []) {
     const when = r.started.toLocaleString("sv-SE").slice(r.started.toDateString() === now.toDateString() ? 11 : 5, 16);
     const label = `MCP pid ${r.pid}`;
@@ -25922,7 +25945,7 @@ function report(s, now = new Date) {
       lines.push(`    ${k === "claude" ? "Claude Code" : "Codex"}: ${UPDATE[k]}`);
     lines.push("    届く中身は各ホストの marketplace の取得元で決まる。GitHub から取る設定なら、push していない変更は届かない");
   }
-  return lines;
+  return { lines, issues };
 }
 
 // server/src/search.ts
@@ -26803,49 +26826,74 @@ ${decisions.rows.map((d) => `- ${d.source_key}（${d.status}）${head(d.body, 20
   });
 }
 async function doctor(env, cwd) {
-  for (const line of report(observe(identify(cwd)?.root ?? cwd)))
-    console.log(line);
-  console.log("");
+  const issues = [];
+  const say = (m, label, text2) => {
+    if (m === "warn" || m === "fail")
+      issues.push(label);
+    console.log(rule(`${mark(m)} ${pad(label, 26)}${text2}`));
+  };
+  console.log(title("mitos doctor"));
+  const plugin = report(observe(identify(cwd)?.root ?? cwd));
+  issues.push(...plugin.issues);
+  for (const line of plugin.lines)
+    console.log(rule(line));
+  console.log(rule(""));
   for (const role of ["reader", "ingest", "capture"]) {
     if (!env[KEY[role]]) {
-      console.log(`${KEY[role].padEnd(26)} 無い`);
+      say("fail", KEY[role], "無い");
       continue;
     }
     try {
       await withDb(env, role, async (c) => {
         await c.query(role === "capture" ? "select id from mitos.project limit 1" : "select 1 from mitos.knowledge limit 1");
       });
-      console.log(`${KEY[role].padEnd(26)} 繋がる / schema は期待どおり`);
+      say("ok", KEY[role], "繋がる / schema は期待どおり");
     } catch (e) {
-      console.log(`${KEY[role].padEnd(26)} 繋がらない: ${e instanceof Error ? e.message : e}`);
+      say("fail", KEY[role], `繋がらない: ${e instanceof Error ? e.message : e}`);
     }
   }
-  console.log(`VOYAGE_API_KEY             ${env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）"}`);
+  say(env.VOYAGE_API_KEY ? "ok" : "fail", "VOYAGE_API_KEY", env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）");
   const s = readState();
-  console.log(`自動記録                   待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.error ? ` / 失敗: ${s.error}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
-  if (!env[KEY.reader])
-    return;
-  await withDb(env, "reader", async (c) => {
-    const cap = await c.query(`select pg_size_pretty(pg_database_size(current_database())) as used, pg_database_size(current_database())::text as bytes,
-              (select setting from pg_settings where name = 'neon.max_cluster_size') as cap_mb`);
-    const g = cap.rows[0];
-    if (g) {
-      const capMb = g.cap_mb ? Number(g.cap_mb) : null;
-      const pct = capMb ? Math.round(Number(g.bytes) / (capMb * 1024 * 1024) * 100) : null;
-      console.log(`DB の大きさ                ${g.used}${capMb ? ` / ${capMb} MB（${pct}%）${pct !== null && pct >= 80 ? " ← 超えると書き込みが止まる" : ""}` : ""}`);
+  say(s.error ? "fail" : s.rejected ? "warn" : "ok", "自動記録", `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${s.error ? ` / 失敗: ${s.error}` : ""}${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""}`);
+  if (env[KEY.reader]) {
+    try {
+      await withDb(env, "reader", async (c) => {
+        const cap = await c.query(`select pg_size_pretty(pg_database_size(current_database())) as used, pg_database_size(current_database())::text as bytes,
+                  (select setting from pg_settings where name = 'neon.max_cluster_size') as cap_mb`);
+        const g = cap.rows[0];
+        if (g) {
+          const capMb = g.cap_mb ? Number(g.cap_mb) : null;
+          const pct = capMb ? Math.round(Number(g.bytes) / (capMb * 1024 * 1024) * 100) : null;
+          const full = pct !== null && pct >= 80;
+          say(full ? "warn" : "ok", "DB の大きさ", `${g.used}${capMb ? ` / ${capMb} MB（${pct}%）${full ? " ← 超えると書き込みが止まる" : ""}` : ""}`);
+        }
+        const emb = await c.query(`select 'knowledge' as t, status, count(*) as n from mitos.knowledge_embedding where status <> 'ready' group by status
+           union all select 'message', status, count(*) from mitos.message_embedding where status <> 'ready' group by status`);
+        say(emb.rows.length ? "warn" : "ok", "埋め込みの残り", emb.rows.length ? emb.rows.map((r2) => `${r2.t} ${r2.status} ${r2.n}`).join(" / ") : "無い");
+        const { found } = localRoots();
+        const r = await c.query(`select p.key, p.name, cn.provider, cn.last_success_at, cn.last_error
+           from mitos.project p left join mitos.connector cn on cn.project_id = p.id order by p.name, cn.provider`);
+        if (r.rows.length)
+          console.log(`${rule("")}
+${rule("作業場所")}`);
+        const label = (x) => `${x.name} ${x.provider ?? "未同期"}`;
+        const column = Math.max(...r.rows.map((x) => width(label(x)))) + 2;
+        for (const x of r.rows) {
+          const days = x.last_success_at ? Math.floor((Date.now() - x.last_success_at.getTime()) / 86400000) : null;
+          const stale = days === null || days >= 2;
+          const m = x.last_error ? "fail" : stale ? "warn" : "ok";
+          if (m !== "ok")
+            issues.push(`作業場所 ${label(x)}`);
+          const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
+          console.log(rule(`  ${mark(m)} ${pad(label(x), column)}${x.last_success_at ? `${x.last_success_at.toLocaleString("sv-SE")}（${days} 日前）${stale ? " ← 日次同期が止まっているかもしれない" : ""}` : "まだ同期していない"}${x.last_error ? ` / 失敗: ${x.last_error}` : ""}${where}`));
+        }
+      });
+    } catch (e) {
+      say("fail", "DB", `読めない: ${e instanceof Error ? e.message : e}`);
+      process.exitCode = 1;
     }
-    const emb = await c.query(`select 'knowledge' as t, status, count(*) as n from mitos.knowledge_embedding where status <> 'ready' group by status
-       union all select 'message', status, count(*) from mitos.message_embedding where status <> 'ready' group by status`);
-    console.log(`埋め込みの残り             ${emb.rows.length ? emb.rows.map((r2) => `${r2.t} ${r2.status} ${r2.n}`).join(" / ") : "無い"}`);
-    const { found } = localRoots();
-    const r = await c.query(`select p.key, p.name, cn.provider, cn.last_success_at, cn.last_error
-       from mitos.project p left join mitos.connector cn on cn.project_id = p.id order by p.name, cn.provider`);
-    for (const x of r.rows) {
-      const days = x.last_success_at ? Math.floor((Date.now() - x.last_success_at.getTime()) / 86400000) : null;
-      const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
-      console.log(`${`作業場所 ${x.name}`.padEnd(26)} ${x.provider ?? "未同期"}${x.last_success_at ? ` / ${x.last_success_at.toLocaleString("sv-SE")}（${days} 日前）${days !== null && days >= 2 ? " ← 日次同期が止まっているかもしれない" : ""}` : ""}${x.last_error ? ` / 失敗: ${x.last_error}` : ""}${where}`);
-    }
-  });
+  }
+  console.log(foot(issues.length ? `直すもの ${issues.length} 件: ${issues.join(" / ")}` : "直すものは無い"));
 }
 async function main2() {
   const argv = process.argv.slice(2);
@@ -26876,18 +26924,16 @@ ${USAGE}`);
     parseArgs({ args: argv.slice(1), options: { cwd: OPTIONS.cwd } });
     if (cmd === "init") {
       const r2 = init(cwd);
-      console.log(r2.created ? `.mitos を作った: ${r2.root}` : `.mitos は既に初期化済み: ${r2.root}`);
+      console.log(panel("mitos init", [], r2.created ? `.mitos を作った: ${r2.root}` : `.mitos は既に初期化済み: ${r2.root}`));
       return;
     }
     const r = check2(cwd);
-    for (const p of r.problems)
-      console.error(`  ${p.path}: ${p.reason}`);
     if (r.problems.length) {
       process.exitCode = 1;
-      console.error(`.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`);
+      console.error(panel("mitos check", r.problems.map((p) => `${mark("fail", process.stderr)} ${p.path}: ${p.reason}`), `.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`));
       return;
     }
-    console.log(`.mitos の検査は通った: ${r.root}（change ${r.changes} 件）`);
+    console.log(panel("mitos check", [], `${mark("ok")} .mitos の検査は通った: ${r.root}（change ${r.changes} 件）`));
     return;
   }
   if (cmd === "trace" && rest[0] === "check") {
@@ -26898,18 +26944,17 @@ ${USAGE}`);
 ${USAGE}`);
     const r = checkTrace(readTrace(file3));
     if (r.problems.length) {
-      for (const p of r.problems)
-        console.error(`  ${p}`);
+      console.error(panel("mitos trace check", r.problems.map((p) => `${mark("fail", process.stderr)} ${p}`), `問題 ${r.problems.length} 件`));
       process.exitCode = 1;
       return;
     }
-    console.log(`形は通った: 要素 ${r.trace?.items.length ?? 0} 件`);
+    console.log(panel("mitos trace check", [], `${mark("ok")} 形は通った: 要素 ${r.trace?.items.length ?? 0} 件`));
     return;
   }
   if (cmd === "advice") {
     const log = path7.join(os5.homedir(), ".claude", "mitos-advice.jsonl");
     if (!fs6.existsSync(log)) {
-      console.log("まだ記録が無い（編集フックが一度も走っていない）。");
+      console.log(panel("mitos advice", [], "まだ記録が無い（編集フックが一度も走っていない）"));
       return;
     }
     const rows2 = fs6.readFileSync(log, "utf8").split(`
@@ -26922,11 +26967,12 @@ ${USAGE}`);
       }
     });
     const shown = rows2.filter((r) => r.shown > 0);
-    console.log(`フックが走った編集   ${rows2.length} 回`);
-    console.log(`制約を出した         ${shown.length} 回（${(shown.length / Math.max(rows2.length, 1) * 100).toFixed(1)}%）`);
     const since2 = rows2[0]?.at;
-    if (since2)
-      console.log(`記録の始まり         ${new Date(since2).toLocaleString("sv-SE")}`);
+    console.log(panel("mitos advice", [
+      `フックが走った編集   ${rows2.length} 回`,
+      `制約を出した         ${shown.length} 回`,
+      ...since2 ? [`記録の始まり         ${new Date(since2).toLocaleString("sv-SE")}`] : []
+    ], `制約を出した割合 ${(shown.length / Math.max(rows2.length, 1) * 100).toFixed(1)}%`));
     return;
   }
   const env = loadEnv();
@@ -26939,10 +26985,10 @@ ${USAGE}`);
 ${USAGE}`);
     const r = await flush(env);
     if (r.busy) {
-      console.log("別の送信が走っているので何もしなかった（終われば待ち行列は空になる）");
+      console.log(panel("mitos capture flush", [], "別の送信が走っているので何もしなかった（終われば待ち行列は空になる）"));
       return;
     }
-    console.log(`新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（${rejectedDir()} に残した）` : ""}`);
+    console.log(panel("mitos capture flush", [], `新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（${rejectedDir()} に残した）` : ""}`));
     return;
   }
   if (cmd === "trace") {
@@ -26967,10 +27013,10 @@ ${r.problems.map((p) => `  ${p}`).join(`
     await withDb(env, "ingest", async (c) => {
       const id = await registered(c, place);
       const saved = await saveTrace(c, env, id, trace);
-      console.log([
+      console.log(panel("mitos trace save", [], [
         `入れた: 書き直した要素 ${saved.written} 件${saved.superseded ? ` / 覆した決定 ${saved.superseded} 件` : ""}`,
         describeFill("埋め込み", saved.embedding)
-      ].filter(Boolean).join(" / "));
+      ].filter(Boolean).join(" / ")));
     });
     return;
   }
@@ -26980,7 +27026,7 @@ ${r.problems.map((p) => `  ${p}`).join(`
       const place = opt.name ? nameLocal(cwd, opt.name) : placeOf(cwd);
       await withDb(env, "ingest", async (c) => {
         const r = await c.query("insert into mitos.project (key, name) values ($1, $2) on conflict (key) do nothing returning id", [place.key, place.name]);
-        console.log(r.rows.length ? `登録した: ${place.name}（${place.key}）` : `既に登録済み: ${place.name}（${place.key}）`);
+        console.log(panel("mitos project add", [], r.rows.length ? `登録した: ${place.name}（${place.key}）` : `既に登録済み: ${place.name}（${place.key}）`));
       });
       return;
     }
@@ -26989,13 +27035,12 @@ ${r.problems.map((p) => `  ${p}`).join(`
       await withDb(env, "reader", async (c) => {
         const r = await c.query(`select p.key, p.name, max(cn.last_success_at) as last from mitos.project p
            left join mitos.connector cn on cn.project_id = p.id group by p.id order by p.name`);
-        if (r.rows.length === 0)
-          console.log("登録なし。`mitos project add` で登録する");
-        for (const x of r.rows) {
+        const rows2 = r.rows.map((x) => {
           const where = found.get(x.key) ?? (ambiguous.has(x.key) ? "置き場所が複数ある（同期しない）" : "この PC に無い");
-          console.log(`${x.name}  ${x.key}
-  ${where}${x.last ? ` / 最後の同期 ${x.last.toLocaleString("sv-SE")}` : ""}`);
-        }
+          return `${x.name}  ${x.key}
+  ${where}${x.last ? ` / 最後の同期 ${x.last.toLocaleString("sv-SE")}` : ""}`;
+        });
+        console.log(panel("mitos project list", rows2, rows2.length ? `${rows2.length} 件` : "登録なし。mitos project add で登録する"));
       });
       return;
     }
@@ -27015,13 +27060,13 @@ ${USAGE}`);
                   (select count(*) from mitos.knowledge where project_id = $1) as knowledge,
                   (select count(*) from mitos.source_item s join mitos.connector cn on cn.id = s.connector_id where cn.project_id = $1) as items`, [p.id]);
         const x = n.rows[0];
-        console.log(`${p.name}（${p.key}）: 会話 ${x?.conversations} / 発言 ${x?.messages} / 知識 ${x?.knowledge} / 取り込み元の項目 ${x?.items}`);
+        const counts = `${p.name}（${p.key}）: 会話 ${x?.conversations} / 発言 ${x?.messages} / 知識 ${x?.knowledge} / 取り込み元の項目 ${x?.items}`;
         if (opt.yes !== true) {
-          console.log("消していない。消すなら --yes を付ける。**元に戻せない。**");
+          console.log(panel("mitos project forget", [counts], "消していない。消すなら --yes を付ける。元に戻せない"));
           return;
         }
         await c.query("delete from mitos.project where id = $1", [p.id]);
-        console.log("消した。");
+        console.log(panel("mitos project forget", [counts], "消した"));
       });
       return;
     }
@@ -27030,13 +27075,13 @@ ${USAGE}`);
 ${USAGE}`);
   }
   if (cmd === "sync") {
-    const startedAt = new Date;
-    console.log(`==== 同期開始 ${startedAt.toLocaleString("sv-SE")} ====`);
-    await flush(env).catch((e) => console.error(`  自動記録の送信に失敗: ${e instanceof Error ? e.message : e}`));
-    const failed = [];
-    let done = 0;
     if (opt["reset-docs"] && !opt.cwd)
       throw new Error("--reset-docs は --cwd で作業場所を 1 つ指定したときだけ使える");
+    const startedAt = new Date;
+    console.log(title(`mitos sync ${startedAt.toLocaleString("sv-SE")}`));
+    await flush(env).catch((e) => console.error(rule(`${mark("fail", process.stderr)} 自動記録の送信に失敗: ${e instanceof Error ? e.message : e}`)));
+    const failed = [];
+    let done = 0;
     await withDb(env, "ingest", async (c) => {
       const only = opt.cwd ? placeOf(cwd) : null;
       if (only)
@@ -27048,18 +27093,18 @@ ${USAGE}`);
           continue;
         const root = only?.root ?? found.get(p.key);
         if (!root) {
-          console.log(`飛ばした: ${p.name}（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`);
+          console.log(rule(`${mark("none")} ${p.name}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`));
           continue;
         }
         try {
           const place = { key: p.key, root, name: p.name };
           for (const line of await syncOne(c, Number(p.id), place, opt["reset-docs"] === true)) {
-            console.log(`${p.name} / ${line}`);
+            console.log(rule(`${mark("ok")} ${p.name} / ${line}`));
           }
           done++;
         } catch (e) {
           failed.push(p.name);
-          console.error(`  ${e instanceof Error ? e.message : e}`);
+          console.error(rule(`${mark("fail", process.stderr)} ${e instanceof Error ? e.message : e}`));
         }
       }
       for (const line of [
@@ -27067,13 +27112,11 @@ ${USAGE}`);
         describeFill("発言の埋め込み", await fillMessages(c, env))
       ])
         if (line)
-          console.log(line);
+          console.log(rule(line));
     });
-    console.log(`==== 同期おわり ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} 秒 / 成功 ${done} ====`);
-    if (failed.length) {
-      console.error(`失敗: ${failed.join(" / ")}`);
+    console.log(foot(`おわり ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} 秒 / 成功 ${done}${failed.length ? ` / 失敗 ${failed.join(" / ")}` : ""}`));
+    if (failed.length)
       process.exitCode = 1;
-    }
     return;
   }
   if (cmd === "search") {
@@ -27086,7 +27129,7 @@ ${USAGE}`);
     await withDb(env, "reader", async (c) => {
       const projects = place ? [await registered(c, place)] : null;
       const hits = opt.said ? await searchMessages(c, env, { question: question2 || undefined, projects, who: opt.said, limit }) : await searchKnowledge(c, env, { question: question2, projects, avoid: opt.avoid, limit });
-      console.log(hits.length ? framed(renderHits(hits, 16 * 1024)) : "該当なし。");
+      console.log(panel("mitos search", hits.length ? [framed(renderHits(hits, 16 * 1024))] : [], `${hits.length ? `${hits.length} 件` : "該当なし"} / ${place ? place.name : "すべての作業場所"}`));
     });
     return;
   }
@@ -27094,19 +27137,17 @@ ${USAGE}`);
     await withDb(env, rest.length ? "ingest" : "reader", async (c) => {
       if (rest.length === 0) {
         const people = await directory(c);
-        if (people.length === 0)
-          console.log("名簿は空。`mitos who <呼び名> <ハンドル>...` で入れる");
-        for (const p of people)
-          console.log(`${p.isSelf ? "→ " : "  "}${p.display.padEnd(12)} ${p.handles.join(" / ")}`);
         const unknown2 = await c.query(`select i.handle, count(m.id) as n from mitos.person_identity i
            left join mitos.message m on m.identity_id = i.id
            where i.person_id is null group by i.id order by count(m.id) desc limit 20`);
-        if (unknown2.rows.length) {
-          console.log(`
-まだ誰か決めていないハンドル（発言の多い順）:`);
-          for (const u of unknown2.rows)
-            console.log(`  ${u.n.padStart(5)} 件  ${u.handle}`);
-        }
+        console.log(panel("mitos who", [
+          ...people.map((p) => `${p.isSelf ? "→ " : "  "}${pad(p.display, 12)}${p.handles.join(" / ")}`),
+          ...unknown2.rows.length ? [
+            "",
+            "まだ誰か決めていないハンドル（発言の多い順）:",
+            ...unknown2.rows.map((u) => `  ${u.n.padStart(5)} 件  ${u.handle}`)
+          ] : []
+        ], people.length ? `${people.length} 人` : "名簿は空。mitos who <呼び名> <ハンドル>... で入れる"));
         return;
       }
       const [display, ...handles] = rest;
@@ -27123,14 +27164,12 @@ ${USAGE}`);
            where provider = 'github' and lower(handle) = any($2) returning handle`, [pe.rows[0]?.id, handles.map((h) => h.replace(/^@/, "").toLowerCase())]);
       });
       const missing = handles.filter((h) => !linked.rows.some((l) => l.handle.toLowerCase() === h.replace(/^@/, "").toLowerCase()));
-      console.log(`名簿に入れた: ${display}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`);
-      if (missing.length)
-        console.log(`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`);
+      console.log(panel("mitos who", missing.length ? [`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`] : [], `名簿に入れた: ${display}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`));
     });
     return;
   }
 }
 main2().catch((e) => {
-  console.error(e instanceof Error ? e.message : String(e));
+  console.error(panel(`mitos ${process.argv[2] ?? ""}`.trim(), [e instanceof Error ? e.message : String(e)], `${mark("fail", process.stderr)} 止まった`));
   process.exit(1);
 });

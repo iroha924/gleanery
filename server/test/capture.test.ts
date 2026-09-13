@@ -8,6 +8,7 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 import {
   answersOf,
+  captureNotice,
   fit,
   isOwnerTurn,
   MAX_MESSAGE,
@@ -520,6 +521,13 @@ test("記録のフックを起動すると、標準入力の持ち主の発言�
       entry,
     );
   }
+});
+
+test("自動記録が止まっていれば、session の開始時に同じ枠の形で知らせる", () => {
+  assert.equal(
+    captureNotice({}),
+    "✦ mitos: KNOWLEDGE_DB_URL_CAPTURE が無いので、会話を自動記録できない\n╰─ mitos doctor で確かめる",
+  );
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {

@@ -10,7 +10,7 @@
     {
       "name": "mitos",
       "description": "会話と判断を貯め、過去の決定・棄却した案・制約・発言を引く",
-      "version": "0.11.22",
+      "version": "0.12.0",
       "source": "./plugin",
       "author": {
         "name": "iroha924",
