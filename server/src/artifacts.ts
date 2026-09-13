@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { identify } from "./scope.ts";
+import { rootOf } from "./project.ts";
 
 const MITOS = ".mitos";
 const CHANGES = ".mitos/changes";
@@ -16,7 +16,7 @@ const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * 同期と Dashboard が成果物として扱う path。これ以外の `.mitos` 配下の Markdown は取り込まない。
  * trace の `plugin/skills/trace/lib/collect.mjs` の `ARTIFACT` と同じ形（`scripts/check-pairs.mjs` が突き合わせる）。
  */
-const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+export const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
 /** manifest は数行の JSON。上限が無いと、巨大なファイル 1 つで日次同期のプロセスごと落ちる（OOM）。 */
 const MAX_MANIFEST = 64 * 1024;
 
@@ -156,7 +156,7 @@ function inspectRoot(root: string): Problem[] {
  * 作業ツリーの `.mitos` を全部検査する（`mitos check`）。draft は未追跡のことが多いので、追跡状態を問わず全 change を見る。
  */
 export function check(dir: string): { root: string; changes: number; problems: Problem[] } {
-  const root = identify(dir).absPath;
+  const root = rootOf(dir);
   const rootProblems = inspectRoot(root);
   if (rootProblems.length) return { root, changes: 0, problems: rootProblems };
   const problems: Problem[] = [];
@@ -221,10 +221,10 @@ export const underMitos = (rel: string): boolean => rel.startsWith(`${MITOS}/`) 
  * EEXIST のあとに lstat で種別を見て拒否する。
  */
 export function init(dir: string): { root: string; created: boolean } {
-  // identify() は存在しない path をそのまま返すので、先に確かめる。
+  // rootOf() は存在しない path をそのまま返すので、先に確かめる。
   if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory())
     throw new Error(`${dir} はディレクトリではない`);
-  const root = identify(dir).absPath;
+  const root = rootOf(dir);
   let created = false;
   for (const rel of [MITOS, CHANGES]) {
     try {

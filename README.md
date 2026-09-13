@@ -179,33 +179,22 @@ Claude Code と Codex から使える。**どれも読み取り専用**で、管
 ## CLI
 
 ```
-mitos ingest <ir.json> [--cwd <dir>]           記録を取り込む（未登録なら作業場所も登録し、
-                                               空なら役割と説明もリポジトリを読んで埋める）
-mitos export <記録の id>                       取り込んだ IR を書き戻す（record.raw をそのまま出す。編集して ingest で戻す）
-mitos search <質問> [--cwd <dir>] [--all] [--dont] [--limit N]
-                                               引けるかを確かめる
-mitos scopes                                   登録済みの作業場所と束
-mitos candidates [--json]                      束ねる候補を並べる（選ぶのは人間）
-mitos link <束の名前> <dir>...                  選ばれたものを 1 つの束にする
-mitos describe <dir> <役割> [説明]              その作業場所が何なのかを書く
-mitos who                                      誰が誰かの名簿を見る（未設定の名前も出る）
-mitos who <呼び名> <ハンドル>... [--me]         名簿に入れる（--me は質問者本人）
-mitos import-github [--cwd <dir>]              PR と issue の本体、レビューと議論を取り込む
-mitos import-linear --team <名前> [--group <束>] [--all]
-                                               Linear の issue とコメントを取り込む
-mitos import-docs [--cwd <dir>]                リポジトリの Markdown をナレッジにする（sync からも呼ばれる）
-mitos init [--cwd <dir>]                       要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
-mitos check [--cwd <dir>]                      .mitos/ の change.json を検査する（DB に触らない）
-mitos sync [--group <束>] [--all]              登録済みの取り込み元をまとめて更新（日次用）
-mitos adopt [--yes]                            このマシンの ~/Projects を見て、置き場所を登録する（新しい PC で最初に叩く。
-                                               --yes は既に登録済みの場所を入れ替える）
-mitos gaps [--limit N] [--all]                 聞かれたのに答えを持てなかった問いと、確かめていない決定
-mitos forget <dir|ラベル> [--yes]               その作業場所のデータを消す（--yes が無ければ数えるだけ）
-mitos doctor                                   plugin の版（repository・CLI・Claude Code・Codex・実行中 MCP）、
-                                               資格情報と接続、Linear MCP の疎通、DB の大きさ
-mitos --version                                この CLI の版と置き場所
-mitos advice                                   編集フックが効いているか（ヒット率・再提示率）
-mitos usage                                    OpenAI の使用量と残り
+mitos project add [--cwd <dir>] [--name <名前>]  作業場所を登録する（remote が無いなら --name でこの PC での名前を付ける）
+mitos project list                               登録済みの作業場所と、最後の同期
+mitos project forget <key|名前> [--yes]          作業場所のデータを消す（--yes が無ければ数えるだけ）
+mitos sync [--cwd <dir>]                         この PC にある作業場所の GitHub と文書を同期する（日次用）
+mitos search <質問> [--avoid] [--said me|others|<名前>] [--all] [--cwd <dir>] [--limit N]
+                                                 引けるかを確かめる（--said は発言を探す）
+mitos who [<呼び名> <ハンドル>... [--me]]         GitHub のハンドルと人を結ぶ（--me は持ち主）
+mitos trace context                              いまの session の会話と、進行中の作業を出す（trace の材料）
+mitos trace check <trace.json>                   trace の記録の形を確かめる（DB に触らない）
+mitos trace save <trace.json>                    trace の記録を入れる
+mitos capture flush                              自動記録の待ち行列を DB へ送る
+mitos init [--cwd <dir>]                         要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る
+mitos check [--cwd <dir>]                        .mitos/ の change.json を検査する（DB に触らない）
+mitos doctor                                     plugin の版、鍵と接続、schema、同期と自動記録の状態
+mitos advice                                     編集フックが制約を出した割合
+mitos --version                                  この CLI の版と置き場所
 ```
 
 ## 取り込めるもの

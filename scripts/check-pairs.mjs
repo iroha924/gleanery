@@ -26,41 +26,67 @@ const grab = (file, re, what) => {
   return m[1];
 };
 
-// ---- node.kind の一覧が AI 向けの 2 つの出口で揃っているか ----
+// ---- 知識の種類と状態が、DB の CHECK とコードで揃っているか ----
 //
-// 正本は DB の check 制約だが、広げる移行が複数ファイルに散るので、出口どうしを突き合わせる。
-// **片方に足してもう片方を忘れた**を捕まえられれば足りる。
-// 漏れると何が起きるかは .agents/skills/knowledge-schema/SKILL.md「nodeと検索の出口」。
-const kindSets = {
-  "server/src/mcp.ts（MCP の kinds）": grab(
-    "server/src/mcp.ts",
-    /kinds:\s*z\s*\.array\(\s*z\.enum\(\[([^\]]*)\]\)/,
-    "MCP の kinds enum",
-  )?.match(/"[a-z_]+"/g),
-  "server/src/search.ts（再ランクへ渡す札）": grab(
-    "server/src/search.ts",
-    /const LABEL[^{]*\{(.*?)^\};/ms,
-    "search.ts の LABEL",
-  )?.match(/^\s*"([a-z_]+)\//gm),
-};
-
-const kinds = {};
-for (const [where, hit] of Object.entries(kindSets)) {
-  // **0 件を「差が無い」と読ませない。**ここで黙って飛ばすと、その出口が照合から外れたまま
-  // 全体は成功で終わる。検査が効かなくなったこと自体を差と同じ強さで報告する。
-  if (!hit?.length) {
-    fail.push(`${where} から kind を 1 つも取り出せない。check-pairs.mjs の正規表現が実物とずれている`);
-    continue;
-  }
-  kinds[where] = new Set(hit.map((s) => s.replace(/[^a-z_]/g, "")));
+// 正本は db/schema.sql の knowledge の CHECK。コード側（server/src/knowledge.ts）は MCP の入力、画面のチャットの道具、
+// 札が読む写し。**片方に足してもう片方を忘れた**を捕まえる。DB だけに足すと検索の札が空になり、
+// コードだけに足すと取り込みが CHECK で落ちる。
+const schema = read("db/schema.sql");
+const knowledgeTable = schema.slice(
+  schema.indexOf("create table mitos.knowledge ("),
+  schema.indexOf("create index knowledge_listing"),
+);
+const dbKinds = grab("db/schema.sql", /kind in \(([^)]*)\)\s*\),\s*status text/, "knowledge.kind の CHECK")
+  ?.match(/'([a-z_]+)'/g)
+  ?.map((x) => x.replaceAll("'", ""));
+const codeKinds = grab(
+  "server/src/knowledge.ts",
+  /export const KINDS = \[([^\]]*)\]/,
+  "knowledge.ts の KINDS",
+)
+  ?.match(/"([a-z_]+)"/g)
+  ?.map((x) => x.replaceAll('"', ""));
+if (dbKinds && codeKinds && [...dbKinds].sort().join() !== [...codeKinds].sort().join()) {
+  fail.push(
+    `知識の種類が揃っていない: DB は ${dbKinds.join(" / ")}、knowledge.ts は ${codeKinds.join(" / ")}`,
+  );
 }
-const all = new Set(Object.values(kinds).flatMap((s) => [...s]));
-for (const [where, set] of Object.entries(kinds)) {
-  const missing = [...all].filter((k) => !set.has(k)).sort();
-  if (missing.length) {
+const dbStatuses = Object.fromEntries(
+  [...knowledgeTable.matchAll(/when '([a-z_]+)' then status is not null and status in \(([^)]*)\)/g)].map(
+    (m) => [
+      m[1],
+      [...m[2].matchAll(/'([a-z_]+)'/g)]
+        .map((x) => x[1])
+        .sort()
+        .join(),
+    ],
+  ),
+);
+const codeStatuses = Object.fromEntries(
+  [
+    ...(
+      grab(
+        "server/src/knowledge.ts",
+        /export const STATUSES = \{(.*?)\} as const/s,
+        "knowledge.ts の STATUSES",
+      ) ?? ""
+    ).matchAll(/([a-z_]+): \[([^\]]*)\]/g),
+  ].map((m) => [
+    m[1],
+    [...m[2].matchAll(/"([a-z_]+)"/g)]
+      .map((x) => x[1])
+      .sort()
+      .join(),
+  ]),
+);
+if (Object.keys(dbStatuses).length === 0)
+  fail.push(
+    "db/schema.sql から状態の CHECK を 1 つも取り出せない。check-pairs.mjs の正規表現が実物とずれている",
+  );
+for (const kind of new Set([...Object.keys(dbStatuses), ...Object.keys(codeStatuses)])) {
+  if (dbStatuses[kind] !== codeStatuses[kind]) {
     fail.push(
-      `kind の ${missing.join(" / ")} が ${where} に無い。` +
-        "足し方は .agents/skills/knowledge-schema/SKILL.md「nodeと検索の出口」",
+      `${kind} の状態が揃っていない: DB は ${dbStatuses[kind] ?? "無し"}、knowledge.ts は ${codeStatuses[kind] ?? "無し"}`,
     );
   }
 }

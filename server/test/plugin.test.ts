@@ -7,16 +7,13 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { loadEnv } from "../src/db.ts";
 import {
   compareVersions,
   differingFiles,
   type Install,
-  mcpNote,
   observe,
   parsePs,
   report,
-  rootState,
   type Seen,
   versionAt,
 } from "../src/plugin.ts";
@@ -65,24 +62,6 @@ test("mitos 以外の manifest と消えた root は版を持たない", () => {
   assert.equal(versionAt(other), null);
   assert.equal(versionAt(path.join(tmp, "missing")), null);
   assert.equal(versionAt(plugin("ok", "0.1.0").root), "0.1.0");
-});
-
-test("起動元が消えたら Skill のパスも無効と伝え、置き換え済みなら張り直しを促す", () => {
-  const live = plugin("live", "0.10.18");
-  assert.equal(rootState(live.root), "ok");
-  assert.equal(mcpNote("0.10.18", live.root), "mitos MCP 0.10.18");
-
-  const old = plugin("orphaned", "0.10.17");
-  fs.writeFileSync(path.join(old.root, ".orphaned_at"), "1789000000000");
-  assert.equal(rootState(old.root), "orphaned");
-  assert.match(
-    mcpNote("0.10.17", old.root),
-    /置き換えた。\/reload-plugins か session の張り直しで新しい版になる/,
-  );
-
-  const gone = path.join(tmp, "gone", "0.10.16");
-  assert.equal(rootState(gone), "gone");
-  assert.match(mcpNote("0.10.16", gone), /^mitos MCP 0\.10\.16。起動元 .* が消えている。Skill のパスも無効/);
 });
 
 test("中身の比較はホストが cache に足す印と .DS_Store を無視する", () => {
@@ -310,39 +289,6 @@ test("MCP の serverInfo は manifest の版を名乗る", async () => {
   );
   try {
     assert.equal(client.getServerVersion()?.version, versionAt(REPO_PLUGIN));
-  } finally {
-    await client.close();
-  }
-});
-
-// **読み取り用の鍵を自分で選ばない。**current-work.test.ts と同じく、RO が無ければ飛ばす。
-const hasRo = (() => {
-  try {
-    return Boolean(loadEnv().KNOWLEDGE_DB_URL_RO);
-  } catch {
-    return false;
-  }
-})();
-
-test("current_work の応答は記録の枠の外に実行版を添える", {
-  skip: hasRo ? false : "KNOWLEDGE_DB_URL_RO が無い",
-}, async () => {
-  const client = new Client({ name: "test", version: "0" });
-  await client.connect(
-    new StdioClientTransport({
-      command: process.execPath,
-      args: [path.join(SRC, "mcp.ts")],
-      stderr: "ignore",
-    }),
-  );
-  try {
-    // 未登録の場所の早期の応答と、登録済みの場所の応答を通す。記録の枠は「ここまで」の行で閉じるので、
-    // 最後の行が版の行なら枠の外にある。
-    for (const cwd of [os.tmpdir(), path.join(SRC, "..", "..")]) {
-      const r = await client.callTool({ name: "current_work", arguments: { cwd } });
-      const text = (r.content as { text: string }[])[0]?.text ?? "";
-      assert.equal(text.split("\n").at(-1), `mitos MCP ${versionAt(REPO_PLUGIN)}`, cwd);
-    }
   } finally {
     await client.close();
   }

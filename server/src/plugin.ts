@@ -46,17 +46,6 @@ export function rootState(root: string): "gone" | "orphaned" | "ok" {
   return "ok";
 }
 
-/** MCP の応答の末尾に置く 1 行。AI がその session の実行版と、張り直しの要否を知る口。 */
-export function mcpNote(version: string | null, root: string): string {
-  const v = `mitos MCP ${version ?? "（版不明）"}`;
-  const state = rootState(root);
-  if (state === "gone")
-    return `${v}。起動元 ${root} が消えている。Skill のパスも無効なので、Claude Code は /reload-plugins、Codex は開き直すと新しい版になる`;
-  if (state === "orphaned")
-    return `${v}。Claude Code がこの版を更新で置き換えた。/reload-plugins か session の張り直しで新しい版になる`;
-  return v;
-}
-
 /** 0.10.9 < 0.10.18 を文字列比較で逆転させない。 */
 export function compareVersions(a: string, b: string): number {
   const x = a.split(".").map(Number);

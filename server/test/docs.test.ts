@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Artifact } from "../src/artifacts.ts";
-import { liveKeys, markdownFiles, needEmbedding, projectDocs, sections, sectionText } from "../src/docs.ts";
+import { docHash, markdownFiles, projectDocs, sections } from "../src/docs.ts";
+import { knowledgeText } from "../src/knowledge.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
 // 説明と、その説明が指すコマンドが別々の断片になる。
@@ -54,12 +54,15 @@ test("長い節は切り捨てずに続きへ回す", () => {
   assert.ok(joined.includes("段落59"), "末尾が落ちた");
 });
 
-// 埋め込みには構造から文脈を付ける（github.ts の PR 題と同じ発想）。
+// 埋め込みには構造から文脈を付ける。どの文書のどの節かが前置されないと、節だけでは何の話か分からない。
 test("埋め込む文にはどの文書のどの節かが前置される", () => {
   const out = sections("docs/adr/0001-x.md", ["# 決定", "## Context", "背景の説明"].join("\n"));
   const s = out.find((x) => x.title === "Context");
   assert.ok(s);
-  assert.equal(sectionText(s), "docs/adr/0001-x.md > 決定 > Context\n## Context\n背景の説明");
+  assert.equal(
+    knowledgeText({ kind: "document", heading: s.trail, body: s.text, reason: null }),
+    "docs/adr/0001-x.md > 決定 > Context / 文書\n## Context\n背景の説明",
+  );
 });
 
 // 見出しの無い文書（README の冒頭だけ、CLAUDE.md の `@AGENTS.md` など）も落とさない。
@@ -67,7 +70,7 @@ test("見出しの無い本文も 1 件になる", () => {
   const out = sections("CLAUDE.md", "@AGENTS.md\n");
   assert.equal(out.length, 1);
   assert.equal(out[0]?.text, "@AGENTS.md");
-  assert.equal(out[0]?.key, "CLAUDE.md#claude.md");
+  assert.equal(out[0]?.key, "doc:CLAUDE.md#claude.md");
 });
 
 // **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
@@ -146,7 +149,7 @@ test("CRLF と BOM でも見出しで割れる", () => {
 });
 
 // **承認済みの成果物だけを入れる。**draft を入れると、未承認の AI 生成物が次の生成の根拠として引かれる。
-test("成果物は承認済みだけを節と原文にし、draft と .mitos のそれ以外は入れない", () => {
+test("成果物は承認済みだけを入れ、draft と .mitos のそれ以外は入れない", () => {
   const req = ".mitos/changes/auth/requirements.md";
   const artifact: Artifact = { kind: "requirements", change: "auth", changeTitle: "認証" };
   const bodies = new Map([
@@ -158,76 +161,40 @@ test("成果物は承認済みだけを節と原文にし、draft と .mitos の
     ["sub/.mitos/changes/x/requirements.md", "# 入れ子\n\n本文\n"],
   ]);
   const got = projectDocs(bodies, new Map([[req, artifact]]), new Map());
-  assert.deepEqual([...new Set(got.sections.map((s) => s.path))], ["README.md", req]);
-  assert.ok(got.sections.filter((s) => s.path === req).every((s) => s.artifact === artifact));
-  assert.equal(got.sections.find((s) => s.path === "README.md")?.artifact, undefined);
   assert.deepEqual(
-    got.sections.filter((s) => s.path === "README.md").map((s) => s.key),
-    sections("README.md", bodies.get("README.md") ?? "").map((s) => s.key),
-    "通常の文書の節が変わった",
+    got.map((d) => [d.path, d.kind, d.title]),
+    [
+      ["README.md", "document", "読んで"],
+      [req, "requirements", "要件"],
+    ],
   );
-  assert.deepEqual(got.sources, [{ key: req, text: bodies.get(req), at: null, artifact }]);
+  assert.equal(got[1]?.artifact, artifact);
 });
 
-// 墓標の対象外リストに原文の key が無いと、原文は挿入した直後に soft delete される。
-test("墓標を立てずに残す key には、節と原文の両方が入る", () => {
-  const req = ".mitos/changes/a/requirements.md";
-  const got = projectDocs(
-    new Map([
-      ["README.md", "# r\n\n本文\n"],
-      [req, "# 要件\n\n本文\n"],
-    ]),
-    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
-    new Map(),
-  );
-  const keys = liveKeys(got);
-  for (const s of got.sections) assert.ok(keys.includes(s.key), `${s.key} が墓標になる`);
-  assert.ok(keys.includes(req), "原文が墓標になる");
-});
-
-// 原文は検索しないので埋め込まない。draft へ戻して再承認した節は、墓標の行の埋め込みを使い回す。
-test("埋め込みを取り直すのは本文が変わった節か埋め込みの無い節だけで、原文は入らない", () => {
-  const req = ".mitos/changes/a/requirements.md";
-  const got = projectDocs(
-    new Map([[req, "# 要件\n\n## 変わらない\n\n同じ本文\n\n## 変わる\n\n新しい本文\n"]]),
-    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
-    new Map(),
-  );
-  const sha = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
-  const [same, changed] = got.sections;
-  assert.ok(same && changed);
-  const existing = new Map([
-    [same.key, { content_hash: sha(sectionText(same)), has_emb: true }],
-    [changed.key, { content_hash: "古い本文のハッシュ", has_emb: true }],
-  ]);
-  const need = needEmbedding(got.sections, existing).map((s) => s.key);
-  assert.deepEqual(need, [changed.key]);
-  assert.ok(!need.includes(req), "原文が埋め込み対象に入った");
-});
-
-// 節は見出しだけの節を落とすので、連結しても元に戻らない。原文は読んだ本文をそのまま持つ。
+// 節は見出しだけの節を落とすので、連結しても元に戻らない。画面が出す原文は読んだ本文をそのまま持つ。
 test("原文は見出しだけの節・コードフェンス・末尾の改行を含めて元の本文と一致する", () => {
   const req = ".mitos/changes/a/requirements.md";
   const body = "# 題\n\n## 見出しだけ\n### 子\n\n```sh\n# コメント\n```\n\n末尾\n\n";
-  const got = projectDocs(
+  const [doc] = projectDocs(
     new Map([[req, body]]),
     new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
     new Map(),
   );
-  assert.equal(got.sources[0]?.text, body);
-  assert.notEqual(got.sections.map((s) => s.text).join("\n"), body, "節の連結で戻るなら原文は要らない");
+  assert.equal(doc?.body, body);
+  assert.notEqual(doc?.sections.map((s) => s.text).join("\n"), body, "節の連結で戻るなら原文は要らない");
 });
 
-// 見出し slug は `@` を除かないので、`#@...` を原文の key にすると `## @...` の節と衝突し、後勝ちで片方が消える。
-test("原文の key は、どんな見出しから作った節の key とも交わらない", () => {
-  const req = ".mitos/changes/a/requirements.md";
-  const body = "## @artifact-source\n\n本文\n\n## .mitos/changes/a/requirements.md\n\n本文\n";
-  const got = projectDocs(
-    new Map([[req, body]]),
-    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
-    new Map(),
-  );
-  const sectionKeys = new Set(got.sections.map((s) => s.key));
-  for (const s of got.sources) assert.equal(sectionKeys.has(s.key), false, `${s.key} が節の key と衝突した`);
-  assert.ok(got.sections.every((s) => s.key.includes("#")));
+// **本文が同じ文書には書かない。**毎日の同期で全節を書き直すと、索引と埋め込みの行が膨らむ（実測で 2 万回の書き換え）。
+test("文書の hash は本文と承認の状態で決まり、同じなら同じ値になる", () => {
+  const bodies = new Map([["a.md", "# a\n\n本文\n"]]);
+  const [x] = projectDocs(bodies, new Map(), new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
+  const [y] = projectDocs(bodies, new Map(), new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
+  const [z] = projectDocs(new Map([["a.md", "# a\n\n本文を変えた\n"]]), new Map(), new Map());
+  assert.ok(x && y && z);
+  assert.ok(docHash(x).equals(docHash(y)));
+  assert.ok(!docHash(x).equals(docHash(z)));
+});
+
+test("中身の無い文書は入れない", () => {
+  assert.deepEqual(projectDocs(new Map([["empty.md", "  \n"]]), new Map(), new Map()), []);
 });

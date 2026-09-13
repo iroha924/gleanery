@@ -1,0 +1,207 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { after, before, test } from "node:test";
+import {
+  answersOf,
+  fit,
+  isOwnerTurn,
+  MAX_MESSAGE,
+  mask,
+  onHook,
+  type Spooled,
+  spoolDir,
+} from "../src/capture.ts";
+import { bytes } from "../src/text.ts";
+
+// 別の agent 向けの prompt が「持ち主の発言」として DB の大半を占めた先行事例がある。見分けに推測を使わない。
+test("subagent と、エージェントが起動した子の turn は持ち主の発言にしない", () => {
+  assert.equal(isOwnerTurn({ session_id: "s1" }, undefined), true, "印の無い session は持ち主");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "s1"), true, "自分が書いた印は自分の id と一致する");
+  assert.equal(isOwnerTurn({ session_id: "child" }, "s1"), false, "親の印を継いだ子");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "none"), false, "mitos が起動した headless");
+  assert.equal(isOwnerTurn({ session_id: "s1", agent_id: "a1" }, undefined), false, "subagent");
+  assert.equal(isOwnerTurn({}, undefined), false, "session の分からない入力");
+});
+
+test("128 KiB を超えた発言は冒頭と末尾だけを残し、元の大きさを持つ", () => {
+  const small = fit("短い");
+  assert.deepEqual(small, { body: "短い", truncated: false, originalBytes: bytes("短い") });
+  const big = `${"頭".repeat(20_000)}${"中".repeat(50_000)}${"尾".repeat(20_000)}`;
+  const got = fit(big);
+  assert.equal(got.truncated, true);
+  assert.equal(got.originalBytes, bytes(big));
+  assert.ok(bytes(got.body) < 20 * 1024, `${bytes(got.body)} bytes 残っている`);
+  assert.ok(got.body.startsWith("頭") && got.body.endsWith("尾"));
+  assert.match(got.body, /中央 [\d,]+ bytes を保存していない/);
+  assert.ok(bytes(big) > MAX_MESSAGE);
+});
+
+test("形の決まった鍵だけを伏せ、接続文字列はパスワードだけを伏せる", () => {
+  const got = mask(
+    [
+      "OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123",
+      "VOYAGE=pa-abcdefghijklmnopqrstuvwxyz0123",
+      "gh: ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+      "url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db",
+      "ふつうの文: sk は短いので伏せない、pa-ge も伏せない",
+    ].join("\n"),
+  );
+  for (const leak of ["sk-proj-abc", "pa-abcdef", "ghp_abc", "s3cr3t"])
+    assert.ok(!got.includes(leak), `${leak} が残った`);
+  assert.match(got, /postgres:\/\/mitos_reader:\[伏せた\]@ep-x\.neon\.tech\/db/);
+  assert.match(got, /ふつうの文: sk は短いので伏せない、pa-ge も伏せない/);
+});
+
+test("AskUserQuestion の答えを、質問と答えの組にする", () => {
+  assert.equal(
+    answersOf({ tool_response: { answers: { "全部推奨で？": "推奨", 選ぶもの: ["A", "B"] } } }),
+    "Q: 全部推奨で？\nA: 推奨\n\nQ: 選ぶもの\nA: A / B",
+  );
+  assert.equal(answersOf({ tool_response: {} }), null);
+});
+
+// ---- フックの入力から待ち行列までを通す ----
+
+const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-capture-home-")));
+const realHome = process.env.HOME;
+const repoDir = path.join(home, "repo");
+before(() => {
+  // この試験を Claude Code の Bash から走らせると、親の session の印を継いでいる。
+  delete process.env.MITOS_PARENT_SESSION;
+  process.env.HOME = home;
+  execFileSync("git", ["init", "-q", repoDir], { stdio: "ignore" });
+  fs.mkdirSync(path.join(repoDir, "server"));
+  execFileSync("git", ["-C", repoDir, "remote", "add", "origin", "https://github.com/o/r.git"], {
+    stdio: "ignore",
+  });
+});
+after(() => {
+  process.env.HOME = realHome;
+  fs.rmSync(home, { recursive: true, force: true });
+});
+const spooled = (): Spooled[] => {
+  const dir = spoolDir();
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".json") && !f.startsWith("."))
+    .sort()
+    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as Spooled);
+};
+const reset = () => fs.rmSync(spoolDir(), { recursive: true, force: true });
+
+test("持ち主の発言・AI の最後の応答・編集したファイルが待ち行列に入る", () => {
+  reset();
+  const base = { session_id: "s1", prompt_id: "p1", cwd: path.join(repoDir, "server") };
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "UserPromptSubmit",
+    prompt: "DB を作り直す。鍵は sk-proj-abcdefghijklmnopqrstuvwxyz0123",
+  });
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: path.join(repoDir, "db", "schema.sql") },
+  });
+  // リポジトリの外と、承認済みの成果物でない読み込みは残さない。
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: "/etc/hosts" },
+  });
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    tool_input: { file_path: "README.md" },
+  });
+  onHook("claude-code", {
+    ...base,
+    hook_event_name: "PostToolUse",
+    tool_name: "Read",
+    tool_input: { file_path: path.join(repoDir, ".mitos/changes/auth/design.md") },
+  });
+  const r = onHook("claude-code", {
+    ...base,
+    hook_event_name: "Stop",
+    last_assistant_message: "作り直した。",
+  });
+  assert.equal(r.flush, true, "Stop で送る");
+  const got = spooled();
+  const messages = got.filter((x) => x.kind === "message");
+  const files = got.filter((x) => x.kind === "file");
+  assert.deepEqual(
+    messages.map((m) => (m.kind === "message" ? [m.id, m.speaker, m.project] : [])),
+    [
+      ["p1:self", "self", "git:github.com/o/r"],
+      ["p1:assistant", "assistant", "git:github.com/o/r"],
+    ],
+  );
+  const said = messages[0];
+  assert.ok(said?.kind === "message" && !said.body.includes("sk-proj-abc"), "鍵が待ち行列に入った");
+  assert.deepEqual(
+    files.map((f) => (f.kind === "file" ? [f.path, f.action] : [])),
+    [
+      ["db/schema.sql", "edit"],
+      [".mitos/changes/auth/design.md", "read"],
+    ],
+  );
+});
+
+test("エージェントが起動した子と、作業場所の外の session は何も書かない", () => {
+  reset();
+  process.env.MITOS_PARENT_SESSION = "parent";
+  try {
+    onHook("claude-code", {
+      session_id: "child",
+      prompt_id: "p",
+      cwd: repoDir,
+      hook_event_name: "UserPromptSubmit",
+      prompt: "レビューして",
+    });
+  } finally {
+    delete process.env.MITOS_PARENT_SESSION;
+  }
+  onHook("claude-code", {
+    session_id: "s2",
+    prompt_id: "p",
+    cwd: os.tmpdir(),
+    hook_event_name: "UserPromptSubmit",
+    prompt: "外",
+  });
+  assert.deepEqual(spooled(), []);
+});
+
+test("SessionStart は、この session の id を子へ継がせる", () => {
+  const file = path.join(home, "env-file");
+  fs.writeFileSync(file, "");
+  process.env.CLAUDE_ENV_FILE = file;
+  try {
+    onHook("claude-code", { session_id: "abc-123", hook_event_name: "SessionStart" });
+    // 形の違う id はシェルへ書かない（CLAUDE_ENV_FILE はシェルで読まれる）。
+    onHook("claude-code", { session_id: "x; rm -rf ~", hook_event_name: "SessionStart" });
+  } finally {
+    delete process.env.CLAUDE_ENV_FILE;
+  }
+  assert.equal(fs.readFileSync(file, "utf8"), "export MITOS_PARENT_SESSION=abc-123\n");
+});
+
+test("Codex の apply_patch は見出しから編集先を読む", () => {
+  reset();
+  onHook("codex", {
+    session_id: "t1",
+    turn_id: "turn-1",
+    cwd: repoDir,
+    hook_event_name: "PostToolUse",
+    tool_name: "apply_patch",
+    tool_input: { command: "*** Begin Patch\n*** Update File: server/src/a.ts\n@@\n+x\n*** End Patch" },
+  });
+  const got = spooled();
+  assert.equal(got.length, 1);
+  assert.ok(got[0]?.kind === "file" && got[0].path === "server/src/a.ts" && got[0].host === "codex");
+});

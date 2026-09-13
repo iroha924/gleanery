@@ -2,7 +2,8 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import OpenAI from "openai";
 import { z } from "zod";
-import { labelOf, search } from "../../search.ts";
+import { KINDS } from "../../knowledge.ts";
+import { searchKnowledge, searchMessages } from "../../search.ts";
 import { db, env } from "../runtime.ts";
 import { positiveIds } from "../validation.ts";
 
@@ -10,7 +11,7 @@ const transcribeSchema = z.object({ audio: z.instanceof(File) });
 const replySchema = z
   .object({
     heard: z.string().trim().min(1).max(20_000),
-    scopeIds: positiveIds.optional(),
+    projects: positiveIds.min(1),
   })
   .strict();
 const polishSchema = z.object({ text: z.string().trim().min(1).max(50_000) }).strict();
@@ -97,13 +98,21 @@ const app = new Hono()
     }
   })
   .post("/reply", zValidator("json", replySchema), async (c) => {
-    const { heard, scopeIds } = c.req.valid("json");
+    const { heard, projects } = c.req.valid("json");
     if (!env.OPENAI_API_KEY) return c.json({ error: "OPENAI_API_KEY が無い" }, 500);
 
     try {
-      const { rows } = await search(db(), env, { question: heard, scopeIds, limit: 8 });
+      // 会議で聞かれるのは「どんな設計だったっけ？」と「あの時◯◯さんはなんて書いてた？」。
+      // 判断と文書（設計書を含む）と、人の発言の両方から引く。
+      const pool = await db();
+      const [knowledge, said] = await Promise.all([
+        searchKnowledge(pool, env, { question: heard, projects, kinds: [...KINDS], limit: 6 }),
+        searchMessages(pool, env, { question: heard, projects, limit: 4 }),
+      ]);
+      const rows = [...knowledge, ...said];
       const facts = rows.map(
-        (row, index) => `[${index + 1}] ${labelOf(row)}${row.text}${row.ex ? ` — ${row.ex}` : ""}`,
+        (row, index) =>
+          `[${index + 1}] ${row.label}${row.speaker ? `${row.speaker}: ` : ""}${row.text}${row.reason ? ` — ${row.reason}` : ""}`,
       );
       const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
       const result = await openai.responses.create({
@@ -149,10 +158,11 @@ const app = new Hono()
         ...output,
         facts: rows.map((row, index) => ({
           n: index + 1,
-          label: labelOf(row),
+          ref: row.ref,
+          label: row.label,
           text: row.text,
-          recordId: row.record_id,
-          recordTitle: row.record_title,
+          speaker: row.speaker,
+          context: row.context,
         })),
       });
     } catch (error) {
