@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、触ったファイルを残す。
+// mitos のレビュアー（subagent）が終わったときは、その報告を持ち主の画面へ出す（記録はしない）。
 //
 // **フックは手元の待ち行列へ書くだけにする。**網へは Stop のときにまとめて送る（async のフックなので待たせない）。
 // DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は入力から決定的に作る）。
@@ -248,12 +249,12 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     return { flush: false, notice: captureNotice(loadEnv()) };
   }
   if (event === "SubagentStop") {
-    // レビュアー（hooks.json の matcher が mitos:review-* に絞る）の生の報告を、終わった時点で持ち主の画面に出す。
-    // systemMessage はモデルの文脈に入らないので、親の Claude の判断は変えない。レビュアーは他人の diff を引用するので、
-    // 端末を乱す制御文字は落とす。
+    // レビュアーと validator（hooks.json の matcher が mitos:review-* に絞る）の生の報告を、終わった時点で持ち主の画面に
+    // 出す。systemMessage はモデルの文脈に入らないので、親の Claude の判断は変えない。レビュアーは他人の diff を引用するので、
+    // 端末を乱す制御文字と、見た目を偽れる文字（双方向の上書き、ゼロ幅、行区切り）は落とす。
     const report = (input.last_assistant_message ?? "")
       // biome-ignore lint/suspicious/noControlCharactersInRegex: 端末を乱す制御文字を落とすための範囲
-      .replace(/[ ---]/g, "")
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, "")
       .trim();
     return {
       flush: false,
@@ -644,6 +645,8 @@ async function main(): Promise<void> {
     return;
   }
   const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
+  // 塊ごとに文字へ変えると、境目で割れた多バイト文字が化ける。文字として読ませる。
+  process.stdin.setEncoding("utf8");
   let raw = "";
   for await (const chunk of process.stdin) raw += chunk;
   const { flush: send, notice } = onHook(host, JSON.parse(raw || "{}") as HookInput);

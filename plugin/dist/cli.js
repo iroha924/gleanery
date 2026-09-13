@@ -24565,7 +24565,7 @@ function onHook(host, input2) {
     return { flush: false, notice: captureNotice(loadEnv()) };
   }
   if (event === "SubagentStop") {
-    const report = (input2.last_assistant_message ?? "").replace(/[ ---]/g, "").trim();
+    const report = (input2.last_assistant_message ?? "").replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g, "").trim();
     return {
       flush: false,
       notice: report ? `${input2.agent_type ?? "レビュアー"} の報告
@@ -24880,6 +24880,7 @@ async function main() {
     return;
   }
   const host = process.argv[2] === "codex" ? "codex" : "claude-code";
+  process.stdin.setEncoding("utf8");
   let raw = "";
   for await (const chunk of process.stdin)
     raw += chunk;

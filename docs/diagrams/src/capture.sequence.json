@@ -118,7 +118,7 @@
       "from": "cc",
       "to": "hook",
       "kind": "async",
-      "label": "Stop：AI の最後の応答も書く"
+      "label": "Stop：AI の応答も書く（SubagentStop は報告を画面へ）"
     },
     {
       "from": "hook",

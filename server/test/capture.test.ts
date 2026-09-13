@@ -481,21 +481,39 @@ test("エージェントが起動した子と、作業場所の外の session �
 
 test("レビュアーが終わったら、その生の報告を持ち主の画面へ出し、会話としては残さない", () => {
   reset();
+  // 端末を乱す制御文字（ESC・CR）と、見た目を偽れる文字（双方向の上書き・ゼロ幅）は落とす。
+  const [esc, rlo, zw] = [0x1b, 0x202e, 0x200b].map((c) => String.fromCodePoint(c));
   const r = onHook("claude-code", {
     session_id: "s1",
     agent_id: "a1",
     agent_type: "mitos:review-security",
     cwd: repoDir,
     hook_event_name: "SubagentStop",
-    last_assistant_message: "verdict: pass\n[31mfindings: 0[0m\r\n",
+    last_assistant_message: `verdict: pass\n${esc}[31mfindings: 0${esc}[0m ${rlo}a${zw}b\r\n`,
   });
   assert.deepEqual(r, {
     flush: false,
-    notice: "mitos:review-security の報告\n\nverdict: pass\n[31mfindings: 0[0m",
+    notice: "mitos:review-security の報告\n\nverdict: pass\n[31mfindings: 0[0m ab",
   });
   assert.deepEqual(spooled(), []);
   const empty = onHook("claude-code", { session_id: "s1", agent_id: "a1", hook_event_name: "SubagentStop" });
   assert.equal(empty.notice, null, "報告が空なら何も出さない");
+});
+
+test("フックは、多バイト文字が標準入力の塊の境目で割れても化けずに読む", () => {
+  const out = execFileSync(process.execPath, [path.join(import.meta.dirname, "..", "src", "capture.ts")], {
+    input: JSON.stringify({
+      hook_event_name: "SubagentStop",
+      session_id: "s1",
+      agent_id: "a1",
+      agent_type: "mitos:review-adversarial",
+      last_assistant_message: "境".repeat(60_000),
+    }),
+    env: { ...process.env, HOME: home },
+  }).toString("utf8");
+  const shown = (JSON.parse(out) as { systemMessage: string }).systemMessage;
+  assert.equal(shown.includes(String.fromCodePoint(0xfffd)), false, "割れた文字が置き換え文字になった");
+  assert.ok(shown.endsWith("境".repeat(10)));
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {
