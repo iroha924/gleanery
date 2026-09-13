@@ -39181,6 +39181,8 @@ function head(s, n) {
   }
   return out;
 }
+var MAX_VALUE = 4096;
+var BARE_VALUE = new RegExp(`[^\\s"',;]{1,${MAX_VALUE}}`, "y");
 
 // server/src/knowledge.ts
 var KINDS = [

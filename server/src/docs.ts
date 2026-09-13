@@ -363,12 +363,8 @@ export async function syncDocs(
   const done = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId, "docs");
     const before = connector.headOid;
-    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit)) {
-      const latest = commitOf(root, opts.remote);
-      if (latest === before || isAncestor(root, before, latest))
-        return { refused: null, newer: before, changed: 0, removed: 0 };
-      return { refused: before, newer: null, changed: 0, removed: 0 };
-    }
+    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))
+      return { refused: before, changed: 0, removed: 0 };
     const known = new Map(
       (
         await client.query<{ external_id: string; content_hash: Buffer }>(
@@ -468,17 +464,20 @@ export async function syncDocs(
       "update mitos.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1",
       [connector.id, commit],
     );
-    return { refused: null, newer: null, changed: changed.length, removed: removed.rowCount ?? 0 };
+    return { refused: null, changed: changed.length, removed: removed.rowCount ?? 0 };
   });
 
-  if (done.refused)
+  if (done.refused) {
+    // 取り直しは transaction の外で行う（connector の行を掴んだまま、最大 60 秒の fetch を待たない）。
+    const latest = commitOf(root, opts.remote);
+    if (latest === done.refused || isAncestor(root, done.refused, latest))
+      return `別の同期が新しい commit（${done.refused.slice(0, 8)}）を先に入れていたので、何も書かなかった`;
     throw new Error(
       `前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` +
         "fast-forward でないので書かなかった（巻き戻し・force-push・分岐した branch への切り替え）。" +
         `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``,
     );
-  if (done.newer)
-    return `別の同期が新しい commit（${done.newer.slice(0, 8)}）を先に入れていたので、何も書かなかった`;
+  }
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
     `文書 ${docs.length} 本・節 ${sectionCount} 件`,

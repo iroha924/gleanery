@@ -24010,23 +24010,55 @@ var SECRETS = [
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\bbearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"]
+  [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
+  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"]
 ];
-var AUTH_HEADER = /(\bAuthorization["']?\s*[:=]\s*["']?\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+var AUTH_HEADER = /(\bAuthorization["']?\s*[:=]\s*(?:["']\s*)?(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+var HEADER_BEARER = /(:[ \t]*bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
 var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-var FIELD_ASSIGN = /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(?:"([^"\n]{0,512})"|'([^'\n]{0,512})'|([^\s"',;&]+))/gi;
+var FIELD_NAME = /(?:api|account|access|private|secret)[-_]?key["']?\s*[:=]\s*|(?:secret|token|passw(?:or)?d)["']?\s*[:=]\s*/gi;
+var MAX_VALUE = 4096;
+var BARE_VALUE = new RegExp(`[^\\s"',;]{1,${MAX_VALUE}}`, "y");
 function secretValue(quoted, v) {
   if (v.length < 8 || /^\$(?:\{|[A-Za-z_])/.test(v))
     return false;
   if (!quoted)
     return !/^[#$]/.test(v) && /\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v);
-  if (!/^[\x21-\x7e]+$/.test(v))
+  if (/^#[0-9a-f]{3,8}$/i.test(v) || !/[A-Za-z0-9]/.test(v))
     return false;
-  return /[^A-Za-z_-]/.test(v) || v.length >= 16 && !/[_-]/.test(v);
+  return !/\s/.test(v) || v.split(/\s+/).some((w) => /\d/.test(w) && /[A-Za-z]/.test(w));
 }
-var MYSQL_LINE = /\bmysql(?:dump|admin)?\b[^\n]*/g;
-var MYSQL_PASSWORD = /(\s-p)(?=[^\s-])\S+/g;
+function maskFields(text) {
+  let out = "";
+  let last = 0;
+  FIELD_NAME.lastIndex = 0;
+  for (let m = FIELD_NAME.exec(text);m; m = FIELD_NAME.exec(text)) {
+    const at = m.index + m[0].length;
+    const q = text[at];
+    let quote2 = "";
+    let value;
+    if (q === '"' || q === "'") {
+      const window = text.slice(at + 1, at + 2 + MAX_VALUE);
+      const close = window.indexOf(q);
+      if (close < 0 || window.slice(0, close).includes(`
+`))
+        continue;
+      quote2 = q;
+      value = window.slice(0, close);
+    } else {
+      BARE_VALUE.lastIndex = at;
+      value = BARE_VALUE.exec(text)?.[0] ?? "";
+    }
+    if (!secretValue(quote2 !== "", value))
+      continue;
+    out += `${text.slice(last, at)}${quote2}[伏せた]`;
+    last = at + quote2.length + value.length;
+    FIELD_NAME.lastIndex = last;
+  }
+  return out + text.slice(last);
+}
+var MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:[^\n;&|\\]|\\\n|\\(?!\n))*/g;
+var MYSQL_PASSWORD = /(\s-p)(?:'[^'\n]*'|"[^"\n]*"|(?=[^\s-])\S+)/;
 var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 var KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
 var KEY_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
@@ -24052,10 +24084,7 @@ function maskPrivateKeys(text) {
   return out + text.slice(last);
 }
 function mask(text) {
-  let out = maskPrivateKeys(text).replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, (all, name, sep, dq, sq, bare) => {
-    const quote2 = dq !== undefined ? '"' : sq !== undefined ? "'" : "";
-    return secretValue(quote2 !== "", dq ?? sq ?? bare ?? "") ? `${name}${sep}${quote2}[伏せた]${quote2}` : all;
-  }).replace(MYSQL_LINE, (line) => line.replace(MYSQL_PASSWORD, "$1[伏せた]"));
+  let out = maskFields(maskPrivateKeys(text).replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(HEADER_BEARER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]")).replace(MYSQL_COMMAND, (command) => command.replace(MYSQL_PASSWORD, "$1[伏せた]"));
   for (const [re, what] of SECRETS)
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;

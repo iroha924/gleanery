@@ -77,6 +77,21 @@ const LEAKS: [string, string][] = [
     "S3cr3tPass",
   ],
   ["-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA\n-----END RSA PRIVATE KEY-----", "MIIEowIB"],
+  [`{"SessionToken": "IQoJb3JpZ2luX2Vj${"EAoaCXVzLWVhc3QtMSJHMEUCIQD".repeat(26)}"}`, "IQoJb3Jp"],
+  ["spring.datasource.password=Xk9&mZ2pQ7vL", "mZ2pQ7vL"],
+  ["db.password=Tr0ub4dor&3", "Tr0ub4dor"],
+  ['MYSQL_ROOT_PASSWORD: "SuperSecret"', "SuperSecret"],
+  ['"password": "letmeinnow"', "letmeinnow"],
+  ['{"db_password":"sunshineforever"}', "sunshineforever"],
+  ['"password": "stunt-kayak-ferry-enamel"', "stunt-kayak"],
+  ['"secret": "Tr0ub4dor 3xyz"', "Tr0ub4dor"],
+  ['"password": "p\u00e4ssw\u00f6rd-2024"', "2024"],
+  ['"password": "パスワード1234abcd"', "1234abcd"],
+  ["password: P4ss&word1", "word1"],
+  ['"token": "curl -d password=Tr0ub4dor33 https://x"', "Tr0ub4dor33"],
+  ["mysql \\\n  -u root \\\n  -phunter2x db", "hunter2x"],
+  ["mysql -u root -p'correct horse battery' db", "horse"],
+  ["X-Auth: bearer abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnop"],
 ];
 
 // 伏せた文は元に戻せない。コードの型注釈・変数の参照・画面の文言・パスを鍵とみなして消すと、会話の中身が失われる。
@@ -96,10 +111,11 @@ const KEEPS = [
   "the basic src/components/app-sidebar.tsx layout",
   "--brand-token: #ff00aa11;",
   "PWD=/Users/someone/Projects/x PASS=3 FAIL=0",
-  '{ password: "Required" }',
   '{ password: "Password is required" }',
   'password: "パスワードを入力してください"',
-  '{"token": "refresh_token"}',
+  '{"brand-token": "#ff00aa11"}',
+  "'surface-token': '#0f172acc'",
+  "the bearer src/app/api/v2/route.ts handles it",
 ];
 
 test("形の決まった鍵と、名前で分かる代入・ヘッダ・URL の資格情報・mysql -p・秘密鍵を伏せる", () => {
@@ -115,6 +131,14 @@ test("形の決まった鍵と、名前で分かる代入・ヘッダ・URL の�
   );
   assert.match(mask("redis://:hunter2x@cache:6379"), /@cache:6379/, "どこへ繋いだかは残す");
   assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[伏せた]"}', "引用符を残す");
+  // 鍵の名前に付いた引用符の値は、文言でも伏せる側に倒す（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
+  assert.equal(mask('{ password: "Required" }'), '{ password: "[伏せた]" }');
+  // 同じコマンドの最初の -p だけ。後ろの別のコマンドの -p は消さない。
+  const chained = mask("mysql -u root -phunter2x db && ssh -p2222 host && cp -pr src dst");
+  assert.ok(
+    !chained.includes("hunter2x") && chained.includes("ssh -p2222") && chained.includes("cp -pr"),
+    chained,
+  );
 });
 
 test("鍵でない代入・画面の文言・パス・URL は変えない", () => {
@@ -136,11 +160,24 @@ test("伏せ字は引き金を繰り返した入力でも線形に終わる", ()
     "token=",
     'token: "',
     "Authorization: Bearer ",
+    "eyJ-",
   ]) {
     const text = unit.repeat(Math.ceil(N / unit.length)).slice(0, N);
     const t = performance.now();
     mask(text);
     assert.ok(performance.now() - t < 500, `${unit}: ${(performance.now() - t).toFixed(0)} ms`);
+  }
+  // 引き金の後に長い空白・改行・閉じない値が続く形。
+  for (const [name, text] of [
+    ["Authorization: の後の空白", `Authorization:${" ".repeat(N)}`],
+    ["Authorization: の後の改行", `Authorization:${"\n".repeat(N)}`],
+    ["閉じない引用符", `token: "${"a".repeat(N)}`],
+    ["長い mysql の行", `mysql ${"a ".repeat(N / 2)}`],
+    ["継いだ行が続く mysql", `mysql ${"\\\n".repeat(N / 2)}`],
+  ]) {
+    const t = performance.now();
+    mask(text as string);
+    assert.ok(performance.now() - t < 500, `${name}: ${(performance.now() - t).toFixed(0)} ms`);
   }
 });
 

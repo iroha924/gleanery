@@ -24268,23 +24268,55 @@ var SECRETS = [
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  [/\bbearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"]
+  [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
+  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"]
 ];
-var AUTH_HEADER = /(\bAuthorization["']?\s*[:=]\s*["']?\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+var AUTH_HEADER = /(\bAuthorization["']?\s*[:=]\s*(?:["']\s*)?(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+var HEADER_BEARER = /(:[ \t]*bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
 var ENV_ASSIGN = /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-var FIELD_ASSIGN = /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(?:"([^"\n]{0,512})"|'([^'\n]{0,512})'|([^\s"',;&]+))/gi;
+var FIELD_NAME = /(?:api|account|access|private|secret)[-_]?key["']?\s*[:=]\s*|(?:secret|token|passw(?:or)?d)["']?\s*[:=]\s*/gi;
+var MAX_VALUE = 4096;
+var BARE_VALUE = new RegExp(`[^\\s"',;]{1,${MAX_VALUE}}`, "y");
 function secretValue(quoted, v) {
   if (v.length < 8 || /^\$(?:\{|[A-Za-z_])/.test(v))
     return false;
   if (!quoted)
     return !/^[#$]/.test(v) && /\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v);
-  if (!/^[\x21-\x7e]+$/.test(v))
+  if (/^#[0-9a-f]{3,8}$/i.test(v) || !/[A-Za-z0-9]/.test(v))
     return false;
-  return /[^A-Za-z_-]/.test(v) || v.length >= 16 && !/[_-]/.test(v);
+  return !/\s/.test(v) || v.split(/\s+/).some((w) => /\d/.test(w) && /[A-Za-z]/.test(w));
 }
-var MYSQL_LINE = /\bmysql(?:dump|admin)?\b[^\n]*/g;
-var MYSQL_PASSWORD = /(\s-p)(?=[^\s-])\S+/g;
+function maskFields(text) {
+  let out = "";
+  let last = 0;
+  FIELD_NAME.lastIndex = 0;
+  for (let m = FIELD_NAME.exec(text);m; m = FIELD_NAME.exec(text)) {
+    const at = m.index + m[0].length;
+    const q = text[at];
+    let quote2 = "";
+    let value;
+    if (q === '"' || q === "'") {
+      const window = text.slice(at + 1, at + 2 + MAX_VALUE);
+      const close = window.indexOf(q);
+      if (close < 0 || window.slice(0, close).includes(`
+`))
+        continue;
+      quote2 = q;
+      value = window.slice(0, close);
+    } else {
+      BARE_VALUE.lastIndex = at;
+      value = BARE_VALUE.exec(text)?.[0] ?? "";
+    }
+    if (!secretValue(quote2 !== "", value))
+      continue;
+    out += `${text.slice(last, at)}${quote2}[伏せた]`;
+    last = at + quote2.length + value.length;
+    FIELD_NAME.lastIndex = last;
+  }
+  return out + text.slice(last);
+}
+var MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:[^\n;&|\\]|\\\n|\\(?!\n))*/g;
+var MYSQL_PASSWORD = /(\s-p)(?:'[^'\n]*'|"[^"\n]*"|(?=[^\s-])\S+)/;
 var URL_CREDENTIALS = /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 var KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
 var KEY_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
@@ -24310,10 +24342,7 @@ function maskPrivateKeys(text) {
   return out + text.slice(last);
 }
 function mask(text) {
-  let out = maskPrivateKeys(text).replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]").replace(FIELD_ASSIGN, (all, name, sep, dq, sq, bare) => {
-    const quote2 = dq !== undefined ? '"' : sq !== undefined ? "'" : "";
-    return secretValue(quote2 !== "", dq ?? sq ?? bare ?? "") ? `${name}${sep}${quote2}[伏せた]${quote2}` : all;
-  }).replace(MYSQL_LINE, (line) => line.replace(MYSQL_PASSWORD, "$1[伏せた]"));
+  let out = maskFields(maskPrivateKeys(text).replace(URL_CREDENTIALS, "$1[伏せた]@$2").replace(AUTH_HEADER, "$1[伏せた]").replace(HEADER_BEARER, "$1[伏せた]").replace(ENV_ASSIGN, "$1$2[伏せた]")).replace(MYSQL_COMMAND, (command) => command.replace(MYSQL_PASSWORD, "$1[伏せた]"));
   for (const [re, what] of SECRETS)
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
@@ -25056,12 +25085,8 @@ async function syncDocs(client, projectId2, root, opts) {
   const done = await inTransaction(client, async () => {
     const connector = await connectorOf(client, projectId2, "docs");
     const before = connector.headOid;
-    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit)) {
-      const latest = commitOf(root, opts.remote);
-      if (latest === before || isAncestor(root, before, latest))
-        return { refused: null, newer: before, changed: 0, removed: 0 };
-      return { refused: before, newer: null, changed: 0, removed: 0 };
-    }
+    if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))
+      return { refused: before, changed: 0, removed: 0 };
     const known = new Map((await client.query("select external_id, content_hash from mitos.source_item where connector_id = $1", [connector.id])).rows.map((r) => [r.external_id, r.content_hash]));
     const changed = docs.filter((d) => !known.get(d.path)?.equals(docHash(d)));
     if (changed.length) {
@@ -25130,12 +25155,14 @@ ${s.text}`)
     }
     const removed = await client.query("delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))", [connector.id, docs.map((d) => d.path)]);
     await client.query("update mitos.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1", [connector.id, commit]);
-    return { refused: null, newer: null, changed: changed.length, removed: removed.rowCount ?? 0 };
+    return { refused: null, changed: changed.length, removed: removed.rowCount ?? 0 };
   });
-  if (done.refused)
+  if (done.refused) {
+    const latest = commitOf(root, opts.remote);
+    if (latest === done.refused || isAncestor(root, done.refused, latest))
+      return `別の同期が新しい commit（${done.refused.slice(0, 8)}）を先に入れていたので、何も書かなかった`;
     throw new Error(`前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` + "fast-forward でないので書かなかった（巻き戻し・force-push・分岐した branch への切り替え）。" + `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``);
-  if (done.newer)
-    return `別の同期が新しい commit（${done.newer.slice(0, 8)}）を先に入れていたので、何も書かなかった`;
+  }
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
     `文書 ${docs.length} 本・節 ${sectionCount} 件`,

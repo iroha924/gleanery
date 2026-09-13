@@ -104,6 +104,7 @@ export const clean = (s: string): string => s.replaceAll("\u0000", "");
 // 形は 5 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報、認証ヘッダの値、
 // `mysql -p` のパスワード。載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
 // **どれも入力の長さに対して線形で終わる形に保つ。**フックは 128 KiB までの発言を、trace は上限の無い本文を通す。
+// 量指定子を隣り合わせない（同じ文字を取り合って二乗になる）。語の途中から照合を始めない（`eyJ-eyJ-…` で二乗になる）。
 const SECRETS: [RegExp, string][] = [
   [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
   [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
@@ -119,40 +120,75 @@ const SECRETS: [RegExp, string][] = [
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
   [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
-  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  // ヘッダの外に貼った bearer の値。数字を含む値だけ（「refresh token <パス>」を消さない）。
-  [/\bbearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/gi, "認証ヘッダの値"],
+  [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
+  // ヘッダの外に貼った値。大文字の Bearer と数字を含む値だけ（「the bearer src/app/v2/route.ts」を消さない）。
+  [/\bBearer\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"],
 ];
 // Authorization ヘッダの値。ヘッダ・JSON・コードの形（`"Authorization": "Basic …"`）を同じに扱う。
 const AUTH_HEADER =
-  /(\bAuthorization["']?\s*[:=]\s*["']?\s*(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+  /(\bAuthorization["']?\s*[:=]\s*(?:["']\s*)?(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
+// ほかの名前のヘッダに入れた bearer の値（`-H "X-Auth: bearer …"`）。
+const HEADER_BEARER = /(:[ \t]*bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
 // 環境変数の形（大文字の名前への代入）。**値が変数の参照なら伏せない**（`PASSWORD=$DB_PASSWORD`）。
 // KEY は単独か、語の区切り（`_`）か鍵の語（MASTERKEY）の後だけ。PASS・PWD は `_` の後だけ
 // （MONKEY=banana、COMPASS=north と、シェルの作業ディレクトリ PWD=/Users/… を消さない）。
 const ENV_ASSIGN =
   /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
 // 設定ファイル・JSON・ヘッダ・URL の形（名前が鍵の語で終わる）。照合は鍵の語から始め、名前の前半は見ない。
-// 引用符で囲んだ値は閉じる引用符まで、囲まない値は空白・区切り（`,;&`）までを値とする（`&` で切らないと、
-// 伏せなかった値が後ろの `&client_secret=…` まで呑む）。値が鍵らしいかは関数で決める。
-const FIELD_ASSIGN =
-  /((?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)(["']?\s*[:=]\s*)(?:"([^"\n]{0,512})"|'([^'\n]{0,512})'|([^\s"',;&]+))/gi;
+const FIELD_NAME =
+  /(?:api|account|access|private|secret)[-_]?key["']?\s*[:=]\s*|(?:secret|token|passw(?:or)?d)["']?\s*[:=]\s*/gi;
+/** 値として読む長さの上限。越える値は判定しない（窓を切らないと、値の中の鍵の語ごとに末尾まで読み直す）。 */
+const MAX_VALUE = 4096;
+const BARE_VALUE = new RegExp(`[^\\s"',;]{1,${MAX_VALUE}}`, "y");
 /**
- * 代入の値が鍵らしいか。**伏せた文は戻せないので、コードと画面の文言を消さない側へ倒す。**
+ * 代入の値が鍵らしいか。**鍵の名前に付いた値は、伏せる側に倒す**（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
  *   変数の参照（`${…}`、`$NAME`）は伏せない
  *   囲まない値: 数字と英字を両方含む 8 文字以上（`token = getToken()`、`password: string`、`#ff00aa` を消さない）
- *   囲んだ値: 空白や ASCII 以外を含むものは画面の文言として残す（`"Password is required"`）。数字や記号を含む
- *   8 文字以上は鍵。英字だけのものは、区切り（`_` `-`）の無い 16 文字以上（合言葉の形）だけを鍵とみなす
- *   （`"Required"`、`"refresh_token"` を消さない）
+ *   囲んだ値: 8 文字以上は伏せる。例外は CSS の色、英数字を含まない文言（日本語だけ）、数字と英字の混ざった語を
+ *   1 つも持たない文（`"Password is required"`）。英字だけの合言葉を空白で区切った値も文と区別できないので残る
  */
 function secretValue(quoted: boolean, v: string): boolean {
   if (v.length < 8 || /^\$(?:\{|[A-Za-z_])/.test(v)) return false;
   if (!quoted) return !/^[#$]/.test(v) && /\d/.test(v) && /[A-Za-z]/.test(v) && !/[()]/.test(v);
-  if (!/^[\x21-\x7e]+$/.test(v)) return false;
-  return /[^A-Za-z_-]/.test(v) || (v.length >= 16 && !/[_-]/.test(v));
+  if (/^#[0-9a-f]{3,8}$/i.test(v) || !/[A-Za-z0-9]/.test(v)) return false;
+  return !/\s/.test(v) || v.split(/\s+/).some((w) => /\d/.test(w) && /[A-Za-z]/.test(w));
 }
-// `mysql -p<パスワード>`（-p の直後に空白を置かない形だけがパスワードを持つ）。mysql を含む行の中だけを見る。
-const MYSQL_LINE = /\bmysql(?:dump|admin)?\b[^\n]*/g;
-const MYSQL_PASSWORD = /(\s-p)(?=[^\s-])\S+/g;
+
+/**
+ * 鍵の名前への代入を伏せる。**伏せなかった値の中も続けて見る**（`?refresh_token=$RT&client_secret=…` の後ろの鍵、
+ * `"token": "curl -d password=…"` の中の鍵）。値は窓（MAX_VALUE）の中だけを読むので、線形で終わる。
+ */
+function maskFields(text: string): string {
+  let out = "";
+  let last = 0;
+  FIELD_NAME.lastIndex = 0;
+  for (let m = FIELD_NAME.exec(text); m; m = FIELD_NAME.exec(text)) {
+    const at = m.index + m[0].length;
+    const q = text[at];
+    let quote = "";
+    let value: string;
+    if (q === '"' || q === "'") {
+      const window = text.slice(at + 1, at + 2 + MAX_VALUE);
+      const close = window.indexOf(q);
+      if (close < 0 || window.slice(0, close).includes("\n")) continue;
+      quote = q;
+      value = window.slice(0, close);
+    } else {
+      BARE_VALUE.lastIndex = at;
+      value = BARE_VALUE.exec(text)?.[0] ?? "";
+    }
+    if (!secretValue(quote !== "", value)) continue;
+    out += `${text.slice(last, at)}${quote}[伏せた]`;
+    last = at + quote.length + value.length;
+    FIELD_NAME.lastIndex = last;
+  }
+  return out + text.slice(last);
+}
+
+// `mysql -p<パスワード>`（-p の直後に空白を置かない形だけがパスワードを持つ）。同じコマンドの中（`&&` `;` `|` と
+// 改行まで。`\` で継いだ行は続き）の最初の -p だけを伏せる（後ろの `ssh -p2222`、`cp -pr` を消さない）。
+const MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:[^\n;&|\\]|\\\n|\\(?!\n))*/g;
+const MYSQL_PASSWORD = /(\s-p)(?:'[^'\n]*'|"[^"\n]*"|(?=[^\s-])\S+)/;
 // URL の資格情報は、パスワードに @ を含んでも host の直前の @ まで伏せる。どこへ繋いだかは話の中身として残す。
 // userinfo は最初の `/` より前にしか無い（`http://localhost:5173/@vite` のポートを伏せない）。ここで切ると線形で終わる。
 const URL_CREDENTIALS =
@@ -184,17 +220,13 @@ function maskPrivateKeys(text: string): string {
 
 export function mask(text: string): string {
   // 代入・ヘッダ・URL を先に伏せる（値ごと消える）。残った裸の鍵を形で伏せる。
-  let out = maskPrivateKeys(text)
-    .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
-    .replace(AUTH_HEADER, "$1[伏せた]")
-    .replace(ENV_ASSIGN, "$1$2[伏せた]")
-    .replace(FIELD_ASSIGN, (all, name: string, sep: string, dq?: string, sq?: string, bare?: string) => {
-      const quote = dq !== undefined ? '"' : sq !== undefined ? "'" : "";
-      return secretValue(quote !== "", dq ?? sq ?? bare ?? "")
-        ? `${name}${sep}${quote}[伏せた]${quote}`
-        : all;
-    })
-    .replace(MYSQL_LINE, (line) => line.replace(MYSQL_PASSWORD, "$1[伏せた]"));
+  let out = maskFields(
+    maskPrivateKeys(text)
+      .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
+      .replace(AUTH_HEADER, "$1[伏せた]")
+      .replace(HEADER_BEARER, "$1[伏せた]")
+      .replace(ENV_ASSIGN, "$1$2[伏せた]"),
+  ).replace(MYSQL_COMMAND, (command) => command.replace(MYSQL_PASSWORD, "$1[伏せた]"));
   for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
