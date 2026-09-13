@@ -482,13 +482,34 @@ test("エージェントが起動した子と、作業場所の外の session �
 });
 
 test("フックの入力は、多バイト文字が塊の境目で割れても化けずに読む", async () => {
-  // 標準入力は塊で届く。「境」の 3 バイトの途中で塊を分け、境目を確実に作る。
+  // 標準入力は塊で届く。「境」の 3 バイトの途中で塊を分け、境目を作る。
   const input = Buffer.from(JSON.stringify({ prompt: "境界" }));
   const cut = input.indexOf(Buffer.from("境")) + 1;
-  const got = await readInput(
-    Readable.from([input.subarray(0, cut), input.subarray(cut)], { objectMode: false }),
+  const parts = () => Readable.from([input.subarray(0, cut), input.subarray(cut)], { objectMode: false });
+  // 塊が 1 つにまとまると境目ができず、この試験は何も確かめなくなる。先に 2 つ届くことを見る。
+  const chunks: unknown[] = [];
+  for await (const chunk of parts()) chunks.push(chunk);
+  assert.equal(chunks.length, 2);
+  assert.equal((await readInput(parts())).prompt, "境界");
+});
+
+test("記録のフックを起動すると、標準入力の持ち主の発言が待ち行列に入る", () => {
+  // 入口の判定と main の配線を通す。main は例外を握りつぶすので、壊れても記録が黙って止まるだけになる。
+  reset();
+  execFileSync(process.execPath, [path.join(import.meta.dirname, "..", "src", "capture.ts")], {
+    input: JSON.stringify({
+      hook_event_name: "UserPromptSubmit",
+      session_id: "s1",
+      prompt_id: "p1",
+      cwd: repoDir,
+      prompt: "境界",
+    }),
+    env: { ...process.env, HOME: home },
+  });
+  assert.deepEqual(
+    spooled().flatMap((m) => (m.kind === "message" ? [m.body] : [])),
+    ["境界"],
   );
-  assert.equal(got.prompt, "境界");
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {
