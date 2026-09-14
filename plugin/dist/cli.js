@@ -24357,6 +24357,14 @@ function mask(text) {
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
+function reason(e) {
+  if (!(e instanceof Error))
+    return String(e);
+  if (e.message)
+    return e.message;
+  const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).filter(Boolean).join(" / ") : "";
+  return inner || e.name || "理由の分からない失敗";
+}
 
 // server/src/knowledge.ts
 var KINDS = [
@@ -24467,6 +24475,7 @@ var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)]
 `);
 var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
 `).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+var inline = (s) => plain(s).replace(/\s+/g, " ").trim();
 var width = (text) => [...text].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0);
 var pad = (text, to) => text + " ".repeat(Math.max(1, to - width(text)));
 
@@ -24659,14 +24668,20 @@ function readState() {
     }
   };
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
-  let state = {};
+  let raw = {};
   try {
     const parsed = JSON.parse(fs4.readFileSync(stateFile(), "utf8"));
     if (parsed && typeof parsed === "object")
-      state = parsed;
+      raw = parsed;
   } catch {}
-  const error61 = typeof state.error === "string" ? state.error || "理由の分からない失敗" : null;
-  return { ...state, ...counts, stuck: error61 && counts.pending > 0 ? error61 : null };
+  const error61 = typeof raw.error === "string" ? raw.error || "理由の分からない失敗" : null;
+  return {
+    flushedAt: typeof raw.flushedAt === "string" ? raw.flushedAt : undefined,
+    error: error61,
+    dropped: typeof raw.dropped === "number" ? raw.dropped : undefined,
+    ...counts,
+    stuck: error61 && counts.pending > 0 ? error61 : null
+  };
 }
 function lock() {
   const file2 = path4.join(spoolDir(), ".lock");
@@ -24879,12 +24894,7 @@ async function flush(env) {
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).join(" / ") : "";
-    writeState({
-      flushedAt: new Date().toISOString(),
-      error: (message || inner || "理由の分からない失敗").slice(0, 300)
-    });
+    writeState({ flushedAt: new Date().toISOString(), error: reason(e).slice(0, 300) });
     throw e;
   } finally {
     await client?.end().catch(() => {});
@@ -25253,7 +25263,7 @@ ${s.text}`)
 var MAX_ATTEMPTS = 5;
 var BATCH2 = 200;
 var rejectsInput = (e) => e instanceof VoyageError && [400, 413, 422].includes(e.status);
-var reason = (e) => (e instanceof Error ? e.message : String(e)).slice(0, 500);
+var reason2 = (e) => (e instanceof Error ? e.message : String(e)).slice(0, 500);
 async function store(db, t, rows, vectors) {
   const r = await db.query(`update mitos.${t.name} e set embedding = x.v::extensions.halfvec, status = 'ready', model = $5,
        source_hash = x.hash, last_error = null, updated_at = now()
@@ -25269,7 +25279,7 @@ async function store(db, t, rows, vectors) {
 }
 async function reject(db, t, row, e) {
   await db.query(`update mitos.${t.name} set status = 'error', attempts = attempts + 1, last_error = $3, updated_at = now()
-     where ${t.id}::text = $1 and source_hash = $2`, [row.id, row.stored, reason(e)]);
+     where ${t.id}::text = $1 and source_hash = $2`, [row.id, row.stored, reason2(e)]);
 }
 async function run(db, env, t, load) {
   if (!env.VOYAGE_API_KEY)
@@ -25287,7 +25297,7 @@ async function run(db, env, t, load) {
       continue;
     } catch (e) {
       if (!rejectsInput(e))
-        return { embedded, failed, stopped: reason(e) };
+        return { embedded, failed, stopped: reason2(e) };
     }
     const refused = [];
     for (const row of rows) {
@@ -25295,7 +25305,7 @@ async function run(db, env, t, load) {
         embedded += await store(db, t, [row], await embed(env, [row.text], "document"));
       } catch (e) {
         if (!rejectsInput(e))
-          return { embedded, failed, stopped: reason(e) };
+          return { embedded, failed, stopped: reason2(e) };
         refused.push([row, e]);
       }
     }
@@ -25306,7 +25316,7 @@ async function run(db, env, t, load) {
         return {
           embedded,
           failed,
-          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${reason(e)}）` : reason(e)
+          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${reason2(e)}）` : reason2(e)
         };
       }
     }
@@ -26690,6 +26700,7 @@ var USAGE = `使い方:
   mitos --version                                  この CLI の版と置き場所
 
 資格情報: ~/.claude/knowledge.env（KNOWLEDGE_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）`;
+var heading = "mitos";
 var OPTIONS = {
   cwd: { type: "string" },
   host: { type: "string" },
@@ -26733,7 +26744,7 @@ async function syncOne(c, id, place, resetDocs = false) {
     try {
       out.push(`${label}: ${await fn()}`);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = reason(e);
       await c.query("update mitos.connector set last_error = $3 where project_id = $1 and provider = $2", [
         id,
         provider,
@@ -26861,7 +26872,7 @@ async function doctor(env, cwd) {
       });
       say("ok", KEY[role], "繋がる / schema は期待どおり");
     } catch (e) {
-      say("fail", KEY[role], `繋がらない: ${plain(e instanceof Error ? e.message : String(e))}`);
+      say("fail", KEY[role], `繋がらない: ${plain(reason(e))}`);
     }
   }
   say(env.VOYAGE_API_KEY ? "ok" : "fail", "VOYAGE_API_KEY", env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）");
@@ -26900,7 +26911,7 @@ ${rule("作業場所")}`);
         }
       });
     } catch (e) {
-      say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
+      say("fail", "DB", `読めない: ${plain(reason(e))}`);
     }
   }
   console.log(foot(issues.length ? `直すもの ${issues.length} 件: ${[...new Set(issues)].map((name) => {
@@ -26924,6 +26935,7 @@ async function main2() {
     throw new Error(`知らないコマンド: ${cmd}
 
 ${USAGE}`);
+  heading = `mitos ${cmd}`;
   const { values: opt, positionals: rest } = parseArgs({
     args: argv.slice(1),
     options: OPTIONS,
@@ -26950,6 +26962,7 @@ ${USAGE}`);
     return;
   }
   if (cmd === "trace" && rest[0] === "check") {
+    heading = "mitos trace check";
     const file3 = rest[1];
     if (!file3)
       throw new Error(`確かめる記録のファイルを指定する
@@ -26996,6 +27009,7 @@ ${USAGE}`);
       throw new Error(`mitos capture flush だけがある
 
 ${USAGE}`);
+    heading = "mitos capture flush";
     const r = await flush(env);
     if (r.busy) {
       console.log(panel("mitos capture flush", [], "別の送信が走っているので何もしなかった（終われば待ち行列は空になる）"));
@@ -27006,6 +27020,7 @@ ${USAGE}`);
   }
   if (cmd === "trace") {
     if (rest[0] === "context") {
+      heading = "mitos trace context";
       console.log(framed(await traceContext(env, cwd, opt.host)));
       return;
     }
@@ -27013,6 +27028,7 @@ ${USAGE}`);
       throw new Error(`mitos trace context / check <file> / save <file>
 
 ${USAGE}`);
+    heading = "mitos trace save";
     const r = checkTrace(readTrace(rest[1]));
     if (!r.trace)
       throw new Error(`記録の形が通らない:
@@ -27036,6 +27052,7 @@ ${r.problems.map((p) => `  ${p}`).join(`
   if (cmd === "project") {
     const sub = rest[0];
     if (sub === "add") {
+      heading = "mitos project add";
       const place = opt.name ? nameLocal(cwd, opt.name) : placeOf(cwd);
       await withDb(env, "ingest", async (c) => {
         const r = await c.query("insert into mitos.project (key, name) values ($1, $2) on conflict (key) do nothing returning id", [place.key, place.name]);
@@ -27044,6 +27061,7 @@ ${r.problems.map((p) => `  ${p}`).join(`
       return;
     }
     if (sub === "list") {
+      heading = "mitos project list";
       const { found, ambiguous } = localRoots();
       await withDb(env, "reader", async (c) => {
         const r = await c.query(`select p.key, p.name, max(cn.last_success_at) as last from mitos.project p
@@ -27058,6 +27076,7 @@ ${r.problems.map((p) => `  ${p}`).join(`
       return;
     }
     if (sub === "forget") {
+      heading = "mitos project forget";
       const target = rest[1];
       if (!target)
         throw new Error(`消す作業場所を key か名前で指定する
@@ -27092,7 +27111,7 @@ ${USAGE}`);
       throw new Error("--reset-docs は --cwd で作業場所を 1 つ指定したときだけ使える");
     const startedAt = new Date;
     console.log(title(`mitos sync ${startedAt.toLocaleString("sv-SE")}`));
-    await flush(env).catch((e) => console.error(rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(e instanceof Error ? e.message : String(e))}`)));
+    await flush(env).catch((e) => console.error(rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(reason(e))}`)));
     const failed = [];
     let done = 0;
     try {
@@ -27118,7 +27137,7 @@ ${USAGE}`);
             done++;
           } catch (e) {
             failed.push(p.name);
-            const lines = plain(e instanceof Error ? e.message : String(e)).split(`
+            const lines = plain(reason(e)).split(`
 `);
             console.error(rule([`${mark("fail")} ${p.name}`, ...lines.map((l) => l.trim() ? `  ${l.trim()}` : "")].join(`
 `)));
@@ -27132,7 +27151,7 @@ ${USAGE}`);
             console.log(rule(line));
       });
     } catch (e) {
-      console.error(rule(`${mark("fail")} ${plain(e instanceof Error ? e.message : String(e))}`));
+      console.error(rule(`${mark("fail")} ${plain(reason(e))}`));
       console.log(foot(`${mark("fail")} 止まった ${new Date().toLocaleString("sv-SE")}`));
       process.exitCode = 1;
       return;
@@ -27164,7 +27183,7 @@ ${USAGE}`);
            left join mitos.message m on m.identity_id = i.id
            where i.person_id is null group by i.id order by count(m.id) desc limit 20`);
         console.log(panel("mitos who", [
-          ...people.map((p) => `${p.isSelf ? "→ " : "  "}${pad(plain(p.display), 12)}${p.handles.join(" / ")}`),
+          ...people.map((p) => `${p.isSelf ? "→ " : "  "}${pad(inline(p.display), 12)}${p.handles.join(" / ")}`),
           ...unknown2.rows.length ? [
             "",
             "まだ誰か決めていないハンドル（発言の多い順）:",
@@ -27187,21 +27206,12 @@ ${USAGE}`);
            where provider = 'github' and lower(handle) = any($2) returning handle`, [pe.rows[0]?.id, handles.map((h) => h.replace(/^@/, "").toLowerCase())]);
       });
       const missing = handles.filter((h) => !linked.rows.some((l) => l.handle.toLowerCase() === h.replace(/^@/, "").toLowerCase()));
-      console.log(panel("mitos who", missing.length ? [`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`] : [], `名簿に入れた: ${plain(display).replace(/\s+/g, " ")}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`));
+      console.log(panel("mitos who", missing.length ? [`まだ取り込んでいないハンドル: ${missing.map(inline).join(" / ")}（同期の後にもう一度結ぶ）`] : [], `名簿に入れた: ${inline(display)}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`));
     });
     return;
   }
 }
 main2().catch((e) => {
-  let typed = "";
-  try {
-    typed = parseArgs({
-      args: process.argv.slice(2),
-      options: OPTIONS,
-      strict: false,
-      allowPositionals: true
-    }).positionals.slice(0, 2).join(" ");
-  } catch {}
-  console.error(panel(plain(`mitos ${typed}`).replace(/\s+/g, " ").trim(), [plain(e instanceof Error ? e.message : String(e))], `${mark("fail")} 止まった`));
+  console.error(panel(heading, [plain(reason(e))], `${mark("fail")} 止まった`));
   process.exit(1);
 });

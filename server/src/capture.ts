@@ -26,7 +26,7 @@ import { connect, EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, vec
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
-import { bytes, clean, head, mask, sha256, tail, tsvector, uuidFrom } from "./text.ts";
+import { bytes, clean, head, mask, reason, sha256, tail, tsvector, uuidFrom } from "./text.ts";
 
 // 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の待ち行列を触らない）。
 export const spoolDir = (): string => path.join(os.homedir(), ".claude", "mitos-spool");
@@ -336,16 +336,23 @@ export function readState(): State & { pending: number; rejected: number; stuck:
     }
   };
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
-  let state: State = {};
+  // 欄ごとに型を確かめて読む（外から書き換えられても、doctor と SessionStart の警告を落とさない）。
+  let raw: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
-    if (parsed && typeof parsed === "object") state = parsed as State;
+    if (parsed && typeof parsed === "object") raw = parsed as Record<string, unknown>;
   } catch {
     // まだ送っていないか、書きかけで壊れていて読めない
   }
-  // error は送信の失敗で文字列、成功で null。文字列でないものは読めなかった扱いにする（外から書き換えられても落ちない）。
-  const error = typeof state.error === "string" ? state.error || "理由の分からない失敗" : null;
-  return { ...state, ...counts, stuck: error && counts.pending > 0 ? error : null };
+  // error は送信の失敗で文字列、成功で null。理由の文が空でも失敗は失敗として扱う。
+  const error = typeof raw.error === "string" ? raw.error || "理由の分からない失敗" : null;
+  return {
+    flushedAt: typeof raw.flushedAt === "string" ? raw.flushedAt : undefined,
+    error,
+    dropped: typeof raw.dropped === "number" ? raw.dropped : undefined,
+    ...counts,
+    stuck: error && counts.pending > 0 ? error : null,
+  };
 }
 
 /**
@@ -631,16 +638,7 @@ export async function flush(
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
-    // pg は、複数のアドレスへの接続がすべて拒まれると理由の文が空の AggregateError を返す。そのときは下のエラーの理由を拾う。
-    const message = e instanceof Error ? e.message : String(e);
-    const inner =
-      e instanceof AggregateError
-        ? e.errors.map((x: unknown) => (x instanceof Error ? x.message : String(x))).join(" / ")
-        : "";
-    writeState({
-      flushedAt: new Date().toISOString(),
-      error: (message || inner || "理由の分からない失敗").slice(0, 300),
-    });
+    writeState({ flushedAt: new Date().toISOString(), error: reason(e).slice(0, 300) });
     throw e;
   } finally {
     await client?.end().catch(() => {});

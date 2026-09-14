@@ -13,7 +13,7 @@ import { syncDocs } from "./docs.ts";
 import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
-import { foot, type Mark, mark, pad, panel, plain, rule, title, width } from "./panel.ts";
+import { foot, inline, type Mark, mark, pad, panel, plain, rule, title, width } from "./panel.ts";
 import { observe, ROOT, report, versionAt } from "./plugin.ts";
 import { identify, localRoots, nameLocal, type Place, projectId } from "./project.ts";
 import {
@@ -26,7 +26,7 @@ import {
   searchMessages,
   workDetail,
 } from "./search.ts";
-import { head } from "./text.ts";
+import { head, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 
 const USAGE = `使い方:
@@ -52,6 +52,9 @@ const USAGE = `使い方:
 資格情報: ~/.claude/knowledge.env（KNOWLEDGE_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）`;
 
 // 引数の解釈を自前で書かない。手書きのループは知らないフラグと `--name=値` を黙って捨てる。
+/** エラーの枠の見出し。振り分けた分岐が決まった文字列で詳しくしていく（打った引数は入れない）。 */
+let heading = "mitos";
+
 const OPTIONS = {
   cwd: { type: "string" },
   host: { type: "string" },
@@ -109,7 +112,7 @@ async function syncOne(c: pg.Client, id: number, place: Place, resetDocs = false
     try {
       out.push(`${label}: ${await fn()}`);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = reason(e);
       await c
         .query("update mitos.connector set last_error = $3 where project_id = $1 and provider = $2", [
           id,
@@ -258,7 +261,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
       });
       say("ok", KEY[role], "繋がる / schema は期待どおり");
     } catch (e) {
-      say("fail", KEY[role], `繋がらない: ${plain(e instanceof Error ? e.message : String(e))}`);
+      say("fail", KEY[role], `繋がらない: ${plain(reason(e))}`);
     }
   }
   say(
@@ -340,7 +343,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
         }
       });
     } catch (e) {
-      say("fail", "DB", `読めない: ${plain(e instanceof Error ? e.message : String(e))}`);
+      say("fail", "DB", `読めない: ${plain(reason(e))}`);
     }
   }
   // 件数は行の数で数え、名前だけ重ねない（同じ名前の Codex の cache や作業場所が複数あっても件数は減らさない）。
@@ -371,6 +374,7 @@ async function main(): Promise<void> {
   }
   const KNOWN = ["project", "sync", "search", "who", "trace", "capture", "init", "check", "doctor", "advice"];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
+  heading = `mitos ${cmd}`;
   const { values: opt, positionals: rest } = parseArgs({
     args: argv.slice(1),
     options: OPTIONS,
@@ -415,6 +419,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "trace" && rest[0] === "check") {
+    heading = "mitos trace check";
     const file = rest[1];
     if (!file) throw new Error(`確かめる記録のファイルを指定する\n\n${USAGE}`);
     const r = checkTrace(readTrace(file));
@@ -475,6 +480,7 @@ async function main(): Promise<void> {
   if (cmd === "doctor") return doctor(env, cwd);
   if (cmd === "capture") {
     if (rest[0] !== "flush") throw new Error(`mitos capture flush だけがある\n\n${USAGE}`);
+    heading = "mitos capture flush";
     const r = await flush(env);
     if (r.busy) {
       console.log(
@@ -499,11 +505,13 @@ async function main(): Promise<void> {
   }
   if (cmd === "trace") {
     if (rest[0] === "context") {
+      heading = "mitos trace context";
       console.log(framed(await traceContext(env, cwd, opt.host)));
       return;
     }
     if (rest[0] !== "save" || !rest[1])
       throw new Error(`mitos trace context / check <file> / save <file>\n\n${USAGE}`);
+    heading = "mitos trace save";
     const r = checkTrace(readTrace(rest[1]));
     if (!r.trace) throw new Error(`記録の形が通らない:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
     const trace = r.trace;
@@ -536,6 +544,7 @@ async function main(): Promise<void> {
   if (cmd === "project") {
     const sub = rest[0];
     if (sub === "add") {
+      heading = "mitos project add";
       const place = opt.name ? nameLocal(cwd, opt.name) : placeOf(cwd);
       await withDb(env, "ingest", async (c) => {
         const r = await c.query<{ id: string }>(
@@ -555,6 +564,7 @@ async function main(): Promise<void> {
       return;
     }
     if (sub === "list") {
+      heading = "mitos project list";
       const { found, ambiguous } = localRoots();
       await withDb(env, "reader", async (c) => {
         const r = await c.query<{ key: string; name: string; last: Date | null }>(
@@ -578,6 +588,7 @@ async function main(): Promise<void> {
       return;
     }
     if (sub === "forget") {
+      heading = "mitos project forget";
       const target = rest[1];
       if (!target) throw new Error(`消す作業場所を key か名前で指定する\n\n${USAGE}`);
       await withDb(env, "ingest", async (c) => {
@@ -624,9 +635,7 @@ async function main(): Promise<void> {
     const startedAt = new Date();
     console.log(title(`mitos sync ${startedAt.toLocaleString("sv-SE")}`));
     await flush(env).catch((e: unknown) =>
-      console.error(
-        rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(e instanceof Error ? e.message : String(e))}`),
-      ),
+      console.error(rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(reason(e))}`)),
     );
     const failed: string[] = [];
     let done = 0;
@@ -658,7 +667,7 @@ async function main(): Promise<void> {
           } catch (e) {
             // 1 つ落ちても残りは回す。失敗は終了コードへ出す（launchd の LastExitStatus で見える）。
             failed.push(p.name);
-            const lines = plain(e instanceof Error ? e.message : String(e)).split("\n");
+            const lines = plain(reason(e)).split("\n");
             console.error(
               rule(
                 [`${mark("fail")} ${p.name}`, ...lines.map((l) => (l.trim() ? `  ${l.trim()}` : ""))].join(
@@ -677,7 +686,7 @@ async function main(): Promise<void> {
       });
     } catch (e) {
       // 見出しを出した後で止まっても、枠を閉じてから終わる（ログは日をまたいで追記される）。
-      console.error(rule(`${mark("fail")} ${plain(e instanceof Error ? e.message : String(e))}`));
+      console.error(rule(`${mark("fail")} ${plain(reason(e))}`));
       console.log(foot(`${mark("fail")} 止まった ${new Date().toLocaleString("sv-SE")}`));
       process.exitCode = 1;
       return;
@@ -728,7 +737,7 @@ async function main(): Promise<void> {
             "mitos who",
             [
               ...people.map(
-                (p) => `${p.isSelf ? "→ " : "  "}${pad(plain(p.display), 12)}${p.handles.join(" / ")}`,
+                (p) => `${p.isSelf ? "→ " : "  "}${pad(inline(p.display), 12)}${p.handles.join(" / ")}`,
               ),
               ...(unknown.rows.length
                 ? [
@@ -767,9 +776,9 @@ async function main(): Promise<void> {
         panel(
           "mitos who",
           missing.length
-            ? [`まだ取り込んでいないハンドル: ${missing.join(" / ")}（同期の後にもう一度結ぶ）`]
+            ? [`まだ取り込んでいないハンドル: ${missing.map(inline).join(" / ")}（同期の後にもう一度結ぶ）`]
             : [],
-          `名簿に入れた: ${plain(display).replace(/\s+/g, " ")}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`,
+          `名簿に入れた: ${inline(display)}${opt.me ? "（持ち主）" : ""} = ${linked.rows.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`,
         ),
       );
     });
@@ -778,28 +787,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
-  // 見出しは打った引数の先頭 2 つまで（サブコマンドを持つコマンドでも、どれが止まったか分かる）。
-  // 見出しには行頭の印が付かないので、改行を空白にまとめて 1 行にする（引数から偽の締めの行を作らせない）。
-  let typed = "";
-  try {
-    // フラグとその値を除いた、コマンドとサブコマンド（フラグの値をコマンド名として出さない）。
-    typed = parseArgs({
-      args: process.argv.slice(2),
-      options: OPTIONS,
-      strict: false,
-      allowPositionals: true,
-    })
-      .positionals.slice(0, 2)
-      .join(" ");
-  } catch {
-    // 引数を解釈できないときは、見出しを mitos だけにする
-  }
-  console.error(
-    panel(
-      plain(`mitos ${typed}`).replace(/\s+/g, " ").trim(),
-      [plain(e instanceof Error ? e.message : String(e))],
-      `${mark("fail")} 止まった`,
-    ),
-  );
+  console.error(panel(heading, [plain(reason(e))], `${mark("fail")} 止まった`));
   process.exit(1);
 });

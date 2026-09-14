@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bytes, clean, head, tail, terms, tsquery, tsvector, uuidFrom } from "../src/text.ts";
+import { bytes, clean, head, reason, tail, terms, tsquery, tsvector, uuidFrom } from "../src/text.ts";
 
 // ひらがなだけの語（助詞・助動詞・「こと」）はどの行にも当たり、語彙側の順位を薄める。
 test("語は日本語を語に割り、ひらがなだけの語を落とす", () => {
@@ -61,4 +61,16 @@ test("バイトで切り、文字の途中で切らない", () => {
 
 test("NUL を落とす（PostgreSQL の text は持てない）", () => {
   assert.equal(clean(`a${String.fromCharCode(0)}b`), "ab");
+});
+
+test("例外の理由の文は、理由の空の AggregateError なら中のエラーの理由をつなぐ", () => {
+  // pg は、複数のアドレスへの接続がすべて拒まれるとこの形で返す。
+  const refused = new AggregateError([
+    new Error("connect ECONNREFUSED ::1:1"),
+    new Error("connect ECONNREFUSED 127.0.0.1:1"),
+  ]);
+  assert.equal(reason(refused), "connect ECONNREFUSED ::1:1 / connect ECONNREFUSED 127.0.0.1:1");
+  assert.equal(reason(new Error("鍵が無い")), "鍵が無い");
+  assert.equal(reason(new AggregateError([])), "AggregateError");
+  assert.equal(reason("文字列"), "文字列");
 });

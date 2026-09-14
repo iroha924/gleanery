@@ -144,13 +144,14 @@ const marks = Object.fromEntries(
 if (Object.keys(LEDGER).every((k) => marks[k])) {
   const states = Object.values(LEDGER).join("|");
   const review = read("plugin/skills/review/SKILL.md");
-  // 凡例は印の字を問わずに取り出す（MARKS に無い字を書いたら、それを食い違いとして出す）。表は「| 印 状態」のセルを見る。
+  // 凡例は印の字を問わずに取り出す（MARKS に無い字を書いたら、それを食い違いとして出す）。表と本文は、状態名の直前にある
+  // 記号 1 字（BMP の外も含む）を印とみなし、バッククォートや太字で囲んでいても読む。囲いと表の区切りの字は印にしない。
   const legend = [
     ...(
       grab("plugin/skills/review/SKILL.md", /状態は印（(.*?)）/, "review Skill の台帳の凡例") ?? ""
     ).matchAll(new RegExp(`\`([^\`]+)\` (${states})`, "g")),
   ];
-  const cells = [...review.matchAll(new RegExp(`\\| (\\S) (${states})`, "g"))];
+  const cells = [...review.matchAll(new RegExp(`(?![\`*|])(\\p{S})[\`*]*\\s*(${states})`, "gu"))];
   const missing = Object.values(LEDGER).filter((state) => !legend.some((m) => m[2] === state));
   if (missing.length) fail.push(`review Skill の台帳の凡例に ${missing.join(" / ")} の印が無い`);
   for (const [, glyph, state] of [...legend, ...cells]) {

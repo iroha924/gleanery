@@ -535,19 +535,28 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
   reset();
   const file = path.join(home, ".claude", "mitos-capture.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
+  const capture = { KNOWLEDGE_DB_URL_CAPTURE: "x" };
+  fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
+  assert.equal(readState().stuck, null, "待ちが空なら、失敗は過去のもの");
+  // 以降は待ちが 1 件ある状態で見る（待ちが無ければ、壊れた状態でも判定は null になって何も確かめない）。
+  fs.mkdirSync(spoolDir(), { recursive: true });
+  fs.writeFileSync(path.join(spoolDir(), "1.json"), "{}");
   for (const body of ["null", "{", "3", '{"error":1}', '{"error":{"a":1}}']) {
     fs.writeFileSync(file, body);
     assert.equal(readState().stuck, null, body);
+    assert.equal(captureNotice(capture), null, body);
   }
-  fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
-  assert.equal(readState().stuck, null, "待ちが空なら、失敗は過去のもの");
-  fs.mkdirSync(spoolDir(), { recursive: true });
-  fs.writeFileSync(path.join(spoolDir(), "1.json"), "{}");
-  assert.equal(readState().stuck, "auth");
+  // 型の違う欄は読まない（doctor の行へ、壊れた日時や制御文字をそのまま出さない）。
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ error: "auth", flushedAt: 5, dropped: String.fromCodePoint(0x1b) }),
+  );
+  const s = readState();
+  assert.deepEqual([s.stuck, s.flushedAt, s.dropped], ["auth", undefined, undefined]);
   // 理由の文が空の失敗も、送れていないことに変わりはない。
   fs.writeFileSync(file, JSON.stringify({ error: "" }));
   assert.equal(readState().stuck, "理由の分からない失敗");
-  assert.match(captureNotice({ KNOWLEDGE_DB_URL_CAPTURE: "x" }) ?? "", /送れていない/);
+  assert.match(captureNotice(capture) ?? "", /送れていない/);
   reset();
   fs.rmSync(file);
 });

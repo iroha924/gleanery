@@ -24099,6 +24099,14 @@ function mask(text) {
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
+function reason(e) {
+  if (!(e instanceof Error))
+    return String(e);
+  if (e.message)
+    return e.message;
+  const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).filter(Boolean).join(" / ") : "";
+  return inner || e.name || "理由の分からない失敗";
+}
 
 // server/src/knowledge.ts
 function messageText(m) {
@@ -24310,14 +24318,20 @@ function readState() {
     }
   };
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
-  let state = {};
+  let raw = {};
   try {
     const parsed = JSON.parse(fs3.readFileSync(stateFile(), "utf8"));
     if (parsed && typeof parsed === "object")
-      state = parsed;
+      raw = parsed;
   } catch {}
-  const error61 = typeof state.error === "string" ? state.error || "理由の分からない失敗" : null;
-  return { ...state, ...counts, stuck: error61 && counts.pending > 0 ? error61 : null };
+  const error61 = typeof raw.error === "string" ? raw.error || "理由の分からない失敗" : null;
+  return {
+    flushedAt: typeof raw.flushedAt === "string" ? raw.flushedAt : undefined,
+    error: error61,
+    dropped: typeof raw.dropped === "number" ? raw.dropped : undefined,
+    ...counts,
+    stuck: error61 && counts.pending > 0 ? error61 : null
+  };
 }
 function lock() {
   const file2 = path3.join(spoolDir(), ".lock");
@@ -24530,12 +24544,7 @@ async function flush(env) {
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).join(" / ") : "";
-    writeState({
-      flushedAt: new Date().toISOString(),
-      error: (message || inner || "理由の分からない失敗").slice(0, 300)
-    });
+    writeState({ flushedAt: new Date().toISOString(), error: reason(e).slice(0, 300) });
     throw e;
   } finally {
     await client?.end().catch(() => {});

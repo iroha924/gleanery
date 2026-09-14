@@ -244,3 +244,20 @@ export function mask(text: string): string {
   for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
+
+/**
+ * 例外の理由の文。pg は、複数のアドレスへの接続がすべて拒まれると理由の文が空の AggregateError を返すので、
+ * そのときは中のエラーの理由をつなぐ。
+ */
+export function reason(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  if (e.message) return e.message;
+  const inner =
+    e instanceof AggregateError
+      ? e.errors
+          .map((x: unknown) => (x instanceof Error ? x.message : String(x)))
+          .filter(Boolean)
+          .join(" / ")
+      : "";
+  return inner || e.name || "理由の分からない失敗";
+}
