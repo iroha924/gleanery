@@ -13,13 +13,19 @@ export type Env = Record<string, string | undefined>;
 // どのプロジェクトからでも同じものを指せるよう、置き場所を 1 つに固定する。
 export const GLOBAL_ENV = path.join(os.homedir(), ".claude", "knowledge.env");
 
+export function parseEnv(text: string): Env {
+  const out: Env = {};
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (m?.[1] && out[m[1]] === undefined) out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
+  }
+  return out;
+}
+
 function readInto(out: Env, file: string): boolean {
   if (!fs.existsSync(file)) return false;
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
-    if (m?.[1] && !process.env[m[1]] && out[m[1]] === undefined) {
-      out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
-    }
+  for (const [k, v] of Object.entries(parseEnv(fs.readFileSync(file, "utf8")))) {
+    if (!process.env[k] && out[k] === undefined) out[k] = v;
   }
   return true;
 }

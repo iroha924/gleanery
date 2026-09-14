@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { pendingMigrations } from "../src/admin.ts";
+import { ownerKeyFromBranchFile, pendingMigrations } from "../src/admin.ts";
 import { SCHEMA_REVISION } from "../src/db.ts";
 
 test("DB の版より新しい migration だけを、revision の昇順で返す", () => {
@@ -87,4 +87,49 @@ test("db/migrations は revision 3 から欠番も重複も無く続き、最後
     revisions.at(-1),
     Number(sql.match(/comment on schema mitos is 'mitos schema revision (\d+)'/)?.[1]),
   );
+});
+
+// branch の鍵とみなした owner の鍵は、端末でなくても db:migrate を当てられる。本番の鍵をそう読み違えると、
+// AI が stdin へ endpoint 名を流して本番へ DDL を当てられる。
+const BRANCH_DIR = { KNOWLEDGE_ENV_DIR: "/tmp/mitos-branch" };
+const BRANCH_URL = "postgres://u:p@ep-branch.example.neon.tech/db";
+
+test("KNOWLEDGE_ENV_DIR の .env に owner の鍵があり、process.env に無ければ branch の鍵とみなす", () => {
+  for (const text of [
+    `KNOWLEDGE_DB_URL=${BRANCH_URL}\n`,
+    `# branch\nexport KNOWLEDGE_DB_URL="${BRANCH_URL}"\n`,
+    `KNOWLEDGE_DB_URL_RO=${BRANCH_URL}\n  KNOWLEDGE_DB_URL = ${BRANCH_URL}\n`,
+  ]) {
+    assert.equal(ownerKeyFromBranchFile(BRANCH_DIR, text), true, text);
+  }
+});
+
+// loadEnv はそのとき ~/.claude/knowledge.env の owner の鍵で補う。
+test("KNOWLEDGE_ENV_DIR の .env に owner の鍵が無ければ（別の鍵だけ・コメント行・ファイルが無い）本番の鍵とみなす", () => {
+  for (const text of [
+    `KNOWLEDGE_DB_URL_RO=${BRANCH_URL}\nKNOWLEDGE_DB_URL_INGEST=${BRANCH_URL}\n`,
+    `# KNOWLEDGE_DB_URL=${BRANCH_URL}\n`,
+    `knowledge_db_url=${BRANCH_URL}\n`,
+    "",
+    undefined,
+  ]) {
+    assert.equal(ownerKeyFromBranchFile(BRANCH_DIR, text), false, String(text));
+  }
+});
+
+// loadEnv は process.env の鍵を .env で上書きしない。
+test("process.env に owner の鍵があれば、KNOWLEDGE_ENV_DIR の .env にあっても本番の鍵とみなす", () => {
+  assert.equal(
+    ownerKeyFromBranchFile(
+      { ...BRANCH_DIR, KNOWLEDGE_DB_URL: BRANCH_URL },
+      `KNOWLEDGE_DB_URL=${BRANCH_URL}\n`,
+    ),
+    false,
+  );
+});
+
+test("KNOWLEDGE_ENV_DIR が無ければ、渡した .env に owner の鍵があっても本番の鍵とみなす", () => {
+  for (const env of [{}, { KNOWLEDGE_ENV_DIR: "" }]) {
+    assert.equal(ownerKeyFromBranchFile(env, `KNOWLEDGE_DB_URL=${BRANCH_URL}\n`), false, JSON.stringify(env));
+  }
 });

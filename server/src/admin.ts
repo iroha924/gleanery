@@ -13,7 +13,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { connect, type Db, GLOBAL_ENV, inTransaction, KEY, loadEnv } from "./db.ts";
+import { connect, type Db, type Env, GLOBAL_ENV, inTransaction, KEY, loadEnv, parseEnv } from "./db.ts";
 import { reason } from "./text.ts";
 
 const SCHEMA = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "db", "schema.sql");
@@ -88,9 +88,29 @@ async function revisionOf(db: Db): Promise<number> {
   return got;
 }
 
+/** loadEnv の探索順で、owner の鍵が KNOWLEDGE_ENV_DIR/.env から来るか。 */
+export function ownerKeyFromBranchFile(env: Env, branchEnvText: string | undefined): boolean {
+  return (
+    Boolean(env.KNOWLEDGE_ENV_DIR) &&
+    env[KEY.owner] === undefined &&
+    branchEnvText !== undefined &&
+    parseEnv(branchEnvText)[KEY.owner] !== undefined
+  );
+}
+
 async function migrate(): Promise<void> {
   const env = loadEnv();
   const t = target(env[KEY.owner]);
+  // endpoint 名の確認は stdin へ流し込めば通る。本番へは持ち主が端末で当て、非対話は検証用の branch の鍵にだけ許す。
+  if (!process.stdin.isTTY) {
+    const dir = process.env.KNOWLEDGE_ENV_DIR;
+    const file = dir ? path.join(dir, ".env") : undefined;
+    const branch = file && fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
+    if (!ownerKeyFromBranchFile(process.env, branch))
+      throw new Error(
+        `本番の鍵（${KEY.owner} を KNOWLEDGE_ENV_DIR/.env 以外から読んだ）で当てるときは、持ち主が端末で \`bun run db:migrate\` を打つ`,
+      );
+  }
   const c = await connect(env, "owner");
   try {
     const files = fs.readdirSync(MIGRATIONS);

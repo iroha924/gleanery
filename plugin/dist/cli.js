@@ -24043,15 +24043,22 @@ var esm_default = import_lib.default;
 
 // server/src/db.ts
 var GLOBAL_ENV = path3.join(os2.homedir(), ".claude", "knowledge.env");
+function parseEnv(text) {
+  const out = {};
+  for (const line of text.split(`
+`)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (m?.[1] && out[m[1]] === undefined)
+      out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
+  }
+  return out;
+}
 function readInto(out, file2) {
   if (!fs3.existsSync(file2))
     return false;
-  for (const line of fs3.readFileSync(file2, "utf8").split(`
-`)) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
-    if (m?.[1] && !process.env[m[1]] && out[m[1]] === undefined) {
-      out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
-    }
+  for (const [k, v] of Object.entries(parseEnv(fs3.readFileSync(file2, "utf8")))) {
+    if (!process.env[k] && out[k] === undefined)
+      out[k] = v;
   }
   return true;
 }

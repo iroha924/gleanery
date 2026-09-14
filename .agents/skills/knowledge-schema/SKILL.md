@@ -34,6 +34,7 @@ DBのrevisionを`server/src/db.ts`の`SCHEMA_REVISION`と等値で照合し、�
 transactionで番号順に当て、同じtransactionでschemaのコメントを最後の番号へ上げる。`db:migrate`どうしは
 `pg_try_advisory_xact_lock`で排他し、`lock_timeout`は10秒。当てる前に接続先のendpoint名・今のrevision・
 当てる一覧を出し、endpoint名を打ち直させる。名前の形・重複・欠番は`pendingMigrations`が止める。
+`.`で始まる名前（`.DS_Store`やvimのswap）はmigrationとして読まずに除く。
 
 DBを作り直すcommandは無い。Neonのbranchを親の状態へ戻すのは`neon branches reset <branch> --parent`、
 空から作るのは空のDBへ`db:apply`。
@@ -182,26 +183,31 @@ migrationは本番から切ったNeonのbranchで確かめる。branch Mへ`db:m
 残る3つがそこへ書かれる）。`server/src/db.ts`の`loadEnv`はそこを先に読み、無い鍵だけ
 `~/.claude/knowledge.env`で補うので、1つでも欠けるとその鍵は本番へ繋がる。ただし`readInto`は`process.env`に
 ある鍵を上書きしないので、シェルに`KNOWLEDGE_DB_URL*`をexportしているとそちらが`.env`より優先される。
-検証の前に、その鍵がbranchのendpointを向いていることを確かめる。
+検証の前に、その鍵がbranchのendpointを向いていることを確かめる。ownerの鍵は`.env`に書き、exportしない。
+`.env`から読んだowner鍵だけがbranchの鍵として扱われ、`db:migrate`を非対話でも流せる。それ以外から読んだ
+owner鍵は本番扱いになり、stdinが端末でなければ止まる。
 
 そのうえで、変更した取り込み口を実DBで通す。`bun run verify`も通す。MCP、CLI、自動記録、またはその依存
 moduleを触った場合は`plugin-release`も続けて使う。
 
 ## 本番へ当てる
 
-本番へ当てるのは持ち主の承認を得てからにする。`db:migrate`の確認はendpoint名の打ち直しだけで、stdinへ
-流し込めば通る。DBが古いときにMCPの応答が`db:migrate`を案内しても、AIがそれを読んでそのまま本番へ当てない。
+本番へ当てるのは持ち主の承認を得てからにする。DBが古いときにMCPの応答が`db:migrate`を案内しても、AIがそれを
+読んでそのまま本番へ当てない。`db:migrate`は、owner鍵を`KNOWLEDGE_ENV_DIR/.env`から読んでいない
+（`~/.claude/knowledge.env`かシェルの環境変数から読んだ）とき、stdinが端末でなければDBに繋ぐ前に止まる。
+本番へは持ち主が端末で打つ。
 
 1. mergeする。mainへのmergeでVercelが本番へ自動でdeployする
 2. Neonで本番から控えのbranch `pre-migrate-NNNN`を切る。1週間ほど残す
-3. merge済みのmainから`bun run db:migrate`を叩く
+3. 持ち主が端末で、merge済みのmainから`bun run db:migrate`を叩き、endpoint名を打ち直す
 4. pluginを更新する（`plugin-release`）
 5. 各PCで`~/Projects/mitos`を`git pull`する。日次同期はこのcheckoutの`plugin/bin/mitos`を叩く
 6. `mitos doctor`で確かめる
 
-照合で止まるのは、コードとDBの版が食い違っている間に初めてDBを引くプロセスだけである。
+照合で止まるのは、コードとDBの版が食い違っている間に初めてDBを引くプロセスだけである。持ち主は、この手順の
+間に次が照合で止まることを許容した。
 
-- 画面とAPI: mergeの自動deployから`db:migrate`を当て終えるまでの数分（持ち主が許容した）
+- 画面とAPI: mergeの自動deployから`db:migrate`を当て終えるまでの数分
 - MCP: `db:migrate`の後に初めてDBを引くものは、pluginを更新するまで
 - CLI: 各PCの日次同期（`scripts/com.mitos.sync.plist`から`plugin/bin/mitos`）はそのPCで`git pull`するまで、
   pluginのcacheから動くCLIはpluginを更新するまで
@@ -216,5 +222,6 @@ Vercelの本番を前のdeploymentへ戻す。
 戻すときは`neon branches restore production pre-migrate-NNNN --preserve-under-name <名前>`。戻すと、
 控えを切った後に入った自動記録とtraceは消える。本番を時点指定で復元できるのは6時間までである。
 restoreでDBを前のrevisionへ戻しても、Vercelの本番、更新済みのplugin、`git pull`したcheckoutは新しいrevisionを
-期待したまま残るので、画面・API・MCP・CLIが照合で止まる。restoreするなら、Vercelの本番も前のdeploymentへ戻す。
-更新済みのpluginは照合で止まったままになる。
+期待したまま残る。restoreの後に初めてDBを引くプロセスは照合で止まり、既に照合を通ったMCPとVercelの関数
+インスタンスは、新しいコードのまま古いschemaを読み続ける。restoreするなら、Vercelの本番も前のdeploymentへ戻す。
+更新済みのpluginから新しく起動するMCPとCLIは、照合で止まり続ける。
