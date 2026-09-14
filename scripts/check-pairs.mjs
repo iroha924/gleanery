@@ -247,7 +247,8 @@ if (usage) {
   if (!block.test(before)) {
     fail.push("README.md の「## CLI」直後のコードブロックが見つからない。節を消したなら本スクリプトも直す");
   } else {
-    const after = before.replace(block, `$1${list}$2`);
+    // 置き換えは関数で渡す。文字列で渡すと、USAGE の中の $& や $1 を置換パターンとして読む。
+    const after = before.replace(block, (_, open, close) => `${open}${list}${close}`);
     if (after !== before) {
       fs.writeFileSync("README.md", after);
       // **書いたときだけ staged へ戻す。**呼び出し側で無条件に `git add README.md` すると、
