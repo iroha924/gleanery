@@ -1,6 +1,6 @@
 ---
 name: knowledge-schema
-description: mitosのDB schema（db/schema.sql）、role・grant、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、権限、新しいimport経路を触るときに使う。HTTP APIや画面だけの変更には使わない。
+description: mitosのDB schema（db/schema.sqlとdb/migrations）、role・grant、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。HTTP APIや画面だけの変更には使わない。
 ---
 
 # ナレッジschemaを変更する
@@ -8,6 +8,7 @@ description: mitosのDB schema（db/schema.sql）、role・grant、知識の種�
 ## Triggers
 
 - `db/schema.sql`のtable、列、CHECK、index、extension、role、grantを変更する
+- `db/migrations`へ手順を足す、または`bun run db:migrate`を本番へ当てる
 - `knowledge`の種類・状態・stance、`message`の話者、`conversation`の出自、`message_file`の操作を変更する
 - 取り込み元を足す、またはGitHub同期・文書同期・自動記録・traceの書き方を変える
 
@@ -18,18 +19,48 @@ description: mitosのDB schema（db/schema.sql）、role・grant、知識の種�
 
 ## 正本と版
 
-DBの正本は`db/schema.sql`の1本で、今の形だけを表す。migrationを積まない。Prisma・Drizzleのschemaを
-別の正本として足さない。
+DBの正本は`db/schema.sql`の1本で、今の形だけを表す。Prisma・Drizzleのschemaを別の正本として足さない。
+新しいDBは`bun run db:apply`でschema.sqlから作る。
 
-schemaを変えたら、`comment on schema mitos is 'mitos schema revision N'`と`server/src/db.ts`の
-`SCHEMA_REVISION`を同じ数へ上げる（`server/test/db.test.ts`が突き合わせる）。上げ忘れると、古いDBへ
-新しいコードが繋がって列の不一致で落ちる。上げれば、MCP・CLI・画面のAPIが最初の接続で止まって
-`db:reset`を案内する。
+`db/migrations/NNNN_<名前>.sql`は、既存のDBをrevision N-1からNへ進める手順で、正本ではない。NNNNは
+当てた後のrevision（4桁）。最初の1本はrevision 3で、本番に入っていた旧migrationの残りを消す。
 
-`bun run db:reset`はschema `mitos`を消して作り直す。GitHubと文書は`mitos sync`で戻るが、自動記録した
-会話とtraceの記録は戻らない。本番へ当てる前に持ち主へ確かめる。本番に会話を貯め始めた後の最初のschema変更
-では、作り直す代わりにmigrationのrunnerを先に入れる。確認はNeonの本番から切ったbranchで行い、
-`KNOWLEDGE_ENV_DIR`で全部の鍵がbranchを向いていることを先に確かめる。
+版はschemaのコメント（`mitos schema revision N`）のrevisionだけで持つ。MCP・CLI・画面のAPIは最初の接続で
+DBのrevisionを`server/src/db.ts`の`SCHEMA_REVISION`と等値で照合し、食い違えば止まる。DBが古ければ
+`bun run db:migrate`を案内する。MCPと画面のAPIは、照合が一度通るとプロセスが終わるまでその結果を保持する
+（`lazyPool`）。
+
+`bun run db:migrate`（`server/src/admin.ts`、owner鍵）は、DBのrevisionより新しいmigrationを1回の
+transactionで番号順に当て、同じtransactionでschemaのコメントを最後の番号へ上げる。`db:migrate`どうしは
+`pg_try_advisory_xact_lock`で排他し、`lock_timeout`は10秒。当てる前に接続先のendpoint名・今のrevision・
+当てる一覧を出し、endpoint名を打ち直させる。名前の形・重複・欠番は`pendingMigrations`が止める。
+`.`で始まる名前（`.DS_Store`やvimのswap）はmigrationとして読まずに除く。
+
+DBを作り直すcommandは無い。Neonのbranchを親の状態へ戻すのは`neon branches reset <branch> --parent`、
+空から作るのは空のDBへ`db:apply`。
+
+## schemaを変えるとき
+
+1. 同じcommitで、schema.sql（今の形）と`db/migrations/NNNN_<名前>.sql`（既存のDBを運ぶ手順）を両方変え、
+   schema.sqlのrevisionと`SCHEMA_REVISION`をNNNNへ上げる。`server/test/migrate.test.ts`が「`db/migrations`は
+   3から連続し、最大が`SCHEMA_REVISION`とschema.sqlのrevisionに一致する」を検査する。上げ忘れると、古いDBへ
+   新しいコードが繋がって列の不一致で落ちる
+2. migrationに`BEGIN` / `COMMIT` / `ROLLBACK`や、transactionの外でしか動かない文（`create index concurrently`
+   など）を書かない。runnerはtransactionの中で当てるが、これらを検出しない。migrationはpgのsimple queryで
+   1回に流れるので、本文の`COMMIT` / `ROLLBACK`はその場で外側のtransactionを終わらせる。`COMMIT`なら、途中で
+   失敗したときに前半だけ確定して版は上がらず、打ち直すと二重に当たる。`ROLLBACK`なら、それまでのDDLが
+   捨てられたまま版だけ進む
+3. 表を足すmigrationでは、`mitos_reader`へselect、`mitos_ingest`へselect・insert・update・deleteと
+   sequenceのusageを明示的にgrantする。schema.sqlの`grant ... on all tables`は実行した時点の表にしか
+   効かない。`mitos_capture`へは列単位でgrantする。default privilegesは置かない
+4. 旧版のコードは`db:migrate`の後も新しいschemaに対して動き続ける。自動記録はpluginのcacheの版で動き、
+   DBに弾かれた記録は`rejected/`へ移る。`db:migrate`より前にDBを一度でも引いたMCPと、Vercelの旧deploymentの
+   関数インスタンスは、プロセスが終わるまで旧版のまま新しいschemaを読む。そのため、自動記録が書く表には
+   旧版の自動記録がそのまま通る変更（nullを許すか既定値付きの列の追加）だけを入れ、締めるのは全PCのpluginが
+   上がった後の別のmigrationにする。列の削除・改名・型の変更も、旧版が読まなくなってから別のmigrationで行う
+5. migrationで作る制約には名前を付け、schema.sqlにも同じ名前を書く。無名のCHECKは作った順に
+   `knowledge_check2`のような番号が付き、本番と空のDBで番号がずれうる
+6. downは書かない
 
 ## 表の境界
 
@@ -81,7 +112,7 @@ schemaを変えたら、`comment on schema mitos is 'mitos schema revision N'`�
 
 | role | 変数 | できること |
 |---|---|---|
-| owner | `KNOWLEDGE_DB_URL` | `server/src/admin.ts`（`bun run db:*`）だけ。schemaの適用と作り直し、roleのパスワード |
+| owner | `KNOWLEDGE_DB_URL` | `server/src/admin.ts`（`bun run db:*`）だけ。schemaの適用とmigration、roleのパスワード |
 | `mitos_reader` | `KNOWLEDGE_DB_URL_RO` | 全表の読み取り。MCPと画面のAPI |
 | `mitos_ingest` | `KNOWLEDGE_DB_URL_INGEST` | 全表の読み書き。CLIのsync・trace・who・project |
 | `mitos_capture` | `KNOWLEDGE_DB_URL_CAPTURE` | 会話の4表へ、自動記録が埋める列の追記だけ |
@@ -141,6 +172,56 @@ GitHub同期（`server/src/github.ts`）は`gh api`で毎回全件を取る。�
 
 ## 検証
 
-schemaをNeonのbranchへ当て（`db:reset`）、`bun run db:roles`で鍵を作り直してから、変更した取り込み口を
-実DBで通す。`bun run verify`も通す。MCP、CLI、自動記録、またはその依存moduleを触った場合は
-`plugin-release`も続けて使う。
+migrationは本番から切ったNeonのbranchで確かめる。branch Mへ`db:migrate`を当て、別のbranch Fの空のDBへ
+`db:apply`して、次を見る。
+
+- `neon branches schema-diff`でMとFに差が無い
+- Mで主な表の件数が、当てる前後で同じ
+- 各鍵の禁止操作が`permission denied`のまま
+
+鍵は`KNOWLEDGE_ENV_DIR/.env`に4つともbranch向きで書く（ownerを書いてから`bun run db:roles`を叩くと、
+残る3つがそこへ書かれる）。`server/src/db.ts`の`loadEnv`はそこを先に読み、無い鍵だけ
+`~/.claude/knowledge.env`で補うので、1つでも欠けるとその鍵は本番へ繋がる。ただし`readInto`は`process.env`に
+ある鍵を上書きしないので、シェルに`KNOWLEDGE_DB_URL*`をexportしているとそちらが`.env`より優先される。
+検証の前に、その鍵がbranchのendpointを向いていることを確かめる。ownerの鍵は`.env`に書き、exportしない。
+`.env`から読んだowner鍵だけがbranchの鍵として扱われ、`db:migrate`を非対話でも流せる。それ以外から読んだ
+owner鍵は本番扱いになり、stdinが端末でなければ止まる。
+
+そのうえで、変更した取り込み口を実DBで通す。`bun run verify`も通す。MCP、CLI、自動記録、またはその依存
+moduleを触った場合は`plugin-release`も続けて使う。
+
+## 本番へ当てる
+
+本番へ当てるのは持ち主の承認を得てからにする。DBが古いときにMCPの応答が`db:migrate`を案内しても、AIがそれを
+読んでそのまま本番へ当てない。`db:migrate`は、owner鍵を`KNOWLEDGE_ENV_DIR/.env`から読んでいない
+（`~/.claude/knowledge.env`かシェルの環境変数から読んだ）とき、stdinが端末でなければDBに繋ぐ前に止まる。
+本番へは持ち主が端末で打つ。
+
+1. mergeする。mainへのmergeでVercelが本番へ自動でdeployする
+2. Neonで本番から控えのbranch `pre-migrate-NNNN`を切る。1週間ほど残す
+3. 持ち主が端末で、merge済みのmainから`bun run db:migrate`を叩き、endpoint名を打ち直す
+4. pluginを更新する（`plugin-release`）
+5. 各PCで`~/Projects/mitos`を`git pull`する。日次同期はこのcheckoutの`plugin/bin/mitos`を叩く
+6. `mitos doctor`で確かめる
+
+照合で止まるのは、コードとDBの版が食い違っている間に初めてDBを引くプロセスだけである。持ち主は、この手順の
+間に次が照合で止まることを許容した。
+
+- 画面とAPI: mergeの自動deployから`db:migrate`を当て終えるまでの数分
+- MCP: `db:migrate`の後に初めてDBを引くものは、pluginを更新するまで
+- CLI: 各PCの日次同期（`scripts/com.mitos.sync.plist`から`plugin/bin/mitos`）はそのPCで`git pull`するまで、
+  pluginのcacheから動くCLIはpluginを更新するまで
+
+`db:migrate`より前にDBを引いていたMCPとVercelの旧deploymentの関数インスタンスは止まらず、旧版のまま新しい
+schemaを読み続ける（「schemaを変えるとき」の4）。止まるだけでデータは失われず、自動記録は照合しないので
+送り続ける（`server/src/capture.ts`の送信は`checkSchema`を呼ばない）。
+
+mergeでdeployした後に`db:migrate`が失敗したときは、画面とAPIは止まったままになる。直したmigrationで進めるか、
+Vercelの本番を前のdeploymentへ戻す。
+
+戻すときは`neon branches restore production pre-migrate-NNNN --preserve-under-name <名前>`。戻すと、
+控えを切った後に入った自動記録とtraceは消える。本番を時点指定で復元できるのは6時間までである。
+restoreでDBを前のrevisionへ戻しても、Vercelの本番、更新済みのplugin、`git pull`したcheckoutは新しいrevisionを
+期待したまま残る。restoreの後に初めてDBを引くプロセスは照合で止まり、既に照合を通ったMCPとVercelの関数
+インスタンスは、新しいコードのまま古いschemaを読み続ける。restoreするなら、Vercelの本番も前のdeploymentへ戻す。
+更新済みのpluginから新しく起動するMCPとCLIは、照合で止まり続ける。

@@ -13,13 +13,19 @@ export type Env = Record<string, string | undefined>;
 // どのプロジェクトからでも同じものを指せるよう、置き場所を 1 つに固定する。
 export const GLOBAL_ENV = path.join(os.homedir(), ".claude", "knowledge.env");
 
+export function parseEnv(text: string): Env {
+  const out: Env = {};
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (m?.[1] && out[m[1]] === undefined) out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
+  }
+  return out;
+}
+
 function readInto(out: Env, file: string): boolean {
   if (!fs.existsSync(file)) return false;
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
-    if (m?.[1] && !process.env[m[1]] && out[m[1]] === undefined) {
-      out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
-    }
+  for (const [k, v] of Object.entries(parseEnv(fs.readFileSync(file, "utf8")))) {
+    if (!process.env[k] && out[k] === undefined) out[k] = v;
   }
   return true;
 }
@@ -39,7 +45,7 @@ export function loadEnv(): Env {
 
 /**
  * どの鍵で繋ぐか。
- *   owner   schema の適用と作り直しだけ（server/src/admin.ts）
+ *   owner   schema の適用と migration だけ（server/src/admin.ts）
  *   reader  MCP・画面の API（読むだけ）
  *   ingest  取り込み・trace・名簿（CLI）
  *   capture 会話の自動記録（追記だけ）
@@ -54,7 +60,7 @@ export const KEY: Record<Role, string> = {
 };
 
 /** MCP と CLI が期待する schema の版。db/schema.sql の schema コメントと同じ数にする（テストが突き合わせる）。 */
-export const SCHEMA_REVISION = 2;
+export const SCHEMA_REVISION = 3;
 
 export type Db = Pick<pg.Client, "query">;
 
@@ -102,7 +108,9 @@ export async function checkSchema(db: Db): Promise<void> {
   if (got !== SCHEMA_REVISION) {
     throw new Error(
       `DB の schema は revision ${Number.isNaN(got) ? "不明" : got}、このコードは revision ${SCHEMA_REVISION} を期待している。` +
-        (got < SCHEMA_REVISION ? "DB を作り直す（`bun run db:reset`）" : "mitos を更新する"),
+        (got < SCHEMA_REVISION
+          ? "持ち主が mitos のリポジトリで `bun run db:migrate` を当てる"
+          : "mitos を更新する"),
     );
   }
 }

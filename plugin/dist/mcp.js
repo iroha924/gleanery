@@ -38997,15 +38997,22 @@ var esm_default = import_lib.default;
 
 // server/src/db.ts
 var GLOBAL_ENV = path.join(os.homedir(), ".claude", "knowledge.env");
+function parseEnv(text) {
+  const out = {};
+  for (const line of text.split(`
+`)) {
+    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
+    if (m?.[1] && out[m[1]] === undefined)
+      out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
+  }
+  return out;
+}
 function readInto(out, file2) {
   if (!fs.existsSync(file2))
     return false;
-  for (const line of fs.readFileSync(file2, "utf8").split(`
-`)) {
-    const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/);
-    if (m?.[1] && !process.env[m[1]] && out[m[1]] === undefined) {
-      out[m[1]] = (m[2] ?? "").replace(/^["']|["']$/g, "").trim();
-    }
+  for (const [k, v] of Object.entries(parseEnv(fs.readFileSync(file2, "utf8")))) {
+    if (!process.env[k] && out[k] === undefined)
+      out[k] = v;
   }
   return true;
 }
@@ -39022,7 +39029,7 @@ var KEY = {
   ingest: "KNOWLEDGE_DB_URL_INGEST",
   capture: "KNOWLEDGE_DB_URL_CAPTURE"
 };
-var SCHEMA_REVISION = 2;
+var SCHEMA_REVISION = 3;
 function settings(env, role) {
   const raw = env[KEY[role]];
   if (!raw)
@@ -39053,7 +39060,7 @@ async function checkSchema(db) {
     throw new Error("DB に mitos の schema が無い。`bun run db:apply` で作る");
   const got = Number(comment?.match(/revision (\d+)/)?.[1]);
   if (got !== SCHEMA_REVISION) {
-    throw new Error(`DB の schema は revision ${Number.isNaN(got) ? "不明" : got}、このコードは revision ${SCHEMA_REVISION} を期待している。` + (got < SCHEMA_REVISION ? "DB を作り直す（`bun run db:reset`）" : "mitos を更新する"));
+    throw new Error(`DB の schema は revision ${Number.isNaN(got) ? "不明" : got}、このコードは revision ${SCHEMA_REVISION} を期待している。` + (got < SCHEMA_REVISION ? "持ち主が mitos のリポジトリで `bun run db:migrate` を当てる" : "mitos を更新する"));
   }
 }
 function lazyPool(env, role) {

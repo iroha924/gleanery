@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// schema の適用と作り直し、ロールの鍵づくり。持ち主が手元で叩く（plugin の配布物には入れない）。
+// schema の適用と migration、ロールの鍵づくり。持ち主が手元で叩く（plugin の配布物には入れない）。
 //
 //   bun run db:apply                 空の DB に db/schema.sql を当てる（mitos の schema が既にあれば止める）
-//   bun run db:reset                 mitos の schema だけを消して作り直す。接続先の endpoint 名を打ち直させる
+//   bun run db:migrate               DB の版より新しい db/migrations を当てる。接続先の endpoint 名を打ち直させる
 //   bun run db:roles [--env <file>]  3 つのロールに新しいパスワードを付け、接続文字列を env ファイルへ書く
 //
 // どれも owner の鍵（KNOWLEDGE_DB_URL）で繋ぐ。**パスワードと接続文字列は画面に出さない。**
@@ -13,10 +13,14 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { connect, GLOBAL_ENV, inTransaction, KEY, loadEnv } from "./db.ts";
+import { connect, type Db, type Env, GLOBAL_ENV, inTransaction, KEY, loadEnv, parseEnv } from "./db.ts";
 import { reason } from "./text.ts";
 
 const SCHEMA = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "db", "schema.sql");
+const MIGRATIONS = path.join(path.dirname(SCHEMA), "migrations");
+
+/** db:migrate どうしを排他する advisory lock の鍵（"mitos" の ASCII）。 */
+const MIGRATE_LOCK = 0x6d69746f73;
 
 /** 繋ぎ先。資格情報を除いた host と database だけを出す。 */
 function target(url: string | undefined): { host: string; endpoint: string; database: string } {
@@ -36,7 +40,9 @@ async function apply(): Promise<void> {
   try {
     const exists = await c.query("select 1 from pg_namespace where nspname = 'mitos'");
     if (exists.rowCount)
-      throw new Error(`${t.endpoint}/${t.database} には mitos の schema が既にある。作り直すなら db:reset`);
+      throw new Error(
+        `${t.endpoint}/${t.database} には mitos の schema が既にある。既存の DB は \`bun run db:migrate\` で進める`,
+      );
     await inTransaction(c, () => c.query(fs.readFileSync(SCHEMA, "utf8")));
     console.log(`当てた: ${t.endpoint}/${t.database}`);
   } finally {
@@ -44,26 +50,87 @@ async function apply(): Promise<void> {
   }
 }
 
-async function reset(): Promise<void> {
+/**
+ * 名前の NNNN は当てた後の版。名前の形と重複は当てるものが無くても検査する（飛ばした 1 本は、版が進むと二度と当たらない）。
+ */
+export function pendingMigrations(files: string[], current: number): { revision: number; file: string }[] {
+  const all = files
+    // `.` で始まる名前は OS やエディタの隠しファイル（.DS_Store、vim の swap）で、書き損じた migration ではない。
+    .filter((file) => !file.startsWith("."))
+    .map((file) => {
+      const revision = file.match(/^(\d{4})_[a-z0-9_]+\.sql$/)?.[1];
+      if (!revision) throw new Error(`db/migrations/${file} の名前が NNNN_<英小文字・数字・_>.sql でない`);
+      return { revision: Number(revision), file };
+    })
+    .sort((a, b) => a.revision - b.revision);
+  const seen = new Map<number, string>();
+  for (const m of all) {
+    const other = seen.get(m.revision);
+    if (other) throw new Error(`db/migrations に revision ${m.revision} が 2 本ある: ${other} と ${m.file}`);
+    seen.set(m.revision, m.file);
+  }
+  const pending = all.filter((m) => m.revision > current);
+  for (const [i, m] of pending.entries()) {
+    if (m.revision !== current + 1 + i)
+      throw new Error(`db/migrations に revision ${current + 1 + i} の migration が無い`);
+  }
+  return pending;
+}
+
+async function revisionOf(db: Db): Promise<number> {
+  const r = await db.query<{ comment: string | null }>(
+    "select obj_description(n.oid, 'pg_namespace') as comment from pg_namespace n where n.nspname = 'mitos'",
+  );
+  const row = r.rows[0];
+  if (!row) throw new Error("DB に mitos の schema が無い。`bun run db:apply` で作る");
+  const got = Number(row.comment?.match(/revision (\d+)/)?.[1]);
+  if (Number.isNaN(got)) throw new Error("mitos の schema コメントから revision を読めない");
+  return got;
+}
+
+/** loadEnv の探索順で、owner の鍵が KNOWLEDGE_ENV_DIR/.env から来るか。 */
+export function ownerKeyFromBranchFile(env: Env, branchEnvText: string | undefined): boolean {
+  return (
+    Boolean(env.KNOWLEDGE_ENV_DIR) &&
+    env[KEY.owner] === undefined &&
+    branchEnvText !== undefined &&
+    parseEnv(branchEnvText)[KEY.owner] !== undefined
+  );
+}
+
+async function migrate(): Promise<void> {
   const env = loadEnv();
   const t = target(env[KEY.owner]);
+  // endpoint 名の確認は stdin へ流し込めば通る。本番へは持ち主が端末で当て、非対話は検証用の branch の鍵にだけ許す。
+  if (!process.stdin.isTTY) {
+    const dir = process.env.KNOWLEDGE_ENV_DIR;
+    const file = dir ? path.join(dir, ".env") : undefined;
+    const branch = file && fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined;
+    if (!ownerKeyFromBranchFile(process.env, branch))
+      throw new Error(
+        `本番の鍵（${KEY.owner} を KNOWLEDGE_ENV_DIR/.env 以外から読んだ）で当てるときは、持ち主が端末で \`bun run db:migrate\` を打つ`,
+      );
+  }
   const c = await connect(env, "owner");
   try {
-    const counts = await c
-      .query<{ t: string; n: string }>(
-        `select 'conversation' as t, count(*)::text as n from mitos.conversation
-         union all select 'message', count(*)::text from mitos.message
-         union all select 'knowledge', count(*)::text from mitos.knowledge`,
-      )
-      .catch(() => ({ rows: [] as { t: string; n: string }[] }));
+    const files = fs.readdirSync(MIGRATIONS);
+    const current = await revisionOf(c);
+    const todo = pendingMigrations(files, current);
+    if (todo.length === 0) {
+      console.log(`当てるものは無い: ${t.endpoint}/${t.database} は revision ${current}`);
+      return;
+    }
     console.log(`接続先: ${t.host} / database ${t.database}`);
-    console.log(
-      `いまの mitos: ${counts.rows.length ? counts.rows.map((r) => `${r.t} ${r.n}`).join(" / ") : "無い"}`,
-    );
-    console.log("mitos の schema を消して作り直す。**元に戻せない。**");
+    console.log(`いまの revision: ${current}`);
+    console.log(`当てる: ${todo.map((m) => m.file).join(" / ")}`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    // 標準入力が EOF で閉じても question は settle せず、owner の接続を開いたまま止まる。
+    const closed = new AbortController();
+    rl.once("close", () => closed.abort());
     const typed = (
-      await rl.question(`続けるなら endpoint 名（${t.endpoint}）を打つ: `).catch(() => "")
+      await rl
+        .question(`続けるなら endpoint 名（${t.endpoint}）を打つ: `, { signal: closed.signal })
+        .catch(() => "")
     ).trim();
     rl.close();
     if (typed !== t.endpoint) {
@@ -71,11 +138,22 @@ async function reset(): Promise<void> {
       process.exitCode = 1;
       return;
     }
-    await inTransaction(c, async () => {
-      await c.query("drop schema if exists mitos cascade");
-      await c.query(fs.readFileSync(SCHEMA, "utf8"));
+    const applied = await inTransaction(c, async () => {
+      // DDL が表の lock を待ち続けると、後ろに並んだほかの接続の query まで止まる。
+      await c.query("set local lock_timeout = '10s'");
+      const lock = await c.query<{ ok: boolean }>("select pg_try_advisory_xact_lock($1::bigint) as ok", [
+        MIGRATE_LOCK,
+      ]);
+      if (!lock.rows[0]?.ok) throw new Error("別の db:migrate が走っている。終わってから打ち直す");
+      // 確かめている間に別の db:migrate が版を進めていれば、その残りだけを当てる。
+      const now = pendingMigrations(files, await revisionOf(c));
+      for (const m of now) await c.query(fs.readFileSync(path.join(MIGRATIONS, m.file), "utf8"));
+      const last = now.at(-1);
+      if (last) await c.query(`comment on schema mitos is 'mitos schema revision ${last.revision}'`);
+      return now;
     });
-    console.log(`作り直した: ${t.endpoint}/${t.database}`);
+    console.log(`当てた: ${applied.map((m) => m.file).join(" / ") || "無し"}`);
+    console.log(`${t.endpoint}/${t.database} は revision ${await revisionOf(c)}`);
   } finally {
     await c.end();
   }
@@ -155,15 +233,15 @@ async function main(): Promise<void> {
   });
   const cmd = positionals[0];
   if (cmd === "apply") return apply();
-  if (cmd === "reset") return reset();
+  if (cmd === "migrate") return migrate();
   if (cmd === "roles") {
     const dir = process.env.KNOWLEDGE_ENV_DIR;
     return roles(values.env ?? (dir ? path.join(dir, ".env") : GLOBAL_ENV));
   }
-  throw new Error("使い方: node server/src/admin.ts apply | reset | roles [--env <file>]");
+  throw new Error("使い方: node server/src/admin.ts apply | migrate | roles [--env <file>]");
 }
 
-// 直接起動されたときだけ動く（テストは rewriteEnv だけを使う）。
+// 直接起動されたときだけ動く（テストはこの module を import する）。
 if (process.argv[1] && /admin\.ts$/.test(process.argv[1])) {
   main().catch((e: unknown) => {
     console.error(reason(e));

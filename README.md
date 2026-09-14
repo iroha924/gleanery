@@ -92,6 +92,10 @@ mitos project add --cwd <repo> # 記録する作業場所を登録する
 mitos sync --cwd <repo>        # 最初の取り込み
 ```
 
+既存の DB は作り直さず、owner の鍵がある PC で `bun run db:migrate` を叩いて `db/migrations` の新しい分を当てる。
+MCP・CLI・画面の API は、DB の schema の版がコードより古いと止まってこれを案内する。`db:migrate` は当てる前に
+接続先の endpoint 名を打ち直させる。本番へ当てる順序と戻し方は `.agents/skills/knowledge-schema/SKILL.md`。
+
 ### 新しい PC で使い始める
 
 ```bash
@@ -132,11 +136,14 @@ bun run bundle       # plugin/dist を作り直す
 - **CLI・同期・plugin を変える作業は別の git worktree で行う。**日次同期は `~/Projects/mitos` の
   `plugin/bin/mitos` を叩くので、そこで branch を切ると作業途中の `dist` で本番の DB へ書く
 - **DB を使う確認は、本番から切った Neon の branch で行う。**`KNOWLEDGE_ENV_DIR` に branch の鍵の `.env` を置いた
-  ディレクトリを指すと、`~/.claude/knowledge.env` より先に読まれる
+  ディレクトリを指すと、`~/.claude/knowledge.env` より先に読まれる。`.env` に無い鍵は `knowledge.env` で補われて
+  本番へ繋がるので、DB の鍵は 4 つとも branch 向きで書く。branch を親の状態へ戻すのは
+  `neon branches reset <branch> --parent`
 - MCP・フック・Skill の変更を届けるには、版を上げて merge し、install 済みの plugin を更新する
   （`.agents/skills/plugin-release/SKILL.md`）。セッションを張り直すだけでは届かない
 
 構成は `server/`（取り込み・検索・MCP・自動記録・CLI・画面の API）、`dashboard/`（Next.js）、`plugin/`（配るもの）、
-`db/schema.sql`（DB の正本）。流れは [docs/diagrams/](docs/diagrams/README.md)、AI 向けの規約は `AGENTS.md`。
+`db/schema.sql`（DB の正本）、`db/migrations/`（既存の DB を進める手順）。
+流れは [docs/diagrams/](docs/diagrams/README.md)、AI 向けの規約は `AGENTS.md`。
 DB は Neon で、容量の上限（Free は 512 MB）に当たると書き込みが止まる（`mitos doctor` の「DB の大きさ」）。
 埋め込みの行が 5 万に近づいたら HNSW を足す（実測は `.agents/skills/knowledge-schema/SKILL.md`）。
