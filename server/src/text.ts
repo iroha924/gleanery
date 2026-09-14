@@ -101,11 +101,13 @@ export function tail(s: string, n: number): string {
 export const clean = (s: string): string => s.replaceAll("\u0000", "");
 
 /**
- * 人に見えない書式文字（タグ文字・ゼロ幅・双方向の制御など）を落とし、人に見えない文をモデルにだけ読ませない。
- * 文字の結合に要る ZWJ・ZWNJ だけ残す（タグ列でできた地域旗とソフトハイフンは崩れるが、落とす側を取る）。
- * 見えない文字をすべて落とせるわけではない（異体字セレクタなどは残る）。残ったものへの守りは framed の札である。
+ * Unicode が既定で見えないとする文字（Default_Ignorable_Code_Point。タグ文字・ゼロ幅・双方向の制御など）を落とし、
+ * 人に見えない文をモデルにだけ読ませない。文字の結合に要る ZWJ・ZWNJ と、絵文字・異体字に要る異体字セレクタは残す
+ * （タグ列でできた地域旗とソフトハイフンは崩れるが、落とす側を取る）。残した文字も並べれば文を運べる。そこへの守りは
+ * framed の札である。
  */
-export const visible = (s: string): string => s.replace(/(?![\u{200c}\u{200d}])\p{Cf}/gu, "");
+export const visible = (s: string): string =>
+  s.replace(/(?!\p{Join_Control}|\p{Variation_Selector})\p{Default_Ignorable_Code_Point}/gu, "");
 
 // 貼ってしまった鍵を DB・待ち行列・埋め込みの API へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
 // 形は 5 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報、認証ヘッダの値、

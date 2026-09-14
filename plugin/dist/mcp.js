@@ -39181,7 +39181,7 @@ function head(s, n) {
   }
   return out;
 }
-var visible = (s) => s.replace(/(?![\u{200c}\u{200d}])\p{Cf}/gu, "");
+var visible = (s) => s.replace(/(?!\p{Join_Control}|\p{Variation_Selector})\p{Default_Ignorable_Code_Point}/gu, "");
 var reason = (e) => explain(e, 0) || "理由の分からない失敗";
 function explain(e, depth) {
   if (!(e instanceof Error)) {

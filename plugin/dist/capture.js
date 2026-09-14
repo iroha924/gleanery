@@ -23995,7 +23995,7 @@ function tail(s, n) {
   return chars.slice(i).join("");
 }
 var clean = (s) => s.replaceAll("\x00", "");
-var visible = (s) => s.replace(/(?![\u{200c}\u{200d}])\p{Cf}/gu, "");
+var visible = (s) => s.replace(/(?!\p{Join_Control}|\p{Variation_Selector})\p{Default_Ignorable_Code_Point}/gu, "");
 var SECRETS = [
   [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
   [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],

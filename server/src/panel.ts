@@ -43,7 +43,7 @@ export const panel = (head: string, lines: string[], end: string): string =>
 /**
  * 外から来た文字（PR・issue の本文、DB に残ったエラー文）を、端末に出す枠の中へ入れられる形にする。CR で行頭の │ を
  * 上書きしたり、制御文字で端末を乱したりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にし、制御文字を落とし、
- * 見えない書式文字を visible で落とす（端末の人に見えない文を、この出力を読むエージェントにだけ読ませない）。
+ * 見えない文字を visible で落とす（端末の人に見えない文を、この出力を読むエージェントにだけ読ませない）。
  */
 export const plain = (s: string): string =>
   visible(s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n])\p{Cc}/gu, ""));
