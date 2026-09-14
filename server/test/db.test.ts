@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { rewriteEnv } from "../src/admin.ts";
-import { connect, SCHEMA_REVISION, vec } from "../src/db.ts";
+import { checkSchema, connect, type Db, SCHEMA_REVISION, vec } from "../src/db.ts";
 
 test("pgvector のリテラルへ落とす", () => {
   assert.equal(vec([1, 2.5, -3]), "[1,2.5,-3]");
@@ -15,6 +15,41 @@ test("コードが期待する schema の版は db/schema.sql の版と同じ", 
     Number(sql.match(/comment on schema mitos is 'mitos schema revision (\d+)'/)?.[1]),
     SCHEMA_REVISION,
   );
+});
+
+// どの query にも schema コメントの 1 行を返す（checkSchema が引くのはそれだけ）。
+const dbAt = (revision: number): Db =>
+  ({ query: async () => ({ rows: [{ comment: `mitos schema revision ${revision}` }] }) }) as unknown as Db;
+
+// この文面は MCP の応答として AI に届く。db:reset は自動記録した会話と trace を戻せない形で消す。
+test("DB の schema が古ければ db:migrate を案内し、db:reset を案内しない", async () => {
+  await assert.rejects(checkSchema(dbAt(SCHEMA_REVISION - 1)), (e: unknown) => {
+    assert.ok(e instanceof Error);
+    assert.match(e.message, /bun run db:migrate/);
+    assert.doesNotMatch(e.message, /db:reset/);
+    return true;
+  });
+});
+
+test("DB の schema が古いときに案内する command は root の package.json にある", async () => {
+  const { scripts } = JSON.parse(fs.readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  await assert.rejects(checkSchema(dbAt(SCHEMA_REVISION - 1)), (e: unknown) => {
+    const command = String(e).match(/bun run ([\w:-]+)/)?.[1];
+    assert.ok(command && Object.hasOwn(scripts, command), String(e));
+    return true;
+  });
+});
+
+// migration は版を戻せないので、DB のほうが新しいときに当てる手順は無い。
+test("DB の schema がコードより新しければ mitos の更新を案内し、db:migrate を案内しない", async () => {
+  await assert.rejects(checkSchema(dbAt(SCHEMA_REVISION + 1)), (e: unknown) => {
+    assert.ok(e instanceof Error);
+    assert.match(e.message, /mitos を更新/);
+    assert.doesNotMatch(e.message, /db:migrate/);
+    return true;
+  });
 });
 
 // pg は接続文字列側を後勝ちで適用する。`?ssl=0` の 5 文字で TLS が消え、`?sslrootcert=` は CA を差し替える。

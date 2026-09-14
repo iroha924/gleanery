@@ -39,7 +39,7 @@ export function loadEnv(): Env {
 
 /**
  * どの鍵で繋ぐか。
- *   owner   schema の適用と作り直しだけ（server/src/admin.ts）
+ *   owner   schema の適用と migration だけ（server/src/admin.ts）
  *   reader  MCP・画面の API（読むだけ）
  *   ingest  取り込み・trace・名簿（CLI）
  *   capture 会話の自動記録（追記だけ）
@@ -54,7 +54,7 @@ export const KEY: Record<Role, string> = {
 };
 
 /** MCP と CLI が期待する schema の版。db/schema.sql の schema コメントと同じ数にする（テストが突き合わせる）。 */
-export const SCHEMA_REVISION = 2;
+export const SCHEMA_REVISION = 3;
 
 export type Db = Pick<pg.Client, "query">;
 
@@ -102,7 +102,7 @@ export async function checkSchema(db: Db): Promise<void> {
   if (got !== SCHEMA_REVISION) {
     throw new Error(
       `DB の schema は revision ${Number.isNaN(got) ? "不明" : got}、このコードは revision ${SCHEMA_REVISION} を期待している。` +
-        (got < SCHEMA_REVISION ? "DB を作り直す（`bun run db:reset`）" : "mitos を更新する"),
+        (got < SCHEMA_REVISION ? "DB を進める（`bun run db:migrate`）" : "mitos を更新する"),
     );
   }
 }

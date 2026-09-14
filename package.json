@@ -17,7 +17,7 @@
     "verify": "bun run check && bun run test && bun run build",
     "bundle": "bun build server/src/mcp.ts --target=node --outfile plugin/dist/mcp.js && bun build server/src/capture.ts --target=node --outfile plugin/dist/capture.js && bun build server/src/cli.ts --target=node --outfile plugin/dist/cli.js",
     "db:apply": "node server/src/admin.ts apply",
-    "db:reset": "node server/src/admin.ts reset",
+    "db:migrate": "node server/src/admin.ts migrate",
     "db:roles": "node server/src/admin.ts roles"
   }
 }
