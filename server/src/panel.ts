@@ -4,6 +4,7 @@
 // trace context はこの形にしない。
 
 import { styleText } from "node:util";
+import { visible } from "./text.ts";
 
 /** ok は良い、warn は見る、fail は壊れている、none は情報（無い・不明・待っているだけ）。印の字は MARKS にだけ書く。 */
 export type Mark = "ok" | "warn" | "fail" | "none";
@@ -41,19 +42,16 @@ export const panel = (head: string, lines: string[], end: string): string =>
 
 /**
  * 外から来た文字（PR・issue の本文、DB に残ったエラー文）を、端末に出す枠の中へ入れられる形にする。CR で行頭の │ を
- * 上書きしたり、制御文字で端末を乱したりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にし、制御文字と書式文字を落とす。
- * 書式文字を落とすのは、タグ文字・ゼロ幅・双方向の制御で、端末の人に見えない文をエージェントにだけ読ませないため。
- * 見えない文字をすべて落とせるわけではない（異体字セレクタなどは残る）。エージェントへの守りは、記録を囲う framed の方である
- * （AI だけが読む MCP の結果と trace context は、この関数を通さず framed だけで囲う）。
- * タグ列でできた地域旗とソフトハイフンは崩れるが、落とす側を取る。文字の結合に要る ZWJ・ZWNJ だけ残す。
+ * 上書きしたり、制御文字で端末を乱したりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にし、制御文字を落とし、
+ * 見えない文字を visible で落とす（端末の人に見えない文を、この出力を読むエージェントにだけ読ませない）。
  */
 export const plain = (s: string): string =>
-  s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
+  visible(s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n])\p{Cc}/gu, ""));
 
 /**
  * 1 行に収める文字（呼び名など）。外から来た文字を plain に通し、改行とタブを空白 1 つにする。ほかの空白（全角空白など）は
- * 保存したとおりに残す。改行・タブ・制御文字・書式文字を含まない名前なら、表示を写して --said や mitos who に渡すと、
- * 保存した名前と一致する。
+ * 保存したとおりに残す。改行・タブ・制御文字と、visible が落とす見えない文字を含まない名前なら、表示を写して --said や
+ * mitos who に渡すと、保存した名前と一致する。
  */
 export const inline = (s: string): string => plain(s).replace(/[\n\t]+/g, " ");
 
