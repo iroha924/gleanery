@@ -49,6 +49,11 @@ test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落�
     /^✦ mitos search$/m,
     "知らないフラグの値も見出しにしない",
   );
+  assert.match(
+    run("trace", "check", "--limit", "0", "f").out,
+    /^✦ mitos trace check$/m,
+    "振り分けの前に止まってもサブコマンドまで出す",
+  );
   const forged = run("x\n╰─ ✓ 直すものは無い");
   assert.doesNotMatch(forged.out, /^╰─ ✓ 直すものは無い$/m, forged.out);
   assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");

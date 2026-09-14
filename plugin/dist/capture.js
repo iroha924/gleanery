@@ -24099,13 +24099,18 @@ function mask(text) {
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
-function reason(e) {
-  if (!(e instanceof Error))
-    return String(e);
-  if (e.message)
-    return e.message;
-  const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).filter(Boolean).join(" / ") : "";
-  return inner || e.name || "理由の分からない失敗";
+function reason(e, depth = 0) {
+  if (!(e instanceof Error)) {
+    try {
+      return String(e);
+    } catch {
+      return "理由の分からない失敗";
+    }
+  }
+  const inner = depth >= 3 ? "" : e instanceof AggregateError ? e.errors.map((x) => reason(x, depth + 1)).filter(Boolean).join(" / ") : e.cause === undefined ? "" : reason(e.cause, depth + 1);
+  if (e.message && inner)
+    return `${e.message}（${inner}）`;
+  return e.message || inner || "理由の分からない失敗";
 }
 
 // server/src/knowledge.ts

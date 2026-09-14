@@ -28,7 +28,7 @@ import {
   searchMessages,
   workDetail,
 } from "./search.ts";
-import { head } from "./text.ts";
+import { head, reason } from "./text.ts";
 
 const env = loadEnv();
 const db = lazyPool(env, "reader");
@@ -270,9 +270,7 @@ server.registerTool(
       );
     } catch (e) {
       // 編集は止めない（フックは許可を決めない）。ただし確かめていないことは伝える。
-      return reply(
-        `mitos: このファイルにかかる制約を確かめられなかった（${e instanceof Error ? head(e.message, 200) : "不明"}）。`,
-      );
+      return reply(`mitos: このファイルにかかる制約を確かめられなかった（${head(reason(e), 200)}）。`);
     }
   },
 );

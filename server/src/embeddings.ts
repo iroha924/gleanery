@@ -9,7 +9,7 @@
 
 import { type Db, EMBED_MODEL, type Env, embed, VoyageError, vec } from "./db.ts";
 import { knowledgeText, type MessageEmbedInput, messageText } from "./knowledge.ts";
-import { sha256 } from "./text.ts";
+import { reason, sha256 } from "./text.ts";
 
 const MAX_ATTEMPTS = 5;
 const BATCH = 200;
@@ -22,7 +22,7 @@ type Table = { name: "knowledge_embedding" | "message_embedding"; id: "knowledge
 
 /** 本文を受け付けなかった（大きすぎる・形が違う）。鍵・上限・障害とは分ける。 */
 const rejectsInput = (e: unknown): boolean => e instanceof VoyageError && [400, 413, 422].includes(e.status);
-const reason = (e: unknown): string => (e instanceof Error ? e.message : String(e)).slice(0, 500);
+const why = (e: unknown): string => reason(e).slice(0, 500);
 
 // **書き戻すのは、読んだ時点から本文が変わっていない行だけ。**変わっていれば取り込みが pending に戻しており、
 // 古い本文の結果（成功でも失敗でも）で上書きすると、新しい本文が古いベクトルで引かれるか、取り直されなくなる。
@@ -47,7 +47,7 @@ async function reject(db: Db, t: Table, row: Pending, e: unknown): Promise<void>
   await db.query(
     `update mitos.${t.name} set status = 'error', attempts = attempts + 1, last_error = $3, updated_at = now()
      where ${t.id}::text = $1 and source_hash = $2`,
-    [row.id, row.stored, reason(e)],
+    [row.id, row.stored, why(e)],
   );
 }
 
@@ -78,7 +78,7 @@ async function run(
       );
       continue;
     } catch (e) {
-      if (!rejectsInput(e)) return { embedded, failed, stopped: reason(e) };
+      if (!rejectsInput(e)) return { embedded, failed, stopped: why(e) };
     }
     // どれかの本文を受け付けなかった。1 行ずつ送り直し、受け付けない行だけを数える。
     const refused: [Pending, unknown][] = [];
@@ -86,7 +86,7 @@ async function run(
       try {
         embedded += await store(db, t, [row], await embed(env, [row.text], "document"));
       } catch (e) {
-        if (!rejectsInput(e)) return { embedded, failed, stopped: reason(e) };
+        if (!rejectsInput(e)) return { embedded, failed, stopped: why(e) };
         refused.push([row, e]);
       }
     }
@@ -99,7 +99,7 @@ async function run(
         return {
           embedded,
           failed,
-          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${reason(e)}）` : reason(e),
+          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${why(e)}）` : why(e),
         };
       }
     }

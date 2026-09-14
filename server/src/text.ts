@@ -246,18 +246,28 @@ export function mask(text: string): string {
 }
 
 /**
- * 例外の理由の文。pg は、複数のアドレスへの接続がすべて拒まれると理由の文が空の AggregateError を返すので、
- * そのときは中のエラーの理由をつなぐ。
+ * 例外の理由の文。中のエラー（AggregateError の errors と cause）の理由も添える。pg は、複数のアドレスへの接続が
+ * すべて拒まれると理由の文が空の AggregateError を返し、fetch は本当の理由（名前解決の失敗など）を cause にだけ持つ。
  */
-export function reason(e: unknown): string {
-  if (!(e instanceof Error)) return String(e);
-  if (e.message) return e.message;
+export function reason(e: unknown, depth = 0): string {
+  if (!(e instanceof Error)) {
+    try {
+      return String(e);
+    } catch {
+      return "理由の分からない失敗"; // null prototype のオブジェクトは文字列にできない
+    }
+  }
   const inner =
-    e instanceof AggregateError
-      ? e.errors
-          .map((x: unknown) => (x instanceof Error ? x.message : String(x)))
-          .filter(Boolean)
-          .join(" / ")
-      : "";
-  return inner || e.name || "理由の分からない失敗";
+    depth >= 3
+      ? ""
+      : e instanceof AggregateError
+        ? e.errors
+            .map((x: unknown) => reason(x, depth + 1))
+            .filter(Boolean)
+            .join(" / ")
+        : e.cause === undefined
+          ? ""
+          : reason(e.cause, depth + 1);
+  if (e.message && inner) return `${e.message}（${inner}）`;
+  return e.message || inner || "理由の分からない失敗";
 }

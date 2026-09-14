@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { KINDS } from "../../knowledge.ts";
 import { framed, searchKnowledge, searchMessages } from "../../search.ts";
+import { reason } from "../../text.ts";
 import { db, env } from "../runtime.ts";
 import { positiveIds } from "../validation.ts";
 
@@ -71,7 +72,7 @@ const app = new Hono()
       });
       return c.json({ text: result.text.trim() });
     } catch (error) {
-      console.error("transcribe:", error instanceof Error ? error.message : String(error));
+      console.error("transcribe:", reason(error));
       return c.json({ error: "文字起こしに失敗した" }, 500);
     }
   })
@@ -95,7 +96,7 @@ const app = new Hono()
       });
       return c.json({ token: result.value, expiresAt: result.expires_at });
     } catch (error) {
-      console.error("realtime-token:", error instanceof Error ? error.message : String(error));
+      console.error("realtime-token:", reason(error));
       return c.json({ error: "一時鍵を作れなかった" }, 500);
     }
   })
@@ -168,7 +169,7 @@ const app = new Hono()
         })),
       });
     } catch (error) {
-      console.error("reply:", error instanceof Error ? error.message : String(error));
+      console.error("reply:", reason(error));
       return c.json({ error: "返信案を作れなかった" }, 500);
     }
   })
@@ -219,7 +220,7 @@ const app = new Hono()
         options: parsed.options.filter((option) => option.text.trim() && option.text.trim() !== text),
       });
     } catch (error) {
-      console.error("polish:", error instanceof Error ? error.message : String(error));
+      console.error("polish:", reason(error));
       return c.json({ error: "整形に失敗した" }, 500);
     }
   });

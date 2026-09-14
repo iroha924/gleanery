@@ -50,8 +50,11 @@ export const panel = (head: string, lines: string[], end: string): string =>
 export const plain = (s: string): string =>
   s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 
-/** 1 行に収める文字（呼び名など）。外から来た文字を plain に通し、改行と空白の並びを空白 1 つにまとめる。 */
-export const inline = (s: string): string => plain(s).replace(/\s+/g, " ").trim();
+/**
+ * 1 行に収める文字（呼び名など）。外から来た文字を plain に通し、改行だけを空白 1 つにする。ほかの空白（全角空白など）は
+ * 保存したとおりに残す（表示を写して --said や mitos who に渡すと、保存した名前と完全一致で比べられる）。
+ */
+export const inline = (s: string): string => plain(s).replace(/\n+/g, " ");
 
 /**
  * 端末での表示幅の近似。U+00FF を超える文字を 2 桁と数えるので、全角は合い、ラテン拡張や記号は多めに数える

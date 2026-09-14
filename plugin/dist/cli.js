@@ -24357,13 +24357,18 @@ function mask(text) {
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
-function reason(e) {
-  if (!(e instanceof Error))
-    return String(e);
-  if (e.message)
-    return e.message;
-  const inner = e instanceof AggregateError ? e.errors.map((x) => x instanceof Error ? x.message : String(x)).filter(Boolean).join(" / ") : "";
-  return inner || e.name || "理由の分からない失敗";
+function reason(e, depth = 0) {
+  if (!(e instanceof Error)) {
+    try {
+      return String(e);
+    } catch {
+      return "理由の分からない失敗";
+    }
+  }
+  const inner = depth >= 3 ? "" : e instanceof AggregateError ? e.errors.map((x) => reason(x, depth + 1)).filter(Boolean).join(" / ") : e.cause === undefined ? "" : reason(e.cause, depth + 1);
+  if (e.message && inner)
+    return `${e.message}（${inner}）`;
+  return e.message || inner || "理由の分からない失敗";
 }
 
 // server/src/knowledge.ts
@@ -24475,7 +24480,7 @@ var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)]
 `);
 var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
 `).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
-var inline = (s) => plain(s).replace(/\s+/g, " ").trim();
+var inline = (s) => plain(s).replace(/\n+/g, " ");
 var width = (text) => [...text].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0);
 var pad = (text, to) => text + " ".repeat(Math.max(1, to - width(text)));
 
@@ -25263,7 +25268,7 @@ ${s.text}`)
 var MAX_ATTEMPTS = 5;
 var BATCH2 = 200;
 var rejectsInput = (e) => e instanceof VoyageError && [400, 413, 422].includes(e.status);
-var reason2 = (e) => (e instanceof Error ? e.message : String(e)).slice(0, 500);
+var why = (e) => reason(e).slice(0, 500);
 async function store(db, t, rows, vectors) {
   const r = await db.query(`update mitos.${t.name} e set embedding = x.v::extensions.halfvec, status = 'ready', model = $5,
        source_hash = x.hash, last_error = null, updated_at = now()
@@ -25279,7 +25284,7 @@ async function store(db, t, rows, vectors) {
 }
 async function reject(db, t, row, e) {
   await db.query(`update mitos.${t.name} set status = 'error', attempts = attempts + 1, last_error = $3, updated_at = now()
-     where ${t.id}::text = $1 and source_hash = $2`, [row.id, row.stored, reason2(e)]);
+     where ${t.id}::text = $1 and source_hash = $2`, [row.id, row.stored, why(e)]);
 }
 async function run(db, env, t, load) {
   if (!env.VOYAGE_API_KEY)
@@ -25297,7 +25302,7 @@ async function run(db, env, t, load) {
       continue;
     } catch (e) {
       if (!rejectsInput(e))
-        return { embedded, failed, stopped: reason2(e) };
+        return { embedded, failed, stopped: why(e) };
     }
     const refused = [];
     for (const row of rows) {
@@ -25305,7 +25310,7 @@ async function run(db, env, t, load) {
         embedded += await store(db, t, [row], await embed(env, [row.text], "document"));
       } catch (e) {
         if (!rejectsInput(e))
-          return { embedded, failed, stopped: reason2(e) };
+          return { embedded, failed, stopped: why(e) };
         refused.push([row, e]);
       }
     }
@@ -25316,7 +25321,7 @@ async function run(db, env, t, load) {
         return {
           embedded,
           failed,
-          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${reason2(e)}）` : reason2(e)
+          stopped: rejectsInput(e) ? `どの本文も受け付けられなかった（${why(e)}）` : why(e)
         };
       }
     }
@@ -26701,6 +26706,11 @@ var USAGE = `使い方:
 
 資格情報: ~/.claude/knowledge.env（KNOWLEDGE_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）`;
 var heading = "mitos";
+var SUBCOMMANDS = {
+  trace: ["context", "check", "save"],
+  project: ["add", "list", "forget"],
+  capture: ["flush"]
+};
 var OPTIONS = {
   cwd: { type: "string" },
   host: { type: "string" },
@@ -26935,12 +26945,14 @@ async function main2() {
     throw new Error(`知らないコマンド: ${cmd}
 
 ${USAGE}`);
-  heading = `mitos ${cmd}`;
+  const named = (sub) => sub && SUBCOMMANDS[cmd]?.includes(sub) ? `mitos ${cmd} ${sub}` : `mitos ${cmd}`;
+  heading = named(argv[1]);
   const { values: opt, positionals: rest } = parseArgs({
     args: argv.slice(1),
     options: OPTIONS,
     allowPositionals: true
   });
+  heading = named(rest[0]);
   const cwd = opt.cwd ?? process.cwd();
   const limit = Number(opt.limit ?? 5);
   if (!Number.isInteger(limit) || limit < 1 || limit > 20)
@@ -26962,7 +26974,6 @@ ${USAGE}`);
     return;
   }
   if (cmd === "trace" && rest[0] === "check") {
-    heading = "mitos trace check";
     const file3 = rest[1];
     if (!file3)
       throw new Error(`確かめる記録のファイルを指定する
@@ -27009,7 +27020,6 @@ ${USAGE}`);
       throw new Error(`mitos capture flush だけがある
 
 ${USAGE}`);
-    heading = "mitos capture flush";
     const r = await flush(env);
     if (r.busy) {
       console.log(panel("mitos capture flush", [], "別の送信が走っているので何もしなかった（終われば待ち行列は空になる）"));
@@ -27020,7 +27030,6 @@ ${USAGE}`);
   }
   if (cmd === "trace") {
     if (rest[0] === "context") {
-      heading = "mitos trace context";
       console.log(framed(await traceContext(env, cwd, opt.host)));
       return;
     }
@@ -27028,7 +27037,6 @@ ${USAGE}`);
       throw new Error(`mitos trace context / check <file> / save <file>
 
 ${USAGE}`);
-    heading = "mitos trace save";
     const r = checkTrace(readTrace(rest[1]));
     if (!r.trace)
       throw new Error(`記録の形が通らない:
@@ -27052,7 +27060,6 @@ ${r.problems.map((p) => `  ${p}`).join(`
   if (cmd === "project") {
     const sub = rest[0];
     if (sub === "add") {
-      heading = "mitos project add";
       const place = opt.name ? nameLocal(cwd, opt.name) : placeOf(cwd);
       await withDb(env, "ingest", async (c) => {
         const r = await c.query("insert into mitos.project (key, name) values ($1, $2) on conflict (key) do nothing returning id", [place.key, place.name]);
@@ -27061,7 +27068,6 @@ ${r.problems.map((p) => `  ${p}`).join(`
       return;
     }
     if (sub === "list") {
-      heading = "mitos project list";
       const { found, ambiguous } = localRoots();
       await withDb(env, "reader", async (c) => {
         const r = await c.query(`select p.key, p.name, max(cn.last_success_at) as last from mitos.project p
@@ -27076,7 +27082,6 @@ ${r.problems.map((p) => `  ${p}`).join(`
       return;
     }
     if (sub === "forget") {
-      heading = "mitos project forget";
       const target = rest[1];
       if (!target)
         throw new Error(`消す作業場所を key か名前で指定する

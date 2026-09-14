@@ -131,8 +131,9 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 // ---- 状態の印が、CLI と review の台帳で揃っているか ----
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
-// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。**印と状態の組で比べる**（並びや集合で比べると入れ替えを
-// 見逃す）。凡例だけでなく、例の表に書いた「印 状態」の組もすべて見る。
+// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印と状態を並べて書くのは凡例の 1 行と「### 形」の例の
+// 表の 2 か所だけと決め、そこを決まった形で読む（本文のどこに書いても拾う読み方は、書き方の揺れに終わりが無い）。
+// 形から外れた書き方は、印が合っていても落とす。
 const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
 const marks = Object.fromEntries(
   [
@@ -143,21 +144,32 @@ const marks = Object.fromEntries(
 );
 if (Object.keys(LEDGER).every((k) => marks[k])) {
   const states = Object.values(LEDGER).join("|");
-  const review = read("plugin/skills/review/SKILL.md");
-  // 凡例は印の字を問わずに取り出す（MARKS に無い字を書いたら、それを食い違いとして出す）。表と本文は、状態名の直前にある
-  // 記号 1 字（BMP の外も含む）を印とみなし、バッククォートや太字で囲んでいても読む。囲いと表の区切りの字は印にしない。
-  const legend = [
-    ...(
-      grab("plugin/skills/review/SKILL.md", /状態は印（(.*?)）/, "review Skill の台帳の凡例") ?? ""
-    ).matchAll(new RegExp(`\`([^\`]+)\` (${states})`, "g")),
-  ];
-  const cells = [...review.matchAll(new RegExp(`(?![\`*|])(\\p{S})[\`*]*\\s*(${states})`, "gu"))];
-  const missing = Object.values(LEDGER).filter((state) => !legend.some((m) => m[2] === state));
-  if (missing.length) fail.push(`review Skill の台帳の凡例に ${missing.join(" / ")} の印が無い`);
-  for (const [, glyph, state] of [...legend, ...cells]) {
+  const skill = "plugin/skills/review/SKILL.md";
+  const pairs = [];
+  const legend = grab(skill, /状態は印（(.*?)）/, "review Skill の台帳の凡例");
+  for (const part of legend?.split(" / ") ?? []) {
+    const m = part.match(new RegExp(`^\`([^\`]+)\` (${states})$`));
+    if (m) pairs.push([m[1], m[2], "凡例"]);
+    else fail.push(`review Skill の台帳の凡例「${part}」は「\`印\` 状態」の形で書く`);
+  }
+  const missing = Object.values(LEDGER).filter((state) => !pairs.some(([, s]) => s === state));
+  if (legend !== null && missing.length)
+    fail.push(`review Skill の台帳の凡例に ${missing.join(" / ")} が無い`);
+  const example = grab(skill, /### 形\n[\s\S]*?```\n([\s\S]*?)\n```/, "review Skill の「形」の例");
+  for (const line of (example ?? "").split("\n").filter((l) => l.startsWith("|"))) {
+    for (const cell of line.split("|").map((c) => c.trim())) {
+      if (!new RegExp(states).test(cell)) continue;
+      const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（[^）]*）)?$`, "u"));
+      if (m) pairs.push([m[1], m[2], "例の表"]);
+      else fail.push(`review Skill の「形」の例のセル「${cell}」は「印 状態（注記）」の形で書く`);
+    }
+  }
+  for (const [glyph, state, where] of pairs) {
     const key = Object.keys(LEDGER).find((k) => LEDGER[k] === state);
     if (marks[key] !== glyph)
-      fail.push(`review Skill が「${state}」に ${glyph} を書いている。panel.ts の ${key} は ${marks[key]}`);
+      fail.push(
+        `review Skill の${where}が「${state}」に ${glyph} を書いている。panel.ts の ${key} は ${marks[key]}`,
+      );
   }
 } else {
   fail.push(

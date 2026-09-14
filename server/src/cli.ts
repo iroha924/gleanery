@@ -51,10 +51,17 @@ const USAGE = `使い方:
 
 資格情報: ~/.claude/knowledge.env（KNOWLEDGE_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）`;
 
-// 引数の解釈を自前で書かない。手書きのループは知らないフラグと `--name=値` を黙って捨てる。
-/** エラーの枠の見出し。振り分けた分岐が決まった文字列で詳しくしていく（打った引数は入れない）。 */
+/** エラーの枠の見出し。知っているコマンドとサブコマンドの名前だけで作る（打った引数そのものは入れない）。 */
 let heading = "mitos";
 
+/** サブコマンドを持つコマンド。振り分けの前に止まったエラーでも、見出しにサブコマンドまで出すのに使う。 */
+const SUBCOMMANDS: Record<string, string[]> = {
+  trace: ["context", "check", "save"],
+  project: ["add", "list", "forget"],
+  capture: ["flush"],
+};
+
+// 引数の解釈を自前で書かない。手書きのループは知らないフラグと `--name=値` を黙って捨てる。
 const OPTIONS = {
   cwd: { type: "string" },
   host: { type: "string" },
@@ -374,12 +381,16 @@ async function main(): Promise<void> {
   }
   const KNOWN = ["project", "sync", "search", "who", "trace", "capture", "init", "check", "doctor", "advice"];
   if (!KNOWN.includes(cmd)) throw new Error(`知らないコマンド: ${cmd}\n\n${USAGE}`);
-  heading = `mitos ${cmd}`;
+  const named = (sub: string | undefined) =>
+    sub && SUBCOMMANDS[cmd]?.includes(sub) ? `mitos ${cmd} ${sub}` : `mitos ${cmd}`;
+  // 引数の解釈で止まるときは打った順の 2 番目から、解釈できたらフラグを除いた最初の位置引数から決める。
+  heading = named(argv[1]);
   const { values: opt, positionals: rest } = parseArgs({
     args: argv.slice(1),
     options: OPTIONS,
     allowPositionals: true,
   });
+  heading = named(rest[0]);
   const cwd = opt.cwd ?? process.cwd();
   // MCP は 1〜10 に縛っている。CLI だけ穴を開けると、負の値が Voyage の top_k へそのまま流れる。
   const limit = Number(opt.limit ?? 5);
@@ -419,7 +430,6 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "trace" && rest[0] === "check") {
-    heading = "mitos trace check";
     const file = rest[1];
     if (!file) throw new Error(`確かめる記録のファイルを指定する\n\n${USAGE}`);
     const r = checkTrace(readTrace(file));
@@ -480,7 +490,6 @@ async function main(): Promise<void> {
   if (cmd === "doctor") return doctor(env, cwd);
   if (cmd === "capture") {
     if (rest[0] !== "flush") throw new Error(`mitos capture flush だけがある\n\n${USAGE}`);
-    heading = "mitos capture flush";
     const r = await flush(env);
     if (r.busy) {
       console.log(
@@ -505,13 +514,11 @@ async function main(): Promise<void> {
   }
   if (cmd === "trace") {
     if (rest[0] === "context") {
-      heading = "mitos trace context";
       console.log(framed(await traceContext(env, cwd, opt.host)));
       return;
     }
     if (rest[0] !== "save" || !rest[1])
       throw new Error(`mitos trace context / check <file> / save <file>\n\n${USAGE}`);
-    heading = "mitos trace save";
     const r = checkTrace(readTrace(rest[1]));
     if (!r.trace) throw new Error(`記録の形が通らない:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
     const trace = r.trace;
@@ -544,7 +551,6 @@ async function main(): Promise<void> {
   if (cmd === "project") {
     const sub = rest[0];
     if (sub === "add") {
-      heading = "mitos project add";
       const place = opt.name ? nameLocal(cwd, opt.name) : placeOf(cwd);
       await withDb(env, "ingest", async (c) => {
         const r = await c.query<{ id: string }>(
@@ -564,7 +570,6 @@ async function main(): Promise<void> {
       return;
     }
     if (sub === "list") {
-      heading = "mitos project list";
       const { found, ambiguous } = localRoots();
       await withDb(env, "reader", async (c) => {
         const r = await c.query<{ key: string; name: string; last: Date | null }>(
@@ -588,7 +593,6 @@ async function main(): Promise<void> {
       return;
     }
     if (sub === "forget") {
-      heading = "mitos project forget";
       const target = rest[1];
       if (!target) throw new Error(`消す作業場所を key か名前で指定する\n\n${USAGE}`);
       await withDb(env, "ingest", async (c) => {
