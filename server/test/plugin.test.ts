@@ -303,24 +303,30 @@ test("MCP の serverInfo は manifest の版を名乗る", async () => {
 });
 
 test("MCP の recall と read は、失敗の理由を空にせず isError で返す", async () => {
-  // 鍵の無い環境では DB へ繋ぐ前に止まる。投げたままにすると SDK が error.message だけを返す。
+  // localhost は ::1 と 127.0.0.1 の両方に解決され、どちらも拒むと pg は理由の文が空の AggregateError を返す。
+  // 投げたままにすると SDK が error.message（空）だけを返す。all_projects で、走らせる場所の登録に左右されない。
   const client = new Client({ name: "test", version: "0" });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
       args: [path.join(SRC, "mcp.ts")],
-      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", KNOWLEDGE_ENV_DIR: "/nonexistent" },
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: "/nonexistent",
+        KNOWLEDGE_ENV_DIR: "/nonexistent",
+        KNOWLEDGE_DB_URL_RO: "postgres://u:p@localhost:1/db",
+      },
       stderr: "ignore",
     }),
   );
   try {
     for (const [name, args] of [
-      ["recall", { question: "x" }],
-      ["read", { refs: ["k:1"] }],
+      ["recall", { question: "x", all_projects: true }],
+      ["read", { refs: ["k:1"], all_projects: true }],
     ] as const) {
       const r = await client.callTool({ name, arguments: args });
       assert.equal(r.isError, true, name);
-      assert.match(JSON.stringify(r.content), /mitos: 失敗した（KNOWLEDGE_DB_URL_RO/, name);
+      assert.match(JSON.stringify(r.content), /mitos: 失敗した（[^）]*ECONNREFUSED/, name);
     }
   } finally {
     await client.close();

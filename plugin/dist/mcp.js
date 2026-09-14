@@ -39832,7 +39832,7 @@ async function here2(cwd) {
 }
 var unregistered = (h) => h.place ? `この作業場所（${h.place.name}）は mitos に登録されていない。登録は \`mitos project add\`。` : "この場所は git の remote も名前も持たないので、どの作業場所か決められない。";
 var text = (t) => ({ content: [{ type: "text", text: t }] });
-var failed = (e) => ({ ...text(`mitos: 失敗した（${reason(e)}）`), isError: true });
+var failed = (e) => ({ ...text(`mitos: 失敗した（${head(reason(e), 1000)}）`), isError: true });
 var server = new McpServer({ name: "mitos", version: VERSION ?? "unknown" }, {
   instructions: [
     "過去の判断・会話・文書を引く（DB は読むだけ）。",

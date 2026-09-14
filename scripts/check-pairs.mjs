@@ -131,9 +131,9 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 // ---- 状態の印が、CLI と review の台帳で揃っているか ----
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
-// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印と状態を並べて書くのは凡例の 1 行と「### 形」の例の
-// 表の 2 か所だけと決め（Skill にもそう書いてある）、そこを決まった形で読む。形から外れた書き方は、印が合っていても落とす
-// （本文のどこに書いても拾う読み方は、書き方の揺れに終わりが無い）。本文は、MARKS の印が状態名の隣にあるものだけ突き合わせる。
+// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印と状態名を並べて書くのは凡例の 1 行と「### 形」の例の
+// 台帳の表の 2 か所だけと決め（Skill にもそう書いてある）、そこは決まった形で読み、外れた書き方は印が合っていても落とす。
+// ほかの場所に記号と状態名を並べて書いたら、それも落とす（印を変えた後に古い印が残るずれを、字を問わずに捕まえる）。
 const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
 const marks = Object.fromEntries(
   [
@@ -146,28 +146,46 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
   const states = Object.values(LEDGER).join("|");
   const skill = "plugin/skills/review/SKILL.md";
   const pairs = [];
-  const legend = grab(skill, /状態は印（(.*?)）/, "review Skill の台帳の凡例");
-  for (const part of legend?.split(" / ") ?? []) {
+  const legendLine = grab(skill, /(状態は印（.*?）)/, "review Skill の台帳の凡例");
+  for (const part of legendLine?.slice("状態は印（".length, -1).split(" / ") ?? []) {
     const m = part.match(new RegExp(`^\`([^\`]+)\` (${states})$`));
     if (m) pairs.push([m[1], m[2], "凡例"]);
     else fail.push(`review Skill の台帳の凡例「${part}」は「\`印\` 状態」の形で書く`);
   }
   const missing = Object.values(LEDGER).filter((state) => !pairs.some(([, s]) => s === state));
-  if (legend !== null && missing.length)
+  if (legendLine !== null && missing.length)
     fail.push(`review Skill の台帳の凡例に ${missing.join(" / ")} が無い`);
   const example = grab(skill, /### 形\n[\s\S]*?```\n([\s\S]*?)\n```/, "review Skill の「形」の例");
-  for (const line of (example ?? "").split("\n").filter((l) => l.trimStart().startsWith("|"))) {
-    for (const cell of line.split("|").map((c) => c.trim())) {
-      // 状態名が語として出てくるセルだけを見る（「実行されない」のような文の一部は状態ではない）。
-      if (!new RegExp(`(^|\\s)(${states})(?=$|（|\\s)`).test(cell)) continue;
+  // 例の中の台帳の表（見出しに Claude と Codex の列を持つ表）の、観点の列より右のセルはすべて「印 状態（注記）」で書く。
+  const rows = (example ?? "").split("\n").map((l) => l.trim());
+  const head = rows.findIndex(
+    (l) => l.startsWith("|") && /\| *Claude *\|/.test(l) && /\| *Codex *\|/.test(l),
+  );
+  if (example !== null && head < 0)
+    fail.push("review Skill の「形」の例に、Claude と Codex の列を持つ台帳の表が無い");
+  for (const row of head < 0 ? [] : rows.slice(head + 2)) {
+    if (!row.startsWith("|")) break;
+    for (const cell of row
+      .split("|")
+      .slice(2, -1)
+      .map((c) => c.trim())) {
       const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（[^）]*）)?$`, "u"));
-      if (m) pairs.push([m[1], m[2], "例の表"]);
-      else fail.push(`review Skill の「形」の例のセル「${cell}」は「印 状態（注記）」の形で書く`);
+      if (m) pairs.push([m[1], m[2], "例の台帳"]);
+      else fail.push(`review Skill の「形」の例の台帳のセル「${cell}」は「印 状態（注記）」の形で書く`);
     }
   }
-  const glyphs = Object.values(marks).join("");
-  for (const m of read(skill).matchAll(new RegExp(`\`?([${glyphs}])\`? (${states})(?=$|（|\\s|\`)`, "gmu")))
-    pairs.push([m[1], m[2], "本文"]);
+  const prose = read(skill)
+    .replace(legendLine ?? "\u0000", "")
+    .replace(example ?? "\u0000", "");
+  for (const m of prose.matchAll(
+    new RegExp(
+      `(?![\`*|])(\\p{S})[\`*]*\\s*[\`*]*(${states})(?![\\p{Script=Hiragana}\\p{Script=Han}ー])`,
+      "gu",
+    ),
+  ))
+    fail.push(
+      `review Skill の本文に「${m[0].replace(/[`*]/g, "").trim()}」と印と状態名を並べている。並べるのは凡例と「形」の例の台帳だけにする`,
+    );
   for (const [glyph, state, where] of pairs) {
     const key = Object.keys(LEDGER).find((k) => LEDGER[k] === state);
     if (marks[key] !== glyph)

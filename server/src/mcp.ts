@@ -68,7 +68,7 @@ const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
  * 道具の失敗を、理由の文つきで返す。投げたままだと SDK が error.message だけを返し、pg の理由の空の AggregateError では
  * 空文字になる（CLI と同じ reason() で、中のエラーの理由まで出す）。
  */
-const failed = (e: unknown) => ({ ...text(`mitos: 失敗した（${reason(e)}）`), isError: true });
+const failed = (e: unknown) => ({ ...text(`mitos: 失敗した（${head(reason(e), 1000)}）`), isError: true });
 
 const server = new McpServer(
   { name: "mitos", version: VERSION ?? "unknown" },

@@ -56,7 +56,7 @@ Codexでは組み込みの`skill-creator`を使う。
 | `db/schema.sql`のCHECK（知識の種類と状態、話者、出自、ファイルの操作） | `server/src/knowledge.ts`の定数 | `scripts/check-pairs.mjs` |
 | 同期が承認を判定する成果物のpath（`ARTIFACT_PATH`） | 画面の成果物の種別 | `scripts/check-pairs.mjs` |
 | 表示の状態の印（`server/src/panel.ts`の`MARKS`） | review Skillの台帳の凡例と「形」の例の表 | `scripts/check-pairs.mjs` |
-| 例外の理由の文（CLI・自動記録・MCP・画面のAPI） | 同じ失敗を別の出口で出す文 | 同じ`server/src/text.ts`の`reason`を通す |
+| 例外の理由の文（CLI、自動記録、MCP、画面のチャット、音声のログ） | 同じ失敗を別の出口で出す文 | 同じ`server/src/text.ts`の`reason`を通す |
 | 自動記録を送れていない判定（sessionの開始時の警告） | `mitos doctor`の「自動記録」の行 | 同じ`server/src/capture.ts`の`readState().stuck`を通す |
 | CLIの`USAGE` | READMEのCLI一覧 | `scripts/check-pairs.mjs`が書き出す |
 | schemaのrevision | `server/src/db.ts`の`SCHEMA_REVISION` | `server/test/db.test.ts` |
