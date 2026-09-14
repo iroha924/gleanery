@@ -21,7 +21,7 @@ test("コードが期待する schema の版は db/schema.sql の版と同じ", 
 const dbAt = (revision: number): Db =>
   ({ query: async () => ({ rows: [{ comment: `mitos schema revision ${revision}` }] }) }) as unknown as Db;
 
-// この文面は MCP の応答として AI に届く。db:reset は自動記録した会話と trace を戻せない形で消す。
+// 案内の文面は MCP の応答とフックで AI に届くので、実在する command だけを示す。
 test("DB の schema が古ければ db:migrate を案内し、db:reset を案内しない", async () => {
   await assert.rejects(checkSchema(dbAt(SCHEMA_REVISION - 1)), (e: unknown) => {
     assert.ok(e instanceof Error);

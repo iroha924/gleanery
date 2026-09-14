@@ -55,6 +55,8 @@ async function apply(): Promise<void> {
  */
 export function pendingMigrations(files: string[], current: number): { revision: number; file: string }[] {
   const all = files
+    // `.` で始まる名前は OS やエディタの隠しファイル（.DS_Store、vim の swap）で、書き損じた migration ではない。
+    .filter((file) => !file.startsWith("."))
     .map((file) => {
       const revision = file.match(/^(\d{4})_[a-z0-9_]+\.sql$/)?.[1];
       if (!revision) throw new Error(`db/migrations/${file} の名前が NNNN_<英小文字・数字・_>.sql でない`);
@@ -102,8 +104,13 @@ async function migrate(): Promise<void> {
     console.log(`いまの revision: ${current}`);
     console.log(`当てる: ${todo.map((m) => m.file).join(" / ")}`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    // 標準入力が EOF で閉じても question は settle せず、owner の接続を開いたまま止まる。
+    const closed = new AbortController();
+    rl.once("close", () => closed.abort());
     const typed = (
-      await rl.question(`続けるなら endpoint 名（${t.endpoint}）を打つ: `).catch(() => "")
+      await rl
+        .question(`続けるなら endpoint 名（${t.endpoint}）を打つ: `, { signal: closed.signal })
+        .catch(() => "")
     ).trim();
     rl.close();
     if (typed !== t.endpoint) {
