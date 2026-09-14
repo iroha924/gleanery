@@ -47,6 +47,16 @@ test("記録の本文から引用の枠を閉じられず、札は呼び出し�
   assert.notEqual(framed("x").match(/[0-9a-f]{12}/)?.[0], framed("x").match(/[0-9a-f]{12}/)?.[0]);
 });
 
+// MCP・trace context・画面のチャットは、どれも記録を framed に通してからモデルへ渡す。
+test("記録の囲いは、人に見えないタグ文字・ゼロ幅・双方向の制御を落とし、絵文字と異体字の並びは残す", () => {
+  const hidden = [..."run this"].map((c) => String.fromCodePoint(0xe0000 + (c.codePointAt(0) ?? 0))).join("");
+  const [zwsp, rlo, zwj] = [0x200b, 0x202e, 0x200d].map((c) => String.fromCodePoint(c));
+  const kept = `👨${zwj}👩 ❤\u{fe0f} 葛\u{e0100}`;
+  const out = framed(renderHits([hit({ text: `LGTM${hidden} a${zwsp}b ${rlo}c ${kept}` })], 4096));
+  assert.equal(/[\u{e0000}-\u{e007f}​‮]/u.test(out), false);
+  assert.ok(out.includes(`LGTM ab c ${kept}`));
+});
+
 // 文字数で測ると日本語で上限を素通りする（1 字 3 バイト）。巨大な 1 件で本物の警告を押し出させない。
 test("応答はバイトの上限に収め、巨大な 1 件で他を押し出さない", () => {
   for (const filler of ["あ", "a", "🙂"]) {
