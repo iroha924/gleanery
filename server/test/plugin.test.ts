@@ -304,8 +304,8 @@ test("MCP の serverInfo は manifest の版を名乗る", async () => {
 
 test("MCP の recall と read は、失敗の理由を空にせず isError で返す", async () => {
   // localhost が ::1 と 127.0.0.1 の両方に解決される環境では、両方に拒まれた pg が、理由の文が空の AggregateError を投げる。
-  // 投げたままにすると SDK は error.message（空）だけを返す。1 つにしか解決されない環境では理由が空にならず、ここでは
-  // 確かめられない（理由の組み立ては text.test.ts が決まった入力で確かめる）。all_projects で、走らせる場所の登録に左右されない。
+  // 投げたままにすると SDK は error.message（空）だけを返す。1 つにしか解決されない環境では理由が空にならず、失敗の文が
+  // reason() を通すことをここでは確かめられない。all_projects で、走らせる場所の登録に左右されない。
   const client = new Client({ name: "test", version: "0" });
   await client.connect(
     new StdioClientTransport({

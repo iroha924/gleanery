@@ -132,8 +132,9 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
 // 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印の字を書いてよいのは凡例の 1 行と「### 形」の例の
-// 台帳の表（見出しに Claude と Codex の列を持つ表）だけと決め（Skill にもそう書いてある）、そこは決まった形で読んで
-// 組を突き合わせ、ほかの行に印の字があれば落とす。commit ごとに守らせるので、印を変えても古い印は外に残らない。
+// 台帳の表（見出しに Claude と Codex の列を持つ表）の状態のセルだけと決め（Skill にもそう書いてある）、そこは決まった形で
+// 読んで組を突き合わせ、ほかの場所に印の字があれば落とす。pre-commit と CI（push の先端）で守らせるので、印を変えても
+// 古い印は外に残らない（フックを経ない commit を同じ push に混ぜたときは残りうる）。
 // 印でない記号と状態名を並べた書き方（「● 実行」など）は見ない。本文の書き方を読み分けようとすると終わりが無い。
 const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
 const marks = Object.fromEntries(
@@ -171,15 +172,18 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
       .replace(/\|$/, "")
       .split("|")
       .map((c) => c.trim());
-  const ledgerRows = new Set();
+  // 印の字を書いてはいけない部分。凡例の中身と、台帳の表の状態のセルだけを除く。
+  const outside = [...lines];
+  if (legend !== undefined) outside[legendAt] = lines[legendAt].replace(/状態は印（.*?）/, "");
+  let tables = 0;
   for (let i = open + 1; i < close; i++) {
     const head = cells(lines[i]);
     if (!head.includes("Claude") || !head.includes("Codex")) continue;
-    ledgerRows.add(i);
-    for (i++; i < close && lines[i].trim(); i++) {
-      ledgerRows.add(i);
-      const row = cells(lines[i]).slice(1);
-      if (row.every((c) => /^:?-+:?$/.test(c))) continue;
+    tables++;
+    // 見出しの次の 1 行が区切り（GFM の決まり）。そこから空行までが表の行で、1 列目は観点。
+    for (i += 2; i < close && lines[i].trim(); i++) {
+      const [aspect, ...row] = cells(lines[i]);
+      outside[i] = aspect;
       for (const cell of row) {
         const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（[^）]*）)?$`, "u"));
         if (m) pairs.push([m[1], m[2], "例の台帳"]);
@@ -187,14 +191,12 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
       }
     }
   }
-  if (close >= 0 && ledgerRows.size === 0)
+  if (close >= 0 && tables === 0)
     fail.push("review Skill の「形」の例に、Claude と Codex の列を持つ台帳の表が無い");
-  lines.forEach((line, i) => {
-    if (ledgerRows.has(i)) return;
-    const rest = i === legendAt ? line.replace(/状態は印（.*?）/, "") : line;
-    for (const glyph of Object.values(marks).filter((g) => rest.includes(g)))
+  outside.forEach((text, i) => {
+    for (const glyph of Object.values(marks).filter((g) => text.includes(g)))
       fail.push(
-        `review Skill の ${i + 1} 行目に印の ${glyph} がある。印を書くのは凡例と「形」の例の台帳の表だけにする`,
+        `review Skill の ${i + 1} 行目に印の ${glyph} がある。印を書くのは凡例と「形」の例の台帳の表の状態のセルだけにする`,
       );
   });
   for (const [glyph, state, where] of pairs) {
