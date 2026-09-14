@@ -132,9 +132,9 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
 // 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印の字を書いてよいのは凡例の 1 行と「### 形」の例の
-// 台帳の表（見出しに Claude と Codex の列を持つ表）の状態のセルだけと決め（Skill にもそう書いてある）、そこは決まった形で
-// 読んで組を突き合わせ、ほかの場所に印の字があれば落とす。pre-commit と CI（push の先端）で守らせるので、印を変えても
-// 古い印は外に残らない（フックを経ない commit を同じ push に混ぜたときは残りうる）。
+// 台帳の表（見出しに Claude と Codex の列を持つ表）の状態のセルだけと決め（注記の中は除く。Skill にもそう書いてある）、
+// そこは決まった形で読んで組を突き合わせ、ほかの場所に印の字があれば落とす。pre-commit が commit ごとに守らせるので、
+// 印を変えても古い印は外に残らない。フックを経ない commit では守られず、CI（PR と main）は先端しか見ない。
 // 印でない記号と状態名を並べた書き方（「● 実行」など）は見ない。本文の書き方を読み分けようとすると終わりが無い。
 const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
 const marks = Object.fromEntries(
@@ -164,15 +164,15 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
   const open = at < 0 ? -1 : lines.indexOf("```", at);
   const close = open < 0 ? -1 : lines.indexOf("```", open + 1);
   if (close < 0) fail.push("review Skill の「### 形」の例（``` で囲んだ塊）を取り出せない");
-  // GFM の表は両端の | を省けて、空行で終わる。
+  // GFM の表は両端の | を省けて、\| はセルの中の | になる。空行までが表。
   const cells = (line) =>
     line
       .trim()
       .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
+      .replace(/(?<!\\)\|$/, "")
+      .split(/(?<!\\)\|/)
       .map((c) => c.trim());
-  // 印の字を書いてはいけない部分。凡例の中身と、台帳の表の状態のセルだけを除く。
+  // 印の字を書いてはいけない部分。凡例の中身と、台帳の表の状態のセル（注記の中は除く）だけを外す。
   const outside = [...lines];
   if (legend !== undefined) outside[legendAt] = lines[legendAt].replace(/状態は印（.*?）/, "");
   let tables = 0;
@@ -181,13 +181,19 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
     if (!head.includes("Claude") || !head.includes("Codex")) continue;
     tables++;
     // 見出しの次の 1 行が区切り（GFM の決まり）。そこから空行までが表の行で、1 列目は観点。
+    if (!cells(lines[i + 1] ?? "").every((c) => /^:?-+:?$/.test(c)))
+      fail.push(`review Skill の ${i + 2} 行目は、台帳の表の見出しの次なので区切りの行（|---|）にする`);
     for (i += 2; i < close && lines[i].trim(); i++) {
       const [aspect, ...row] = cells(lines[i]);
       outside[i] = aspect;
       for (const cell of row) {
-        const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（[^）]*）)?$`, "u"));
-        if (m) pairs.push([m[1], m[2], "例の台帳"]);
-        else fail.push(`review Skill の「形」の例の台帳のセル「${cell}」は「印 状態（注記）」の形で書く`);
+        const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（([^）]*)）)?$`, "u"));
+        if (!m) {
+          fail.push(`review Skill の「形」の例の台帳のセル「${cell}」は「印 状態（注記）」の形で書く`);
+          continue;
+        }
+        pairs.push([m[1], m[2], "例の台帳"]);
+        outside[i] += ` ${m[3] ?? ""}`;
       }
     }
   }
@@ -196,7 +202,7 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
   outside.forEach((text, i) => {
     for (const glyph of Object.values(marks).filter((g) => text.includes(g)))
       fail.push(
-        `review Skill の ${i + 1} 行目に印の ${glyph} がある。印を書くのは凡例と「形」の例の台帳の表の状態のセルだけにする`,
+        `review Skill の ${i + 1} 行目に印の ${glyph} がある。印を書くのは凡例と、「形」の例の台帳の表の状態のセル（注記の外）だけにする`,
       );
   });
   for (const [glyph, state, where] of pairs) {
