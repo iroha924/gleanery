@@ -718,11 +718,11 @@ async function main(): Promise<void> {
       const hits = opt.said
         ? await searchMessages(c, env, { question: question || undefined, projects, who: opt.said, limit })
         : await searchKnowledge(c, env, { question, projects, avoid: opt.avoid, limit });
-      // この出力はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通す。
+      // この出力はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
       console.log(
         panel(
           "mitos search",
-          hits.length ? [framed(renderHits(hits, 16 * 1024))] : [],
+          hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [],
           `${hits.length ? `${hits.length} 件` : "該当なし"} / ${place ? place.name : "すべての作業場所"}`,
         ),
       );
