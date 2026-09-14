@@ -131,9 +131,10 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 // ---- 状態の印が、CLI と review の台帳で揃っているか ----
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
-// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印と状態名を並べて書くのは凡例の 1 行と「### 形」の例の
-// 台帳の表の 2 か所だけと決め（Skill にもそう書いてある）、そこは決まった形で読み、外れた書き方は印が合っていても落とす。
-// ほかの場所に記号と状態名を並べて書いたら、それも落とす（印を変えた後に古い印が残るずれを、字を問わずに捕まえる）。
+// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印の字を書いてよいのは凡例の 1 行と「### 形」の例の
+// 台帳の表（見出しに Claude と Codex の列を持つ表）だけと決め（Skill にもそう書いてある）、そこは決まった形で読んで
+// 組を突き合わせ、ほかの行に印の字があれば落とす。commit ごとに守らせるので、印を変えても古い印は外に残らない。
+// 印でない記号と状態名を並べた書き方（「● 実行」など）は見ない。本文の書き方を読み分けようとすると終わりが無い。
 const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
 const marks = Object.fromEntries(
   [
@@ -145,47 +146,57 @@ const marks = Object.fromEntries(
 if (Object.keys(LEDGER).every((k) => marks[k])) {
   const states = Object.values(LEDGER).join("|");
   const skill = "plugin/skills/review/SKILL.md";
+  const lines = read(skill).split("\n");
   const pairs = [];
-  const legendLine = grab(skill, /(状態は印（.*?）)/, "review Skill の台帳の凡例");
-  for (const part of legendLine?.slice("状態は印（".length, -1).split(" / ") ?? []) {
+  const legendAt = lines.findIndex((l) => l.includes("状態は印（"));
+  const legend = lines[legendAt]?.match(/状態は印（(.*?)）/)?.[1];
+  if (legend === undefined) fail.push("review Skill の台帳の凡例（「状態は印（…）」）を取り出せない");
+  for (const part of legend?.split(" / ") ?? []) {
     const m = part.match(new RegExp(`^\`([^\`]+)\` (${states})$`));
     if (m) pairs.push([m[1], m[2], "凡例"]);
     else fail.push(`review Skill の台帳の凡例「${part}」は「\`印\` 状態」の形で書く`);
   }
   const missing = Object.values(LEDGER).filter((state) => !pairs.some(([, s]) => s === state));
-  if (legendLine !== null && missing.length)
+  if (legend !== undefined && missing.length)
     fail.push(`review Skill の台帳の凡例に ${missing.join(" / ")} が無い`);
-  const example = grab(skill, /### 形\n[\s\S]*?```\n([\s\S]*?)\n```/, "review Skill の「形」の例");
-  // 例の中の台帳の表（見出しに Claude と Codex の列を持つ表）の、観点の列より右のセルはすべて「印 状態（注記）」で書く。
-  const rows = (example ?? "").split("\n").map((l) => l.trim());
-  const head = rows.findIndex(
-    (l) => l.startsWith("|") && /\| *Claude *\|/.test(l) && /\| *Codex *\|/.test(l),
-  );
-  if (example !== null && head < 0)
-    fail.push("review Skill の「形」の例に、Claude と Codex の列を持つ台帳の表が無い");
-  for (const row of head < 0 ? [] : rows.slice(head + 2)) {
-    if (!row.startsWith("|")) break;
-    for (const cell of row
+  const at = lines.indexOf("### 形");
+  const open = at < 0 ? -1 : lines.indexOf("```", at);
+  const close = open < 0 ? -1 : lines.indexOf("```", open + 1);
+  if (close < 0) fail.push("review Skill の「### 形」の例（``` で囲んだ塊）を取り出せない");
+  // GFM の表は両端の | を省けて、空行で終わる。
+  const cells = (line) =>
+    line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/\|$/, "")
       .split("|")
-      .slice(2, -1)
-      .map((c) => c.trim())) {
-      const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（[^）]*）)?$`, "u"));
-      if (m) pairs.push([m[1], m[2], "例の台帳"]);
-      else fail.push(`review Skill の「形」の例の台帳のセル「${cell}」は「印 状態（注記）」の形で書く`);
+      .map((c) => c.trim());
+  const ledgerRows = new Set();
+  for (let i = open + 1; i < close; i++) {
+    const head = cells(lines[i]);
+    if (!head.includes("Claude") || !head.includes("Codex")) continue;
+    ledgerRows.add(i);
+    for (i++; i < close && lines[i].trim(); i++) {
+      ledgerRows.add(i);
+      const row = cells(lines[i]).slice(1);
+      if (row.every((c) => /^:?-+:?$/.test(c))) continue;
+      for (const cell of row) {
+        const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（[^）]*）)?$`, "u"));
+        if (m) pairs.push([m[1], m[2], "例の台帳"]);
+        else fail.push(`review Skill の「形」の例の台帳のセル「${cell}」は「印 状態（注記）」の形で書く`);
+      }
     }
   }
-  const prose = read(skill)
-    .replace(legendLine ?? "\u0000", "")
-    .replace(example ?? "\u0000", "");
-  for (const m of prose.matchAll(
-    new RegExp(
-      `(?![\`*|])(\\p{S})[\`*]*\\s*[\`*]*(${states})(?![\\p{Script=Hiragana}\\p{Script=Han}ー])`,
-      "gu",
-    ),
-  ))
-    fail.push(
-      `review Skill の本文に「${m[0].replace(/[`*]/g, "").trim()}」と印と状態名を並べている。並べるのは凡例と「形」の例の台帳だけにする`,
-    );
+  if (close >= 0 && ledgerRows.size === 0)
+    fail.push("review Skill の「形」の例に、Claude と Codex の列を持つ台帳の表が無い");
+  lines.forEach((line, i) => {
+    if (ledgerRows.has(i)) return;
+    const rest = i === legendAt ? line.replace(/状態は印（.*?）/, "") : line;
+    for (const glyph of Object.values(marks).filter((g) => rest.includes(g)))
+      fail.push(
+        `review Skill の ${i + 1} 行目に印の ${glyph} がある。印を書くのは凡例と「形」の例の台帳の表だけにする`,
+      );
+  });
   for (const [glyph, state, where] of pairs) {
     const key = Object.keys(LEDGER).find((k) => LEDGER[k] === state);
     if (marks[key] !== glyph)
