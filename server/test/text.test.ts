@@ -77,6 +77,12 @@ test("例外の理由の文は、中のエラー（AggregateError の errors と
   assert.equal(reason(fetchFailed), "fetch failed（getaddrinfo ENOTFOUND api.voyageai.com）");
   assert.equal(reason(new Error("鍵が無い")), "鍵が無い");
   assert.equal(reason(new Error("")), "理由の分からない失敗");
+  // 理由の文が空なら種類の名前を理由にし、中のエラーのうち分かったものだけをつなぐ。
+  const timeout = new Error("");
+  timeout.name = "TimeoutError";
+  assert.equal(reason(timeout), "TimeoutError");
+  assert.equal(reason(new AggregateError([new Error(""), new Error("b")])), "b");
+  assert.equal(reason(new AggregateError([], "", { cause: new Error("c") })), "c");
   assert.equal(reason(new AggregateError([])), "理由の分からない失敗");
   assert.equal(reason(Object.create(null)), "理由の分からない失敗");
   // 自分を cause に持つエラーでも止まる。

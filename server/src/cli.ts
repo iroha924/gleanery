@@ -54,12 +54,15 @@ const USAGE = `使い方:
 /** エラーの枠の見出し。知っているコマンドとサブコマンドの名前だけで作る（打った引数そのものは入れない）。 */
 let heading = "mitos";
 
-/** サブコマンドを持つコマンド。振り分けの前に止まったエラーでも、見出しにサブコマンドまで出すのに使う。 */
-const SUBCOMMANDS: Record<string, string[]> = {
-  trace: ["context", "check", "save"],
-  project: ["add", "list", "forget"],
-  capture: ["flush"],
-};
+/**
+ * サブコマンドを持つコマンド。振り分けの前に止まったエラーでも、見出しにサブコマンドまで出すのに使う。
+ * USAGE の「mitos <コマンド> <サブコマンド>」の行から取る（書き写すと USAGE とずれる）。
+ */
+const SUBCOMMANDS = USAGE.split("\n").reduce<Record<string, string[]>>((all, line) => {
+  const m = line.match(/^\s*mitos ([a-z]+) ([a-z]+)\b/);
+  if (m?.[1] && m[2]) all[m[1]] = [...(all[m[1]] ?? []), m[2]];
+  return all;
+}, {});
 
 // 引数の解釈を自前で書かない。手書きのループは知らないフラグと `--name=値` を黙って捨てる。
 const OPTIONS = {

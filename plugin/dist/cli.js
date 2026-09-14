@@ -24357,18 +24357,19 @@ function mask(text) {
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
-function reason(e, depth = 0) {
+var reason = (e) => explain(e, 0) || "理由の分からない失敗";
+function explain(e, depth) {
   if (!(e instanceof Error)) {
     try {
       return String(e);
     } catch {
-      return "理由の分からない失敗";
+      return "";
     }
   }
-  const inner = depth >= 3 ? "" : e instanceof AggregateError ? e.errors.map((x) => reason(x, depth + 1)).filter(Boolean).join(" / ") : e.cause === undefined ? "" : reason(e.cause, depth + 1);
-  if (e.message && inner)
-    return `${e.message}（${inner}）`;
-  return e.message || inner || "理由の分からない失敗";
+  const own2 = e.message || (e.name === "Error" || e.name === "AggregateError" ? "" : e.name);
+  const parts = depth >= 3 ? [] : [...e instanceof AggregateError ? e.errors : [], ...e.cause === undefined ? [] : [e.cause]];
+  const inner = parts.map((x) => explain(x, depth + 1)).filter(Boolean).join(" / ");
+  return own2 && inner ? `${own2}（${inner}）` : own2 || inner;
 }
 
 // server/src/knowledge.ts
@@ -24480,7 +24481,7 @@ var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)]
 `);
 var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
 `).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
-var inline = (s) => plain(s).replace(/\n+/g, " ");
+var inline = (s) => plain(s).replace(/[\n\t]+/g, " ");
 var width = (text) => [...text].reduce((w, c) => w + ((c.codePointAt(0) ?? 0) > 255 ? 2 : 1), 0);
 var pad = (text, to) => text + " ".repeat(Math.max(1, to - width(text)));
 
@@ -26706,11 +26707,13 @@ var USAGE = `使い方:
 
 資格情報: ~/.claude/knowledge.env（KNOWLEDGE_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）`;
 var heading = "mitos";
-var SUBCOMMANDS = {
-  trace: ["context", "check", "save"],
-  project: ["add", "list", "forget"],
-  capture: ["flush"]
-};
+var SUBCOMMANDS = USAGE.split(`
+`).reduce((all, line) => {
+  const m = line.match(/^\s*mitos ([a-z]+) ([a-z]+)\b/);
+  if (m?.[1] && m[2])
+    all[m[1]] = [...all[m[1]] ?? [], m[2]];
+  return all;
+}, {});
 var OPTIONS = {
   cwd: { type: "string" },
   host: { type: "string" },

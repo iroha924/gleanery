@@ -301,3 +301,28 @@ test("MCP の serverInfo は manifest の版を名乗る", async () => {
     await client.close();
   }
 });
+
+test("MCP の recall と read は、失敗の理由を空にせず isError で返す", async () => {
+  // 鍵の無い環境では DB へ繋ぐ前に止まる。投げたままにすると SDK が error.message だけを返す。
+  const client = new Client({ name: "test", version: "0" });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(SRC, "mcp.ts")],
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", KNOWLEDGE_ENV_DIR: "/nonexistent" },
+      stderr: "ignore",
+    }),
+  );
+  try {
+    for (const [name, args] of [
+      ["recall", { question: "x" }],
+      ["read", { refs: ["k:1"] }],
+    ] as const) {
+      const r = await client.callTool({ name, arguments: args });
+      assert.equal(r.isError, true, name);
+      assert.match(JSON.stringify(r.content), /mitos: 失敗した（KNOWLEDGE_DB_URL_RO/, name);
+    }
+  } finally {
+    await client.close();
+  }
+});
