@@ -254,7 +254,7 @@ if (usage) {
       // 一覧が既に一致している場合でも走り、README に残していた別件の編集を
       // そのコミットへ巻き込む（生成物だけの plugin/dist とは違い、ここは人が書く本文を含む）。
       execFileSync("git", ["add", "README.md"], { stdio: "ignore" });
-      console.log("README.md の CLI 一覧を cli.ts の USAGE から書き直して staged へ戻した");
+      console.log("README.md の CLI 一覧が cli.ts の USAGE とずれていたので、書き直して staged へ戻した");
     }
   }
 }
