@@ -133,8 +133,9 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
 // 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印の字を書いてよいのは凡例の 1 行と「### 形」の例の
 // 台帳の表（見出しに Claude と Codex の列を持つ表）の状態のセルだけと決め（注記の中は除く。Skill にもそう書いてある）、
-// そこは決まった形で読んで組を突き合わせ、ほかの場所に印の字があれば落とす。pre-commit が commit ごとに守らせるので、
-// 印を変えても古い印は外に残らない。フックを経ない commit では守られず、CI（PR と main）は先端しか見ない。
+// そこは決まった形で読んで組を突き合わせ、ほかの場所に印の字があれば落とす。検査は作業ツリーを読み、今の印の字だけを
+// 探す。印を変える前から外にあった古い印は書いた時点の commit で落ちるので、印を変えた後に外に残らない。見えないのは、
+// 印を変えるのと同じ変更で書き足した古い印と、フックを経ない commit（CI は PR と main の先端だけを見る）。
 // 印でない記号と状態名を並べた書き方（「● 実行」など）は見ない。本文の書き方を読み分けようとすると終わりが無い。
 const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
 const marks = Object.fromEntries(
@@ -175,14 +176,17 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
   // 印の字を書いてはいけない部分。凡例の中身と、台帳の表の状態のセル（注記の中は除く）だけを外す。
   const outside = [...lines];
   if (legend !== undefined) outside[legendAt] = lines[legendAt].replace(/状態は印（.*?）/, "");
+  const delimiter = (line, n) => {
+    const row = cells(line ?? "");
+    return row.length === n && row.every((c) => /^:?-+:?$/.test(c));
+  };
   let tables = 0;
   for (let i = open + 1; i < close; i++) {
     const head = cells(lines[i]);
-    if (!head.includes("Claude") || !head.includes("Codex")) continue;
+    // GFM では、見出しの次に同じ列数の区切りの行が来たときだけ表になる。そこから空行までが表の行で、1 列目は観点。
+    if (!head.includes("Claude") || !head.includes("Codex") || !delimiter(lines[i + 1], head.length))
+      continue;
     tables++;
-    // 見出しの次の 1 行が区切り（GFM の決まり）。そこから空行までが表の行で、1 列目は観点。
-    if (!cells(lines[i + 1] ?? "").every((c) => /^:?-+:?$/.test(c)))
-      fail.push(`review Skill の ${i + 2} 行目は、台帳の表の見出しの次なので区切りの行（|---|）にする`);
     for (i += 2; i < close && lines[i].trim(); i++) {
       const [aspect, ...row] = cells(lines[i]);
       outside[i] = aspect;
@@ -198,7 +202,9 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
     }
   }
   if (close >= 0 && tables === 0)
-    fail.push("review Skill の「形」の例に、Claude と Codex の列を持つ台帳の表が無い");
+    fail.push(
+      "review Skill の「形」の例に、Claude と Codex の列を持つ台帳の表（見出しの次に同じ列数の区切りの行）が無い",
+    );
   outside.forEach((text, i) => {
     for (const glyph of Object.values(marks).filter((g) => text.includes(g)))
       fail.push(
