@@ -24,8 +24,9 @@ import type pg from "pg";
 import { ARTIFACT_PATH } from "./artifacts.ts";
 import { connect, EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, vec } from "./db.ts";
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
+import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
-import { bytes, clean, head, mask, sha256, tail, tsvector, uuidFrom } from "./text.ts";
+import { bytes, clean, head, mask, reason, sha256, tail, tsvector, uuidFrom } from "./text.ts";
 
 // 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の待ち行列を触らない）。
 export const spoolDir = (): string => path.join(os.homedir(), ".claude", "mitos-spool");
@@ -220,17 +221,25 @@ export function answersOf(input: HookInput): string | null {
 }
 
 /**
- * 自動記録が止まっているなら、持ち主へ伝える一文。**黙って待ち行列を積み続けない。**
+ * 自動記録が止まっているなら、session の開始時に持ち主へ出す表示。**黙って待ち行列を積み続けない。**
  * 鍵が無い・送信が失敗し続けている・DB が受け付けなかった記録がある、のどれか。
  */
 export function captureNotice(env: Env): string | null {
   if (!env[KEY.capture])
-    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
-  if (s.error && s.pending > 0)
-    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+  if (s.stuck)
+    return panel(
+      "mitos: 自動記録を送れていない",
+      [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.stuck.slice(0, 120))}`],
+      "mitos doctor で確かめる",
+    );
   if (s.rejected > 0)
-    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+    return panel(
+      `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`,
+      [rejectedDir()],
+      "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる",
+    );
   return null;
 }
 
@@ -314,7 +323,11 @@ function writeState(s: State): void {
   }
 }
 
-export function readState(): State & { pending: number; rejected: number } {
+/**
+ * 待ち行列と送信の状態。`stuck` は送れていないときの最後の失敗で、失敗が残っていて待ちもあるときだけ入る
+ * （待ちが空になれば失敗は過去のもの）。session の開始時の警告と doctor が同じ判定を使う。
+ */
+export function readState(): State & { pending: number; rejected: number; stuck: string | null } {
   const count = (dir: string) => {
     try {
       return fs.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
@@ -323,11 +336,23 @@ export function readState(): State & { pending: number; rejected: number } {
     }
   };
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
+  // 欄ごとに型を確かめて読む（外から書き換えられても、doctor と SessionStart の警告を落とさない）。
+  let raw: Record<string, unknown> = {};
   try {
-    return { ...(JSON.parse(fs.readFileSync(stateFile(), "utf8")) as State), ...counts };
+    const parsed: unknown = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
+    if (parsed && typeof parsed === "object") raw = parsed as Record<string, unknown>;
   } catch {
-    return counts;
+    // まだ送っていないか、書きかけで壊れていて読めない
   }
+  // error は送信の失敗で文字列、成功で null。理由の文が空でも失敗は失敗として扱う。
+  const error = typeof raw.error === "string" ? raw.error || "理由の分からない失敗" : null;
+  return {
+    flushedAt: typeof raw.flushedAt === "string" ? raw.flushedAt : undefined,
+    error,
+    dropped: typeof raw.dropped === "number" ? raw.dropped : undefined,
+    ...counts,
+    stuck: error && counts.pending > 0 ? error : null,
+  };
 }
 
 /**
@@ -613,10 +638,7 @@ export async function flush(
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
-    writeState({
-      flushedAt: new Date().toISOString(),
-      error: e instanceof Error ? e.message.slice(0, 300) : String(e),
-    });
+    writeState({ flushedAt: new Date().toISOString(), error: reason(e).slice(0, 300) });
     throw e;
   } finally {
     await client?.end().catch(() => {});

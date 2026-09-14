@@ -39,7 +39,7 @@ pre-commit:
     # 理由と過去の事例は docs/ai-development.md。README の CLI 一覧は
     # 突き合わせではなく USAGE から書き出すので、書き直した分を staged へ戻す。
     - name: pairs
-      glob: "{db/schema.sql,server/src/*.ts,dashboard/src/app/(dashboard)/sessions/_sessions/api/sessions.ts,README.md}"
+      glob: "{db/schema.sql,server/src/*.ts,dashboard/src/app/(dashboard)/sessions/_sessions/api/sessions.ts,README.md,plugin/skills/review/SKILL.md,scripts/check-pairs.mjs}"
       # **`git add` はここに書かない。**無条件に走ると、README に残っていた別件の編集まで
       # コミットへ巻き込む。書き換えたときだけ check-pairs.mjs 自身が staged へ戻す。
       run: node scripts/check-pairs.mjs

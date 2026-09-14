@@ -24099,6 +24099,20 @@ function mask(text) {
     out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
+var reason = (e) => explain(e, 0) || "理由の分からない失敗";
+function explain(e, depth) {
+  if (!(e instanceof Error)) {
+    try {
+      return String(e);
+    } catch {
+      return "";
+    }
+  }
+  const own2 = e.message || (e.name === "Error" || e.name === "AggregateError" ? "" : e.name);
+  const parts = depth >= 3 ? [] : [...e instanceof AggregateError ? e.errors : [], ...e.cause === undefined ? [] : [e.cause]];
+  const inner = parts.map((x) => explain(x, depth + 1)).filter(Boolean).join(" / ");
+  return own2 && inner ? `${own2}（${inner}）` : own2 || inner;
+}
 
 // server/src/knowledge.ts
 function messageText(m) {
@@ -24109,6 +24123,17 @@ ${m.body}`;
 }
 var indexesMessage = (origin, speakerKind) => speakerKind !== "bot" && !(origin !== "github" && speakerKind === "assistant");
 var conversationId = (projectId, origin, externalId) => uuidFrom(String(projectId), origin, externalId);
+
+// server/src/panel.ts
+var title = (text) => `✦ ${text}`;
+var rule = (text) => text.split(`
+`).map((line) => line ? `│ ${line}` : "│").join(`
+`);
+var foot = (text) => `╰─ ${text}`;
+var panel = (head2, lines, end) => [title(head2), ...lines.map(rule), foot(end)].join(`
+`);
+var plain = (s) => s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, `
+`).replace(/(?![\t\n\u200c\u200d])[\p{Cc}\p{Cf}]/gu, "");
 
 // server/src/capture.ts
 var spoolDir = () => path3.join(os3.homedir(), ".claude", "mitos-spool");
@@ -24205,12 +24230,12 @@ A: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo2}`;
 }
 function captureNotice(env) {
   if (!env[KEY.capture])
-    return `mitos: ${KEY.capture} が無いので、会話を自動記録できない。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
   const s = readState();
-  if (s.error && s.pending > 0)
-    return `mitos: 自動記録を送れていない（待ち ${s.pending} 件、最後の失敗: ${s.error.slice(0, 120)}）。\`mitos doctor\` で確かめる`;
+  if (s.stuck)
+    return panel("mitos: 自動記録を送れていない", [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.stuck.slice(0, 120))}`], "mitos doctor で確かめる");
   if (s.rejected > 0)
-    return `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある（${rejectedDir()}）。\`mitos doctor\` で確かめる`;
+    return panel(`mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`, [rejectedDir()], "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる");
   return null;
 }
 function onHook(host, input2) {
@@ -24299,11 +24324,20 @@ function readState() {
     }
   };
   const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
+  let raw = {};
   try {
-    return { ...JSON.parse(fs3.readFileSync(stateFile(), "utf8")), ...counts };
-  } catch {
-    return counts;
-  }
+    const parsed = JSON.parse(fs3.readFileSync(stateFile(), "utf8"));
+    if (parsed && typeof parsed === "object")
+      raw = parsed;
+  } catch {}
+  const error61 = typeof raw.error === "string" ? raw.error || "理由の分からない失敗" : null;
+  return {
+    flushedAt: typeof raw.flushedAt === "string" ? raw.flushedAt : undefined,
+    error: error61,
+    dropped: typeof raw.dropped === "number" ? raw.dropped : undefined,
+    ...counts,
+    stuck: error61 && counts.pending > 0 ? error61 : null
+  };
 }
 function lock() {
   const file2 = path3.join(spoolDir(), ".lock");
@@ -24516,10 +24550,7 @@ async function flush(env) {
     writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
     return { sent, dropped, rejected: bad.length };
   } catch (e) {
-    writeState({
-      flushedAt: new Date().toISOString(),
-      error: e instanceof Error ? e.message.slice(0, 300) : String(e)
-    });
+    writeState({ flushedAt: new Date().toISOString(), error: reason(e).slice(0, 300) });
     throw e;
   } finally {
     await client?.end().catch(() => {});

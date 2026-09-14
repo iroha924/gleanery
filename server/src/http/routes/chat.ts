@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { chat } from "../../chat.ts";
+import { reason } from "../../text.ts";
 import { db, env } from "../runtime.ts";
 import { positiveIds } from "../validation.ts";
 
@@ -33,7 +34,7 @@ const app = new Hono().post("/chat", zValidator("json", chatSchema), async (c) =
       if (signal.aborted) return;
       await stream.writeSSE({
         event: "error",
-        data: JSON.stringify({ message: error instanceof Error ? error.message : String(error) }),
+        data: JSON.stringify({ message: reason(error) }),
       });
     }
     if (!signal.aborted) await stream.writeSSE({ event: "done", data: "{}" });

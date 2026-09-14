@@ -128,6 +128,107 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
   );
 }
 
+// ---- 状態の印が、CLI と review の台帳で揃っているか ----
+//
+// 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
+// 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印の字を書いてよいのは凡例の 1 行と「### 形」の例の
+// 台帳の表（見出しに Claude と Codex の列を持つ表）の状態のセルだけと決め（注記の中は除く。Skill にもそう書いてある）、
+// そこは決まった形で読んで組を突き合わせ、ほかの場所に印の字があれば落とす。検査は作業ツリーを読み、今の印の字だけを
+// 探す。印を変える前に外へ書いた印は、書いたときの検査で落ちる。見えないのは、作業ツリーで印を変えた後に書き足した
+// 古い印（commit を分けても同じ）と、フックを経ない commit（CI は PR と main の先端だけを見る）。
+// 印でない記号と状態名を並べた書き方（「● 実行」など）は見ない。本文の書き方を読み分けようとすると終わりが無い。
+const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
+const marks = Object.fromEntries(
+  [
+    ...(
+      grab("server/src/panel.ts", /const MARKS = \{([\s\S]*?)\} as const;/, "panel.ts の MARKS") ?? ""
+    ).matchAll(/(\w+): \["(.)",/g),
+  ].map((m) => [m[1], m[2]]),
+);
+if (Object.keys(LEDGER).every((k) => marks[k])) {
+  const states = Object.values(LEDGER).join("|");
+  const skill = "plugin/skills/review/SKILL.md";
+  const lines = read(skill).split("\n");
+  const pairs = [];
+  const legendAt = lines.findIndex((l) => l.includes("状態は印（"));
+  const legend = lines[legendAt]?.match(/状態は印（(.*?)）/)?.[1];
+  if (legend === undefined) fail.push("review Skill の台帳の凡例（「状態は印（…）」）を取り出せない");
+  for (const part of legend?.split(" / ") ?? []) {
+    const m = part.match(new RegExp(`^\`([^\`]+)\` (${states})$`));
+    if (m) pairs.push([m[1], m[2], "凡例"]);
+    else fail.push(`review Skill の台帳の凡例「${part}」は「\`印\` 状態」の形で書く`);
+  }
+  const missing = Object.values(LEDGER).filter((state) => !pairs.some(([, s]) => s === state));
+  if (legend !== undefined && missing.length)
+    fail.push(`review Skill の台帳の凡例に ${missing.join(" / ")} が無い`);
+  const at = lines.indexOf("### 形");
+  const open = at < 0 ? -1 : lines.indexOf("```", at);
+  const close = open < 0 ? -1 : lines.indexOf("```", open + 1);
+  if (close < 0) fail.push("review Skill の「### 形」の例（``` で囲んだ塊）を取り出せない");
+  // GFM の表は両端の | を省けて、\| はセルの中の | になる。空行までが表。
+  const cells = (line) =>
+    line
+      .trim()
+      .replace(/^\|/, "")
+      .replace(/(?<!\\)\|$/, "")
+      .split(/(?<!\\)\|/)
+      .map((c) => c.trim());
+  // 印の字を書いてはいけない部分。凡例の中身と、台帳の表の状態のセル（注記の中は除く）だけを外す。
+  const outside = [...lines];
+  if (legend !== undefined) outside[legendAt] = lines[legendAt].replace(/状態は印（.*?）/, "");
+  let tables = 0;
+  for (let i = open + 1; i < close; i++) {
+    const head = cells(lines[i]);
+    if (!head.includes("Claude") || !head.includes("Codex")) continue;
+    // GFM では、見出しの次に同じ列数の区切りの行が来たときだけ表になる。区切りの行が続かないなら表の見出しではない。
+    const sep = cells(lines[i + 1] ?? "");
+    if (!sep.every((c) => /^:?-+:?$/.test(c))) continue;
+    if (sep.length !== head.length) {
+      fail.push(
+        `review Skill の ${i + 2} 行目の区切りの行は、台帳の表の見出しと同じ ${head.length} 列にする`,
+      );
+      continue;
+    }
+    tables++;
+    // 検査は空行までを表の行として読む（GFM はリストや引用の始まりでも表を閉じるが、そこに書いた印も組として
+    // 突き合わせるので、古い印は残らない）。1 列目は観点。
+    for (i += 2; i < close && lines[i].trim(); i++) {
+      const [aspect, ...row] = cells(lines[i]);
+      outside[i] = aspect;
+      for (const cell of row) {
+        const m = cell.match(new RegExp(`^(\\S+) (${states})(?:（([^）]*)）)?$`, "u"));
+        if (!m) {
+          fail.push(`review Skill の「形」の例の台帳のセル「${cell}」は「印 状態（注記）」の形で書く`);
+          continue;
+        }
+        pairs.push([m[1], m[2], "例の台帳"]);
+        outside[i] += ` ${m[3] ?? ""}`;
+      }
+    }
+  }
+  if (close >= 0 && tables === 0)
+    fail.push(
+      "review Skill の「形」の例に、Claude と Codex の列を持つ台帳の表（見出しの次に同じ列数の区切りの行）が無い",
+    );
+  outside.forEach((text, i) => {
+    for (const glyph of Object.values(marks).filter((g) => text.includes(g)))
+      fail.push(
+        `review Skill の ${i + 1} 行目に印の ${glyph} がある。印を書くのは凡例と、「形」の例の台帳の表の状態のセル（注記の外）だけにする`,
+      );
+  });
+  for (const [glyph, state, where] of pairs) {
+    const key = Object.keys(LEDGER).find((k) => LEDGER[k] === state);
+    if (marks[key] !== glyph)
+      fail.push(
+        `review Skill の${where}が「${state}」に ${glyph} を書いている。panel.ts の ${key} は ${marks[key]}`,
+      );
+  }
+} else {
+  fail.push(
+    "panel.ts の MARKS から ok / warn / fail / none の印を取り出せない。check-pairs.mjs の正規表現が実物とずれている",
+  );
+}
+
 // ---- README の CLI 一覧を USAGE から書き出す ----
 //
 // **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、

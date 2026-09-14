@@ -14,6 +14,7 @@ import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { connect, GLOBAL_ENV, inTransaction, KEY, loadEnv } from "./db.ts";
+import { reason } from "./text.ts";
 
 const SCHEMA = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "db", "schema.sql");
 
@@ -129,7 +130,7 @@ async function roles(given: string): Promise<void> {
         fs.renameSync(tmp, file);
       } catch (e) {
         throw new Error(
-          `${name} のパスワードは変えたが ${file} を置き換えられなかった。新しい鍵は ${tmp} にある（0600）: ${e instanceof Error ? e.message : e}`,
+          `${name} のパスワードは変えたが ${file} を置き換えられなかった。新しい鍵は ${tmp} にある（0600）: ${reason(e)}`,
         );
       }
       done.push(KEY[role]);
@@ -165,7 +166,7 @@ async function main(): Promise<void> {
 // 直接起動されたときだけ動く（テストは rewriteEnv だけを使う）。
 if (process.argv[1] && /admin\.ts$/.test(process.argv[1])) {
   main().catch((e: unknown) => {
-    console.error(e instanceof Error ? e.message : String(e));
+    console.error(reason(e));
     process.exit(1);
   });
 }

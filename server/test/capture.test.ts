@@ -8,11 +8,13 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 import {
   answersOf,
+  captureNotice,
   fit,
   isOwnerTurn,
   MAX_MESSAGE,
   onHook,
   readInput,
+  readState,
   type Spooled,
   spoolDir,
   write,
@@ -520,6 +522,43 @@ test("記録のフックを起動すると、標準入力の持ち主の発言�
       entry,
     );
   }
+});
+
+test("自動記録が止まっていれば、session の開始時に同じ枠の形で知らせる", () => {
+  assert.equal(
+    captureNotice({}),
+    "✦ mitos: KNOWLEDGE_DB_URL_CAPTURE が無いので、会話を自動記録できない\n╰─ mitos doctor で確かめる",
+  );
+});
+
+test("送れていない判定は、待ちがあって失敗が残るときだけで、状態ファイルが壊れていても落ちない", () => {
+  reset();
+  const file = path.join(home, ".claude", "mitos-capture.json");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const capture = { KNOWLEDGE_DB_URL_CAPTURE: "x" };
+  fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
+  assert.equal(readState().stuck, null, "待ちが空なら、失敗は過去のもの");
+  // 以降は待ちが 1 件ある状態で見る（待ちが無ければ、壊れた状態でも判定は null になって何も確かめない）。
+  fs.mkdirSync(spoolDir(), { recursive: true });
+  fs.writeFileSync(path.join(spoolDir(), "1.json"), "{}");
+  for (const body of ["null", "{", "3", '{"error":1}', '{"error":{"a":1}}']) {
+    fs.writeFileSync(file, body);
+    assert.equal(readState().stuck, null, body);
+    assert.equal(captureNotice(capture), null, body);
+  }
+  // 型の違う欄は読まない（doctor の行へ、壊れた日時や制御文字をそのまま出さない）。
+  fs.writeFileSync(
+    file,
+    JSON.stringify({ error: "auth", flushedAt: 5, dropped: String.fromCodePoint(0x1b) }),
+  );
+  const s = readState();
+  assert.deepEqual([s.stuck, s.flushedAt, s.dropped], ["auth", undefined, undefined]);
+  // 理由の文が空の失敗も、送れていないことに変わりはない。
+  fs.writeFileSync(file, JSON.stringify({ error: "" }));
+  assert.equal(readState().stuck, "理由の分からない失敗");
+  assert.match(captureNotice(capture) ?? "", /送れていない/);
+  reset();
+  fs.rmSync(file);
 });
 
 test("SessionStart は、この session の id を子へ継がせる", () => {

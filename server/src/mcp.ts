@@ -28,7 +28,7 @@ import {
   searchMessages,
   workDetail,
 } from "./search.ts";
-import { head } from "./text.ts";
+import { head, reason } from "./text.ts";
 
 const env = loadEnv();
 const db = lazyPool(env, "reader");
@@ -64,6 +64,11 @@ const unregistered = (h: Here) =>
     : "この場所は git の remote も名前も持たないので、どの作業場所か決められない。";
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
+/**
+ * 道具の失敗を、理由の文つきで返す。投げたままだと SDK が error.message だけを返し、pg の理由の空の AggregateError では
+ * 空文字になる（CLI と同じ reason() で、中のエラーの理由まで出す）。
+ */
+const failed = (e: unknown) => ({ ...text(`mitos: 失敗した（${head(reason(e), 1000)}）`), isError: true });
 
 const server = new McpServer(
   { name: "mitos", version: VERSION ?? "unknown" },
@@ -119,55 +124,59 @@ server.registerTool(
     annotations: READ_ONLY,
   },
   async (a) => {
-    const h = await here(a.cwd);
-    if (!a.all_projects && h.id === null) return text(unregistered(h));
-    const projects = a.all_projects ? null : [h.id as number];
-    const pool = await db();
-    const limit = a.limit ?? 5;
-    const mode = a.mode ?? "knowledge";
-    const file =
-      a.path && h.place ? (relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path) : a.path;
+    try {
+      const h = await here(a.cwd);
+      if (!a.all_projects && h.id === null) return text(unregistered(h));
+      const projects = a.all_projects ? null : [h.id as number];
+      const pool = await db();
+      const limit = a.limit ?? 5;
+      const mode = a.mode ?? "knowledge";
+      const file =
+        a.path && h.place ? (relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path) : a.path;
 
-    if (mode === "resume") {
-      const works = await openWork(pool, projects, 10);
-      if (works.length === 0) return text("進行中の作業は無い。");
-      const only = works.length === 1 && works[0] ? await workDetail(pool, works[0].ref.slice(2)) : null;
-      if (only) return text(framed(renderWork(only, RECALL_BYTES)));
-      return text(
-        framed(
-          `進行中の作業（新しい順に ${works.length} 件${works.length === 10 ? "まで" : ""}）。続けるものの参照を read に渡す。\n\n${works
-            .map(
-              (w) =>
-                `- ${w.title}（${w.project} / ${w.status} / ${w.ref}）\n  いまの状況: ${head(w.current, 300)}`,
-            )
-            .join("\n")}`,
-        ),
-      );
-    }
-    if (mode === "said") {
-      const hits = await searchMessages(pool, env, {
+      if (mode === "resume") {
+        const works = await openWork(pool, projects, 10);
+        if (works.length === 0) return text("進行中の作業は無い。");
+        const only = works.length === 1 && works[0] ? await workDetail(pool, works[0].ref.slice(2)) : null;
+        if (only) return text(framed(renderWork(only, RECALL_BYTES)));
+        return text(
+          framed(
+            `進行中の作業（新しい順に ${works.length} 件${works.length === 10 ? "まで" : ""}）。続けるものの参照を read に渡す。\n\n${works
+              .map(
+                (w) =>
+                  `- ${w.title}（${w.project} / ${w.status} / ${w.ref}）\n  いまの状況: ${head(w.current, 300)}`,
+              )
+              .join("\n")}`,
+          ),
+        );
+      }
+      if (mode === "said") {
+        const hits = await searchMessages(pool, env, {
+          question: a.question,
+          projects,
+          who: a.who ?? "me",
+          path: file,
+          since: a.since,
+          until: a.until,
+          limit,
+        });
+        return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当する発言は無い。");
+      }
+      if (!a.question?.trim()) return text("question が要る（mode: knowledge / avoid）。");
+      const hits = await searchKnowledge(pool, env, {
         question: a.question,
         projects,
-        who: a.who ?? "me",
+        kinds: a.kinds,
+        avoid: mode === "avoid",
         path: file,
         since: a.since,
         until: a.until,
         limit,
       });
-      return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当する発言は無い。");
+      return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当なし。");
+    } catch (e) {
+      return failed(e);
     }
-    if (!a.question?.trim()) return text("question が要る（mode: knowledge / avoid）。");
-    const hits = await searchKnowledge(pool, env, {
-      question: a.question,
-      projects,
-      kinds: a.kinds,
-      avoid: mode === "avoid",
-      path: file,
-      since: a.since,
-      until: a.until,
-      limit,
-    });
-    return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当なし。");
   },
 );
 
@@ -187,10 +196,14 @@ server.registerTool(
   },
   // 範囲は recall と同じ。記録に書かれた別の作業場所の参照を、明示せずに読ませない。
   async (a) => {
-    const h = await here(a.cwd);
-    if (!a.all_projects && h.id === null) return text(unregistered(h));
-    const projects = a.all_projects ? null : [h.id as number];
-    return text(framed(await read(await db(), a.refs, READ_BYTES, { projects })));
+    try {
+      const h = await here(a.cwd);
+      if (!a.all_projects && h.id === null) return text(unregistered(h));
+      const projects = a.all_projects ? null : [h.id as number];
+      return text(framed(await read(await db(), a.refs, READ_BYTES, { projects })));
+    } catch (e) {
+      return failed(e);
+    }
   },
 );
 
@@ -270,9 +283,7 @@ server.registerTool(
       );
     } catch (e) {
       // 編集は止めない（フックは許可を決めない）。ただし確かめていないことは伝える。
-      return reply(
-        `mitos: このファイルにかかる制約を確かめられなかった（${e instanceof Error ? head(e.message, 200) : "不明"}）。`,
-      );
+      return reply(`mitos: このファイルにかかる制約を確かめられなかった（${head(reason(e), 200)}）。`);
     }
   },
 );

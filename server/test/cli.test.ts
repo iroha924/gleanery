@@ -15,10 +15,14 @@ function run(...args: string[]): { code: number; out: string } {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", KNOWLEDGE_ENV_DIR: "/nonexistent" },
+      // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
+      timeout: 30_000,
     });
     return { code: 0, out };
   } catch (e) {
-    const err = e as { status?: number; stdout?: string; stderr?: string };
+    const err = e as { status?: number; stdout?: string; stderr?: string; code?: string };
+    // 時間切れは、期待どおりの出力を出した後でも失敗にする（終わらない退行を、終了コードの比べ方で通さない）。
+    if (err.code === "ETIMEDOUT") throw new Error(`mitos ${args.join(" ")} が 30 秒で終わらなかった`);
     return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
   }
 }
@@ -33,6 +37,25 @@ test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落�
   }
   const r = run("frobnicate");
   assert.match(r.out, /知らないコマンド: frobnicate/);
+  // エラーの見出しはサブコマンドまで出し、引数に仕込んだ改行で印の無い偽の締めの行を作らせない。
+  assert.match(run("trace", "check").out, /^✦ mitos trace check$/m);
+  assert.match(
+    run("trace", "--cwd", "/nonexistent", "check").out,
+    /^✦ mitos trace check$/m,
+    "フラグの値を見出しにしない",
+  );
+  assert.match(
+    run("search", "--lmit", "3", "認証").out,
+    /^✦ mitos search$/m,
+    "知らないフラグの値も見出しにしない",
+  );
+  assert.match(
+    run("trace", "check", "--limit", "0", "f").out,
+    /^✦ mitos trace check$/m,
+    "振り分けの前に止まってもサブコマンドまで出す",
+  );
+  const forged = run("x\n╰─ ✓ 直すものは無い");
+  assert.doesNotMatch(forged.out, /^╰─ ✓ 直すものは無い$/m, forged.out);
   assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");
 });
 
@@ -83,7 +106,7 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
   try {
     const first = run("init", "--cwd", dir);
     assert.equal(first.code, 0, first.out);
-    assert.match(first.out, /\.mitos を作った/);
+    assert.equal(first.out, `✦ mitos init\n╰─ .mitos を作った: ${dir}\n`);
     assert.match(run("init", "--cwd", dir).out, /既に初期化済み/);
     assert.equal(run("check", "--cwd", dir).code, 0);
     for (const [bad, want] of [
@@ -98,7 +121,9 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
     fs.writeFileSync(path.join(dir, ".mitos/changes/a/change.json"), "{");
     const broken = run("check", "--cwd", dir);
     assert.equal(broken.code, 1, broken.out);
-    assert.match(broken.out, /change\.json: JSON として読めない/);
+    assert.match(broken.out, /^│ ✗ .*change\.json: JSON として読めない$/m);
+    // 端末でない出力先（launchd のログ、Skill が読む出力）には色の制御文字を混ぜない。
+    assert.equal(broken.out.includes(String.fromCodePoint(0x1b)), false, broken.out);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

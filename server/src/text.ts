@@ -244,3 +244,31 @@ export function mask(text: string): string {
   for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
   return out;
 }
+
+/**
+ * 例外の理由の文。中のエラー（AggregateError の errors と cause）の理由も添える。pg は、複数のアドレスへの接続が
+ * すべて拒まれると理由の文が空の AggregateError を返し、fetch は本当の理由（名前解決の失敗など）を cause にだけ持つ。
+ */
+export const reason = (e: unknown): string => explain(e, 0) || "理由の分からない失敗";
+
+/** 理由の文。何も分からなければ空文字（呼び出し側が、中のエラーのうち分かったものだけをつなぐ）。 */
+function explain(e: unknown, depth: number): string {
+  if (!(e instanceof Error)) {
+    try {
+      return String(e);
+    } catch {
+      return ""; // null prototype のオブジェクトは文字列にできない
+    }
+  }
+  // 理由の文が空なら、種類の名前（TimeoutError など）を理由にする。Error と AggregateError は何も言っていないので使わない。
+  const own = e.message || (e.name === "Error" || e.name === "AggregateError" ? "" : e.name);
+  const parts: unknown[] =
+    depth >= 3
+      ? []
+      : [...(e instanceof AggregateError ? e.errors : []), ...(e.cause === undefined ? [] : [e.cause])];
+  const inner = parts
+    .map((x) => explain(x, depth + 1))
+    .filter(Boolean)
+    .join(" / ");
+  return own && inner ? `${own}（${inner}）` : own || inner;
+}

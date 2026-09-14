@@ -39181,6 +39181,20 @@ function head(s, n) {
   }
   return out;
 }
+var reason = (e) => explain(e, 0) || "理由の分からない失敗";
+function explain(e, depth) {
+  if (!(e instanceof Error)) {
+    try {
+      return String(e);
+    } catch {
+      return "";
+    }
+  }
+  const own2 = e.message || (e.name === "Error" || e.name === "AggregateError" ? "" : e.name);
+  const parts = depth >= 3 ? [] : [...e instanceof AggregateError ? e.errors : [], ...e.cause === undefined ? [] : [e.cause]];
+  const inner = parts.map((x) => explain(x, depth + 1)).filter(Boolean).join(" / ");
+  return own2 && inner ? `${own2}（${inner}）` : own2 || inner;
+}
 
 // server/src/knowledge.ts
 var KINDS = [
@@ -39759,8 +39773,8 @@ async function readMessage(db, id, budget, around, projects) {
   const per = Math.floor(budget / Math.max(r.rows.length, 1));
   return r.rows.map((m) => {
     const h = messageHit(m);
-    const mark = m.id === id ? "▶ " : "";
-    return `${mark}${renderHit(h, per)}${m.paths.length ? `
+    const mark2 = m.id === id ? "▶ " : "";
+    return `${mark2}${renderHit(h, per)}${m.paths.length ? `
   触ったファイル: ${m.paths.join(" / ")}` : ""}`;
   }).join(`
 
@@ -39818,6 +39832,7 @@ async function here2(cwd) {
 }
 var unregistered = (h) => h.place ? `この作業場所（${h.place.name}）は mitos に登録されていない。登録は \`mitos project add\`。` : "この場所は git の remote も名前も持たないので、どの作業場所か決められない。";
 var text = (t) => ({ content: [{ type: "text", text: t }] });
+var failed = (e) => ({ ...text(`mitos: 失敗した（${head(reason(e), 1000)}）`), isError: true });
 var server = new McpServer({ name: "mitos", version: VERSION ?? "unknown" }, {
   instructions: [
     "過去の判断・会話・文書を引く（DB は読むだけ）。",
@@ -39847,52 +39862,56 @@ server.registerTool("recall", {
   },
   annotations: READ_ONLY
 }, async (a) => {
-  const h = await here2(a.cwd);
-  if (!a.all_projects && h.id === null)
-    return text(unregistered(h));
-  const projects = a.all_projects ? null : [h.id];
-  const pool = await db();
-  const limit = a.limit ?? 5;
-  const mode = a.mode ?? "knowledge";
-  const file2 = a.path && h.place ? relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path : a.path;
-  if (mode === "resume") {
-    const works = await openWork(pool, projects, 10);
-    if (works.length === 0)
-      return text("進行中の作業は無い。");
-    const only = works.length === 1 && works[0] ? await workDetail(pool, works[0].ref.slice(2)) : null;
-    if (only)
-      return text(framed(renderWork(only, RECALL_BYTES)));
-    return text(framed(`進行中の作業（新しい順に ${works.length} 件${works.length === 10 ? "まで" : ""}）。続けるものの参照を read に渡す。
+  try {
+    const h = await here2(a.cwd);
+    if (!a.all_projects && h.id === null)
+      return text(unregistered(h));
+    const projects = a.all_projects ? null : [h.id];
+    const pool = await db();
+    const limit = a.limit ?? 5;
+    const mode = a.mode ?? "knowledge";
+    const file2 = a.path && h.place ? relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path : a.path;
+    if (mode === "resume") {
+      const works = await openWork(pool, projects, 10);
+      if (works.length === 0)
+        return text("進行中の作業は無い。");
+      const only = works.length === 1 && works[0] ? await workDetail(pool, works[0].ref.slice(2)) : null;
+      if (only)
+        return text(framed(renderWork(only, RECALL_BYTES)));
+      return text(framed(`進行中の作業（新しい順に ${works.length} 件${works.length === 10 ? "まで" : ""}）。続けるものの参照を read に渡す。
 
 ${works.map((w) => `- ${w.title}（${w.project} / ${w.status} / ${w.ref}）
   いまの状況: ${head(w.current, 300)}`).join(`
 `)}`));
-  }
-  if (mode === "said") {
-    const hits2 = await searchMessages(pool, env, {
+    }
+    if (mode === "said") {
+      const hits2 = await searchMessages(pool, env, {
+        question: a.question,
+        projects,
+        who: a.who ?? "me",
+        path: file2,
+        since: a.since,
+        until: a.until,
+        limit
+      });
+      return text(hits2.length ? framed(renderHits(hits2, RECALL_BYTES)) : "該当する発言は無い。");
+    }
+    if (!a.question?.trim())
+      return text("question が要る（mode: knowledge / avoid）。");
+    const hits = await searchKnowledge(pool, env, {
       question: a.question,
       projects,
-      who: a.who ?? "me",
+      kinds: a.kinds,
+      avoid: mode === "avoid",
       path: file2,
       since: a.since,
       until: a.until,
       limit
     });
-    return text(hits2.length ? framed(renderHits(hits2, RECALL_BYTES)) : "該当する発言は無い。");
+    return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当なし。");
+  } catch (e) {
+    return failed(e);
   }
-  if (!a.question?.trim())
-    return text("question が要る（mode: knowledge / avoid）。");
-  const hits = await searchKnowledge(pool, env, {
-    question: a.question,
-    projects,
-    kinds: a.kinds,
-    avoid: mode === "avoid",
-    path: file2,
-    since: a.since,
-    until: a.until,
-    limit
-  });
-  return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当なし。");
 });
 server.registerTool("read", {
   title: "参照を読む",
@@ -39904,11 +39923,15 @@ server.registerTool("read", {
   },
   annotations: READ_ONLY
 }, async (a) => {
-  const h = await here2(a.cwd);
-  if (!a.all_projects && h.id === null)
-    return text(unregistered(h));
-  const projects = a.all_projects ? null : [h.id];
-  return text(framed(await read(await db(), a.refs, READ_BYTES, { projects })));
+  try {
+    const h = await here2(a.cwd);
+    if (!a.all_projects && h.id === null)
+      return text(unregistered(h));
+    const projects = a.all_projects ? null : [h.id];
+    return text(framed(await read(await db(), a.refs, READ_BYTES, { projects })));
+  } catch (e) {
+    return failed(e);
+  }
 });
 var index = new Map;
 var ADVICE = path4.join(os3.homedir(), ".claude", "mitos-advice.jsonl");
@@ -39956,7 +39979,7 @@ server.registerTool("check_path", {
 
 ${body}`, PATH_BYTES)));
   } catch (e) {
-    return reply(`mitos: このファイルにかかる制約を確かめられなかった（${e instanceof Error ? head(e.message, 200) : "不明"}）。`);
+    return reply(`mitos: このファイルにかかる制約を確かめられなかった（${head(reason(e), 200)}）。`);
   }
 });
 await server.connect(new StdioServerTransport);
