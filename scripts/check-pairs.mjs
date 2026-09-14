@@ -247,14 +247,15 @@ if (usage) {
   if (!block.test(before)) {
     fail.push("README.md の「## CLI」直後のコードブロックが見つからない。節を消したなら本スクリプトも直す");
   } else {
-    const after = before.replace(block, `$1${list}$2`);
+    // 置き換えは関数で渡す。文字列で渡すと、USAGE の中の $& や $1 を置換パターンとして読む。
+    const after = before.replace(block, (_, open, close) => `${open}${list}${close}`);
     if (after !== before) {
       fs.writeFileSync("README.md", after);
       // **書いたときだけ staged へ戻す。**呼び出し側で無条件に `git add README.md` すると、
       // 一覧が既に一致している場合でも走り、README に残していた別件の編集を
       // そのコミットへ巻き込む（生成物だけの plugin/dist とは違い、ここは人が書く本文を含む）。
       execFileSync("git", ["add", "README.md"], { stdio: "ignore" });
-      console.log("README.md の CLI 一覧を cli.ts の USAGE から書き直して staged へ戻した");
+      console.log("README.md の CLI 一覧が cli.ts の USAGE とずれていたので、書き直して staged へ戻した");
     }
   }
 }

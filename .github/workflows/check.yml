@@ -67,6 +67,10 @@ jobs:
           bun run scripts/check-mcp-version.mjs
           git diff --exit-code -- plugin/dist
 
-      # 同じ知識が複数の出口に写されている場所の突き合わせ。
+      # 同じ知識が複数の出口に写されている場所の突き合わせ。README の CLI 一覧がずれていると、
+      # check-pairs.mjs は書き直して staged へ戻し、0 で終わる。index ではなく HEAD と比べて落とす。
       - name: 対の突き合わせ
-        run: node scripts/check-pairs.mjs
+        run: |
+          set -e
+          node scripts/check-pairs.mjs
+          git diff --exit-code HEAD -- README.md
