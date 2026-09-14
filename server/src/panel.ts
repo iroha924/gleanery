@@ -5,7 +5,7 @@
 
 import { styleText } from "node:util";
 
-/** ✓ 良い・△ 見る・✗ 壊れている・○ 情報（無い・不明・待っているだけ）。review の台帳の 4 状態も同じ印を使う。 */
+/** ok は良い、warn は見る、fail は壊れている、none は情報（無い・不明・待っているだけ）。印の字は MARKS にだけ書く。 */
 export type Mark = "ok" | "warn" | "fail" | "none";
 
 // review Skill の台帳が同じ印を書く（Skill からはこのファイルを読めない）。scripts/check-pairs.mjs が突き合わせる。

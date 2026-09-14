@@ -134,8 +134,8 @@ if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
 // 片方だけ変えると、CLI と Skill の報告で同じ状態が別の印になる。印の字を書いてよいのは凡例の 1 行と「### 形」の例の
 // 台帳の表（見出しに Claude と Codex の列を持つ表）の状態のセルだけと決め（注記の中は除く。Skill にもそう書いてある）、
 // そこは決まった形で読んで組を突き合わせ、ほかの場所に印の字があれば落とす。検査は作業ツリーを読み、今の印の字だけを
-// 探す。印を変える前から外にあった古い印は書いた時点の commit で落ちるので、印を変えた後に外に残らない。見えないのは、
-// 印を変えるのと同じ変更で書き足した古い印と、フックを経ない commit（CI は PR と main の先端だけを見る）。
+// 探す。印を変える前に外へ書いた印は、書いたときの検査で落ちる。見えないのは、作業ツリーで印を変えた後に書き足した
+// 古い印（commit を分けても同じ）と、フックを経ない commit（CI は PR と main の先端だけを見る）。
 // 印でない記号と状態名を並べた書き方（「● 実行」など）は見ない。本文の書き方を読み分けようとすると終わりが無い。
 const LEDGER = { ok: "実行", warn: "打ち切り", fail: "不能", none: "未実行" };
 const marks = Object.fromEntries(
@@ -176,17 +176,22 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
   // 印の字を書いてはいけない部分。凡例の中身と、台帳の表の状態のセル（注記の中は除く）だけを外す。
   const outside = [...lines];
   if (legend !== undefined) outside[legendAt] = lines[legendAt].replace(/状態は印（.*?）/, "");
-  const delimiter = (line, n) => {
-    const row = cells(line ?? "");
-    return row.length === n && row.every((c) => /^:?-+:?$/.test(c));
-  };
   let tables = 0;
   for (let i = open + 1; i < close; i++) {
     const head = cells(lines[i]);
-    // GFM では、見出しの次に同じ列数の区切りの行が来たときだけ表になる。そこから空行までが表の行で、1 列目は観点。
-    if (!head.includes("Claude") || !head.includes("Codex") || !delimiter(lines[i + 1], head.length))
+    if (!head.includes("Claude") || !head.includes("Codex")) continue;
+    // GFM では、見出しの次に同じ列数の区切りの行が来たときだけ表になる。区切りの行が続かないなら表の見出しではない。
+    const sep = cells(lines[i + 1] ?? "");
+    if (!sep.every((c) => /^:?-+:?$/.test(c))) continue;
+    if (sep.length !== head.length) {
+      fail.push(
+        `review Skill の ${i + 2} 行目の区切りの行は、台帳の表の見出しと同じ ${head.length} 列にする`,
+      );
       continue;
+    }
     tables++;
+    // 検査は空行までを表の行として読む（GFM はリストや引用の始まりでも表を閉じるが、そこに書いた印も組として
+    // 突き合わせるので、古い印は残らない）。1 列目は観点。
     for (i += 2; i < close && lines[i].trim(); i++) {
       const [aspect, ...row] = cells(lines[i]);
       outside[i] = aspect;
