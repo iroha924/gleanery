@@ -1,7 +1,8 @@
 # pre-commit が見ていないものを見る。
 #
 # **いちばんの価値は `bun run test`** — pre-commit は走らせず、pre-pushとCIで実行する。
-# 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。
+# 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。ただし plugin の版は
+# commit ごとではなく、merge 先か push 前の commit から HEAD までをまとめて見る。
 #
 # **シークレットを置かない。**テストは資格情報なしで通る（DB が要る 2 件は自分で skip する）。
 # 資格情報なしでもテスト自体は通り、外部サービスを使う検査だけが自分で skip する。
@@ -22,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  # main への push は 1 回ずつ走らせる。取り消すと、版の検査がその push の範囲を二度と見ない。
+  # main への push の run は取り消さない。取り消すと、版の検査がその push の範囲を二度と見ない。
   group: check-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
@@ -47,6 +48,15 @@ jobs:
         with:
           node-version: 24
 
+      # 依存の導入と verify より前に置く。手前で落ちた main への push は、その範囲を二度と見ない。
+      - name: plugin の版が上がっているか
+        env:
+          # PR では checkout した merge commit の 1 つ目の親が merge 先、main への push では push 前の commit。
+          # 利用者に届くかは前の main と版が違うかで決まるので、この範囲をまとめて比べる。
+          # 版上げを配布物と同じ commit に入れる決まりは pre-commit が commit ごとに見る。
+          BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
+        run: node scripts/check-mcp-version.mjs --base "$BASE"
+
       # **`code.ts` は rg を叩く。**ランナーには入っていない（実測: 無い状態で
       # `code.test.ts` が 18 件中 8 件落ちる）。**探索そのものを確かめるテストなので、
       # 偽物では代われない。**rg を起動できないことは結果に出るが、
@@ -65,15 +75,9 @@ jobs:
       # **バンドルし直して差分が出たら、dist が古い。**配布物はソースと一緒にコミットされるので、
       # 忘れると Codex 側が古いコードで動き続ける（.agents/skills/plugin-release/SKILL.md）。
       - name: 配布物が最新か
-        env:
-          # PR では checkout した merge commit の 1 つ目の親が merge 先、main への push では push 前の commit。
-          # 利用者に届くかは前の main と版が違うかで決まるので、この範囲をまとめて比べる。
-          # 版上げを配布物と同じ commit に入れる決まりは pre-commit が commit ごとに見る。
-          BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: |
           set -e
           bun run bundle
-          bun run scripts/check-mcp-version.mjs --base "$BASE"
           git diff --exit-code -- plugin/dist
 
       # 同じ知識が複数の出口に写されている場所の突き合わせ。README の CLI 一覧がずれていると、

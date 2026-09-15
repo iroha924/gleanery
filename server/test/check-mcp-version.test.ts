@@ -88,6 +88,10 @@ test("基準が無ければ、index に入った plugin の変更を HEAD の版
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
 
+    // 版上げを stage し忘れると、commit には版上げが入らない。
+    bump(r.dir, "1.0.1");
+    assert.equal(check(r.dir).status, 1);
+
     bump(r.dir, "1.0.1");
     r.git("add", "-A");
     const bumped = check(r.dir);
