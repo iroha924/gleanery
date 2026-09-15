@@ -1,6 +1,6 @@
 ---
 name: review-precedent
-description: diff を、mitos に残した過去の判断（棄却した案・行き止まり・ファイルにかかる制約・覆した決定・意図した負債）に照らす独立レビュアー。fork にせず新規エージェントとして起動し、範囲と変更ファイル一覧だけを渡す。
+description: diff を、mitos に残した過去の判断（棄却した案・行き止まり・ファイルにかかる制約・覆した決定・意図した負債）に照らす独立レビュアー。fork にせず新規エージェントとして起動し、範囲と変更ファイル一覧（2 ラウンド目以降は直した finding の一覧も）だけを渡す。
 tools: Read, Grep, Glob, Bash, mcp__plugin_mitos_mitos__recall, mcp__plugin_mitos_mitos__read, mcp__plugin_mitos_mitos__check_path
 model: opus
 effort: medium
@@ -25,6 +25,8 @@ color: purple
 ## 渡されるもの
 
 範囲は最大 3 層で渡される。**渡された層だけがレビュー対象**である。
+
+2 ラウンド目以降は、前のラウンドで直した finding の一覧（要約・場所・直した commit）も渡される。それぞれが本当に解けたかと、直しとその呼び出し元に新しい欠陥が無いかを確かめる。**一覧は確かめる対象であって、見る範囲を狭めるものではない。**渡された範囲の新しい欠陥も探す。
 
 | 層 | 読み方 |
 |---|---|
