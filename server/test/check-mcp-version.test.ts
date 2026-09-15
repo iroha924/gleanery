@@ -82,6 +82,9 @@ test("基準が無ければ、index に入った plugin の変更を HEAD の版
     r.git("commit", "-qm", "base");
 
     write(r.dir, "plugin/skills/a.md", "b");
+    const unstaged = check(r.dir);
+    assert.equal(unstaged.status, 0, unstaged.stderr);
+
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
 

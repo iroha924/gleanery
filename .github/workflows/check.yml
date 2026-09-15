@@ -22,7 +22,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: check-${{ github.ref }}
+  # main への push は 1 回ずつ走らせる。取り消すと、版の検査がその push の範囲を二度と見ない。
+  group: check-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -66,7 +67,8 @@ jobs:
       - name: 配布物が最新か
         env:
           # PR では checkout した merge commit の 1 つ目の親が merge 先、main への push では push 前の commit。
-          # 利用者に届くかは前の main と版が違うかで決まるので、commit ごとではなくこの範囲で比べる。
+          # 利用者に届くかは前の main と版が違うかで決まるので、この範囲をまとめて比べる。
+          # 版上げを配布物と同じ commit に入れる決まりは pre-commit が commit ごとに見る。
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: |
           set -e
