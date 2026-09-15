@@ -31,6 +31,9 @@ jobs:
     steps:
       # third-party action は full commit SHA で pin する（タグは後から中身を差し替えられる）。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 版の検査が比べる基準（merge 先と push 前の commit）を手元に置く。
+          fetch-depth: 0
 
       # **bun の版を固定する。**浮かせると lockfile を読めない版が選ばれる
       # （Vercel で実際に踏んだ: 1.3.14 が lockfileVersion 2 を読めず落ちた）。
@@ -61,10 +64,14 @@ jobs:
       # **バンドルし直して差分が出たら、dist が古い。**配布物はソースと一緒にコミットされるので、
       # 忘れると Codex 側が古いコードで動き続ける（.agents/skills/plugin-release/SKILL.md）。
       - name: 配布物が最新か
+        env:
+          # PR では checkout した merge commit の 1 つ目の親が merge 先、main への push では push 前の commit。
+          # 利用者に届くかは前の main と版が違うかで決まるので、commit ごとではなくこの範囲で比べる。
+          BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: |
           set -e
           bun run bundle
-          bun run scripts/check-mcp-version.mjs
+          bun run scripts/check-mcp-version.mjs --base "$BASE"
           git diff --exit-code -- plugin/dist
 
       # 同じ知識が複数の出口に写されている場所の突き合わせ。README の CLI 一覧がずれていると、

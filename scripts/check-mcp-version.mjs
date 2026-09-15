@@ -7,6 +7,9 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { parseArgs } from "node:util";
+
+const { base } = parseArgs({ options: { base: { type: "string" } } }).values;
 
 const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 const at = (ref, file) => {
@@ -51,17 +54,19 @@ if (distinct.length !== 1) {
   process.exit(1);
 }
 
-// **見るのは index（このコミットに入る内容）。**作業ツリーを読むと、bundle が
-// 書き終える前に読んで素通りする。**対象は plugin/ 配下すべて** — キャッシュへ複製されるのは
+// **pre-commit は index（このコミットに入る内容）を HEAD と比べる。**作業ツリーを読むと、bundle が
+// 書き終える前に読んで素通りする。**CI は checkout 直後で index が HEAD と同じなので、`--base` で
+// 渡した commit と HEAD を比べる。**対象は plugin/ 配下すべて — キャッシュへ複製されるのは
 // mcp.js だけではなく、自動記録（dist/capture.js）もフックの定義もスキル（skills/**）も入る。
-const changed = git("diff", "--cached", "--name-only", "--", "plugin/", ".claude-plugin/")
+const range = base ? [base, "HEAD"] : ["--cached"];
+const changed = git("diff", "--name-only", ...range, "--", "plugin/", ".claude-plugin/")
   .split("\n")
   .filter(Boolean)
   .filter((f) => !(f in MANIFESTS));
 if (changed.length === 0) process.exit(0);
 
 const MANIFEST = "plugin/.claude-plugin/plugin.json";
-const was = JSON.parse(at("HEAD", MANIFEST) ?? "{}").version;
+const was = JSON.parse(at(base ?? "HEAD", MANIFEST) ?? "{}").version;
 const now = distinct[0];
 if (was !== now) process.exit(0);
 
