@@ -62,6 +62,7 @@ export const KEY: Record<Role, string> = {
 /** MCP と CLI が期待する schema の版。db/schema.sql の schema コメントと同じ数にする（テストが突き合わせる）。 */
 export const SCHEMA_REVISION = 3;
 
+/** pg は int8（bigint と count(*)）を string、timestamptz を Date で返す。`query<T>` の結果型はこれに合わせて書く。 */
 export type Db = Pick<pg.Client, "query">;
 
 function settings(env: Env, role: Role): pg.ClientConfig {
