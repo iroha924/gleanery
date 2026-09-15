@@ -1,6 +1,6 @@
 {
   "name": "mitos",
-  "version": "0.12.19",
+  "version": "0.12.21",
   "description": "過去の決定・棄却した案・制約・発言を引く（会話の自動記録は Claude Code だけ）。μίτος = 辿れば戻れる糸",
   "author": {
     "name": "iroha924",
