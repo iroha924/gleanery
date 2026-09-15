@@ -12,3 +12,4 @@ server/migrate-*.ts
 .env.local
 .vercel
 .env*
+.serena/
