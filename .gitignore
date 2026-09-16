@@ -13,3 +13,5 @@ server/migrate-*.ts
 .vercel
 .env*
 .serena/
+# 許可した command が入る。持ち主のグローバル ignore に頼ると、他の PC と clone した側で外れる。
+.claude/settings.local.json
