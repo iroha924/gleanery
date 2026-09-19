@@ -31,8 +31,10 @@ try {
 // 実測（2026-09-09）: Claude 側が 13 回上がるあいだ、**Codex 側は作られたときの 0.1.0 のまま
 // 一度も上がっていなかった。**このゲート自身が Claude 側しか見ていなかったため、
 // 「版を上げ忘れたら止まる」という約束が片側にしか効いていなかった。
+// 配る正本は npm の package で、plugin の manifest はそれと同じ版を指す。1 つでもずれると届かない。
 const MANIFESTS = {
-  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "mitos")?.version,
+  "plugin/package.json": (j) => j.version,
+  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.version,
   "plugin/.claude-plugin/plugin.json": (j) => j.version,
   "plugin/.codex-plugin/plugin.json": (j) => j.version,
 };
@@ -57,10 +59,22 @@ if (distinct.length !== 1) {
 
 // **変わったファイルも index（commit に入る内容）で見る。**作業ツリーを読むと、bundle が
 // 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
-// `--base` へ変えるだけで同じ比べ方になる。**対象は plugin/ 配下すべて** — キャッシュへ複製されるのは
-// mcp.js だけではなく、自動記録（dist/capture.js）もフックの定義もスキル（skills/**）も入る。
+// `--base` へ変えるだけで同じ比べ方になる。
+//
+// **配る中身の入力を全部挙げる。**キャッシュへ複製されるのは mcp.js だけではなく、自動記録
+// （dist/capture.js）もフックの定義もスキル（skills/**）も画面も DB の同梱物も入る。
+// dist と db は追跡しないので、ここから漏れた入力を変えると、配る中身が変わったのに版が据え置かれる。
+const INPUTS = [
+  "plugin/",
+  ".claude-plugin/",
+  "server/src/",
+  "dashboard/src/",
+  "dashboard/index.html",
+  "db/",
+  "scripts/bundle.mjs",
+];
 const ref = base ?? "HEAD";
-const changed = git("diff", "--cached", "--name-only", ref, "--", "plugin/", ".claude-plugin/")
+const changed = git("diff", "--cached", "--name-only", ref, "--", ...INPUTS)
   .split("\n")
   .filter(Boolean)
   .filter((f) => !(f in MANIFESTS));
@@ -75,11 +89,11 @@ console.error(
   [
     `plugin/ の ${changed.length} 個が変わったのに版が ${now} のままになっている（${changed[0]} など）。`,
     "",
-    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/mitos/mitos/<版>/ の複製から動く。",
+    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/gleanery/gleanery/<版>/ の複製から動く。",
     "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
     "",
-    "  3つのmanifest（Claude、Codex、marketplace）のversionを同じ値へ上げる。",
-    "  marketplace の取得元へ入れた後、`mitos doctor` の「plugin の版」が出す更新手順を叩き、セッションを張り直す。",
+    "  4つ（npm の package.json、Claude、Codex、marketplace）のversionを同じ値へ上げる。",
+    "  marketplace の取得元へ入れた後、`gleanery doctor` の「plugin の版」が出す更新手順を叩き、セッションを張り直す。",
   ].join("\n"),
 );
 process.exit(1);

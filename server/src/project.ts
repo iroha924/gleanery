@@ -1,7 +1,7 @@
 // 作業場所（project）の識別。
 //
 // key は git remote を正規化したもの（`git:github.com/owner/repo`）で、PC をまたいで同じになる。
-// remote の無い作業場所だけ、PC ごとの対応表（~/.claude/mitos-projects.json）で `local:<名前>` に結ぶ。
+// remote の無い作業場所だけ、PC ごとの対応表（~/.gleanery/projects.json）で `local:<名前>` に結ぶ。
 // ローカルのパスは DB に置かない。置き場所は PC ごとに違い、同期は各 PC で ~/Projects を見て探す。
 
 import { execFileSync } from "node:child_process";
@@ -13,7 +13,7 @@ import type { Db } from "./db.ts";
 export type Place = { key: string; root: string; name: string };
 
 // 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の対応表を触らない）。
-const localFile = (): string => path.join(os.homedir(), ".claude", "mitos-projects.json");
+const localFile = (): string => path.join(os.homedir(), ".gleanery", "projects.json");
 const LOCAL_KEY = /^[a-z0-9][a-z0-9._-]*$/;
 
 /**
@@ -103,13 +103,16 @@ export function nameLocal(dir: string, name: string): Place {
   const root = rootOf(dir);
   const m = localMap();
   m[root] = name;
+  // **置き場所を先に作る。**~/.gleanery/ は鍵を入れたときに出来るが、環境変数で渡している
+  // 利用者にはまだ無い。無いまま書くと ENOENT で落ちて、名前を付けられない。
+  fs.mkdirSync(path.dirname(localFile()), { recursive: true, mode: 0o700 });
   fs.writeFileSync(localFile(), `${JSON.stringify(m, null, 2)}\n`);
   return { key: `local:${name}`, root, name };
 }
 
-/** その作業場所の project id。無ければ null（作るのは `mitos project add` だけ）。 */
+/** その作業場所の project id。無ければ null（作るのは `gleanery project add` だけ）。 */
 export async function projectId(db: Db, key: string): Promise<number | null> {
-  const r = await db.query<{ id: string }>("select id from mitos.project where key = $1", [key]);
+  const r = await db.query<{ id: string }>("select id from gleanery.project where key = $1", [key]);
   return r.rows[0] ? Number(r.rows[0].id) : null;
 }
 
@@ -160,7 +163,7 @@ export type Connector = { id: string; headOid: string | null; snapshotAt: Date |
 
 /**
  * 取り込み元の行。無ければ作る。**transaction の中で呼び、行を掴む**（同じ取り込み元の同期の commit を 1 本ずつにする）。
- * 同期の成否と、最後に入れた snapshot はここへ書く（`mitos doctor` と画面が最後の同期を出す）。
+ * 同期の成否と、最後に入れた snapshot はここへ書く（`gleanery doctor` と画面が最後の同期を出す）。
  */
 export async function connectorOf(
   db: Db,
@@ -168,11 +171,11 @@ export async function connectorOf(
   provider: "github" | "docs",
 ): Promise<Connector> {
   await db.query(
-    "insert into mitos.connector (project_id, provider) values ($1, $2) on conflict (project_id, provider) do nothing",
+    "insert into gleanery.connector (project_id, provider) values ($1, $2) on conflict (project_id, provider) do nothing",
     [projectId, provider],
   );
   const r = await db.query<{ id: string; head_oid: string | null; snapshot_at: Date | null }>(
-    "select id, head_oid, snapshot_at from mitos.connector where project_id = $1 and provider = $2 for update",
+    "select id, head_oid, snapshot_at from gleanery.connector where project_id = $1 and provider = $2 for update",
     [projectId, provider],
   );
   const row = r.rows[0];

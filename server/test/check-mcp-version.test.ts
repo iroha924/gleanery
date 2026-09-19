@@ -15,7 +15,7 @@ const SCRIPT = path.join(
 );
 
 function repo(): { dir: string; git: (...a: string[]) => string; done: () => void } {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-version-")));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-version-")));
   const git = (...a: string[]) =>
     execFileSync(
       "git",
@@ -32,7 +32,8 @@ function write(dir: string, file: string, body: string) {
 }
 
 function bump(dir: string, version: string) {
-  write(dir, ".claude-plugin/marketplace.json", JSON.stringify({ plugins: [{ name: "mitos", version }] }));
+  write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
+  write(dir, ".claude-plugin/marketplace.json", JSON.stringify({ plugins: [{ name: "gleanery", version }] }));
   write(dir, "plugin/.claude-plugin/plugin.json", JSON.stringify({ version }));
   write(dir, "plugin/.codex-plugin/plugin.json", JSON.stringify({ version }));
 }

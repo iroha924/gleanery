@@ -85,6 +85,6 @@ test("db/migrations は revision 3 から欠番も重複も無く続き、最後
   assert.equal(revisions.at(-1), SCHEMA_REVISION);
   assert.equal(
     revisions.at(-1),
-    Number(sql.match(/comment on schema mitos is 'mitos schema revision (\d+)'/)?.[1]),
+    Number(sql.match(/comment on schema gleanery is 'gleanery schema revision (\d+)'/)?.[1]),
   );
 });

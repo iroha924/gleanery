@@ -6,7 +6,7 @@
 //
 // **扱えるのは集合として列挙できる対だけ。**説明文が一致しているかは表現の揺れで
 // 判定できないので、そこは突き合わせずに**写しそのものを消す**（README の CLI 一覧を
-// `mitos --help` から書き出す）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
+// `gleanery --help` から書き出す）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
 // 別の形で 2 つの出口が組み立てる）はここでは捕まらない。AGENTS.md の節がそれを扱う。
 
 import { execFileSync } from "node:child_process";
@@ -41,7 +41,7 @@ const same = (a, b) => [...a].sort().join() === [...b].sort().join();
 // （Read した成果物を action 'read' で送り、CHECK が edit / review しか許さずに自動記録が止まった実例がある）。
 const schema = read("db/schema.sql");
 const knowledgeTable = schema.slice(
-  schema.indexOf("create table mitos.knowledge ("),
+  schema.indexOf("create table gleanery.knowledge ("),
   schema.indexOf("create index knowledge_listing"),
 );
 const PAIRS = [
@@ -242,7 +242,7 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
 // **ディレクトリを読む。**名前を並べると、足した定義が黙って検査の外に出る（実測: review-validator が漏れた）。
 const AGENT_DIR = "plugin/agents";
 // 最小集合。`~/.claude/rules/ai-agent-security.md`「中核原則」が挙げる面にそろえてある。各定義はこれを
-// 含んでいればよく、超過は許す —— review-precedent の「mitos の記録」、review-validator の「渡された主張」の
+// 含んでいればよく、超過は許す —— review-precedent の「gleanery の記録」、review-validator の「渡された主張」の
 // ように、その体にしか無い源を足せるようにするため。
 const UNTRUSTED_MIN = [
   "PR の本文",
@@ -281,11 +281,11 @@ for (const name of fs
     );
 }
 
-// ---- README の CLI 一覧を `mitos --help` から書き出す ----
+// ---- README の CLI 一覧を `gleanery --help` から書き出す ----
 //
 // **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、
 // README 側だけが更新された説明が両方あった）。
-// 正本は `mitos --help` — 端末で叩いた人が見るのはこちらで、README は読み物だから。
+// 正本は `gleanery --help` — 端末で叩いた人が見るのはこちらで、README は読み物だから。
 // **CLI を実際に起動して取る。**spec から help を組み立てる作りなので、ソースを正規表現で
 // 舐めても使い方の行は再現できない。
 let help = null;
@@ -295,7 +295,7 @@ try {
     stdio: ["ignore", "pipe", "pipe"],
   });
 } catch (error) {
-  fail.push(`\`mitos --help\` を起動できない: ${error instanceof Error ? error.message : String(error)}`);
+  fail.push(`\`gleanery --help\` を起動できない: ${error instanceof Error ? error.message : String(error)}`);
 }
 const usage =
   help === null
@@ -304,7 +304,7 @@ const usage =
         const m = help.match(/使い方:\n(.*?)\n\n/s);
         if (!m?.[1]) {
           fail.push(
-            "`mitos --help` から使い方のブロックを取り出せない。check-pairs.mjs の正規表現が実物とずれている",
+            "`gleanery --help` から使い方のブロックを取り出せない。check-pairs.mjs の正規表現が実物とずれている",
           );
           return null;
         }
@@ -330,7 +330,7 @@ if (usage) {
       // 一覧が既に一致している場合でも走り、README に残していた別件の編集を
       // そのコミットへ巻き込む（生成物だけの plugin/dist とは違い、ここは人が書く本文を含む）。
       execFileSync("git", ["add", "README.md"], { stdio: "ignore" });
-      console.log("README.md の CLI 一覧が `mitos --help` とずれていたので、書き直して staged へ戻した");
+      console.log("README.md の CLI 一覧が `gleanery --help` とずれていたので、書き直して staged へ戻した");
     }
   }
 }

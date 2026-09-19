@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
-  "name": "mitos",
-  "version": "0.13.0",
-  "description": "会話を自動で残し、過去の決定・棄却した案・制約・発言を引く。μίτος = 辿れば戻れる糸",
+  "name": "gleanery",
+  "version": "0.15.0",
+  "description": "会話を自動で残し、過去の決定・棄却した案・制約・発言を引く。glean = 落ち穂を拾い集める",
   "author": {
     "name": "iroha924",
     "email": "shunichi@hir4ta.com"
   },
-  "homepage": "https://github.com/iroha924/mitos",
-  "repository": "https://github.com/iroha924/mitos",
+  "homepage": "https://github.com/iroha924/gleanery",
+  "repository": "https://github.com/iroha924/gleanery",
   "keywords": [
     "knowledge",
     "rag",

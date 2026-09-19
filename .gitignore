@@ -13,3 +13,7 @@ server/migrate-*.ts
 .serena/
 # 許可した command が入る。持ち主のグローバル ignore に頼ると、他の PC と clone した側で外れる。
 .claude/settings.local.json
+
+# 配布物は publish のときに作る（scripts/bundle.mjs）。commit には入れない。
+plugin/dist/
+plugin/db/

@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: mitosのMCP、CLI、自動記録のhook、画面の配布物、plugin SkillまたはAgentを変更してnpmへ届ける。bundle入口とその依存module、versionの一致、Claude/Codex両方への到達確認が対象。HTTP APIやdashboardの実装だけの変更には使わない。
+description: gleaneryのMCP、CLI、自動記録のhook、画面の配布物、plugin SkillまたはAgentを変更してnpmへ届ける。bundle入口とその依存module、versionの一致、Claude/Codex両方への到達確認が対象。HTTP APIやdashboardの実装だけの変更には使わない。
 ---
 
 # 配布物を届ける
@@ -38,8 +38,8 @@ Skillが CLI を呼ぶときは、**package内のJSを直接起動する**。
 node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" <サブコマンド>
 ```
 
-npmの`bin`は、利用者が`npm i -g`したときの`mitos`コマンド用であって、**plugin内のPATHへ公開される契約は
-無い**。`${CLAUDE_PLUGIN_ROOT}/bin/mitos`のようなshell scriptに依存すると、Windowsで動かないうえ、
+npmの`bin`は、利用者が`npm i -g`したときの`gleanery`コマンド用であって、**plugin内のPATHへ公開される契約は
+無い**。`${CLAUDE_PLUGIN_ROOT}/bin/gleanery`のようなshell scriptに依存すると、Windowsで動かないうえ、
 npm sourceでは置かれる保証も無い。
 
 ## 届けるまで
@@ -68,15 +68,15 @@ npm sourceでは置かれる保証も無い。
 
 ## 届いたことを確かめる
 
-`mitos doctor`の「plugin の版」が、足りない手順を同じ形で出す。
+`gleanery doctor`の「plugin の版」が、足りない手順を同じ形で出す。
 
 1. Claude Code: marketplaceを更新してinstallし直し、開いているsessionで`/reload-plugins`。
    対話端末の無いsessionはMCPが次のsessionまで旧版のまま
 2. Codex: 同じくmarketplaceを更新してから開き直す
-3. `mitos doctor`で、両ホストの導入済みcacheが同じ版・同じ中身になり、実行中のMCPに張り直しの指示が
+3. `gleanery doctor`で、両ホストの導入済みcacheが同じ版・同じ中身になり、実行中のMCPに張り直しの指示が
    残っていないことを見る
 4. 反映後のsessionから`recall`を呼び、変更したMCP tool、Skill、Agentの中身を確かめる。自動記録を変えたなら、
-   そのsessionの発言がダッシュボードの`/sessions`に出ることと、`mitos doctor`の「自動記録」行に待ちが
+   そのsessionの発言がダッシュボードの`/sessions`に出ることと、`gleanery doctor`の「自動記録」行に待ちが
    残っていないことも見る
 
 `plugin/agents/`もcache経由なので、保存やsession再起動だけでは新しい定義にならない。Agentを変更する
@@ -88,10 +88,10 @@ npm sourceでは置かれる保証も無い。
   `agents/openai.yaml`の`policy.allow_implicit_invocation: false`（Codex）を対で置く。Codexは前者を解釈しない。
   対は`verify:ai`が検査する
 - `allowed-tools`に`${CLAUDE_PLUGIN_ROOT}`を書いた事前承認は効く。2026-09-12に、一時リポジトリで
-  `claude -p "/mitos:init" --plugin-dir <plugin> --permission-mode default --output-format json`を実行し、
-  `.mitos`が作られて`permission_denials`が空だった（利用者の設定にmitosを許すBashのルールは無い）。
+  `claude -p "/gleanery:init" --plugin-dir <plugin> --permission-mode default --output-format json`を実行し、
+  `.gleanery`が作られて`permission_denials`が空だった（利用者の設定にgleaneryを許すBashのルールは無い）。
   requirementsとdesignは書き込みを事前承認に入れない。承認済みの本文を確認なしで書き換えられると、
   次の同期でそのままapprovedとして入る
-- 届いた後の確認では、Codexで`$mitos:<skill>`の明示起動でも本文が読まれることを確かめる
+- 届いた後の確認では、Codexで`$gleanery:<skill>`の明示起動でも本文が読まれることを確かめる
 
 人向けのCLI出力とAI向けのMCP応答は別々に確認する。

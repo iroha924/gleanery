@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 過去の判断・会話・文書を Claude Code と Codex から引く MCP サーバー。**DB は読むだけ**（reader の鍵）。
-// 手元に書くのは、check_path がフックの効き目を測る ~/.claude/mitos-advice.jsonl だけ。
+// 手元に書くのは、check_path がフックの効き目を測る ~/.gleanery/advice.jsonl だけ。
 //
 // 汎用の Postgres MCP では意味検索ができない（質問を埋め込むのに Voyage を呼ぶ必要がある）ので自前で持つ。
 // tool は 3 つ。recall（探す）、read（参照を読む）、check_path（編集の前に、そのファイルにかかる制約を引く）。
@@ -60,7 +60,7 @@ async function here(cwd?: string): Promise<Here> {
 
 const unregistered = (h: Here) =>
   h.place
-    ? `この作業場所（${h.place.name}）は mitos に登録されていない。登録は \`mitos project add\`。`
+    ? `この作業場所（${h.place.name}）は gleanery に登録されていない。登録は \`gleanery project add\`。`
     : "この場所は git の remote も名前も持たないので、どの作業場所か決められない。";
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
@@ -68,10 +68,10 @@ const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
  * 道具の失敗を、理由の文つきで返す。投げたままだと SDK が error.message だけを返し、pg の理由の空の AggregateError では
  * 空文字になる（CLI と同じ reason() で、中のエラーの理由まで出す）。
  */
-const failed = (e: unknown) => ({ ...text(`mitos: 失敗した（${head(reason(e), 1000)}）`), isError: true });
+const failed = (e: unknown) => ({ ...text(`gleanery: 失敗した（${head(reason(e), 1000)}）`), isError: true });
 
 const server = new McpServer(
-  { name: "mitos", version: VERSION ?? "unknown" },
+  { name: "gleanery", version: VERSION ?? "unknown" },
   {
     // Claude Code は tool search が既定で有効で、開始時にモデルが見るのは tool 名とこれだけになる。
     instructions: [
@@ -214,7 +214,7 @@ server.registerTool(
 // **確かめられなかったことを「制約なし」と言わない。**DB に届かないときはそう返す。
 
 const index = new Map<number, { at: number; rules: Map<string, PathRule[]> }>();
-const ADVICE = path.join(os.homedir(), ".claude", "mitos-advice.jsonl");
+const ADVICE = path.join(os.homedir(), ".gleanery", "advice.jsonl");
 
 async function rulesFor(id: number): Promise<Map<string, PathRule[]>> {
   const cur = index.get(id);
@@ -283,7 +283,7 @@ server.registerTool(
       );
     } catch (e) {
       // 編集は止めない（フックは許可を決めない）。ただし確かめていないことは伝える。
-      return reply(`mitos: このファイルにかかる制約を確かめられなかった（${head(reason(e), 200)}）。`);
+      return reply(`gleanery: このファイルにかかる制約を確かめられなかった（${head(reason(e), 200)}）。`);
     }
   },
 );

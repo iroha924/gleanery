@@ -1,14 +1,14 @@
-# 手元の PostgreSQL。`mitos db init` が起動し、schema を当てる。
+# 手元の PostgreSQL。`gleanery db init` が起動し、schema を当てる。
 #
 # **この compose を直接 `docker compose up` で起動しない。**接続先の資格情報は
-# ~/.claude/knowledge.env（配布後は ~/.gleanery/env）の 1 ファイルが正本で、
+# ~/.gleanery/env（配布後は ~/.gleanery/env）の 1 ファイルが正本で、
 # CLI がそこから読んで環境変数として渡す。手で起動すると、env ファイルと
 # 実際の DB のパスワードが食い違ったまま気付けない。
 #
 # 版は pgvector まで固定する。`pg18` のような動くタグにすると、
 # 再取得した PC だけ別の版になり、schema の適用が黙ってずれる。
 
-name: ${COMPOSE_PROJECT_NAME:-mitos}
+name: ${COMPOSE_PROJECT_NAME:-gleanery}
 
 services:
   db:
@@ -16,8 +16,8 @@ services:
     restart: unless-stopped
     environment:
       # CLI が接続文字列から取り出して渡す。既定値を置かない（置くと弱い鍵で起動してしまう）。
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?CLI 経由で起動する（mitos db init）}
-      POSTGRES_DB: ${POSTGRES_DB:-mitos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?CLI 経由で起動する（gleanery db init）}
+      POSTGRES_DB: ${POSTGRES_DB:-gleanery}
       # 照合順序をロケールに委ねると、PC ごとに索引の並びが変わる。
       POSTGRES_INITDB_ARGS: --locale-provider=icu --icu-locale=und-x-icu --encoding=UTF8
     ports:

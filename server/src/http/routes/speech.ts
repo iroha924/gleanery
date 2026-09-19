@@ -119,7 +119,7 @@ const app = new Hono()
       );
       const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
       const result = await openai.responses.create({
-        model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+        model: env.GLEANERY_CHAT_MODEL ?? "gpt-5.6-terra",
         reasoning: { effort: "low" },
         instructions: REPLY,
         input: `相手の発言:\n${heard}\n\n記録:\n${facts.length ? framed(facts.join("\n")) : "(該当なし)"}`,
@@ -180,7 +180,7 @@ const app = new Hono()
     try {
       const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
       const result = await openai.responses.create({
-        model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
+        model: env.GLEANERY_CHAT_MODEL ?? "gpt-5.6-terra",
         // Lower effort changed correct numbers during repeated measurements.
         reasoning: { effort: "medium" },
         instructions: POLISH,

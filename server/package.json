@@ -1,9 +1,9 @@
 {
-  "name": "mitos-server",
+  "name": "gleanery-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "mitos の MCP・CLI・自動記録・画面の API（手元の PostgreSQL と Voyage、OpenAI）",
+  "description": "gleanery の MCP・CLI・自動記録・画面の API（手元の PostgreSQL と Voyage、OpenAI）",
   "scripts": {
     "check": "biome check .",
     "fix": "biome check --write .",

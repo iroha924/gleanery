@@ -71,13 +71,29 @@ jobs:
       - name: 画面と Hono を検証
         run: bun run verify
 
-      # **バンドルし直して差分が出たら、dist が古い。**配布物はソースと一緒にコミットされるので、
-      # 忘れると Codex 側が古いコードで動き続ける（.agents/skills/plugin-release/SKILL.md）。
-      - name: 配布物が最新か
+      # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
+      # （ignore されたファイルは差分に現れない）。npm が実際に詰めるものを一覧し、リポジトリの
+      # 外へ展開して起動する。ここが唯一「利用者が受け取る形」を見る場所である。
+      - name: 配る tarball が自己完結しているか
         run: |
           set -e
           bun run bundle
-          git diff --exit-code -- plugin/dist
+          cd plugin
+          tgz="$(npm pack --silent)"
+          tar tzf "$tgz" | sort > /tmp/contents.txt
+          for f in package/dist/cli.js package/dist/mcp.js package/dist/capture.js \
+                   package/dist/dashboard/index.html package/db/schema.sql package/db/compose.yaml; do
+            grep -qx "$f" /tmp/contents.txt || { echo "tarball に $f が無い"; exit 1; }
+          done
+          # **リポジトリの外へ出す。**中で展開すると、同梱物を取り違えても親を辿って当たり、通ってしまう。
+          out="$(mktemp -d)"
+          tar xzf "$tgz" -C "$out"
+          node "$out/package/dist/cli.js" --help > /dev/null
+          node "$out/package/dist/cli.js" db --help > /dev/null
+          # 同梱物を配った配置のまま引けるか。dist と db の相対関係は
+          # server/test/assets.test.ts が候補の計算ごと検査している。
+          test -f "$out/package/dist/../db/schema.sql"
+          test -f "$out/package/dist/dashboard/index.html"
 
       # 同じ知識が複数の出口に写されている場所の突き合わせ。README の CLI 一覧がずれていると、
       # check-pairs.mjs は書き直して staged へ戻し、0 で終わる。index ではなく HEAD と比べて落とす。

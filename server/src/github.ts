@@ -280,14 +280,14 @@ export async function syncGithub(
     const ids = new Map<number, string>();
     if (users.size) {
       await client.query(
-        `insert into mitos.person_identity (provider, external_id, handle)
+        `insert into gleanery.person_identity (provider, external_id, handle)
          select 'github', t.id, t.handle from unnest($1::text[], $2::text[]) as t(id, handle)
          on conflict (provider, external_id) do update set handle = excluded.handle
-           where mitos.person_identity.handle <> excluded.handle`,
+           where gleanery.person_identity.handle <> excluded.handle`,
         [[...users.keys()].map(String), [...users.values()]],
       );
       const all = await client.query<{ id: string; external_id: string }>(
-        "select id, external_id from mitos.person_identity where provider = 'github' and external_id = any($1)",
+        "select id, external_id from gleanery.person_identity where provider = 'github' and external_id = any($1)",
         [[...users.keys()].map(String)],
       );
       for (const x of all.rows) ids.set(Number(x.external_id), x.id);
@@ -297,7 +297,7 @@ export async function syncGithub(
     const known = new Map(
       (
         await client.query<{ id: string; external_id: string; content_hash: Buffer }>(
-          "select id, external_id, content_hash from mitos.source_item where connector_id = $1",
+          "select id, external_id, content_hash from gleanery.source_item where connector_id = $1",
           [connector.id],
         )
       ).rows.map((r) => [r.external_id, r]),
@@ -306,9 +306,9 @@ export async function syncGithub(
     const stored = new Map(
       (
         await client.query<{ id: string; content_hash: Buffer }>(
-          `select m.id, m.content_hash from mitos.message m
-           join mitos.conversation c on c.id = m.conversation_id
-           join mitos.source_item s on s.id = c.source_item_id
+          `select m.id, m.content_hash from gleanery.message m
+           join gleanery.conversation c on c.id = m.conversation_id
+           join gleanery.source_item s on s.id = c.source_item_id
            where s.connector_id = $1`,
           [connector.id],
         )
@@ -319,7 +319,7 @@ export async function syncGithub(
     const changedItems = items.filter((i) => !known.get(String(i.number))?.content_hash.equals(itemHash(i)));
     if (changedItems.length) {
       const r = await client.query<{ id: string; external_id: string }>(
-        `insert into mitos.source_item (connector_id, external_id, kind, title, state, url, author_identity_id,
+        `insert into gleanery.source_item (connector_id, external_id, kind, title, state, url, author_identity_id,
                                         source_created_at, source_updated_at, closed_at, content_hash, synced_at)
          select $1, t.number, t.kind, t.title, t.state, t.url, t.author, t.created, t.updated, t.closed,
                 decode(t.hash, 'hex'), now()
@@ -410,7 +410,7 @@ export async function syncGithub(
     if (conversations.size) {
       const c = [...conversations];
       await client.query(
-        `insert into mitos.conversation (id, project_id, source_item_id, origin, external_id, started_at)
+        `insert into gleanery.conversation (id, project_id, source_item_id, origin, external_id, started_at)
          select t.id, $1, t.source, 'github', t.external, t.at
          from unnest($2::uuid[], $3::bigint[], $4::text[], $5::timestamptz[]) as t(id, source, external, at)
          on conflict (id) do nothing`,
@@ -425,7 +425,7 @@ export async function syncGithub(
     }
     if (messages.length) {
       await client.query(
-        `insert into mitos.message (id, conversation_id, external_id, reply_to_id, speaker_kind, identity_id, body,
+        `insert into gleanery.message (id, conversation_id, external_id, reply_to_id, speaker_kind, identity_id, body,
                                     original_bytes, url, sent_at, content_hash, lexemes)
          select t.id, t.conversation, t.external, t.reply, t.speaker, t.identity, t.body, octet_length(t.body), t.url,
                 t.at, decode(t.hash, 'hex'), t.lex::tsvector
@@ -440,11 +440,11 @@ export async function syncGithub(
         [JSON.stringify(messages.map((m) => m.json))],
       );
       const written = messages.map((m) => m.json.id);
-      await client.query("delete from mitos.message_file where message_id = any($1::uuid[])", [written]);
+      await client.query("delete from gleanery.message_file where message_id = any($1::uuid[])", [written]);
       const files = messages.flatMap((m) => (m.s.file ? [{ id: m.json.id, ...m.s.file }] : []));
       if (files.length) {
         await client.query(
-          `insert into mitos.message_file (message_id, path, action, line_start, line_end)
+          `insert into gleanery.message_file (message_id, path, action, line_start, line_end)
            select t.id, t.path, 'review', t.first, t.last
            from unnest($1::uuid[], $2::text[], $3::int[], $4::int[]) as t(id, path, first, last)`,
           [
@@ -458,12 +458,12 @@ export async function syncGithub(
       const embed = messages.filter((m) => m.indexed);
       if (embed.length) {
         await client.query(
-          `insert into mitos.message_embedding (message_id, model, source_hash, status)
+          `insert into gleanery.message_embedding (message_id, model, source_hash, status)
            select t.id, $3, t.hash, 'pending' from unnest($1::uuid[], $2::bytea[]) as t(id, hash)
            on conflict (message_id) do update set
              source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0,
              last_error = null, updated_at = now()
-           where mitos.message_embedding.source_hash <> excluded.source_hash`,
+           where gleanery.message_embedding.source_hash <> excluded.source_hash`,
           [embed.map((m) => m.json.id), embed.map((m) => sha256(m.embedText)), EMBED_MODEL],
         );
       }
@@ -471,15 +471,16 @@ export async function syncGithub(
     // GitHub で消されたコメントは消す。一覧は完全なもの（取れなかったら collect が投げてここに来ない）。
     const gone = [...stored.keys()].filter((id) => !live.has(id));
     const messagesRemoved = gone.length
-      ? ((await client.query("delete from mitos.message where id = any($1::uuid[])", [gone])).rowCount ?? 0)
+      ? ((await client.query("delete from gleanery.message where id = any($1::uuid[])", [gone])).rowCount ??
+        0)
       : 0;
     // 一覧から消えた PR・issue（削除された、別のリポジトリへ移された）は行ごと消す。
     const removed = await client.query(
-      "delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))",
+      "delete from gleanery.source_item where connector_id = $1 and not (external_id = any($2))",
       [connector.id, items.map((i) => String(i.number))],
     );
     await client.query(
-      "update mitos.connector set snapshot_at = $2, last_success_at = now(), last_error = null where id = $1",
+      "update gleanery.connector set snapshot_at = $2, last_success_at = now(), last_error = null where id = $1",
       [connector.id, snapshotAt],
     );
     return {

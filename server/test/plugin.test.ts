@@ -22,7 +22,7 @@ import {
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 const REPO_PLUGIN = path.join(SRC, "..", "..", "plugin");
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "mitos-plugin-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-plugin-"));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 /** manifest と中身 1 つだけの配布物を作る。 */
 function plugin(where: string, version: string, body = "x"): Install {
@@ -31,7 +31,7 @@ function plugin(where: string, version: string, body = "x"): Install {
   fs.mkdirSync(path.join(root, "dist"), { recursive: true });
   fs.writeFileSync(
     path.join(root, ".claude-plugin", "plugin.json"),
-    JSON.stringify({ name: "mitos", version }),
+    JSON.stringify({ name: "gleanery", version }),
   );
   fs.writeFileSync(path.join(root, "dist", "mcp.js"), body);
   return { version, root };
@@ -53,7 +53,7 @@ test("版は数値で比べる（0.10.9 < 0.10.18）", () => {
   assert.equal(compareVersions("1.0.0", "0.99.99"), 1);
 });
 
-test("mitos 以外の manifest と消えた root は版を持たない", () => {
+test("gleanery 以外の manifest と消えた root は版を持たない", () => {
   const other = path.join(tmp, "other");
   fs.mkdirSync(path.join(other, ".claude-plugin"), { recursive: true });
   fs.writeFileSync(
@@ -99,7 +99,7 @@ test("repository 側は git が追跡しているファイルだけを配布物�
 
 test("ps の出力から node …/dist/mcp.js だけを拾う", () => {
   const out = [
-    "18319 Fri Sep 11 09:07:27 2026     node /Users/me/Projects/mitos/plugin/dist/mcp.js",
+    "18319 Fri Sep 11 09:07:27 2026     node /Users/me/Projects/gleanery/plugin/dist/mcp.js",
     "29334 Fri Sep  4 14:10:31 2026     node ./dist/mcp.js",
     "  401 Fri Sep 11 09:00:00 2026     /opt/homebrew/bin/node /Users/me/Library/Application Support/x/dist/mcp.js",
     "  500 Fri Sep 11 09:00:00 2026     node /Users/me/other/dist/cli.js",
@@ -109,7 +109,7 @@ test("ps の出力から node …/dist/mcp.js だけを拾う", () => {
   assert.deepEqual(
     got.map((p) => [p.pid, p.script]),
     [
-      [18319, "/Users/me/Projects/mitos/plugin/dist/mcp.js"],
+      [18319, "/Users/me/Projects/gleanery/plugin/dist/mcp.js"],
       [29334, "./dist/mcp.js"],
       [401, "/Users/me/Library/Application Support/x/dist/mcp.js"],
     ],
@@ -123,8 +123,8 @@ test("repository より古い導入は両ホストとも更新手順を出す", 
     seen({
       repository,
       cli: repository,
-      claude: plugin("claude/plugins/cache/mitos/mitos/0.10.18", "0.10.18"),
-      codex: [plugin("codex/plugins/cache/mitos/mitos/0.10.18", "0.10.18")],
+      claude: plugin("claude/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18"),
+      codex: [plugin("codex/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18")],
     }),
   );
   // 端末の上で同じプロセスの中で走らせると印に色が付く。比べる前に外す。
@@ -135,12 +135,12 @@ test("repository より古い導入は両ホストとも更新手順を出す", 
   assert.deepEqual(r.issues, ["Claude Code", "Codex"], "直すものは食い違った導入だけ");
   assert.match(
     out,
-    /Claude Code: claude plugin marketplace update mitos && claude plugin update mitos@mitos/,
+    /Claude Code: claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery/,
   );
   assert.match(out, /開いている session で \/reload-plugins/);
   assert.match(
     out,
-    /Codex: codex plugin marketplace upgrade mitos && codex plugin add mitos@mitos の後、Codex を開き直す/,
+    /Codex: codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery の後、Codex を開き直す/,
   );
 });
 
@@ -150,8 +150,8 @@ test("古い cache の CLI から実行しても、新しい導入を古いと�
   const out = report(
     seen({
       repository,
-      cli: plugin("claude/plugins/cache/mitos/mitos/0.10.18b", "0.10.18"),
-      claude: plugin("claude/plugins/cache/mitos/mitos/0.10.19", "0.10.19"),
+      cli: plugin("claude/plugins/cache/gleanery/gleanery/0.10.18b", "0.10.18"),
+      claude: plugin("claude/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19"),
     }),
   );
   assert.match(out.lines.find((l) => l.includes("この CLI")) ?? "", /← repository（0\.10\.19）より古い/);
@@ -165,7 +165,7 @@ test("同じ版で中身が違えば、repository の CLI だけ新しい状態�
     seen({
       repository,
       cli: repository,
-      codex: [plugin("codex/plugins/cache/mitos/mitos/0.10.18c", "0.10.18", "old")],
+      codex: [plugin("codex/plugins/cache/gleanery/gleanery/0.10.18c", "0.10.18", "old")],
     }),
   ).lines.join("\n");
   assert.match(
@@ -180,7 +180,7 @@ test("導入側のほうが新しければ、更新手順を出さず checkout �
   const out = report(
     seen({
       repository: plugin("r4/plugin", "0.10.18"),
-      claude: plugin("claude4/plugins/cache/mitos/mitos/0.10.19", "0.10.19"),
+      claude: plugin("claude4/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19"),
     }),
   ).lines.join("\n");
   assert.match(out, /Claude Code .*← repository（0\.10\.18）より新しい。repository の checkout が古い/);
@@ -191,16 +191,16 @@ test("repository が見えず Claude の導入先が消えていても落ちな�
   const out = report(
     seen({
       claude: { version: "0.10.18", root: path.join(tmp, "claude5", "missing") },
-      codex: [plugin("codex5/plugins/cache/mitos/mitos/0.10.18", "0.10.18")],
+      codex: [plugin("codex5/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18")],
     }),
   ).lines.join("\n");
   assert.match(out, /Claude Code .*← 導入先が無い/);
 });
 
 test("実行中の MCP は起動元の状態と導入済みの版で判定する", () => {
-  const installed = plugin("claude2/plugins/cache/mitos/mitos/0.10.19", "0.10.19");
-  const older = plugin("claude2/plugins/cache/mitos/mitos/0.10.18", "0.10.18");
-  const replaced = plugin("claude2/plugins/cache/mitos/mitos/0.10.17", "0.10.17");
+  const installed = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19");
+  const older = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18");
+  const replaced = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.17", "0.10.17");
   fs.writeFileSync(path.join(replaced.root, ".orphaned_at"), "1");
   const codexCache = path.join(tmp, "codex2", "plugins", "cache");
   const started = new Date("2026-09-11T00:07:27Z");
@@ -212,13 +212,18 @@ test("実行中の MCP は起動元の状態と導入済みの版で判定する
         { pid: 1, started, root: installed.root, version: "0.10.19" },
         { pid: 2, started, root: older.root, version: "0.10.18" },
         { pid: 3, started, root: replaced.root, version: "0.10.17" },
-        { pid: 4, started, root: path.join(codexCache, "mitos", "mitos", "0.10.16"), version: "0.10.16" },
+        {
+          pid: 4,
+          started,
+          root: path.join(codexCache, "gleanery", "gleanery", "0.10.16"),
+          version: "0.10.16",
+        },
         { pid: 5, started, root: plugin("work/plugin", "0.10.19").root, version: "0.10.19" },
         // 同じパスに作り直された cache。パスは生きているが、動いているのは消えた旧ディレクトリの中身。
         {
           pid: 6,
           started,
-          root: plugin("codex2/plugins/cache/mitos/mitos/0.10.15", "0.10.15").root,
+          root: plugin("codex2/plugins/cache/gleanery/gleanery/0.10.15", "0.10.15").root,
           version: "0.10.15",
           replaced: true,
         },
@@ -239,7 +244,7 @@ test("実行中の MCP は起動元の状態と導入済みの版で判定する
 
 test("実行中の MCP を起動元から特定し、同じ場所に作り直された cache を見分ける", async () => {
   // Codex と同じく、root を cwd にして相対パスで起動する。
-  const where = "obs/plugins/cache/mitos/mitos/0.0.1";
+  const where = "obs/plugins/cache/gleanery/gleanery/0.0.1";
   const idle = "setInterval(() => {}, 1000);";
   const { root } = plugin(where, "0.0.1", idle);
   const child = spawn(process.execPath, ["./dist/mcp.js"], { cwd: root, stdio: "ignore" });
@@ -262,7 +267,7 @@ test("導入先が消えていれば repository が見えなくても出す", ()
     seen({ claude: { version: "0.10.18", root: path.join(tmp, "claude3", "missing") } }),
   ).lines.join("\n");
   assert.match(out, /Claude Code .*← 導入先が無い。Skill のパスも無効/);
-  assert.match(out, /Claude Code: claude plugin marketplace update mitos/);
+  assert.match(out, /Claude Code: claude plugin marketplace update gleanery/);
 });
 
 test("観測できないものは無いと言わず不明と出す", () => {
@@ -276,7 +281,7 @@ test("観測できないものは無いと言わず不明と出す", () => {
   assert.deepEqual(r.issues, [], "観測できないことは直すものに数えない");
 });
 
-test("mitos --version は manifest の版を出す", () => {
+test("gleanery --version は manifest の版を出す", () => {
   const out = execFileSync(process.execPath, [path.join(SRC, "cli.ts"), "--version"], {
     encoding: "utf8",
     env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent" },
@@ -314,8 +319,8 @@ test("MCP の recall と read は、失敗の理由を空にせず isError で�
       env: {
         PATH: process.env.PATH ?? "",
         HOME: "/nonexistent",
-        KNOWLEDGE_ENV_DIR: "/nonexistent",
-        KNOWLEDGE_DB_URL_RO: "postgres://u:p@localhost:1/db",
+        GLEANERY_ENV_DIR: "/nonexistent",
+        GLEANERY_DB_URL_RO: "postgres://u:p@localhost:1/db",
       },
       stderr: "ignore",
     }),
@@ -327,7 +332,7 @@ test("MCP の recall と read は、失敗の理由を空にせず isError で�
     ] as const) {
       const r = await client.callTool({ name, arguments: args });
       assert.equal(r.isError, true, name);
-      assert.match(JSON.stringify(r.content), /mitos: 失敗した（[^）]*ECONNREFUSED/, name);
+      assert.match(JSON.stringify(r.content), /gleanery: 失敗した（[^）]*ECONNREFUSED/, name);
     }
   } finally {
     await client.close();

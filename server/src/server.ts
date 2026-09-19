@@ -9,40 +9,29 @@
 // CORS middleware は入れない。**許可しないことが、cross-origin の読み取りを止める手段そのもの**なので、
 // 足すと preflight に許可を返してしまう。
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { csrf } from "hono/csrf";
+import { dashboardRoot } from "./assets.ts";
 import chatRoutes from "./http/routes/chat.ts";
 import knowledgeRoutes from "./http/routes/knowledge.ts";
 import speechRoutes from "./http/routes/speech.ts";
 
-export const DEFAULT_PORT = 8787;
+export { dashboardRoot };
 
-/**
- * 画面のビルド成果物の場所。**cwd から探さない。**どこで起動されても同じものを配る。
- * 配る形（dist/cli.js の隣）と、開発の作業ツリーの両方を見る。
- */
-export function dashboardRoot(here = path.dirname(fileURLToPath(import.meta.url))): string | null {
-  for (const dir of [path.join(here, "dashboard"), path.join(here, "..", "..", "dashboard", "dist")]) {
-    if (fs.existsSync(path.join(dir, "index.html"))) return dir;
-  }
-  return null;
-}
+export const DEFAULT_PORT = 8787;
 
 /**
  * port を外から受ける。**0 と空文字と非数値を弾く。**
  * 0 は Node には「空いている番号を選ぶ」の意味だが、Host の allowlist は起動前の番号で作るので、
  * 選ばれた実ポートと食い違って全部 403 になる。
  */
-export function parsePort(raw: string | undefined, fallback = DEFAULT_PORT): number {
-  if (raw === undefined || raw.trim() === "") return fallback;
+export function parsePort(raw: string | undefined, what = "GLEANERY_DASHBOARD_PORT"): number {
+  if (raw === undefined || raw.trim() === "") return DEFAULT_PORT;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1 || n > 65535) {
-    throw new Error(`MITOS_DASHBOARD_PORT は 1〜65535 の整数にする（受け取った値: ${JSON.stringify(raw)}）`);
+    throw new Error(`${what} は 1〜65535 の整数にする（受け取った値: ${JSON.stringify(raw)}）`);
   }
   return n;
 }
@@ -72,6 +61,14 @@ export function createApp(port: number, devPorts: readonly number[] = []): Hono 
   // 文字起こしは音声の長さぶん課金されるので、ここが踏み台になる。
   app.use("/api/*", csrf());
 
+  // **Cache-Control が無い応答は、再利用してよいことになっている**（RFC 9111 4.2.2 のヒューリスティック）。
+  // 画面は同じ URL を何度も引くので、CLI で足した作業場所が出てこない形になりうる。
+  // 静的資産は内容でハッシュした名前なので、ここでは掛けない。
+  app.use("/api/*", async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-store");
+  });
+
   app.route("/api", knowledgeRoutes);
   app.route("/api", speechRoutes);
   app.route("/api", chatRoutes);
@@ -83,9 +80,14 @@ export function createApp(port: number, devPorts: readonly number[] = []): Hono 
 
   const root = dashboardRoot();
   if (root) {
-    app.use("*", serveStatic({ root }));
+    // **index.html だけは溜めさせない。**名前に中身のハッシュを持たないので、更新しても古い画面が
+    // 残り、消えた資産を指し続ける。assets/ は名前が変わるので掛けない。
+    const freshIndex = (p: string, c: Context) => {
+      if (p.endsWith("index.html")) c.header("Cache-Control", "no-cache");
+    };
+    app.use("*", serveStatic({ root, onFound: freshIndex }));
     // serveStatic は見つからないと next() へ抜けるだけで、SPA の fallback を持たない。
-    app.get("*", serveStatic({ root, path: "index.html" }));
+    app.get("*", serveStatic({ root, path: "index.html", onFound: freshIndex }));
   }
   return app;
 }
@@ -100,17 +102,22 @@ export const DEV_PORT = 5173;
  * proxy は Host を書き換えない（書き換えると Origin と食い違って CSRF に弾かれる）ので、
  * Vite の port を Host として受け付ける必要がある。**配る形では渡さない。**
  */
-export function start(port = parsePort(process.env.MITOS_DASHBOARD_PORT), dev = false): void {
+export function start(port?: number, dev = false): void {
   if (!dev && !dashboardRoot()) {
     throw new Error("画面のビルド成果物が無い。`bun run build` を流してから起動する");
   }
-  const app = createApp(port, dev ? [DEV_PORT] : []);
-  const server = serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, (info) =>
-    console.log(dev ? `mitos API: http://127.0.0.1:${info.port}` : `mitos: http://127.0.0.1:${info.port}`),
+  // **dev では番号を動かさない。**Vite の proxy 先は vite.config.ts に 8787 で書いてあり、
+  // こちらだけ動かすと画面から `/api/*` が届かなくなる。
+  const chosen = dev ? DEFAULT_PORT : (port ?? parsePort(process.env.GLEANERY_DASHBOARD_PORT));
+  const app = createApp(chosen, dev ? [DEV_PORT] : []);
+  const server = serve({ fetch: app.fetch, port: chosen, hostname: "127.0.0.1" }, (info) =>
+    console.log(
+      dev ? `gleanery API: http://127.0.0.1:${info.port}` : `gleanery: http://127.0.0.1:${info.port}`,
+    ),
   );
   server.on("error", (e: NodeJS.ErrnoException) => {
     if (e.code !== "EADDRINUSE") throw e;
-    console.error(`port ${port} は使われている。空けるか MITOS_DASHBOARD_PORT で別の番号を指定する`);
+    console.error(`port ${chosen} は使われている。空けるか GLEANERY_DASHBOARD_PORT で別の番号を指定する`);
     process.exit(1);
   });
 }

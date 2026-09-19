@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// mitos の CLI。取り込み・trace・名簿の書き込みは ingest の鍵、検索は reader の鍵で繋ぐ。
+// gleanery の CLI。取り込み・trace・名簿の書き込みは ingest の鍵、検索は reader の鍵で繋ぐ。
 //
 // 引数の解釈は @stricli/core に任せる。**コマンドごとに受け付けるフラグと位置引数を宣言する**ので、
-// 別のコマンドのフラグ（`mitos doctor --yes`）も余分な位置引数（`mitos project list garbage`）も
+// 別のコマンドのフラグ（`gleanery doctor --yes`）も余分な位置引数（`gleanery project list garbage`）も
 // 構文の段階で落ちる。使い方の文はこの宣言から組み立て、別に書かない。
 
 import fs from "node:fs";
@@ -43,6 +43,7 @@ import {
   searchMessages,
   workDetail,
 } from "./search.ts";
+import { DEFAULT_PORT, parsePort, start } from "./server.ts";
 import { head, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 
@@ -50,7 +51,7 @@ import { checkTrace, saveTrace } from "./trace.ts";
  * エラーの枠の見出し。**振り分けが決めた道の名前だけで作る**（打った引数そのものは入れない）。
  * 引数の解釈より前に決まるので、フラグの綴りを間違えた失敗でもサブコマンドまで出る。
  */
-let heading = "mitos";
+let heading = "gleanery";
 
 /** 止まったときの枠。本文は rule が 1 行ずつ `│ ` を付けるので、引数に仕込んだ改行で締めの行を作れない。 */
 const failed = (body: string): string => panel(heading, [plain(body)], `${mark("fail")} 止まった`);
@@ -114,7 +115,7 @@ function placeOf(cwd: string): Place {
   const place = identify(cwd);
   if (!place) {
     throw new Error(
-      `${cwd} は git の remote を持たず、名前も付いていない。\`mitos project add --name <名前>\` で名前を付ける`,
+      `${cwd} は git の remote を持たず、名前も付いていない。\`gleanery project add --name <名前>\` で名前を付ける`,
     );
   }
   return place;
@@ -123,7 +124,7 @@ function placeOf(cwd: string): Place {
 async function registered(c: pg.Client, place: Place): Promise<number> {
   const id = await projectId(c, place.key);
   if (id === null)
-    throw new Error(`${place.name} は mitos に登録されていない。\`mitos project add\` で登録する`);
+    throw new Error(`${place.name} は gleanery に登録されていない。\`gleanery project add\` で登録する`);
   return id;
 }
 
@@ -146,7 +147,7 @@ async function syncOne(c: pg.Client, id: number, place: Place, resetDocs = false
     } catch (e) {
       const message = reason(e);
       await c
-        .query("update mitos.connector set last_error = $3 where project_id = $1 and provider = $2", [
+        .query("update gleanery.connector set last_error = $3 where project_id = $1 and provider = $2", [
           id,
           provider,
           message.slice(0, 500),
@@ -209,24 +210,24 @@ async function traceContext(env: Env, cwd: string, host?: Host): Promise<string>
       paths: string[];
     }>(
       `select m.speaker_kind, m.body, m.sent_at, m.truncated,
-              array(select f.path from mitos.message_file f where f.message_id = m.id order by f.path) as paths
-       from mitos.message m where m.conversation_id = $1 order by m.sent_at`,
+              array(select f.path from gleanery.message_file f where f.message_id = m.id order by f.path) as paths
+       from gleanery.message m where m.conversation_id = $1 order by m.sent_at`,
       [conversation],
     );
     const mine = await c.query<{ source_key: string; kind: string; status: string | null; body: string }>(
-      `select source_key, kind, status, body from mitos.knowledge
+      `select source_key, kind, status, body from gleanery.knowledge
        where conversation_id = $1 and kind <> 'option' order by occurred_at`,
       [conversation],
     );
     const works = await openWork(c, [id], 5);
     const detail = works.length === 1 && works[0] ? await workDetail(c, works[0].ref.slice(2)) : null;
     const workKeys = await c.query<{ source_key: string; title: string; status: string }>(
-      "select source_key, title, status from mitos.work_item where project_id = $1 and status in ('active', 'blocked', 'paused')",
+      "select source_key, title, status from gleanery.work_item where project_id = $1 and status in ('active', 'blocked', 'paused')",
       [id],
     );
     const decisions = await c.query<{ source_key: string; status: string; body: string }>(
-      `select k.source_key, k.status, k.body from mitos.knowledge k
-       join mitos.work_item w on w.id = k.work_item_id
+      `select k.source_key, k.status, k.body from gleanery.knowledge k
+       join gleanery.work_item w on w.id = k.work_item_id
        where k.project_id = $1 and k.kind = 'decision' and w.status in ('active', 'blocked', 'paused')
        order by k.occurred_at desc limit 30`,
       [id],
@@ -270,7 +271,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
     count(m, label);
     console.log(rule(`${mark(m)} ${pad(label, 26)}${text}`));
   };
-  console.log(title("mitos doctor"));
+  console.log(title("gleanery doctor"));
   // DB より先に出す。版の食い違いは DB と無関係に見たい。
   const plugin = report(observe(identify(cwd)?.root ?? cwd));
   issues.push(...plugin.issues);
@@ -286,8 +287,8 @@ async function doctor(env: Env, cwd: string): Promise<void> {
       await withDb(env, role, async (c) => {
         await c.query(
           role === "capture"
-            ? "select id from mitos.project limit 1"
-            : "select 1 from mitos.knowledge limit 1",
+            ? "select id from gleanery.project limit 1"
+            : "select 1 from gleanery.knowledge limit 1",
         );
       });
       say("ok", KEY[role], "繋がる / schema は期待どおり");
@@ -320,14 +321,21 @@ async function doctor(env: Env, cwd: string): Promise<void> {
         const used = cap.rows[0]?.used;
         if (used) say("ok", "DB の大きさ", used);
         const emb = await c.query<{ t: string; status: string; n: string }>(
-          `select 'knowledge' as t, status, count(*) as n from mitos.knowledge_embedding where status <> 'ready' group by status
-           union all select 'message', status, count(*) from mitos.message_embedding where status <> 'ready' group by status`,
+          `select 'knowledge' as t, status, count(*) as n from gleanery.knowledge_embedding where status <> 'ready' group by status
+           union all select 'message', status, count(*) from gleanery.message_embedding where status <> 'ready' group by status`,
         );
-        // 残りは次の同期が埋め、埋められなかった行は再試行の上限で止まる。どちらも手で直すものではない。
+        // pending は打つまで埋まらない（定期実行は無い）ので、意味検索に出てこない行が残り続ける。
+        // error は再試行の上限で止まった行で、harvest を打っても戻らない。
         say(
           emb.rows.length ? "none" : "ok",
           "埋め込みの残り",
-          emb.rows.length ? emb.rows.map((r) => `${r.t} ${r.status} ${r.n}`).join(" / ") : "無い",
+          emb.rows.length
+            ? `${emb.rows.map((r) => `${r.t} ${r.status} ${r.n}`).join(" / ")}${
+                emb.rows.some((r) => r.status === "pending")
+                  ? " ← pending は gleanery harvest で取り直す"
+                  : ""
+              }`
+            : "無い",
         );
         const { found } = localRoots();
         const r = await c.query<{
@@ -338,26 +346,22 @@ async function doctor(env: Env, cwd: string): Promise<void> {
           last_error: string | null;
         }>(
           `select p.key, p.name, cn.provider, cn.last_success_at, cn.last_error
-           from mitos.project p left join mitos.connector cn on cn.project_id = p.id order by p.name, cn.provider`,
+           from gleanery.project p left join gleanery.connector cn on cn.project_id = p.id order by p.name, cn.provider`,
         );
         if (r.rows.length) console.log(`${rule("")}\n${rule("作業場所")}`);
         const label = (x: (typeof r.rows)[number]) => `${x.name} ${x.provider ?? "未同期"}`;
         const column = Math.max(...r.rows.map((x) => width(label(x)))) + 2;
         for (const x of r.rows) {
-          const days = x.last_success_at
-            ? Math.floor((Date.now() - x.last_success_at.getTime()) / 86_400_000)
-            : null;
-          // 取り込み元の無い作業場所（GitHub も git も持たない）は同期するものが無いので、直すものに数えない。
-          const stale = x.provider !== null && (days === null || days >= 2);
-          const m: Mark = x.last_error ? "fail" : x.provider === null ? "none" : stale ? "warn" : "ok";
+          // 取り込みは gleanery harvest を打ったときだけ走る。間が空くのは運用どおりなので、失敗だけを直すものに数える。
+          const m: Mark = x.last_error ? "fail" : x.provider === null || !x.last_success_at ? "none" : "ok";
           count(m, `作業場所 ${label(x)}`);
           const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
           console.log(
             rule(
               `  ${mark(m)} ${pad(label(x), column)}${
                 x.last_success_at
-                  ? `${x.last_success_at.toLocaleString("sv-SE")}（${days} 日前）${stale ? " ← 日次同期が止まっているかもしれない" : ""}`
-                  : "まだ同期していない"
+                  ? `最後の取り込み ${x.last_success_at.toLocaleString("sv-SE")}`
+                  : "まだ取り込んでいない"
               }${x.last_error ? ` / 失敗: ${plain(x.last_error)}` : ""}${where}`,
             ),
           );
@@ -420,12 +424,12 @@ const projectRoutes = buildRouteMap({
         const place = flags.name ? nameLocal(cwd, flags.name) : placeOf(cwd);
         await withDb(loadEnv(), "ingest", async (c) => {
           const r = await c.query<{ id: string }>(
-            "insert into mitos.project (key, name) values ($1, $2) on conflict (key) do nothing returning id",
+            "insert into gleanery.project (key, name) values ($1, $2) on conflict (key) do nothing returning id",
             [place.key, place.name],
           );
           console.log(
             panel(
-              "mitos project add",
+              "gleanery project add",
               [],
               r.rows.length
                 ? `登録した: ${place.name}（${place.key}）`
@@ -442,8 +446,8 @@ const projectRoutes = buildRouteMap({
         const { found, ambiguous } = localRoots();
         await withDb(loadEnv(), "reader", async (c) => {
           const r = await c.query<{ key: string; name: string; last: Date | null }>(
-            `select p.key, p.name, max(cn.last_success_at) as last from mitos.project p
-             left join mitos.connector cn on cn.project_id = p.id group by p.id order by p.name`,
+            `select p.key, p.name, max(cn.last_success_at) as last from gleanery.project p
+             left join gleanery.connector cn on cn.project_id = p.id group by p.id order by p.name`,
           );
           const rows = r.rows.map((x) => {
             const where =
@@ -453,9 +457,9 @@ const projectRoutes = buildRouteMap({
           });
           console.log(
             panel(
-              "mitos project list",
+              "gleanery project list",
               rows,
-              rows.length ? `${rows.length} 件` : "登録なし。mitos project add で登録する",
+              rows.length ? `${rows.length} 件` : "登録なし。gleanery project add で登録する",
             ),
           );
         });
@@ -473,7 +477,7 @@ const projectRoutes = buildRouteMap({
       func: async (flags: { yes?: boolean }, target: string) => {
         await withDb(loadEnv(), "ingest", async (c) => {
           const hit = await c.query<{ id: string; key: string; name: string }>(
-            "select id, key, name from mitos.project where key = $1 or name = $1",
+            "select id, key, name from gleanery.project where key = $1 or name = $1",
             [target],
           );
           if (hit.rows.length !== 1)
@@ -485,22 +489,26 @@ const projectRoutes = buildRouteMap({
             knowledge: string;
             items: string;
           }>(
-            `select (select count(*) from mitos.conversation where project_id = $1) as conversations,
-                    (select count(*) from mitos.message m join mitos.conversation c on c.id = m.conversation_id where c.project_id = $1) as messages,
-                    (select count(*) from mitos.knowledge where project_id = $1) as knowledge,
-                    (select count(*) from mitos.source_item s join mitos.connector cn on cn.id = s.connector_id where cn.project_id = $1) as items`,
+            `select (select count(*) from gleanery.conversation where project_id = $1) as conversations,
+                    (select count(*) from gleanery.message m join gleanery.conversation c on c.id = m.conversation_id where c.project_id = $1) as messages,
+                    (select count(*) from gleanery.knowledge where project_id = $1) as knowledge,
+                    (select count(*) from gleanery.source_item s join gleanery.connector cn on cn.id = s.connector_id where cn.project_id = $1) as items`,
             [p.id],
           );
           const x = n.rows[0];
           const counts = `${p.name}（${p.key}）: 会話 ${x?.conversations} / 発言 ${x?.messages} / 知識 ${x?.knowledge} / 取り込み元の項目 ${x?.items}`;
           if (flags.yes !== true) {
             console.log(
-              panel("mitos project forget", [counts], "消していない。消すなら --yes を付ける。元に戻せない"),
+              panel(
+                "gleanery project forget",
+                [counts],
+                "消していない。消すなら --yes を付ける。元に戻せない",
+              ),
             );
             return;
           }
-          await c.query("delete from mitos.project where id = $1", [p.id]);
-          console.log(panel("mitos project forget", [counts], "消した"));
+          await c.query("delete from gleanery.project where id = $1", [p.id]);
+          console.log(panel("gleanery project forget", [counts], "消した"));
         });
       },
     }),
@@ -539,7 +547,7 @@ const traceRoutes = buildRouteMap({
         if (r.problems.length) {
           console.error(
             panel(
-              "mitos trace check",
+              "gleanery trace check",
               r.problems.map((p) => `${mark("fail")} ${p}`),
               `問題 ${r.problems.length} 件`,
             ),
@@ -548,7 +556,11 @@ const traceRoutes = buildRouteMap({
           return;
         }
         console.log(
-          panel("mitos trace check", [], `${mark("ok")} 形は通った: 要素 ${r.trace?.items.length ?? 0} 件`),
+          panel(
+            "gleanery trace check",
+            [],
+            `${mark("ok")} 形は通った: 要素 ${r.trace?.items.length ?? 0} 件`,
+          ),
         );
       },
     }),
@@ -577,7 +589,7 @@ const traceRoutes = buildRouteMap({
           const saved = await saveTrace(c, env, id, trace);
           console.log(
             panel(
-              "mitos trace save",
+              "gleanery trace save",
               [],
               [
                 `入れた: 書き直した要素 ${saved.written} 件${saved.superseded ? ` / 覆した決定 ${saved.superseded} 件` : ""}`,
@@ -604,7 +616,7 @@ const captureRoutes = buildRouteMap({
         if (r.busy) {
           console.log(
             panel(
-              "mitos capture flush",
+              "gleanery capture flush",
               [],
               "別の送信が走っているので何もしなかった（終われば待ち行列は空になる）",
             ),
@@ -613,7 +625,7 @@ const captureRoutes = buildRouteMap({
         }
         console.log(
           panel(
-            "mitos capture flush",
+            "gleanery capture flush",
             [],
             `新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${
               r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（${rejectedDir()} に残した）` : ""
@@ -660,14 +672,13 @@ const dbRoutes = buildRouteMap({
 const root = buildRouteMap({
   docs: {
     brief: "過去の判断・会話・文書を溜めて引く",
-    fullDescription:
-      "資格情報: ~/.claude/knowledge.env（KNOWLEDGE_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）",
+    fullDescription: "資格情報: ~/.gleanery/env（GLEANERY_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）",
   },
   routes: {
     project: projectRoutes,
-    sync: buildCommand({
+    harvest: buildCommand({
       docs: {
-        brief: "この PC にある作業場所の GitHub と文書を同期する（日次用）",
+        brief: "この PC にある作業場所の GitHub と文書を同期する",
         fullDescription:
           "文書は remote の既定 branch から入れ、fast-forward でなければ止まる（--reset-docs はその作業場所を今の状態に揃える）。",
       },
@@ -684,12 +695,12 @@ const root = buildRouteMap({
       func: async (flags: { cwd?: string; "reset-docs"?: boolean }) => {
         const env = loadEnv();
         const resetDocs = flags["reset-docs"] === true;
-        // 揃え直しは作業場所を 1 つ名指ししたときだけ（日次の全件で比較不能な作業場所をまとめて上書きしない）。
+        // 揃え直しは作業場所を 1 つ名指ししたときだけ（全件の同期で、比較不能な作業場所をまとめて上書きしない）。
         if (resetDocs && !flags.cwd)
           throw new Error("--reset-docs は --cwd で作業場所を 1 つ指定したときだけ使える");
         // ログは追記で残るので、いつ走ったかを見出しに必ず出す。
         const startedAt = new Date();
-        console.log(title(`mitos sync ${startedAt.toLocaleString("sv-SE")}`));
+        console.log(title(`gleanery harvest ${startedAt.toLocaleString("sv-SE")}`));
         await flush(env).catch((e: unknown) =>
           console.error(rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(reason(e))}`)),
         );
@@ -701,7 +712,7 @@ const root = buildRouteMap({
             if (only) await registered(c, only);
             const { found, ambiguous } = localRoots();
             const projects = await c.query<{ id: string; key: string; name: string }>(
-              "select id, key, name from mitos.project order by name",
+              "select id, key, name from gleanery.project order by name",
             );
             for (const p of projects.rows) {
               if (only && only.key !== p.key) continue;
@@ -808,7 +819,7 @@ const root = buildRouteMap({
           // この出力はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
           console.log(
             panel(
-              "mitos search",
+              "gleanery search",
               hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [],
               `${hits.length ? `${hits.length} 件` : "該当なし"} / ${place ? place.name : "すべての作業場所"}`,
             ),
@@ -834,13 +845,13 @@ const root = buildRouteMap({
           if (args.length === 0) {
             const people = await directory(c);
             const unknown = await c.query<{ handle: string; n: string }>(
-              `select i.handle, count(m.id) as n from mitos.person_identity i
-               left join mitos.message m on m.identity_id = i.id
+              `select i.handle, count(m.id) as n from gleanery.person_identity i
+               left join gleanery.message m on m.identity_id = i.id
                where i.person_id is null group by i.id order by count(m.id) desc limit 20`,
             );
             console.log(
               panel(
-                "mitos who",
+                "gleanery who",
                 [
                   ...people.map(
                     (p) => `${p.isSelf ? "→ " : "  "}${pad(inline(p.display), 12)}${p.handles.join(" / ")}`,
@@ -853,7 +864,9 @@ const root = buildRouteMap({
                       ]
                     : []),
                 ],
-                people.length ? `${people.length} 人` : "名簿は空。mitos who <呼び名> <ハンドル>... で入れる",
+                people.length
+                  ? `${people.length} 人`
+                  : "名簿は空。gleanery who <呼び名> <ハンドル>... で入れる",
               ),
             );
             return;
@@ -863,14 +876,14 @@ const root = buildRouteMap({
             throw new Error("呼び名と、GitHub のハンドルを 1 つ以上指定する");
           // 持ち主の付け替えは 1 つの transaction で。途中で落ちると持ち主が 0 人になる。
           const linked = await inTransaction(c, async () => {
-            if (flags.me) await c.query("update mitos.person set is_self = false where is_self");
+            if (flags.me) await c.query("update gleanery.person set is_self = false where is_self");
             const pe = await c.query<{ id: string }>(
-              `insert into mitos.person (display_name, is_self) values ($1, $2)
-               on conflict (display_name) do update set is_self = mitos.person.is_self or excluded.is_self returning id`,
+              `insert into gleanery.person (display_name, is_self) values ($1, $2)
+               on conflict (display_name) do update set is_self = gleanery.person.is_self or excluded.is_self returning id`,
               [display, flags.me === true],
             );
             return c.query<{ handle: string }>(
-              `update mitos.person_identity set person_id = $1
+              `update gleanery.person_identity set person_id = $1
                where provider = 'github' and lower(handle) = any($2) returning handle`,
               [pe.rows[0]?.id, handles.map((h) => h.replace(/^@/, "").toLowerCase())],
             );
@@ -880,7 +893,7 @@ const root = buildRouteMap({
           );
           console.log(
             panel(
-              "mitos who",
+              "gleanery who",
               missing.length
                 ? [
                     `まだ取り込んでいないハンドル: ${missing.map(inline).join(" / ")}（同期の後にもう一度結ぶ）`,
@@ -896,21 +909,21 @@ const root = buildRouteMap({
     capture: captureRoutes,
     db: dbRoutes,
     init: buildCommand({
-      docs: { brief: "要件定義と設計書の置き場所 .mitos/ をリポジトリの根に作る" },
+      docs: { brief: "要件定義と設計書の置き場所 .gleanery/ をリポジトリの根に作る" },
       parameters: { flags: { cwd: CWD } },
       func: (flags: { cwd?: string }) => {
         const r = init(flags.cwd ?? process.cwd());
         console.log(
           panel(
-            "mitos init",
+            "gleanery init",
             [],
-            r.created ? `.mitos を作った: ${r.root}` : `.mitos は既に初期化済み: ${r.root}`,
+            r.created ? `.gleanery を作った: ${r.root}` : `.gleanery は既に初期化済み: ${r.root}`,
           ),
         );
       },
     }),
     check: buildCommand({
-      docs: { brief: ".mitos/ の change.json を検査する（DB に触らない）" },
+      docs: { brief: ".gleanery/ の change.json を検査する（DB に触らない）" },
       parameters: { flags: { cwd: CWD } },
       func: (flags: { cwd?: string }) => {
         const r = check(flags.cwd ?? process.cwd());
@@ -918,20 +931,38 @@ const root = buildRouteMap({
           process.exitCode = 1;
           console.error(
             panel(
-              "mitos check",
+              "gleanery check",
               r.problems.map((p) => `${mark("fail")} ${p.path}: ${p.reason}`),
-              `.mitos の検査で ${r.problems.length} 件の問題: ${r.root}`,
+              `.gleanery の検査で ${r.problems.length} 件の問題: ${r.root}`,
             ),
           );
           return;
         }
         console.log(
           panel(
-            "mitos check",
+            "gleanery check",
             [],
-            `${mark("ok")} .mitos の検査は通った: ${r.root}（change ${r.changes} 件）`,
+            `${mark("ok")} .gleanery の検査は通った: ${r.root}（change ${r.changes} 件）`,
           ),
         );
+      },
+    }),
+    dashboard: buildCommand({
+      docs: { brief: "画面を 127.0.0.1 に立てる（Ctrl-C で止める）" },
+      parameters: {
+        flags: {
+          port: {
+            kind: "parsed",
+            parse: (raw) => parsePort(raw, "--port"),
+            brief: `待ち受ける port（既定 ${DEFAULT_PORT}）`,
+            optional: true,
+          },
+        },
+      },
+      func: (flags: { port?: number }) => {
+        // 前面で動かし続ける。**背景へ回さない** — 止め方が Ctrl-C だけなので、
+        // 端末から見えなくなると止められないプロセスが残る。
+        start(flags.port ?? parsePort(process.env.GLEANERY_DASHBOARD_PORT));
       },
     }),
     doctor: buildCommand({
@@ -944,9 +975,9 @@ const root = buildRouteMap({
       parameters: {},
       func: () => {
         // 編集フックが役に立っているかを測る。1 か月見て、出した割合が低ければフックごと消す。
-        const log = path.join(os.homedir(), ".claude", "mitos-advice.jsonl");
+        const log = path.join(os.homedir(), ".gleanery", "advice.jsonl");
         if (!fs.existsSync(log)) {
-          console.log(panel("mitos advice", [], "まだ記録が無い（編集フックが一度も走っていない）"));
+          console.log(panel("gleanery advice", [], "まだ記録が無い（編集フックが一度も走っていない）"));
           return;
         }
         // 途中で切れた行（書いている最中に止まったプロセス）は飛ばす。1 行のために全体を読めなくしない。
@@ -967,7 +998,7 @@ const root = buildRouteMap({
         const since = rows[0]?.at;
         console.log(
           panel(
-            "mitos advice",
+            "gleanery advice",
             [
               `フックが走った編集   ${rows.length} 回`,
               `制約を出した         ${shown.length} 回`,
@@ -990,7 +1021,7 @@ const FORMATTING = {
 const app = buildApplication(
   root,
   {
-    name: "mitos",
+    name: "gleanery",
     localization: { text: TEXT },
     // 枠と印の色は panel.ts が決める（標準出力と標準エラーの両方が端末のときだけ付ける）。
     documentation: { disableAnsiColor: true },

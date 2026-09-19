@@ -9,7 +9,7 @@ Claude CodeとCodexが同じ不変条件を読み、作業に必要な手順だ�
 |---|---|---|
 | 全作業の不変条件 | `AGENTS.md` | 毎session |
 | 人向け説明・command・setup | `README.md` | 必要時に読む |
-| mitos自身の開発手順 | `.agents/skills/` | repository内でSkillが選ばれた時 |
+| gleanery自身の開発手順 | `.agents/skills/` | repository内でSkillが選ばれた時 |
 | Claude CodeのSkill discovery | `.claude/skills/`のsymlink | Skill metadataは起動時、本文は選択時 |
 | plugin利用者へ配るSkill | `plugin/skills/` | pluginをinstallした環境 |
 | installed Next.js固有の注意 | `dashboard/AGENTS.md` | dashboardで作業する時 |
@@ -20,7 +20,7 @@ Claude Codeは`CLAUDE.md`の`@AGENTS.md`で共通規約を読む。import先を�
 
 repo Skillの正本を`.agents/skills/`にしたのは、Codexがこの場所をrepository scopeとして探索するため。
 Claude Codeもsymlink先のSkillを読めるので、`.claude/skills/`には同じdirectoryへのlinkだけを置く。
-これらはmitos自身を変更する開発者向けで、marketplaceのsourceは`plugin/`だけを指す。利用者向けの
+これらはgleanery自身を変更する開発者向けで、marketplaceのsourceは`plugin/`だけを指す。利用者向けの
 `plugin/skills/`とは正本も配布経路も共有しない。
 
 ## 何をどこへ移したか
@@ -57,7 +57,7 @@ Codexでは組み込みの`skill-creator`を使う。
 | 表示の状態の印（`server/src/panel.ts`の`MARKS`） | review Skillの台帳の凡例と「形」の例の台帳の表の状態のセル（印の字はこの2か所だけに書き、注記の中には書かない） | `scripts/check-pairs.mjs` |
 | `plugin/agents/`の各レビュアーの本文がuntrustedとして名指しする列挙 | 同じディレクトリの他の全定義（ちょうど1回書き、最小集合を含む。超過は可） | `scripts/check-pairs.mjs` |
 | 例外の理由の文（CLI、自動記録、MCP、画面のチャット、音声のログ） | 同じ失敗を別の出口で出す文 | 同じ`server/src/text.ts`の`reason`を通す |
-| 自動記録を送れていない判定（sessionの開始時の警告） | `mitos doctor`の「自動記録」の行 | 同じ`server/src/capture.ts`の`readState().stuck`を通す |
+| 自動記録を送れていない判定（sessionの開始時の警告） | `gleanery doctor`の「自動記録」の行 | 同じ`server/src/capture.ts`の`readState().stuck`を通す |
 | CLIの`USAGE` | READMEのCLI一覧 | `scripts/check-pairs.mjs`が書き出す |
 | schemaのrevision | `server/src/db.ts`の`SCHEMA_REVISION`、`db/migrations`の最後の番号 | `server/test/db.test.ts`、`server/test/migrate.test.ts` |
 | Claude plugin manifestのversion | Codex plugin manifestとmarketplaceのversion | `scripts/check-mcp-version.mjs` |
@@ -65,7 +65,7 @@ Codexでは組み込みの`skill-creator`を使う。
 | reviewerの`effort`固定 | 同じ理由が要る`model`固定 | `verify:ai` |
 | MCPの`recall`・`read` | 画面のチャットと全文表示 | 同じ`server/src/search.ts`の関数を通す |
 | 自動記録が伏せる鍵の形 | traceが伏せる鍵の形 | 同じ`server/src/text.ts`の`mask`を通す |
-| `mitos check`の成果物検査（作業ツリー） | 文書同期の成果物検査（commit tree） | 同じ`server/src/artifacts.ts`の関数を通す |
+| `gleanery check`の成果物検査（作業ツリー） | 文書同期の成果物検査（commit tree） | 同じ`server/src/artifacts.ts`の関数を通す |
 
 2026-09-08にはMCP sourceを変更してbundleしただけのcommitが8回続き、versioned plugin cacheへ届いて
 いなかった。このためplugin配布は注意書きだけでなくLefthookのversion検査でも止める。

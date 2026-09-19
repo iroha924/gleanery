@@ -21,9 +21,9 @@ const searchQuery = z.object({
 
 // session の題。持ち主の最初の発言、無ければ（trace だけで残した session）結んだ作業の題。
 const TITLE = `coalesce(
-  (select left(m.body, 200) from mitos.message m
+  (select left(m.body, 200) from gleanery.message m
    where m.conversation_id = c.id and m.speaker_kind = 'self' order by m.sent_at limit 1),
-  (select w.title from mitos.work_item w where w.conversation_id = c.id order by w.updated_at desc limit 1))`;
+  (select w.title from gleanery.work_item w where w.conversation_id = c.id order by w.updated_at desc limit 1))`;
 
 // どの作業場所について読むかは画面が持つ（チャットで選んだ作業場所）。その外の参照は「無い」と返す。
 const refQuery = z.object({
@@ -38,12 +38,12 @@ const app = new Hono()
   .get("/projects", async (c) => {
     const r = await (await db()).query(
       `select p.id::int, p.key, p.name,
-              (select count(*) from mitos.conversation c where c.project_id = p.id and c.origin <> 'github')::int as sessions,
-              (select count(*) from mitos.knowledge k where k.project_id = p.id and k.kind <> 'document')::int as knowledge,
+              (select count(*) from gleanery.conversation c where c.project_id = p.id and c.origin <> 'github')::int as sessions,
+              (select count(*) from gleanery.knowledge k where k.project_id = p.id and k.kind <> 'document')::int as knowledge,
               coalesce(json_agg(json_build_object('provider', cn.provider, 'lastSuccessAt', cn.last_success_at,
                                                   'lastError', cn.last_error) order by cn.provider)
                        filter (where cn.id is not null), '[]') as connectors
-       from mitos.project p left join mitos.connector cn on cn.project_id = p.id
+       from gleanery.project p left join gleanery.connector cn on cn.project_id = p.id
        group by p.id order by p.name`,
     );
     return c.json(r.rows);
@@ -55,20 +55,20 @@ const app = new Hono()
     const where = `c.origin <> 'github' and ($1::bigint is null or c.project_id = $1)`;
     const total = Number(
       (
-        await pool.query<{ n: string }>(`select count(*) as n from mitos.conversation c where ${where}`, [
+        await pool.query<{ n: string }>(`select count(*) as n from gleanery.conversation c where ${where}`, [
           project ?? null,
         ])
       ).rows[0]?.n ?? 0,
     );
     const r = await pool.query(
       `select c.id, c.origin, c.external_id as "sessionId", c.branch, c.started_at as "startedAt", p.name as project,
-              (select max(m.sent_at) from mitos.message m where m.conversation_id = c.id) as "lastAt",
+              (select max(m.sent_at) from gleanery.message m where m.conversation_id = c.id) as "lastAt",
               ${TITLE} as title,
-              (select count(*) from mitos.message m where m.conversation_id = c.id and m.speaker_kind = 'self')::int as said,
-              (select count(*) from mitos.knowledge k where k.conversation_id = c.id and k.kind <> 'option')::int as traced
-       from mitos.conversation c join mitos.project p on p.id = c.project_id
+              (select count(*) from gleanery.message m where m.conversation_id = c.id and m.speaker_kind = 'self')::int as said,
+              (select count(*) from gleanery.knowledge k where k.conversation_id = c.id and k.kind <> 'option')::int as traced
+       from gleanery.conversation c join gleanery.project p on p.id = c.project_id
        where ${where}
-       order by coalesce((select max(m.sent_at) from mitos.message m where m.conversation_id = c.id), c.started_at) desc
+       order by coalesce((select max(m.sent_at) from gleanery.message m where m.conversation_id = c.id), c.started_at) desc
        limit $2 offset $3`,
       [project ?? null, pageSize, (page - 1) * pageSize],
     );
@@ -85,7 +85,7 @@ const app = new Hono()
         ? await searchMessages(pool, env, { question: q, projects, who: "me", sessionsOnly: true, limit: 20 })
         : await searchKnowledge(pool, env, { question: q, projects, avoid: mode === "avoid", limit: 20 });
     if (hits.length === 0) return c.json([]);
-    const [table, id] = mode === "said" ? ["mitos.message", "uuid"] : ["mitos.knowledge", "bigint"];
+    const [table, id] = mode === "said" ? ["gleanery.message", "uuid"] : ["gleanery.knowledge", "bigint"];
     const owners = await pool.query<{
       ref: string;
       id: string;
@@ -96,7 +96,7 @@ const app = new Hono()
     }>(
       `select x.id::text as ref, c.id, c.external_id as "sessionId", c.origin, p.name as project,
               ${TITLE} as title
-       from ${table} x join mitos.conversation c on c.id = x.conversation_id join mitos.project p on p.id = c.project_id
+       from ${table} x join gleanery.conversation c on c.id = x.conversation_id join gleanery.project p on p.id = c.project_id
        where x.id = any($1::${id}[]) and c.origin <> 'github'`,
       [hits.map((h) => h.ref.slice(2))],
     );
@@ -128,7 +128,7 @@ const app = new Hono()
     const head = await pool.query(
       `select c.id, c.origin, c.external_id as "sessionId", c.branch, c.started_at as "startedAt",
               p.id::int as "projectId", p.name as project, ${TITLE} as title
-       from mitos.conversation c join mitos.project p on p.id = c.project_id
+       from gleanery.conversation c join gleanery.project p on p.id = c.project_id
        where c.id = $1 and c.origin <> 'github'`,
       [id],
     );
@@ -138,19 +138,19 @@ const app = new Hono()
       `select m.id, m.speaker_kind as speaker, m.body, m.sent_at as "sentAt", m.truncated, m.original_bytes as "originalBytes",
               coalesce(json_agg(json_build_object('path', f.path, 'action', f.action) order by f.path)
                        filter (where f.path is not null), '[]') as files
-       from mitos.message m left join mitos.message_file f on f.message_id = m.id
+       from gleanery.message m left join gleanery.message_file f on f.message_id = m.id
        where m.conversation_id = $1 group by m.id order by m.sent_at`,
       [id],
     );
     const knowledge = await pool.query<{ kind: string; status: string | null }>(
       `select k.id::int, k.kind, k.status, k.stance, k.body, k.reason, k.confirmation, k.downsides, k.occurred_at as "at",
               k.decision_id::int as "decisionId"
-       from mitos.knowledge k where k.conversation_id = $1 order by k.occurred_at, k.id`,
+       from gleanery.knowledge k where k.conversation_id = $1 order by k.occurred_at, k.id`,
       [id],
     );
     const work = await pool.query(
       `select w.id::int, w.title, w.goal, w.current, w.next, w.status, w.updated_at as "updatedAt"
-       from mitos.work_item w where w.conversation_id = $1`,
+       from gleanery.work_item w where w.conversation_id = $1`,
       [id],
     );
     // この session が触った承認済みの要件定義・設計書。同じ作業場所で同期された原文だけを返す
@@ -158,10 +158,10 @@ const app = new Hono()
     const artifacts = await pool.query(
       `select distinct on (s.id) s.kind, s.metadata->>'change' as change, s.metadata->>'changeTitle' as title, s.path,
               s.body as content, s.synced_at as "syncedAt"
-       from mitos.message_file f
-       join mitos.message m on m.id = f.message_id
-       join mitos.source_item s on s.path = f.path and s.kind in ('requirements', 'design')
-       join mitos.connector cn on cn.id = s.connector_id and cn.project_id = $2
+       from gleanery.message_file f
+       join gleanery.message m on m.id = f.message_id
+       join gleanery.source_item s on s.path = f.path and s.kind in ('requirements', 'design')
+       join gleanery.connector cn on cn.id = s.connector_id and cn.project_id = $2
        where m.conversation_id = $1
        order by s.id`,
       [id, conversation.projectId],

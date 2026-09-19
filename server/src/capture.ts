@@ -8,7 +8,7 @@
 // 「利用者の発言」として DB の 97.2% を占めた。見分けは 4 つで、どれも推測をしない。
 //   - subagent の中の turn は hook 入力に agent_id が付く
 //   - エージェントが起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
-//     CLAUDE_ENV_FILE に書いた MITOS_PARENT_SESSION を継ぐ。自分の session id と違えば子である
+//     CLAUDE_ENV_FILE に書いた GLEANERY_PARENT_SESSION を継ぐ。自分の session id と違えば子である
 //     （記録させたくない起動には、どの session とも一致しない値を置けばよい。値を「その session の id」にしてあるのは、
 //     この変数が将来 hook 自身の環境へ届く仕様になっても、持ち主の session では自分の id と一致して記録が止まらないようにするため）
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
@@ -29,8 +29,8 @@ import { identify, patchPaths, relativeTo } from "./project.ts";
 import { bytes, clean, head, mask, reason, sha256, tail, tsvector, uuidFrom } from "./text.ts";
 
 // 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の待ち行列を触らない）。
-export const spoolDir = (): string => path.join(os.homedir(), ".claude", "mitos-spool");
-const stateFile = (): string => path.join(os.homedir(), ".claude", "mitos-capture.json");
+export const spoolDir = (): string => path.join(os.homedir(), ".gleanery", "spool");
+const stateFile = (): string => path.join(os.homedir(), ".gleanery", "capture.json");
 /** DB が受け付けなかった記録。消さずにここへ移し、doctor が数を出す（直してから戻せば送り直せる）。 */
 export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
 
@@ -141,7 +141,7 @@ type HookInput = {
 /** 持ち主の turn か。subagent と、エージェントが起動した子と、印を継がない headless を外す。 */
 export function isOwnerTurn(
   input: HookInput,
-  parent = process.env.MITOS_PARENT_SESSION,
+  parent = process.env.GLEANERY_PARENT_SESSION,
   entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT,
 ): boolean {
   if (!input.session_id || input.agent_id) return false;
@@ -180,6 +180,21 @@ const saidDir = (): string => path.join(spoolDir(), "said");
  * 始まった turn には持ち主の発言が無く、turn の id では結べない）。読みかけに半端な値を返さないよう、別名で書いてから
  * 置き換える。30 日触らなかった session の分は消す。
  */
+/**
+ * 宛先が空くまで待つ回数と間隔（合計 300ms）。
+ * ウイルス対策が掴む時間は数ミリ秒から数百ミリ秒に散るので、回数より実時間で足りるかを見る。
+ */
+const RENAME_TRIES = 20;
+const RENAME_WAIT_MS = 15;
+
+/**
+ * 同期のまま待つ。**この経路は hook から同期で呼ばれるので await できない。**
+ * `Atomics.wait` は Node のメインスレッドでも待つ（実測: v24 で 120ms 指定に 125ms）。
+ */
+const sleepSync = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
 function remember(session: string, id: string): void {
   const dir = saidDir();
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -188,17 +203,18 @@ function remember(session: string, id: string): void {
   fs.writeFileSync(tmp, id, { mode: 0o600 });
   // Windows は宛先を開いているプロセス（エディタ、ウイルス対策）がいる間 EPERM / EBUSY を返す。
   // ここで諦めると、後続の編集と Read の記録が前の発言へ誤って結ばれるか、結ばれずに捨てられる。
-  // 呼び出し側は同期なので、待たずに繰り返す（宛先を掴んでいる側が離すのは数ミリ秒）。
+  // **実時間を空けて繰り返す。**空けずに回すと、相手が離す前に回数を使い切って同じ結果になる。
   for (let i = 0; ; i++) {
     try {
       fs.renameSync(tmp, file);
       break;
     } catch (e) {
       const code = (e as NodeJS.ErrnoException).code;
-      if (i >= 20 || (code !== "EPERM" && code !== "EBUSY")) {
+      if (i >= RENAME_TRIES || (code !== "EPERM" && code !== "EBUSY")) {
         fs.rmSync(tmp, { force: true });
         throw e;
       }
+      sleepSync(RENAME_WAIT_MS);
     }
   }
   const old = Date.now() - 30 * 86_400_000;
@@ -241,19 +257,23 @@ export function answersOf(input: HookInput): string | null {
  */
 export function captureNotice(env: Env): string | null {
   if (!env[KEY.capture])
-    return panel(`mitos: ${KEY.capture} が無いので、会話を自動記録できない`, [], "mitos doctor で確かめる");
+    return panel(
+      `gleanery: ${KEY.capture} が無いので、会話を自動記録できない`,
+      [],
+      "gleanery doctor で確かめる",
+    );
   const s = readState();
   if (s.stuck)
     return panel(
-      "mitos: 自動記録を送れていない",
+      "gleanery: 自動記録を送れていない",
       [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.stuck.slice(0, 120))}`],
-      "mitos doctor で確かめる",
+      "gleanery doctor で確かめる",
     );
   if (s.rejected > 0)
     return panel(
-      `mitos: DB が受け付けなかった記録が ${s.rejected} 件ある`,
+      `gleanery: DB が受け付けなかった記録が ${s.rejected} 件ある`,
       [rejectedDir()],
-      "直して待ち行列へ戻せば送り直す。mitos doctor で確かめる",
+      "直して待ち行列へ戻せば送り直す。gleanery doctor で確かめる",
     );
   return null;
 }
@@ -266,7 +286,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     // エージェントが Bash から起動する子へ、この session の id を継がせる。
     const file = process.env.CLAUDE_ENV_FILE;
     if (file && input.session_id && /^[A-Za-z0-9_-]+$/.test(input.session_id)) {
-      fs.appendFileSync(file, `export MITOS_PARENT_SESSION=${input.session_id}\n`);
+      fs.appendFileSync(file, `export GLEANERY_PARENT_SESSION=${input.session_id}\n`);
     }
     return { flush: false, notice: captureNotice(loadEnv()) };
   }
@@ -448,7 +468,7 @@ export async function write(
     }
     const c = [...conversations];
     await db.query(
-      `insert into mitos.conversation (id, project_id, origin, external_id, branch, started_at)
+      `insert into gleanery.conversation (id, project_id, origin, external_id, branch, started_at)
        select * from unnest($1::uuid[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
        on conflict do nothing`,
       [
@@ -469,7 +489,7 @@ export async function write(
       ];
     });
     const inserted = await db.query(
-      `insert into mitos.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
+      `insert into gleanery.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
                                   original_bytes, sent_at, content_hash, lexemes)
        select t.id, t.conversation, t.external, t.turn, t.speaker, t.body, t.truncated, t.bytes, t.at, t.hash,
               t.lex::tsvector
@@ -497,7 +517,7 @@ export async function write(
       return e ? [{ id: x.id, text: e.text, v: e.v }] : [];
     });
     await db.query(
-      `insert into mitos.message_embedding (message_id, model, source_hash, status, embedding)
+      `insert into gleanery.message_embedding (message_id, model, source_hash, status, embedding)
        select t.id, $5, t.hash, t.status, t.v::extensions.halfvec
        from unnest($1::uuid[], $2::bytea[], $3::text[], $4::text[]) as t(id, hash, status, v)
        on conflict do nothing`,
@@ -523,9 +543,9 @@ export async function write(
       ];
     });
     await db.query(
-      `insert into mitos.message_file (message_id, path, action)
+      `insert into gleanery.message_file (message_id, path, action)
        select t.message, t.path, t.action from unnest($1::uuid[], $2::text[], $3::text[]) as t(message, path, action)
-       where exists (select 1 from mitos.message m where m.id = t.message)
+       where exists (select 1 from gleanery.message m where m.id = t.message)
        on conflict do nothing`,
       [files.map((f) => f.message), files.map((f) => f.path), files.map((f) => f.action)],
     );
@@ -544,7 +564,7 @@ const rejected = (e: unknown): boolean => {
 
 /**
  * 待ち行列を DB へ送る。**鍵は capture（追記だけ）。**同じものを 2 回送っても行は増えない。
- * 登録されていない作業場所の記録は捨てる（記録するのは `mitos project add` した作業場所だけ）。
+ * 登録されていない作業場所の記録は捨てる（記録するのは `gleanery project add` した作業場所だけ）。
  * **1 件の不正な記録で、以後の記録を止めない。**束が値の誤りで落ちたら 1 件ずつ送り直し、落ちた記録だけを
  * rejected/ へ移す（消さない）。接続断などの失敗は、束ごと待ち行列に残して次の送信で送り直す。
  *
@@ -577,7 +597,7 @@ export async function flush(
     const projects = new Map(
       (
         await db.query<{ id: string; key: string; name: string }>(
-          "select id, key, name from mitos.project where key = any($1)",
+          "select id, key, name from gleanery.project where key = any($1)",
           [[...new Set(records.map((x) => x.r.project))]],
         )
       ).rows.map((p) => [p.key, { id: Number(p.id), name: p.name }]),

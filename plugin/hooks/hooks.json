@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:mitos:mitos",
+            "server": "plugin:gleanery:gleanery",
             "tool": "check_path",
             "input": { "path": "${tool_input.file_path}", "cwd": "${cwd}", "hook": true },
             "timeout": 5
@@ -63,7 +63,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:mitos:mitos",
+            "server": "plugin:gleanery:gleanery",
             "tool": "check_path",
             "input": { "path": "${tool_input.notebook_path}", "cwd": "${cwd}", "hook": true },
             "timeout": 5

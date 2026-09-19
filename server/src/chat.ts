@@ -414,8 +414,8 @@ export async function* chat(
     body.signal?.throwIfAborted();
     const stream = await openai.responses.create(
       {
-        model: env.MITOS_CHAT_MODEL ?? "gpt-5.6-terra",
-        reasoning: { effort: (env.MITOS_CHAT_EFFORT ?? "high") as "low" | "medium" | "high" },
+        model: env.GLEANERY_CHAT_MODEL ?? "gpt-5.6-terra",
+        reasoning: { effort: (env.GLEANERY_CHAT_EFFORT ?? "high") as "low" | "medium" | "high" },
         instructions: SYSTEM(people),
         input,
         tools: round === ROUNDS - 1 ? [] : TOOLS,

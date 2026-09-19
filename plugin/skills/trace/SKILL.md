@@ -3,7 +3,7 @@ name: trace
 description: いまの session で下した判断（決定と捨てた案、制約、やらないこと、行き止まり、分かったこと、意図して残した負債、検証、問い）と作業の現在地を DB に残す。会話そのものは自動で残るので、次の判断を誤らないための要素だけを選ぶ。ユーザーが明示的に頼んだときだけ使う。
 argument-hint: "[作業テーマ]"
 disable-model-invocation: true
-allowed-tools: Read, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos trace *)
+allowed-tools: Read, Bash(node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" trace *)
 ---
 
 # trace — 判断を、次に引ける形で残す
@@ -27,8 +27,8 @@ Claude Code では会話が自動で残っている（持ち主の発言、AI �
 
 ## 流れ
 
-`$M` は CLI。Claude Code は `${CLAUDE_PLUGIN_ROOT}/bin/mitos`、Codex はこの Skill のディレクトリからの
-`../../bin/mitos`（Codex の PATH に mitos は無い）。
+`$M` は CLI。Claude Code は `node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js"`、Codex はこの Skill のディレクトリからの
+`node "../../dist/cli.js"`（Codex の PATH に gleanery は無く、shell script は Windows で動かない）。
 
 1. **材料を読む** — `$M trace context`。この session の会話、触ったファイル、既に記録した要素、
    進行中の作業とその決定の key が出る。会話がまだ記録されていなければ、自分の文脈から書く。
@@ -40,11 +40,11 @@ Claude Code では会話が自動で残っている（持ち主の発言、AI �
    規則を見る。弾かれたら直してから次へ
 4. **入れる** — 同じ形で `$M trace save - <<'TRACE'`。同じ key は上書きし、書かなかった要素は残す（追記になる）。
    `session` は context が出したものをそのまま書く（いまの session と違えば止まる）
-5. **返す** — 入れたものを、mitos の他の表示と同じ形で持ち主へ示す（見出しは `✦`、表は Markdown、最後に `╰─` の 1 行）。
+5. **返す** — 入れたものを、gleanery の他の表示と同じ形で持ち主へ示す（見出しは `✦`、表は Markdown、最後に `╰─` の 1 行）。
    締めの行は save が出した件数をそのまま写す
 
 ```
-✦ **mitos trace** · <work の title>
+✦ **gleanery trace** · <work の title>
 
 | kind | key | 要約 |
 |---|---|---|

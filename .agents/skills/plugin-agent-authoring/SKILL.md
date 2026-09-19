@@ -1,11 +1,11 @@
 ---
 name: plugin-agent-authoring
-description: mitos pluginが配るreview Agentの定義、model、effort、tools、起動方法を変更する。plugin/agentsまたはreview Skillを触るときに使う。通常の実装や組み込みsubagentの利用には使わない。
+description: gleanery pluginが配るreview Agentの定義、model、effort、tools、起動方法を変更する。plugin/agentsまたはreview Skillを触るときに使う。通常の実装や組み込みsubagentの利用には使わない。
 ---
 
 # plugin Agentを変更する
 
-このSkill自体はmitos repositoryの開発用であり、plugin利用者へは配布しない。変更対象の
+このSkill自体はgleanery repositoryの開発用であり、plugin利用者へは配布しない。変更対象の
 `plugin/agents/`と`plugin/skills/review/`は配布物である。
 
 ## Triggers
@@ -21,7 +21,7 @@ description: mitos pluginが配るreview Agentの定義、model、effort、tools
 
 ## 識別と配布
 
-Claude Codeからplugin Agentを呼ぶときは`mitos:review-adversarial`のように`mitos:`を付ける。素の名前は
+Claude Codeからplugin Agentを呼ぶときは`gleanery:review-adversarial`のように`gleanery:`を付ける。素の名前は
 同名のuser/project Agentへ解決されうる。reviewer定義と同名のfileを`~/.claude/agents/`へ置かない。
 
 plugin Agentはversioned cacheから読むため、変更時は`plugin-release`のbundle、3 manifestのversion更新、
@@ -36,7 +36,7 @@ Codexは`plugin/agents/*.md`をAgentとして登録しないが、review Skill�
 `maxTurns`を持つ。`model: inherit`や省略でsession設定へ依存させない。値を変えるときは、その観点に
 必要な探索幅に基づく理由も本文で更新する。
 
-Agent本文は自己完結させる。plugin cacheにはmitos rootの`AGENTS.md`や`.claude/rules`が入らないため、
+Agent本文は自己完結させる。plugin cacheにはgleanery rootの`AGENTS.md`や`.claude/rules`が入らないため、
 それらや別Skillの相対pathを実行時の前提にしない。Codexへはfrontmatterを除いた本文も渡るので、
 本文だけで意味が通る形にする。
 

@@ -4,7 +4,7 @@
   "work": {
     "key": "local",
     "title": "手元だけで動く形へ移す",
-    "goal": "クラウドの依存を外し、mitos dashboard で 127.0.0.1 に画面が立ち、手元の PostgreSQL を読む",
+    "goal": "クラウドの依存を外し、gleanery dashboard で 127.0.0.1 に画面が立ち、手元の PostgreSQL を読む",
     "current": "サーバー側と画面を書き終え、手元の DB で通した",
     "next": ["配布を npm へ移す", "人: 旧環境を消す前に確認する"],
     "status": "active"

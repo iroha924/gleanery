@@ -1,6 +1,6 @@
 ---
 name: next-hono
-description: mitosの画面（Vite + React + TanStack Router）またはHono HTTP APIを変更する。画面、route、URLの状態、API入力、ローカルの境界を触るときに使う。MCP・CLIだけの変更やDB schemaの変更には使わない。
+description: gleaneryの画面（Vite + React + TanStack Router）またはHono HTTP APIを変更する。画面、route、URLの状態、API入力、ローカルの境界を触るときに使う。MCP・CLIだけの変更やDB schemaの変更には使わない。
 ---
 
 # 画面と Hono を変更する
@@ -30,8 +30,8 @@ Vite、TanStack Router、TanStack Query、Honoは、入っている版の型定�
   `127.0.0.1`へのbind、Hostの完全一致、CSRF middlewareである。この3つより後にrouteを登録しない
   （`server/test/server.test.ts`が実際にHTTPを喋って検査する）
 - CORS middlewareを入れない。許可を返さないことがcross-originの読み取りを止める手段そのものである
-- 画面のAPIは`KNOWLEDGE_DB_URL_RO`（読むだけ）で繋ぐ。書き込みの鍵を`server/src/http/`へ持ち込まない。
-  取り込みを起動するrouteも作らない（`mitos sync`はCLIだけが持つ）
+- 画面のAPIは`GLEANERY_DB_URL_RO`（読むだけ）で繋ぐ。書き込みの鍵を`server/src/http/`へ持ち込まない。
+  取り込みを起動するrouteも作らない（`gleanery harvest`はCLIだけが持つ）
 - AIが答えを組み立てる入口は作業場所で絞る。チャット（`/api/chat`）、会議の返答案（`/api/reply`）、全文
   （`/api/read`）は`projects`を必須にし、範囲の外の参照は「無い」と返す。範囲の無指定を「全部」と
   読まない — 別の仕事の決定が答えに混ざる。人が並べて見る一覧と検索（`/api/sessions`）は「すべて」を許し、

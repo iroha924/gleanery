@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // この PC の DB の面倒を見る。持ち主が手元で叩く。
 //
-//   mitos db init                    鍵づくり・起動・schema・ロールの鍵。何度流してもよい
-//   mitos db up / down               docker compose の起動と停止（down でもデータは残る）
-//   mitos db migrate [--yes]         DB の版より新しい db/migrations を当てる。接続先を打ち直させる
-//   bun run db:apply                 空の DB に db/schema.sql を当てる（mitos の schema が既にあれば止める）
+//   gleanery db init                    鍵づくり・起動・schema・ロールの鍵。何度流してもよい
+//   gleanery db up / down               docker compose の起動と停止（down でもデータは残る）
+//   gleanery db migrate [--yes]         DB の版より新しい db/migrations を当てる。接続先を打ち直させる
+//   bun run db:apply                 空の DB に db/schema.sql を当てる（gleanery の schema が既にあれば止める）
 //   bun run db:roles [--env <file>]  3 つのロールに新しいパスワードを付け、接続文字列を env ファイルへ書く
 //
-// どれも owner の鍵（KNOWLEDGE_DB_URL）で繋ぐ。**パスワードと接続文字列は画面に出さない。**
+// どれも owner の鍵（GLEANERY_DB_URL）で繋ぐ。docker を触る init / up / down は、その接続先が
+// loopback でなければ何もせずに止まる（migrate は他所の DB へ当てられる）。
+// **パスワードと接続文字列は画面に出さない。**
 // docker へも引数ではなく子プロセスの環境変数で渡す（引数は同じ PC の他の利用者から見える）。
 
 import { execFileSync } from "node:child_process";
@@ -15,24 +17,27 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
-import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { dbDir } from "./assets.ts";
 import { connect, type Db, type Env, GLOBAL_ENV, inTransaction, KEY, loadEnv, parseEnv } from "./db.ts";
 import { reason } from "./text.ts";
 
-const DB_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "db");
-const SCHEMA = path.join(DB_DIR, "schema.sql");
-const MIGRATIONS = path.join(DB_DIR, "migrations");
-const COMPOSE = path.join(DB_DIR, "compose.yaml");
+// 同梱物の在り処は assets.ts が 1 箇所で決める（配る形と作業ツリーで置かれ方が違う）。
+const SCHEMA = (): string => path.join(dbDir(), "schema.sql");
+const MIGRATIONS = (): string => path.join(dbDir(), "migrations");
+const COMPOSE = (): string => path.join(dbDir(), "compose.yaml");
 
-/** db:migrate どうしを排他する advisory lock の鍵（"mitos" の ASCII）。 */
+/**
+ * db migrate どうしを排他する advisory lock の鍵。**値そのものに意味は無く、変えない。**
+ * 変えると、前の値で lock を取っている古いプロセスと排他できなくなり、同時に当たる。
+ */
 const MIGRATE_LOCK = 0x6d69746f73;
 
 const ROLES = ["reader", "ingest", "capture"] as const;
 
 /** 繋ぎ先。資格情報を除いた host:port/database だけを出す。対話の確認でもこの文字列を打たせる。 */
 function target(url: string | undefined): string {
-  if (!url) throw new Error(`${KEY.owner} が無い。\`mitos db init\` でこの PC の DB を用意する`);
+  if (!url) throw new Error(`${KEY.owner} が無い。\`gleanery db init\` でこの PC の DB を用意する`);
   const u = new URL(url);
   return `${u.hostname}:${u.port || "5432"}/${u.pathname.replace(/^\//, "")}`;
 }
@@ -69,9 +74,9 @@ async function writeKeys(given: string, set: Record<string, string>): Promise<st
 async function applySchema(env: Env): Promise<boolean> {
   const c = await connect(env, "owner");
   try {
-    const exists = await c.query("select 1 from pg_namespace where nspname = 'mitos'");
+    const exists = await c.query("select 1 from pg_namespace where nspname = 'gleanery'");
     if (exists.rowCount) return false;
-    await inTransaction(c, () => c.query(fs.readFileSync(SCHEMA, "utf8")));
+    await inTransaction(c, () => c.query(fs.readFileSync(SCHEMA(), "utf8")));
     return true;
   } finally {
     await c.end();
@@ -82,7 +87,7 @@ async function apply(): Promise<void> {
   const env = loadEnv();
   const t = target(env[KEY.owner]);
   if (!(await applySchema(env)))
-    throw new Error(`${t} には mitos の schema が既にある。既存の DB は \`mitos db migrate\` で進める`);
+    throw new Error(`${t} には gleanery の schema が既にある。既存の DB は \`gleanery db migrate\` で進める`);
   console.log(`当てた: ${t}`);
 }
 
@@ -115,12 +120,12 @@ export function pendingMigrations(files: string[], current: number): { revision:
 
 async function revisionOf(db: Db): Promise<number> {
   const r = await db.query<{ comment: string | null }>(
-    "select obj_description(n.oid, 'pg_namespace') as comment from pg_namespace n where n.nspname = 'mitos'",
+    "select obj_description(n.oid, 'pg_namespace') as comment from pg_namespace n where n.nspname = 'gleanery'",
   );
   const row = r.rows[0];
-  if (!row) throw new Error("DB に mitos の schema が無い。`mitos db init` で作る");
+  if (!row) throw new Error("DB に gleanery の schema が無い。`gleanery db init` で作る");
   const got = Number(row.comment?.match(/revision (\d+)/)?.[1]);
-  if (Number.isNaN(got)) throw new Error("mitos の schema コメントから revision を読めない");
+  if (Number.isNaN(got)) throw new Error("gleanery の schema コメントから revision を読めない");
   return got;
 }
 
@@ -134,7 +139,7 @@ export async function migrate(yes: boolean): Promise<void> {
   if (!yes && !process.stdin.isTTY) throw new Error(`端末でないときは --yes を付ける（${t} へ当てる）`);
   const c = await connect(env, "owner");
   try {
-    const files = fs.readdirSync(MIGRATIONS);
+    const files = fs.readdirSync(MIGRATIONS());
     const current = await revisionOf(c);
     const todo = pendingMigrations(files, current);
     if (todo.length === 0) {
@@ -168,9 +173,9 @@ export async function migrate(yes: boolean): Promise<void> {
       if (!lock.rows[0]?.ok) throw new Error("別の db migrate が走っている。終わってから打ち直す");
       // 確かめている間に別の db migrate が版を進めていれば、その残りだけを当てる。
       const now = pendingMigrations(files, await revisionOf(c));
-      for (const m of now) await c.query(fs.readFileSync(path.join(MIGRATIONS, m.file), "utf8"));
+      for (const m of now) await c.query(fs.readFileSync(path.join(MIGRATIONS(), m.file), "utf8"));
       const last = now.at(-1);
-      if (last) await c.query(`comment on schema mitos is 'mitos schema revision ${last.revision}'`);
+      if (last) await c.query(`comment on schema gleanery is 'gleanery schema revision ${last.revision}'`);
       return now;
     });
     console.log(`当てた: ${applied.map((m) => m.file).join(" / ") || "無し"}`);
@@ -204,7 +209,7 @@ async function roles(given: string): Promise<void> {
   const done: string[] = [];
   try {
     for (const role of ROLES) {
-      const name = `mitos_${role}`;
+      const name = `gleanery_${role}`;
       // base64url は ' を含まないので、そのまま文字列リテラルに置ける（alter role はパラメータを取れない）。
       const password = crypto.randomBytes(24).toString("base64url");
       const u = new URL(owner as string);
@@ -235,13 +240,8 @@ async function roles(given: string): Promise<void> {
   }
 }
 
-/**
- * docker compose に渡す環境。**パスワードは argv に載せない。**
- * compose.yaml は POSTGRES_PASSWORD が無ければ止まるので、up も down も owner の鍵が要る。
- */
-function composeEnv(env: Env): NodeJS.ProcessEnv {
-  const url = env[KEY.owner];
-  if (!url) throw new Error(`${KEY.owner} が無い。\`mitos db init\` でこの PC の DB を用意する`);
+/** docker compose に渡す環境。**パスワードは argv に載せない。** */
+function composeEnv(url: string): NodeJS.ProcessEnv {
   const u = new URL(url);
   return {
     ...process.env,
@@ -251,10 +251,30 @@ function composeEnv(env: Env): NodeJS.ProcessEnv {
   };
 }
 
-/** docker を shell を通さずに呼ぶ（引数配列のまま渡す）。失敗すれば投げる。 */
+/**
+ * owner の接続先がこの PC か。**完全一致でだけ loopback と認める**（db.ts の settings() と同じ判定）。
+ * URL パーサは host を正規化しないので、`127.1` や `0x7f.1` は綴りのまま届く。
+ * ここを緩めると、手元のコンテナを起動したまま、schema とロールのパスワードを外の DB へ当てにいく。
+ */
+function requireLocal(url: string): void {
+  const hostname = new URL(url).hostname.replace(/^\[(.+)\]$/, "$1");
+  if (!["localhost", "127.0.0.1", "::1"].includes(hostname.toLowerCase()))
+    throw new Error(
+      `${KEY.owner} の接続先 ${target(url)} はこの PC の DB でない。` +
+        "docker を触る db init / up / down は手元の DB にだけ使う（他所の DB は `gleanery db migrate`）",
+    );
+}
+
+/**
+ * docker を shell を通さずに呼ぶ（引数配列のまま渡す）。失敗すれば投げる。
+ * compose.yaml は POSTGRES_PASSWORD が無ければ止まるので、up も down も owner の鍵が要る。
+ */
 function compose(env: Env, ...args: string[]): void {
-  execFileSync("docker", ["compose", "-f", COMPOSE, ...args], {
-    env: composeEnv(env),
+  const url = env[KEY.owner];
+  if (!url) throw new Error(`${KEY.owner} が無い。\`gleanery db init\` でこの PC の DB を用意する`);
+  requireLocal(url);
+  execFileSync("docker", ["compose", "-f", COMPOSE(), ...args], {
+    env: composeEnv(url),
     stdio: ["ignore", "inherit", "inherit"],
   });
 }
@@ -287,6 +307,15 @@ async function waitForDb(env: Env): Promise<void> {
 }
 
 /**
+ * ロールの鍵を作り直すか。**schema を当てた直後は、env に 3 鍵が残っていても作り直す。**
+ * 作りたての DB のロールはパスワードを持たない（db/schema.sql の create role）ので、前の DB の鍵を
+ * 残すと、`docker compose down -v` の後の `gleanery db init` が成功したまま 3 つの出口とも認証に落ちる。
+ */
+export function needsRoleKeys(schemaApplied: boolean, have: Env): boolean {
+  return schemaApplied || ROLES.some((r) => !have[KEY[r]]);
+}
+
+/**
  * この PC の DB を用意する。**既にできている段は飛ばす**ので何度流してもよい。
  * owner のパスワードは生成した後どこにも出さない（env ファイルだけが持つ）。
  */
@@ -294,7 +323,7 @@ export async function dbInit(): Promise<void> {
   if (!parseEnv(fs.existsSync(GLOBAL_ENV) ? fs.readFileSync(GLOBAL_ENV, "utf8") : "")[KEY.owner]) {
     const password = crypto.randomBytes(24).toString("base64url");
     const file = await writeKeys(GLOBAL_ENV, {
-      [KEY.owner]: `postgres://postgres:${password}@127.0.0.1:5432/mitos`,
+      [KEY.owner]: `postgres://postgres:${password}@127.0.0.1:5432/gleanery`,
     });
     console.log(`owner の鍵を作った: ${file}`);
   } else {
@@ -304,9 +333,10 @@ export async function dbInit(): Promise<void> {
   compose(env, "up", "-d");
   console.log(`起動した: ${target(env[KEY.owner])}`);
   await waitForDb(env);
-  console.log((await applySchema(env)) ? "schema を当てた" : "schema は既にある");
+  const applied = await applySchema(env);
+  console.log(applied ? "schema を当てた" : "schema は既にある");
   const have = parseEnv(fs.readFileSync(GLOBAL_ENV, "utf8"));
-  if (ROLES.some((r) => !have[KEY[r]])) await roles(GLOBAL_ENV);
+  if (needsRoleKeys(applied, have)) await roles(GLOBAL_ENV);
   else console.log("3 つのロールの鍵は既にある");
 }
 
@@ -320,7 +350,7 @@ async function main(): Promise<void> {
   if (cmd === "apply") return apply();
   if (cmd === "migrate") return migrate(values.yes === true);
   if (cmd === "roles") {
-    const dir = process.env.KNOWLEDGE_ENV_DIR;
+    const dir = process.env.GLEANERY_ENV_DIR;
     return roles(values.env ?? (dir ? path.join(dir, ".env") : GLOBAL_ENV));
   }
   throw new Error("使い方: node server/src/admin.ts apply | migrate [--yes] | roles [--env <file>]");

@@ -1,6 +1,6 @@
 ---
 name: knowledge-schema
-description: mitosのDB schema（db/schema.sqlとdb/migrations）、role・grant、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。HTTP APIや画面だけの変更には使わない。
+description: gleaneryのDB schema（db/schema.sqlとdb/migrations）、role・grant、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。HTTP APIや画面だけの変更には使わない。
 ---
 
 # ナレッジschemaを変更する
@@ -25,7 +25,7 @@ DBの正本は`db/schema.sql`の1本で、今の形だけを表す。Prisma・Dr
 `db/migrations/NNNN_<名前>.sql`は、既存のDBをrevision N-1からNへ進める手順で、正本ではない。NNNNは
 当てた後のrevision（4桁）。最初の1本はrevision 3で、本番に入っていた旧migrationの残りを消す。
 
-版はschemaのコメント（`mitos schema revision N`）のrevisionだけで持つ。MCP・CLI・画面のAPIは最初の接続で
+版はschemaのコメント（`gleanery schema revision N`）のrevisionだけで持つ。MCP・CLI・画面のAPIは最初の接続で
 DBのrevisionを`server/src/db.ts`の`SCHEMA_REVISION`と等値で照合し、食い違えば止まる。DBが古ければ
 `bun run db:migrate`を案内する。MCPと画面のAPIは、照合が一度通るとプロセスが終わるまでその結果を保持する
 （`lazyPool`）。
@@ -37,7 +37,7 @@ transactionで番号順に当て、同じtransactionでschemaのコメントを�
 `.`で始まる名前（`.DS_Store`やvimのswap）はmigrationとして読まずに除く。
 
 DBを作り直すcommandは無い。空から作るのは空のDBへ`db:apply`で、手元のvolumeごと捨てるなら
-`docker compose -f db/compose.yaml down -v`の後に`mitos db init`を打ち直す。**volumeを消すと記録は戻らない。**
+`docker compose -f db/compose.yaml down -v`の後に`gleanery db init`を打ち直す。**volumeを消すと記録は戻らない。**
 
 ## schemaを変えるとき
 
@@ -50,9 +50,9 @@ DBを作り直すcommandは無い。空から作るのは空のDBへ`db:apply`�
    1回に流れるので、本文の`COMMIT` / `ROLLBACK`はその場で外側のtransactionを終わらせる。`COMMIT`なら、途中で
    失敗したときに前半だけ確定して版は上がらず、打ち直すと二重に当たる。`ROLLBACK`なら、それまでのDDLが
    捨てられたまま版だけ進む
-3. 表を足すmigrationでは、`mitos_reader`へselect、`mitos_ingest`へselect・insert・update・deleteと
+3. 表を足すmigrationでは、`gleanery_reader`へselect、`gleanery_ingest`へselect・insert・update・deleteと
    sequenceのusageを明示的にgrantする。schema.sqlの`grant ... on all tables`は実行した時点の表にしか
-   効かない。`mitos_capture`へは列単位でgrantする。default privilegesは置かない
+   効かない。`gleanery_capture`へは列単位でgrantする。default privilegesは置かない
 4. 旧版のコードは`db:migrate`の後も新しいschemaに対して動き続ける。自動記録はpluginのcacheの版で動き、
    DBに弾かれた記録は`rejected/`へ移る。`db:migrate`より前にDBを一度でも引いたMCPは、
    プロセスが終わるまで旧版のまま新しいschemaを読む。そのため、自動記録が書く表には
@@ -112,20 +112,20 @@ DBを作り直すcommandは無い。空から作るのは空のDBへ`db:apply`�
 
 | role | 変数 | できること |
 |---|---|---|
-| owner | `KNOWLEDGE_DB_URL` | `server/src/admin.ts`（`bun run db:*`）だけ。schemaの適用とmigration、roleのパスワード |
-| `mitos_reader` | `KNOWLEDGE_DB_URL_RO` | 全表の読み取り。MCPと画面のAPI |
-| `mitos_ingest` | `KNOWLEDGE_DB_URL_INGEST` | 全表の読み書き。CLIのsync・trace・who・project |
-| `mitos_capture` | `KNOWLEDGE_DB_URL_CAPTURE` | 会話の4表へ、自動記録が埋める列の追記だけ |
+| owner | `GLEANERY_DB_URL` | `server/src/admin.ts`（`bun run db:*`）だけ。schemaの適用とmigration、roleのパスワード |
+| `gleanery_reader` | `GLEANERY_DB_URL_RO` | 全表の読み取り。MCPと画面のAPI |
+| `gleanery_ingest` | `GLEANERY_DB_URL_INGEST` | 全表の読み書き。CLIのsync・trace・who・project |
+| `gleanery_capture` | `GLEANERY_DB_URL_CAPTURE` | 会話の4表へ、自動記録が埋める列の追記だけ |
 
 PRコメントのようなuntrustedな文章を読む出口（MCP、画面）へ書き込みを持たせない。RLSは使わない。
 持ち主1人で、境界はroleで切っている。
 
 表を足したら、schema.sqlの`grant ... on all tables`より前に置く（grantは実行時点の表にしか効かず、
-default privilegesは置いていない）。`mitos_capture`へは表単位ではなく列単位でgrantする。
+default privilegesは置いていない）。`gleanery_capture`へは表単位ではなく列単位でgrantする。
 
-- `mitos_capture`が書く`insert`に`on conflict (列)`を書かない。衝突先の列にはSELECT権限が要り、
+- `gleanery_capture`が書く`insert`に`on conflict (列)`を書かない。衝突先の列にはSELECT権限が要り、
   本文を読めないroleでは権限エラーになる。`on conflict do nothing`で書く
-- `source_item`と`person_identity`を指す列を`mitos_capture`へ開けない。開けると、GitHubの会話を
+- `source_item`と`person_identity`を指す列を`gleanery_capture`へ開けない。開けると、GitHubの会話を
   作ることや他人の身元を名乗ることができる
 
 権限はschemaを読むだけで判定しない。検証用のdatabaseで各roleの接続文字列から禁止操作を実行し、
@@ -141,19 +141,19 @@ default privilegesは置いていない）。`mitos_capture`へは表単位で�
 埋め込みを取り直さない。失敗の記録は`source_hash`が一致する行にだけ書く。本文が変わった後に古い失敗を
 書くと、新しい本文が埋め込まれないまま残る。文脈は題や見出しから決定的に前置し、LLMで作らない。
 
-新しい取り込み元は`mitos sync`にも繋ぐ。手動のcommandだけを足して完了にしない。
+新しい取り込み元は`gleanery harvest`にも繋ぐ。手動のcommandだけを足して完了にしない。
 
 ### 文書と要件定義・設計書
 
 文書同期（`server/src/docs.ts`）は、remoteの既定branchの**commit tree**を読む。作業ツリーは読まない。
 `connector.head_oid`に入れたcommitを持ち、そこからfast-forwardできるcommitだけを自動で入れる。
 fast-forwardでなければ一度だけ取り直し、前に入れたcommit以降まで進んでいれば（同時に走った別の同期が先に入れた）
-何も書かずに終える。進んでいなければ巻き戻し・force-pushとして書かずに止め、`mitos sync --cwd <dir> --reset-docs`を
+何も書かずに終える。進んでいなければ巻き戻し・force-pushとして書かずに止め、`gleanery harvest --cwd <dir> --reset-docs`を
 案内する。巻き戻しを成功扱いにしない — 漏れた文書を巻き戻して消したときに、検索に黙って残る。
 投影の規則（節の割り方、前置する文脈）を変えたら`PROJECTION`の定数を上げる。次の同期で全文書が書き直される。
 
-`.mitos/`配下からは、`change.json`がapprovedの`requirements.md`と`design.md`だけを入れる。承認の判定と
-検査は`server/src/artifacts.ts`にだけ置き、`mitos check`（作業ツリー）と同期（commit tree）が同じ関数を通る。
+`.gleanery/`配下からは、`change.json`がapprovedの`requirements.md`と`design.md`だけを入れる。承認の判定と
+検査は`server/src/artifacts.ts`にだけ置き、`gleanery check`（作業ツリー）と同期（commit tree）が同じ関数を通る。
 
 - 選別と検査を、埋め込みと文書のDB書き込みより前に済ませる。逆にすると、draftの節が埋め込みAPIへ送られる
 - 追跡済みの成果物を持つchangeのmanifestが不正なら、そのrepositoryの文書同期を丸ごと止める。エラーには
@@ -177,18 +177,18 @@ migrationは検証用のdatabaseで確かめる。同じcontainerに2つ作り�
 もう片方（F）の空のdatabaseへ`db:apply`して、次を見る。
 
 ```bash
-docker exec mitos-db-1 psql -U postgres -c 'create database mitos_m template mitos'
-docker exec mitos-db-1 psql -U postgres -c 'create database mitos_f'
+docker exec gleanery-db-1 psql -U postgres -c 'create database gleanery_m template gleanery'
+docker exec gleanery-db-1 psql -U postgres -c 'create database gleanery_f'
 ```
 
 - MとFでschemaに差が無い（`pg_dump --schema-only`を両方から取って比べる）
 - Mで主な表の件数が、当てる前後で同じ
 - 各鍵の禁止操作が`permission denied`のまま
 
-鍵は`KNOWLEDGE_ENV_DIR/.env`に4つとも検証用のdatabaseへ向けて書く（ownerを書いてから`bun run db:roles`を
+鍵は`GLEANERY_ENV_DIR/.env`に4つとも検証用のdatabaseへ向けて書く（ownerを書いてから`bun run db:roles`を
 叩くと、残る3つがそこへ書かれる）。`server/src/db.ts`の`loadEnv`はそこを先に読み、無い鍵だけ
-`~/.claude/knowledge.env`で補うので、1つでも欠けるとその鍵は手元の本物のDBへ繋がる。ただし`readInto`は
-`process.env`にある鍵を上書きしないので、シェルに`KNOWLEDGE_DB_URL*`をexportしているとそちらが`.env`より
+`~/.gleanery/env`で補うので、1つでも欠けるとその鍵は手元の本物のDBへ繋がる。ただし`readInto`は
+`process.env`にある鍵を上書きしないので、シェルに`GLEANERY_DB_URL*`をexportしているとそちらが`.env`より
 優先される。検証の前に、その鍵が検証用のdatabaseを向いていることを確かめる。
 
 そのうえで、変更した取り込み口を実DBで通す。`bun run verify`も通す。MCP、CLI、自動記録、またはその依存
@@ -203,15 +203,15 @@ DBが古いときにMCPの応答が`db:migrate`を案内しても、AIがそれ�
 接続先を打ち直させる。非対話では`--yes`を要求する。
 
 1. mergeする
-2. 控えを取る。`docker exec mitos-db-1 pg_dump -U postgres -Fc mitos > <保存先>`。当てて問題が出たときに
+2. 控えを取る。`docker exec gleanery-db-1 pg_dump -U postgres -Fc gleanery > <保存先>`。当てて問題が出たときに
    戻せるのはこれだけで、**取らずに当てると戻せない**
 3. 持ち主が端末で、merge済みのmainから`bun run db:migrate`を叩き、接続先を打ち直す
 4. pluginを更新する（`plugin-release`）
-5. `mitos doctor`で確かめる
+5. `gleanery doctor`で確かめる
 
 照合で止まるのは、コードとDBの版が食い違っている間に初めてDBを引くプロセスだけである。
 
-- 画面とAPI: `mitos dashboard`を立て直すまで
+- 画面とAPI: `gleanery dashboard`を立て直すまで
 - MCP: `db:migrate`の後に初めてDBを引くものは、pluginを更新するまで
 - CLI: pluginのcacheから動くものは、pluginを更新するまで
 

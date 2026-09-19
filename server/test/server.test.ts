@@ -205,6 +205,9 @@ test("port は 1〜65535 の整数だけを受ける", () => {
   for (const bad of ["0", "-1", "65536", "abc", "80.5"]) {
     assert.throws(() => parsePort(bad), /1〜65535/, bad);
   }
+  // 経路ごとに自分の名前を出す（環境変数と --port を取り違えない）。
+  assert.throws(() => parsePort("0", "--port"), /--port は 1〜65535/);
+  assert.throws(() => parsePort("0"), /GLEANERY_DASHBOARD_PORT は 1〜65535/);
 });
 
 // dev では Vite が画面を出し、/api だけをここへ proxy する。proxy は Host を書き換えないので、
@@ -238,5 +241,26 @@ test("port が塞がっていたら別の番号へ移らない", async () => {
     second.close();
   } finally {
     blocker.close();
+  }
+});
+
+// Cache-Control が無い応答は再利用してよいことになっている（RFC 9111 4.2.2）。
+// 画面は同じ URL を繰り返し引くので、CLI で足した行が出てこない形になりうる。
+test("API の応答は溜めさせない", async () => {
+  const host = `127.0.0.1:${port}`;
+  for (const path of ["/api/__probe__", "/api/projects"]) {
+    const reply = await ask(port, path, { headers: { host } });
+    assert.equal(reply.headers["cache-control"], "no-store", path);
+  }
+});
+
+// index.html は名前に中身のハッシュを持たない。溜まると、更新しても消えた資産を指し続ける。
+test("index.html は使う前に検証させる", async () => {
+  const host = `127.0.0.1:${port}`;
+  for (const path of ["/", "/sessions"]) {
+    const reply = await ask(port, path, { headers: { host } });
+    // 画面をビルドしていない作業ツリーでは配らない。配るときだけ検査する。
+    if (reply.status === 404) continue;
+    assert.equal(reply.headers["cache-control"], "no-cache", path);
   }
 });

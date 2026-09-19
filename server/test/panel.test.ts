@@ -17,7 +17,7 @@ test("外から来た文字は、行頭の印を上書きできず、端末を�
 });
 
 test("枠は見出し・中身・締めの順に並び、中身の空行は印だけにする", () => {
-  assert.equal(panel("mitos x", ["a\n\nb"], "おわり"), "✦ mitos x\n│ a\n│\n│ b\n╰─ おわり");
+  assert.equal(panel("gleanery x", ["a\n\nb"], "おわり"), "✦ gleanery x\n│ a\n│\n│ b\n╰─ おわり");
 });
 
 test("1 行に収める文字は、改行とタブを空白にし、全角空白などは保存したとおりに残す", () => {

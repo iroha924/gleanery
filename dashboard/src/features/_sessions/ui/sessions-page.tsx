@@ -628,7 +628,7 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                   {decisions.length === 0 ? (
                     <p className="text-sm leading-6 text-muted-foreground">
                       この session では判断を残していない。残すなら、その session で{" "}
-                      <code className="font-mono">/mitos:trace</code> を実行する。
+                      <code className="font-mono">/gleanery:trace</code> を実行する。
                     </p>
                   ) : (
                     <div className="grid gap-3 md:grid-cols-2">

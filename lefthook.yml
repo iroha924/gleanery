@@ -19,24 +19,24 @@ pre-commit:
     - name: ai-config
       glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,plugin/agents/**,plugin/skills/**,scripts/check-ai-config.mjs,package.json}"
       run: bun run verify:ai
-    # dist は配布物。ソースだけ直して bundle を忘れると、
-    # Codex 側（依存を自動インストールしない）で古いコードが動き続ける。
-    # **版の判定は bundle の後でなければ意味が無い。**parallel なので別ジョブにすると
+    # 配布物（plugin/dist、plugin/db）は追跡せず、npm へ publish するときに bundle から作る。
+    # **だからここで確かめるのは「束ねられること」と「版が上がっていること」だけである。**
+    # 版の判定は bundle の後でなければ意味が無く、parallel なので別ジョブにすると
     # 作り直す前のバンドルを読んで素通りする（実測: 4/4 で通った）。同じジョブで順に走らせる。
     # 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
     - name: bundle
-      # **マーケットプレースのマニフェストも見る。**版はそこにもあり、揃っていないと届かない。
-      glob: "{server/src/**/*.ts,plugin/**,.claude-plugin/**}"
+      # **束ねる入力を全部挙げる。**dist は追跡しないので、ここから漏れた入力を変えると
+      # 中身が変わったのに版の検査が走らない。マーケットプレースのマニフェストも版を持つ。
+      glob: "{server/src/**/*.ts,dashboard/src/**,dashboard/index.html,db/**,scripts/bundle.mjs,plugin/**,.claude-plugin/**}"
       # **`set -e` を置く。**複数行の run は最後のコマンドの終了コードだけが結果になるので、
       # これが無いと bundle が失敗しても後ろの検査が 0 を返して打ち消す。
       run: |
         set -e
         bun run bundle
-        git add plugin/dist/
         bun run scripts/check-mcp-version.mjs
     # 同じ知識が複数の出口に写されている場所を突き合わせる。
     # 理由と過去の事例は docs/ai-development.md。README の CLI 一覧は
-    # 突き合わせではなく `mitos --help` から書き出すので、書き直した分を staged へ戻す。
+    # 突き合わせではなく `gleanery --help` から書き出すので、書き直した分を staged へ戻す。
     - name: pairs
       glob: "{db/schema.sql,server/src/*.ts,dashboard/src/features/_sessions/api/sessions.ts,README.md,plugin/skills/review/SKILL.md,plugin/agents/*.md,scripts/check-pairs.mjs}"
       # **`git add` はここに書かない。**無条件に走ると、README に残っていた別件の編集まで

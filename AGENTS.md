@@ -1,18 +1,18 @@
-# mitosで作業するとき
+# gleaneryで作業するとき
 
 過去の作業から「なぜそうしたか」を貯め、Claude CodeとCodexから引けるようにする道具。
 TypeScript / bun、PostgreSQL 18 + pgvector、Vite + React、Honoを使う。埋め込みはVoyage、生成はOpenAI。
 **手元だけで動く。**DBはDockerのlocal PostgreSQL、画面は`127.0.0.1`に立つ。PCごとにDBは独立で、共有しない。
 
 Claude Codeはrootの`CLAUDE.md`からこのfileをimportする。両AIに共通する常時規約はここだけを正本にし、
-mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は同じSkillへのsymlinkである。
+gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は同じSkillへのsymlinkである。
 利用者へ配るSkillは`plugin/skills/`が別の正本であり、開発用Skillをpluginへ含めない。
 
 ## 実行境界
 
 - DBの正本は`db/schema.sql`の1本だけ。Prisma・Drizzleのschemaを別の正本として足さない
-- 鍵は操作ごとに分ける。MCPと画面のAPIは`mitos_reader`（読むだけ）、CLIの取り込み・traceは`mitos_ingest`、
-  会話の自動記録は`mitos_capture`（追記だけ）を使う。owner鍵はDBを管理するcommand（`mitos db *`と`bun run db:*`）だけが使い、どの鍵もownerへfallbackしない
+- 鍵は操作ごとに分ける。MCPと画面のAPIは`gleanery_reader`（読むだけ）、CLIの取り込み・traceは`gleanery_ingest`、
+  会話の自動記録は`gleanery_capture`（追記だけ）を使う。owner鍵はDBを管理するcommand（`gleanery db *`と`bun run db:*`）だけが使い、どの鍵もownerへfallbackしない
 - untrustedな文章（PR・issueの本文、記録された会話）を読む出口に書き込みを持たせない。
   画面のAPIはreaderだけを持ち、取り込みを起動する経路を持たない
 - 画面は完全にstaticなSPAである。Honoが`/api/*`と静的資産を同じoriginで配る。サーバーで動く画面のcodeを作らない
@@ -26,7 +26,7 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 
 - 人向けとAI向けの出口は別々に動かす。CLIやdashboardの成功をMCP応答の成功とみなさない
 - 同じ値・分類・判断を変更したら`rg`で全参照を引き、対になる出口を探す。列挙できる対は検査へ足す
-- 新しい取り込み元は`mitos sync`にも接続する。手動commandだけを追加して完了にしない
+- 新しい取り込み元は`gleanery harvest`にも接続する。手動commandだけを追加して完了にしない
 - 配布物を変更したらrelease versionを上げ、npm package・Claude/Codexのmanifest・marketplaceのnpm source versionを
   一致させる。`plugin/dist`は追跡しない
 - 新しい外部入力はsystem境界で検査する。資格情報を追跡file、command引数、logへ書かない
@@ -73,8 +73,8 @@ bun run verify:ai   # AGENTS、repository開発Skill、plugin Skill・Agentの�
 bun run bundle      # MCP、CLI、自動記録、画面の配布物を更新する
 ```
 
-DBは`mitos db init`で立てる（Dockerの`pgvector/pgvector:0.8.6-pg18`）。個別command、setup、運用は
-READMEを読み、障害の切り分けは`mitos doctor`から始める。pre-commitは変更対象の軽い検査、
+DBは`gleanery db init`で立てる（Dockerの`pgvector/pgvector:0.8.6-pg18`）。個別command、setup、運用は
+READMEを読み、障害の切り分けは`gleanery doctor`から始める。pre-commitは変更対象の軽い検査、
 pre-pushとCIは`bun run verify`を実行する。
 
 ## 外へ出す文章

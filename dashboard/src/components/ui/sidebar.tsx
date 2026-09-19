@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const SIDEBAR_STORAGE_KEY = "mitos.sidebar";
+const SIDEBAR_STORAGE_KEY = "gleanery.sidebar";
 
 function storedOpen(fallback: boolean): boolean {
   try {

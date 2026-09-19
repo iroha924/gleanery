@@ -126,9 +126,16 @@ for (const name of pluginSkills) {
     );
   }
 
-  // CodexのPATHにmitosは無い（exit 127を観測）。
-  if (/Bash\(mitos |^mitos |\}\/bin\/mitos/m.test(source) && !source.includes("../../bin/mitos")) {
-    fail(`${relative}: mitosのCLIを呼ぶのに、Codex用の../../bin/mitosが無い`);
+  // CodexのPATHにgleaneryは無い（exit 127を観測）。**shell scriptを挟まずpackage内のJSを直接起動する** —
+  // npmの`bin`はplugin内のPATHへ公開される契約が無く、POSIX shellはWindowsで動かない。
+  if (/\}\/bin\/gleanery|\.\.\/\.\.\/bin\/gleanery/m.test(source)) {
+    fail(`${relative}: bin/gleaneryは使わない。node "\${CLAUDE_PLUGIN_ROOT}/dist/cli.js" の形で呼ぶ`);
+  }
+  if (/Bash\(gleanery |^gleanery /m.test(source)) {
+    fail(`${relative}: 素のgleaneryはCodexのPATHに無い。package内のdist/cli.jsを直接起動する`);
+  }
+  if (/dist\/cli\.js/.test(source) && !source.includes("../../dist/cli.js")) {
+    fail(`${relative}: gleaneryのCLIを呼ぶのに、Codex用の../../dist/cli.jsが無い`);
   }
 }
 

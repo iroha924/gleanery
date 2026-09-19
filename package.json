@@ -1,5 +1,5 @@
 {
-  "name": "mitos",
+  "name": "gleanery",
   "private": true,
   "packageManager": "bun@1.4.0",
   "scripts": {
@@ -12,12 +12,13 @@
     "architecture": "node scripts/check-dashboard-boundaries.mjs",
     "verify:ai": "node scripts/check-ai-config.mjs",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd dashboard typecheck",
-    "check": "bun run lint && bun run architecture && bun run verify:ai && bun run typecheck",
+    "check": "bun run lint && bun run architecture && bun run verify:ai && bun run naming && bun run typecheck",
     "test": "bun run --cwd server test",
     "verify": "bun run check && bun run test && bun run build",
-    "bundle": "bun build server/src/mcp.ts --target=node --outfile plugin/dist/mcp.js && bun build server/src/capture.ts --target=node --outfile plugin/dist/capture.js && bun build server/src/cli.ts --target=node --outfile plugin/dist/cli.js",
+    "bundle": "node scripts/bundle.mjs",
     "db:apply": "node server/src/admin.ts apply",
     "db:migrate": "node server/src/admin.ts migrate",
-    "db:roles": "node server/src/admin.ts roles"
+    "db:roles": "node server/src/admin.ts roles",
+    "naming": "node scripts/check-naming.mjs"
   }
 }

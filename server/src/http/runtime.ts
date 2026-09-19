@@ -8,9 +8,9 @@ import { type Env, KEY, lazyPool, loadEnv } from "../db.ts";
  * 「今の route が使っていない」だけの理由で閉じていることになる。能力として持たせない。
  *
  * **足すときは、HTTP から到達する経路が実際に読む変数だけにする。**
- * 絞りすぎると黙って壊れる（`MITOS_CHAT_EFFORT` が抜けていて、会議の返答案だけが既定値に戻った）。
+ * 絞りすぎると黙って壊れる（`GLEANERY_CHAT_EFFORT` が抜けていて、会議の返答案だけが既定値に戻った）。
  */
-const USED = [KEY.reader, "VOYAGE_API_KEY", "OPENAI_API_KEY", "MITOS_CHAT_MODEL", "MITOS_CHAT_EFFORT"];
+const USED = [KEY.reader, "VOYAGE_API_KEY", "OPENAI_API_KEY", "GLEANERY_CHAT_MODEL", "GLEANERY_CHAT_EFFORT"];
 
 const all = loadEnv();
 export const env: Env = Object.fromEntries(USED.map((name) => [name, all[name]]));

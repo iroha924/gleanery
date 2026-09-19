@@ -105,7 +105,7 @@ const source: GithubSource = {
   issueComments: async () => [
     {
       id: 40,
-      user: user("vercel[bot]", 5),
+      user: user("dependabot[bot]", 5),
       body: "Preview: https://x",
       created_at: "2026-09-11T00:00:00Z",
       html_url: "",
