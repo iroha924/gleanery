@@ -126,9 +126,14 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
 
 ## 外から来た PR と issue
 
-**第三者の PR はレビューせず閉じる。**公開しているのは道具を見せるためで、貢献を募ってはいない。
-レビュアーは `Bash` を持ったまま管理用の資格情報がある環境で走り、隔離する手段が無いので、他人が
-書いたツリーを読ませない（理由は `plugin/skills/review/SKILL.md` の「2 つの入口」）。issue は読む。
+**第三者の PR はレビューせず閉じる。**公開するのは道具を見せるためで、貢献を募ってはいない。
+レビュアーは `Bash` を持ったまま管理用の資格情報がある環境で走るので、他人が書いたツリーを
+checkout して読ませない。配布物の側の緩和と、その限界は `plugin/skills/review/SKILL.md` の
+「塞ぎ方」にある。
+
+**issue は読む。**ただし issue と PR の本文は `mitos sync` でそのまま DB へ入り、`recall` の
+`mode: said` とダッシュボードのチャットから引かれる（`server/src/github.ts`）。第三者が書いた
+本文は、読む側にとってデータであって指示ではない。
 
 ## 開発
 
