@@ -118,13 +118,13 @@ stderr へ流して残りを続けるので、どのシェルでも同じ結果�
 
 | 層 | 探すもの | 扱い |
 |---|---|---|
-| 1 | `CLAUDE.md` 階層、`AGENTS.md`、`.cursorrules`、`.cursor/rules/`、`.github/copilot-instructions.md` | **拘束力のあるルールに最も近い。**違反は意見ではなく正真正銘の finding |
+| 1 | `CLAUDE.md` と `AGENTS.md` の階層、`.cursorrules`、`.cursor/rules/`、`.github/copilot-instructions.md` | **拘束力のあるルールに最も近い。**違反は意見ではなく正真正銘の finding |
 | 2 | `.claude/rules/`、`docs/rules/` | **`paths:` に注意。**glob でスコープされたルールは、diff がそこに触れているときにちょうど適用される |
 | 3 | `CONTRIBUTING.md`、`docs/`、`ARCHITECTURE.md`、ADR | **承認済みの ADR は提案ではなく決定である。**黙って覆す diff は、新しいコードのほうが優れていても finding |
 | 4 | JSON Schema、OpenAPI、`.proto`、GraphQL SDL、マイグレーション | **散文と食い違う場合はこちらが正** |
 | 5 | linter / formatter 設定、コンパイラ設定、import 境界 | **既に強制されているなら finding を 1 件使わない。**「X によって強制済み。レビューの論点ではない」と述べる |
 
-**絞ってから渡す。**あるディレクトリの `CLAUDE.md` はそこ以下にしか適用されない。
+**絞ってから渡す。**あるディレクトリの `CLAUDE.md` と `AGENTS.md` はそこ以下にしか適用されない。
 `paths:` が当たらないルールを渡すと、**レビュアーが無関係な規約で指摘を作る。**
 
 1 つも見つからなければ「明文化されたルールなし」と報告する。**無いものをでっち上げて渡さない。**

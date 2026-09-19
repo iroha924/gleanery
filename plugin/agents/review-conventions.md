@@ -51,13 +51,13 @@ color: blue
 
 存在するものを読み、変更されたパスから見て無関係なものは飛ばす。
 
-- **エージェント向け指示** — `CLAUDE.md`（リポジトリルート、`.claude/`、変更ファイルを含むディレクトリの入れ子）、`AGENTS.md`、`.cursorrules`、`.cursor/rules/`、`.github/copilot-instructions.md`。**拘束力のあるルールに最も近く、違反は意見ではなく正真正銘の finding になる**
+- **エージェント向け指示** — `CLAUDE.md` と `AGENTS.md`（リポジトリルート、`.claude/`、変更ファイルを含むディレクトリの入れ子）、`.cursorrules`、`.cursor/rules/`、`.github/copilot-instructions.md`。**拘束力のあるルールに最も近く、違反は意見ではなく正真正銘の finding になる**
 - **rules ディレクトリ** — `.claude/rules/`、`docs/rules/`。**`paths:` frontmatter に注意。**glob でスコープされたルールは、diff がそこに触れているときにちょうど適用される
 - **コントリビュータ向け・アーキテクチャ文書** — `CONTRIBUTING.md`、`docs/`、`ARCHITECTURE.md`、ADR（`docs/adr/` / `docs/decisions/` / `adr/`）。**承認済みの ADR は提案ではなく決定である。**黙って覆す diff は、たとえ新しいコードのほうが優れていても finding
 - **機械可読な契約** — JSON Schema、OpenAPI、`.proto`、GraphQL SDL、マイグレーション、生成クライアント。**散文と食い違う場合はこちらが正**
 - **機械的に強制される設定** — linter / formatter、コンパイラ設定、import 境界、コミットメッセージ設定。**既に強制されているなら finding を 1 件使わない。**「X によって強制済み。レビューの論点ではない」と述べる
 
-**絞ってから読む。**あるディレクトリの `CLAUDE.md` は**そこ以下のファイルにしか適用されない。**
+**絞ってから読む。**あるディレクトリの `CLAUDE.md` と `AGENTS.md` は**そこ以下のファイルにしか適用されない。**
 `paths:` が当たらないルールを根拠にすると、**無関係な規約で指摘を作ることになる。**
 
 **1 つも見つからないことは正常である。**「明文化されたルールなし」と報告し、担当範囲が薄いことを述べる。
