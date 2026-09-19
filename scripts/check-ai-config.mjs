@@ -63,10 +63,14 @@ const lines = agents.trimEnd().split("\n").length;
 const bytes = Buffer.byteLength(agents);
 if (lines >= 200) fail(`AGENTS.md: ${lines}行。200行未満にする`);
 if (bytes > 32 * 1024) fail(`AGENTS.md: ${bytes} bytes。Codex既定の32 KiBを超えている`);
-// 片方だけ消すと、残した側をcwdにしたsessionでもう一方のAGENTS.mdが読まれない（docs/ai-development.md）。
+// 片方だけ消すと、どちらの向きでも規約の片側が黙って落ちる（docs/ai-development.md）。
 if (read("CLAUDE.md").trim() !== "@AGENTS.md") fail("CLAUDE.md: @AGENTS.mdだけを正本として読む形ではない");
 if (read("dashboard/CLAUDE.md").trim() !== "@AGENTS.md") {
   fail("dashboard/CLAUDE.md: dashboard/AGENTS.mdをimportしていない");
+}
+// import先が消えてもshimは残るので、存在を見ないと空のimportが検査を通る。
+if (!fs.existsSync(path.join(root, "dashboard/AGENTS.md"))) {
+  fail("dashboard/AGENTS.md: dashboard/CLAUDE.mdのimport先が無い");
 }
 
 for (const name of developmentSkills) {

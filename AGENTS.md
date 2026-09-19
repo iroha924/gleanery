@@ -4,9 +4,9 @@
 TypeScript / bun、PostgreSQL 18 + pgvector、Next.js、Honoを使う。埋め込みはVoyage、生成はOpenAI、
 DBはNeon、画面とAPIはVercelで動く。
 
-Claude Codeはrootの`CLAUDE.md`が`@AGENTS.md`でこのfileをimportする。2.1.277以降は`CLAUDE.md`が無ければ
-`AGENTS.md`を直接読むが、読まれないsessionがあるのでこのshimは消さない。rootと`dashboard/`で片方だけ
-消すのも不可（根拠は`docs/ai-development.md`）。両AIに共通する常時規約はここだけを正本にし、
+Claude Codeはrootの`CLAUDE.md`が`@AGENTS.md`でこのfileをimportする。`AGENTS.md`を直接読む版もあるが、
+読まれないsessionがあるのでshimは消さない。rootと`dashboard/`のどちらか片方だけ消すと、どちらの向きでも
+規約の片側が黙って落ちる（根拠と実測は`docs/ai-development.md`）。両AIに共通する常時規約はここだけを正本にし、
 mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は同じSkillへのsymlinkである。
 利用者へ配るSkillは`plugin/skills/`が別の正本であり、開発用Skillをpluginへ含めない。
 

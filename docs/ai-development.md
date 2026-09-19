@@ -74,8 +74,8 @@ Codexでは組み込みの`skill-creator`を使う。
 ## 公式仕様から採った判断
 
 - Claude CodeはCLAUDE.mdを起動時contextへ入れるため、200行未満が目安。path ruleやSkillで条件付きにする
-- Claude Code 2.1.277以降は、作業directoryとその上位に`CLAUDE.md`が無ければ`AGENTS.md`を直接読む。排他で、
-  `CLAUDE.md`が1つでもあれば`AGENTS.md`は直接読まれない。`@AGENTS.md`だけのshimを残しても二重にはならない
+- Claude Code 2.1.277以降は、作業directoryとその上位に`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`の
+  どれも無ければ`AGENTS.md`を直接読む。`~/.claude/CLAUDE.md`と`.claude/rules/`は数えず、`AGENTS.md`と併存する
 - Claude Opus 5は自己検証を既定で行うため、一般的な「最後に再検証せよ」は置かない
 - Codexはrootからcurrent directoryまでのAGENTS.mdを読み、既定の合計上限は32 KiB
 - Claude CodeとCodexはSkill本文を選択時に読む。descriptionがimplicit triggerの判定材料になる
@@ -95,14 +95,17 @@ root `CLAUDE.md`と`dashboard/CLAUDE.md`は`@AGENTS.md`の1行だけなので、
 入ってからは不要に見える。残すのは次の2つが理由である。
 
 - 直接読込は組み込みplugin `agents-md@builtin`のfeature flag経由で、更新直後の最初のsession、
-  Bedrock / Vertex、`disableAllHooks`では効かない。そのsessionでは規約が警告なしに全部落ちる。
-  公式も「`@AGENTS.md`を含む`CLAUDE.md`は残してよい。二重読込は起きない」と書いている
-- 片方だけ消すと黙って壊れる。2026-09-19に`claude -p`で合言葉が届くかを測ったところ、親に`AGENTS.md`・
-  作業directoryに`CLAUDE.md`を置いた形では親の`AGENTS.md`が読まれなかった。root shimだけ消して
-  `dashboard/`に残すと、`dashboard/`を作業directoryにしたsessionでroot `AGENTS.md`が落ちる
+  Bedrock / Vertex、`disableAllHooks`や`allowManagedHooksOnly`のsessionほかでは効かない。そのsessionでは
+  規約が警告なしに全部落ちる。公式も「`@AGENTS.md`を含む`CLAUDE.md`は残してよい。二重読込は起きない」と
+  書いている（memoryの"Remove an earlier AGENTS.md workaround"）
+- 片方だけ消すと、どちらの向きでも黙って壊れる。2026-09-19に`claude -p`で合言葉が届くかを測った。
+  親に`AGENTS.md`・作業directoryに`CLAUDE.md`を置くと親の`AGENTS.md`は読まれず、`CLAUDE.local.md`が
+  1つあるだけでも同じく止まる（`~/.claude/CLAUDE.md`は止めない）。root shimだけ消すと`dashboard/`を
+  作業directoryにしたsessionがroot `AGENTS.md`を失い、`dashboard/`のshimだけ消すとroot側のsessionが
+  `dashboard/AGENTS.md`を失う
 
-`scripts/check-ai-config.mjs`が両方のshimを`@AGENTS.md`ちょうどと検査するので、片方を消すと`verify:ai`が
-落ちる。この不変条件は機械的に守られている。
+`scripts/check-ai-config.mjs`が2つのshimの中身と`dashboard/AGENTS.md`の存在を検査するので、どれを消しても
+`verify:ai`が落ちる。
 
 ## 評価
 
