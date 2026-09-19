@@ -63,15 +63,15 @@ const lines = agents.trimEnd().split("\n").length;
 const bytes = Buffer.byteLength(agents);
 if (lines >= 200) fail(`AGENTS.md: ${lines}行。200行未満にする`);
 if (bytes > 32 * 1024) fail(`AGENTS.md: ${bytes} bytes。Codex既定の32 KiBを超えている`);
-// 片方だけ消すと、どちらの向きでも規約の片側が黙って落ちる（docs/ai-development.md）。
+// shimを片方だけ消すと、規約の片側が落ちるか、届き方がsessionごとに変わる（docs/ai-development.md）。
 if (read("CLAUDE.md").trim() !== "@AGENTS.md") fail("CLAUDE.md: @AGENTS.mdだけを正本として読む形ではない");
 if (read("dashboard/CLAUDE.md").trim() !== "@AGENTS.md") {
   fail("dashboard/CLAUDE.md: dashboard/AGENTS.mdをimportしていない");
 }
-// import先が消えてもshimは残るので、存在を見ないと空のimportが検査を通る。
-if (!fs.existsSync(path.join(root, "dashboard/AGENTS.md"))) {
-  fail("dashboard/AGENTS.md: dashboard/CLAUDE.mdのimport先が無い");
-}
+// import先が消えても空になってもshimは残る。中身まで見ないと空のimportが検査を通る。
+if (read("dashboard/AGENTS.md").trim() === "")
+  fail("dashboard/AGENTS.md: 空。shimのimport先が規約を運んでいない");
+if (agents.trim() === "") fail("AGENTS.md: 空。CLAUDE.mdのimport先が規約を運んでいない");
 
 for (const name of developmentSkills) {
   const relative = `.agents/skills/${name}/SKILL.md`;

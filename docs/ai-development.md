@@ -74,8 +74,11 @@ Codexでは組み込みの`skill-creator`を使う。
 ## 公式仕様から採った判断
 
 - Claude CodeはCLAUDE.mdを起動時contextへ入れるため、200行未満が目安。path ruleやSkillで条件付きにする
-- Claude Code 2.1.277以降は、作業directoryとその上位に`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`の
-  どれも無ければ`AGENTS.md`を直接読む。`~/.claude/CLAUDE.md`と`.claude/rules/`は数えず、`AGENTS.md`と併存する
+- Claude Code 2.1.277以降は`AGENTS.md`を直接読む。session開始時に読むのは作業directoryとその上位の
+  `AGENTS.md`と`.claude/AGENTS.md`で、同じ範囲に`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`が
+  1つでもあると読まない。`~/.claude/CLAUDE.md`と`.claude/rules/`は数えず、`AGENTS.md`と併存する
+- そのほかに、sub directoryのファイルをReadで開いたときだけ、そのdirectory自身が3つの`CLAUDE.md`の
+  どれも持たない場合に限って、そこの`AGENTS.md`を読む経路がある。実測では不安定だった（下の節）
 - Claude Opus 5は自己検証を既定で行うため、一般的な「最後に再検証せよ」は置かない
 - Codexはrootからcurrent directoryまでのAGENTS.mdを読み、既定の合計上限は32 KiB
 - Claude CodeとCodexはSkill本文を選択時に読む。descriptionがimplicit triggerの判定材料になる
@@ -94,22 +97,26 @@ Codexでは組み込みの`skill-creator`を使う。
 root `CLAUDE.md`と`dashboard/CLAUDE.md`は`@AGENTS.md`の1行だけなので、Claude Code 2.1.277の直接読込が
 入ってからは不要に見える。残すのは次の2つが理由である。
 
-- 直接読込は組み込みplugin `agents-md@builtin`のfeature flag経由で、更新直後の最初のsession、
-  Bedrock / Vertex、`disableAllHooks`や`allowManagedHooksOnly`のsessionほかでは効かない。そのsessionでは
-  規約が警告なしに全部落ちる。公式も「`@AGENTS.md`を含む`CLAUDE.md`は残してよい。二重読込は起きない」と
-  書いている（memoryの"Remove an earlier AGENTS.md workaround"）
-- 片方だけ消すと、どちらの向きでも黙って壊れる。2026-09-19に`claude -p`で合言葉が届くかを測った。
+- 直接読込は組み込みplugin `agents-md@builtin`のfeature flag経由で、次のsessionでは効かない。2.1.277より
+  前の版、feature flagを取りに行かないsession（Amazon Bedrockなどのthird-party provider、telemetryを切った
+  場合）、install / upgrade直後の最初のsession、`disableAllHooks`・`allowManagedHooksOnly`を設定した場合、
+  `/plugin`で組み込みの`agents-md`を無効にした場合。そのsessionでは規約が警告なしに全部落ちる
+- 公式は両方を書いている。「`@AGENTS.md`を含む`CLAUDE.md`は残してよい。二重読込は起きない」「ほかに
+  何も無いならその`CLAUDE.md`は消してよい。ただし`AGENTS.md`を直接読めないsessionがあるなら残す」
+  （memoryの"Remove an earlier AGENTS.md workaround"）。mitosのshimは前者に当たるが、上の条件に当たる
+  sessionが実在するので後者の但し書きを採る
+- 片方だけ消すと、向きによって別の壊れ方をする。2026-09-19に`claude -p`で合言葉が届くかを測った。
   親に`AGENTS.md`・作業directoryに`CLAUDE.md`を置くと親の`AGENTS.md`は読まれず、`CLAUDE.local.md`が
-  1つあるだけでも同じく止まる（`~/.claude/CLAUDE.md`は止めない）。root shimだけ消すと`dashboard/`を
-  作業directoryにしたsessionがroot `AGENTS.md`を失い、`dashboard/`のshimだけ消すとroot側のsessionが
-  `dashboard/AGENTS.md`を失う
+  1つあるだけでも同じく止まる（`~/.claude/CLAUDE.md`は止めない）。root shimだけ消すと、`dashboard/`を
+  作業directoryにしたsessionがroot `AGENTS.md`を失う。`dashboard/`のshimだけ消した場合は上のReadの経路が
+  残るが、**届くかどうかがsessionごとに変わる**（既定modelで5回中3回、haikuでは10回中0回）
 
-`scripts/check-ai-config.mjs`が2つのshimの中身と`dashboard/AGENTS.md`の存在を検査するので、どれを消しても
-`verify:ai`が落ちる。
+守りは`scripts/check-ai-config.mjs`にある（何を検査するかは「評価」節）。
 
 ## 評価
 
-`bun run verify:ai`はroot指示の行数・bytes、repository開発Skillのfrontmatter・trigger例・参照先・
+`bun run verify:ai`はroot指示の行数・bytes、2つの`CLAUDE.md` shimが`@AGENTS.md`ちょうどであることと
+import先の`AGENTS.md`が空でないこと、repository開発Skillのfrontmatter・trigger例・参照先・
 symlink、plugin利用者へ配るSkillのmanifest入口とfrontmatter・参照先・明示起動の対（Claude Codeの
 `disable-model-invocation`とCodexの`agents/openai.yaml`）・Codex用のCLIの呼び方、plugin Agentの必須設定を検査する。文言の一致は
 評価しない。

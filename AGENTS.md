@@ -4,9 +4,7 @@
 TypeScript / bun、PostgreSQL 18 + pgvector、Next.js、Honoを使う。埋め込みはVoyage、生成はOpenAI、
 DBはNeon、画面とAPIはVercelで動く。
 
-Claude Codeはrootの`CLAUDE.md`が`@AGENTS.md`でこのfileをimportする。`AGENTS.md`を直接読む版もあるが、
-読まれないsessionがあるのでshimは消さない。rootと`dashboard/`のどちらか片方だけ消すと、どちらの向きでも
-規約の片側が黙って落ちる（根拠と実測は`docs/ai-development.md`）。両AIに共通する常時規約はここだけを正本にし、
+Claude Codeはrootの`CLAUDE.md`が`@AGENTS.md`でこのfileをimportする。両AIに共通する常時規約はここだけを正本にし、
 mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は同じSkillへのsymlinkである。
 利用者へ配るSkillは`plugin/skills/`が別の正本であり、開発用Skillをpluginへ含めない。
 
@@ -27,6 +25,8 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 - 同じ値・分類・判断を変更したら`rg`で全参照を引き、対になる出口を探す。列挙できる対は検査へ足す
 - 新しい取り込み元は`mitos sync`にも接続する。手動commandだけを追加して完了にしない
 - plugin配布物を変更したらbundleと3 manifestのversion更新を同じcommitに含める
+- `CLAUDE.md`のshimはrootと`dashboard/`の両方を残す。片方消すと規約の片側が落ちるか、届き方が
+  sessionごとに変わる（理由と実測は`docs/ai-development.md`）
 - 新しい外部入力はsystem境界で検査する。資格情報を追跡file、command引数、logへ書かない
 
 ## 作業別Skill
