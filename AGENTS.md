@@ -1,8 +1,8 @@
 # mitosで作業するとき
 
 過去の作業から「なぜそうしたか」を貯め、Claude CodeとCodexから引けるようにする道具。
-TypeScript / bun、PostgreSQL 18 + pgvector、Next.js、Honoを使う。埋め込みはVoyage、生成はOpenAI、
-DBはNeon、画面とAPIはVercelで動く。
+TypeScript / bun、PostgreSQL 18 + pgvector、Vite + React、Honoを使う。埋め込みはVoyage、生成はOpenAI。
+**手元だけで動く。**DBはDockerのlocal PostgreSQL、画面は`127.0.0.1`に立つ。PCごとにDBは独立で、共有しない。
 
 Claude Codeはrootの`CLAUDE.md`からこのfileをimportする。両AIに共通する常時規約はここだけを正本にし、
 mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は同じSkillへのsymlinkである。
@@ -13,10 +13,13 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 - DBの正本は`db/schema.sql`の1本だけ。Prisma・Drizzleのschemaを別の正本として足さない
 - 鍵は操作ごとに分ける。MCPと画面のAPIは`mitos_reader`（読むだけ）、CLIの取り込み・traceは`mitos_ingest`、
   会話の自動記録は`mitos_capture`（追記だけ）を使う。owner鍵は`bun run db:*`だけが使い、どの鍵もownerへfallbackしない
-- untrustedな文章（PR・issueの本文、記録された会話）を読む出口に書き込みを持たせない
-- Next.jsは画面、Honoは全`/api/*`を担当する。Route HandlerやServer ActionへAPIを複製しない
-- Honoの全`/api/*`はClerk認証を先に通す。公開の例外を作らない
-- DBや生成APIの資格情報をNext.jsのserver codeとbrowserへ渡さない。画面は同一originの`/api/*`だけを呼ぶ
+- untrustedな文章（PR・issueの本文、記録された会話）を読む出口に書き込みを持たせない。
+  画面のAPIはreaderだけを持ち、取り込みを起動する経路を持たない
+- 画面は完全にstaticなSPAである。Honoが`/api/*`と静的資産を同じoriginで配る。サーバーで動く画面のcodeを作らない
+- **ログイン機構を持たない。**境界は3つで、どれも利用者に設定を求めない。
+  `127.0.0.1`にだけbindする、Hostが手元の綴りに完全一致する、書き込む要求のOriginをCSRF middlewareが見る。
+  CORS middlewareを入れない（許可しないことがcross-originの読み取りを止める手段そのもの）
+- DBや生成APIの資格情報をbrowserへ渡さない。画面は同一originの`/api/*`だけを呼ぶ
 - HTML / Markdownの進捗fileを作らない。記録の正本はDB、セッションの表示はdashboardの`/sessions`
 
 ## 変更時の不変条件
@@ -24,14 +27,16 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 - 人向けとAI向けの出口は別々に動かす。CLIやdashboardの成功をMCP応答の成功とみなさない
 - 同じ値・分類・判断を変更したら`rg`で全参照を引き、対になる出口を探す。列挙できる対は検査へ足す
 - 新しい取り込み元は`mitos sync`にも接続する。手動commandだけを追加して完了にしない
-- plugin配布物を変更したらbundleと3 manifestのversion更新を同じcommitに含める
+- 配布物を変更したらrelease versionを上げ、npm package・Claude/Codexのmanifest・marketplaceのnpm source versionを
+  一致させる。`plugin/dist`は追跡しない
 - 新しい外部入力はsystem境界で検査する。資格情報を追跡file、command引数、logへ書かない
+- Windowsでも動かす。POSIX shell、symlink、`0600`のmode、`/tmp`固定path、`.cmd`をexecFileで起動する形に依存しない
 
 ## 作業別Skill
 
 該当する作業では、実装前に次のSkillを最後まで読む。
 
-- Next.js、Hono、Clerk、画面のAPI通信: `next-hono`
+- 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `next-hono`
 - DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
 - MCP、CLI、自動記録のhook、plugin Skill・Agentの配布: `plugin-release`
 - `plugin/agents/`とreview Agent: `plugin-agent-authoring`
@@ -44,7 +49,7 @@ Skill・Agent・rule自体を新規作成するときは、Claude Codeでは既�
 
 PRの要否はfile数ではなく影響面で決める。次をすべて満たす変更はmainへ直接入れてよい。
 
-- 本番の実行時動作、データ、認証、secret、build・deploy、利用者向けplugin配布物を変えない
+- 実行時動作、データ、認証境界、secret、build、利用者向け配布物を変えない
 - 1 commitのrevertで戻せる
 - commit前にdiffを最初から最後まで読み、対象に応じた検査を通した
 
@@ -52,22 +57,23 @@ PRの要否はfile数ではなく影響面で決める。次をすべて満た�
 変えない内部整理である。AIの読込経路を変えた場合は`verify:ai`に加えClaude CodeとCodexの新しい
 sessionで確認する。
 
-dashboard・Honoの実行時動作、DB schema・権限・データ変換、認証・secret、依存・build・CI・
-Vercel設定、`plugin/skills/`・`plugin/agents/`・MCP・CLIを変える場合はPRを使う。Previewでの確認が
-必要な変更と、影響範囲を即答できない変更もPRへ寄せる。
+dashboard・Honoの実行時動作、DB schema・権限・データ変換、認証境界・secret、依存・build・CI、
+`plugin/skills/`・`plugin/agents/`・MCP・CLI・npm配布物を変える場合はPRを使う。
+影響範囲を即答できない変更もPRへ寄せる。
 
 ## 最小command索引
 
 ```bash
 bun run setup       # server / dashboardの依存とLefthookを固定lockfileから入れる
-bun run dev         # Hono + Next.js。TTYが要るため前面でだけ実行する
-bun run verify      # lint、architecture、型、AI設定、test、Next.js production build
+bun run dev         # Hono + Viteのdev server。TTYが要るため前面でだけ実行する
+bun run verify      # lint、architecture、型、AI設定、test、画面のbuild
 bun run verify:ai   # AGENTS、repository開発Skill、plugin Skill・Agentの静的検査
-bun run bundle      # MCP、CLI、自動記録のplugin配布物を更新する
+bun run bundle      # MCP、CLI、自動記録、画面の配布物を更新する
 ```
 
-個別command、setup、運用はREADMEを読み、障害の切り分けは`mitos doctor`から始める。pre-commitは
-変更対象の軽い検査、pre-pushとCIは`bun run verify`を実行する。
+DBは`mitos db init`で立てる（Dockerの`pgvector/pgvector:0.8.6-pg18`）。個別command、setup、運用は
+READMEを読み、障害の切り分けは`mitos doctor`から始める。pre-commitは変更対象の軽い検査、
+pre-pushとCIは`bun run verify`を実行する。
 
 ## 外へ出す文章
 
@@ -77,7 +83,7 @@ PRは`.github/pull_request_template.md`、issueは`.github/ISSUE_TEMPLATE/`を�
 ## 参照先
 
 - `README.md`: 全体像、鍵、setup、全command、新しいPC
-- `dashboard/AGENTS.md`: installed Next.js版が生成した規約
+- `dashboard/AGENTS.md`: 画面の置き場所とURLの扱い
 - `plugin/skills/trace/SKILL.md`: 判断を記録する契約
 - `server/src/capture.ts`: 会話を自動記録する範囲（持ち主の判定、残すものと残さないもの）
 - `plugin/skills/review/SKILL.md`: reviewの実行と担当分け
