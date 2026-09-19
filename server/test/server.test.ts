@@ -6,7 +6,7 @@ import http from "node:http";
 import net from "node:net";
 import { after, before, test } from "node:test";
 import { serve } from "@hono/node-server";
-import { allowedHosts, createApp } from "../src/server.ts";
+import { allowedHosts, createApp, DEV_PORT, parsePort } from "../src/server.ts";
 
 type Reply = { status: number; headers: http.IncomingHttpHeaders; body: string };
 
@@ -164,12 +164,66 @@ test("実在する API も残らず境界の内側にある", async () => {
     "/api/reply",
     "/api/sessions",
     "/api/sessions/search",
+    "/api/sessions/00000000-0000-4000-8000-000000000000",
     "/api/transcribe",
   ];
   for (const path of routes) {
     const reply = await ask(port, path, { headers: { host: "evil.example.com" } });
     assert.equal(reply.status, 403, path);
   }
+});
+
+// SPA の fallback へ落とすと、API の綴り違いと消した endpoint が index.html を 200 で返し、
+// 呼んだ側では JSON の parse error になる。
+test("どの route にも当たらない /api/* は 404 の JSON", async () => {
+  for (const path of ["/api/__probe__", "/api/sessions/extra/segment", "/api/"]) {
+    const reply = await ask(port, path, { headers: { host: `127.0.0.1:${port}` } });
+    assert.equal(reply.status, 404, path);
+    assert.match(reply.headers["content-type"] ?? "", /application\/json/, path);
+  }
+});
+
+// Origin も Sec-Fetch-Site も無い form は、ブラウザ以外から来たもの。
+test("Origin も Sec-Fetch-Site も無い form は 403", async () => {
+  const reply = await ask(port, "/api/__probe__", {
+    method: "POST",
+    headers: { host: `127.0.0.1:${port}`, "content-type": "application/x-www-form-urlencoded" },
+    body: "a=1",
+  });
+  assert.equal(reply.status, 403);
+});
+
+// 0 は Node には「空いている番号を選ぶ」の意味だが、Host の allowlist は起動前の番号で作る。
+// 選ばれた実 port と食い違って全部 403 になる。
+test("port は 1〜65535 の整数だけを受ける", () => {
+  assert.equal(parsePort(undefined), 8787);
+  assert.equal(parsePort(""), 8787);
+  assert.equal(parsePort("  "), 8787);
+  assert.equal(parsePort("9000"), 9000);
+  // Number の解釈に任せる。1e3 は 1000 で、port として有効。
+  assert.equal(parsePort("1e3"), 1000);
+  for (const bad of ["0", "-1", "65536", "abc", "80.5"]) {
+    assert.throws(() => parsePort(bad), /1〜65535/, bad);
+  }
+});
+
+// dev では Vite が画面を出し、/api だけをここへ proxy する。proxy は Host を書き換えないので、
+// Vite の port を Host として受け付けないと開発中の API が全部 403 になる。
+test("dev の port は明示したときだけ通り、既定では通らない", async () => {
+  const devHost = `127.0.0.1:${DEV_PORT}`;
+  assert.ok(!allowedHosts(port).has(devHost));
+  assert.ok(allowedHosts(port, [DEV_PORT]).has(devHost));
+
+  const withDev = createApp(port, [DEV_PORT]);
+  const passed = await withDev.request(`http://127.0.0.1:${DEV_PORT}/api/__probe__`, {
+    headers: { host: devHost },
+  });
+  assert.notEqual(passed.status, 403);
+
+  const blocked = await createApp(port).request(`http://127.0.0.1:${DEV_PORT}/api/__probe__`, {
+    headers: { host: devHost },
+  });
+  assert.equal(blocked.status, 403);
 });
 
 // 別の番号へ黙って移ると、Host の検査と食い違って画面が 403 になる。

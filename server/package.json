@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
     "mcp": "node src/mcp.ts",
-    "api": "node src/server.ts"
+    "api": "node src/server.ts --dev"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
