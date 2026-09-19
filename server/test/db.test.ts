@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { rewriteEnv } from "../src/admin.ts";
-import { checkSchema, connect, type Db, SCHEMA_REVISION, vec } from "../src/db.ts";
+import { checkSchema, connect, type Db, SCHEMA_REVISION, settings, vec } from "../src/db.ts";
 
 test("pgvector のリテラルへ落とす", () => {
   assert.equal(vec([1, 2.5, -3]), "[1,2.5,-3]");
@@ -68,6 +68,36 @@ test("接続文字列で TLS を緩められない", async () => {
       q,
     );
   }
+});
+
+// 手元の DB は TLS を張らない（公式イメージの既定が ssl = off）。他所へ繋ぐときは検証を切らない。
+test("loopback は平文、それ以外は検証付き TLS", () => {
+  for (const host of ["localhost", "LOCALHOST", "127.0.0.1", "[::1]"]) {
+    const c = settings({ KNOWLEDGE_DB_URL_RO: `postgres://u:p@${host}:5432/db` }, "reader");
+    assert.equal(c.ssl, false, host);
+  }
+  for (const host of ["db.example.com", "10.0.0.1", "[2001:db8::1]"]) {
+    const c = settings({ KNOWLEDGE_DB_URL_RO: `postgres://u:p@${host}:5432/db` }, "reader");
+    assert.deepEqual(c.ssl, { rejectUnauthorized: true }, host);
+  }
+});
+
+// URL パーサは host を正規化しない。綴りが違うものを loopback と認めると、
+// loopback でない相手へ平文で繋ぐ側へ倒れる。取りこぼすのは接続に失敗するだけで安全。
+test("loopback に見える別の綴りは平文にしない", () => {
+  for (const host of ["127.1", "0x7f.1", "127.0.0.2", "localhost.example.com", "notlocalhost"]) {
+    const c = settings({ KNOWLEDGE_DB_URL_RO: `postgres://u:p@${host}:5432/db` }, "reader");
+    assert.deepEqual(c.ssl, { rejectUnauthorized: true }, host);
+  }
+});
+
+// net.connect は角括弧付きの IPv6 を受け付けない。
+test("IPv6 の角括弧を外して渡す", () => {
+  assert.equal(settings({ KNOWLEDGE_DB_URL_RO: "postgres://u:p@[::1]:5432/db" }, "reader").host, "::1");
+  assert.equal(
+    settings({ KNOWLEDGE_DB_URL_RO: "postgres://u:p@[2001:db8::1]:5432/db" }, "reader").host,
+    "2001:db8::1",
+  );
 });
 
 test("壊れた接続文字列の例外に、接続文字列そのものを乗せない", async () => {

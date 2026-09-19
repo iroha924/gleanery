@@ -65,7 +65,7 @@ export const SCHEMA_REVISION = 3;
 /** pg は int8（bigint と count(*)）を string、timestamptz を Date で返す。`query<T>` の結果型はこれに合わせて書く。 */
 export type Db = Pick<pg.Client, "query">;
 
-function settings(env: Env, role: Role): pg.ClientConfig {
+export function settings(env: Env, role: Role): pg.ClientConfig {
   const raw = env[KEY[role]];
   if (!raw) throw new Error(`${KEY[role]} が無い。~/.claude/knowledge.env か、デプロイ先の環境変数に入れる`);
   let u: URL;
@@ -79,19 +79,24 @@ function settings(env: Env, role: Role): pg.ClientConfig {
   // 接続先だけを取り出して渡し、TLS はここで固定する。
   const bad = ["ssl", "sslmode", "sslrootcert", "sslcert", "sslkey"].filter((k) => u.searchParams.has(k));
   if (bad.length) {
-    throw new Error(
-      `${KEY[role]} の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`,
-    );
+    throw new Error(`${KEY[role]} の ${bad.join(" / ")} は使えない。TLS は接続先から決める。この指定を消す`);
   }
+  // URL は IPv6 を角括弧付きで返す。net.connect はそれを受け付けない。
+  const hostname = u.hostname.replace(/^\[(.+)\]$/, "$1");
+  // **完全一致でだけ loopback と認める。**URL パーサは host を正規化しないので、
+  // `127.1` や `0x7f.1` は綴りのまま届く。取りこぼすと TLS を要求して接続に失敗するだけだが、
+  // 曖昧な一致を許すと、loopback でない相手へ平文で繋ぐ側へ倒れる。
+  const loopback = ["localhost", "127.0.0.1", "::1"].includes(hostname.toLowerCase());
   return {
-    host: u.hostname,
+    host: hostname,
     port: u.port ? Number(u.port) : 5432,
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    // 検証を切ると、経路を握った相手が返した行がそのまま MCP の応答になる。
+    // 手元の DB は TLS を張らない（公式イメージの既定が ssl = off）。
+    // 他所へ繋ぐときは検証を切らない。切ると、経路を握った相手が返した行がそのまま MCP の応答になる。
     // CA は同梱せず Node の信頼ストアに任せる（NODE_EXTRA_CA_CERTS も効く）。
-    ssl: { rejectUnauthorized: true },
+    ssl: loopback ? false : { rejectUnauthorized: true },
   };
 }
 
