@@ -126,7 +126,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
 
 ## 外から来た PR と issue
 
-**第三者の PR はレビューせず閉じる。**公開するのは道具を見せるためで、貢献を募ってはいない。
+**第三者の PR はレビューせず閉じる。**public にする目的は道具を見せることで、貢献を募ってはいない。
 レビュアーは `Bash` を持ったまま管理用の資格情報がある環境で走るので、他人が書いたツリーを
 checkout して読ませない。なぜ機構で塞げないかは `plugin/skills/review/SKILL.md` の
 「塞ぐ手段は無い」にある。
