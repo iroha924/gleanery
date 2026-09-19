@@ -62,6 +62,7 @@ Codexでは組み込みの`skill-creator`を使う。
 | CLIの`USAGE` | READMEのCLI一覧 | `scripts/check-pairs.mjs`が書き出す |
 | schemaのrevision | `server/src/db.ts`の`SCHEMA_REVISION`、`db/migrations`の最後の番号 | `server/test/db.test.ts`、`server/test/migrate.test.ts` |
 | Claude plugin manifestのversion | Codex plugin manifestとmarketplaceのversion | `scripts/check-mcp-version.mjs` |
+| 2つの`CLAUDE.md` shim（`@AGENTS.md`ちょうど） | import先の`AGENTS.md`が空でないこと | `verify:ai` |
 | 明示起動Skillの`disable-model-invocation` | Codexの`agents/openai.yaml` | `verify:ai` |
 | reviewerの`effort`固定 | 同じ理由が要る`model`固定 | `verify:ai` |
 | MCPの`recall`・`read` | 画面のチャットと全文表示 | 同じ`server/src/search.ts`の関数を通す |
@@ -78,7 +79,7 @@ Codexでは組み込みの`skill-creator`を使う。
   `AGENTS.md`と`.claude/AGENTS.md`で、同じ範囲に`CLAUDE.md`・`.claude/CLAUDE.md`・`CLAUDE.local.md`が
   1つでもあると読まない。`~/.claude/CLAUDE.md`と`.claude/rules/`は数えず、`AGENTS.md`と併存する
 - そのほかに、sub directoryのファイルをReadで開いたときだけ、そのdirectory自身が3つの`CLAUDE.md`の
-  どれも持たない場合に限って、そこの`AGENTS.md`を読む経路がある。実測では不安定だった（下の節）
+  どれも持たない場合に限って、そこの`AGENTS.md`を読む経路がある
 - Claude Opus 5は自己検証を既定で行うため、一般的な「最後に再検証せよ」は置かない
 - Codexはrootからcurrent directoryまでのAGENTS.mdを読み、既定の合計上限は32 KiB
 - Claude CodeとCodexはSkill本文を選択時に読む。descriptionがimplicit triggerの判定材料になる
@@ -95,12 +96,13 @@ Codexでは組み込みの`skill-creator`を使う。
 ## `CLAUDE.md` shimを残す理由
 
 root `CLAUDE.md`と`dashboard/CLAUDE.md`は`@AGENTS.md`の1行だけなので、Claude Code 2.1.277の直接読込が
-入ってからは不要に見える。残すのは次の2つが理由である。
+入ってからは不要に見える。残す理由と、消し方の制約は次のとおり。
 
-- 直接読込は組み込みplugin `agents-md@builtin`のfeature flag経由で、次のsessionでは効かない。2.1.277より
-  前の版、feature flagを取りに行かないsession（Amazon Bedrockなどのthird-party provider、telemetryを切った
-  場合）、install / upgrade直後の最初のsession、`disableAllHooks`・`allowManagedHooksOnly`を設定した場合、
-  `/plugin`で組み込みの`agents-md`を無効にした場合。そのsessionでは規約が警告なしに全部落ちる
+- 直接読込は組み込みplugin `agents-md@builtin`のfeature flag経由で働くので、次のどれかに当たるsessionでは
+  効かない。2.1.277より前の版を使っている。feature flagを取りに行かない（Amazon Bedrockなどの
+  third-party provider、telemetryを切った場合）。install / upgrade直後の最初のsessionである。
+  `disableAllHooks`・`allowManagedHooksOnly`が設定されている。`/plugin`で組み込みの`agents-md`を無効にした。
+  どれに当たっても規約は警告なしに全部落ちる
 - 公式は両方を書いている。「`@AGENTS.md`を含む`CLAUDE.md`は残してよい。二重読込は起きない」「ほかに
   何も無いならその`CLAUDE.md`は消してよい。ただし`AGENTS.md`を直接読めないsessionがあるなら残す」
   （memoryの"Remove an earlier AGENTS.md workaround"）。mitosのshimは前者に当たるが、上の条件に当たる
