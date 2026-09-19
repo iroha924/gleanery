@@ -35,7 +35,6 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 - DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
 - MCP、CLI、自動記録のhook、plugin Skill・Agentの配布: `plugin-release`
 - `plugin/agents/`とreview Agent: `plugin-agent-authoring`
-- Vercel、Clerk本番、環境変数、domain、DNS: `deploy`
 
 Skill・Agent・rule自体を新規作成するときは、Claude Codeでは既存の`docs-author`、Codexでは組み込みの
 `skill-creator`を使う。一般的なexplorer / workerと重なるrepo Agentは作らず、独立contextや固定modelが
