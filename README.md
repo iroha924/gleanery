@@ -67,7 +67,7 @@ mitos --version
 | `KNOWLEDGE_DB_URL_RO` | MCP・画面の API（読むだけ） |
 | `KNOWLEDGE_DB_URL_INGEST` | CLI の sync・trace・who・project |
 | `KNOWLEDGE_DB_URL_CAPTURE` | 自動記録の送信（追記だけ） |
-| `KNOWLEDGE_DB_URL` | owner。`bun run db:*` だけが使う。**schema を触る PC にだけ置く** |
+| `KNOWLEDGE_DB_URL` | owner。DB を管理する command（`mitos db *` と `bun run db:*`）だけが使う |
 | `VOYAGE_API_KEY` / `OPENAI_API_KEY` | 埋め込みと rerank／チャット・会議の生成と文字起こし |
 
 DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`bun run db:roles` が 3 つのロールの鍵を作り直して書く。

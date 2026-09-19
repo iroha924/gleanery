@@ -12,7 +12,7 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 
 - DBの正本は`db/schema.sql`の1本だけ。Prisma・Drizzleのschemaを別の正本として足さない
 - 鍵は操作ごとに分ける。MCPと画面のAPIは`mitos_reader`（読むだけ）、CLIの取り込み・traceは`mitos_ingest`、
-  会話の自動記録は`mitos_capture`（追記だけ）を使う。owner鍵は`bun run db:*`だけが使い、どの鍵もownerへfallbackしない
+  会話の自動記録は`mitos_capture`（追記だけ）を使う。owner鍵はDBを管理するcommand（`mitos db *`と`bun run db:*`）だけが使い、どの鍵もownerへfallbackしない
 - untrustedな文章（PR・issueの本文、記録された会話）を読む出口に書き込みを持たせない。
   画面のAPIはreaderだけを持ち、取り込みを起動する経路を持たない
 - 画面は完全にstaticなSPAである。Honoが`/api/*`と静的資産を同じoriginで配る。サーバーで動く画面のcodeを作らない
@@ -30,7 +30,9 @@ mitos自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は�
 - 配布物を変更したらrelease versionを上げ、npm package・Claude/Codexのmanifest・marketplaceのnpm source versionを
   一致させる。`plugin/dist`は追跡しない
 - 新しい外部入力はsystem境界で検査する。資格情報を追跡file、command引数、logへ書かない
-- Windowsでも動かす。POSIX shell、symlink、`0600`のmode、`/tmp`固定path、`.cmd`をexecFileで起動する形に依存しない
+- **配る物はWindowsでも動かす。**POSIX shell、`0600`のmode、`/tmp`固定path、`.cmd`をexecFileで起動する形に
+  依存しない。**このrepositoryでの開発はmacOS / Linuxを前提にする** — `.claude/skills/`の4本のsymlinkと、
+  `artifacts.test.ts` / `docs.test.ts`の`symlinkSync`が要る
 
 ## 作業別Skill
 

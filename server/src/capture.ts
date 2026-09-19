@@ -184,8 +184,23 @@ function remember(session: string, id: string): void {
   const dir = saidDir();
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = path.join(dir, uuidFrom(session));
-  fs.writeFileSync(`${file}.${process.pid}`, id, { mode: 0o600 });
-  fs.renameSync(`${file}.${process.pid}`, file);
+  const tmp = `${file}.${process.pid}`;
+  fs.writeFileSync(tmp, id, { mode: 0o600 });
+  // Windows は宛先を開いているプロセス（エディタ、ウイルス対策）がいる間 EPERM / EBUSY を返す。
+  // ここで諦めると、後続の編集と Read の記録が前の発言へ誤って結ばれるか、結ばれずに捨てられる。
+  // 呼び出し側は同期なので、待たずに繰り返す（宛先を掴んでいる側が離すのは数ミリ秒）。
+  for (let i = 0; ; i++) {
+    try {
+      fs.renameSync(tmp, file);
+      break;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (i >= 20 || (code !== "EPERM" && code !== "EBUSY")) {
+        fs.rmSync(tmp, { force: true });
+        throw e;
+      }
+    }
+  }
   const old = Date.now() - 30 * 86_400_000;
   for (const f of fs.readdirSync(dir)) {
     const st = fs.statSync(path.join(dir, f), { throwIfNoEntry: false });
