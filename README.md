@@ -124,6 +124,12 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.mitos.sync.plist
 `launchctl bootout gui/$(id -u)/com.mitos.sync`）。各リポジトリで `git fetch` するので、launchd の環境から remote に
 届く資格情報が要る。作業場所の置き場所は `~/Projects` の直下と、名前を付けた作業場所から探す。
 
+## 外から来た PR と issue
+
+**第三者の PR はレビューせず閉じる。**公開しているのは道具を見せるためで、貢献を募ってはいない。
+レビュアーは `Bash` を持ったまま管理用の資格情報がある環境で走り、隔離する手段が無いので、他人が
+書いたツリーを読ませない（理由は `plugin/skills/review/SKILL.md` の「2 つの入口」）。issue は読む。
+
 ## 開発
 
 ```bash
