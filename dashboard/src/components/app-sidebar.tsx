@@ -1,6 +1,4 @@
-"use client";
-
-import { UserButton, useUser } from "@clerk/nextjs";
+import { Link, useMatchRoute } from "@tanstack/react-router";
 import {
   AudioLinesIcon,
   ChevronDownIcon,
@@ -9,8 +7,6 @@ import {
   MessageCircleIcon,
   MessagesSquareIcon,
 } from "lucide-react-motion";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import type * as React from "react";
 import {
   DropdownMenu,
@@ -24,7 +20,6 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -39,31 +34,22 @@ import type { Project } from "@/lib/api";
 import { useProject } from "@/lib/project";
 
 const NAVIGATION = [
-  { href: "/sessions", label: "セッション", icon: MessagesSquareIcon },
-  { href: "/", label: "チャット", icon: MessageCircleIcon },
-  { href: "/mtg", label: "MTG録音", icon: AudioLinesIcon },
+  { to: "/sessions", label: "セッション", icon: MessagesSquareIcon },
+  { to: "/", label: "チャット", icon: MessageCircleIcon },
+  { to: "/mtg", label: "MTG録音", icon: AudioLinesIcon },
 ] as const;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const path = usePathname();
-  const { user } = useUser();
+  const matchRoute = useMatchRoute();
   const { setOpenMobile } = useSidebar();
   const closeMobile = () => setOpenMobile(false);
-  const providerAccount = user?.externalAccounts.find((account) => account.username || account.emailAddress);
-  const accountName =
-    providerAccount?.username ??
-    providerAccount?.emailAddress ??
-    user?.username ??
-    user?.fullName ??
-    user?.primaryEmailAddress?.emailAddress ??
-    "アカウント";
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="gap-3 p-2">
         <div className="relative flex h-10 items-center justify-start">
           <Link
-            href="/"
+            to="/"
             onClick={closeMobile}
             className="flex min-w-0 items-center gap-2.5 px-2 text-lg font-semibold tracking-[-0.025em] group-data-[collapsible=icon]:hidden"
           >
@@ -82,9 +68,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <SidebarGroupContent>
             <SidebarMenu>
               {NAVIGATION.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={path === item.href} tooltip={item.label}>
-                    <Link href={item.href} onClick={closeMobile}>
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton asChild isActive={!!matchRoute({ to: item.to })} tooltip={item.label}>
+                    <Link to={item.to} onClick={closeMobile}>
                       <item.icon />
                       <span>{item.label}</span>
                     </Link>
@@ -96,21 +82,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-2">
-        <div className="flex h-10 items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <UserButton
-            appearance={{
-              elements: {
-                userButtonTrigger: { width: "2rem", height: "2rem" },
-                userButtonAvatarBox: { width: "2rem", height: "2rem" },
-              },
-            }}
-          />
-          <span className="truncate text-base group-data-[collapsible=icon]:hidden" title={accountName}>
-            {accountName}
-          </span>
-        </div>
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

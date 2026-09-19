@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@clerk/ui/themes/shadcn.css";
 @import "@fontsource-variable/m-plus-1";
 
 @custom-variant dark (&:is(.dark *));

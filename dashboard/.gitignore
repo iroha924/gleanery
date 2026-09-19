@@ -21,3 +21,6 @@ dist
 *.njsproj
 *.sln
 *.sw?
+
+# TanStack Router の作業用
+.tanstack

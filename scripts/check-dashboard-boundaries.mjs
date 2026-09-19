@@ -5,15 +5,10 @@ import path from "node:path";
 
 const dashboardSource = path.resolve("dashboard/src");
 const sourceExtensions = new Set([".ts", ".tsx"]);
-const routeEntries = new Set([
-  "default.tsx",
-  "error.tsx",
-  "layout.tsx",
-  "loading.tsx",
-  "not-found.tsx",
-  "page.tsx",
-  "template.tsx",
-]);
+// TanStack Router の route は src/routes/ 配下の file 名そのものが path になる。
+// 機能の module は routesDirectory の外に置く（`_` 始まりは pathless layout の記法で、
+// routes の下に置くと generator が route として扱い、中身を書き換えて壊す）。
+const routesDirectory = path.join(dashboardSource, "routes");
 const layerOrder = new Map([
   ["api", 0],
   ["model", 1],
@@ -79,13 +74,12 @@ for (const file of sourceFiles) {
     if (!targetModule) continue;
 
     if (!isInside(file, targetModule)) {
-      const isAdjacentRouteEntry =
-        path.dirname(file) === path.dirname(targetModule) && routeEntries.has(path.basename(file));
+      const isRouteEntry = isInside(file, routesDirectory);
       const targetLayer = layerOf(imported, targetModule);
-      if (!isAdjacentRouteEntry || targetLayer !== "ui") {
+      if (!isRouteEntry || targetLayer !== "ui") {
         failures.push(
           `${path.relative(".", file)} は ${path.relative(".", targetModule)} の非公開実装 ` +
-            `${specifier} を参照している。隣接する route entry だけが ui を参照できる`,
+            `${specifier} を参照している。route entry だけが ui を参照できる`,
         );
       }
       continue;

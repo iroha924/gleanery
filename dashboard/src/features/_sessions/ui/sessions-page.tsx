@@ -1,6 +1,5 @@
-"use client";
-
 import { useQuery } from "@tanstack/react-query";
+import { getRouteApi, useRouter } from "@tanstack/react-router";
 import { cn } from "cn";
 import {
   ArrowLeftIcon,
@@ -22,7 +21,6 @@ import {
   ShieldAlertIcon,
   UserRoundIcon,
 } from "lucide-react-motion";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { MarkdownText } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +55,9 @@ import {
   type SessionWork,
   searchSessions,
 } from "../api/sessions";
+
+// route と component は別 file なので、循環 import を避けて route api から引く。
+const route = getRouteApi("/sessions");
 
 const DATE = new Intl.DateTimeFormat("ja-JP", {
   year: "numeric",
@@ -879,37 +880,25 @@ export function SessionsPage() {
   const { target } = useProject();
   const projectId = target ? Number(target) : undefined;
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const selected = searchParams.get("session");
-  const query = searchParams.get("q")?.trim() || undefined;
-  const requestedMode = searchParams.get("mode");
-  const mode: SearchMode = isMode(requestedMode) ? requestedMode : "knowledge";
-  const requestedPage = Number(searchParams.get("page") ?? "1");
-  const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const navigate = route.useNavigate();
+  const { mode, page, q, session } = route.useSearch();
+  const selected = session ?? null;
+  const query = q?.trim() || undefined;
   const scopeKey = projectId ?? "all";
   const previousScope = useRef(scopeKey);
   const restoreRow = useRef<string | null>(null);
-  const hrefFor = (nextPage: number, session?: string): string => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("page");
-    params.delete("session");
-    if (nextPage > 1) params.set("page", String(nextPage));
-    if (session) params.set("session", session);
-    const q = params.toString();
-    return q ? `/sessions?${q}` : "/sessions";
-  };
-  const listHref = hrefFor(page);
   const openSession = (id: string) => {
     restoreRow.current = id;
-    router.push(hrefFor(page, id), { scroll: false });
+    navigate({ search: (prev) => ({ ...prev, session: id }), resetScroll: false });
   };
   const closeSession = () => {
-    if (restoreRow.current === selected) router.back();
-    else router.replace(listHref, { scroll: false });
+    // 自分で開いた行なら戻る。直接 URL で開かれたときは戻り先が別の画面なので置き換える。
+    if (restoreRow.current === selected) router.history.back();
+    else navigate({ search: (prev) => ({ ...prev, session: undefined }), replace: true, resetScroll: false });
   };
   const goToPage = (next: number) => {
     restoreRow.current = null;
-    router.push(hrefFor(next), { scroll: false });
+    navigate({ search: (prev) => ({ ...prev, page: next, session: undefined }), resetScroll: false });
   };
   const sessions = useQuery({
     queryKey: ["sessions", projectId, page],
@@ -921,28 +910,25 @@ export function SessionsPage() {
     enabled: query !== undefined,
     staleTime: 60_000,
   });
-  const updateSearch = (next: { q?: string; mode?: SearchMode }) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete("session");
-    params.delete("page");
-    if (next.q !== undefined) {
-      if (next.q) params.set("q", next.q);
-      else params.delete("q");
-    }
-    if (next.mode !== undefined) {
-      if (next.mode === "knowledge") params.delete("mode");
-      else params.set("mode", next.mode);
-    }
-    const nextQuery = params.toString();
-    window.history.pushState(null, "", nextQuery ? `/sessions?${nextQuery}` : "/sessions");
+  // 検索の条件が変われば 1 ページ目に戻し、開いていた詳細は閉じる。
+  const updateSearch = (next: { q?: string | undefined; mode?: SearchMode }) => {
+    navigate({
+      search: (prev) => ({ ...prev, ...next, page: 1, session: undefined }),
+      resetScroll: false,
+    });
   };
 
   useEffect(() => {
     if (previousScope.current === scopeKey) return;
     previousScope.current = scopeKey;
     restoreRow.current = null;
-    router.replace("/sessions", { scroll: false });
-  }, [router, scopeKey]);
+    // 4 つとも明示して消す。省くと retainSearchParams が前の作業場所の絞り込みを書き戻す。
+    navigate({
+      search: { q: undefined, mode: "knowledge", page: 1, session: undefined },
+      replace: true,
+      resetScroll: false,
+    });
+  }, [navigate, scopeKey]);
 
   useEffect(() => {
     const id = restoreRow.current;
@@ -966,7 +952,7 @@ export function SessionsPage() {
         mode={mode}
         onSearch={(value) => updateSearch({ q: value })}
         onModeChange={(value) => updateSearch({ mode: value })}
-        onClear={() => updateSearch({ q: "", mode: "knowledge" })}
+        onClear={() => updateSearch({ q: undefined, mode: "knowledge" })}
       />
 
       {query ? (

@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useProject } from "@/lib/project";

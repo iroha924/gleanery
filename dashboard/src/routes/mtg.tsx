@@ -1,5 +1,4 @@
-"use client";
-
+import { createFileRoute } from "@tanstack/react-router";
 import { MicIcon, SquareIcon } from "lucide-react-motion";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -19,6 +18,8 @@ type Line = { key: string; who: Who; at: number; text: string; done: boolean };
 const clock = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
+export const Route = createFileRoute("/mtg")({ component: MeetingPage });
+
 /**
  * 会議のかんぺ。**話者を推定せず、記憶でも答えない。**
  *
@@ -29,7 +30,7 @@ const clock = (s: number) =>
  * 返信案は記録にあることだけで作る。**無いときは「無い」と出す** — その場しのぎの案は、
  * 会議のあとで訂正する羽目になるので価値が負になる。
  */
-export default function MeetingPage() {
+function MeetingPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [on, setOn] = useState(false);
   const [reply, setReply] = useState<Reply | null>(null);

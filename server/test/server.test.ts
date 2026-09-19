@@ -152,6 +152,26 @@ test("cross-origin の問い合わせに CORS の許可を返さない", async (
   assert.equal(reply.headers["access-control-allow-credentials"], undefined);
 });
 
+// 実在する route が middleware より後に登録されると、そこだけ境界の外に出る。
+// **Host が合わなければ handler へ入らない**ので、この検査は DB にも外部 API にも触らない。
+test("実在する API も残らず境界の内側にある", async () => {
+  const routes = [
+    "/api/chat",
+    "/api/polish",
+    "/api/projects",
+    "/api/read",
+    "/api/realtime-token",
+    "/api/reply",
+    "/api/sessions",
+    "/api/sessions/search",
+    "/api/transcribe",
+  ];
+  for (const path of routes) {
+    const reply = await ask(port, path, { headers: { host: "evil.example.com" } });
+    assert.equal(reply.status, 403, path);
+  }
+});
+
 // 別の番号へ黙って移ると、Host の検査と食い違って画面が 403 になる。
 test("port が塞がっていたら別の番号へ移らない", async () => {
   const taken = await freePort();

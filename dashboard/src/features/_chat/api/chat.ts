@@ -1,5 +1,4 @@
 import type { Stance } from "@/lib/api";
-import { authed } from "@/lib/api-client";
 
 /** 答えの根拠。n は本文の [n] に対応する。ref は全文を読むときに /api/read へ渡す。 */
 export type ChatSource = {
@@ -23,7 +22,7 @@ export type PolishOption = {
 export async function polishTranscript(text: string): Promise<PolishOption[]> {
   const res = await fetch("/api/polish", {
     method: "POST",
-    headers: await authed({ "content-type": "application/json" }),
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({ text }),
   });
   const json = (await res.json()) as { options?: PolishOption[]; error?: string };
@@ -35,7 +34,7 @@ export async function transcribe(audio: Blob): Promise<string> {
   const form = new FormData();
   form.append("audio", audio, "a.webm");
   // FormData の content-type は境界文字列を含むためブラウザに決めさせる。
-  const res = await fetch("/api/transcribe", { method: "POST", body: form, headers: await authed() });
+  const res = await fetch("/api/transcribe", { method: "POST", body: form });
   const json = (await res.json()) as { text?: string; error?: string };
   if (!res.ok) throw new Error(json.error ?? `文字起こしが ${res.status}`);
   return json.text ?? "";
@@ -58,7 +57,7 @@ export async function askStream(
 ): Promise<void> {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: await authed({ "content-type": "application/json" }),
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
     signal,
   });
