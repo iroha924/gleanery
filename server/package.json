@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "mitos の MCP・CLI・自動記録・画面の API（Neon の PostgreSQL と Voyage、OpenAI）",
+  "description": "mitos の MCP・CLI・自動記録・画面の API（手元の PostgreSQL と Voyage、OpenAI）",
   "scripts": {
     "check": "biome check .",
     "fix": "biome check --write .",
@@ -13,10 +13,10 @@
     "api": "node src/server.ts"
   },
   "dependencies": {
-    "@clerk/hono": "^0.1.77",
     "@hono/node-server": "^2.1.1",
     "@hono/zod-validator": "0.9.1",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@stricli/core": "1.3.0",
     "hono": "4.13.7",
     "openai": "^7.10.0",
     "pg": "^8.23.0",

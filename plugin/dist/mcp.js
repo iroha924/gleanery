@@ -39042,15 +39042,17 @@ function settings(env, role) {
   }
   const bad = ["ssl", "sslmode", "sslrootcert", "sslcert", "sslkey"].filter((k) => u.searchParams.has(k));
   if (bad.length) {
-    throw new Error(`${KEY[role]} の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`);
+    throw new Error(`${KEY[role]} の ${bad.join(" / ")} は使えない。TLS は接続先から決める。この指定を消す`);
   }
+  const hostname3 = u.hostname.replace(/^\[(.+)\]$/, "$1");
+  const loopback = ["localhost", "127.0.0.1", "::1"].includes(hostname3.toLowerCase());
   return {
-    host: u.hostname,
+    host: hostname3,
     port: u.port ? Number(u.port) : 5432,
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    ssl: { rejectUnauthorized: true }
+    ssl: loopback ? false : { rejectUnauthorized: true }
   };
 }
 async function checkSchema(db) {

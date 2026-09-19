@@ -68,7 +68,7 @@ test("棄却した案と理由・確かめ方の無い決定を通さない", ()
 
 test("根拠の無い fact と、理由の無い未実行の検証を通さない", () => {
   assert.match(
-    problems(base([{ key: "f-1", kind: "finding", at, text: "Neon は 18", confidence: "fact" }])),
+    problems(base([{ key: "f-1", kind: "finding", at, text: "PostgreSQL は 18", confidence: "fact" }])),
     /fact には refs か evidence/,
   );
   assert.deepEqual(
@@ -78,7 +78,7 @@ test("根拠の無い fact と、理由の無い未実行の検証を通さな�
           key: "f-1",
           kind: "finding",
           at,
-          text: "Neon は 18",
+          text: "PostgreSQL は 18",
           confidence: "fact",
           refs: ["cmd:psql -c 'select version()'"],
         },

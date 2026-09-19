@@ -27,11 +27,10 @@ Claude Codeもsymlink先のSkillを読めるので、`.claude/skills/`には同�
 
 | 元の内容 | 分類 | 現在の場所 |
 |---|---|---|
-| runtime、権限、Next/Honoの境界 | 常時必要 | `AGENTS.md` |
+| runtime、権限、画面とHonoの境界 | 常時必要 | `AGENTS.md` |
 | setup、鍵、全command、新しいPC | 人向け | `README.md` |
-| Vercel、Clerk本番、DNS、環境変数 | 手順 | `deploy` Skill |
 | MCP bundle、manifest version、到達確認 | 手順 | `plugin-release` Skill |
-| Next.js、Hono、Clerkの実装規約 | 手順 | `next-hono` Skill |
+| 画面（Vite + React）、Honoの実装規約 | 手順 | `next-hono` Skill |
 | DB schema、role、埋め込みと索引、知識の種類、取り込み | 手順 | `knowledge-schema` Skill |
 | plugin review Agent固有の配布と解決 | 手順 | `plugin-agent-authoring` Skill |
 | 対になる出口と、それを守る検査 | 配置の根拠 | このdocument |

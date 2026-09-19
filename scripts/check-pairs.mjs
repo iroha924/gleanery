@@ -6,7 +6,7 @@
 //
 // **扱えるのは集合として列挙できる対だけ。**説明文が一致しているかは表現の揺れで
 // 判定できないので、そこは突き合わせずに**写しそのものを消す**（README の CLI 一覧を
-// USAGE から書き出す）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
+// `mitos --help` から書き出す）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
 // 別の形で 2 つの出口が組み立てる）はここでは捕まらない。AGENTS.md の節がそれを扱う。
 
 import { execFileSync } from "node:child_process";
@@ -118,7 +118,7 @@ const artifactPattern = grab(
 const pathKinds = artifactPattern?.match(/\(([a-z|]+)\)\\\.md/)?.[1]?.split("|");
 if (artifactPattern && !pathKinds?.length) fail.push("ARTIFACT_PATH から成果物の種別を取り出せない");
 const screenKinds = grab(
-  "dashboard/src/app/(dashboard)/sessions/_sessions/api/sessions.ts",
+  "dashboard/src/features/_sessions/api/sessions.ts",
   /kind: ((?:"[a-z]+"(?: \| )?)+);/,
   "画面の SessionArtifact.kind",
 )?.match(/[a-z]+/g);
@@ -281,12 +281,35 @@ for (const name of fs
     );
 }
 
-// ---- README の CLI 一覧を USAGE から書き出す ----
+// ---- README の CLI 一覧を `mitos --help` から書き出す ----
 //
 // **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、
 // README 側だけが更新された説明が両方あった）。
-// 正本は USAGE — 端末で `mitos` を叩いた人が見るのはこちらで、README は読み物だから。
-const usage = grab("server/src/cli.ts", /const USAGE = `使い方:\n(.*?)\n\n/s, "cli.ts の USAGE");
+// 正本は `mitos --help` — 端末で叩いた人が見るのはこちらで、README は読み物だから。
+// **CLI を実際に起動して取る。**spec から help を組み立てる作りなので、ソースを正規表現で
+// 舐めても使い方の行は再現できない。
+let help = null;
+try {
+  help = execFileSync("node", ["server/src/cli.ts", "--help"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+} catch (error) {
+  fail.push(`\`mitos --help\` を起動できない: ${error instanceof Error ? error.message : String(error)}`);
+}
+const usage =
+  help === null
+    ? null
+    : (() => {
+        const m = help.match(/使い方:\n(.*?)\n\n/s);
+        if (!m?.[1]) {
+          fail.push(
+            "`mitos --help` から使い方のブロックを取り出せない。check-pairs.mjs の正規表現が実物とずれている",
+          );
+          return null;
+        }
+        return m[1];
+      })();
 if (usage) {
   const list = usage
     .split("\n")
@@ -299,7 +322,7 @@ if (usage) {
   if (!block.test(before)) {
     fail.push("README.md の「## CLI」直後のコードブロックが見つからない。節を消したなら本スクリプトも直す");
   } else {
-    // 置き換えは関数で渡す。文字列で渡すと、USAGE の中の $& や $1 を置換パターンとして読む。
+    // 置き換えは関数で渡す。文字列で渡すと、使い方の中の $& や $1 を置換パターンとして読む。
     const after = before.replace(block, (_, open, close) => `${open}${list}${close}`);
     if (after !== before) {
       fs.writeFileSync("README.md", after);
@@ -307,7 +330,7 @@ if (usage) {
       // 一覧が既に一致している場合でも走り、README に残していた別件の編集を
       // そのコミットへ巻き込む（生成物だけの plugin/dist とは違い、ここは人が書く本文を含む）。
       execFileSync("git", ["add", "README.md"], { stdio: "ignore" });
-      console.log("README.md の CLI 一覧が cli.ts の USAGE とずれていたので、書き直して staged へ戻した");
+      console.log("README.md の CLI 一覧が `mitos --help` とずれていたので、書き直して staged へ戻した");
     }
   }
 }

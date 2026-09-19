@@ -9,9 +9,8 @@
 name: check
 
 env:
-  NEXT_TELEMETRY_DISABLED: "1"
-  # Vercel 本番では Services が /api を Hono へ送る。CI もローカル rewrite を入れずにビルドする。
-  VERCEL: "1"
+  # 画面は完全に static な SPA で、build に外部サービスの設定は要らない。
+  CI: "true"
 
 on:
   push:
@@ -68,8 +67,8 @@ jobs:
         run: bun run setup
 
       # ローカルの pre-push と同じ正本を使う。Biome、両アプリの型、サーバーのテスト、
-      # Next.js の本番ビルド（App Router のバンドルと prerender）をまとめて検査する。
-      - name: Next.js と Hono を検証
+      # 画面の本番ビルドをまとめて検査する。
+      - name: 画面と Hono を検証
         run: bun run verify
 
       # **バンドルし直して差分が出たら、dist が古い。**配布物はソースと一緒にコミットされるので、

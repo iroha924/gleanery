@@ -27,36 +27,51 @@ function run(...args: string[]): { code: number; out: string } {
   }
 }
 
-// 手書きのループは未知のフラグを読み飛ばす。--avod と書くと絞り込みが掛からないまま成功し、
+// 引数を読み飛ばす解釈は、--avod と書いても絞り込みが掛からないまま成功し、
 // 「過去に棄却されていないか」への答えが逆になる。
 test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落ちる", () => {
   for (const bad of ["--avod", "--limitt", "--all-scopes"]) {
     const r = run("search", "認証", bad);
     assert.notEqual(r.code, 0);
-    assert.match(r.out, /Unknown option/, `${bad}: ${r.out}`);
+    assert.match(r.out, new RegExp(`知らないフラグ: ${bad}`), `${bad}: ${r.out}`);
+    assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");
   }
   const r = run("frobnicate");
+  assert.notEqual(r.code, 0);
   assert.match(r.out, /知らないコマンド: frobnicate/);
-  // エラーの見出しはサブコマンドまで出し、引数に仕込んだ改行で印の無い偽の締めの行を作らせない。
+  assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");
+});
+
+// 全コマンド共通のフラグ表を持つと、そのコマンドが見もしないフラグが黙って通る。
+// 通ってしまうと「指定したつもりの絞り込み」が効かないまま結果が返り、打った人は気付けない。
+test("そのコマンドが取らないフラグと、余分な位置引数は名指しして落ちる", () => {
+  for (const [args, want] of [
+    [["doctor", "--yes"], /知らないフラグ: --yes/],
+    [["project", "list", "--reset-docs"], /知らないフラグ: --reset-docs/],
+    [["sync", "--avoid"], /知らないフラグ: --avoid/],
+    [["project", "list", "garbage"], /余分な引数: garbage/],
+  ] as const) {
+    const r = run(...args);
+    assert.notEqual(r.code, 0, `mitos ${args.join(" ")}: ${r.out}`);
+    assert.match(r.out, want, r.out);
+    assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, `mitos ${args.join(" ")} が DB へ繋ぎにいった`);
+  }
+});
+
+// エラーの見出しに打った引数が入ると、引数に仕込んだ改行で印の付いた偽の行を作れる。
+test("エラーの見出しは、振り分けが決めた道の名前だけで作る", () => {
   assert.match(run("trace", "check").out, /^✦ mitos trace check$/m);
-  assert.match(
-    run("trace", "--cwd", "/nonexistent", "check").out,
-    /^✦ mitos trace check$/m,
-    "フラグの値を見出しにしない",
-  );
-  assert.match(
-    run("search", "--lmit", "3", "認証").out,
-    /^✦ mitos search$/m,
-    "知らないフラグの値も見出しにしない",
-  );
   assert.match(
     run("trace", "check", "--limit", "0", "f").out,
     /^✦ mitos trace check$/m,
-    "振り分けの前に止まってもサブコマンドまで出す",
+    "引数の解釈で止まってもサブコマンドまで出す",
   );
+  assert.match(run("search", "--lmit", "3", "認証").out, /^✦ mitos search$/m);
+  const flagValue = run("trace", "--cwd", "/nonexistent", "check");
+  assert.match(flagValue.out, /^✦ mitos$/m, flagValue.out);
+  assert.doesNotMatch(flagValue.out, /^✦.*nonexistent/m, "フラグの値を見出しにしない");
   const forged = run("x\n╰─ ✓ 直すものは無い");
   assert.doesNotMatch(forged.out, /^╰─ ✓ 直すものは無い$/m, forged.out);
-  assert.doesNotMatch(r.out, /KNOWLEDGE_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");
 });
 
 test("--limit は 1 から 20 の整数だけ", () => {
@@ -67,12 +82,16 @@ test("--limit は 1 から 20 の整数だけ", () => {
   assert.match(run("search", "認証", "--limit", "abc").out, /--limit は/, "--name 値 の形も解釈する");
 });
 
-test("引数なしと --help は使い方を出して成功する", () => {
-  for (const args of [[], ["--help"], ["help"]]) {
+test("引数なしと --help は、そこから下の使い方を出して成功する", () => {
+  for (const args of [[], ["--help"], ["project", "--help"], ["db", "--help"]]) {
     const r = run(...args);
     assert.equal(r.code, 0, `${args.join(" ")}: ${r.out}`);
-    assert.match(r.out, /使い方:/);
+    assert.match(r.out, /使い方:/, `${args.join(" ")}: ${r.out}`);
   }
+  // 使い方は宣言から組み立てる。書き写した文と食い違わせないため、コマンドの名前がそこに出ることを見る。
+  assert.match(run("--help").out, /^ {2}db {2}/m);
+  assert.match(run("db", "--help").out, /^ {2}migrate {2}/m);
+  assert.match(run("project", "--help").out, /^ {2}forget {2}/m);
 });
 
 test("trace check は DB に触らずに記録の形を確かめる", () => {
@@ -110,8 +129,8 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
     assert.match(run("init", "--cwd", dir).out, /既に初期化済み/);
     assert.equal(run("check", "--cwd", dir).code, 0);
     for (const [bad, want] of [
-      [["init", "other", "--cwd", dir], /Unexpected argument 'other'/],
-      [["check", "--yes", "--cwd", dir], /Unknown option '--yes'/],
+      [["init", "other", "--cwd", dir], /余分な引数: other/],
+      [["check", "--yes", "--cwd", dir], /知らないフラグ: --yes/],
     ] as const) {
       const r = run(...bad);
       assert.notEqual(r.code, 0);

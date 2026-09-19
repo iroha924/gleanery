@@ -401,7 +401,7 @@ type Project = { id: number; name: string };
 type Vectors = Map<Spooled, { text: string; v: number[] | undefined }>;
 
 /**
- * 記録の束を 1 つの transaction で書く。**表ごとに 1 往復**（Neon まで 1 往復 80ms 前後ある）。
+ * 記録の束を 1 つの transaction で書く。**表ごとに 1 往復**（往復の回数は件数に比例して効いてくる）。
  * **衝突先の列を書かない（`on conflict do nothing`）。**列を書くと PostgreSQL はその列の SELECT 権限を求め、
  * 本文を読めない capture の鍵では拒否される。id は待ち行列に書くときに決まるので、送り直しがどの一意制約に当たっても
  * 「もう入っている」。
