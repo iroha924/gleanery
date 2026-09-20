@@ -10,8 +10,11 @@
     {
       "name": "gleanery",
       "description": "会話と判断を貯め、過去の決定・棄却した案・制約・発言を引く",
-      "version": "0.20.0",
-      "source": "./plugin",
+      "source": {
+        "source": "npm",
+        "package": "gleanery",
+        "version": "0.20.0"
+      },
       "author": {
         "name": "iroha924",
         "email": "shunichi@hir4ta.com"

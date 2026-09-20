@@ -33,7 +33,14 @@ function write(dir: string, file: string, body: string) {
 
 function bump(dir: string, version: string) {
   write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
-  write(dir, ".claude-plugin/marketplace.json", JSON.stringify({ plugins: [{ name: "gleanery", version }] }));
+  // 版は source の中に置く（entry 直下にも置くと Claude Code が黙って plugin.json を優先する）。
+  write(
+    dir,
+    ".claude-plugin/marketplace.json",
+    JSON.stringify({
+      plugins: [{ name: "gleanery", source: { source: "npm", package: "gleanery", version } }],
+    }),
+  );
   write(dir, "plugin/.claude-plugin/plugin.json", JSON.stringify({ version }));
   write(dir, "plugin/.codex-plugin/plugin.json", JSON.stringify({ version }));
 }

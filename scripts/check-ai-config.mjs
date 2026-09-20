@@ -92,8 +92,17 @@ try {
     fail("plugin/.codex-plugin/plugin.json: 利用者向けSkillの入口は./skills/に限る");
   }
   const marketplace = JSON.parse(read(".claude-plugin/marketplace.json"));
-  if (marketplace.plugins?.[0]?.source !== "./plugin") {
-    fail(".claude-plugin/marketplace.json: 配布sourceは./pluginに限る");
+  const entry = marketplace.plugins?.[0];
+  const src = entry?.source;
+  if (src?.source !== "npm" || src?.package !== "gleanery") {
+    fail(".claude-plugin/marketplace.json: 配布sourceはnpmのgleaneryに限る");
+  } else if (!/^\d+\.\d+\.\d+$/.test(src.version ?? "")) {
+    // 範囲やlatestを書くと、同じcommitが時期によって別のtarballを解決する。
+    fail(`.claude-plugin/marketplace.json: versionはexactにする（受け取った値: ${src.version}）`);
+  }
+  if (entry?.version !== undefined) {
+    // 両方に置くとClaude Codeは警告なくplugin.jsonを使い、marketplaceの値が黙って無視される。
+    fail(".claude-plugin/marketplace.json: versionはsourceの中だけに置く");
   }
 } catch (error) {
   fail(`plugin manifest: ${error instanceof Error ? error.message : String(error)}`);

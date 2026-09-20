@@ -34,7 +34,9 @@ try {
 // 配る正本は npm の package で、plugin の manifest はそれと同じ版を指す。1 つでもずれると届かない。
 const MANIFESTS = {
   "plugin/package.json": (j) => j.version,
-  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.version,
+  // **版は source の中にある。**entry 直下にも置くと、Claude Code は警告なく plugin.json を使い、
+  // marketplace の値が黙って無視される（公式の plugin-marketplaces）。置き場所は 1 つに保つ。
+  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.source?.version,
   "plugin/.claude-plugin/plugin.json": (j) => j.version,
   "plugin/.codex-plugin/plugin.json": (j) => j.version,
 };
@@ -69,7 +71,9 @@ if (distinct.length !== 1) {
 // src だけでなく、依存の版（lockfile）、build と型の設定、公開する物の一覧も中身を変える。
 const INPUTS = [
   "plugin/",
-  ".claude-plugin/",
+  // .claude-plugin/marketplace.json は入れない。**リポジトリ直下にあり npm の files に入らない**ので、
+  // これを変えても配る tarball の中身は 1 バイトも変わらない。版の一致だけは MANIFESTS が見る。
+
   "server/src/",
   "server/package.json",
   "server/bun.lock",
@@ -96,7 +100,12 @@ const withoutVersion = (text) => {
   try {
     const o = JSON.parse(text);
     delete o.version;
-    if (Array.isArray(o.plugins)) for (const p of o.plugins) delete p.version;
+    // 版の数字だけを落とす。**取得元（source の種類と package 名）は残す** —
+    // そこが変わるのは配布経路の変更なので、版を上げずに通してはいけない。
+    for (const p of Array.isArray(o.plugins) ? o.plugins : []) {
+      delete p.version;
+      if (p.source && typeof p.source === "object") delete p.source.version;
+    }
     return JSON.stringify(o);
   } catch {
     return text;
