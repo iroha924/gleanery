@@ -179,6 +179,40 @@ for (const name of pluginSkills) {
   }
 }
 
+// 範囲の読み方の正本は起動側の 1 箇所にしかない。消えてもレビュアーは「渡された読み方だけを使う」と
+// 書いてあるだけなので、どのレーンも範囲を受け取れないまま検査は通る。
+const REVIEW_SKILL = "plugin/skills/review/SKILL.md";
+const SCOPE_CONTRACT = ["コミット済み", "未コミット・追跡済み", "未追跡", "gh pr diff"];
+// review-validator は finding を 1 件受け取る体で、範囲を渡されない。
+const REVIEWERS_WITH_SCOPE = new Set([
+  "review-adversarial",
+  "review-cleanup",
+  "review-conventions",
+  "review-precedent",
+  "review-security",
+]);
+const SCOPE_BOUNDARY = [
+  "範囲は起動側が",
+  "渡された読み方だけを使い",
+  "渡された層だけがレビュー対象",
+  "現在のファイルを読みにいかず",
+];
+// claude --help の choices。渡した値が外れると Warning だけ出てセッション既定へ落ちる。
+const EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+const reviewSkill = read(REVIEW_SKILL);
+const scopeTable = /^\| 層 \| 渡す形 \|$\n^\|---\|---\|$\n(?:^\|.*$\n)+/m.exec(reviewSkill);
+if (!scopeTable) {
+  fail(`${REVIEW_SKILL}: 範囲の「渡す形」の表が無い`);
+} else {
+  for (const phrase of SCOPE_CONTRACT) {
+    if (!scopeTable[0].includes(phrase)) fail(`${REVIEW_SKILL}: 「渡す形」の表から「${phrase}」が消えている`);
+  }
+}
+if (!reviewSkill.includes("空だった層")) {
+  fail(`${REVIEW_SKILL}: 空の層も渡すという指示が消えている`);
+}
+
 // 配る reviewer（plugin/agents）と repository 専用（.claude/agents）を同じ規則で見る。
 // **片方だけ検査すると、もう片方の壊れ方が静かに残る。**
 const agentDirectories = ["plugin/agents", ".claude/agents"];
@@ -195,16 +229,20 @@ for (const relative of agentEntries) {
   const file = path.basename(relative);
   const source = read(relative);
   const fields = frontmatter(relative, source);
-  // 範囲の読み方は起動側（plugin/skills/review/SKILL.md の Step 3）が渡す。レビュアーへ写すと、
-  // 片方だけ直したときに PR 番号の入口が静かに壊れる。
-  if (relative.startsWith("plugin/agents/") && /(?:gh pr|git) diff/.test(source)) {
-    fail(`${relative}: 範囲の読み方をレビュアーへ書かない。起動側が渡す`);
+  // 範囲の境界。1 文でも欠けたレビュアーは、範囲が解決しないとき現在のツリーを読みにいく。
+  if (REVIEWERS_WITH_SCOPE.has(path.basename(relative, ".md"))) {
+    for (const phrase of SCOPE_BOUNDARY) {
+      if (!source.includes(phrase)) fail(`${relative}: 範囲の境界から「${phrase}」が消えている`);
+    }
   }
   for (const required of ["name", "description", "tools", "model", "effort", "maxTurns"]) {
     if (!fields[required]) fail(`${relative}: ${required}が無い`);
   }
   if (fields.name !== path.basename(file, ".md")) fail(`${relative}: nameがfile名と一致しない`);
   if (fields.model === "inherit") fail(`${relative}: modelをsessionから継承しない`);
+  if (!EFFORT_LEVELS.has(fields.effort)) {
+    fail(`${relative}: effortは${[...EFFORT_LEVELS].join(" / ")}のどれかにする（${fields.effort}）`);
+  }
   // プリロードするSkillが無ければ、その名前は解決されず本文の前提が崩れる。
   for (const name of Array.isArray(fields.skills) ? fields.skills : []) {
     const repoSkill = fs.existsSync(path.join(root, ".agents/skills", name, "SKILL.md"));

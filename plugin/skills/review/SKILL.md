@@ -212,8 +212,22 @@ finding の一覧を足す（下の「ラウンドを重ねるとき」）。
 
 | 自分が | 相手を呼ぶ |
 |---|---|
-| **Claude** | `codex exec --ephemeral -s read-only -c model_reasoning_effort=<定義の effort> --output-schema <schema> -o <out> - < <プロンプト>` |
-| **Codex** | `claude -p --agent gleanery:review-<名> --effort <定義の effort> --session-id <毎回作る uuid> --output-format json < <範囲を書いたファイル>` |
+| **Claude** | `codex exec --ephemeral -s read-only -c model_reasoning_effort=<定義の effort> --output-schema <schema> -o <out> -` |
+| **Codex** | `claude -p --agent gleanery:review-<名> --effort <定義の effort> --no-session-persistence --output-format json` |
+
+**どちらもプロンプトのファイルを stdin へ渡す。**`< ファイル` と書かない —— **PowerShell では `<` が構文エラーになり、
+そのホストではレーンが 1 本も立たない。**
+
+```bash
+# POSIX
+claude -p --agent "$agent" --effort "$effort" --output-format json < "$prompt_file"
+```
+
+```powershell
+# PowerShell
+Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
+  & claude -p --agent $agent --effort $effort --output-format json
+```
 
 **`codex exec review` を使わない。**あちらは `--base` と `--uncommitted` で範囲を指定できるが、
 **`--base` とカスタムプロンプトは併用できない**（実測 2026-09-09: `error: the argument
@@ -230,22 +244,36 @@ finding の一覧を足す（下の「ラウンドを重ねるとき」）。
 `--output-schema` は出力を固定する。`model_reasoning_effort` に**定義の `effort` を写す** —
 渡さないとセッションの既定に落ちる。
 
-**Codex から Claude を呼ぶときは、定義の本文を渡さず `--agent` に名前を渡す。**本文は 13 KB あり、
-`"$(cat …)"` で引数へ埋めるとバッククォートがコマンド置換として展開されて prompt が壊れる。
-`--agent` なら CLI が定義を読むので、渡すのは範囲だけになる。
+**Codex から Claude を呼ぶときは、定義の本文を渡さず `--agent` に名前を渡す。**CLI が定義を読むので、
+13 KB の本文を毎回組み立てなくてよい。
+
+**渡すものは引数ではなく stdin へ置く。**範囲にはブランチ名とファイル名が入り、**それを決めるのは PR を出した側**である。
+引数は `ps` に出るうえ、長さにも上限がある。
 
 | 渡すもの | なぜ |
 |---|---|
 | `--agent gleanery:review-<名>` | 持ち主の設定に `agent` があっても上書きする。存在しない名前は stderr へ出して **exit 1** で落ちる |
 | `--effort <定義の effort>` | フロントマターの値を写す。応答に effort は出ないので、渡すこと自体が唯一の保証になる |
-| `--session-id <毎回作る uuid>` | 全文を後から番号指定で受け取るため。起動側が決めるので応答から拾い直さなくてよい |
+| `--no-session-persistence` | セッションをディスクへ残さない。**後から `--resume` できなくなるのが要点である**（下） |
 
 **`--model` を渡さない。**定義の `model: opus` が効く（実測: init イベントが `claude-opus-5` を返した）。
-**`--max-turns` を付けない。**上限に達するとエラーで終わり、その呼び出しでは報告が返らない。
+**`--max-turns` は 2.1.278 に無い**（`--help` に 0 件）。ターン数の上限はフロントマターの `maxTurns` だけで、
+**それが `--agent` 経由で効くかは観測できていない。**打ち切りの検出は Step 4 の体裁の判定に頼る。
 
-全文は `claude -p --resume <同じ uuid> --agent gleanery:review-<名> --effort <定義の effort>` で番号を指定して要求する。
-**`--resume` にも `--agent` と `--effort` を渡す。**渡さないと定義が外れ、レビュアーが `Edit` と `Write` を持った状態で走る
-（実測: `--agent` 無しの resume で tools が 2 個から 51 個になった。文脈は保たれるので、出力を見ても気付けない）。
+**この経路では `--resume` を使わない。**1 回の呼び出しで、一覧を先頭に全件出し、続けて全 finding の全文を番号順に出させる。
+プロンプトにそう書けば、レビュアーの「求められたものだけ返す」とも両立する。
+
+避けているのは全文の切り詰めではなく**権限の拡大**である。**`--resume` に `--agent` を書き落とすと、
+レビュアーは `Edit` と `Write` を持ったまま走る**（実測: tools が 2 個から 51 個になった。
+**エラーにならず、文脈も保たれるので出力から気付けない**）。untrusted な diff を読み終えた後の 2 回目の
+呼び出しで起きるうえ、配布物からは permission で塞げない。だから書き落としを注意で防ぐのではなく、
+`--no-session-persistence` で**resume できる状態を作らない**
+（実測: このフラグを付けた呼び出しが返した `session_id` へ `--resume` すると
+`No conversation found with session ID` で exit 1 になる）。
+
+切れたレーンは回収せず `打ち切り` として台帳へ出す。
+
+**これは Codex がホストのときだけの形である。**Claude がホストなら、Step 4 のとおり番号を指定して分割で受け取る。
 
 **`codex-talk` は使わない。**議論用に作られていて、ログを 1 本のファイルへ追記するため、
 **並列に走らせると取り合う。使い捨てにもならない**（人が読む議論ログが機械の往復で埋まる）。
@@ -292,6 +320,20 @@ finding の一覧を足す（下の「ラウンドを重ねるとき」）。
 
 **MCP の認証エラーも停止の合図ではない。**`AuthRequired` / `Transport channel closed` は完走した
 レーンにも出る（実測では context7）。`-c mcp_servers='{}'` では消えないが、消さなくても完走する。
+
+**完了を通知させる。**レーンを 1 本ずつ background へ投げると、**返ってくるのはレーンの完了ではなく起動の完了**である。
+以後は完了を知る手段がポーリングだけになり、**「まだ走っている」と「終わって出力を書いた」が区別できなくなる。**
+全部を 1 つの background の仕事にまとめ、`wait` で全レーンの完了まで返らせる。
+
+```bash
+for name in adversarial security conventions cleanup precedent; do
+  codex exec --ephemeral -s read-only -c model_reasoning_effort="$effort" -o "out/$name.txt" - < "prompt/$name.md" &
+done
+wait
+```
+
+実測（2026-09-21）: 起動だけを待つ形にしたため、5 レーンが完走して出力を書き終えた後も
+**3 レーンを「走行中」と報告していた。**行の伸びと `pgrep` を数えても、完了した瞬間は分からない。
 
 進んでいるかは**ログの行数が増えているか**で見る。止まっているなら行数も止まる。
 
