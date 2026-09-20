@@ -209,9 +209,9 @@ test("Origin も Sec-Fetch-Site も無い form は 403", async () => {
 // 0 は Node には「空いている番号を選ぶ」の意味だが、Host の allowlist は起動前の番号で作る。
 // 選ばれた実 port と食い違って全部 403 になる。
 test("port は 1〜65535 の整数だけを受ける", () => {
-  assert.equal(parsePort(undefined), 8787);
-  assert.equal(parsePort(""), 8787);
-  assert.equal(parsePort("  "), 8787);
+  assert.equal(parsePort(undefined), 4924);
+  assert.equal(parsePort(""), 4924);
+  assert.equal(parsePort("  "), 4924);
   assert.equal(parsePort("9000"), 9000);
   // Number の解釈に任せる。1e3 は 1000 で、port として有効。
   assert.equal(parsePort("1e3"), 1000);

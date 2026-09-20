@@ -96,7 +96,7 @@ bun run cli harvest --cwd <repo>       # 最初の取り込み
 ```bash
 npm i -g gleanery        # gleanery コマンドが PATH に出る
 gleanery db init
-gleanery dashboard       # http://127.0.0.1:8787
+gleanery dashboard       # http://127.0.0.1:4924
 ```
 
 `db init` が `~/.gleanery/env` に 4 つの鍵（owner と 3 ロール）を書く。VOYAGE と OPENAI の鍵は

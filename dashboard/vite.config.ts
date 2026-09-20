@@ -34,7 +34,7 @@ export default defineConfig({
     // ブラウザが送る Origin と一致して CSRF を通る。書き換えると両者が食い違って弾かれる。
     // Hono 側は `--dev` で起動したときだけこの port を Host として受け付ける。
     proxy: {
-      "/api": { target: "http://127.0.0.1:8787" },
+      "/api": { target: "http://127.0.0.1:4924" },
     },
   },
 });

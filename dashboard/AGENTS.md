@@ -41,7 +41,7 @@ module の `ui` を参照できる（`scripts/check-dashboard-boundaries.mjs` �
 ## API
 
 同一 origin の `/api/*` を叩く。**認証は無い。**トークンも Cookie も付けない。
-dev は Vite の proxy が `127.0.0.1:8787` へ流す。**`changeOrigin` を立てない** —
+dev は Vite の proxy が `127.0.0.1:4924` へ流す。**`changeOrigin` を立てない** —
 ブラウザの Origin と Hono が見る Host が食い違い、CSRF の検査に弾かれる。
 
 サーバーから来たデータのキャッシュは TanStack Query が持つ。route の loader へ移さない。

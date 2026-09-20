@@ -20,7 +20,7 @@ import speechRoutes from "./http/routes/speech.ts";
 
 export { dashboardRoot };
 
-export const DEFAULT_PORT = 8787;
+export const DEFAULT_PORT = 4924;
 
 /**
  * port を外から受ける。**0 と空文字と非数値を弾く。**
@@ -106,7 +106,7 @@ export function start(port?: number, dev = false): void {
   if (!dev && !dashboardRoot()) {
     throw new Error("画面のビルド成果物が無い。`bun run build` を流してから起動する");
   }
-  // **dev では番号を動かさない。**Vite の proxy 先は vite.config.ts に 8787 で書いてあり、
+  // **dev では番号を動かさない。**Vite の proxy 先は vite.config.ts に 4924 で書いてあり、
   // こちらだけ動かすと画面から `/api/*` が届かなくなる。
   const chosen = dev ? DEFAULT_PORT : (port ?? parsePort(process.env.GLEANERY_DASHBOARD_PORT));
   const app = createApp(chosen, dev ? [DEV_PORT] : []);
