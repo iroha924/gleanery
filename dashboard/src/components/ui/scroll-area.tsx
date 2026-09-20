@@ -9,9 +9,12 @@ function ScrollArea({
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
   return (
     <ScrollAreaPrimitive.Root data-slot="scroll-area" className={cn("relative", className)} {...props}>
+      {/* Radix は中身を display: table の div で包む。**shrink-to-fit なので、中の min-w-0 も
+          max-w-% も overflow-x-auto も効かず、幅の読めない表とコード塊が枠を突き抜ける。**
+          横スクロールバーは出していないので、block にして幅を viewport に合わせる。 */}
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-colors outline-none focus-visible:outline-1"
+        className="size-full rounded-[inherit] transition-colors outline-none focus-visible:outline-1 [&>div]:!block [&>div]:min-w-0"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
