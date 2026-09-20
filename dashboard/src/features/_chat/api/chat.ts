@@ -13,6 +13,16 @@ export type ChatSource = {
   url: string | null;
 };
 
+/** 1 往復。画面の状態でも履歴の保存の形でもあるので、境界のこちら側に置く。 */
+export type Turn = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: ChatSource[];
+  error?: string;
+  stopped?: boolean;
+};
+
 export type PolishOption = {
   label: string;
   text: string;

@@ -1,16 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useProject } from "@/lib/project";
-import { askStream, type ChatSource, type PolishOption, polishTranscript, transcribe } from "../api/chat";
-
-export type Turn = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  sources?: ChatSource[];
-  error?: string;
-  stopped?: boolean;
-};
+import { askStream, type PolishOption, polishTranscript, type Turn, transcribe } from "../api/chat";
 
 /**
  * チャットの状態。**会話は保存しない**（ブラウザを閉じれば消える）。作業場所を切り替えたら会話を捨てる —
