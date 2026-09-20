@@ -317,7 +317,11 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
       label,
       `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`,
     );
-  const base = s.repository;
+  // **repository が無いほうが普通になる。**npm から入れた利用者は clone を持たないので、
+  // そこで比べるのをやめると、CLI と plugin が別々に更新されてずれたことを誰も言わなくなる
+  // （CLI は `npm i -g`、plugin は `claude plugin update` で、更新の操作が別々）。
+  const base = s.repository ?? (s.cli.version ? s.cli : null);
+  const baseName = s.repository ? "repository" : "この CLI";
 
   /**
    * 基準との食い違いと、ホストの更新で直るか。同じ版なら中身まで比べる（版を上げずに変えたものを見落とさない）。
@@ -328,20 +332,30 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     if (!fs.existsSync(i.root)) return { note: "導入先が無い。Skill のパスも無効", update: true };
     if (!base?.version || !i.version) return {};
     const c = compareVersions(i.version, base.version);
-    if (c < 0) return { note: `repository（${base.version}）より古い`, update: true };
-    if (c > 0) return { note: `repository（${base.version}）より新しい。repository の checkout が古い` };
+    if (c < 0) return { note: `${baseName}（${base.version}）より古い`, update: true };
+    if (c > 0) {
+      return {
+        note: s.repository
+          ? `repository（${base.version}）より新しい。repository の checkout が古い`
+          : `この CLI（${base.version}）より新しい。\`npm i -g gleanery@${i.version}\` で CLI を揃える`,
+      };
+    }
     if (path.resolve(i.root) === path.resolve(base.root)) return {};
-    const diff = differingFiles(base.root, i.root, { tracked: true });
+    // `tracked` は基準が repository の作業ツリーのときだけ立てる。導入先どうしの比較では、
+    // 追跡の概念が無く、配られたファイルがそのまま両側にある。
+    const diff = differingFiles(base.root, i.root, { tracked: Boolean(s.repository) });
     if (!diff.length) return {};
     const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
     return {
-      note: `同じ版なのに中身が違う（${files}）。repository の変更は、版を上げて main へ入れるまで届かない`,
+      note: s.repository
+        ? `同じ版なのに中身が違う（${files}）。repository の変更は、版を上げて main へ入れるまで届かない`
+        : `同じ版なのに中身が違う（${files}）。入れ直して揃える`,
     };
   };
 
   lines.push("plugin の版");
-  if (base) row("repository", base);
-  else say("none", "repository", "見えない（gleanery の repository の中で実行すると比べられる）");
+  if (s.repository) row("repository", s.repository);
+  else say("none", "repository", "見えない。この CLI の版を基準に比べる");
 
   row("この CLI", s.cli, against(s.cli).note);
 

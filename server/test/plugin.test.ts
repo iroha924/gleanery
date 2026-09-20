@@ -338,3 +338,37 @@ test("MCP の recall と read は、失敗の理由を空にせず isError で�
     await client.close();
   }
 });
+
+// npm から入れた利用者は repository を持たない。CLI は `npm i -g`、plugin は
+// `claude plugin update` で別々に更新されるので、**基準が無いと版ずれを誰も言わない**。
+test("repository が無くても、CLI と plugin の版ずれを出す", () => {
+  const older = report(
+    seen({
+      cli: plugin("npm-cli-new", "0.15.0"),
+      claude: plugin("npm-claude-old/gleanery/0.14.0", "0.14.0"),
+      codex: [plugin("npm-codex-old/plugins/cache/gleanery/gleanery/0.14.0", "0.14.0")],
+    }),
+  ).lines.join("\n");
+  assert.match(older, /Claude Code .*← この CLI（0\.15\.0）より古い/);
+  assert.match(older, /Codex .*← この CLI（0\.15\.0）より古い/);
+
+  // 逆向き（plugin のほうが新しい）では、CLI を上げる手順を出す。
+  const newer = report(
+    seen({
+      cli: plugin("npm-cli-old", "0.14.0"),
+      claude: plugin("npm-claude-new/gleanery/0.16.0", "0.16.0"),
+    }),
+  ).lines.join("\n");
+  assert.match(newer, /npm i -g gleanery@0\.16\.0/);
+});
+
+// 同じ版なら中身まで比べる。repository が無い場合は「入れ直す」ほうを案内する。
+test("repository が無いとき、同じ版で中身が違えば入れ直しを案内する", () => {
+  const out = report(
+    seen({
+      cli: plugin("same-cli", "0.15.0", "new"),
+      claude: plugin("same-claude/gleanery/0.15.0", "0.15.0", "old"),
+    }),
+  ).lines.join("\n");
+  assert.match(out, /同じ版なのに中身が違う.*入れ直して揃える/);
+});

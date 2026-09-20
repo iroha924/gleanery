@@ -1,6 +1,6 @@
 {
   "name": "gleanery",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "会話と判断を貯め、過去の決定・棄却した案・制約・発言を引く",
   "license": "MIT",
   "type": "module",
@@ -15,7 +15,9 @@
     "hooks",
     "mcp",
     ".claude-plugin",
-    ".codex-plugin"
+    ".codex-plugin",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "engines": {
     "node": ">=22.18"
@@ -24,5 +26,13 @@
     "type": "git",
     "url": "git+https://github.com/iroha924/gleanery.git"
   },
-  "keywords": ["knowledge", "rag", "conversations", "decisions", "pgvector", "postgres", "mcp"]
+  "keywords": [
+    "knowledge",
+    "rag",
+    "conversations",
+    "decisions",
+    "pgvector",
+    "postgres",
+    "mcp"
+  ]
 }

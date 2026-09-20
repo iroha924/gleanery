@@ -2,11 +2,13 @@
 // **fetch では Host を偽装できない**（forbidden header name）ので node:http で生の要求を組む。
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
+import path from "node:path";
 import { after, before, test } from "node:test";
 import { serve } from "@hono/node-server";
-import { allowedHosts, createApp, DEV_PORT, parsePort } from "../src/server.ts";
+import { allowedHosts, createApp, DEV_PORT, dashboardRoot, parsePort } from "../src/server.ts";
 
 type Reply = { status: number; headers: http.IncomingHttpHeaders; body: string };
 
@@ -17,7 +19,15 @@ function ask(
 ): Promise<Reply> {
   return new Promise((resolve, reject) => {
     const request = http.request(
-      { host: "127.0.0.1", port, path, method: options.method ?? "GET", headers: options.headers },
+      {
+        host: "127.0.0.1",
+        port,
+        path,
+        method: options.method ?? "GET",
+        headers: options.headers,
+        // **keep-alive を使わない。**繋いだままにすると close() が返らず、テストが終わらない。
+        agent: false,
+      },
       (response) => {
         let body = "";
         response.setEncoding("utf8");
@@ -79,6 +89,9 @@ before(async () => {
 });
 
 after(() => {
+  // 借りている接続を先に落とす。残っていると close() のコールバックが来ない。
+  // `ServerType` は HTTP/2 の server も含む合併型で、そちらにこのメソッドが無い。
+  if ("closeAllConnections" in server) server.closeAllConnections();
   server?.close();
 });
 
@@ -246,21 +259,42 @@ test("port が塞がっていたら別の番号へ移らない", async () => {
 
 // Cache-Control が無い応答は再利用してよいことになっている（RFC 9111 4.2.2）。
 // 画面は同じ URL を繰り返し引くので、CLI で足した行が出てこない形になりうる。
+// **DB へ繋ぐ route は叩かない。**middleware は route より手前に居るので、当たらない綴りでも
+// 同じ経路を通る。実在する route を叩くと、資格情報の無い CI では落ちるか、pool を掴んで終わらない。
 test("API の応答は溜めさせない", async () => {
   const host = `127.0.0.1:${port}`;
-  for (const path of ["/api/__probe__", "/api/projects"]) {
+  for (const path of ["/api/__probe__", "/api/", "/api/sessions/extra/segment"]) {
     const reply = await ask(port, path, { headers: { host } });
     assert.equal(reply.headers["cache-control"], "no-store", path);
   }
 });
 
 // index.html は名前に中身のハッシュを持たない。溜まると、更新しても消えた資産を指し続ける。
+//
+// **画面が無いときに黙って飛ばさない。**飛ばす形にすると、ビルドより先にテストが走る順序で
+// 何も検査しないまま緑になる（`bun run verify` は build を test より前に置いてある）。
 test("index.html は使う前に検証させる", async () => {
+  assert.ok(
+    dashboardRoot(),
+    "画面のビルド成果物が無い。`bun run build` を流してから実行する（この検査は配る形だけを見る）",
+  );
   const host = `127.0.0.1:${port}`;
+  // SPA の fallback（/sessions）と、serveStatic が index を返す経路（/）の両方を見る。
   for (const path of ["/", "/sessions"]) {
     const reply = await ask(port, path, { headers: { host } });
-    // 画面をビルドしていない作業ツリーでは配らない。配るときだけ検査する。
-    if (reply.status === 404) continue;
+    assert.equal(reply.status, 200, path);
     assert.equal(reply.headers["cache-control"], "no-cache", path);
   }
+});
+
+// ハッシュ付きの資産には掛けない。名前が変わるので、溜まっても古いものを掴み続けない。
+test("中身でハッシュした資産には掛けない", async () => {
+  const root = dashboardRoot();
+  assert.ok(root, "画面のビルド成果物が無い。`bun run build` を流してから実行する");
+  const assets = path.join(root, "assets");
+  const js = fs.readdirSync(assets).find((f) => f.endsWith(".js"));
+  assert.ok(js, `${assets} に .js が無い`);
+  const reply = await ask(port, `/assets/${js}`, { headers: { host: `127.0.0.1:${port}` } });
+  assert.equal(reply.status, 200);
+  assert.equal(reply.headers["cache-control"], undefined);
 });

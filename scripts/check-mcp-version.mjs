@@ -41,6 +41,8 @@ const MANIFESTS = {
 
 // 版も index から読む。作業ツリーで上げただけの版は commit に入らない。
 const read = (f) => JSON.parse(git("show", `:${f}`));
+/** index（commit に入る内容）での姿。ref を空にすると `git show :path` になる。 */
+const staged = (f) => at("", f);
 const versions = Object.entries(MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
 const distinct = [...new Set(versions.map(([, v]) => v))];
 if (distinct.length !== 1) {
@@ -61,23 +63,50 @@ if (distinct.length !== 1) {
 // 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
 // `--base` へ変えるだけで同じ比べ方になる。
 //
-// **配る中身の入力を全部挙げる。**キャッシュへ複製されるのは mcp.js だけではなく、自動記録
-// （dist/capture.js）もフックの定義もスキル（skills/**）も画面も DB の同梱物も入る。
-// dist と db は追跡しないので、ここから漏れた入力を変えると、配る中身が変わったのに版が据え置かれる。
+// **配る中身を変えうる入力を全部挙げる。**キャッシュへ複製されるのは mcp.js だけではなく、
+// 自動記録（dist/capture.js）もフックの定義もスキル（skills/**）も画面も DB の同梱物も入る。
+// dist と db は追跡しないので、ここから漏れた入力を変えると、中身が変わったのに版が据え置かれる。
+// src だけでなく、依存の版（lockfile）、build と型の設定、公開する物の一覧も中身を変える。
 const INPUTS = [
   "plugin/",
   ".claude-plugin/",
   "server/src/",
+  "server/package.json",
+  "server/bun.lock",
+  "server/tsconfig.json",
   "dashboard/src/",
+  "dashboard/public/",
   "dashboard/index.html",
+  "dashboard/package.json",
+  "dashboard/bun.lock",
+  "dashboard/tsconfig.json",
+  "dashboard/vite.config.ts",
   "db/",
   "scripts/bundle.mjs",
+  "scripts/third-party-notices.mjs",
 ];
+/**
+ * manifest から版を落とした姿。**版だけを上げた commit を「中身が変わった」に数えない**ため。
+ * ただし落とすのは版だけで、`files` と `bin` と MCP の起動引数は配る物を変えるので残す
+ * （これを丸ごと除外していたため、公開する一覧を変えて版を据え置く commit が素通りしていた）。
+ */
+const withoutVersion = (text) => {
+  if (text === null) return null;
+  try {
+    const o = JSON.parse(text);
+    delete o.version;
+    if (Array.isArray(o.plugins)) for (const p of o.plugins) delete p.version;
+    return JSON.stringify(o);
+  } catch {
+    return text;
+  }
+};
+
 const ref = base ?? "HEAD";
 const changed = git("diff", "--cached", "--name-only", ref, "--", ...INPUTS)
   .split("\n")
   .filter(Boolean)
-  .filter((f) => !(f in MANIFESTS));
+  .filter((f) => !(f in MANIFESTS) || withoutVersion(at(ref, f)) !== withoutVersion(staged(f)));
 if (changed.length === 0) process.exit(0);
 
 const MANIFEST = "plugin/.claude-plugin/plugin.json";

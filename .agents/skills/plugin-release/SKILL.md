@@ -42,9 +42,19 @@ npmの`bin`は、利用者が`npm i -g`したときの`gleanery`コマンド用�
 無い**。`${CLAUDE_PLUGIN_ROOT}/bin/gleanery`のようなshell scriptに依存すると、Windowsで動かないうえ、
 npm sourceでは置かれる保証も無い。
 
+## 依存を足すとき
+
+`dist/`は依存のcodeをそのまま含むので、**束ねてnpmのdependenciesを0にしても同梱の義務は消えない**。
+MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写しと（あれば）NOTICEの内容を求める。
+
+- `server/`へ依存を足したら`bun run notices`を通す。SPDXが読めない package があれば落ちる
+- `plugin/THIRD_PARTY_NOTICES.md`は`bun run bundle`が`node_modules`から作り直す。追跡せず、publishする物に入る
+- ライセンス文を同梱しない package は`scripts/licenses/<SPDX>.txt`の写しで補う。写しが無いものは出典を載せる
+- **GPL / AGPL / SSPLの依存を足さない。**MITで配れなくなる
+
 ## 届けるまで
 
-1. `bun run bundle`で配布物（MCP、CLI、自動記録、画面のbuild成果物）を作る
+1. `bun run bundle`で配布物（MCP、CLI、自動記録、画面のbuild成果物、同梱の告知）を作る
 2. release versionを1つ決め、次を全部そこへ揃える
    - npmの`package.json`
    - `plugin/.claude-plugin/plugin.json`

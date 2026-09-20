@@ -82,7 +82,8 @@ jobs:
           tgz="$(npm pack --silent)"
           tar tzf "$tgz" | sort > /tmp/contents.txt
           for f in package/dist/cli.js package/dist/mcp.js package/dist/capture.js \
-                   package/dist/dashboard/index.html package/db/schema.sql package/db/compose.yaml; do
+                   package/dist/dashboard/index.html package/db/schema.sql package/db/compose.yaml \
+                   package/LICENSE package/THIRD_PARTY_NOTICES.md; do
             grep -qx "$f" /tmp/contents.txt || { echo "tarball に $f が無い"; exit 1; }
           done
           # **リポジトリの外へ出す。**中で展開すると、同梱物を取り違えても親を辿って当たり、通ってしまう。

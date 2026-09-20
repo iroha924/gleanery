@@ -114,7 +114,7 @@ DBを作り直すcommandは無い。空から作るのは空のDBへ`db:apply`�
 |---|---|---|
 | owner | `GLEANERY_DB_URL` | `server/src/admin.ts`（`bun run db:*`）だけ。schemaの適用とmigration、roleのパスワード |
 | `gleanery_reader` | `GLEANERY_DB_URL_RO` | 全表の読み取り。MCPと画面のAPI |
-| `gleanery_ingest` | `GLEANERY_DB_URL_INGEST` | 全表の読み書き。CLIのsync・trace・who・project |
+| `gleanery_ingest` | `GLEANERY_DB_URL_INGEST` | 全表の読み書き。CLIのharvest・trace・who・project |
 | `gleanery_capture` | `GLEANERY_DB_URL_CAPTURE` | 会話の4表へ、自動記録が埋める列の追記だけ |
 
 PRコメントのようなuntrustedな文章を読む出口（MCP、画面）へ書き込みを持たせない。RLSは使わない。

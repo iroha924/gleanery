@@ -1,8 +1,6 @@
 node_modules/
 .env
 *.log
-dashboard/.next/
-dashboard/next-env.d.ts
 *.tsbuildinfo
 codex-prompt-*.md
 server/migrate-*.ts
@@ -17,3 +15,6 @@ server/migrate-*.ts
 # 配布物は publish のときに作る（scripts/bundle.mjs）。commit には入れない。
 plugin/dist/
 plugin/db/
+
+# 同梱した依存から作り直す（scripts/third-party-notices.mjs）。commit には入れない。
+plugin/THIRD_PARTY_NOTICES.md

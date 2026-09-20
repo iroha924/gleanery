@@ -66,31 +66,43 @@ gleanery --version
 | 変数 | 使うもの |
 |---|---|
 | `GLEANERY_DB_URL_RO` | MCP・画面の API（読むだけ） |
-| `GLEANERY_DB_URL_INGEST` | CLI の sync・trace・who・project |
+| `GLEANERY_DB_URL_INGEST` | CLI の harvest・trace・who・project |
 | `GLEANERY_DB_URL_CAPTURE` | 自動記録の送信（追記だけ） |
 | `GLEANERY_DB_URL` | owner。DB を管理する command（`gleanery db *` と `bun run db:*`）だけが使う |
 | `VOYAGE_API_KEY` / `OPENAI_API_KEY` | 埋め込みと rerank／チャット・会議の生成と文字起こし |
 
 DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`bun run db:roles` が 3 つのロールの鍵を作り直して書く。
-ロールの権限は `.agents/skills/knowledge-schema/SKILL.md`、デプロイ先の変数は `.agents/skills/deploy/SKILL.md`。
+ロールの権限は `.agents/skills/knowledge-schema/SKILL.md`。
 
 ## セットアップ
 
 **Docker が要る。**DB は `pgvector/pgvector:0.8.6-pg18` を `127.0.0.1:5432` に立てる。
 
+**`gleanery` は PATH に出ない。**plugin は MCP とフックと Skill を配るだけで、コマンドは別に入れる。
+このリポジトリでは `bun run cli`（= `node server/src/cli.ts`）で打ち、グローバルに入れた版と混ざらない。
+
 ```bash
-bun run setup                  # server / dashboard の依存を各 lockfile から入れる（Lefthook も入る）
-gleanery db init                  # DB を立て、鍵を作り、db/schema.sql を当てる（冪等）
-bun run bundle                 # 配布物を作る（MCP・自動記録・CLI・画面）
-gleanery doctor                   # 鍵と接続、schema の版、DB の大きさを確かめる
-gleanery project add --cwd <repo> # 記録する作業場所を登録する
-gleanery harvest --cwd <repo>        # 最初の取り込み
+bun run setup                          # server / dashboard の依存を各 lockfile から入れる（Lefthook も入る）
+bun run cli db init                    # DB を立て、鍵を作り、db/schema.sql を当てる（冪等）
+bun run bundle                         # 配布物を作る（MCP・自動記録・CLI・画面・同梱の告知）
+bun run cli doctor                     # 鍵と接続、schema の版、DB の大きさを確かめる
+bun run cli project add --cwd <repo>   # 記録する作業場所を登録する
+bun run cli harvest --cwd <repo>       # 最初の取り込み
 ```
 
-`gleanery db init` が `~/.gleanery/env` に 4 つの鍵（owner と 3 ロール）を書く。VOYAGE と OPENAI の鍵は
+使うだけなら npm から入れる。**plugin の版とは別に更新する**（plugin は `claude plugin update`、
+コマンドは `npm i -g`）。
+
+```bash
+npm i -g gleanery        # gleanery コマンドが PATH に出る
+gleanery db init
+gleanery dashboard       # http://127.0.0.1:8787
+```
+
+`db init` が `~/.gleanery/env` に 4 つの鍵（owner と 3 ロール）を書く。VOYAGE と OPENAI の鍵は
 手で足す。
 
-既存の DB は作り直さず、`gleanery db migrate` で `db/migrations` の新しい分を当てる。MCP・CLI・画面の API は、
+既存の DB は作り直さず、`db migrate` で `db/migrations` の新しい分を当てる。MCP・CLI・画面の API は、
 DB の schema の版がコードより古いと止まってこれを案内する。当てる前に接続先を打ち直させる。
 順序と戻し方は `.agents/skills/knowledge-schema/SKILL.md`。
 
@@ -99,9 +111,8 @@ DB の schema の版がコードより古いと止まってこれを案内する
 **その PC の DB は空から始まる。**ほかの PC の記録は引き継がない。
 
 ```bash
-# 1. リポジトリとプラグイン
-git clone https://github.com/iroha924/gleanery.git ~/Projects/gleanery
-cd ~/Projects/gleanery && bun run setup && bun run bundle
+# 1. コマンドとプラグイン。**plugin だけでは gleanery が PATH に出ない**ので両方入れる
+npm i -g gleanery
 claude plugin marketplace add iroha924/gleanery && claude plugin install gleanery@gleanery
 codex plugin marketplace add iroha924/gleanery --ref main && codex plugin add gleanery@gleanery
 
@@ -110,8 +121,16 @@ gleanery db init
 
 # 3. VOYAGE_API_KEY と OPENAI_API_KEY を ~/.gleanery/env へ足す
 
-# 4. 確かめる
+# 4. 確かめる（コマンド・plugin それぞれの版と、鍵と接続を見る）
 gleanery doctor
+```
+
+開発する PC では、これに加えてリポジトリを clone する。コマンドは `bun run cli` を使い、
+グローバルに入れた版と混ざらないようにする。
+
+```bash
+git clone https://github.com/iroha924/gleanery.git ~/Projects/gleanery
+cd ~/Projects/gleanery && bun run setup && bun run bundle
 ```
 
 取り込みは `gleanery harvest` を打ったときだけ走る。定期実行は用意していない。自動化したいなら launchd や
@@ -149,3 +168,12 @@ bun run bundle       # 配布物を作り直す
 AI 向けの規約は `AGENTS.md`。
 DB は手元の Docker で動くので容量の上限は無く、ディスクが尽きるまで入る（`gleanery doctor` の「DB の大きさ」）。
 埋め込みの行が 5 万に近づいたら HNSW を足す（実測は `.agents/skills/knowledge-schema/SKILL.md`）。
+
+## ライセンス
+
+gleanery 自身は MIT（`LICENSE`）。
+
+配る `dist/` の JavaScript は依存を束ねているので、**束ねた側にも同梱の義務が残る**。
+`plugin/THIRD_PARTY_NOTICES.md` に 107 package の著作権表示とライセンス文を集めてあり、
+`bun run bundle` が `node_modules` から作り直す（追跡せず、publish する物に入る）。
+Apache-2.0 の package が全文を同梱していない場合は `scripts/licenses/Apache-2.0.txt` の写しを当てる。

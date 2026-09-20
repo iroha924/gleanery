@@ -1,4 +1,5 @@
--- gleanery の DB の正本。持ち主 1 人が、どの PC からでも同じ判断と会話を引くためにある。
+-- gleanery の DB の正本。持ち主 1 人が、その PC での判断と会話を引くためにある。
+-- **PC ごとに独立していて、記録を共有しない。**
 --
 -- 境界は 3 つ。取り込み元の今の状態（connector / source_item）、逐語の会話（conversation / message）、
 -- 検索する知識（knowledge）。作業の現在地（work_item）は更新される状態なので知識とは表を分ける。

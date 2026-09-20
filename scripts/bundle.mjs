@@ -40,6 +40,10 @@ fs.cpSync(path.join(root, "db", "migrations"), path.join(db, "migrations"), { re
 // 4. 束ねた入口に実行権を付ける。npm は Windows で shebang を読んで .cmd を作る。
 for (const entry of ["cli"]) fs.chmodSync(path.join(dist, `${entry}.js`), 0o755);
 
+// 5. 同梱した依存の著作権表示とライセンス文。**束ねても同梱の義務は消えない**ので、
+// 配る物を作るたびに、そのときの node_modules から作り直す。
+run("node", ["scripts/third-party-notices.mjs"]);
+
 const count = (dir) =>
   fs.readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).length;
 console.log(
