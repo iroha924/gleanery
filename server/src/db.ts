@@ -132,40 +132,6 @@ export async function connect(env: Env, role: Role): Promise<pg.Client> {
 }
 
 /**
- * 長命のプロセス（画面の API と MCP）が使う接続。同時に来たクエリを 1 本へ積まない。
- *
- * 返すのは「最初の呼び出しで schema の版を確かめてから pool を渡す」関数。起動時に確かめると、
- * DB に届かないだけで MCP が立ち上がらなくなる。失敗は覚えず、次の呼び出しで確かめ直す。
- */
-export function lazyPool(env: Env, role: Role): () => Promise<pg.Pool> {
-  let ready: Promise<pg.Pool> | null = null;
-  return () => {
-    ready ??= (async () => {
-      const p = new pg.Pool({
-        ...settings(env, role),
-        max: 5,
-        idleTimeoutMillis: 30_000,
-        allowExitOnIdle: true,
-      });
-      // 借りている間の切断は、pg が reject の後に emit("error") まで行う。受け手が無いとプロセスごと落ちる。
-      p.on("connect", (client) => client.on("error", () => {}));
-      p.on("error", () => {});
-      try {
-        await checkSchema(p);
-      } catch (e) {
-        await p.end().catch(() => {});
-        throw e;
-      }
-      return p;
-    })().catch((e: unknown) => {
-      ready = null;
-      throw e;
-    });
-    return ready;
-  };
-}
-
-/**
  * role ごとの接続。pool は最初のクエリで作り、そこで schema の版を確かめる。
  * 起動時に確かめると、DB に届かないだけで MCP が立ち上がらなくなる。失敗は覚えず、次のクエリで作り直す。
  */

@@ -21,11 +21,13 @@ import {
   text_en,
   version,
 } from "@stricli/core";
+import type { Kysely } from "kysely";
 import type pg from "pg";
 import { dbDown, dbInit, dbUp, migrate } from "./admin.ts";
 import { check, init } from "./artifacts.ts";
 import { flush, readState, rejectedDir } from "./capture.ts";
-import { checkSchema, connect, type Env, inClientTransaction, KEY, loadEnv, type Role } from "./db.ts";
+import { checkSchema, connect, type Env, inClientTransaction, KEY, loadEnv, open, type Role } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { syncDocs } from "./docs.ts";
 import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
@@ -102,12 +104,15 @@ const TEXT: ApplicationText = {
   commandErrorResult: (e) => failed(e.message),
 };
 
-async function withDb<T>(env: Env, role: Role, fn: (c: pg.Client) => Promise<T>): Promise<T> {
+// 移行中: 読む側は kysely、書く側はまだ pg.Client。transaction は Client 側だけで張るので割れない。
+async function withDb<T>(env: Env, role: Role, fn: (c: pg.Client, db: Kysely<DB>) => Promise<T>): Promise<T> {
   const c = await connect(env, role);
+  const db = open(env, role);
   try {
     await checkSchema(c);
-    return await fn(c);
+    return await fn(c, db);
   } finally {
+    await db.destroy().catch(() => {});
     await c.end().catch(() => {});
   }
 }
@@ -122,8 +127,8 @@ function placeOf(cwd: string): Place {
   return place;
 }
 
-async function registered(c: pg.Client, place: Place): Promise<number> {
-  const id = await projectId(c, place.key);
+async function registered(db: Kysely<DB>, place: Place): Promise<number> {
+  const id = await projectId(db, place.key);
   if (id === null)
     throw new Error(`${place.name} は gleanery に登録されていない。\`gleanery project add\` で登録する`);
   return id;
@@ -200,8 +205,8 @@ async function traceContext(env: Env, cwd: string, host?: Host): Promise<string>
   // 待ち行列に残っている分を先に送る。送れなくても続ける（会話は自分の文脈から書ける）。
   await flush(env).catch(() => {});
   const place = placeOf(cwd);
-  return withDb(env, "reader", async (c) => {
-    const id = await registered(c, place);
+  return withDb(env, "reader", async (c, db) => {
+    const id = await registered(db, place);
     const conversation = conversationId(id, session.host, session.id);
     const messages = await c.query<{
       speaker_kind: string;
@@ -220,8 +225,8 @@ async function traceContext(env: Env, cwd: string, host?: Host): Promise<string>
        where conversation_id = $1 and kind <> 'option' order by occurred_at`,
       [conversation],
     );
-    const works = await openWork(c, [id], 5);
-    const detail = works.length === 1 && works[0] ? await workDetail(c, works[0].ref.slice(2)) : null;
+    const works = await openWork(db, [id], 5);
+    const detail = works.length === 1 && works[0] ? await workDetail(db, works[0].ref.slice(2)) : null;
     const workKeys = await c.query<{ source_key: string; title: string; status: string }>(
       "select source_key, title, status from gleanery.work_item where project_id = $1 and status in ('active', 'blocked', 'paused')",
       [id],
@@ -585,8 +590,8 @@ const traceRoutes = buildRouteMap({
             `記録の session（${trace.session.id}）が、いまの ${now.host} の session（${now.id}）と違う。trace context が出した session を書く`,
           );
         const place = placeOf(process.cwd());
-        await withDb(env, "ingest", async (c) => {
-          const id = await registered(c, place);
+        await withDb(env, "ingest", async (c, db) => {
+          const id = await registered(db, place);
           const saved = await saveTrace(c, env, id, trace);
           console.log(
             panel(
@@ -708,9 +713,9 @@ const root = buildRouteMap({
         const failures: string[] = [];
         let done = 0;
         try {
-          await withDb(env, "ingest", async (c) => {
+          await withDb(env, "ingest", async (c, db) => {
             const only = flags.cwd ? placeOf(flags.cwd) : null;
-            if (only) await registered(c, only);
+            if (only) await registered(db, only);
             const { found, ambiguous } = localRoots();
             const projects = await c.query<{ id: string; key: string; name: string }>(
               "select id, key, name from gleanery.project order by name",
@@ -803,16 +808,16 @@ const root = buildRouteMap({
         const question = words.join(" ");
         if (!question && !flags.said) throw new Error("質問を指定する（--said なら質問は要らない）");
         const place = flags.all ? null : placeOf(flags.cwd ?? process.cwd());
-        await withDb(env, "reader", async (c) => {
-          const projects = place ? [await registered(c, place)] : null;
+        await withDb(env, "reader", async (_c, db) => {
+          const projects = place ? [await registered(db, place)] : null;
           const hits = flags.said
-            ? await searchMessages(c, env, {
+            ? await searchMessages(db, env, {
                 question: question || undefined,
                 projects,
                 who: flags.said,
                 limit: flags.limit,
               })
-            : await searchKnowledge(c, env, {
+            : await searchKnowledge(db, env, {
                 question,
                 projects,
                 avoid: flags.avoid,
@@ -843,9 +848,9 @@ const root = buildRouteMap({
         },
       },
       func: async (flags: { me?: boolean }, ...args: string[]) => {
-        await withDb(loadEnv(), args.length ? "ingest" : "reader", async (c) => {
+        await withDb(loadEnv(), args.length ? "ingest" : "reader", async (c, db) => {
           if (args.length === 0) {
-            const people = await directory(c);
+            const people = await directory(db);
             const unknown = await c.query<{ handle: string; n: string }>(
               `select i.handle, count(m.id) as n from gleanery.person_identity i
                left join gleanery.message m on m.identity_id = i.id

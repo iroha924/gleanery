@@ -6,8 +6,10 @@
 // 再ランクと埋め込みが落ちても検索は返す（語彙側だけ、または融合の順で）。
 
 import crypto from "node:crypto";
+import { type Expression, type InferResult, type Kysely, type NotNull, type SqlBool, sql } from "kysely";
 import { z } from "zod";
-import { type Db, type Env, embed, RERANK_MODEL, vec } from "./db.ts";
+import { type Env, embed, RERANK_MODEL, vec } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { KINDS, labelOf } from "./knowledge.ts";
 import { bytes, head, tsquery, visible } from "./text.ts";
 
@@ -44,12 +46,6 @@ export type Hit = {
 const POOL = 40;
 const RERANK_POOL = 30;
 
-type P = (v: unknown) => string;
-const params = (): [unknown[], P] => {
-  const values: unknown[] = [];
-  return [values, (v) => `$${values.push(v)}`];
-};
-
 /** 日付の形。暦にない日（2026-02-30）も弾く。MCP の入力の検査にも使う。 */
 export const DAY = z.iso.date();
 
@@ -59,10 +55,14 @@ const day = (d: string): string => {
   if (!DAY.safeParse(d).success) throw new RangeError(`日付は実在する YYYY-MM-DD（日本時間）にする: ${d}`);
   return d;
 };
-const since = (col: string, d: string, p: P) =>
-  `${col} >= (${p(day(d))}::date)::timestamp at time zone 'Asia/Tokyo'`;
-const until = (col: string, d: string, p: P) =>
-  `${col} < ((${p(day(d))}::date) + 1)::timestamp at time zone 'Asia/Tokyo'`;
+const since = (col: string, d: string): Expression<SqlBool> =>
+  sql<SqlBool>`${sql.ref(col)} >= (${day(d)}::date)::timestamp at time zone 'Asia/Tokyo'`;
+const until = (col: string, d: string): Expression<SqlBool> =>
+  sql<SqlBool>`${sql.ref(col)} < ((${day(d)}::date) + 1)::timestamp at time zone 'Asia/Tokyo'`;
+
+/** 作業場所で絞る。null は全部（`any` の相手が null なら比較自体を飛ばす）。 */
+const inScope = (col: string, projects: Scope): Expression<SqlBool> =>
+  sql<SqlBool>`(${projects}::bigint[] is null or ${sql.ref(col)} = any(${projects}))`;
 
 /** 尺度の違う並びを、順位だけで混ぜる（Reciprocal Rank Fusion）。 */
 export function fuse<T extends { ref: string }>(lists: T[][], k = 60): T[] {
@@ -93,14 +93,13 @@ async function queryVector(env: Env, question: string): Promise<number[] | null>
 async function both<R>(
   env: Env,
   question: string,
-  lexical: (() => Promise<{ rows: R[] }>) | null,
-  dense: (v: number[]) => Promise<{ rows: R[] }>,
+  lexical: (() => Promise<R[]>) | null,
+  dense: (v: number[]) => Promise<R[]>,
 ): Promise<[R[], R[]]> {
-  const [lex, den] = await Promise.all([
-    lexical ? lexical() : { rows: [] },
-    queryVector(env, question).then((v) => (v ? dense(v) : { rows: [] })),
+  return await Promise.all([
+    lexical ? lexical() : [],
+    queryVector(env, question).then((v) => (v ? dense(v) : [])),
   ]);
-  return [lex.rows, den.rows];
 }
 
 /** 札を前置して再ランクする。**札が無いと、棄却した案が文字面の近さで 1 位に来る。** */
@@ -150,30 +149,33 @@ export type KnowledgeQuery = {
   limit: number;
 };
 
-type KnowledgeRow = {
-  id: string;
-  kind: string;
-  status: string | null;
-  stance: Hit["stance"];
-  heading: string | null;
-  body: string;
-  reason: string | null;
-  confirmation: string | null;
-  downsides: string[];
-  occurred_at: Date;
-  project: string;
-  source_kind: string | null;
-  path: string | null;
-  url: string | null;
-  successor: string | null;
-};
+/** 知識の共通の射影。join と列を 1 か所に持つ（結果の型はここから推論する）。 */
+const knowledgeBase = (db: Kysely<DB>) =>
+  db
+    .selectFrom("gleanery.knowledge as k")
+    .innerJoin("gleanery.project as p", "p.id", "k.project_id")
+    .leftJoin("gleanery.source_item as s", "s.id", "k.source_item_id")
+    .leftJoin("gleanery.knowledge as succ", "succ.id", "k.superseded_by_id")
+    .select([
+      sql<string>`k.id::text`.as("id"),
+      "k.kind",
+      "k.status",
+      // 生成列。schema の case 式が 3 値のどれかを返すので、列の型（text）より狭く持つ。
+      sql<Hit["stance"]>`k.stance`.as("stance"),
+      "k.heading",
+      "k.body",
+      "k.reason",
+      "k.confirmation",
+      "k.downsides",
+      "k.occurred_at",
+      "p.name as project",
+      "s.kind as source_kind",
+      "s.path",
+      "s.url",
+      "succ.body as successor",
+    ]);
 
-const KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.stance, k.heading, k.body, k.reason, k.confirmation, k.downsides,
-  k.occurred_at, p.name as project, s.kind as source_kind, s.path, s.url, succ.body as successor`;
-const KNOWLEDGE_FROM = `from gleanery.knowledge k
-  join gleanery.project p on p.id = k.project_id
-  left join gleanery.source_item s on s.id = k.source_item_id
-  left join gleanery.knowledge succ on succ.id = k.superseded_by_id`;
+type KnowledgeRow = InferResult<ReturnType<typeof knowledgeBase>>[number];
 
 const knowledgeHit = (r: KnowledgeRow): Hit => ({
   ref: `k:${r.id}`,
@@ -197,61 +199,56 @@ const knowledgeHit = (r: KnowledgeRow): Hit => ({
   relevance: null,
 });
 
-function knowledgeFilters(q: KnowledgeQuery, p: P): string[] {
-  const w: string[] = [];
-  if (q.projects) w.push(`k.project_id = any(${p(q.projects)})`);
+function knowledgeFilters(q: KnowledgeQuery): Expression<SqlBool>[] {
+  const w: Expression<SqlBool>[] = [];
+  if (q.projects) w.push(sql<SqlBool>`k.project_id = any(${q.projects})`);
   const kinds = q.kinds?.filter((k) => (KINDS as readonly string[]).includes(k));
-  w.push(kinds?.length ? `k.kind = any(${p(kinds)})` : "k.kind <> 'document'");
-  if (q.avoid) w.push("k.stance = 'dont'");
+  w.push(kinds?.length ? sql<SqlBool>`k.kind = any(${kinds})` : sql<SqlBool>`k.kind <> 'document'`);
+  if (q.avoid) w.push(sql<SqlBool>`k.stance = 'dont'`);
   else {
     // 通常の検索は、いま有効な知識だけ。覆された決定と当時の案は avoid で引く（再提案を止めるため）。
     // 外した制約と解決した問いはどの検索にも出さない（read と画面のセッション詳細で読む）。外した理由と
     // 問いの答えは decision か finding として残す（trace の Skill）。採った案は決定と同じ内容なので、決定だけを返す。
-    w.push("not (k.kind = 'decision' and k.status = 'superseded')");
-    w.push("not (k.kind = 'option' and k.status in ('chosen', 'was_chosen'))");
-    w.push("coalesce(k.status, '') not in ('retired', 'resolved')");
+    w.push(sql<SqlBool>`not (k.kind = 'decision' and k.status = 'superseded')`);
+    w.push(sql<SqlBool>`not (k.kind = 'option' and k.status in ('chosen', 'was_chosen'))`);
+    w.push(sql<SqlBool>`coalesce(k.status, '') not in ('retired', 'resolved')`);
   }
   if (q.path)
     w.push(
-      `exists (select 1 from gleanery.knowledge_file f where f.knowledge_id = k.id and f.path = ${p(q.path)})`,
+      sql<SqlBool>`exists (select 1 from gleanery.knowledge_file f
+        where f.knowledge_id = k.id and f.path = ${q.path})`,
     );
-  if (q.since) w.push(since("k.occurred_at", q.since, p));
-  if (q.until) w.push(until("k.occurred_at", q.until, p));
+  if (q.since) w.push(since("k.occurred_at", q.since));
+  if (q.until) w.push(until("k.occurred_at", q.until));
   return w;
 }
 
 /** 判断と文書を探す。 */
-export async function searchKnowledge(db: Db, env: Env, q: KnowledgeQuery): Promise<Hit[]> {
+export async function searchKnowledge(db: Kysely<DB>, env: Env, q: KnowledgeQuery): Promise<Hit[]> {
   // 絞り込みを先に組む（日付の誤りをここで投げる）。
-  knowledgeFilters(q, params()[1]);
+  const w = knowledgeFilters(q);
   const words = tsquery(q.question);
   const [lex, den] = await both(
     env,
     q.question,
     words
-      ? () => {
-          const [v, p] = params();
-          const w = knowledgeFilters(q, p);
-          const t = p(words);
-          return db.query<KnowledgeRow>(
-            `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
-             where ${[...w, `k.lexemes @@ ${t}::tsquery`].join(" and ")}
-             order by ts_rank_cd(k.lexemes, ${t}::tsquery) desc, k.occurred_at desc limit ${p(POOL)}`,
-            v,
-          );
-        }
+      ? () =>
+          knowledgeBase(db)
+            .where((eb) => eb.and([...w, sql<SqlBool>`k.lexemes @@ ${words}::tsquery`]))
+            .orderBy(sql`ts_rank_cd(k.lexemes, ${words}::tsquery)`, "desc")
+            .orderBy("k.occurred_at", "desc")
+            .limit(POOL)
+            .execute()
       : null,
-    (qv) => {
-      const [v, p] = params();
-      const w = knowledgeFilters(q, p);
-      return db.query<KnowledgeRow>(
-        `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
-         join gleanery.knowledge_embedding e on e.knowledge_id = k.id and e.status = 'ready'
-         where ${w.join(" and ")}
-         order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
-        v,
-      );
-    },
+    (qv) =>
+      knowledgeBase(db)
+        .innerJoin("gleanery.knowledge_embedding as e", (j) =>
+          j.onRef("e.knowledge_id", "=", "k.id").on("e.status", "=", "ready"),
+        )
+        .where((eb) => eb.and(w))
+        .orderBy(sql`e.embedding operator(extensions.<#>) ${vec(qv)}::extensions.halfvec`)
+        .limit(POOL)
+        .execute(),
   );
   return rerank(env, q.question, fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]), q.limit);
 }
@@ -270,34 +267,37 @@ export type MessageQuery = {
   limit: number;
 };
 
-type MessageRow = {
-  id: string;
-  body: string;
-  speaker_kind: string;
-  sent_at: Date;
-  url: string | null;
-  truncated: boolean;
-  original_bytes: number;
-  origin: string;
-  project: string;
-  title: string | null;
-  source_kind: string | null;
-  number: string | null;
-  handle: string | null;
-  display_name: string | null;
-  is_self: boolean | null;
-};
+/** 発言の共通の射影。join と列を 1 か所に持つ（結果の型はここから推論する）。 */
+const messageBase = (db: Kysely<DB>) =>
+  db
+    .selectFrom("gleanery.message as m")
+    .innerJoin("gleanery.conversation as c", "c.id", "m.conversation_id")
+    .innerJoin("gleanery.project as p", "p.id", "c.project_id")
+    .leftJoin("gleanery.source_item as s", "s.id", "c.source_item_id")
+    .leftJoin("gleanery.person_identity as i", "i.id", "m.identity_id")
+    .leftJoin("gleanery.person as pe", "pe.id", "i.person_id")
+    .select([
+      sql<string>`m.id::text`.as("id"),
+      "m.body",
+      "m.speaker_kind",
+      "m.sent_at",
+      "m.url",
+      "m.truncated",
+      "m.original_bytes",
+      "c.origin",
+      "p.name as project",
+      "s.title",
+      "s.kind as source_kind",
+      "s.external_id as number",
+      "i.handle",
+      "pe.display_name",
+      "pe.is_self",
+    ]);
 
-const MESSAGE_COLS = `m.id::text, m.body, m.speaker_kind, m.sent_at, m.url, m.truncated, m.original_bytes, c.origin,
-  p.name as project, s.title, s.kind as source_kind, s.external_id as number, i.handle, pe.display_name, pe.is_self`;
-const MESSAGE_FROM = `from gleanery.message m
-  join gleanery.conversation c on c.id = m.conversation_id
-  join gleanery.project p on p.id = c.project_id
-  left join gleanery.source_item s on s.id = c.source_item_id
-  left join gleanery.person_identity i on i.id = m.identity_id
-  left join gleanery.person pe on pe.id = i.person_id`;
+type MessageRow = InferResult<ReturnType<typeof messageBase>>[number];
+
 /** 持ち主の発言。coding session の発言と、持ち主の GitHub アカウントの発言の両方。 */
-const SELF = "(m.speaker_kind = 'self' or coalesce(pe.is_self, false))";
+const SELF = sql<SqlBool>`(m.speaker_kind = 'self' or coalesce(pe.is_self, false))`;
 
 export function speakerLabel(r: {
   speaker_kind: string;
@@ -344,67 +344,62 @@ const messageHit = (r: MessageRow): Hit => {
   };
 };
 
-function messageFilters(q: MessageQuery, p: P): string[] {
+function messageFilters(q: MessageQuery): Expression<SqlBool>[] {
   // 索引した発言だけ（coding session の AI の応答と自動通知は lexemes を持たない）。
-  const w = ["m.lexemes is not null"];
-  if (q.projects) w.push(`c.project_id = any(${p(q.projects)})`);
-  if (q.sessionsOnly) w.push("c.origin <> 'github'");
+  const w: Expression<SqlBool>[] = [sql<SqlBool>`m.lexemes is not null`];
+  if (q.projects) w.push(sql<SqlBool>`c.project_id = any(${q.projects})`);
+  if (q.sessionsOnly) w.push(sql<SqlBool>`c.origin <> 'github'`);
   if (q.who === "me") w.push(SELF);
-  else if (q.who === "others") w.push(`not ${SELF} and m.speaker_kind = 'person'`);
+  else if (q.who === "others") w.push(sql<SqlBool>`not ${SELF} and m.speaker_kind = 'person'`);
   else if (q.who) {
-    const x = p(q.who.replace(/^@/, ""));
-    w.push(`(lower(i.handle) = lower(${x}) or pe.display_name = ${x})`);
+    const x = q.who.replace(/^@/, "");
+    w.push(sql<SqlBool>`(lower(i.handle) = lower(${x}) or pe.display_name = ${x})`);
   }
   if (q.path)
     w.push(
-      `exists (select 1 from gleanery.message_file f where f.message_id = m.id and f.path = ${p(q.path)})`,
+      sql<SqlBool>`exists (select 1 from gleanery.message_file f
+        where f.message_id = m.id and f.path = ${q.path})`,
     );
-  if (q.since) w.push(since("m.sent_at", q.since, p));
-  if (q.until) w.push(until("m.sent_at", q.until, p));
+  if (q.since) w.push(since("m.sent_at", q.since));
+  if (q.until) w.push(until("m.sent_at", q.until));
   return w;
 }
 
 /** 発言を探す。「私はなんて言った？」「◯◯さんは何と書いた？」「このファイルについて言われたこと」。 */
-export async function searchMessages(db: Db, env: Env, q: MessageQuery): Promise<Hit[]> {
+export async function searchMessages(db: Kysely<DB>, env: Env, q: MessageQuery): Promise<Hit[]> {
+  // 絞り込みを先に組む（日付の誤りをここで投げる）。
+  const w = messageFilters(q);
   if (!q.question?.trim()) {
-    const [v, p] = params();
-    const w = messageFilters(q, p);
-    const r = await db.query<MessageRow>(
-      `select ${MESSAGE_COLS} ${MESSAGE_FROM} where ${w.join(" and ")} order by m.sent_at desc limit ${p(q.limit)}`,
-      v,
-    );
-    return r.rows.map(messageHit);
+    const rows = await messageBase(db)
+      .where((eb) => eb.and(w))
+      .orderBy("m.sent_at", "desc")
+      .limit(q.limit)
+      .execute();
+    return rows.map(messageHit);
   }
-  messageFilters(q, params()[1]);
   const question = q.question;
   const words = tsquery(question);
   const [lex, den] = await both(
     env,
     question,
     words
-      ? () => {
-          const [v, p] = params();
-          const w = messageFilters(q, p);
-          const t = p(words);
-          return db.query<MessageRow>(
-            `select ${MESSAGE_COLS} ${MESSAGE_FROM}
-             where ${[...w, `m.lexemes @@ ${t}::tsquery`].join(" and ")}
-             order by ts_rank_cd(m.lexemes, ${t}::tsquery) desc, m.sent_at desc limit ${p(POOL)}`,
-            v,
-          );
-        }
+      ? () =>
+          messageBase(db)
+            .where((eb) => eb.and([...w, sql<SqlBool>`m.lexemes @@ ${words}::tsquery`]))
+            .orderBy(sql`ts_rank_cd(m.lexemes, ${words}::tsquery)`, "desc")
+            .orderBy("m.sent_at", "desc")
+            .limit(POOL)
+            .execute()
       : null,
-    (qv) => {
-      const [v, p] = params();
-      const w = messageFilters(q, p);
-      return db.query<MessageRow>(
-        `select ${MESSAGE_COLS} ${MESSAGE_FROM}
-         join gleanery.message_embedding e on e.message_id = m.id and e.status = 'ready'
-         where ${w.join(" and ")}
-         order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
-        v,
-      );
-    },
+    (qv) =>
+      messageBase(db)
+        .innerJoin("gleanery.message_embedding as e", (j) =>
+          j.onRef("e.message_id", "=", "m.id").on("e.status", "=", "ready"),
+        )
+        .where((eb) => eb.and(w))
+        .orderBy(sql`e.embedding operator(extensions.<#>) ${vec(qv)}::extensions.halfvec`)
+        .limit(POOL)
+        .execute(),
   );
   return rerank(env, question, fuse([den.map(messageHit), lex.map(messageHit)]), q.limit);
 }
@@ -428,25 +423,24 @@ export type WorkDetail = Work & {
 };
 
 /** 続きをやる作業。進行中（active / blocked / paused）を新しい順に。 */
-export async function openWork(db: Db, projects: Scope, limit = 3): Promise<Work[]> {
-  const [v, p] = params();
-  const r = await db.query<{
-    id: string;
-    project: string;
-    title: string;
-    goal: string;
-    current: string;
-    next: string[];
-    status: string;
-    updated_at: Date;
-  }>(
-    `select w.id::text, p.name as project, w.title, w.goal, w.current, w.next, w.status, w.updated_at
-     from gleanery.work_item w join gleanery.project p on p.id = w.project_id
-     where w.status in ('active', 'blocked', 'paused') ${projects ? `and w.project_id = any(${p(projects)})` : ""}
-     order by w.updated_at desc limit ${p(limit)}`,
-    v,
-  );
-  return r.rows.map((w) => ({
+export async function openWork(db: Kysely<DB>, projects: Scope, limit = 3): Promise<Work[]> {
+  let q = db
+    .selectFrom("gleanery.work_item as w")
+    .innerJoin("gleanery.project as p", "p.id", "w.project_id")
+    .select([
+      sql<string>`w.id::text`.as("id"),
+      "p.name as project",
+      "w.title",
+      "w.goal",
+      "w.current",
+      "w.next",
+      "w.status",
+      "w.updated_at",
+    ])
+    .where("w.status", "in", ["active", "blocked", "paused"]);
+  if (projects) q = q.where(sql<SqlBool>`w.project_id = any(${projects})`);
+  const rows = await q.orderBy("w.updated_at", "desc").limit(limit).execute();
+  return rows.map((w) => ({
     ref: `w:${w.id}`,
     project: w.project,
     title: w.title,
@@ -459,34 +453,41 @@ export async function openWork(db: Db, projects: Scope, limit = 3): Promise<Work
 }
 
 /** 作業 1 件の、再開に要るもの全部。 */
-export async function workDetail(db: Db, id: string, projects: Scope = null): Promise<WorkDetail | null> {
-  const w = await db.query<{
-    id: string;
-    project: string;
-    title: string;
-    goal: string;
-    current: string;
-    next: string[];
-    status: string;
-    updated_at: Date;
-  }>(
-    `select w.id::text, p.name as project, w.title, w.goal, w.current, w.next, w.status, w.updated_at
-     from gleanery.work_item w join gleanery.project p on p.id = w.project_id
-     where w.id = $1 and ($2::bigint[] is null or w.project_id = any($2))`,
-    [id, projects],
-  );
-  const row = w.rows[0];
+export async function workDetail(
+  db: Kysely<DB>,
+  id: string,
+  projects: Scope = null,
+): Promise<WorkDetail | null> {
+  const row = await db
+    .selectFrom("gleanery.work_item as w")
+    .innerJoin("gleanery.project as p", "p.id", "w.project_id")
+    .select([
+      sql<string>`w.id::text`.as("id"),
+      "p.name as project",
+      "w.title",
+      "w.goal",
+      "w.current",
+      "w.next",
+      "w.status",
+      "w.updated_at",
+    ])
+    .where("w.id", "=", id)
+    .where(inScope("w.project_id", projects))
+    .executeTakeFirst();
   if (!row) return null;
-  const k = await db.query<KnowledgeRow>(
-    `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
-     where k.work_item_id = $1
-       and ((k.kind = 'question' and k.status in ('open', 'blocking'))
-            or (k.kind in ('constraint', 'non_goal', 'debt') and k.status = 'active')
-            or k.kind = 'dead_end')
-     order by case k.status when 'blocking' then 0 else 1 end, k.occurred_at desc limit 30`,
-    [id],
-  );
-  const hits = k.rows.map(knowledgeHit);
+  const hits = (
+    await knowledgeBase(db)
+      .where("k.work_item_id", "=", id)
+      .where(
+        sql<SqlBool>`((k.kind = 'question' and k.status in ('open', 'blocking'))
+          or (k.kind in ('constraint', 'non_goal', 'debt') and k.status = 'active')
+          or k.kind = 'dead_end')`,
+      )
+      .orderBy(sql`case k.status when 'blocking' then 0 else 1 end`)
+      .orderBy("k.occurred_at", "desc")
+      .limit(30)
+      .execute()
+  ).map(knowledgeHit);
   return {
     ref: `w:${row.id}`,
     project: row.project,
@@ -504,24 +505,29 @@ export async function workDetail(db: Db, id: string, projects: Scope = null): Pr
 /** 編集の前に出す、ファイルに直接かかる制約と負債。path は作業場所の根からの相対。 */
 export type PathRule = { ref: string; label: string; text: string; reason: string | null; at: Date };
 
-export async function pathRules(db: Db, projectId: number): Promise<Map<string, PathRule[]>> {
-  const r = await db.query<{
-    path: string;
-    id: string;
-    kind: string;
-    status: string;
-    body: string;
-    reason: string | null;
-    occurred_at: Date;
-  }>(
-    `select f.path, k.id::text, k.kind, k.status, k.body, k.reason, k.occurred_at
-     from gleanery.knowledge_file f join gleanery.knowledge k on k.id = f.knowledge_id
-     where f.role = 'applies_to' and k.project_id = $1 and k.kind in ('constraint', 'debt') and k.status = 'active'
-     order by k.occurred_at desc`,
-    [projectId],
-  );
+export async function pathRules(db: Kysely<DB>, projectId: number): Promise<Map<string, PathRule[]>> {
+  const rows = await db
+    .selectFrom("gleanery.knowledge_file as f")
+    .innerJoin("gleanery.knowledge as k", "k.id", "f.knowledge_id")
+    .select([
+      "f.path",
+      sql<string>`k.id::text`.as("id"),
+      "k.kind",
+      "k.status",
+      "k.body",
+      "k.reason",
+      "k.occurred_at",
+    ])
+    .where("f.role", "=", "applies_to")
+    .where("k.project_id", "=", String(projectId))
+    .where("k.kind", "in", ["constraint", "debt"])
+    .where("k.status", "=", "active")
+    // 列としては null を許すが、直前の where が非 null を保証する。
+    .$narrowType<{ status: NotNull }>()
+    .orderBy("k.occurred_at", "desc")
+    .execute();
   const out = new Map<string, PathRule[]>();
-  for (const x of r.rows) {
+  for (const x of rows) {
     const list = out.get(x.path) ?? [];
     list.push({ ref: `k:${x.id}`, label: labelOf(x), text: x.body, reason: x.reason, at: x.occurred_at });
     out.set(x.path, list);
@@ -550,7 +556,7 @@ export type Item = {
  * 「先週マージした PR」を作成日で絞ると、先週より前に作って先週マージしたものが落ちる。
  */
 export async function listItems(
-  db: Db,
+  db: Kysely<DB>,
   q: {
     projects: Scope;
     kind?: "pull_request" | "issue" | undefined;
@@ -564,49 +570,55 @@ export async function listItems(
     offset?: number | undefined;
   },
 ): Promise<{ total: number; rows: Item[] }> {
-  const [v, p] = params();
-  const w = ["s.kind in ('pull_request', 'issue')"];
-  if (q.projects) w.push(`cn.project_id = any(${p(q.projects)})`);
-  if (q.kind) w.push(`s.kind = ${p(q.kind)}`);
-  if (q.state) w.push(`s.state = ${p(q.state)}`);
-  if (q.number) w.push(`s.external_id = ${p(String(q.number))}`);
+  const w: Expression<SqlBool>[] = [sql<SqlBool>`s.kind in ('pull_request', 'issue')`];
+  if (q.projects) w.push(sql<SqlBool>`cn.project_id = any(${q.projects})`);
+  if (q.kind) w.push(sql<SqlBool>`s.kind = ${q.kind}`);
+  if (q.state) w.push(sql<SqlBool>`s.state = ${q.state}`);
+  if (q.number) w.push(sql<SqlBool>`s.external_id = ${String(q.number)}`);
   if (q.author) {
-    const x = p(q.author);
+    const x = q.author;
     w.push(
-      `(lower(i.handle) = lower(${x}) or pe.display_name = ${x} or (${x} in ('私', 'me') and coalesce(pe.is_self, false)))`,
+      sql<SqlBool>`(lower(i.handle) = lower(${x}) or pe.display_name = ${x}
+        or (${x} in ('私', 'me') and coalesce(pe.is_self, false)))`,
     );
   }
   const at = q.state === "merged" || q.state === "closed" ? "s.closed_at" : "s.source_created_at";
-  if (q.since) w.push(since(at, q.since, p));
-  if (q.until) w.push(until(at, q.until, p));
-  const from = `from gleanery.source_item s
-    join gleanery.connector cn on cn.id = s.connector_id
-    join gleanery.project pr on pr.id = cn.project_id
-    left join gleanery.person_identity i on i.id = s.author_identity_id
-    left join gleanery.person pe on pe.id = i.person_id
-    where ${w.join(" and ")}`;
-  const total = Number((await db.query<{ n: string }>(`select count(*) as n ${from}`, v)).rows[0]?.n ?? 0);
-  const r = await db.query<{
-    id: string;
-    kind: string;
-    external_id: string;
-    title: string;
-    state: string;
-    handle: string | null;
-    url: string | null;
-    source_created_at: Date | null;
-    closed_at: Date | null;
-    source_updated_at: Date | null;
-    project: string;
-  }>(
-    `select s.id::text, s.kind, s.external_id, s.title, s.state, i.handle, s.url, s.source_created_at, s.closed_at,
-            s.source_updated_at, pr.name as project
-     ${from} order by ${at} desc nulls last, s.id desc limit ${p(q.limit)} offset ${p(q.offset ?? 0)}`,
-    v,
-  );
+  if (q.since) w.push(since(at, q.since));
+  if (q.until) w.push(until(at, q.until));
+  // 件数と一覧で同じ絞り込みを使う。builder は不変なので、ここから 2 通りに枝分かれさせられる。
+  const base = db
+    .selectFrom("gleanery.source_item as s")
+    .innerJoin("gleanery.connector as cn", "cn.id", "s.connector_id")
+    .innerJoin("gleanery.project as pr", "pr.id", "cn.project_id")
+    .leftJoin("gleanery.person_identity as i", "i.id", "s.author_identity_id")
+    .leftJoin("gleanery.person as pe", "pe.id", "i.person_id")
+    .where((eb) => eb.and(w));
+  const counted = await base.select((eb) => eb.fn.countAll().as("n")).executeTakeFirst();
+  const total = Number(counted?.n ?? 0);
+  const rows = await base
+    .select([
+      sql<string>`s.id::text`.as("id"),
+      "s.kind",
+      "s.external_id",
+      "s.title",
+      "s.state",
+      "i.handle",
+      "s.url",
+      "s.source_created_at",
+      "s.closed_at",
+      "s.source_updated_at",
+      "pr.name as project",
+    ])
+    // PR・issue に絞っているので、source_item_state_required（revision 5）が state の非 null を保証する。
+    .$narrowType<{ state: NotNull }>()
+    .orderBy(sql.ref(at), (ob) => ob.desc().nullsLast())
+    .orderBy("s.id", "desc")
+    .limit(q.limit)
+    .offset(q.offset ?? 0)
+    .execute();
   return {
     total,
-    rows: r.rows.map((x) => ({
+    rows: rows.map((x) => ({
       ref: `s:${x.id}`,
       kind: x.kind,
       number: x.external_id,
@@ -625,14 +637,22 @@ export async function listItems(
 /** 名簿の 1 行。**推論しない** — 人が `gleanery who` で入れたものだけ。 */
 export type Person = { display: string; handles: string[]; isSelf: boolean };
 
-export async function directory(db: Db): Promise<Person[]> {
-  const r = await db.query<{ display_name: string; is_self: boolean; handles: string[] }>(
-    `select pe.display_name, pe.is_self,
-            coalesce(array_agg(i.handle order by i.handle) filter (where i.id is not null), '{}') as handles
-     from gleanery.person pe left join gleanery.person_identity i on i.person_id = pe.id
-     group by pe.id order by pe.is_self desc, pe.display_name`,
-  );
-  return r.rows.map((p) => ({ display: p.display_name, handles: p.handles, isSelf: p.is_self }));
+export async function directory(db: Kysely<DB>): Promise<Person[]> {
+  const rows = await db
+    .selectFrom("gleanery.person as pe")
+    .leftJoin("gleanery.person_identity as i", "i.person_id", "pe.id")
+    .select([
+      "pe.display_name",
+      "pe.is_self",
+      sql<string[]>`coalesce(array_agg(i.handle order by i.handle) filter (where i.id is not null), '{}')`.as(
+        "handles",
+      ),
+    ])
+    .groupBy("pe.id")
+    .orderBy("pe.is_self", "desc")
+    .orderBy("pe.display_name")
+    .execute();
+  return rows.map((p) => ({ display: p.display_name, handles: p.handles, isSelf: p.is_self }));
 }
 
 // ---- 読む側へ渡す形 ----
@@ -723,7 +743,7 @@ export const REF = /^(?:[ksw]:\d{1,18}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
  * projects を渡すと、その作業場所の外の参照は「無い」と返す（画面のチャットは選んだ作業場所の外を読ませない）。
  */
 export async function read(
-  db: Db,
+  db: Kysely<DB>,
   refs: string[],
   budget: number,
   opts: { projects?: Scope; around?: number } = {},
@@ -748,74 +768,85 @@ export async function read(
   return out.join("\n\n");
 }
 
-async function readKnowledge(db: Db, id: string, budget: number, projects: Scope): Promise<string> {
-  const r = await db.query<
-    KnowledgeRow & {
-      refs: string[];
-      confidence: string | null;
-      origin: string | null;
-      session: string | null;
-      decision_id: string | null;
-    }
-  >(
-    `select ${KNOWLEDGE_COLS}, k.refs, k.confidence, c.origin, c.external_id as session, k.decision_id::text
-     ${KNOWLEDGE_FROM} left join gleanery.conversation c on c.id = k.conversation_id
-     where k.id = $1 and ($2::bigint[] is null or k.project_id = any($2))`,
-    [id, projects],
-  );
-  const k = r.rows[0];
+async function readKnowledge(db: Kysely<DB>, id: string, budget: number, projects: Scope): Promise<string> {
+  const k = await knowledgeBase(db)
+    .leftJoin("gleanery.conversation as c", "c.id", "k.conversation_id")
+    .select([
+      "k.refs",
+      "k.confidence",
+      "c.origin",
+      "c.external_id as session",
+      sql<string | null>`k.decision_id::text`.as("decision_id"),
+    ])
+    .where("k.id", "=", id)
+    .where(inScope("k.project_id", projects))
+    .executeTakeFirst();
   if (!k) return `k:${id}: 無い`;
-  const files = await db.query<{ path: string; role: string; line_start: number | null }>(
-    "select path, role, line_start from gleanery.knowledge_file where knowledge_id = $1 order by role, path",
-    [id],
-  );
-  const related = await db.query<KnowledgeRow>(
-    `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
-     where k.decision_id = $1 or k.id = $2 order by k.kind, k.occurred_at`,
-    [id, k.decision_id],
-  );
+  const files = await db
+    .selectFrom("gleanery.knowledge_file")
+    .select(["path", "role", "line_start"])
+    .where("knowledge_id", "=", id)
+    .orderBy("role")
+    .orderBy("path")
+    .execute();
+  const related = await knowledgeBase(db)
+    .where(sql<SqlBool>`(k.decision_id = ${id} or k.id = ${k.decision_id})`)
+    .orderBy("k.kind")
+    .orderBy("k.occurred_at")
+    .execute();
   const lines = [
     renderHit(knowledgeHit(k), budget),
     k.confidence ? `  根拠の強さ: ${k.confidence}` : null,
     k.refs.length ? `  根拠: ${k.refs.join(" / ")}` : null,
-    files.rows.length
-      ? `  ファイル: ${files.rows.map((f) => `${f.path}${f.line_start ? `:${f.line_start}` : ""}（${f.role === "applies_to" ? "かかる" : "根拠"}）`).join(" / ")}`
+    files.length
+      ? `  ファイル: ${files.map((f) => `${f.path}${f.line_start ? `:${f.line_start}` : ""}（${f.role === "applies_to" ? "かかる" : "根拠"}）`).join(" / ")}`
       : null,
     k.origin && k.session ? `  記録した session: ${k.origin} ${k.session}` : null,
-    ...related.rows.map((x) => `  - ${renderHit(knowledgeHit(x), 400).split("\n").join("\n    ")}`),
+    ...related.map((x) => `  - ${renderHit(knowledgeHit(x), 400).split("\n").join("\n    ")}`),
   ];
   return head(lines.filter(Boolean).join("\n"), budget);
 }
 
 async function readMessage(
-  db: Db,
+  db: Kysely<DB>,
   id: string,
   budget: number,
   around: number,
   projects: Scope,
 ): Promise<string> {
-  const target = await db.query<{ conversation_id: string; sent_at: Date }>(
-    `select m.conversation_id, m.sent_at from gleanery.message m join gleanery.conversation c on c.id = m.conversation_id
-     where m.id = $1 and ($2::bigint[] is null or c.project_id = any($2))`,
-    [id, projects],
-  );
-  const t = target.rows[0];
+  const t = await db
+    .selectFrom("gleanery.message as m")
+    .innerJoin("gleanery.conversation as c", "c.id", "m.conversation_id")
+    .select(["m.conversation_id", "m.sent_at"])
+    .where("m.id", "=", id)
+    .where(inScope("c.project_id", projects))
+    .executeTakeFirst();
   if (!t) return `m:${id}: 無い`;
   // 前後の turn も読む。AI の応答（索引していない）もここでは出す — 「それでいい」が何を指したかが分かる。
   // 並びは (sent_at, id)。同じ時刻の発言が並んでも、対象の発言が前後の件数の上限で落ちない。
-  const r = await db.query<MessageRow & { paths: string[] }>(
-    `(select ${MESSAGE_COLS}, array(select f.path from gleanery.message_file f where f.message_id = m.id order by f.path) as paths
-      ${MESSAGE_FROM} where m.conversation_id = $1 and (m.sent_at, m.id) < ($2, $5::uuid)
-      order by m.sent_at desc, m.id desc limit $3)
-     union all
-     (select ${MESSAGE_COLS}, array(select f.path from gleanery.message_file f where f.message_id = m.id order by f.path) as paths
-      ${MESSAGE_FROM} where m.conversation_id = $1 and (m.sent_at, m.id) >= ($2, $5::uuid)
-      order by m.sent_at, m.id limit $4)
-     order by sent_at, id`,
-    [t.conversation_id, t.sent_at, around, around + 1, id],
-  );
-  const per = Math.floor(budget / Math.max(r.rows.length, 1));
-  return r.rows
+  const withPaths = messageBase(db)
+    .select(
+      sql<string[]>`array(select f.path from gleanery.message_file f
+        where f.message_id = m.id order by f.path)`.as("paths"),
+    )
+    .where("m.conversation_id", "=", t.conversation_id);
+  const rows = await withPaths
+    .where(sql<SqlBool>`(m.sent_at, m.id) < (${t.sent_at}, ${id}::uuid)`)
+    .orderBy("m.sent_at", "desc")
+    .orderBy("m.id", "desc")
+    .limit(around)
+    .unionAll(
+      withPaths
+        .where(sql<SqlBool>`(m.sent_at, m.id) >= (${t.sent_at}, ${id}::uuid)`)
+        .orderBy("m.sent_at")
+        .orderBy("m.id")
+        .limit(around + 1),
+    )
+    .orderBy("sent_at")
+    .orderBy("id")
+    .execute();
+  const per = Math.floor(budget / Math.max(rows.length, 1));
+  return rows
     .map((m) => {
       const h = messageHit(m);
       const mark = m.id === id ? "▶ " : "";
@@ -824,29 +855,29 @@ async function readMessage(
     .join("\n\n");
 }
 
-async function readSource(db: Db, id: string, budget: number, projects: Scope): Promise<string> {
-  const r = await db.query<{
-    kind: string;
-    external_id: string;
-    title: string;
-    state: string | null;
-    url: string | null;
-    path: string | null;
-    body: string | null;
-    source_updated_at: Date | null;
-    project: string;
-    metadata: { change?: string; changeTitle?: string };
-    conversation: string | null;
-  }>(
-    `select s.kind, s.external_id, s.title, s.state, s.url, s.path, s.body, s.source_updated_at, p.name as project,
-            s.metadata, c.id::text as conversation
-     from gleanery.source_item s join gleanery.connector cn on cn.id = s.connector_id
-     join gleanery.project p on p.id = cn.project_id
-     left join gleanery.conversation c on c.source_item_id = s.id
-     where s.id = $1 and ($2::bigint[] is null or cn.project_id = any($2))`,
-    [id, projects],
-  );
-  const s = r.rows[0];
+async function readSource(db: Kysely<DB>, id: string, budget: number, projects: Scope): Promise<string> {
+  const s = await db
+    .selectFrom("gleanery.source_item as s")
+    .innerJoin("gleanery.connector as cn", "cn.id", "s.connector_id")
+    .innerJoin("gleanery.project as p", "p.id", "cn.project_id")
+    .leftJoin("gleanery.conversation as c", "c.source_item_id", "s.id")
+    .select([
+      "s.kind",
+      "s.external_id",
+      "s.title",
+      "s.state",
+      "s.url",
+      "s.path",
+      "s.body",
+      "s.source_updated_at",
+      "p.name as project",
+      // jsonb の中身は DB が形を保証しない。読む側で見る。
+      sql<{ change?: string; changeTitle?: string }>`s.metadata`.as("metadata"),
+      sql<string | null>`c.id::text`.as("conversation"),
+    ])
+    .where("s.id", "=", id)
+    .where(inScope("cn.project_id", projects))
+    .executeTakeFirst();
   if (!s) return `s:${id}: 無い`;
   if (s.body !== null) {
     const title =
@@ -856,15 +887,17 @@ async function readSource(db: Db, id: string, budget: number, projects: Scope): 
     return `${labelOf({ kind: "document", status: null, source_kind: s.kind, path: s.path })}${title}\n  出自: ${s.project} / ${s.path} / ${dateOf(s.source_updated_at)}\n\n${cut(s.body, budget)}`;
   }
   const first = s.conversation
-    ? await db.query<{ body: string }>(
-        "select body from gleanery.message where conversation_id = $1 and external_id = 'body'",
-        [s.conversation],
-      )
-    : { rows: [] };
+    ? await db
+        .selectFrom("gleanery.message")
+        .select("body")
+        .where("conversation_id", "=", s.conversation)
+        .where("external_id", "=", "body")
+        .executeTakeFirst()
+    : undefined;
   return [
     `【${s.kind === "pull_request" ? "PR" : "issue"}】#${s.external_id} ${s.title}（${s.state}）`,
     `  出自: ${s.project} / ${dateOf(s.source_updated_at)} 更新 / ${s.url}`,
-    first.rows[0] ? `\n${cut(first.rows[0].body, budget - 400)}` : null,
+    first ? `\n${cut(first.body, budget - 400)}` : null,
   ]
     .filter(Boolean)
     .join("\n");

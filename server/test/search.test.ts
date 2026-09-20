@@ -11,6 +11,7 @@ import {
   searchMessages,
   speakerLabel,
 } from "../src/search.ts";
+import { fakeDb } from "./fake-db.ts";
 
 const hit = (over: Partial<Hit> = {}): Hit => ({
   ref: "k:1",
@@ -101,14 +102,16 @@ test("融合は参照ごとに順位を足し合わせる", () => {
 });
 
 const recorder = () => {
-  const sql: string[] = [];
-  const params: unknown[][] = [];
-  const query = async (s: string, p: unknown[] = []) => {
-    sql.push(s);
-    params.push(p);
-    return { rows: [] };
+  const { db, calls } = fakeDb();
+  return {
+    db,
+    get sql() {
+      return calls.map((c) => c.sql);
+    },
+    get params() {
+      return calls.map((c) => [...c.parameters]);
+    },
   };
-  return { sql, params, db: { query } as never };
 };
 
 /** Voyage の埋め込みだけを差し替える（外部 API）。ms 待ってから 1024 次元を返す。 */
@@ -151,7 +154,7 @@ test("発言の検索は索引した発言だけを見て、持ち主の発言�
   await searchMessages(r.db, {}, { projects: [1], who: "me", limit: 5 });
   assert.match(r.sql[0] ?? "", /m\.lexemes is not null/);
   assert.match(r.sql[0] ?? "", /m\.speaker_kind = 'self' or coalesce\(pe\.is_self, false\)/);
-  assert.match(r.sql[0] ?? "", /order by m\.sent_at desc/);
+  assert.match(r.sql[0] ?? "", /order by "m"\."sent_at" desc/);
   assert.doesNotMatch(r.sql[0] ?? "", /origin <> 'github'/);
   // セッションの検索は GitHub の発言を SQL で落とす（上位 20 件を取ってから落とすと、session の一致が欠ける）。
   const sessions = recorder();
@@ -205,7 +208,7 @@ test("埋め込みを待つ間に語彙側が落ちても、未処理の reject 
   const spy = (e: unknown) => unhandled.push(e);
   process.on("unhandledRejection", spy);
   try {
-    const db = { query: async () => Promise.reject(new Error("接続が切れた")) } as never;
+    const { db } = fakeDb(() => new Error("接続が切れた"));
     await assert.rejects(
       searchKnowledge(db, { VOYAGE_API_KEY: "k" }, { question: "認証", projects: [1], limit: 5 }),
       /接続が切れた/,
@@ -243,31 +246,28 @@ test("read は参照の形を先に確かめ、範囲を渡すと作業場所で
     "どの問い合わせも範囲を持つ",
   );
 
-  const down = { query: async () => Promise.reject(new Error("timeout")) } as never;
+  const { db: down } = fakeDb(() => new Error("timeout"));
   await assert.rejects(read(down, ["k:12"], 4096), /timeout/);
 });
 
 // 同じ時刻の発言が前後の上限を超えて並んでも、対象の発言を落とさない。
 test("前後の発言は時刻と id の組で切る", async () => {
-  const sql: string[] = [];
-  const db = {
-    query: async (s: string) => {
-      sql.push(s);
-      return { rows: sql.length === 1 ? [{ conversation_id: "c", sent_at: new Date() }] : [] };
-    },
-  } as never;
+  const { db, calls } = fakeDb((_s, nth) =>
+    nth === 0 ? [{ conversation_id: "c", sent_at: new Date() }] : [],
+  );
   await read(db, ["m:00000000-0000-8000-8000-000000000001"], 4096);
-  assert.match(sql[1] ?? "", /\(m\.sent_at, m\.id\) < \(\$2, \$5::uuid\)/);
-  assert.match(sql[1] ?? "", /\(m\.sent_at, m\.id\) >= \(\$2, \$5::uuid\)/);
+  // 番号は組み立て側が決めるので綴りだけ見る。見たいのは、時刻と id を組で比べていること。
+  assert.match(calls[1]?.sql ?? "", /\(m\.sent_at, m\.id\) < \(\$\d+, \$\d+::uuid\)/);
+  assert.match(calls[1]?.sql ?? "", /\(m\.sent_at, m\.id\) >= \(\$\d+, \$\d+::uuid\)/);
 });
 
 // 「先週マージした PR」を作成日で絞ると、先週より前に作って先週マージしたものが落ちる。
 test("PR・issue はマージ・クローズを聞いたらその日で絞って並べ、それ以外は作成日", async () => {
   const merged = recorder();
   await listItems(merged.db, { projects: [1], state: "merged", since: "2026-09-01", limit: 5 });
-  assert.match(merged.sql[1] ?? "", /s\.closed_at >= /);
-  assert.match(merged.sql[1] ?? "", /order by s\.closed_at desc/);
+  assert.match(merged.sql[1] ?? "", /"s"\."closed_at" >= /);
+  assert.match(merged.sql[1] ?? "", /order by "s"\."closed_at" desc/);
   const open = recorder();
   await listItems(open.db, { projects: [1], state: "open", limit: 5 });
-  assert.match(open.sql[1] ?? "", /order by s\.source_created_at desc/);
+  assert.match(open.sql[1] ?? "", /order by "s"\."source_created_at" desc/);
 });

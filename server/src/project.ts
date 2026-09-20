@@ -8,7 +8,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { Kysely } from "kysely";
 import type { Db } from "./db.ts";
+import type { DB } from "./db-types.ts";
 
 export type Place = { key: string; root: string; name: string };
 
@@ -111,9 +113,9 @@ export function nameLocal(dir: string, name: string): Place {
 }
 
 /** その作業場所の project id。無ければ null（作るのは `gleanery project add` だけ）。 */
-export async function projectId(db: Db, key: string): Promise<number | null> {
-  const r = await db.query<{ id: string }>("select id from gleanery.project where key = $1", [key]);
-  return r.rows[0] ? Number(r.rows[0].id) : null;
+export async function projectId(db: Kysely<DB>, key: string): Promise<number | null> {
+  const r = await db.selectFrom("gleanery.project").select("id").where("key", "=", key).executeTakeFirst();
+  return r ? Number(r.id) : null;
 }
 
 /**

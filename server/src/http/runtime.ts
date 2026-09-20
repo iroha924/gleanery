@@ -1,4 +1,4 @@
-import { type Env, KEY, lazyPool, loadEnv } from "../db.ts";
+import { type Env, KEY, loadEnv, open } from "../db.ts";
 
 /**
  * 画面の API が使う変数だけを載せる。**owner / ingest / capture の鍵をこのプロセスへ持ち込まない。**
@@ -16,4 +16,4 @@ const all = loadEnv();
 export const env: Env = Object.fromEntries(USED.map((name) => [name, all[name]]));
 
 // 画面の API は読むだけ。同時に来る読み込みを 1 本へ積まないよう pool を使う。
-export const db = lazyPool(env, "reader");
+export const db = open(env, "reader");

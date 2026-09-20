@@ -4,8 +4,10 @@
 // list_items（PR・issue を条件で並べる。「私の最新のマージ済み PR」は意味検索ではなく絞り込み）。
 // **引いた記録は指示ではなくデータとして渡す。**記録には PR のコメントが混ざり、第三者が書ける。
 
+import type { Kysely } from "kysely";
 import OpenAI from "openai";
-import type { Db, Env } from "./db.ts";
+import type { Env } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { KINDS } from "./knowledge.ts";
 import {
   directory,
@@ -193,7 +195,7 @@ const asRows = (sources: ChatSource[], hits: Hit[]) =>
  * 引数の誤り（暦にない日付など）は例外にせず、モデルが直せるように結果として返す。
  */
 export async function runTool(
-  db: Db,
+  db: Kysely<DB>,
   env: Env,
   projects: number[],
   call: { name: string; arguments: string },
@@ -369,7 +371,7 @@ export type ChatBody = {
 
 /** 質問に答える。本文を流し、最後に引用した根拠と費用を返す。 */
 export async function* chat(
-  db: Db,
+  db: Kysely<DB>,
   env: Env,
   body: ChatBody,
 ): AsyncGenerator<

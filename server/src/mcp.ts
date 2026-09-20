@@ -11,7 +11,7 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { lazyPool, loadEnv } from "./db.ts";
+import { loadEnv, open } from "./db.ts";
 import { KINDS } from "./knowledge.ts";
 import { ROOT, versionAt } from "./plugin.ts";
 import { identify, type Place, patchPaths, projectId, relativeTo } from "./project.ts";
@@ -31,7 +31,7 @@ import {
 import { head, reason } from "./text.ts";
 
 const env = loadEnv();
-const db = lazyPool(env, "reader");
+const db = open(env, "reader");
 const VERSION = versionAt(ROOT);
 
 /** recall の応答の上限。検索結果は候補であり、全文は read で読む。 */
@@ -52,7 +52,7 @@ async function here(cwd?: string): Promise<Here> {
   if (!place) return { place: null, id: null };
   const cached = known.get(place.key);
   if (cached && Date.now() - cached.at < TTL) return { place, id: cached.id };
-  const id = await projectId(await db(), place.key);
+  const id = await projectId(db, place.key);
   if (id === null) known.delete(place.key);
   else known.set(place.key, { at: Date.now(), id });
   return { place, id };
@@ -128,16 +128,15 @@ server.registerTool(
       const h = await here(a.cwd);
       if (!a.all_projects && h.id === null) return text(unregistered(h));
       const projects = a.all_projects ? null : [h.id as number];
-      const pool = await db();
       const limit = a.limit ?? 5;
       const mode = a.mode ?? "knowledge";
       const file =
         a.path && h.place ? (relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path) : a.path;
 
       if (mode === "resume") {
-        const works = await openWork(pool, projects, 10);
+        const works = await openWork(db, projects, 10);
         if (works.length === 0) return text("進行中の作業は無い。");
-        const only = works.length === 1 && works[0] ? await workDetail(pool, works[0].ref.slice(2)) : null;
+        const only = works.length === 1 && works[0] ? await workDetail(db, works[0].ref.slice(2)) : null;
         if (only) return text(framed(renderWork(only, RECALL_BYTES)));
         return text(
           framed(
@@ -151,7 +150,7 @@ server.registerTool(
         );
       }
       if (mode === "said") {
-        const hits = await searchMessages(pool, env, {
+        const hits = await searchMessages(db, env, {
           question: a.question,
           projects,
           who: a.who ?? "me",
@@ -163,7 +162,7 @@ server.registerTool(
         return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当する発言は無い。");
       }
       if (!a.question?.trim()) return text("question が要る（mode: knowledge / avoid）。");
-      const hits = await searchKnowledge(pool, env, {
+      const hits = await searchKnowledge(db, env, {
         question: a.question,
         projects,
         kinds: a.kinds,
@@ -200,7 +199,7 @@ server.registerTool(
       const h = await here(a.cwd);
       if (!a.all_projects && h.id === null) return text(unregistered(h));
       const projects = a.all_projects ? null : [h.id as number];
-      return text(framed(await read(await db(), a.refs, READ_BYTES, { projects })));
+      return text(framed(await read(db, a.refs, READ_BYTES, { projects })));
     } catch (e) {
       return failed(e);
     }
@@ -219,7 +218,7 @@ const ADVICE = path.join(os.homedir(), ".gleanery", "advice.jsonl");
 async function rulesFor(id: number): Promise<Map<string, PathRule[]>> {
   const cur = index.get(id);
   if (cur && Date.now() - cur.at < TTL) return cur.rules;
-  const rules = await pathRules(await db(), id);
+  const rules = await pathRules(db, id);
   index.set(id, { at: Date.now(), rules });
   return rules;
 }
