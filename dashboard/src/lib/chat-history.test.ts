@@ -1,7 +1,6 @@
 import "fake-indexeddb/auto";
 import { beforeEach, expect, test } from "vitest";
-import type { Turn } from "./chat";
-import { type ChatEntry, deleteChat, listChats, loadChat, saveChat } from "./history";
+import { type ChatEntry, deleteChat, listChats, loadChat, saveChat, type Turn } from "./chat-history";
 
 const entry = (id: string, projectKey: string, updatedAt: string): ChatEntry => ({
   id,

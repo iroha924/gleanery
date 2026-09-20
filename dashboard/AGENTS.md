@@ -36,6 +36,9 @@ module の `ui` を参照できる（`scripts/check-dashboard-boundaries.mjs` �
 
 具体的な middleware の名前と適用順は `ui-hono` Skill。
 
+チャットの履歴は browser の IndexedDB にだけ置く（`features/_chat/api/history.ts`）。
+**画面から DB へ書く経路を作らない。**理由と持ち方は `ui-hono` Skill。
+
 ## API
 
 同一 origin の `/api/*` を叩く。**認証は無い。**トークンも Cookie も付けない。

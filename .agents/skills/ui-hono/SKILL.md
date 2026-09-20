@@ -142,6 +142,15 @@ Biomeのa11yルール36本が全部recommendedで効いている。ただし`bio
 - CORS middlewareを入れない。許可を返さないことがcross-originの読み取りを止める手段そのものである
 - 画面のAPIは`GLEANERY_DB_URL_RO`（読むだけ）で繋ぐ。書き込みの鍵を`server/src/http/`へ持ち込まない。
   取り込みを起動するrouteも作らない（`gleanery harvest`はCLIだけが持つ）
+- 画面が持つ状態をDBへ書きたくなったら、browserのIndexedDBへ置く（実例: チャットの履歴
+  `features/_chat/api/history.ts`）。**この境界が守っているのは、第三者が書いた文章をモデルへ読ませる
+  プロセスを、永続データを書き換えるconfused deputyにしないことである。**injectionだけでなく、HTTP・
+  依存・routeの欠陥が出ても被害を「読まれる」までに止める。認証が無く全要求が同じDB roleなので、
+  clientが渡すIDは所有権の証明にならず「自分が作った行だけ」は強制できない（RLSでも同じroleは区別できない）
+- 生成した答えを`knowledge`/`message`へ書き戻さない。検索と埋め込みが当たるのはこの2つで
+  （`conversation`自体は対象外）、書き戻すと**自分の出力を自分の根拠に引く輪**ができる。
+  別のstoreに置いて`search.ts`・埋め込み・lexemes・traceへ繋がなければ分離できる
+- 作業場所を残すときは数値IDではなく`project.key`で持つ。DBを作り直すと同じIDが別の作業場所を指す
 - AIが答えを組み立てる入口は作業場所で絞る。チャット（`/api/chat`）、会議の返答案（`/api/reply`）、全文
   （`/api/read`）は`projects`を必須にし、範囲の外の参照は「無い」と返す。範囲の無指定を「全部」と
   読まない — 別の仕事の決定が答えに混ざる。人が並べて見る一覧と検索（`/api/sessions`）は「すべて」を許し、

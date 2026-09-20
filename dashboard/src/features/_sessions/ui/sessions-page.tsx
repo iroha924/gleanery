@@ -400,7 +400,8 @@ function Turn({ message }: { message: SessionMessage }) {
     <Message align={mine ? "end" : "start"}>
       <MessageAvatar
         className={cn(
-          "size-7 min-w-0 translate-y-[5px] self-start rounded-full border",
+          // transform は content-visibility の paint containment で切り落とされる。margin なら行が伸びる。
+          "mt-[5px] size-7 min-w-0 self-start rounded-full border group-has-data-[slot=message-footer]/message:translate-y-0",
           mine ? "bg-card" : "bg-secondary/60 text-muted-foreground",
         )}
         aria-hidden="true"
@@ -410,33 +411,38 @@ function Turn({ message }: { message: SessionMessage }) {
       {/* 誰の発言かは左右とアイコンだけで示している。読み上げには位置も色も届かない。 */}
       <span className="sr-only">{mine ? "あなた" : "AI"}</span>
       <MessageContent>
-        <Bubble
-          variant="muted"
-          className="has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-2 has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-foreground/25"
-        >
-          {/* 自分の発言だけ色相で分ける。明度で分けると、地・AI・自分が同じ明るさの 3 枚重ねになって境界が読めない。
-                親の variant は子より詳細度が高いので、`!` でないと勝てない。 */}
-          <BubbleContent
-            className={cn(
-              "p-3",
-              mine && "border-earth-slate/25! bg-earth-slate/12!",
-              long && !open && "max-h-40 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]",
-            )}
-          >
-            <MarkdownText text={message.body} className="text-sm leading-6" />
-          </BubbleContent>
-          {long && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="self-start"
-              onClick={() => setOpen(!open)}
+        {/* 自分の発言は塗って右へ、AI は地のまま左へ。読む量が多いのは AI 側なので、そこに枠を置かない。 */}
+        {mine ? (
+          <Bubble variant="default">
+            <BubbleContent className="p-3 [&_a]:text-primary-foreground [&_code]:text-foreground [&_pre]:text-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
+              <MarkdownText text={message.body} />
+            </BubbleContent>
+          </Bubble>
+        ) : (
+          <div className="min-w-0 max-w-full">
+            <div
+              className={cn(
+                "min-w-0",
+                long &&
+                  !open &&
+                  "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]",
+              )}
             >
-              {open ? "折りたたむ" : "全文を読む"}
-            </Button>
-          )}
-        </Bubble>
+              <MarkdownText text={message.body} />
+            </div>
+            {long && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="-ml-2 mt-1"
+                onClick={() => setOpen(!open)}
+              >
+                {open ? "折りたたむ" : "全文を読む"}
+              </Button>
+            )}
+          </div>
+        )}
         {message.truncated && (
           <p className="text-xs text-muted-foreground">
             大きすぎる発言なので冒頭と末尾だけを保存した（元は {message.originalBytes.toLocaleString("ja-JP")}{" "}

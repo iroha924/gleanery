@@ -8,12 +8,25 @@
 //
 // 作業場所は数値 ID ではなく `project.key` で持つ。DB を作り直すと同じ ID が別の作業場所を指す。
 
-import type { Turn } from "./chat";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { toast } from "sonner";
+import type { ChatSource } from "./api";
+import { useProject } from "./project";
 
 const NAME = "gleanery-chat";
 const VERSION = 1;
 const CHAT = "chat";
 const TURN = "turn";
+
+/** 1 往復。履歴が保存する形そのものなので、画面をまたぐここに置く。 */
+export type Turn = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources?: ChatSource[];
+  error?: string;
+  stopped?: boolean;
+};
 
 export type ChatEntry = {
   id: string;
@@ -26,7 +39,8 @@ export type ChatEntry = {
 
 type StoredTurn = Turn & { chatId: string; at: number };
 
-const promised = <T>(request: IDBRequest<T>): Promise<T> =>
+// .tsx では `<T>` が JSX タグに見えるので、末尾のカンマで型引数だと示す。
+const promised = <T,>(request: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("IndexedDB が失敗した"));
@@ -102,4 +116,53 @@ export async function deleteChat(id: string): Promise<void> {
     tx.onerror = () => reject(tx.error ?? new Error("履歴を消せなかった"));
   });
   db.close();
+}
+
+// ---- 画面をまたぐ状態 ----
+
+// サイドバーの一覧とチャットの画面が同じ一覧を見る。別々に読むと、質問した後どちらかが古いままになる。
+type Ctx = {
+  entries: ChatEntry[];
+  /** 書いた後に呼ぶ。作業場所が選ばれていなければ空にする。 */
+  reload: () => Promise<void>;
+  remove: (id: string) => Promise<void>;
+};
+
+const ChatHistoryContext = createContext<Ctx | null>(null);
+
+export function ChatHistoryProvider({ children }: { children: ReactNode }) {
+  const { project } = useProject();
+  const projectKey = project?.key ?? null;
+  const [entries, setEntries] = useState<ChatEntry[]>([]);
+
+  useEffect(() => {
+    if (!projectKey) {
+      setEntries([]);
+      return;
+    }
+    listChats(projectKey)
+      .then(setEntries)
+      .catch(() => toast.error("チャットの履歴を読めなかった"));
+  }, [projectKey]);
+
+  const reload = async () => setEntries(projectKey ? await listChats(projectKey) : []);
+
+  const remove = async (id: string) => {
+    try {
+      await deleteChat(id);
+      await reload();
+    } catch {
+      toast.error("その会話を消せなかった");
+    }
+  };
+
+  return (
+    <ChatHistoryContext.Provider value={{ entries, reload, remove }}>{children}</ChatHistoryContext.Provider>
+  );
+}
+
+export function useChatHistory(): Ctx {
+  const ctx = useContext(ChatHistoryContext);
+  if (!ctx) throw new Error("ChatHistoryProvider の外で useChatHistory を呼んでいる");
+  return ctx;
 }

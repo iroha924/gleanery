@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ChatHistoryProvider } from "@/lib/chat-history";
 import { ProjectProvider } from "@/lib/project";
 
 /** 幅。**外からは絞らない。**読む幅は画面ごとに違うので、それぞれが自分で決める。 */
@@ -32,14 +33,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     <MotionIconConfig mode="signature" trigger="parent-hover" onLeave="snap" duration={0.4} stagger={0.08}>
       <TooltipProvider delayDuration={300}>
         <ProjectProvider>
-          <SidebarProvider className="app-canvas min-h-svh">
-            <AppSidebar />
-            <SidebarInset className="h-svh min-w-0 overflow-hidden bg-card">
-              <SidebarTrigger className="absolute top-3 left-3 z-30 rounded-md border bg-card/85 backdrop-blur-xl md:hidden" />
-              <Body>{children}</Body>
-            </SidebarInset>
-            <Toaster />
-          </SidebarProvider>
+          <ChatHistoryProvider>
+            <SidebarProvider className="app-canvas min-h-svh">
+              <AppSidebar />
+              <SidebarInset className="h-svh min-w-0 overflow-hidden bg-card">
+                <SidebarTrigger className="absolute top-3 left-3 z-30 rounded-md border bg-card/85 backdrop-blur-xl md:hidden" />
+                <Body>{children}</Body>
+              </SidebarInset>
+              <Toaster />
+            </SidebarProvider>
+          </ChatHistoryProvider>
         </ProjectProvider>
       </TooltipProvider>
     </MotionIconConfig>

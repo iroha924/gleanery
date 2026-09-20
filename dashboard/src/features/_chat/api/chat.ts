@@ -1,33 +1,25 @@
-import { api, type Stance } from "@/lib/api";
+import { api, type ChatSource } from "@/lib/api";
 
-/** 答えの根拠。n は本文の [n] に対応する。ref は全文を読むときに /api/read へ渡す。 */
-export type ChatSource = {
-  n: number;
-  ref: string;
-  label: string;
-  stance: Stance;
-  text: string;
-  speaker: string | null;
-  project: string;
-  at: string | null;
-  url: string | null;
-};
-
-/** 1 往復。画面の状態でも履歴の保存の形でもあるので、境界のこちら側に置く。 */
-export type Turn = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  sources?: ChatSource[];
-  error?: string;
-  stopped?: boolean;
-};
+export type { ChatSource } from "@/lib/api";
+export type { Turn } from "@/lib/chat-history";
 
 export type PolishOption = {
   label: string;
   text: string;
   changed: string[];
 };
+
+/** 題を付ける。失敗しても会話は続けられるので、呼び出し側は空を受け取って構わない。 */
+export async function titleFor(question: string): Promise<string> {
+  const res = await fetch("/api/chat/title", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ question }),
+  });
+  const json = (await res.json()) as { title?: string; error?: string };
+  if (!res.ok) throw new Error(json.error ?? `題の生成が ${res.status}`);
+  return json.title ?? "";
+}
 
 export async function polishTranscript(text: string): Promise<PolishOption[]> {
   const res = await fetch("/api/polish", {
