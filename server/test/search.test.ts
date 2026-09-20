@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  directory,
   framed,
   fuse,
   type Hit,
   listItems,
+  openWork,
   read,
   renderHits,
   searchKnowledge,
@@ -249,6 +251,17 @@ test("検索を中断すると、進行中の埋め込みも中断する", async
   } finally {
     restore();
   }
+});
+
+test("検索を中断すると、一覧と全文の DB 問い合わせも始めない", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const r = recorder();
+  await assert.rejects(directory(r.db, controller.signal), /aborted/i);
+  await assert.rejects(openWork(r.db, [1], 3, controller.signal), /aborted/i);
+  await assert.rejects(listItems(r.db, { projects: [1], limit: 5 }, controller.signal), /aborted/i);
+  await assert.rejects(read(r.db, ["k:1"], 4096, { projects: [1], signal: controller.signal }), /aborted/i);
+  assert.equal(r.sql.length, 0);
 });
 
 test("暦にない日付は SQL を投げる前に止める", async () => {

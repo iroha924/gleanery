@@ -336,7 +336,7 @@ export function ChatPage() {
                   </Empty>
                 )}
 
-                {chat.turns.map((turn) =>
+                {chat.turns.map((turn, index) =>
                   turn.role === "user" ? (
                     <MessageScrollerItem key={turn.id} messageId={turn.id} scrollAnchor>
                       <Message align="end">
@@ -378,6 +378,7 @@ export function ChatPage() {
                             !turn.error &&
                             !turn.stopped &&
                             chat.busy &&
+                            index === chat.turns.length - 1 &&
                             !turn.sources?.length && (
                               <p className="flex items-center gap-2 text-muted-foreground text-base">
                                 <Spinner /> 考えています
@@ -398,13 +399,18 @@ export function ChatPage() {
                             </p>
                           )}
                           {turn.sources && (
-                            <Sources sources={turn.sources} busy={chat.busy && !turn.stopped} />
+                            <Sources
+                              sources={turn.sources}
+                              busy={chat.busy && index === chat.turns.length - 1 && !turn.stopped}
+                            />
                           )}
-                          {turn.content && !chat.busy && !turn.stopped && (
-                            <MessageFooter className="px-0">
-                              <Copy text={turn.content} label="答えを写す" />
-                            </MessageFooter>
-                          )}
+                          {turn.content &&
+                            (!chat.busy || index !== chat.turns.length - 1) &&
+                            !turn.stopped && (
+                              <MessageFooter className="px-0">
+                                <Copy text={turn.content} label="答えを写す" />
+                              </MessageFooter>
+                            )}
                         </MessageContent>
                       </Message>
                     </MessageScrollerItem>

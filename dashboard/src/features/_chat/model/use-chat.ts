@@ -203,32 +203,37 @@ export function useChat({ onSaved }: { onSaved: (id: string) => void }) {
     // **保存する中身をここで持つ。**state から読み戻すと、どの描画の値かで結果が変わる。
     const asked: Turn = { id: `${id}-q`, role: "user", content: question };
     let answered: Turn = { id: `${id}-a`, role: "assistant", content: "" };
-    const patchLastTurn = (update: (turn: Turn) => Turn) => {
+    const patchAnswer = (update: (turn: Turn) => Turn) => {
       answered = update(answered);
-      setTurns((current) =>
-        current.map((turn, index) => (index === current.length - 1 ? update(turn) : turn)),
-      );
+      setTurns((current) => current.map((turn) => (turn.id === answered.id ? update(turn) : turn)));
     };
 
     try {
       await askStream(
         { question, history, projects },
         {
-          sources: (sources) => patchLastTurn((turn) => ({ ...turn, sources })),
-          text: (text) => patchLastTurn((turn) => ({ ...turn, content: turn.content + text })),
-          error: (message) => patchLastTurn((turn) => ({ ...turn, error: message })),
+          sources: (sources) => patchAnswer((turn) => ({ ...turn, sources })),
+          text: (text) => patchAnswer((turn) => ({ ...turn, content: turn.content + text })),
+          error: (message) => patchAnswer((turn) => ({ ...turn, error: message })),
           cost: setCost,
         },
         controller.signal,
       );
     } catch (error) {
       if ((error as Error).name !== "AbortError") {
-        patchLastTurn((turn) => ({
+        patchAnswer((turn) => ({
           ...turn,
           error: error instanceof Error ? error.message : String(error),
         }));
       }
     } finally {
+      if (answered.sources) {
+        const cited = new Set([...answered.content.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1])));
+        patchAnswer((turn) => ({
+          ...turn,
+          sources: turn.sources?.filter((source) => cited.has(source.n)),
+        }));
+      }
       if (abort.current === controller) {
         abort.current = null;
         pendingQuestion.current = null;

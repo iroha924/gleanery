@@ -246,7 +246,7 @@ export async function runTool(
       const each = Math.floor(12_000 / refs.length);
       const rows = [];
       for (const ref of refs) {
-        const text = await read(db, [ref], each, { projects });
+        const text = await read(db, [ref], each, { projects, signal });
         const n = sources.length + 1;
         sources.push({
           n,
@@ -265,17 +265,21 @@ export async function runTool(
     }
     if (call.name === "list_items") {
       const kind = str("kind");
-      const r = await listItems(db, {
-        projects,
-        kind: kind === "pull_request" || kind === "issue" ? kind : undefined,
-        state: str("state"),
-        author: str("author"),
-        number: typeof a.number === "number" ? Math.trunc(a.number) : undefined,
-        since: str("since"),
-        until: str("until"),
-        limit: clampInt(a.limit, 10, 50),
-        offset: Math.max(Math.trunc(Number(a.offset ?? 0)) || 0, 0),
-      });
+      const r = await listItems(
+        db,
+        {
+          projects,
+          kind: kind === "pull_request" || kind === "issue" ? kind : undefined,
+          state: str("state"),
+          author: str("author"),
+          number: typeof a.number === "number" ? Math.trunc(a.number) : undefined,
+          since: str("since"),
+          until: str("until"),
+          limit: clampInt(a.limit, 10, 50),
+          offset: Math.max(Math.trunc(Number(a.offset ?? 0)) || 0, 0),
+        },
+        signal,
+      );
       return JSON.stringify({
         total: r.total,
         shown: r.rows.length,
@@ -313,11 +317,11 @@ export async function runTool(
       ? a.kinds.filter((k): k is string => typeof k === "string")
       : undefined;
     if (mode === "resume") {
-      const works = await openWork(db, projects);
+      const works = await openWork(db, projects, 3, signal);
       if (works.length === 0) return JSON.stringify({ note: "進行中の作業は無い" });
       const rows = [];
       for (const w of works) {
-        const d = await workDetail(db, w.ref.slice(2), projects);
+        const d = await workDetail(db, w.ref.slice(2), projects, signal);
         if (!d) continue;
         const n = sources.length + 1;
         sources.push({
@@ -437,7 +441,7 @@ export async function* chat(
     throw new Error(route.error?.message ?? "質問を判定できなかった");
   }
 
-  const people = route.output_parsed.needsRecords ? await directory(db) : [];
+  const people = route.output_parsed.needsRecords ? await directory(db, body.signal) : [];
   const sources: ChatSource[] = [];
   // 最後の 1 周は道具を外す。渡し続けると、呼び続けて 1 文字も答えないまま打ち切られることがある。
   const ROUNDS = 4;
