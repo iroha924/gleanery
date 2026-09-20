@@ -56,6 +56,7 @@ const withTitle = app.post("/chat/title", zValidator("json", titleSchema), async
       reasoning: { effort: "low" },
       instructions: TITLE_INSTRUCTIONS,
       input: framed(question),
+      store: false,
     });
     const title = cleanTitle(result.output_text);
     if (!title) return c.json({ error: "題を作れなかった" }, 502);

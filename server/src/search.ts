@@ -45,6 +45,10 @@ export type Hit = {
 
 const POOL = 40;
 const RERANK_POOL = 30;
+const queryOptions = (signal?: AbortSignal) => ({
+  signal,
+  inflightQueryAbortStrategy: "cancel query" as const,
+});
 
 /** 日付の形。暦にない日（2026-02-30）も弾く。MCP の入力の検査にも使う。 */
 export const DAY = z.iso.date();
@@ -77,10 +81,11 @@ export function fuse<T extends { ref: string }>(lists: T[][], k = 60): T[] {
   return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
 }
 
-async function queryVector(env: Env, question: string): Promise<number[] | null> {
+async function queryVector(env: Env, question: string, signal?: AbortSignal): Promise<number[] | null> {
   try {
-    return (await embed(env, [question], "query"))[0] ?? null;
+    return (await embed(env, [question], "query", signal))[0] ?? null;
   } catch {
+    signal?.throwIfAborted();
     // 埋め込みが落ちても語彙側で返す。
     return null;
   }
@@ -95,15 +100,22 @@ async function both<R>(
   question: string,
   lexical: (() => Promise<R[]>) | null,
   dense: (v: number[]) => Promise<R[]>,
+  signal?: AbortSignal,
 ): Promise<[R[], R[]]> {
   return await Promise.all([
     lexical ? lexical() : [],
-    queryVector(env, question).then((v) => (v ? dense(v) : [])),
+    queryVector(env, question, signal).then((v) => (v ? dense(v) : [])),
   ]);
 }
 
 /** 札を前置して再ランクする。**札が無いと、棄却した案が文字面の近さで 1 位に来る。** */
-async function rerank(env: Env, question: string, rows: Hit[], limit: number): Promise<Hit[]> {
+async function rerank(
+  env: Env,
+  question: string,
+  rows: Hit[],
+  limit: number,
+  signal?: AbortSignal,
+): Promise<Hit[]> {
   const pool = rows.slice(0, RERANK_POOL);
   const bare = () => pool.slice(0, limit);
   if (pool.length <= 1 || !env.VOYAGE_API_KEY) return bare();
@@ -115,7 +127,7 @@ async function rerank(env: Env, question: string, rows: Hit[], limit: number): P
   );
   try {
     const res = await fetch("https://api.voyageai.com/v1/rerank", {
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${env.VOYAGE_API_KEY}` },
       body: JSON.stringify({
@@ -132,6 +144,7 @@ async function rerank(env: Env, question: string, rows: Hit[], limit: number): P
       return row ? [{ ...row, relevance: d.relevance_score }] : [];
     });
   } catch {
+    signal?.throwIfAborted();
     return bare();
   }
 }
@@ -147,6 +160,7 @@ export type KnowledgeQuery = {
   since?: string | undefined;
   until?: string | undefined;
   limit: number;
+  signal?: AbortSignal | undefined;
 };
 
 /** 知識の共通の射影。join と列を 1 か所に持つ（結果の型はここから推論する）。 */
@@ -238,7 +252,7 @@ export async function searchKnowledge(db: Kysely<DB>, env: Env, q: KnowledgeQuer
             .orderBy(sql`ts_rank_cd(k.lexemes, ${words}::tsquery)`, "desc")
             .orderBy("k.occurred_at", "desc")
             .limit(POOL)
-            .execute()
+            .execute(queryOptions(q.signal))
       : null,
     (qv) =>
       knowledgeBase(db)
@@ -248,9 +262,10 @@ export async function searchKnowledge(db: Kysely<DB>, env: Env, q: KnowledgeQuer
         .where((eb) => eb.and(w))
         .orderBy(sql`e.embedding operator(extensions.<#>) ${vec(qv)}::extensions.halfvec`)
         .limit(POOL)
-        .execute(),
+        .execute(queryOptions(q.signal)),
+    q.signal,
   );
-  return rerank(env, q.question, fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]), q.limit);
+  return rerank(env, q.question, fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]), q.limit, q.signal);
 }
 
 export type MessageQuery = {
@@ -265,6 +280,7 @@ export type MessageQuery = {
   /** coding session の発言だけ（GitHub の会話を除く）。上位を取ってから落とすと、件数が欠ける */
   sessionsOnly?: boolean;
   limit: number;
+  signal?: AbortSignal | undefined;
 };
 
 /** 発言の共通の射影。join と列を 1 か所に持つ（結果の型はここから推論する）。 */
@@ -374,7 +390,7 @@ export async function searchMessages(db: Kysely<DB>, env: Env, q: MessageQuery):
       .where((eb) => eb.and(w))
       .orderBy("m.sent_at", "desc")
       .limit(q.limit)
-      .execute();
+      .execute(queryOptions(q.signal));
     return rows.map(messageHit);
   }
   const question = q.question;
@@ -389,7 +405,7 @@ export async function searchMessages(db: Kysely<DB>, env: Env, q: MessageQuery):
             .orderBy(sql`ts_rank_cd(m.lexemes, ${words}::tsquery)`, "desc")
             .orderBy("m.sent_at", "desc")
             .limit(POOL)
-            .execute()
+            .execute(queryOptions(q.signal))
       : null,
     (qv) =>
       messageBase(db)
@@ -399,9 +415,10 @@ export async function searchMessages(db: Kysely<DB>, env: Env, q: MessageQuery):
         .where((eb) => eb.and(w))
         .orderBy(sql`e.embedding operator(extensions.<#>) ${vec(qv)}::extensions.halfvec`)
         .limit(POOL)
-        .execute(),
+        .execute(queryOptions(q.signal)),
+    q.signal,
   );
-  return rerank(env, question, fuse([den.map(messageHit), lex.map(messageHit)]), q.limit);
+  return rerank(env, question, fuse([den.map(messageHit), lex.map(messageHit)]), q.limit, q.signal);
 }
 
 export type Work = {

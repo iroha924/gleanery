@@ -117,8 +117,17 @@ const recorder = () => {
 /** Voyage の埋め込みだけを差し替える（外部 API）。ms 待ってから 1024 次元を返す。 */
 function stubVoyage(ms = 0): () => void {
   const real = globalThis.fetch;
-  globalThis.fetch = (async (url: string | URL) => {
-    await new Promise((r) => setTimeout(r, ms));
+  globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(resolve, ms);
+      const signal = init?.signal;
+      const abort = () => {
+        clearTimeout(timer);
+        reject(signal?.reason);
+      };
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+    });
     if (String(url).endsWith("/embeddings"))
       return new Response(JSON.stringify({ data: [{ index: 0, embedding: Array(1024).fill(0.01) }] }));
     return new Response("{}", { status: 500 });
@@ -217,6 +226,27 @@ test("埋め込みを待つ間に語彙側が落ちても、未処理の reject 
     assert.deepEqual(unhandled, []);
   } finally {
     process.off("unhandledRejection", spy);
+    restore();
+  }
+});
+
+test("検索を中断すると、進行中の埋め込みも中断する", async () => {
+  const restore = stubVoyage(10_000);
+  const controller = new AbortController();
+  try {
+    const pending = searchKnowledge(
+      fakeDb().db,
+      { VOYAGE_API_KEY: "k" },
+      {
+        question: "認証",
+        projects: [1],
+        limit: 5,
+        signal: controller.signal,
+      },
+    );
+    controller.abort();
+    await assert.rejects(pending, /aborted/i);
+  } finally {
     restore();
   }
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { expandNames, runTool, SYSTEM } from "../src/chat.ts";
+import { expandNames, ROUTER_INSTRUCTIONS, runTool, SYSTEM } from "../src/chat.ts";
 import type { Person } from "../src/search.ts";
 import { fakeDb } from "./fake-db.ts";
 
@@ -24,6 +24,20 @@ test("質問者本人と、表に無い名前の扱いを渡す", () => {
   assert.match(s, /平田（質問者本人） = iroha924/);
   assert.match(s, /この表に無い名前は別人/);
   assert.match(SYSTEM([]), /who: me/);
+});
+
+test("一般的な質問はそのまま答え、作業場所の事実だけ記録で確かめる", () => {
+  const s = SYSTEM([]);
+  assert.match(s, /一般的な知識.*記録を探さず/);
+  assert.match(s, /作業場所.*必ず道具で確かめて/);
+  assert.match(s, /一般知識に根拠番号を付けない/);
+  assert.match(s, /IndexedDB/);
+  assert.doesNotMatch(s, /一般論で補わない/);
+});
+
+test("作業場所の事実を保守的に分類する", () => {
+  assert.match(ROUTER_INSTRUCTIONS, /一部でも.*true/);
+  assert.match(ROUTER_INSTRUCTIONS, /迷ったときは true/);
 });
 
 const recorder = () => {
