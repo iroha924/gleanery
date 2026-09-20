@@ -349,7 +349,7 @@ export function ChatPage() {
                         <span className="sr-only">あなた</span>
                         <MessageContent>
                           <Bubble variant="default">
-                            <BubbleContent className="whitespace-pre-wrap p-3 leading-relaxed [&_a]:text-primary-foreground [&_code]:text-foreground [&_pre]:text-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
+                            <BubbleContent className="whitespace-pre-wrap p-3 leading-relaxed [&_a]:text-primary-foreground [&_code]:bg-primary-foreground/15 [&_code]:text-primary-foreground [&_pre]:border-primary-foreground/20 [&_pre]:bg-primary-foreground/10 [&_pre]:text-primary-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
                               {turn.content}
                             </BubbleContent>
                           </Bubble>

@@ -414,7 +414,7 @@ function Turn({ message }: { message: SessionMessage }) {
         {/* 自分の発言は塗って右へ、AI は地のまま左へ。読む量が多いのは AI 側なので、そこに枠を置かない。 */}
         {mine ? (
           <Bubble variant="default">
-            <BubbleContent className="p-3 [&_a]:text-primary-foreground [&_code]:text-foreground [&_pre]:text-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
+            <BubbleContent className="p-3 [&_a]:text-primary-foreground [&_code]:bg-primary-foreground/15 [&_code]:text-primary-foreground [&_pre]:border-primary-foreground/20 [&_pre]:bg-primary-foreground/10 [&_pre]:text-primary-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
               <MarkdownText text={message.body} />
             </BubbleContent>
           </Bubble>

@@ -119,7 +119,10 @@ const COMPONENTS: Components = {
     ),
   pre: ({ children }) => (
     // 長い行で画面が横に伸びないよう、ここだけ横スクロールさせる。
-    <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-sm">{children}</pre>
+    // 言語の無いフェンスは code に className が付かないので、inline 用の地がブロック全体に当たる。
+    <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-sm [&_code]:rounded-none [&_code]:bg-transparent [&_code]:p-0">
+      {children}
+    </pre>
   ),
   // 幅が読めないので、はみ出す分は Table のラッパーの中でスクロールさせる。
   table: ({ children }) => <Table className="border-collapse">{children}</Table>,
