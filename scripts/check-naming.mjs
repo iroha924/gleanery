@@ -21,6 +21,11 @@ const ALLOWED = [
     file: ".agents/skills/knowledge-schema/SKILL.md",
     pattern: /Neonの80ms前後の往復/,
   },
+  {
+    // 一括置換が取りこぼした実例。旧名そのものが検査の対象なので、綴りを消すと例が成立しない。
+    file: ".claude/agents/review-shipping.md",
+    pattern: /μίτος|mcp__plugin_mitos_mitos__/,
+  },
 ];
 
 const OLD = [
