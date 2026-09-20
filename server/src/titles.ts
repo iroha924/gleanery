@@ -12,7 +12,7 @@ import { framed } from "./search.ts";
 import { head, reason } from "./text.ts";
 
 // 題は短い要約で、推論の深さが要らない。チャットの模型（設定で替えられる）とは別に、いちばん安い段を固定で使う。
-const MODEL = "gpt-5.6-luna";
+export const TITLE_MODEL = "gpt-5.6-luna";
 // 1 回の harvest で付ける上限。題の無い session が溜まっている最初の 1 回で、API を一気に叩かない。
 const BATCH = 40;
 // 題を決めるのに要るのは冒頭だけ。発言は 1 件で 12 KiB まで入りうるので、ここで切る。
@@ -20,10 +20,10 @@ const SOURCE_BYTES = 4000;
 const TITLE_BYTES = 120;
 const TURNS = 6;
 
-const INSTRUCTIONS = [
-  "coding session の会話から、一覧で見分けるための題を 1 つ作る。",
+export const TITLE_INSTRUCTIONS = [
+  "会話から、一覧で見分けるための題を 1 つ作る。",
   "日本語で 10〜24 文字。体言止め。鍵括弧・引用符・句点・接頭辞を付けず、題だけを返す。",
-  "何をした session かが分かる具体を入れる（扱った機能・不具合・道具の名前）。",
+  "何の話だったかが分かる具体を入れる（扱った機能・不具合・道具の名前）。",
   "「作業」「対応」「修正」だけの題にしない。",
 ].join("\n");
 
@@ -42,9 +42,9 @@ async function titleOf(openai: OpenAI, turns: Turn[]): Promise<string> {
     SOURCE_BYTES,
   );
   const result = await openai.responses.create({
-    model: MODEL,
+    model: TITLE_MODEL,
     reasoning: { effort: "low" },
-    instructions: INSTRUCTIONS,
+    instructions: TITLE_INSTRUCTIONS,
     input: framed(source),
   });
   return cleanTitle(result.output_text);

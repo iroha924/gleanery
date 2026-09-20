@@ -1,4 +1,4 @@
-import { Link, useMatchRoute } from "@tanstack/react-router";
+import { Link, useMatchRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { cn } from "cn";
 import {
   AudioLinesIcon,
@@ -7,8 +7,21 @@ import {
   Layers2Icon,
   MessageCircleIcon,
   MessagesSquareIcon,
+  SquarePenIcon,
+  Trash2Icon,
 } from "lucide-react-motion";
 import type * as React from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,8 +36,10 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
@@ -32,6 +47,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import type { Project } from "@/lib/api";
+import { useChatHistory } from "@/lib/chat-history";
 import { useProject } from "@/lib/project";
 
 const NAVIGATION = [
@@ -68,6 +84,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild tooltip="新しい会話">
+                  <Link to="/" search={{ chat: undefined }} onClick={closeMobile}>
+                    <SquarePenIcon />
+                    <span>新しい会話</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               {NAVIGATION.map((item) => (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton asChild isActive={!!matchRoute({ to: item.to })} tooltip={item.label}>
@@ -81,10 +105,72 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        <ChatHistoryGroup onNavigate={closeMobile} />
       </SidebarContent>
 
       <SidebarRail />
     </Sidebar>
+  );
+}
+
+/**
+ * 会話の履歴。折り畳んだサイドバーでは出さない（題は 1 文字では読めない）。
+ * 開くのも消すのも URL を変えるだけで、チャットの画面がそれに追随する。
+ */
+function ChatHistoryGroup({ onNavigate }: { onNavigate: () => void }) {
+  const { entries, remove } = useChatHistory();
+  const { chat: opened } = useSearch({ strict: false });
+  const navigate = useNavigate();
+  const show = (id: string | undefined) => {
+    onNavigate();
+    navigate({ to: "/", search: { chat: id } });
+  };
+
+  if (entries.length === 0) return null;
+  return (
+    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroupLabel>最近の会話</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {entries.map((entry) => (
+            <SidebarMenuItem key={entry.id} className="group/row">
+              <SidebarMenuButton isActive={entry.id === opened} onClick={() => show(entry.id)}>
+                <span className="truncate">{entry.title}</span>
+              </SidebarMenuButton>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <SidebarMenuAction
+                    aria-label={`「${entry.title}」を消す`}
+                    className="opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100"
+                  >
+                    <Trash2Icon />
+                  </SidebarMenuAction>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>この会話を消しますか</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      「{entry.title}」の質問と答えを消します。戻せません。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>やめる</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        remove.mutate(entry.id);
+                        if (entry.id === opened) show(undefined);
+                      }}
+                    >
+                      消す
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
   );
 }
 

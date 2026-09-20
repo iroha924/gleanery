@@ -1,22 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useProject } from "@/lib/project";
-import { askStream, type ChatSource, type PolishOption, polishTranscript, transcribe } from "../api/chat";
+import { loadChat, useChatHistory } from "@/lib/chat-history";
 
-export type Turn = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  sources?: ChatSource[];
-  error?: string;
-  stopped?: boolean;
-};
+import { useProject } from "@/lib/project";
+import { askStream, type PolishOption, polishTranscript, type Turn, titleFor, transcribe } from "../api/chat";
 
 /**
- * チャットの状態。**会話は保存しない**（ブラウザを閉じれば消える）。作業場所を切り替えたら会話を捨てる —
- * 前の作業場所の答えを文脈に持ったまま、別の作業場所について聞かせない。
+ * チャットの状態。履歴は browser の IndexedDB にだけ持つ（`api/history.ts`）。
+ * 作業場所を切り替えたら出ている会話を捨てる — **前の作業場所の答えを文脈に持ったまま、
+ * 別の作業場所について聞かせない。**履歴の一覧も作業場所で絞る。
  */
-export function useChat() {
+export function useChat({ onSaved }: { onSaved: (id: string) => void }) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -30,6 +24,9 @@ export function useChat() {
   const [preparing, setPreparing] = useState(false);
   const [options, setOptions] = useState<PolishOption[]>([]);
   const [polishing, setPolishing] = useState(false);
+  const [chatId, setChatId] = useState<string | null>(null);
+  const { entries, save } = useChatHistory();
+  const projectKey = project?.key ?? null;
 
   const stop = () => {
     const controller = abort.current;
@@ -125,6 +122,51 @@ export function useChat() {
 
   useEffect(() => () => abort.current?.abort(), []);
 
+  const openChat = async (id: string) => {
+    abort.current?.abort();
+    try {
+      const stored = await loadChat(id);
+      setTurns(stored);
+      setChatId(id);
+      setCost(null);
+      setOptions([]);
+    } catch {
+      toast.error("その会話を読めなかった");
+    }
+  };
+
+  const newChat = () => {
+    abort.current?.abort();
+    setTurns([]);
+    setChatId(null);
+    setCost(null);
+    setOptions([]);
+  };
+
+  /** 流れ終わってから 1 回だけ書く。途中で書くと、部分的な答えと取り直した後の答えが二重に残る。 */
+  const persist = async (all: Turn[]) => {
+    if (!project || !projectKey || all.length === 0) return;
+    const id = chatId ?? crypto.randomUUID();
+    const known = entries.find((c) => c.id === id);
+    const first = all[0]?.content ?? "";
+    // 題は最初の質問から 1 回だけ作る。失敗しても会話は残す（次に開いたときに作り直す）。
+    const title = known?.title ?? ((await titleFor(first).catch(() => "")) || first.slice(0, 60));
+    const now = new Date().toISOString();
+    setChatId(id);
+    onSaved(id);
+    save.mutate({
+      entry: {
+        id,
+        title,
+        projectKey,
+        projectLabel: project.name,
+        createdAt: known?.createdAt ?? now,
+        updatedAt: now,
+      },
+      turns: all,
+    });
+  };
+
   const ask = async (question: string) => {
     setOptions([]);
     if (!question.trim() || busy || projects.length === 0) return;
@@ -138,6 +180,7 @@ export function useChat() {
       const cut = text.slice(0, 50_000);
       return /[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut;
     };
+    const before = turns;
     const history = turns
       .flatMap((turn, index) => {
         const question = turns[index - 1];
@@ -157,10 +200,15 @@ export function useChat() {
 
     const controller = new AbortController();
     abort.current = controller;
-    const patchLastTurn = (update: (turn: Turn) => Turn) =>
+    // **保存する中身をここで持つ。**state から読み戻すと、どの描画の値かで結果が変わる。
+    const asked: Turn = { id: `${id}-q`, role: "user", content: question };
+    let answered: Turn = { id: `${id}-a`, role: "assistant", content: "" };
+    const patchLastTurn = (update: (turn: Turn) => Turn) => {
+      answered = update(answered);
       setTurns((current) =>
         current.map((turn, index) => (index === current.length - 1 ? update(turn) : turn)),
       );
+    };
 
     try {
       await askStream(
@@ -185,6 +233,7 @@ export function useChat() {
         abort.current = null;
         pendingQuestion.current = null;
         setBusy(false);
+        void persist([...before, asked, answered]);
       }
     }
   };
@@ -192,10 +241,13 @@ export function useChat() {
   return {
     ask,
     busy,
+    chatId,
     cost,
     draft,
     hearing,
     listen,
+    newChat,
+    openChat,
     options,
     polishing,
     preparing,

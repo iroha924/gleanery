@@ -1,3 +1,4 @@
+import { getRouteApi } from "@tanstack/react-router";
 import { cn } from "cn";
 import {
   ArrowUpIcon,
@@ -8,7 +9,7 @@ import {
   SquareIcon,
   UserRoundIcon,
 } from "lucide-react-motion";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useProject } from "@/lib/project";
 import { stanceClass } from "@/lib/stance";
 import { type ChatSource, type PolishOption, readFull } from "../api/chat";
+
+const route = getRouteApi("/");
+
 import { useChat } from "../model/use-chat";
 
 const EXAMPLES = [
@@ -274,7 +278,22 @@ function PolishOptions({
 }
 
 export function ChatPage() {
-  const chat = useChat();
+  const { chat: opened } = route.useSearch();
+  const navigate = route.useNavigate();
+  // 会話を作ったら URL へ載せる。載せないとリロードで開き直せない。
+  const chat = useChat({
+    onSaved: (id) => navigate({ search: { chat: id }, replace: true }),
+  });
+
+  // URL が正本。**当てた値を覚えるのは effect の中**でやる（描画中に ref を書くと Compiler が飛ばす）。
+  // 初回の描画も「まだ当てていない」から始まるので、`?chat=` 付きで開いてもここで読み込まれる。
+  const applied = useRef<string | undefined | null>(null);
+  useEffect(() => {
+    if (applied.current === opened) return;
+    applied.current = opened;
+    if (opened) void chat.openChat(opened);
+    else chat.newChat();
+  }, [opened, chat.openChat, chat.newChat]);
 
   return (
     <div className="flex h-full min-h-0">
@@ -287,7 +306,7 @@ export function ChatPage() {
               <MessageScrollerContent
                 aria-busy={chat.busy}
                 aria-live="polite"
-                className="mx-auto w-full max-w-[48rem] px-6 pb-10"
+                className="mx-auto w-full max-w-[48rem] gap-4 px-6 pt-8 pb-10"
               >
                 {chat.turns.length === 0 && (
                   <Empty className="min-h-[55vh] border-none">
@@ -297,7 +316,7 @@ export function ChatPage() {
                       </EmptyTitle>
                       <EmptyDescription className="text-pretty leading-loose">
                         記録（判断・会話・文書・PR）だけで答えます。記録に無いことは「無い」と答え、答えには根拠が付きます。
-                        この会話は保存しません。
+                        会話はこの browser の中にだけ残ります（サーバーには送りません）。
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent className="mt-3 max-w-2xl flex-row flex-wrap justify-center gap-2">
@@ -320,13 +339,17 @@ export function ChatPage() {
                 {chat.turns.map((turn) =>
                   turn.role === "user" ? (
                     <MessageScrollerItem key={turn.id} messageId={turn.id} scrollAnchor>
-                      <Message align="end" className="pt-9">
-                        <MessageAvatar aria-hidden="true" className="mb-1 size-8 border bg-card">
-                          <UserRoundIcon className="size-4" />
+                      <Message align="end">
+                        <MessageAvatar
+                          aria-hidden="true"
+                          className="mt-[5px] size-7 min-w-0 self-start rounded-full border group-has-data-[slot=message-footer]/message:translate-y-0 bg-card"
+                        >
+                          <UserRoundIcon className="size-3.5" />
                         </MessageAvatar>
+                        <span className="sr-only">あなた</span>
                         <MessageContent>
-                          <Bubble align="end" variant="secondary">
-                            <BubbleContent className="whitespace-pre-wrap rounded-br-[2px] border-border px-4 py-2.5 text-base leading-[1.9]">
+                          <Bubble variant="default">
+                            <BubbleContent className="whitespace-pre-wrap p-3 leading-relaxed [&_a]:text-primary-foreground [&_code]:bg-primary-foreground/15 [&_code]:text-primary-foreground [&_pre]:border-primary-foreground/20 [&_pre]:bg-primary-foreground/10 [&_pre]:text-primary-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
                               {turn.content}
                             </BubbleContent>
                           </Bubble>
@@ -338,14 +361,15 @@ export function ChatPage() {
                     </MessageScrollerItem>
                   ) : (
                     <MessageScrollerItem key={turn.id} messageId={turn.id}>
-                      <Message className="pt-4">
+                      <Message>
                         <MessageAvatar
                           aria-hidden="true"
-                          className="mt-1 size-8 self-start border bg-card group-has-data-[slot=message-footer]/message:translate-y-0"
+                          className="mt-[5px] size-7 min-w-0 self-start rounded-full border group-has-data-[slot=message-footer]/message:translate-y-0 bg-secondary/60 text-muted-foreground"
                         >
-                          <BotIcon className="size-4" />
+                          <BotIcon className="size-3.5" />
                         </MessageAvatar>
-                        <MessageContent className="gap-5">
+                        <span className="sr-only">AI</span>
+                        <MessageContent className="gap-3">
                           {turn.content && <Answer text={turn.content} />}
                           {!turn.content && !turn.error && !turn.stopped && chat.busy && (
                             <p className="flex items-center gap-2 text-muted-foreground text-base">

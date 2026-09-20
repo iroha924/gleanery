@@ -6,6 +6,19 @@ import { get } from "@/lib/api-client";
 /** 通ってよい道か（do）、いけない道か（dont）。札の色を分ける。 */
 export type Stance = "do" | "dont" | "neutral";
 
+/** 答えの根拠。n は本文の [n] に対応する。ref は全文を読むときに /api/read へ渡す。 */
+export type ChatSource = {
+  n: number;
+  ref: string;
+  label: string;
+  stance: Stance;
+  text: string;
+  speaker: string | null;
+  project: string;
+  at: string | null;
+  url: string | null;
+};
+
 /** 取り込み元ごとの最後の同期。失敗していれば lastError を持つ。 */
 export type Connector = {
   provider: "github" | "docs";
