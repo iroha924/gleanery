@@ -84,6 +84,7 @@ const INPUTS = [
   "db/",
   "scripts/bundle.mjs",
   "scripts/third-party-notices.mjs",
+  "scripts/licenses/",
 ];
 /**
  * manifest から版を落とした姿。**版だけを上げた commit を「中身が変わった」に数えない**ため。

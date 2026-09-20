@@ -62,8 +62,12 @@ export function compareVersions(a: string, b: string): number {
 // **名前で挙げる。**ドットで始まるものをまとめて外すと、`.mcp.json` のような配布物の差まで黙って消える。
 const HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
 
-/** bundle が作り、npm が配るが、git は追跡しないもの（.gitignore の plugin/dist と plugin/db）。 */
-const GENERATED = /^(dist|db)\//;
+/**
+ * bundle が作り、npm が配るが、git は追跡しないもの。
+ * **ディレクトリだけでなくファイルも挙げる** — 同梱の告知を入れ忘れて、正常な導入先が
+ * 「同じ版なのに中身が違う」と出た（実測: 自己比較で THIRD_PARTY_NOTICES.md だけが差になった）。
+ */
+const GENERATED = /^(dist|db)\/|^THIRD_PARTY_NOTICES\.md$/;
 
 /** OS と editor が置く物。追跡もされず、npm にも詰められない。 */
 const JUNK = /^\.DS_Store$|\.sw[a-p]$|~$/;
