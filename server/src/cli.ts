@@ -25,7 +25,7 @@ import type pg from "pg";
 import { dbDown, dbInit, dbUp, migrate } from "./admin.ts";
 import { check, init } from "./artifacts.ts";
 import { flush, readState, rejectedDir } from "./capture.ts";
-import { checkSchema, connect, type Env, inTransaction, KEY, loadEnv, type Role } from "./db.ts";
+import { checkSchema, connect, type Env, inClientTransaction, KEY, loadEnv, type Role } from "./db.ts";
 import { syncDocs } from "./docs.ts";
 import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
@@ -877,7 +877,7 @@ const root = buildRouteMap({
           if (!display || handles.length === 0)
             throw new Error("呼び名と、GitHub のハンドルを 1 つ以上指定する");
           // 持ち主の付け替えは 1 つの transaction で。途中で落ちると持ち主が 0 人になる。
-          const linked = await inTransaction(c, async () => {
+          const linked = await inClientTransaction(c, async () => {
             if (flags.me) await c.query("update gleanery.person set is_self = false where is_self");
             const pe = await c.query<{ id: string }>(
               `insert into gleanery.person (display_name, is_self) values ($1, $2)

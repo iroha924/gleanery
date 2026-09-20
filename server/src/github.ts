@@ -11,7 +11,7 @@
 
 import { execFileSync } from "node:child_process";
 import type pg from "pg";
-import { EMBED_MODEL, inTransaction } from "./db.ts";
+import { EMBED_MODEL, inClientTransaction } from "./db.ts";
 import { conversationId, indexesMessage, messageText, type SpeakerKind } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
 import { clean, sha256, tsvector, uuidFrom } from "./text.ts";
@@ -267,7 +267,7 @@ export async function syncGithub(
   if (!snapshotAt) throw new Error("DB の時刻を取れなかった");
   const { items, said } = await collect(cliSource(repo));
 
-  const counts = await inTransaction(client, async () => {
+  const counts = await inClientTransaction(client, async () => {
     const connector = await connectorOf(client, projectId, "github");
     // 取得を始めた後に、別の同期がより新しい取得を入れていれば書かない（遅れた古い取得で巻き戻さない）。
     if (connector.snapshotAt && snapshotAt.getTime() < connector.snapshotAt.getTime()) return null;

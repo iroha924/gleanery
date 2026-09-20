@@ -8,7 +8,7 @@
 
 import type pg from "pg";
 import { z } from "zod";
-import { EMBED_MODEL, type Env, inTransaction } from "./db.ts";
+import { EMBED_MODEL, type Env, inClientTransaction } from "./db.ts";
 import { type Filled, fillKnowledge } from "./embeddings.ts";
 import { conversationId, knowledgeText, STATUSES } from "./knowledge.ts";
 import { mask, sha256, tsvector } from "./text.ts";
@@ -319,7 +319,7 @@ export async function saveTrace(
   const earliest = t.items.map((i) => i.at).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
   const startedAt = t.session.startedAt ?? earliest ?? new Date().toISOString();
 
-  const result = await inTransaction(client, async () => {
+  const result = await inClientTransaction(client, async () => {
     // 自動記録がこの session を先に作っていれば、そのまま使う（id は同じ規則で決まる）。
     await client.query(
       `insert into gleanery.conversation (id, project_id, origin, external_id, branch, started_at)

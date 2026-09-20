@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type pg from "pg";
 import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underGleanery } from "./artifacts.ts";
-import { EMBED_MODEL, inTransaction } from "./db.ts";
+import { EMBED_MODEL, inClientTransaction } from "./db.ts";
 import { knowledgeText } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
 import { clean, sha256, tsvector } from "./text.ts";
@@ -363,7 +363,7 @@ export async function syncDocs(
   const commit = commitOf(root, opts.remote);
   const { docs, skipped } = collectDocs(root, commit);
 
-  const done = await inTransaction(client, async () => {
+  const done = await inClientTransaction(client, async () => {
     const connector = await connectorOf(client, projectId, "docs");
     const before = connector.headOid;
     if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))

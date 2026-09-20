@@ -22,7 +22,7 @@ import os from "node:os";
 import path from "node:path";
 import type pg from "pg";
 import { ARTIFACT_PATH } from "./artifacts.ts";
-import { connect, EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, vec } from "./db.ts";
+import { connect, EMBED_MODEL, type Env, embed, inClientTransaction, KEY, loadEnv, vec } from "./db.ts";
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
@@ -448,7 +448,7 @@ export async function write(
   projects: Map<string, Project>,
   vectors: Vectors,
 ): Promise<number> {
-  return inTransaction(db, async () => {
+  return inClientTransaction(db, async () => {
     const conversations = new Map<
       string,
       { project: number; host: Host; session: string; branch: string | null; at: string }
