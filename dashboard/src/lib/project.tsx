@@ -6,7 +6,7 @@ import { api, type Project } from "@/lib/api";
 // プロジェクトはセッション中ほぼ変わらないので、画面ごとに毎回選ばせない。
 //
 // `""` は「すべて」。チャットと会議だけは 1 つ選ばれていることを求める（混ぜると別の仕事の決定が答えに入る）。
-const KEY = "mitos.project";
+const KEY = "gleanery.project";
 
 type Ctx = {
   /** 作業場所の id か ""（すべて） */
@@ -22,7 +22,14 @@ const ProjectContext = createContext<Ctx | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const [target, setTargetState] = useState<string | null>(null);
-  const projects = useQuery({ queryKey: ["projects"], queryFn: api.projects, enabled: target !== null });
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: api.projects,
+    enabled: target !== null,
+    // **作業場所は画面の外で増える**（`gleanery project add` と `gleanery harvest`）。
+    // 既定では窓に戻っても取り直さないので、登録したのに 0 件のままに見える。
+    refetchOnWindowFocus: true,
+  });
 
   useEffect(() => {
     try {

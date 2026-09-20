@@ -31,14 +31,18 @@ try {
 // 実測（2026-09-09）: Claude 側が 13 回上がるあいだ、**Codex 側は作られたときの 0.1.0 のまま
 // 一度も上がっていなかった。**このゲート自身が Claude 側しか見ていなかったため、
 // 「版を上げ忘れたら止まる」という約束が片側にしか効いていなかった。
+// 配る正本は npm の package で、plugin の manifest はそれと同じ版を指す。1 つでもずれると届かない。
 const MANIFESTS = {
-  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "mitos")?.version,
+  "plugin/package.json": (j) => j.version,
+  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.version,
   "plugin/.claude-plugin/plugin.json": (j) => j.version,
   "plugin/.codex-plugin/plugin.json": (j) => j.version,
 };
 
 // 版も index から読む。作業ツリーで上げただけの版は commit に入らない。
 const read = (f) => JSON.parse(git("show", `:${f}`));
+/** index（commit に入る内容）での姿。ref を空にすると `git show :path` になる。 */
+const staged = (f) => at("", f);
 const versions = Object.entries(MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
 const distinct = [...new Set(versions.map(([, v]) => v))];
 if (distinct.length !== 1) {
@@ -57,13 +61,53 @@ if (distinct.length !== 1) {
 
 // **変わったファイルも index（commit に入る内容）で見る。**作業ツリーを読むと、bundle が
 // 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
-// `--base` へ変えるだけで同じ比べ方になる。**対象は plugin/ 配下すべて** — キャッシュへ複製されるのは
-// mcp.js だけではなく、自動記録（dist/capture.js）もフックの定義もスキル（skills/**）も入る。
+// `--base` へ変えるだけで同じ比べ方になる。
+//
+// **配る中身を変えうる入力を全部挙げる。**キャッシュへ複製されるのは mcp.js だけではなく、
+// 自動記録（dist/capture.js）もフックの定義もスキル（skills/**）も画面も DB の同梱物も入る。
+// dist と db は追跡しないので、ここから漏れた入力を変えると、中身が変わったのに版が据え置かれる。
+// src だけでなく、依存の版（lockfile）、build と型の設定、公開する物の一覧も中身を変える。
+const INPUTS = [
+  "plugin/",
+  ".claude-plugin/",
+  "server/src/",
+  "server/package.json",
+  "server/bun.lock",
+  "server/tsconfig.json",
+  "dashboard/src/",
+  "dashboard/public/",
+  "dashboard/index.html",
+  "dashboard/package.json",
+  "dashboard/bun.lock",
+  "dashboard/tsconfig.json",
+  "dashboard/vite.config.ts",
+  "db/",
+  "scripts/bundle.mjs",
+  "scripts/third-party-notices.mjs",
+  "scripts/licenses/",
+];
+/**
+ * manifest から版を落とした姿。**版だけを上げた commit を「中身が変わった」に数えない**ため。
+ * ただし落とすのは版だけで、`files` と `bin` と MCP の起動引数は配る物を変えるので残す
+ * （これを丸ごと除外していたため、公開する一覧を変えて版を据え置く commit が素通りしていた）。
+ */
+const withoutVersion = (text) => {
+  if (text === null) return null;
+  try {
+    const o = JSON.parse(text);
+    delete o.version;
+    if (Array.isArray(o.plugins)) for (const p of o.plugins) delete p.version;
+    return JSON.stringify(o);
+  } catch {
+    return text;
+  }
+};
+
 const ref = base ?? "HEAD";
-const changed = git("diff", "--cached", "--name-only", ref, "--", "plugin/", ".claude-plugin/")
+const changed = git("diff", "--cached", "--name-only", ref, "--", ...INPUTS)
   .split("\n")
   .filter(Boolean)
-  .filter((f) => !(f in MANIFESTS));
+  .filter((f) => !(f in MANIFESTS) || withoutVersion(at(ref, f)) !== withoutVersion(staged(f)));
 if (changed.length === 0) process.exit(0);
 
 const MANIFEST = "plugin/.claude-plugin/plugin.json";
@@ -75,11 +119,11 @@ console.error(
   [
     `plugin/ の ${changed.length} 個が変わったのに版が ${now} のままになっている（${changed[0]} など）。`,
     "",
-    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/mitos/mitos/<版>/ の複製から動く。",
+    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/gleanery/gleanery/<版>/ の複製から動く。",
     "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
     "",
-    "  3つのmanifest（Claude、Codex、marketplace）のversionを同じ値へ上げる。",
-    "  marketplace の取得元へ入れた後、`mitos doctor` の「plugin の版」が出す更新手順を叩き、セッションを張り直す。",
+    "  4つ（npm の package.json、Claude、Codex、marketplace）のversionを同じ値へ上げる。",
+    "  marketplace の取得元へ入れた後、`gleanery doctor` の「plugin の版」が出す更新手順を叩き、セッションを張り直す。",
   ].join("\n"),
 );
 process.exit(1);

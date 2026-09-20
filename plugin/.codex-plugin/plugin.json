@@ -1,13 +1,13 @@
 {
-  "name": "mitos",
-  "version": "0.12.25",
-  "description": "過去の決定・棄却した案・制約・発言を引く（会話の自動記録は Claude Code だけ）。μίτος = 辿れば戻れる糸",
+  "name": "gleanery",
+  "version": "0.19.0",
+  "description": "過去の決定・棄却した案・制約・発言を引く（会話の自動記録は Claude Code だけ）。glean = 落ち穂を拾い集める",
   "author": {
     "name": "iroha924",
     "email": "shunichi@hir4ta.com"
   },
-  "homepage": "https://github.com/iroha924/mitos",
-  "repository": "https://github.com/iroha924/mitos",
+  "homepage": "https://github.com/iroha924/gleanery",
+  "repository": "https://github.com/iroha924/gleanery",
   "skills": "./skills/",
   "hooks": {},
   "mcpServers": "./mcp/codex.json"

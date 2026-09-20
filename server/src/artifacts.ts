@@ -1,7 +1,7 @@
-// `.mitos/` の作業領域。要件定義と設計書の置き場所と、公開してよいかを決める manifest。
+// `.gleanery/` の作業領域。要件定義と設計書の置き場所と、公開してよいかを決める manifest。
 //
 // **承認状態は change.json だけが持つ。**本文の自然言語から推測しない。
-// 文書の同期（commit の tree を読む）と `mitos check`（作業ツリーを読む）は、同じ検査を読み先だけ替えて通す。
+// 文書の同期（commit の tree を読む）と `gleanery check`（作業ツリーを読む）は、同じ検査を読み先だけ替えて通す。
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,26 +9,26 @@ import path from "node:path";
 import { z } from "zod";
 import { rootOf } from "./project.ts";
 
-const MITOS = ".mitos";
-const CHANGES = ".mitos/changes";
+const GLEANERY = ".gleanery";
+const CHANGES = ".gleanery/changes";
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /**
- * 同期と画面が成果物として扱う path。これ以外の `.mitos` 配下の Markdown は取り込まない。
+ * 同期と画面が成果物として扱う path。これ以外の `.gleanery` 配下の Markdown は取り込まない。
  * 自動記録も同じ定数で「読んだ成果物」を選ぶ。種別は画面の SessionArtifact.kind と `scripts/check-pairs.mjs` が突き合わせる。
  */
-export const ARTIFACT_PATH = /^\.mitos\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
-/** manifest は数行の JSON。上限が無いと、巨大なファイル 1 つで日次同期のプロセスごと落ちる（OOM）。 */
+export const ARTIFACT_PATH = /^\.gleanery\/changes\/([a-z0-9]+(?:-[a-z0-9]+)*)\/(requirements|design)\.md$/;
+/** manifest は数行の JSON。上限が無いと、巨大なファイル 1 つで取り込みのプロセスごと落ちる（OOM）。 */
 export const MAX_MANIFEST = 64 * 1024;
 
 export type ArtifactKind = "requirements" | "design";
 export type Artifact = { kind: ArtifactKind; change: string; changeTitle: string };
 export type Problem = { path: string; reason: string };
 
-const projectSchema = z.object({ schema: z.literal("mitos/project/1") }).strict();
+const projectSchema = z.object({ schema: z.literal("gleanery/project/1") }).strict();
 const phase = z.object({ status: z.enum(["draft", "approved"]) }).strict();
 const changeSchema = z
   .object({
-    schema: z.literal("mitos/change/1"),
+    schema: z.literal("gleanery/change/1"),
     title: z.string().trim().min(1).max(200),
     requirements: phase.optional(),
     design: phase.optional(),
@@ -53,7 +53,7 @@ export type Snapshot = {
   tracked: Set<string> | null;
 };
 
-/** 作業ツリーを読む（`mitos check`）。 */
+/** 作業ツリーを読む（`gleanery check`）。 */
 export function workingTree(root: string): Snapshot {
   const stat = (rel: string) => fs.lstatSync(path.join(root, rel), { throwIfNoEntry: false });
   return {
@@ -93,7 +93,7 @@ const zodReason = (e: z.ZodError): string =>
     .map((i) => `${i.path.join(".") || "(根)"}: ${i.code === "custom" ? i.message : i.code}`)
     .join(" / ");
 
-/** `.mitos/changes` 配下で git が追っている path。git 管理外なら null。 */
+/** `.gleanery/changes` 配下で git が追っている path。git 管理外なら null。 */
 function trackedChanges(root: string): Set<string> | null {
   try {
     const out = execFileSync("git", ["-C", root, "ls-files", "-z", "--", CHANGES], {
@@ -154,18 +154,18 @@ function inspectChange(snap: Snapshot, slug: string): { change: Change | null; p
   return { change: parsed.data, problems };
 }
 
-/** `.mitos` と `.mitos/changes` が symlink でない実ディレクトリか。 */
+/** `.gleanery` と `.gleanery/changes` が symlink でない実ディレクトリか。 */
 function inspectRoot(snap: Snapshot): Problem[] {
-  for (const rel of [MITOS, CHANGES]) {
+  for (const rel of [GLEANERY, CHANGES]) {
     const kind = snap.kind(rel);
-    if (kind === null) return [{ path: rel, reason: "無い（mitos init を実行する）" }];
+    if (kind === null) return [{ path: rel, reason: "無い（gleanery init を実行する）" }];
     if (kind !== "dir") return [{ path: rel, reason: "ディレクトリではない（symlink も受け付けない）" }];
   }
   return [];
 }
 
 /**
- * 作業ツリーの `.mitos` を全部検査する（`mitos check`）。draft は未追跡のことが多いので、追跡状態を問わず全 change を見る。
+ * 作業ツリーの `.gleanery` を全部検査する（`gleanery check`）。draft は未追跡のことが多いので、追跡状態を問わず全 change を見る。
  */
 export function check(dir: string): { root: string; changes: number; problems: Problem[] } {
   const root = rootOf(dir);
@@ -173,11 +173,11 @@ export function check(dir: string): { root: string; changes: number; problems: P
   const rootProblems = inspectRoot(snap);
   if (rootProblems.length) return { root, changes: 0, problems: rootProblems };
   const problems: Problem[] = [];
-  const project = readJson(snap, `${MITOS}/project.json`);
-  if ("reason" in project) problems.push({ path: `${MITOS}/project.json`, reason: project.reason });
+  const project = readJson(snap, `${GLEANERY}/project.json`);
+  if ("reason" in project) problems.push({ path: `${GLEANERY}/project.json`, reason: project.reason });
   else {
     const parsed = projectSchema.safeParse(project.value);
-    if (!parsed.success) problems.push({ path: `${MITOS}/project.json`, reason: zodReason(parsed.error) });
+    if (!parsed.success) problems.push({ path: `${GLEANERY}/project.json`, reason: zodReason(parsed.error) });
   }
   // `.DS_Store` のような OS の置き物で落ちないよう、ドットで始まる名前は change として扱わない。
   const slugs = fs.readdirSync(path.join(root, CHANGES)).filter((name) => !name.startsWith("."));
@@ -218,13 +218,14 @@ export function selectArtifacts(
 }
 
 /**
- * `.mitos` 配下の Markdown か。承認済みの成果物以外は同期しない。**入れ子の `.mitos` も含める** —
+ * `.gleanery` 配下の Markdown か。承認済みの成果物以外は同期しない。**入れ子の `.gleanery` も含める** —
  * 根にしか承認の判定が無いので、サブディレクトリの draft が通常の文書として検索に入る。
  */
-export const underMitos = (rel: string): boolean => rel.startsWith(`${MITOS}/`) || rel.includes(`/${MITOS}/`);
+export const underGleanery = (rel: string): boolean =>
+  rel.startsWith(`${GLEANERY}/`) || rel.includes(`/${GLEANERY}/`);
 
 /**
- * `.mitos/` を作る。**Git リポジトリの中なら常に根へ**置く。
+ * `.gleanery/` を作る。**Git リポジトリの中なら常に根へ**置く。
  *
  * **symlink を辿らない。**`mkdirSync` と `writeFileSync(..., { flag: "wx" })` は既存なら EEXIST で止まり、
  * O_EXCL は末端が symlink でも止まる。途中のディレクトリの symlink は O_EXCL でも辿るので、
@@ -236,7 +237,7 @@ export function init(dir: string): { root: string; created: boolean } {
     throw new Error(`${dir} はディレクトリではない`);
   const root = rootOf(dir);
   let created = false;
-  for (const rel of [MITOS, CHANGES]) {
+  for (const rel of [GLEANERY, CHANGES]) {
     try {
       fs.mkdirSync(path.join(root, rel));
       created = true;
@@ -246,9 +247,9 @@ export function init(dir: string): { root: string; created: boolean } {
         throw new Error(`${rel} がディレクトリではない（symlink も受け付けない）`);
     }
   }
-  const rel = `${MITOS}/project.json`;
+  const rel = `${GLEANERY}/project.json`;
   try {
-    fs.writeFileSync(path.join(root, rel), `${JSON.stringify({ schema: "mitos/project/1" }, null, 2)}\n`, {
+    fs.writeFileSync(path.join(root, rel), `${JSON.stringify({ schema: "gleanery/project/1" }, null, 2)}\n`, {
       flag: "wx",
     });
     created = true;

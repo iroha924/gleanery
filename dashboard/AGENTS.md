@@ -1,9 +1,48 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# dashboard を触るとき
 
-# This is NOT the Next.js you know
+完全に静的な SPA である。**サーバーで動くコードは 1 行も無い。**`vite build` が出す `dist/` を、
+`server/src/server.ts` の Hono が `/api/*` と同じ origin で配る。
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+SSR、RSC、Server Actions、middleware、route handler を持ち込まない。`"use server"` は書かない。
+`src/components/ui/` に残る `"use client"` は shadcn を取り込んだときの名残で、Vite では無視される。
 
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+## 置き場所
 
-<!-- END:nextjs-agent-rules -->
+```
+src/routes/      TanStack Router の file-based route。file 名がそのまま path になる
+src/features/    機能ごとの module。api / model / ui の 3 層だけを置く
+src/components/  画面をまたいで使うもの（ui/ は shadcn）
+src/lib/         API の呼び出しと、画面をまたぐ状態
+```
+
+**機能の module を `src/routes/` の下に置かない。**`_` で始まる名前は TanStack Router では
+pathless layout route の記法で、`routesDirectory` の下にあると generator が route として扱い、
+`createFileRoute` の骨組みを書き込んでファイルを壊す。
+
+依存の向きは `ui → model → api` の一方向だけ。`src/routes/` の route entry だけが、
+module の `ui` を参照できる（`scripts/check-dashboard-boundaries.mjs` が検査する）。
+
+`src/routeTree.gen.ts` は生成物だが **git 管理下に置く**。実行時に読まれるソースであって
+一時キャッシュではない。手で編集しない。
+
+## URL が状態の正本
+
+画面の状態を URL に持つものは、route の `validateSearch` で型と既定値を決める。
+`zod` をそのまま渡せる（v4 はアダプタ不要）。
+
+- 既定値は `stripSearchParams` で URL から消す。`?page=1` を出さない
+- 画面をまたいで保つものは `retainSearchParams` を**その route に**付ける。root に置くと、
+  検索語やページ番号がチャットや会議の画面へ漏れる
+- middleware の順は `stripSearchParams` → `retainSearchParams`。逆にすると `retain` が
+  `strip` の結果を後から書き戻し、既定値が URL から消えない
+- `window.history.pushState()` を直接呼ばない。URL だけ進んで画面が再評価されない
+- 検索の状態を zustand や jotai のような store に持たせない
+
+## API
+
+同一 origin の `/api/*` を叩く。**認証は無い。**トークンも Cookie も付けない。
+dev は Vite の proxy が `127.0.0.1:8787` へ流す。**`changeOrigin` を立てない** —
+ブラウザの Origin と Hono が見る Host が食い違い、CSRF の検査に弾かれる。
+
+サーバーから来たデータのキャッシュは TanStack Query が持つ。route の loader へ移さない。
+チャットの SSE と会議の音声アップロードは loader に乗せない。

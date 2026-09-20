@@ -1,60 +1,74 @@
 {
   "schema": "trace/1",
-  "session": { "host": "claude-code", "id": "4f2bfe2e-6941-4310-8110-1af8c2245429", "branch": "feat/rebuild" },
+  "session": { "host": "claude-code", "id": "4f2bfe2e-6941-4310-8110-1af8c2245429", "branch": "feat/local" },
   "work": {
-    "key": "rebuild",
-    "title": "mitos の作り直し",
-    "goal": "13 表の schema の上で、自動記録・recall・read・check_path が Neon の branch で通る",
-    "current": "サーバー側を書き終え、branch で E2E を回した",
-    "next": ["plugin のフックと Skill を作り直す", "人: 本番を空にする前に確認する"],
+    "key": "local",
+    "title": "手元だけで動く形へ移す",
+    "goal": "クラウドの依存を外し、gleanery dashboard で 127.0.0.1 に画面が立ち、手元の PostgreSQL を読む",
+    "current": "サーバー側と画面を書き終え、手元の DB で通した",
+    "next": ["配布を npm へ移す", "人: 旧環境を消す前に確認する"],
     "status": "active"
   },
   "items": [
     {
-      "key": "gh-only",
+      "key": "local-postgres",
       "kind": "decision",
       "status": "accepted",
-      "at": "2026-09-13T11:00:00+09:00",
-      "text": "GitHub の取り込みは gh の 1 経路にする",
-      "context": "持ち主 1 人で gh auth があり、同期先の Neon はどの PC からも引ける",
+      "at": "2026-09-20T11:00:00+09:00",
+      "text": "DB は Docker の pgvector/pgvector で手元に立てる。PC ごとに独立させ、PC 間で共有しない",
+      "context": "PC をまたいで同じ記録を引く必要が無くなった。仕事用の PC には仕事の記録だけが溜まればよい",
       "options": [
-        { "text": "gh の 1 経路", "chosen": true },
-        { "text": "GitHub App と webhook", "chosen": false, "why": "967 行と secret 5 つを持つ割に、文書の同期はどのみち PC が要る" }
+        { "text": "Docker で手元に立てる", "chosen": true },
+        { "text": "Homebrew の postgresql", "chosen": false, "why": "DB 本体と pgvector とデータ領域を 1 つに固定できない" }
       ],
-      "confirmation": "server/src に GitHub App の実装が無い",
-      "downsides": ["数分以内の反映は無くなる（PC の日次同期か mitos sync）"]
+      "confirmation": "db/schema.sql が無修正で通り、13 表と 3 ロールができた",
+      "downsides": ["利用者に Docker を要求する", "PC を移ると記録は引き継がれない"]
+    },
+    {
+      "key": "no-login",
+      "kind": "decision",
+      "status": "accepted",
+      "at": "2026-09-20T12:30:00+09:00",
+      "text": "画面にログイン機構を置かない。境界は 127.0.0.1 への bind と Host の完全一致と CSRF の 3 つにする",
+      "context": "localhost に閉じたので識別する相手がいない。ただし bind だけでは、ブラウザで開いた他所のページから叩ける",
+      "options": [
+        { "text": "bind + Host + CSRF", "chosen": true },
+        { "text": "起動ごとのトークン", "chosen": false, "why": "同じ OS ユーザーの別プロセスには効かず、設定項目だけ増える" }
+      ],
+      "confirmation": "Host が合わない要求が画面と API の両方で 403 になる",
+      "downsides": ["同じ OS ユーザーの別プロセスは API を呼べる"]
     },
     {
       "key": "capture-no-conflict-target",
       "kind": "constraint",
       "status": "active",
-      "at": "2026-09-13T12:30:00+09:00",
+      "at": "2026-09-20T12:35:00+09:00",
       "text": "自動記録の insert は on conflict do nothing に衝突先の列を書かない（書くと SELECT 権限が要り、capture の鍵で拒否される）",
       "files": [{ "path": "server/src/capture.ts", "role": "applies_to" }],
       "confidence": "fact",
-      "refs": ["cmd:node roles.mjs"]
+      "refs": ["cmd:bun run db:roles"]
     },
     {
-      "key": "local-docker",
+      "key": "pgtyped",
       "kind": "dead_end",
-      "at": "2026-09-13T12:00:00+09:00",
-      "text": "手元の Docker で schema を先に試すのはやめた。DB は Neon だけで、検証も Neon の branch で行う"
+      "at": "2026-09-20T13:00:00+09:00",
+      "text": "SQL の型付けに pgtyped を採るのはやめた。条件を実行時に組み立てる検索のクエリを扱えず、公式が query composition を非対応と明言している"
     },
     {
-      "key": "sync-idempotent",
+      "key": "host-check",
       "kind": "verification",
       "status": "passed",
-      "at": "2026-09-13T12:40:00+09:00",
-      "text": "変わっていない同期で、書き込みが取り込み元の 2 行だけになる",
-      "command": "mitos sync（2 回目）と pg_stat_user_tables の差",
-      "verifies": "gh-only"
+      "at": "2026-09-20T13:20:00+09:00",
+      "text": "Host を偽装した要求が、画面と API の両方で 403 になる",
+      "command": "node --test server/test/server.test.ts",
+      "verifies": "no-login"
     },
     {
-      "key": "codex-subagent-prompt",
+      "key": "windows-untested",
       "kind": "question",
       "status": "blocking",
-      "at": "2026-09-13T12:45:00+09:00",
-      "text": "Codex の subagent の prompt は UserPromptSubmit を発火するか（自動記録を Codex で有効にする前に測る）"
+      "at": "2026-09-20T13:30:00+09:00",
+      "text": "Windows で CLI と DB の起動が通るか（実機が無く、CI でも Docker Desktop の挙動までは確かめられない）"
     }
   ]
 }

@@ -7,7 +7,7 @@ function fakeDb(ids: string[]) {
   const rejected: string[] = [];
   const stored: string[] = [];
   const query = async (sql: string, params: unknown[] = []) => {
-    if (sql.includes("from mitos.knowledge_embedding e join")) {
+    if (sql.includes("from gleanery.knowledge_embedding e join")) {
       const skip = new Set(params[2] as string[]);
       return {
         rows: ids

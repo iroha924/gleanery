@@ -11,7 +11,7 @@ import pg from "pg";
 export type Env = Record<string, string | undefined>;
 
 // どのプロジェクトからでも同じものを指せるよう、置き場所を 1 つに固定する。
-export const GLOBAL_ENV = path.join(os.homedir(), ".claude", "knowledge.env");
+export const GLOBAL_ENV = path.join(os.homedir(), ".gleanery", "env");
 
 export function parseEnv(text: string): Env {
   const out: Env = {};
@@ -31,14 +31,14 @@ function readInto(out: Env, file: string): boolean {
 }
 
 /**
- * 探索順: プロセスの環境変数 → KNOWLEDGE_ENV_DIR/.env → ~/.claude/knowledge.env
+ * 探索順: プロセスの環境変数 → GLEANERY_ENV_DIR/.env → ~/.gleanery/env
  *
  * **作業ディレクトリから上へ .env を探さない。**フックは編集中のプロジェクトを cwd として起動するので、
  * 他人のリポジトリがコミットした .env が接続先の候補になる。
  */
 export function loadEnv(): Env {
   const out: Env = { ...process.env };
-  if (process.env.KNOWLEDGE_ENV_DIR) readInto(out, path.join(process.env.KNOWLEDGE_ENV_DIR, ".env"));
+  if (process.env.GLEANERY_ENV_DIR) readInto(out, path.join(process.env.GLEANERY_ENV_DIR, ".env"));
   readInto(out, GLOBAL_ENV);
   return out;
 }
@@ -53,10 +53,10 @@ export function loadEnv(): Env {
 export type Role = "owner" | "reader" | "ingest" | "capture";
 
 export const KEY: Record<Role, string> = {
-  owner: "KNOWLEDGE_DB_URL",
-  reader: "KNOWLEDGE_DB_URL_RO",
-  ingest: "KNOWLEDGE_DB_URL_INGEST",
-  capture: "KNOWLEDGE_DB_URL_CAPTURE",
+  owner: "GLEANERY_DB_URL",
+  reader: "GLEANERY_DB_URL_RO",
+  ingest: "GLEANERY_DB_URL_INGEST",
+  capture: "GLEANERY_DB_URL_CAPTURE",
 };
 
 /** MCP と CLI が期待する schema の版。db/schema.sql の schema コメントと同じ数にする（テストが突き合わせる）。 */
@@ -65,9 +65,9 @@ export const SCHEMA_REVISION = 3;
 /** pg は int8（bigint と count(*)）を string、timestamptz を Date で返す。`query<T>` の結果型はこれに合わせて書く。 */
 export type Db = Pick<pg.Client, "query">;
 
-function settings(env: Env, role: Role): pg.ClientConfig {
+export function settings(env: Env, role: Role): pg.ClientConfig {
   const raw = env[KEY[role]];
-  if (!raw) throw new Error(`${KEY[role]} が無い。~/.claude/knowledge.env か、デプロイ先の環境変数に入れる`);
+  if (!raw) throw new Error(`${KEY[role]} が無い。~/.gleanery/env か、デプロイ先の環境変数に入れる`);
   let u: URL;
   try {
     u = new URL(raw);
@@ -79,19 +79,24 @@ function settings(env: Env, role: Role): pg.ClientConfig {
   // 接続先だけを取り出して渡し、TLS はここで固定する。
   const bad = ["ssl", "sslmode", "sslrootcert", "sslcert", "sslkey"].filter((k) => u.searchParams.has(k));
   if (bad.length) {
-    throw new Error(
-      `${KEY[role]} の ${bad.join(" / ")} は使えない。TLS はコード側で固定している。この指定を消す`,
-    );
+    throw new Error(`${KEY[role]} の ${bad.join(" / ")} は使えない。TLS は接続先から決める。この指定を消す`);
   }
+  // URL は IPv6 を角括弧付きで返す。net.connect はそれを受け付けない。
+  const hostname = u.hostname.replace(/^\[(.+)\]$/, "$1");
+  // **完全一致でだけ loopback と認める。**URL パーサは host を正規化しないので、
+  // `127.1` や `0x7f.1` は綴りのまま届く。取りこぼすと TLS を要求して接続に失敗するだけだが、
+  // 曖昧な一致を許すと、loopback でない相手へ平文で繋ぐ側へ倒れる。
+  const loopback = ["localhost", "127.0.0.1", "::1"].includes(hostname.toLowerCase());
   return {
-    host: u.hostname,
+    host: hostname,
     port: u.port ? Number(u.port) : 5432,
     user: decodeURIComponent(u.username),
     password: decodeURIComponent(u.password),
     database: u.pathname.replace(/^\//, "") || "postgres",
-    // 検証を切ると、経路を握った相手が返した行がそのまま MCP の応答になる。
+    // 手元の DB は TLS を張らない（公式イメージの既定が ssl = off）。
+    // 他所へ繋ぐときは検証を切らない。切ると、経路を握った相手が返した行がそのまま MCP の応答になる。
     // CA は同梱せず Node の信頼ストアに任せる（NODE_EXTRA_CA_CERTS も効く）。
-    ssl: { rejectUnauthorized: true },
+    ssl: loopback ? false : { rejectUnauthorized: true },
   };
 }
 
@@ -101,17 +106,17 @@ function settings(env: Env, role: Role): pg.ClientConfig {
  */
 export async function checkSchema(db: Db): Promise<void> {
   const r = await db.query<{ comment: string | null }>(
-    "select obj_description(n.oid, 'pg_namespace') as comment from pg_namespace n where n.nspname = 'mitos'",
+    "select obj_description(n.oid, 'pg_namespace') as comment from pg_namespace n where n.nspname = 'gleanery'",
   );
   const comment = r.rows[0]?.comment;
-  if (comment === undefined) throw new Error("DB に mitos の schema が無い。`bun run db:apply` で作る");
+  if (comment === undefined) throw new Error("DB に gleanery の schema が無い。`bun run db:apply` で作る");
   const got = Number(comment?.match(/revision (\d+)/)?.[1]);
   if (got !== SCHEMA_REVISION) {
     throw new Error(
       `DB の schema は revision ${Number.isNaN(got) ? "不明" : got}、このコードは revision ${SCHEMA_REVISION} を期待している。` +
         (got < SCHEMA_REVISION
-          ? "持ち主が mitos のリポジトリで `bun run db:migrate` を当てる"
-          : "mitos を更新する"),
+          ? "持ち主が gleanery のリポジトリで `bun run db:migrate` を当てる"
+          : "gleanery を更新する"),
     );
   }
 }

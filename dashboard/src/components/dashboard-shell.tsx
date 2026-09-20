@@ -1,7 +1,5 @@
-"use client";
-
+import { useRouterState } from "@tanstack/react-router";
 import { MotionIconConfig } from "lucide-react-motion";
-import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -11,7 +9,7 @@ import { ProjectProvider } from "@/lib/project";
 
 /** 幅。**外からは絞らない。**読む幅は画面ごとに違うので、それぞれが自分で決める。 */
 function Body({ children }: { children: ReactNode }) {
-  const path = usePathname();
+  const path = useRouterState({ select: (s) => s.location.pathname });
   const edgeToEdge = path === "/" || path === "/mtg";
   const ownsScroll = edgeToEdge || path === "/sessions";
 
@@ -26,18 +24,12 @@ function Body({ children }: { children: ReactNode }) {
   );
 }
 
-export function DashboardShell({
-  children,
-  defaultSidebarOpen,
-}: {
-  children: ReactNode;
-  defaultSidebarOpen: boolean;
-}) {
+export function DashboardShell({ children }: { children: ReactNode }) {
   return (
     <MotionIconConfig mode="signature" trigger="parent-hover" onLeave="snap" duration={0.4} stagger={0.08}>
       <TooltipProvider delayDuration={300}>
         <ProjectProvider>
-          <SidebarProvider defaultOpen={defaultSidebarOpen} className="app-canvas min-h-svh">
+          <SidebarProvider className="app-canvas min-h-svh">
             <AppSidebar />
             <SidebarInset className="h-svh min-w-0 overflow-hidden bg-card">
               <SidebarTrigger className="absolute top-3 left-3 z-30 rounded-md border bg-card/85 backdrop-blur-xl md:hidden" />

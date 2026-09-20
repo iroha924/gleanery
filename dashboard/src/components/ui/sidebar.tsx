@@ -13,8 +13,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const SIDEBAR_COOKIE_NAME = "sidebar_state";
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+const SIDEBAR_STORAGE_KEY = "gleanery.sidebar";
+
+function storedOpen(fallback: boolean): boolean {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY);
+    return saved === null ? fallback : saved !== "false";
+  } catch {
+    return fallback;
+  }
+}
+
 // **割合にしない。**窓を狭めても項目名を読める幅を固定で確保する。
 const SIDEBAR_WIDTH = "20rem";
 const SIDEBAR_WIDTH_MOBILE = "18rem";
@@ -60,7 +69,7 @@ function SidebarProvider({
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
-  const [_open, _setOpen] = React.useState(defaultOpen);
+  const [_open, _setOpen] = React.useState(() => storedOpen(defaultOpen));
   const open = openProp ?? _open;
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
@@ -71,8 +80,11 @@ function SidebarProvider({
         _setOpen(openState);
       }
 
-      // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
+      try {
+        localStorage.setItem(SIDEBAR_STORAGE_KEY, String(openState));
+      } catch {
+        // 保存できなくても、このタブの中では開閉する
+      }
     },
     [setOpenProp, open],
   );

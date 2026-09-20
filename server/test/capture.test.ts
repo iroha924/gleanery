@@ -30,7 +30,7 @@ test("subagent と、エージェントが起動した子と、印を継がな�
   assert.equal(isOwnerTurn({ session_id: "s1" }, undefined, "cli"), true, "人が打つ session");
   assert.equal(isOwnerTurn({ session_id: "s1" }, "s1", "cli"), true, "自分が書いた印は自分の id と一致する");
   assert.equal(isOwnerTurn({ session_id: "child" }, "s1", "sdk-cli"), false, "親の印を継いだ子");
-  assert.equal(isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"), false, "mitos が起動した headless");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"), false, "gleanery が起動した headless");
   assert.equal(
     isOwnerTurn({ session_id: "s1" }, undefined, "sdk-cli"),
     false,
@@ -58,7 +58,7 @@ const LEAKS: [string, string][] = [
   ["OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123", "sk-proj-abc"],
   ["VOYAGE=pa-abcdefghijklmnopqrstuvwxyz0123", "pa-abcdef"],
   ["gh: ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abc"],
-  ["url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db", "s3cr3t"],
+  ["url: postgres://gleanery_reader:s3cr3t@ep-x.example.com/db", "s3cr3t"],
   ["PGPASSWORD=npg_AbCdEf123456", "npg_AbCdEf"],
   ["npg_AbCdEf123456XY を貼った", "npg_AbCdEf"],
   ["aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "wJalrXUtn"],
@@ -70,7 +70,7 @@ const LEAKS: [string, string][] = [
   ["rk_live_abcdefghijklmnop1234", "rk_live_"],
   ["whsec_abcdefghijklmnopqrstuvwxyz", "whsec_"],
   ['{"password": "hunter2-example"}', "hunter2"],
-  ["postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb", "ab@cdEFGH"],
+  ["postgresql://db_owner:ab@cdEFGH123@ep-x.example.com/appdb", "ab@cdEFGH"],
   ["Authorization: Basic YWRtaW46c3dvcmRmaXNoMTIz", "YWRtaW46"],
   ["X-API-Key: ak_9f8e7d6c5b4a3", "ak_9f8e7d"],
   ["DB_PASS=s3cr3t-value", "s3cr3t"],
@@ -151,12 +151,12 @@ test("形の決まった鍵と、名前で分かる代入・ヘッダ・URL の�
   for (const [input, leak] of LEAKS)
     assert.ok(!mask(input).includes(leak), `${leak} が残った: ${mask(input)}`);
   assert.match(
-    mask("url: postgres://mitos_reader:s3cr3t@ep-x.neon.tech/db"),
-    /mitos_reader:\[伏せた\]@ep-x\.neon\.tech\/db/,
+    mask("url: postgres://gleanery_reader:s3cr3t@ep-x.example.com/db"),
+    /gleanery_reader:\[伏せた\]@ep-x\.example\.com\/db/,
   );
   assert.match(
-    mask("postgresql://neondb_owner:ab@cdEFGH123@ep-x.neon.tech/neondb"),
-    /@ep-x\.neon\.tech\/neondb/,
+    mask("postgresql://db_owner:ab@cdEFGH123@ep-x.example.com/appdb"),
+    /@ep-x\.example\.com\/appdb/,
   );
   assert.match(mask("redis://:hunter2x@cache:6379"), /@cache:6379/, "どこへ繋いだかは残す");
   assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[伏せた]"}', "引用符を残す");
@@ -236,12 +236,12 @@ test("AskUserQuestion の答えを、質問と答えの組にする", () => {
 
 // ---- フックの入力から待ち行列までを通す ----
 
-const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-capture-home-")));
+const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-capture-home-")));
 const realHome = process.env.HOME;
 const repoDir = path.join(home, "repo");
 before(() => {
   // この試験を Claude Code の Bash から走らせると、親の session の印と入口を継いでいる。
-  delete process.env.MITOS_PARENT_SESSION;
+  delete process.env.GLEANERY_PARENT_SESSION;
   delete process.env.CLAUDE_CODE_ENTRYPOINT;
   process.env.HOME = home;
   execFileSync("git", ["init", "-q", repoDir], { stdio: "ignore" });
@@ -298,7 +298,7 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
     ...base,
     hook_event_name: "PostToolUse",
     tool_name: "Read",
-    tool_input: { file_path: path.join(repoDir, ".mitos/changes/auth/design.md") },
+    tool_input: { file_path: path.join(repoDir, ".gleanery/changes/auth/design.md") },
   });
   const r = onHook("claude-code", {
     ...base,
@@ -329,7 +329,7 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
     files.map((f) => (f.kind === "file" ? [f.path, f.action, f.message] : [])),
     [
       ["db/schema.sql", "edit", said?.id],
-      [".mitos/changes/auth/design.md", "read", said?.id],
+      [".gleanery/changes/auth/design.md", "read", said?.id],
     ],
   );
 });
@@ -455,13 +455,15 @@ test("DB へ書くとき、ファイルは turn ではなく待ち行列に書�
   ];
   await write(db, batch, new Map([["git:github.com/o/r", { id: 7, name: "r" }]]), new Map());
   const anchor = uuidFrom(conversationId(7, "claude-code", "s1"), said);
-  assert.deepEqual(calls.find((c) => c.sql.includes("insert into mitos.message ("))?.params[0], [anchor]);
-  assert.deepEqual(calls.find((c) => c.sql.includes("insert into mitos.message_file"))?.params[0], [anchor]);
+  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message ("))?.params[0], [anchor]);
+  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message_file"))?.params[0], [
+    anchor,
+  ]);
 });
 
 test("エージェントが起動した子と、作業場所の外の session は何も書かない", () => {
   reset();
-  process.env.MITOS_PARENT_SESSION = "parent";
+  process.env.GLEANERY_PARENT_SESSION = "parent";
   try {
     onHook("claude-code", {
       session_id: "child",
@@ -471,7 +473,7 @@ test("エージェントが起動した子と、作業場所の外の session �
       prompt: "レビューして",
     });
   } finally {
-    delete process.env.MITOS_PARENT_SESSION;
+    delete process.env.GLEANERY_PARENT_SESSION;
   }
   onHook("claude-code", {
     session_id: "s2",
@@ -527,15 +529,15 @@ test("記録のフックを起動すると、標準入力の持ち主の発言�
 test("自動記録が止まっていれば、session の開始時に同じ枠の形で知らせる", () => {
   assert.equal(
     captureNotice({}),
-    "✦ mitos: KNOWLEDGE_DB_URL_CAPTURE が無いので、会話を自動記録できない\n╰─ mitos doctor で確かめる",
+    "✦ gleanery: GLEANERY_DB_URL_CAPTURE が無いので、会話を自動記録できない\n╰─ gleanery doctor で確かめる",
   );
 });
 
 test("送れていない判定は、待ちがあって失敗が残るときだけで、状態ファイルが壊れていても落ちない", () => {
   reset();
-  const file = path.join(home, ".claude", "mitos-capture.json");
+  const file = path.join(home, ".gleanery", "capture.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const capture = { KNOWLEDGE_DB_URL_CAPTURE: "x" };
+  const capture = { GLEANERY_DB_URL_CAPTURE: "x" };
   fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
   assert.equal(readState().stuck, null, "待ちが空なら、失敗は過去のもの");
   // 以降は待ちが 1 件ある状態で見る（待ちが無ければ、壊れた状態でも判定は null になって何も確かめない）。
@@ -572,7 +574,7 @@ test("SessionStart は、この session の id を子へ継がせる", () => {
   } finally {
     delete process.env.CLAUDE_ENV_FILE;
   }
-  assert.equal(fs.readFileSync(file, "utf8"), "export MITOS_PARENT_SESSION=abc-123\n");
+  assert.equal(fs.readFileSync(file, "utf8"), "export GLEANERY_PARENT_SESSION=abc-123\n");
 });
 
 test("Codex の apply_patch は見出しから編集先を読む", () => {

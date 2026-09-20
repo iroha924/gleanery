@@ -1,0 +1,38 @@
+# 手元の PostgreSQL。`gleanery db init` が起動し、schema を当てる。
+#
+# **この compose を直接 `docker compose up` で起動しない。**接続先の資格情報は
+# ~/.gleanery/env（配布後は ~/.gleanery/env）の 1 ファイルが正本で、
+# CLI がそこから読んで環境変数として渡す。手で起動すると、env ファイルと
+# 実際の DB のパスワードが食い違ったまま気付けない。
+#
+# 版は pgvector まで固定する。`pg18` のような動くタグにすると、
+# 再取得した PC だけ別の版になり、schema の適用が黙ってずれる。
+
+name: ${COMPOSE_PROJECT_NAME:-gleanery}
+
+services:
+  db:
+    image: pgvector/pgvector:0.8.6-pg18
+    restart: unless-stopped
+    environment:
+      # CLI が接続文字列から取り出して渡す。既定値を置かない（置くと弱い鍵で起動してしまう）。
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?CLI 経由で起動する（gleanery db init）}
+      POSTGRES_DB: ${POSTGRES_DB:-gleanery}
+      # 照合順序をロケールに委ねると、PC ごとに索引の並びが変わる。
+      POSTGRES_INITDB_ARGS: --locale-provider=icu --icu-locale=und-x-icu --encoding=UTF8
+    ports:
+      # **127.0.0.1 に固定する。**0.0.0.0 にすると同じ LAN の全員が DB へ届く。
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # PostgreSQL 18 の公式イメージは PGDATA が /var/lib/postgresql/18/docker にあり、
+      # mount 先は 1 つ上の /var/lib/postgresql になる（17 以前と違う）。
+      - data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  data:

@@ -1,9 +1,10 @@
 {
-  "name": "mitos",
+  "name": "gleanery",
   "private": true,
   "packageManager": "bun@1.4.0",
   "scripts": {
     "setup": "bun install --cwd server --frozen-lockfile && bun install --cwd dashboard --frozen-lockfile",
+    "cli": "node server/src/cli.ts",
     "dev": "bun run --parallel --no-orphans api dashboard",
     "api": "bun run --cwd server api",
     "dashboard": "bun run --cwd dashboard dev",
@@ -12,12 +13,14 @@
     "architecture": "node scripts/check-dashboard-boundaries.mjs",
     "verify:ai": "node scripts/check-ai-config.mjs",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd dashboard typecheck",
-    "check": "bun run lint && bun run architecture && bun run verify:ai && bun run typecheck",
+    "check": "bun run lint && bun run architecture && bun run verify:ai && bun run naming && bun run typecheck",
     "test": "bun run --cwd server test",
-    "verify": "bun run check && bun run test && bun run build",
-    "bundle": "bun build server/src/mcp.ts --target=node --outfile plugin/dist/mcp.js && bun build server/src/capture.ts --target=node --outfile plugin/dist/capture.js && bun build server/src/cli.ts --target=node --outfile plugin/dist/cli.js",
+    "verify": "bun run check && bun run bundle && bun run test",
+    "bundle": "node scripts/bundle.mjs",
     "db:apply": "node server/src/admin.ts apply",
     "db:migrate": "node server/src/admin.ts migrate",
-    "db:roles": "node server/src/admin.ts roles"
+    "db:roles": "node server/src/admin.ts roles",
+    "naming": "node scripts/check-naming.mjs",
+    "notices": "node scripts/third-party-notices.mjs --check"
   }
 }

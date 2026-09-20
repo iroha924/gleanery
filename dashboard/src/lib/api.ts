@@ -1,4 +1,4 @@
-import { authed, get } from "@/lib/api-client";
+import { get } from "@/lib/api-client";
 
 // API の型。**サーバーの戻り値をここで 1 回だけ書く。**
 // 画面ごとに書くと、片方だけ直したときに気付けない。
@@ -53,7 +53,7 @@ export const api = {
   reply: async (heard: string, projects: number[]): Promise<Reply> => {
     const res = await fetch("/api/reply", {
       method: "POST",
-      headers: await authed({ "content-type": "application/json" }),
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ heard, projects }),
     });
     const json = (await res.json()) as Reply & { error?: string };
@@ -62,7 +62,7 @@ export const api = {
   },
   /** 会議を聞き取るための一時鍵。**本物の API キーはここへ来ない。**10 分で切れる。 */
   realtimeToken: async (): Promise<string> => {
-    const res = await fetch("/api/realtime-token", { method: "POST", headers: await authed() });
+    const res = await fetch("/api/realtime-token", { method: "POST" });
     const json = (await res.json()) as { token?: string; error?: string };
     if (!res.ok || !json.token) throw new Error(json.error ?? `一時鍵が ${res.status}`);
     return json.token;

@@ -28,7 +28,7 @@ const why = (e: unknown): string => reason(e).slice(0, 500);
 // 古い本文の結果（成功でも失敗でも）で上書きすると、新しい本文が古いベクトルで引かれるか、取り直されなくなる。
 async function store(db: Db, t: Table, rows: Pending[], vectors: number[][]): Promise<number> {
   const r = await db.query(
-    `update mitos.${t.name} e set embedding = x.v::extensions.halfvec, status = 'ready', model = $5,
+    `update gleanery.${t.name} e set embedding = x.v::extensions.halfvec, status = 'ready', model = $5,
        source_hash = x.hash, last_error = null, updated_at = now()
      from unnest($1::text[], $2::bytea[], $3::bytea[], $4::text[]) as x(id, stored, hash, v)
      where e.${t.id}::text = x.id and e.source_hash = x.stored`,
@@ -45,7 +45,7 @@ async function store(db: Db, t: Table, rows: Pending[], vectors: number[][]): Pr
 
 async function reject(db: Db, t: Table, row: Pending, e: unknown): Promise<void> {
   await db.query(
-    `update mitos.${t.name} set status = 'error', attempts = attempts + 1, last_error = $3, updated_at = now()
+    `update gleanery.${t.name} set status = 'error', attempts = attempts + 1, last_error = $3, updated_at = now()
      where ${t.id}::text = $1 and source_hash = $2`,
     [row.id, row.stored, why(e)],
   );
@@ -94,7 +94,7 @@ async function run(
     // 要求全体の問題なら数えずに止める — 数えると、設定を直しても本文が変わるまで二度と送らない。
     if (refused.length === rows.length) {
       try {
-        await embed(env, ["mitos"], "document");
+        await embed(env, ["gleanery"], "document");
       } catch (e) {
         return {
           embedded,
@@ -122,7 +122,7 @@ export function fillKnowledge(db: Db, env: Env): Promise<Filled> {
       source_hash: Buffer;
     }>(
       `select k.id::text, k.kind, k.heading, k.body, k.reason, e.source_hash
-       from mitos.knowledge_embedding e join mitos.knowledge k on k.id = e.knowledge_id
+       from gleanery.knowledge_embedding e join gleanery.knowledge k on k.id = e.knowledge_id
        where e.status <> 'ready' and e.attempts < $1 and not (e.knowledge_id::text = any($3::text[]))
        order by e.updated_at limit $2`,
       [MAX_ATTEMPTS, BATCH, skip],
@@ -148,15 +148,15 @@ export function fillMessages(db: Db, env: Env): Promise<Filled> {
     }>(
       `select m.id::text, m.body, m.speaker_kind, i.handle, p.name as project,
               s.kind as source_kind, s.external_id, s.title,
-              coalesce(array(select f.path from mitos.message_file f
+              coalesce(array(select f.path from gleanery.message_file f
                              where f.message_id = m.id and f.action = 'review' order by f.path), '{}') as paths,
               e.source_hash
-       from mitos.message_embedding e
-       join mitos.message m on m.id = e.message_id
-       join mitos.conversation c on c.id = m.conversation_id
-       join mitos.project p on p.id = c.project_id
-       left join mitos.source_item s on s.id = c.source_item_id
-       left join mitos.person_identity i on i.id = m.identity_id
+       from gleanery.message_embedding e
+       join gleanery.message m on m.id = e.message_id
+       join gleanery.conversation c on c.id = m.conversation_id
+       join gleanery.project p on p.id = c.project_id
+       left join gleanery.source_item s on s.id = c.source_item_id
+       left join gleanery.person_identity i on i.id = m.identity_id
        where e.status <> 'ready' and e.attempts < $1 and not (e.message_id::text = any($3::text[]))
        order by e.updated_at limit $2`,
       [MAX_ATTEMPTS, BATCH, skip],
@@ -178,7 +178,7 @@ export function fillMessages(db: Db, env: Env): Promise<Filled> {
   });
 }
 
-/** 補充の結果を 1 行にする。sync と trace save が出す。 */
+/** 補充の結果を 1 行にする。harvest と trace save が出す。 */
 export const describeFill = (label: string, f: Filled): string | null =>
   f.embedded || f.failed || f.stopped
     ? `${label} ${f.embedded} 件${f.failed ? ` / 受け付けられなかった ${f.failed} 件` : ""}${

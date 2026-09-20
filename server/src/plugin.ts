@@ -3,7 +3,7 @@
 // **版を別に持たない。**正本は 3 つの manifest で、scripts/check-mcp-version.mjs が揃える。
 // ここは root の `.claude-plugin/plugin.json` を読むだけ。
 //
-// Claude Code と Codex はどちらも plugin を `<cache>/<marketplace>/mitos/<版>/` へ複製して、
+// Claude Code と Codex はどちらも plugin を `<cache>/<marketplace>/gleanery/<版>/` へ複製して、
 // そこから MCP を起動する。directory 型 marketplace の Claude Code（2.1.268 で観測）と
 // `--plugin-dir` だけは作業ツリーを直接読む。
 
@@ -16,14 +16,14 @@ import { type Mark, mark, pad } from "./panel.ts";
 
 const MANIFEST = path.join(".claude-plugin", "plugin.json");
 
-/** root が mitos の配布物ならその版。消えた cache や別の plugin なら null。 */
+/** root が gleanery の配布物ならその版。消えた cache や別の plugin なら null。 */
 export function versionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, MANIFEST), "utf8")) as {
       name?: unknown;
       version?: unknown;
     };
-    return m.name === "mitos" && typeof m.version === "string" ? m.version : null;
+    return m.name === "gleanery" && typeof m.version === "string" ? m.version : null;
   } catch {
     return null;
   }
@@ -62,6 +62,16 @@ export function compareVersions(a: string, b: string): number {
 // **名前で挙げる。**ドットで始まるものをまとめて外すと、`.mcp.json` のような配布物の差まで黙って消える。
 const HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
 
+/**
+ * bundle が作り、npm が配るが、git は追跡しないもの。
+ * **ディレクトリだけでなくファイルも挙げる** — 同梱の告知を入れ忘れて、正常な導入先が
+ * 「同じ版なのに中身が違う」と出た（実測: 自己比較で THIRD_PARTY_NOTICES.md だけが差になった）。
+ */
+const GENERATED = /^(dist|db)\/|^THIRD_PARTY_NOTICES\.md$/;
+
+/** OS と editor が置く物。追跡もされず、npm にも詰められない。 */
+const JUNK = /^\.DS_Store$|\.sw[a-p]$|~$/;
+
 /** root 以下の配布物。印のディレクトリへは降りない（走査中に session が終わると消える）。 */
 function distributed(root: string, tracked: boolean): Map<string, string> {
   const walk = (dir: string): string[] =>
@@ -70,7 +80,8 @@ function distributed(root: string, tracked: boolean): Map<string, string> {
       const abs = path.join(dir, e.name);
       return e.isDirectory() ? walk(abs) : e.isFile() ? [path.relative(root, abs)] : [];
     });
-  // repository は git が追跡しているものだけが配られる。ignore 対象や editor の一時ファイルを差に数えない。
+  // repository は git が追跡しているものと、bundle が作る配布物が配られる。
+  // ignore 対象や editor の一時ファイルは差に数えない。
   let rels: string[] | undefined;
   if (tracked) {
     try {
@@ -80,6 +91,9 @@ function distributed(root: string, tracked: boolean): Map<string, string> {
       })
         .split("\0")
         .filter((rel) => rel && fs.existsSync(path.join(root, rel)));
+      // **生成物は git が追跡しないが、npm の files はこれを配る**（.gitignore の plugin/dist と plugin/db）。
+      // 追跡分だけを基準にすると、導入先にあって基準に無いものが全部差になり、正常な導入が壊れて見える。
+      rels = [...rels, ...walk(root).filter((rel) => GENERATED.test(rel) && !JUNK.test(path.basename(rel)))];
     } catch {
       // git の外（tarball で取った repository など）は全部を数える。
     }
@@ -157,7 +171,7 @@ function cwdOf(pid: number): { dir: string; replaced: boolean } | null {
   }
 }
 
-const CACHED = /\/plugins\/cache\/[^/]+\/mitos\/[^/]+$/;
+const CACHED = /\/plugins\/cache\/[^/]+\/gleanery\/[^/]+$/;
 
 export type Install = { version: string | null; root: string };
 export type Running = {
@@ -170,7 +184,7 @@ export type Running = {
 };
 
 export type Seen = {
-  /** 作業ツリーの plugin/。cwd か CLI の置き場所が mitos の repository のときだけ見える。 */
+  /** 作業ツリーの plugin/。cwd か CLI の置き場所が gleanery の repository のときだけ見える。 */
   repository: Install | null;
   cli: Install;
   /** null は導入されていない、"unknown" は claude コマンドが使えず観測できなかった。 */
@@ -202,7 +216,7 @@ export function observe(cwdRoot: string): Seen {
     ) as { id: string; version?: string; installPath?: string; scope?: string }[];
     // 同じ id が scope ごとに並ぶ。README の導入手順と、下で案内する `claude plugin update`（既定は
     // user scope）に揃えて user の導入だけを見る。project / local は別の場所の session にしか効かない。
-    const m = list.find((p) => p.id.startsWith("mitos@") && p.scope === "user");
+    const m = list.find((p) => p.id.startsWith("gleanery@") && p.scope === "user");
     claude = m?.installPath ? { version: m.version ?? null, root: m.installPath } : null;
   } catch {
     claude = "unknown";
@@ -221,8 +235,8 @@ export function observe(cwdRoot: string): Seen {
   const codexCache = path.join(codexHome, "plugins", "cache");
   const codex: Install[] = [];
   for (const market of safeDirs(codexCache)) {
-    for (const v of safeDirs(path.join(codexCache, market, "mitos"))) {
-      codex.push(install(path.join(codexCache, market, "mitos", v)));
+    for (const v of safeDirs(path.join(codexCache, market, "gleanery"))) {
+      codex.push(install(path.join(codexCache, market, "gleanery", v)));
     }
   }
 
@@ -280,8 +294,9 @@ function safeDirs(dir: string): string[] {
 // /reload-plugins で新しいパスへ移る（公式 plugins-reference）。Codex は開き直す。
 const UPDATE = {
   claude:
-    "claude plugin marketplace update mitos && claude plugin update mitos@mitos の後、開いている session で /reload-plugins",
-  codex: "codex plugin marketplace upgrade mitos && codex plugin add mitos@mitos の後、Codex を開き直す",
+    "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery の後、開いている session で /reload-plugins",
+  codex:
+    "codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery の後、Codex を開き直す",
 };
 const RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "Codex の開き直し" };
 
@@ -306,7 +321,11 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
       label,
       `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`,
     );
-  const base = s.repository;
+  // **repository が無いほうが普通になる。**npm から入れた利用者は clone を持たないので、
+  // そこで比べるのをやめると、CLI と plugin が別々に更新されてずれたことを誰も言わなくなる
+  // （CLI は `npm i -g`、plugin は `claude plugin update` で、更新の操作が別々）。
+  const base = s.repository ?? (s.cli.version ? s.cli : null);
+  const baseName = s.repository ? "repository" : "この CLI";
 
   /**
    * 基準との食い違いと、ホストの更新で直るか。同じ版なら中身まで比べる（版を上げずに変えたものを見落とさない）。
@@ -317,20 +336,30 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     if (!fs.existsSync(i.root)) return { note: "導入先が無い。Skill のパスも無効", update: true };
     if (!base?.version || !i.version) return {};
     const c = compareVersions(i.version, base.version);
-    if (c < 0) return { note: `repository（${base.version}）より古い`, update: true };
-    if (c > 0) return { note: `repository（${base.version}）より新しい。repository の checkout が古い` };
+    if (c < 0) return { note: `${baseName}（${base.version}）より古い`, update: true };
+    if (c > 0) {
+      return {
+        note: s.repository
+          ? `repository（${base.version}）より新しい。repository の checkout が古い`
+          : `この CLI（${base.version}）より新しい。\`npm i -g gleanery@${i.version}\` で CLI を揃える`,
+      };
+    }
     if (path.resolve(i.root) === path.resolve(base.root)) return {};
-    const diff = differingFiles(base.root, i.root, { tracked: true });
+    // `tracked` は基準が repository の作業ツリーのときだけ立てる。導入先どうしの比較では、
+    // 追跡の概念が無く、配られたファイルがそのまま両側にある。
+    const diff = differingFiles(base.root, i.root, { tracked: Boolean(s.repository) });
     if (!diff.length) return {};
     const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
     return {
-      note: `同じ版なのに中身が違う（${files}）。repository の変更は、版を上げて main へ入れるまで届かない`,
+      note: s.repository
+        ? `同じ版なのに中身が違う（${files}）。repository の変更は、版を上げて main へ入れるまで届かない`
+        : `同じ版なのに中身が違う（${files}）。入れ直して揃える`,
     };
   };
 
   lines.push("plugin の版");
-  if (base) row("repository", base);
-  else say("none", "repository", "見えない（mitos の repository の中で実行すると比べられる）");
+  if (s.repository) row("repository", s.repository);
+  else say("none", "repository", "見えない。この CLI の版を基準に比べる");
 
   row("この CLI", s.cli, against(s.cli).note);
 

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "mitos": {
+    "gleanery": {
       "command": "node",
       "args": ["./dist/mcp.js"],
       "cwd": "."

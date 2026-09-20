@@ -1,6 +1,4 @@
-"use client";
-
-import { UserButton, useUser } from "@clerk/nextjs";
+import { Link, useMatchRoute } from "@tanstack/react-router";
 import {
   AudioLinesIcon,
   ChevronDownIcon,
@@ -9,8 +7,6 @@ import {
   MessageCircleIcon,
   MessagesSquareIcon,
 } from "lucide-react-motion";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import type * as React from "react";
 import {
   DropdownMenu,
@@ -24,7 +20,6 @@ import {
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
@@ -39,36 +34,27 @@ import type { Project } from "@/lib/api";
 import { useProject } from "@/lib/project";
 
 const NAVIGATION = [
-  { href: "/sessions", label: "セッション", icon: MessagesSquareIcon },
-  { href: "/", label: "チャット", icon: MessageCircleIcon },
-  { href: "/mtg", label: "MTG録音", icon: AudioLinesIcon },
+  { to: "/sessions", label: "セッション", icon: MessagesSquareIcon },
+  { to: "/", label: "チャット", icon: MessageCircleIcon },
+  { to: "/mtg", label: "MTG録音", icon: AudioLinesIcon },
 ] as const;
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const path = usePathname();
-  const { user } = useUser();
+  const matchRoute = useMatchRoute();
   const { setOpenMobile } = useSidebar();
   const closeMobile = () => setOpenMobile(false);
-  const providerAccount = user?.externalAccounts.find((account) => account.username || account.emailAddress);
-  const accountName =
-    providerAccount?.username ??
-    providerAccount?.emailAddress ??
-    user?.username ??
-    user?.fullName ??
-    user?.primaryEmailAddress?.emailAddress ??
-    "アカウント";
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader className="gap-3 p-2">
         <div className="relative flex h-10 items-center justify-start">
           <Link
-            href="/"
+            to="/"
             onClick={closeMobile}
             className="flex min-w-0 items-center gap-2.5 px-2 text-lg font-semibold tracking-[-0.025em] group-data-[collapsible=icon]:hidden"
           >
             <Logo />
-            mitos
+            gleanery
           </Link>
           <SidebarTrigger className="absolute right-0 shrink-0 rounded-md group-data-[collapsible=icon]:static group-data-[collapsible=icon]:size-8!" />
         </div>
@@ -82,9 +68,9 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           <SidebarGroupContent>
             <SidebarMenu>
               {NAVIGATION.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={path === item.href} tooltip={item.label}>
-                    <Link href={item.href} onClick={closeMobile}>
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton asChild isActive={!!matchRoute({ to: item.to })} tooltip={item.label}>
+                    <Link to={item.to} onClick={closeMobile}>
                       <item.icon />
                       <span>{item.label}</span>
                     </Link>
@@ -96,21 +82,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-2">
-        <div className="flex h-10 items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <UserButton
-            appearance={{
-              elements: {
-                userButtonTrigger: { width: "2rem", height: "2rem" },
-                userButtonAvatarBox: { width: "2rem", height: "2rem" },
-              },
-            }}
-          />
-          <span className="truncate text-base group-data-[collapsible=icon]:hidden" title={accountName}>
-            {accountName}
-          </span>
-        </div>
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );
@@ -132,18 +103,18 @@ function Logo() {
   );
 }
 
-const DAY = 86_400_000;
-
-/** 最後の同期。**2 日より前か失敗なら目立たせる**（日次同期が止まっていると、古い判断を今のものとして読む）。 */
-function syncNote(p: Project): { text: string; stale: boolean } {
+/** 最後の取り込み。`gleanery harvest` を打ったときだけ走るので、間が空くのは異常ではない。**失敗だけ目立たせる。** */
+function syncNote(p: Project): { text: string; failed: boolean } {
   const failed = p.connectors.find((c) => c.lastError);
-  if (failed) return { text: `${failed.provider === "github" ? "GitHub" : "文書"}の同期に失敗`, stale: true };
+  if (failed)
+    return { text: `${failed.provider === "github" ? "GitHub" : "文書"}の同期に失敗`, failed: true };
   const last = p.connectors
     .map((c) => (c.lastSuccessAt ? Date.parse(c.lastSuccessAt) : 0))
     .reduce((a, b) => Math.max(a, b), 0);
-  if (!last) return { text: "未同期", stale: true };
-  const days = Math.floor((Date.now() - last) / DAY);
-  return { text: days === 0 ? "今日同期" : `${days} 日前に同期`, stale: days >= 2 };
+  return {
+    text: last ? `最後の取り込み ${new Date(last).toLocaleDateString("sv-SE")}` : "まだ取り込んでいない",
+    failed: false,
+  };
 }
 
 function ProjectSwitcher() {
@@ -186,7 +157,7 @@ function ProjectSwitcher() {
               <div className="mx-1 mb-2 rounded-md border border-dashed px-3 py-3">
                 <p className="text-sm font-medium">作業場所はまだありません</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  リポジトリで <code className="font-mono">mitos project add</code> を実行します
+                  リポジトリで <code className="font-mono">gleanery project add</code> を実行します
                 </p>
               </div>
             )}
@@ -197,7 +168,7 @@ function ProjectSwitcher() {
                   <GitBranchIcon className="mt-0.5 size-4 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{project.name}</span>
-                    <span className={`block text-xs ${note.stale ? "text-dont" : "text-muted-foreground"}`}>
+                    <span className={`block text-xs ${note.failed ? "text-dont" : "text-muted-foreground"}`}>
                       {note.text} ・ セッション {project.sessions}
                     </span>
                   </span>

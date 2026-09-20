@@ -1,9 +1,9 @@
 ---
 name: requirements
-description: 生の要求から、コードと mitos の過去の判断を根拠に一問ずつ壁打ちし、要件定義（.mitos/changes 配下の requirements.md）を作って利用者の明示承認まで進める。設計書・タスク・実装は作らない。
+description: 生の要求から、コードと gleanery の過去の判断を根拠に一問ずつ壁打ちし、要件定義（.gleanery/changes 配下の requirements.md）を作って利用者の明示承認まで進める。設計書・タスク・実装は作らない。
 argument-hint: "[変更名 または 実現したいこと]"
 disable-model-invocation: true
-allowed-tools: Read, AskUserQuestion, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos check*), mcp__plugin_mitos_mitos__recall, mcp__plugin_mitos_mitos__read, mcp__plugin_mitos_mitos__check_path
+allowed-tools: Read, AskUserQuestion, Bash(node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" check*), mcp__plugin_gleanery_gleanery__recall, mcp__plugin_gleanery_gleanery__read, mcp__plugin_gleanery_gleanery__check_path
 ---
 
 # requirements — 要求を、検証できる要件へ変える
@@ -24,9 +24,9 @@ allowed-tools: Read, AskUserQuestion, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos check
 
 | やりたいこと | 使うもの |
 |---|---|
-| 承認済みの要件から設計書を作る | `/mitos:design`（Codex は `$mitos:design`） |
-| 置き場所を作る | `/mitos:init`（Codex は `$mitos:init`） |
-| このセッションを記録する | `/mitos:trace`（Codex は `$mitos:trace`） |
+| 承認済みの要件から設計書を作る | `/gleanery:design`（Codex は `$gleanery:design`） |
+| 置き場所を作る | `/gleanery:init`（Codex は `$gleanery:init`） |
+| このセッションを記録する | `/gleanery:trace`（Codex は `$gleanery:trace`） |
 
 設計書、タスク分解、実装は始めない。要件が承認されても、次へは自動で進まない。
 
@@ -36,23 +36,23 @@ allowed-tools: Read, AskUserQuestion, Bash(${CLAUDE_PLUGIN_ROOT}/bin/mitos check
 
 ```bash
 # Claude Code
-M="${CLAUDE_PLUGIN_ROOT}/bin/mitos"
+M='node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js"'
 # Codex（このスキルのディレクトリからの相対パス。絶対パスへ解決して使う）
-M="../../bin/mitos"
+M='node "../../dist/cli.js"'
 ```
 
-素の `mitos` は使わない。Codex では PATH に無く、Claude Code では PATH の CLI が古い版のことがある。
+素の `gleanery` は使わない。Codex では PATH に無く、Claude Code では PATH の CLI が古い版のことがある。
 **`$M` は表記である。**コマンドには自分のホストの側の絶対パスを毎回そのまま先頭に書く。変数に代入してから
 呼ばない — Claude Code の Bash は呼び出しをまたいで変数を保持せず、代入を挟むと事前承認が効かない。
 
 ### 承認状態は change.json だけが持つ
 
-`.mitos/changes/<slug>/change.json` の `requirements.status` が `draft` か `approved` かで、
+`.gleanery/changes/<slug>/change.json` の `requirements.status` が `draft` か `approved` かで、
 検索とダッシュボードへ出すかが決まる。本文の書きぶりから承認を推測しない。
 
 | 操作 | 書く順序 |
 |---|---|
-| change を新しく作る | `change.json` を `{"schema": "mitos/change/1", "title": "<題>", "requirements": {"status": "draft"}}` で書く → Step 2 で全部に答えが出てから `requirements.md` を作る |
+| change を新しく作る | `change.json` を `{"schema": "gleanery/change/1", "title": "<題>", "requirements": {"status": "draft"}}` で書く → Step 2 で全部に答えが出てから `requirements.md` を作る |
 | approved の要件を直す | 本文を触る**前に** `requirements` を `draft` へ。`design` があれば同時に `draft` へ |
 | 承認する | 本文の更新、独立 review、利用者の明示承認を終えてから、**最後の書き込みとして** `approved` にする |
 
@@ -84,7 +84,7 @@ auto モードや、セッション中の編集を許可した後は確認が出
 | Goal | 生の要求を、実装方法に依存しない要件・受け入れ条件・制約・対象外にし、利用者が承認できる状態にする |
 | State | `requirements.md` の draft、回答済みの事項、未解決事項、参照した根拠 |
 | Action | 調べる、1 問聞く、draft を直す、独立 review に回す |
-| Observation | コード、mitos の記録、利用者の回答、`$M check` と review の結果 |
+| Observation | コード、gleanery の記録、利用者の回答、`$M check` と review の結果 |
 | Verification | 下の「止まる条件」を全部満たしたか |
 | Continue | 未解決事項が減った、または要件が観測できる形に近づいたとき |
 | Stop | 止まる条件を全部満たし、利用者が明示的に承認した |
@@ -96,9 +96,9 @@ auto モードや、セッション中の編集を許可した後は確認が出
 
 ## Step 0 — change を決める
 
-1. `$M check` を実行する。`.mitos` が無ければ止まり、`/mitos:init`（Codex は `$mitos:init`）を案内する
+1. `$M check` を実行する。`.gleanery` が無ければ止まり、`/gleanery:init`（Codex は `$gleanery:init`）を案内する
 2. 引数が空なら、何を実現したいか（または再開する change）を 1 問で聞く
-3. 引数と `.mitos/changes/` を見て、既存の change の再開か新規かを決める
+3. 引数と `.gleanery/changes/` を見て、既存の change の再開か新規かを決める
    - 新規: slug（小文字英数字とハイフン）と題を提案する。既存の slug と衝突したら上書きせず、再開か別名かを聞く
    - 再開で `requirements` が `approved`: 直す前に `draft` へ戻す（`design` があれば同時に）
 4. change.json を書いたら `$M check` を実行する
@@ -113,10 +113,10 @@ auto モードや、セッション中の編集を許可した後は確認が出
    - `mode: "avoid"`（棄却した案、行き止まり、やらないこと、制約、覆された決定）
    - `kinds: ["document"]`（過去の要件定義と設計書）
 4. 変更しそうなファイルが見えてきたら、`check_path` でそのパスにかかる制約が無いかを見る
-5. 分かったことを 4 つに分ける: 現在のコードの事実 / mitos の過去の判断 / 推測 / 利用者にしか決められないこと。
+5. 分かったことを 4 つに分ける: 現在のコードの事実 / gleanery の過去の判断 / 推測 / 利用者にしか決められないこと。
    利用者の意図・範囲・優先についての推測は、推測ではなく最後の分類に入れる
 
-作業場所が mitos に未登録なら検索結果は空になる。それは「過去の判断が無い」ことを意味しない。
+作業場所が gleanery に未登録なら検索結果は空になる。それは「過去の判断が無い」ことを意味しない。
 
 **コードや記録から答えられることを利用者へ聞かない。**聞いてよいのは 5 の最後の分類だけである。
 
@@ -193,7 +193,7 @@ draft の要点と path を示し、承認を**他の質問と混ぜずに**閉�
 
 - 業務上の解釈が複数あり、どれを採るかで成功条件が変わる
 - 既存の仕様と要求が矛盾し、どちらを優先するか決められない
-- mitos の過去の判断と現在のコードが食い違い、意図した変更か陳腐化かを判定できない
+- gleanery の過去の判断と現在のコードが食い違い、意図した変更か陳腐化かを判定できない
 - 権限、データの保持、公開範囲、課金など、人の責任で決めることがある
 - 要求が当初の change を越え、別の change に分けるかの判断が要る
 
@@ -210,13 +210,13 @@ draft の要点と path を示し、承認を**他の質問と混ぜずに**閉�
 
 ## 終わったら
 
-次にできることを示して止まる。**どれも自動では始めない。**mitos の他の表示と同じ形にそろえる — 見出しは
-`✦ **mitos requirements** · <slug> を承認した`、次に下の項目の箇条書き、最後に成果物のパスを `╰─ ` の行で置く。
+次にできることを示して止まる。**どれも自動では始めない。**gleanery の他の表示と同じ形にそろえる — 見出しは
+`✦ **gleanery requirements** · <slug> を承認した`、次に下の項目の箇条書き、最後に成果物のパスを `╰─ ` の行で置く。
 
-- 設計書を作る: `/mitos:design <slug>`（Codex は `$mitos:design`）
-- このセッションを記録する: `/mitos:trace`（Codex は `$mitos:trace`）
-- 公開する: 成果物と `change.json` を commit し、リポジトリの既定 branch（main）へ merge すると、次の日次同期で
-  ナレッジに入る。すぐ入れたいときは merge の後に `$M sync --cwd <リポジトリの根>` を **`$M` を絶対パスに解決した形で**
+- 設計書を作る: `/gleanery:design <slug>`（Codex は `$gleanery:design`）
+- このセッションを記録する: `/gleanery:trace`（Codex は `$gleanery:trace`）
+- 公開する: 成果物と `change.json` を commit し、リポジトリの既定 branch（main）へ merge したうえで、
+  `$M harvest --cwd <リポジトリの根>` を **`$M` を絶対パスに解決した形で**
   示す。同期は remote の既定 branch だけを読むので、merge 前の branch の成果物は入らない（remote の無い
   リポジトリは HEAD を読むので、commit すれば入る）。同期は利用者が実行する。
   このスキルはナレッジ DB へ書かない

@@ -1,17 +1,23 @@
 node_modules/
 .env
 *.log
-dashboard/.next/
-dashboard/next-env.d.ts
 *.tsbuildinfo
 codex-prompt-*.md
 server/migrate-*.ts
 .review-tmp/
 .review-tmp-ir.json
-.neon
 .env.local
-.vercel
 .env*
 .serena/
-# 許可した command が入る。持ち主のグローバル ignore に頼ると、他の PC と clone した側で外れる。
+# グローバルの ignore に頼ると、他の PC と clone した側で外れる。
 .claude/settings.local.json
+
+# scripts/bundle.mjs が publish のときに作る。
+plugin/dist/
+plugin/db/
+
+# scripts/third-party-notices.mjs が node_modules から作り直す。
+plugin/THIRD_PARTY_NOTICES.md
+
+# npm pack が置く。publish する物は bundle から作り直す。
+*.tgz

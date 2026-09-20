@@ -96,7 +96,7 @@ test("見出しの無い本文も 1 件になる", () => {
 async function withRepo(
   fn: (repo: string, git: (...a: string[]) => string) => void | Promise<void>,
 ): Promise<void> {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-docs-")));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-docs-")));
   try {
     const repo = path.join(dir, "repo");
     execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
@@ -116,7 +116,7 @@ const put = (repo: string, rel: string, body: string) => {
 
 // **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
 // commit の tree では symlink は mode 120000 の項目で、ディレクトリの symlink の先はそもそも tree に無い。
-// 日次同期は無人で走るので、ここが開くと誰も見ていないところで資格情報が出ていく。
+// 取り込みは利用者が打つが、出力を読まないことも多い。ここが開くと気付かないまま資格情報が出ていく。
 test("commit の tree から読み、symlink の先は本文に入れない", async () => {
   await withRepo((repo, git) => {
     put(repo, "docs/real.md", "# 本物\n中身\n");
@@ -137,13 +137,13 @@ test("commit の tree から読み、symlink の先は本文に入れない", as
 // 作業ツリーを読むと、書きかけの本文や、承認を外している最中の成果物が DB に入る。
 test("作業ツリーの未 commit の編集は読まず、commit した承認だけを見る", async () => {
   await withRepo((repo, git) => {
-    put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
+    put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
     put(
       repo,
-      ".mitos/changes/auth/change.json",
-      JSON.stringify({ schema: "mitos/change/1", title: "認証", requirements: { status: "approved" } }),
+      ".gleanery/changes/auth/change.json",
+      JSON.stringify({ schema: "gleanery/change/1", title: "認証", requirements: { status: "approved" } }),
     );
-    put(repo, ".mitos/changes/auth/requirements.md", "# 要件\n承認した本文\n");
+    put(repo, ".gleanery/changes/auth/requirements.md", "# 要件\n承認した本文\n");
     put(repo, "README.md", "# 読んで\n公開した本文\n");
     git("add", "-A");
     git("commit", "-qm", "x");
@@ -151,28 +151,28 @@ test("作業ツリーの未 commit の編集は読まず、commit した承認�
     // commit していない変更（draft へ戻して書き直し中、README の書きかけ）
     put(
       repo,
-      ".mitos/changes/auth/change.json",
-      JSON.stringify({ schema: "mitos/change/1", title: "認証", requirements: { status: "draft" } }),
+      ".gleanery/changes/auth/change.json",
+      JSON.stringify({ schema: "gleanery/change/1", title: "認証", requirements: { status: "draft" } }),
     );
-    put(repo, ".mitos/changes/auth/requirements.md", "# 要件\n書きかけ\n");
+    put(repo, ".gleanery/changes/auth/requirements.md", "# 要件\n書きかけ\n");
     put(repo, "README.md", "# 読んで\n書きかけ\n");
     const { docs } = collectDocs(repo, head);
     const body = Object.fromEntries(docs.map((d) => [d.path, d.body]));
     assert.match(body["README.md"] ?? "", /公開した本文/);
-    assert.match(body[".mitos/changes/auth/requirements.md"] ?? "", /承認した本文/);
+    assert.match(body[".gleanery/changes/auth/requirements.md"] ?? "", /承認した本文/);
     assert.equal(docs.find((d) => d.path.endsWith("requirements.md"))?.kind, "requirements");
   });
 });
 
 test("commit の中の manifest が不正なら何も返さずに止め、fast-forward かどうかを祖先で見る", async () => {
   await withRepo((repo, git) => {
-    put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
-    put(repo, ".mitos/changes/a/change.json", "{");
-    put(repo, ".mitos/changes/a/requirements.md", "# r\n");
+    put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
+    put(repo, ".gleanery/changes/a/change.json", "{");
+    put(repo, ".gleanery/changes/a/requirements.md", "# r\n");
     git("add", "-A");
     git("commit", "-qm", "a");
     const first = commitOf(repo, false);
-    assert.throws(() => collectDocs(repo, first), /\.mitos が不正/);
+    assert.throws(() => collectDocs(repo, first), /\.gleanery が不正/);
     put(repo, "README.md", "# x\n");
     git("add", "-A");
     git("commit", "-qm", "b");
@@ -191,9 +191,9 @@ test("大文字の拡張子の文書にも最終更新日が付き、大きす�
     const { docs } = collectDocs(repo, commitOf(repo, false));
     assert.ok(docs.find((d) => d.path === "README.MD")?.at, "README.MD に日付が無い");
 
-    put(repo, ".mitos/project.json", JSON.stringify({ schema: "mitos/project/1" }));
-    put(repo, ".mitos/changes/a/change.json", `{"schema": "mitos/change/1"${" ".repeat(70 * 1024)}}`);
-    put(repo, ".mitos/changes/a/requirements.md", "# r\n");
+    put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
+    put(repo, ".gleanery/changes/a/change.json", `{"schema": "gleanery/change/1"${" ".repeat(70 * 1024)}}`);
+    put(repo, ".gleanery/changes/a/requirements.md", "# r\n");
     git("add", "-A");
     git("commit", "-qm", "b");
     assert.throws(() => collectDocs(repo, commitOf(repo, false)), /change\.json: 大きすぎる/);
@@ -208,7 +208,7 @@ function headOnly(head: string, onRead: () => void = () => {}) {
   const sql: string[] = [];
   const query = async (text: string) => {
     sql.push(text);
-    if (/^(begin|commit|rollback)$/.test(text) || text.startsWith("insert into mitos.connector"))
+    if (/^(begin|commit|rollback)$/.test(text) || text.startsWith("insert into gleanery.connector"))
       return { rows: [] };
     if (text.startsWith("select id, head_oid")) {
       onRead();
@@ -268,16 +268,16 @@ test("CRLF と BOM でも見出しで割れる", () => {
 });
 
 // **承認済みの成果物だけを入れる。**draft を入れると、未承認の AI 生成物が次の生成の根拠として引かれる。
-test("成果物は承認済みだけを入れ、draft と .mitos のそれ以外は入れない", () => {
-  const req = ".mitos/changes/auth/requirements.md";
+test("成果物は承認済みだけを入れ、draft と .gleanery のそれ以外は入れない", () => {
+  const req = ".gleanery/changes/auth/requirements.md";
   const artifact: Artifact = { kind: "requirements", change: "auth", changeTitle: "認証" };
   const bodies = new Map([
     ["README.md", "# 読んで\n\n本文\n"],
     [req, "# 要件\n\n## 背景\n### 経緯\n\n本文\n"],
-    [".mitos/changes/auth/design.md", "# 設計\n\n本文\n"],
-    [".mitos/notes.md", "# メモ\n\n本文\n"],
-    // 承認の判定は根の .mitos にしか無いので、入れ子の .mitos は通常の文書として入れない
-    ["sub/.mitos/changes/x/requirements.md", "# 入れ子\n\n本文\n"],
+    [".gleanery/changes/auth/design.md", "# 設計\n\n本文\n"],
+    [".gleanery/notes.md", "# メモ\n\n本文\n"],
+    // 承認の判定は根の .gleanery にしか無いので、入れ子の .gleanery は通常の文書として入れない
+    ["sub/.gleanery/changes/x/requirements.md", "# 入れ子\n\n本文\n"],
   ]);
   const got = projectDocs(bodies, new Map([[req, artifact]]), new Map());
   assert.deepEqual(
@@ -292,7 +292,7 @@ test("成果物は承認済みだけを入れ、draft と .mitos のそれ以外
 
 // 節は見出しだけの節を落とすので、連結しても元に戻らない。画面が出す原文は読んだ本文をそのまま持つ。
 test("原文は見出しだけの節・コードフェンス・末尾の改行を含めて元の本文と一致する", () => {
-  const req = ".mitos/changes/a/requirements.md";
+  const req = ".gleanery/changes/a/requirements.md";
   const body = "# 題\n\n## 見出しだけ\n### 子\n\n```sh\n# コメント\n```\n\n末尾\n\n";
   const [doc] = projectDocs(
     new Map([[req, body]]),

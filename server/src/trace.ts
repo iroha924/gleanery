@@ -4,7 +4,7 @@
 // 次の判断を誤らないために残す判断だけ — 決定と棄却した案、制約、やらないこと、行き止まり、分かったこと、
 // 意図して残した負債、検証、問い。そして「続きをやる」ときに読む作業の現在地。
 //
-// 形の検査はここに 1 つだけ置き、`mitos trace check` と `mitos trace save` が同じ関数を通る。
+// 形の検査はここに 1 つだけ置き、`gleanery trace check` と `gleanery trace save` が同じ関数を通る。
 
 import type pg from "pg";
 import { z } from "zod";
@@ -15,7 +15,7 @@ import { mask, sha256, tsvector } from "./text.ts";
 
 const KEY = /^[a-z0-9][a-z0-9._-]*$/;
 const key = z.string().regex(KEY, "小文字英数字と . _ - だけの意味のある語にする");
-/** 別の session の決定を指すときは `<host>:<session id>#<key>`。`mitos trace context` がこの形で出す。 */
+/** 別の session の決定を指すときは `<host>:<session id>#<key>`。`gleanery trace context` がこの形で出す。 */
 const ref = z.string().regex(/^([a-z-]+:[^#\s]+#)?[a-z0-9][a-z0-9._-]*$/, "key か <host>:<session id>#<key>");
 const at = z.iso.datetime({
   offset: true,
@@ -283,7 +283,7 @@ const UPSERT = `with incoming as (
       work_item_id bigint, heading text, body text, reason text, confirmation text, command text,
       downsides text[], refs text[], occurred_at timestamptz, content_hash text, lexemes text)
   ), written as (
-    insert into mitos.knowledge (project_id, conversation_id, work_item_id, source_key, kind, status, confidence,
+    insert into gleanery.knowledge (project_id, conversation_id, work_item_id, source_key, kind, status, confidence,
                                  decision_id, superseded_by_id, heading, body, reason, confirmation, command,
                                  downsides, refs, occurred_at, content_hash, lexemes)
     select $1, $2, t.work_item_id, t.source_key, t.kind, t.status, t.confidence, t.decision_id, t.superseded_by_id,
@@ -297,12 +297,12 @@ const UPSERT = `with incoming as (
       reason = excluded.reason, confirmation = excluded.confirmation, command = excluded.command,
       downsides = excluded.downsides, refs = excluded.refs, occurred_at = excluded.occurred_at,
       content_hash = excluded.content_hash, lexemes = excluded.lexemes
-    where mitos.knowledge.content_hash <> excluded.content_hash
+    where gleanery.knowledge.content_hash <> excluded.content_hash
     returning id, source_key
   )
   select id::text, source_key, true as written from written
   union all
-  select k.id::text, k.source_key, false from mitos.knowledge k
+  select k.id::text, k.source_key, false from gleanery.knowledge k
   where k.project_id = $1 and k.source_key in (select source_key from incoming)
     and k.source_key not in (select source_key from written)`;
 
@@ -322,14 +322,14 @@ export async function saveTrace(
   const result = await inTransaction(client, async () => {
     // 自動記録がこの session を先に作っていれば、そのまま使う（id は同じ規則で決まる）。
     await client.query(
-      `insert into mitos.conversation (id, project_id, origin, external_id, branch, started_at)
+      `insert into gleanery.conversation (id, project_id, origin, external_id, branch, started_at)
        values ($1, $2, $3, $4, $5, $6) on conflict (id) do nothing`,
       [conversation, projectId, t.session.host, t.session.id, t.session.branch ?? null, startedAt],
     );
     let workId: string | null = null;
     if (t.work) {
       const w = await client.query<{ id: string }>(
-        `insert into mitos.work_item (project_id, source_key, title, goal, current, next, status, conversation_id, updated_at)
+        `insert into gleanery.work_item (project_id, source_key, title, goal, current, next, status, conversation_id, updated_at)
          values ($1, $2, $3, $4, $5, $6, $7, $8, now())
          on conflict (project_id, source_key) do update set
            title = excluded.title, goal = excluded.goal, current = excluded.current, next = excluded.next,
@@ -361,7 +361,7 @@ export async function saveTrace(
     ].filter((k) => !all.some((x) => x.key === k));
     if (outside.length) {
       const found = await client.query<{ id: string; source_key: string }>(
-        "select id, source_key from mitos.knowledge where project_id = $1 and kind = 'decision' and source_key = any($2)",
+        "select id, source_key from gleanery.knowledge where project_id = $1 and kind = 'decision' and source_key = any($2)",
         [projectId, outside],
       );
       for (const f of found.rows) idOf.set(f.source_key, f.id);
@@ -378,7 +378,7 @@ export async function saveTrace(
       work_item_id: string | null;
       heading: string | null;
     }>(
-      `select source_key, superseded_by_id, work_item_id, heading from mitos.knowledge
+      `select source_key, superseded_by_id, work_item_id, heading from gleanery.knowledge
        where project_id = $1 and source_key = any($2) for update`,
       [projectId, all.map((r) => r.key)],
     );
@@ -462,7 +462,7 @@ export async function saveTrace(
     const decisionIds = decisions.map((d) => idOf.get(d.key)).filter((x): x is string => Boolean(x));
     if (decisionIds.length) {
       await client.query(
-        `delete from mitos.knowledge where project_id = $1 and kind = 'option' and decision_id = any($2::bigint[])
+        `delete from gleanery.knowledge where project_id = $1 and kind = 'option' and decision_id = any($2::bigint[])
            and not (source_key = any($3))`,
         [projectId, decisionIds, all.filter((r) => r.kind === "option").map((r) => r.key)],
       );
@@ -471,11 +471,11 @@ export async function saveTrace(
     // ファイルと埋め込みは書き直した行の分だけ。
     if (written.length) {
       const ids = written.map((w) => w.id);
-      await client.query("delete from mitos.knowledge_file where knowledge_id = any($1::bigint[])", [ids]);
+      await client.query("delete from gleanery.knowledge_file where knowledge_id = any($1::bigint[])", [ids]);
       const files = written.flatMap((w) => w.row.files.map((f) => ({ id: w.id, ...f })));
       if (files.length) {
         await client.query(
-          `insert into mitos.knowledge_file (knowledge_id, path, role, line_start, line_end)
+          `insert into gleanery.knowledge_file (knowledge_id, path, role, line_start, line_end)
            select t.id, t.path, t.role, t.line, t.line from unnest($1::bigint[], $2::text[], $3::text[], $4::int[])
              as t(id, path, role, line)
            on conflict do nothing`,
@@ -488,12 +488,12 @@ export async function saveTrace(
         );
       }
       await client.query(
-        `insert into mitos.knowledge_embedding (knowledge_id, model, source_hash, status)
+        `insert into gleanery.knowledge_embedding (knowledge_id, model, source_hash, status)
          select t.id, $3, t.hash, 'pending' from unnest($1::bigint[], $2::bytea[]) as t(id, hash)
          on conflict (knowledge_id) do update set
            source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0, last_error = null,
            updated_at = now()
-         where mitos.knowledge_embedding.source_hash <> excluded.source_hash`,
+         where gleanery.knowledge_embedding.source_hash <> excluded.source_hash`,
         [ids, written.map((w) => sha256(w.embedText)), EMBED_MODEL],
       );
     }
@@ -509,14 +509,14 @@ export async function saveTrace(
       // 輪を作らない。後継の側を遡って older に着くなら、older はもう newer の後にある。
       const loop = await client.query(
         `with recursive chain(id) as (
-           select superseded_by_id from mitos.knowledge where id = $1
-           union select k.superseded_by_id from mitos.knowledge k join chain c on k.id = c.id
+           select superseded_by_id from gleanery.knowledge where id = $1
+           union select k.superseded_by_id from gleanery.knowledge k join chain c on k.id = c.id
          ) select 1 from chain where id = $2 limit 1`,
         [newer, older],
       );
       if (loop.rowCount) throw new Error(`${i.key} と ${i.supersedes} が互いに覆し合う形になる`);
       const r = await client.query(
-        `update mitos.knowledge set status = 'superseded', superseded_by_id = $2
+        `update gleanery.knowledge set status = 'superseded', superseded_by_id = $2
          where id = $1 and (status <> 'superseded' or superseded_by_id is distinct from $2)`,
         [older, newer],
       );
@@ -524,7 +524,7 @@ export async function saveTrace(
         superseded++;
         // その決定で採った案は「当時は採った案」になる。
         await client.query(
-          "update mitos.knowledge set status = 'was_chosen' where decision_id = $1 and kind = 'option' and status = 'chosen'",
+          "update gleanery.knowledge set status = 'was_chosen' where decision_id = $1 and kind = 'option' and status = 'chosen'",
           [older],
         );
       }

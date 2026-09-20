@@ -38,7 +38,7 @@ test("remote に埋まった資格情報は key へ持ち込まない", () => {
 });
 
 function repo(remote: string | null): { dir: string; done: () => void } {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-project-")));
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-project-")));
   const dir = path.join(tmp, "repo");
   fs.mkdirSync(path.join(dir, "a", "b"), { recursive: true });
   execFileSync("git", ["init", "-q", dir], { stdio: "ignore" });
@@ -85,16 +85,16 @@ test("相対パスは根からの形にし、根の外は null", () => {
 
 // 空とみなして書き戻すと、ほかの作業場所の名前が全部消える。
 test("名前の対応表が壊れていたら読み飛ばさずに止め、remote のある場所には名前を付けない", () => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-map-")));
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-map-")));
   const realHome = process.env.HOME;
   process.env.HOME = home;
   const r = repo(null);
   try {
-    fs.mkdirSync(path.join(home, ".claude"));
-    fs.writeFileSync(path.join(home, ".claude", "mitos-projects.json"), '{"/x": "a",');
+    fs.mkdirSync(path.join(home, ".gleanery"));
+    fs.writeFileSync(path.join(home, ".gleanery", "projects.json"), '{"/x": "a",');
     assert.throws(() => nameLocal(r.dir, "notes"), /JSON の対応表として読めない/);
     assert.throws(() => identify(r.dir), /JSON の対応表として読めない/);
-    fs.rmSync(path.join(home, ".claude", "mitos-projects.json"));
+    fs.rmSync(path.join(home, ".gleanery", "projects.json"));
     const remote = repo("git@github.com:o/r.git");
     try {
       assert.throws(() => nameLocal(remote.dir, "notes"), /git remote を持つ/);
@@ -111,7 +111,7 @@ test("名前の対応表が壊れていたら読み飛ばさずに止め、remot
 
 // 同じ remote のクローンが 2 つあると、並び順で先に来た方へ黙って同期してしまう。
 test("同じ key の置き場所が 2 つあれば選ばない", () => {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "mitos-roots-")));
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-roots-")));
   // この PC の名前の対応表を読ませない（名前を付けた作業場所が found に混ざる）。
   const realHome = process.env.HOME;
   process.env.HOME = tmp;

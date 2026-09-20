@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "mitos",
+  "name": "gleanery",
   "description": "過去の判断と会話を、開発中に引くための plugin",
   "owner": {
     "name": "iroha924",
@@ -8,9 +8,9 @@
   },
   "plugins": [
     {
-      "name": "mitos",
+      "name": "gleanery",
       "description": "会話と判断を貯め、過去の決定・棄却した案・制約・発言を引く",
-      "version": "0.12.25",
+      "version": "0.19.0",
       "source": "./plugin",
       "author": {
         "name": "iroha924",

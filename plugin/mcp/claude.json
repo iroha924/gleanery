@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "mitos": {
+    "gleanery": {
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp.js"]
     }

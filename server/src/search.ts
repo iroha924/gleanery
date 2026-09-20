@@ -170,10 +170,10 @@ type KnowledgeRow = {
 
 const KNOWLEDGE_COLS = `k.id::text, k.kind, k.status, k.stance, k.heading, k.body, k.reason, k.confirmation, k.downsides,
   k.occurred_at, p.name as project, s.kind as source_kind, s.path, s.url, succ.body as successor`;
-const KNOWLEDGE_FROM = `from mitos.knowledge k
-  join mitos.project p on p.id = k.project_id
-  left join mitos.source_item s on s.id = k.source_item_id
-  left join mitos.knowledge succ on succ.id = k.superseded_by_id`;
+const KNOWLEDGE_FROM = `from gleanery.knowledge k
+  join gleanery.project p on p.id = k.project_id
+  left join gleanery.source_item s on s.id = k.source_item_id
+  left join gleanery.knowledge succ on succ.id = k.superseded_by_id`;
 
 const knowledgeHit = (r: KnowledgeRow): Hit => ({
   ref: `k:${r.id}`,
@@ -213,7 +213,7 @@ function knowledgeFilters(q: KnowledgeQuery, p: P): string[] {
   }
   if (q.path)
     w.push(
-      `exists (select 1 from mitos.knowledge_file f where f.knowledge_id = k.id and f.path = ${p(q.path)})`,
+      `exists (select 1 from gleanery.knowledge_file f where f.knowledge_id = k.id and f.path = ${p(q.path)})`,
     );
   if (q.since) w.push(since("k.occurred_at", q.since, p));
   if (q.until) w.push(until("k.occurred_at", q.until, p));
@@ -246,7 +246,7 @@ export async function searchKnowledge(db: Db, env: Env, q: KnowledgeQuery): Prom
       const w = knowledgeFilters(q, p);
       return db.query<KnowledgeRow>(
         `select ${KNOWLEDGE_COLS} ${KNOWLEDGE_FROM}
-         join mitos.knowledge_embedding e on e.knowledge_id = k.id and e.status = 'ready'
+         join gleanery.knowledge_embedding e on e.knowledge_id = k.id and e.status = 'ready'
          where ${w.join(" and ")}
          order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
         v,
@@ -290,12 +290,12 @@ type MessageRow = {
 
 const MESSAGE_COLS = `m.id::text, m.body, m.speaker_kind, m.sent_at, m.url, m.truncated, m.original_bytes, c.origin,
   p.name as project, s.title, s.kind as source_kind, s.external_id as number, i.handle, pe.display_name, pe.is_self`;
-const MESSAGE_FROM = `from mitos.message m
-  join mitos.conversation c on c.id = m.conversation_id
-  join mitos.project p on p.id = c.project_id
-  left join mitos.source_item s on s.id = c.source_item_id
-  left join mitos.person_identity i on i.id = m.identity_id
-  left join mitos.person pe on pe.id = i.person_id`;
+const MESSAGE_FROM = `from gleanery.message m
+  join gleanery.conversation c on c.id = m.conversation_id
+  join gleanery.project p on p.id = c.project_id
+  left join gleanery.source_item s on s.id = c.source_item_id
+  left join gleanery.person_identity i on i.id = m.identity_id
+  left join gleanery.person pe on pe.id = i.person_id`;
 /** 持ち主の発言。coding session の発言と、持ち主の GitHub アカウントの発言の両方。 */
 const SELF = "(m.speaker_kind = 'self' or coalesce(pe.is_self, false))";
 
@@ -356,7 +356,9 @@ function messageFilters(q: MessageQuery, p: P): string[] {
     w.push(`(lower(i.handle) = lower(${x}) or pe.display_name = ${x})`);
   }
   if (q.path)
-    w.push(`exists (select 1 from mitos.message_file f where f.message_id = m.id and f.path = ${p(q.path)})`);
+    w.push(
+      `exists (select 1 from gleanery.message_file f where f.message_id = m.id and f.path = ${p(q.path)})`,
+    );
   if (q.since) w.push(since("m.sent_at", q.since, p));
   if (q.until) w.push(until("m.sent_at", q.until, p));
   return w;
@@ -397,7 +399,7 @@ export async function searchMessages(db: Db, env: Env, q: MessageQuery): Promise
       const w = messageFilters(q, p);
       return db.query<MessageRow>(
         `select ${MESSAGE_COLS} ${MESSAGE_FROM}
-         join mitos.message_embedding e on e.message_id = m.id and e.status = 'ready'
+         join gleanery.message_embedding e on e.message_id = m.id and e.status = 'ready'
          where ${w.join(" and ")}
          order by e.embedding operator(extensions.<#>) ${p(vec(qv))}::extensions.halfvec limit ${p(POOL)}`,
         v,
@@ -439,7 +441,7 @@ export async function openWork(db: Db, projects: Scope, limit = 3): Promise<Work
     updated_at: Date;
   }>(
     `select w.id::text, p.name as project, w.title, w.goal, w.current, w.next, w.status, w.updated_at
-     from mitos.work_item w join mitos.project p on p.id = w.project_id
+     from gleanery.work_item w join gleanery.project p on p.id = w.project_id
      where w.status in ('active', 'blocked', 'paused') ${projects ? `and w.project_id = any(${p(projects)})` : ""}
      order by w.updated_at desc limit ${p(limit)}`,
     v,
@@ -469,7 +471,7 @@ export async function workDetail(db: Db, id: string, projects: Scope = null): Pr
     updated_at: Date;
   }>(
     `select w.id::text, p.name as project, w.title, w.goal, w.current, w.next, w.status, w.updated_at
-     from mitos.work_item w join mitos.project p on p.id = w.project_id
+     from gleanery.work_item w join gleanery.project p on p.id = w.project_id
      where w.id = $1 and ($2::bigint[] is null or w.project_id = any($2))`,
     [id, projects],
   );
@@ -513,7 +515,7 @@ export async function pathRules(db: Db, projectId: number): Promise<Map<string, 
     occurred_at: Date;
   }>(
     `select f.path, k.id::text, k.kind, k.status, k.body, k.reason, k.occurred_at
-     from mitos.knowledge_file f join mitos.knowledge k on k.id = f.knowledge_id
+     from gleanery.knowledge_file f join gleanery.knowledge k on k.id = f.knowledge_id
      where f.role = 'applies_to' and k.project_id = $1 and k.kind in ('constraint', 'debt') and k.status = 'active'
      order by k.occurred_at desc`,
     [projectId],
@@ -577,11 +579,11 @@ export async function listItems(
   const at = q.state === "merged" || q.state === "closed" ? "s.closed_at" : "s.source_created_at";
   if (q.since) w.push(since(at, q.since, p));
   if (q.until) w.push(until(at, q.until, p));
-  const from = `from mitos.source_item s
-    join mitos.connector cn on cn.id = s.connector_id
-    join mitos.project pr on pr.id = cn.project_id
-    left join mitos.person_identity i on i.id = s.author_identity_id
-    left join mitos.person pe on pe.id = i.person_id
+  const from = `from gleanery.source_item s
+    join gleanery.connector cn on cn.id = s.connector_id
+    join gleanery.project pr on pr.id = cn.project_id
+    left join gleanery.person_identity i on i.id = s.author_identity_id
+    left join gleanery.person pe on pe.id = i.person_id
     where ${w.join(" and ")}`;
   const total = Number((await db.query<{ n: string }>(`select count(*) as n ${from}`, v)).rows[0]?.n ?? 0);
   const r = await db.query<{
@@ -620,14 +622,14 @@ export async function listItems(
   };
 }
 
-/** 名簿の 1 行。**推論しない** — 人が `mitos who` で入れたものだけ。 */
+/** 名簿の 1 行。**推論しない** — 人が `gleanery who` で入れたものだけ。 */
 export type Person = { display: string; handles: string[]; isSelf: boolean };
 
 export async function directory(db: Db): Promise<Person[]> {
   const r = await db.query<{ display_name: string; is_self: boolean; handles: string[] }>(
     `select pe.display_name, pe.is_self,
             coalesce(array_agg(i.handle order by i.handle) filter (where i.id is not null), '{}') as handles
-     from mitos.person pe left join mitos.person_identity i on i.person_id = pe.id
+     from gleanery.person pe left join gleanery.person_identity i on i.person_id = pe.id
      group by pe.id order by pe.is_self desc, pe.display_name`,
   );
   return r.rows.map((p) => ({ display: p.display_name, handles: p.handles, isSelf: p.is_self }));
@@ -757,14 +759,14 @@ async function readKnowledge(db: Db, id: string, budget: number, projects: Scope
     }
   >(
     `select ${KNOWLEDGE_COLS}, k.refs, k.confidence, c.origin, c.external_id as session, k.decision_id::text
-     ${KNOWLEDGE_FROM} left join mitos.conversation c on c.id = k.conversation_id
+     ${KNOWLEDGE_FROM} left join gleanery.conversation c on c.id = k.conversation_id
      where k.id = $1 and ($2::bigint[] is null or k.project_id = any($2))`,
     [id, projects],
   );
   const k = r.rows[0];
   if (!k) return `k:${id}: 無い`;
   const files = await db.query<{ path: string; role: string; line_start: number | null }>(
-    "select path, role, line_start from mitos.knowledge_file where knowledge_id = $1 order by role, path",
+    "select path, role, line_start from gleanery.knowledge_file where knowledge_id = $1 order by role, path",
     [id],
   );
   const related = await db.query<KnowledgeRow>(
@@ -793,7 +795,7 @@ async function readMessage(
   projects: Scope,
 ): Promise<string> {
   const target = await db.query<{ conversation_id: string; sent_at: Date }>(
-    `select m.conversation_id, m.sent_at from mitos.message m join mitos.conversation c on c.id = m.conversation_id
+    `select m.conversation_id, m.sent_at from gleanery.message m join gleanery.conversation c on c.id = m.conversation_id
      where m.id = $1 and ($2::bigint[] is null or c.project_id = any($2))`,
     [id, projects],
   );
@@ -802,11 +804,11 @@ async function readMessage(
   // 前後の turn も読む。AI の応答（索引していない）もここでは出す — 「それでいい」が何を指したかが分かる。
   // 並びは (sent_at, id)。同じ時刻の発言が並んでも、対象の発言が前後の件数の上限で落ちない。
   const r = await db.query<MessageRow & { paths: string[] }>(
-    `(select ${MESSAGE_COLS}, array(select f.path from mitos.message_file f where f.message_id = m.id order by f.path) as paths
+    `(select ${MESSAGE_COLS}, array(select f.path from gleanery.message_file f where f.message_id = m.id order by f.path) as paths
       ${MESSAGE_FROM} where m.conversation_id = $1 and (m.sent_at, m.id) < ($2, $5::uuid)
       order by m.sent_at desc, m.id desc limit $3)
      union all
-     (select ${MESSAGE_COLS}, array(select f.path from mitos.message_file f where f.message_id = m.id order by f.path) as paths
+     (select ${MESSAGE_COLS}, array(select f.path from gleanery.message_file f where f.message_id = m.id order by f.path) as paths
       ${MESSAGE_FROM} where m.conversation_id = $1 and (m.sent_at, m.id) >= ($2, $5::uuid)
       order by m.sent_at, m.id limit $4)
      order by sent_at, id`,
@@ -838,9 +840,9 @@ async function readSource(db: Db, id: string, budget: number, projects: Scope): 
   }>(
     `select s.kind, s.external_id, s.title, s.state, s.url, s.path, s.body, s.source_updated_at, p.name as project,
             s.metadata, c.id::text as conversation
-     from mitos.source_item s join mitos.connector cn on cn.id = s.connector_id
-     join mitos.project p on p.id = cn.project_id
-     left join mitos.conversation c on c.source_item_id = s.id
+     from gleanery.source_item s join gleanery.connector cn on cn.id = s.connector_id
+     join gleanery.project p on p.id = cn.project_id
+     left join gleanery.conversation c on c.source_item_id = s.id
      where s.id = $1 and ($2::bigint[] is null or cn.project_id = any($2))`,
     [id, projects],
   );
@@ -855,7 +857,7 @@ async function readSource(db: Db, id: string, budget: number, projects: Scope): 
   }
   const first = s.conversation
     ? await db.query<{ body: string }>(
-        "select body from mitos.message where conversation_id = $1 and external_id = 'body'",
+        "select body from gleanery.message where conversation_id = $1 and external_id = 'body'",
         [s.conversation],
       )
     : { rows: [] };

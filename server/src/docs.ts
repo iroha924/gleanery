@@ -11,7 +11,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type pg from "pg";
-import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underMitos } from "./artifacts.ts";
+import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underGleanery } from "./artifacts.ts";
 import { EMBED_MODEL, inTransaction } from "./db.ts";
 import { knowledgeText } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
@@ -148,7 +148,7 @@ export function commitOf(root: string, remote: boolean): string {
         "--no-tags",
         "--no-recurse-submodules",
         "origin",
-        "+HEAD:refs/mitos/docs-head",
+        "+HEAD:refs/gleanery/docs-head",
       ]);
     } catch (e) {
       const err = e as { code?: string; stderr?: Buffer };
@@ -158,7 +158,7 @@ export function commitOf(root: string, remote: boolean): string {
           : (err.stderr?.toString().trim().split("\n").at(-1) ?? "");
       throw new Error(`remote の既定 branch を取れなかった（${detail}）。文書は前回の同期のまま`);
     }
-    return git(root, ["rev-parse", "--verify", "refs/mitos/docs-head^{commit}"]).toString().trim();
+    return git(root, ["rev-parse", "--verify", "refs/gleanery/docs-head^{commit}"]).toString().trim();
   }
   try {
     return git(root, ["rev-parse", "--verify", "HEAD^{commit}"]).toString().trim();
@@ -271,7 +271,7 @@ export type Doc = {
   sections: Section[];
 };
 
-/** 読んだ本文を文書の形へ投影する。**`.mitos` 配下は承認済みの成果物だけを入れる。** */
+/** 読んだ本文を文書の形へ投影する。**`.gleanery` 配下は承認済みの成果物だけを入れる。** */
 export function projectDocs(
   bodies: Map<string, string>,
   include: Map<string, Artifact>,
@@ -280,7 +280,7 @@ export function projectDocs(
   const out: Doc[] = [];
   for (const [rel, raw] of bodies) {
     const artifact = include.get(rel);
-    if (underMitos(rel) && !artifact) continue;
+    if (underGleanery(rel) && !artifact) continue;
     const body = clean(raw);
     if (!body.trim()) continue;
     const title = body.match(/^#\s+(\S.*)$/m)?.[1]?.trim() ?? path.basename(rel);
@@ -310,7 +310,7 @@ export const docHash = (d: Doc): Buffer =>
 const CHUNK = 500;
 
 /**
- * commit の tree から、入れる文書を組み立てる（DB に触らない）。`.mitos` が不正なら、どれが承認済みかを
+ * commit の tree から、入れる文書を組み立てる（DB に触らない）。`.gleanery` が不正なら、どれが承認済みかを
  * 決められないので投げる（呼び出し側は何も書かず、前回の状態を保つ）。
  */
 export function collectDocs(root: string, commit: string): { docs: Doc[]; skipped: number } {
@@ -320,7 +320,10 @@ export function collectDocs(root: string, commit: string): { docs: Doc[]; skippe
   // 大きすぎる manifest は読まない（検査が大きさだけで「大きすぎる」と返す）。読み込んでから測ると、1 本で同期ごと落ちる。
   const manifests = [...tree.entries].filter(
     ([rel, e]) =>
-      rel.startsWith(".mitos/") && rel.endsWith(".json") && FILE_MODES.has(e.mode) && e.size <= MAX_MANIFEST,
+      rel.startsWith(".gleanery/") &&
+      rel.endsWith(".json") &&
+      FILE_MODES.has(e.mode) &&
+      e.size <= MAX_MANIFEST,
   );
   const snap = snapshotOf(
     tree,
@@ -333,7 +336,7 @@ export function collectDocs(root: string, commit: string): { docs: Doc[]; skippe
   const { include, problems } = selectArtifacts(snap, [...bodies.keys()]);
   if (problems.length) {
     throw new Error(
-      `.mitos が不正なので、この作業場所の文書を同期しない（前回の状態を保つ）:\n${problems
+      `.gleanery が不正なので、この作業場所の文書を同期しない（前回の状態を保つ）:\n${problems
         .map((p) => `  ${p.path}: ${p.reason}`)
         .join("\n")}`,
     );
@@ -368,7 +371,7 @@ export async function syncDocs(
     const known = new Map(
       (
         await client.query<{ external_id: string; content_hash: Buffer }>(
-          "select external_id, content_hash from mitos.source_item where connector_id = $1",
+          "select external_id, content_hash from gleanery.source_item where connector_id = $1",
           [connector.id],
         )
       ).rows.map((r) => [r.external_id, r.content_hash]),
@@ -377,7 +380,7 @@ export async function syncDocs(
 
     if (changed.length) {
       const items = await client.query<{ id: string; external_id: string }>(
-        `insert into mitos.source_item (connector_id, external_id, kind, title, path, body, source_updated_at,
+        `insert into gleanery.source_item (connector_id, external_id, kind, title, path, body, source_updated_at,
                                         content_hash, metadata, synced_at)
          select $1, t.path, t.kind, t.title, t.path, t.body, t.at, decode(t.hash, 'hex'), t.metadata, now()
          from jsonb_to_recordset($2::jsonb) as t(path text, kind text, title text, body text, at timestamptz,
@@ -417,13 +420,13 @@ export async function syncDocs(
       );
       // 節が消えた・key が変わったものを先に消す。残すと撤回した記述が検索で返る。
       await client.query(
-        "delete from mitos.knowledge where source_item_id = any($1::bigint[]) and not (source_key = any($2))",
+        "delete from gleanery.knowledge where source_item_id = any($1::bigint[]) and not (source_key = any($2))",
         [[...sourceOf.values()], sections.map((x) => x.s.key)],
       );
       for (let i = 0; i < sections.length; i += CHUNK) {
         const part = sections.slice(i, i + CHUNK);
         const written = await client.query<{ id: string; content_hash: Buffer }>(
-          `insert into mitos.knowledge (project_id, source_item_id, source_key, kind, heading, body, occurred_at,
+          `insert into gleanery.knowledge (project_id, source_item_id, source_key, kind, heading, body, occurred_at,
                                         content_hash, lexemes)
            select $1, t.source, t.key, 'document', t.heading, t.body, coalesce(t.at, now()), t.hash, t.lex::tsvector
            from unnest($2::bigint[], $3::text[], $4::text[], $5::text[], $6::timestamptz[], $7::bytea[], $8::text[])
@@ -431,7 +434,7 @@ export async function syncDocs(
            on conflict (project_id, source_key) do update set
              source_item_id = excluded.source_item_id, heading = excluded.heading, body = excluded.body,
              occurred_at = excluded.occurred_at, content_hash = excluded.content_hash, lexemes = excluded.lexemes
-           where mitos.knowledge.content_hash <> excluded.content_hash
+           where gleanery.knowledge.content_hash <> excluded.content_hash
            returning id, content_hash`,
           [
             projectId,
@@ -445,23 +448,23 @@ export async function syncDocs(
           ],
         );
         await client.query(
-          `insert into mitos.knowledge_embedding (knowledge_id, model, source_hash, status)
+          `insert into gleanery.knowledge_embedding (knowledge_id, model, source_hash, status)
            select t.id, $3, t.hash, 'pending' from unnest($1::bigint[], $2::bytea[]) as t(id, hash)
            on conflict (knowledge_id) do update set
              source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0, last_error = null,
              updated_at = now()
-           where mitos.knowledge_embedding.source_hash <> excluded.source_hash`,
+           where gleanery.knowledge_embedding.source_hash <> excluded.source_hash`,
           [written.rows.map((r) => r.id), written.rows.map((r) => r.content_hash), EMBED_MODEL],
         );
       }
     }
     // git の一覧は完全なので、一覧から消えた文書（承認を外した成果物を含む）は行ごと消す。
     const removed = await client.query(
-      "delete from mitos.source_item where connector_id = $1 and not (external_id = any($2))",
+      "delete from gleanery.source_item where connector_id = $1 and not (external_id = any($2))",
       [connector.id, docs.map((d) => d.path)],
     );
     await client.query(
-      "update mitos.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1",
+      "update gleanery.connector set head_oid = $2, last_success_at = now(), last_error = null where id = $1",
       [connector.id, commit],
     );
     return { refused: null, changed: changed.length, removed: removed.rowCount ?? 0 };
@@ -475,7 +478,7 @@ export async function syncDocs(
     throw new Error(
       `前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` +
         "fast-forward でないので書かなかった（巻き戻し・force-push・分岐した branch への切り替え）。" +
-        `今の状態に揃えるなら \`mitos sync --cwd ${root} --reset-docs\``,
+        `今の状態に揃えるなら \`gleanery harvest --cwd ${root} --reset-docs\``,
     );
   }
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
