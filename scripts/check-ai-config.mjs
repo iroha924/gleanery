@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const developmentSkills = ["knowledge-schema", "next-hono", "plugin-agent-authoring", "plugin-release"];
+const developmentSkills = ["knowledge-schema", "ui-hono", "plugin-agent-authoring", "plugin-release"];
 
 function fail(message) {
   failures.push(message);
@@ -56,7 +56,22 @@ const agents = read("AGENTS.md");
 const lines = agents.trimEnd().split("\n").length;
 const bytes = Buffer.byteLength(agents);
 if (lines >= 200) fail(`AGENTS.md: ${lines}行。200行未満にする`);
-if (bytes > 32 * 1024) fail(`AGENTS.md: ${bytes} bytes。Codex既定の32 KiBを超えている`);
+
+// **Codexはglobal → repo root → CWDまでのAGENTS.mdを連結し、32 KiBで打ち切る。**
+// rootだけを見ると、nestedを足したぶんが黙って切り捨てられる。ここではリポジトリ側の合計を見る
+// （持ち主の ~/.codex/AGENTS.md はマシンごとに違うので、その分の余白を引いて判定する）。
+const CODEX_LIMIT = 32 * 1024;
+const USER_RESERVE = 20 * 1024; // 持ち主のglobal指示に見込む分
+const nested = ["dashboard/AGENTS.md"];
+const nestedBytes = nested.map((f) => Buffer.byteLength(read(f)));
+const repoTotal = bytes + nestedBytes.reduce((a, b) => a + b, 0);
+if (repoTotal > CODEX_LIMIT - USER_RESERVE) {
+  fail(
+    `AGENTS.mdの合計が${repoTotal} bytes（root ${bytes} + nested ${nestedBytes.join(" + ")}）。` +
+      `Codexの32 KiBからglobal分${USER_RESERVE}を引いた${CODEX_LIMIT - USER_RESERVE}以内にする。` +
+      "長い手順は.agents/skills/へ移す",
+  );
+}
 if (read("CLAUDE.md").trim() !== "@AGENTS.md") fail("CLAUDE.md: @AGENTS.mdだけを正本として読む形ではない");
 if (read("dashboard/CLAUDE.md").trim() !== "@AGENTS.md") {
   fail("dashboard/CLAUDE.md: dashboard/AGENTS.mdをimportしていない");

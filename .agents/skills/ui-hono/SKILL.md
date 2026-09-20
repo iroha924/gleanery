@@ -1,5 +1,5 @@
 ---
-name: next-hono
+name: ui-hono
 description: gleaneryの画面（Vite + React + TanStack Router）またはHono HTTP APIを変更する。画面、route、URLの状態、API入力、ローカルの境界を触るときに使う。MCP・CLIだけの変更やDB schemaの変更には使わない。
 ---
 

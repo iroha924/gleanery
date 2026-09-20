@@ -13,7 +13,7 @@
     "architecture": "node scripts/check-dashboard-boundaries.mjs",
     "verify:ai": "node scripts/check-ai-config.mjs",
     "typecheck": "bun run --cwd server typecheck && bun run --cwd dashboard typecheck",
-    "check": "bun run lint && bun run architecture && bun run verify:ai && bun run naming && bun run typecheck",
+    "check": "bun run lint && bun run architecture && bun run verify:ai && bun run naming && bun run pairs && bun run typecheck",
     "test": "bun run --cwd server test",
     "verify": "bun run check && bun run bundle && bun run test",
     "bundle": "node scripts/bundle.mjs",
@@ -21,6 +21,7 @@
     "db:migrate": "node server/src/admin.ts migrate",
     "db:roles": "node server/src/admin.ts roles",
     "naming": "node scripts/check-naming.mjs",
-    "notices": "node scripts/third-party-notices.mjs --check"
+    "notices": "node scripts/third-party-notices.mjs --check",
+    "pairs": "node scripts/check-pairs.mjs"
   }
 }

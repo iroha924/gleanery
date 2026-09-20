@@ -38,7 +38,7 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
 
 該当する作業では、実装前に次のSkillを最後まで読む。
 
-- 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `next-hono`
+- 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `ui-hono`
 - DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
 - MCP、CLI、自動記録のhook、plugin Skill・Agentの配布: `plugin-release`
 - `plugin/agents/`とreview Agent: `plugin-agent-authoring`

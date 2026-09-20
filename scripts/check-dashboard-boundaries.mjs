@@ -22,14 +22,27 @@ function walk(directory) {
   });
 }
 
+const failuresEarly = [];
 const allPaths = walk(dashboardSource);
 const sourceFiles = allPaths.filter(
   (candidate) => fs.statSync(candidate).isFile() && sourceExtensions.has(path.extname(candidate)),
 );
+const featuresDirectory = path.join(dashboardSource, "features");
 const moduleRoots = allPaths.filter((candidate) => {
-  if (!fs.statSync(candidate).isDirectory() || !path.basename(candidate).startsWith("_")) return false;
-  return [...layerOrder.keys()].some((layer) => fs.existsSync(path.join(candidate, layer)));
+  if (!fs.statSync(candidate).isDirectory()) return false;
+  if (path.dirname(candidate) !== featuresDirectory) return false;
+  return true;
 });
+
+// **`_` を名前から外すと検査対象から消える**形にしない。features 直下は全部 module として扱い、
+// 名前のほうを検査する（`_` は TanStack Router の pathless layout の記法と揃える決まり）。
+for (const root of moduleRoots) {
+  if (!path.basename(root).startsWith("_")) {
+    failuresEarly.push(
+      `${path.relative(".", root)} は features 直下なので \`_\` で始める（routes 配下の generator と綴りを揃える）`,
+    );
+  }
+}
 
 function isInside(candidate, directory) {
   const relative = path.relative(directory, candidate);
@@ -57,7 +70,7 @@ function layerOf(file, moduleRoot) {
   return layerOrder.has(layer) ? layer : null;
 }
 
-const failures = [];
+const failures = [...failuresEarly];
 
 for (const file of sourceFiles) {
   const sourceModule = moduleRoots.find((root) => isInside(file, root));
@@ -93,6 +106,44 @@ for (const file of sourceFiles) {
           "許可する向きは ui → model → api",
       );
     }
+  }
+}
+
+// **`ui` と `model` から共有の API 入口を直に引かない。**引くと、その画面だけ自分の `api` 層を
+// 飛ばし、失敗の扱いとエラー文が feature の外で決まる。`@/lib/api` を触るのは `api/` 層だけにする。
+const SHARED_API = /^@\/lib\/(api|api-client)$/;
+for (const file of sourceFiles) {
+  const home = moduleRoots.find((root) => isInside(file, root));
+  if (!home) continue;
+  const layer = layerOf(file, home);
+  if (layer !== "ui" && layer !== "model") continue;
+  for (const specifier of importsOf(file)) {
+    if (!SHARED_API.test(specifier)) continue;
+    failures.push(
+      `${path.relative(".", file)} が ${specifier} を直に参照している。` +
+        `${layer} は同じ module の api/ を通す（失敗の扱いを feature の中に閉じる）`,
+    );
+  }
+}
+
+// **route entry に機能を書かない。**route 設定・search schema・feature の ui の import に限る。
+// 実装を直書きすると、その画面だけ層の検査から外れ（module root が無いため）、
+// 同じ機能が feature 側と route 側の 2 通りで書かれる余地が残る。
+const ROUTE_ALLOWED = [
+  /^@tanstack\/react-router$/,
+  /^zod$/,
+  /^@\/features\/_[^/]+\/ui\//,
+  /^@\/components\/dashboard-shell$/,
+];
+for (const file of sourceFiles) {
+  if (!isInside(file, routesDirectory)) continue;
+  if (path.basename(file) === "routeTree.gen.ts") continue;
+  for (const specifier of importsOf(file)) {
+    if (ROUTE_ALLOWED.some((allowed) => allowed.test(specifier))) continue;
+    failures.push(
+      `${path.relative(".", file)} が ${specifier} を参照している。route entry は route 設定と ` +
+        "search schema と feature の ui だけを持つ。実装は src/features/_名前/ へ置く",
+    );
   }
 }
 
