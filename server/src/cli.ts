@@ -45,6 +45,7 @@ import {
 } from "./search.ts";
 import { DEFAULT_PORT, parsePort, start } from "./server.ts";
 import { head, reason } from "./text.ts";
+import { describeTitles, fillTitles } from "./titles.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 
 /**
@@ -745,10 +746,11 @@ const root = buildRouteMap({
                 );
               }
             }
-            // 埋め込みは全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
+            // 埋め込みと題は全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
             for (const line of [
               describeFill("知識の埋め込み", await fillKnowledge(c, env)),
               describeFill("発言の埋め込み", await fillMessages(c, env)),
+              describeTitles(await fillTitles(c, env)),
             ])
               if (line) console.log(rule(line));
           });

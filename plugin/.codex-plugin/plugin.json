@@ -1,6 +1,6 @@
 {
   "name": "gleanery",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "過去の決定・棄却した案・制約・発言を引く（会話の自動記録は Claude Code だけ）。glean = 落ち穂を拾い集める",
   "author": {
     "name": "iroha924",
