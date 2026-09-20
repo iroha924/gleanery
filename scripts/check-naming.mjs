@@ -58,7 +58,6 @@ for (const file of tracked) {
   }
 }
 
-// ファイル名そのものにも残らないようにする。
 for (const file of tracked) {
   if (/mitos/i.test(file)) hits.push(`${file}  旧いツール名がファイル名にある`);
 }

@@ -15,20 +15,19 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "plugin", "dist");
 const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: "inherit" });
 
-// 1. MCP・CLI・自動記録を 1 ファイルずつに束ねる。
-//    **--minify を足さない。**stricli の日本語のエラー文は例外クラスの constructor.name で振り分けるので、
-//    クラス名が潰れると英語へ戻る。
+// **--minify を足さない。**stricli の日本語のエラー文は例外クラスの constructor.name で振り分けるので、
+// クラス名が潰れると英語へ戻る。
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
 for (const entry of ["mcp", "capture", "cli"]) {
   run("bun", ["build", `server/src/${entry}.ts`, "--target=node", "--outfile", `plugin/dist/${entry}.js`]);
 }
 
-// 2. 画面のビルド成果物。Hono が dist/dashboard から配る（server/src/assets.ts）。
+// 配る先は server/src/assets.ts が dashboardRoot() で探す位置。
 run("bun", ["run", "--cwd", "dashboard", "build"]);
 fs.cpSync(path.join(root, "dashboard", "dist"), path.join(dist, "dashboard"), { recursive: true });
 
-// 3. DB の同梱物。plugin の cache には repository が無いので、compose と schema を持たせる。
+// plugin の cache には repository が無いので、schema と compose を持たせる。
 const db = path.join(root, "plugin", "db");
 fs.rmSync(db, { recursive: true, force: true });
 fs.mkdirSync(db, { recursive: true });
@@ -37,11 +36,10 @@ for (const name of ["compose.yaml", "schema.sql"]) {
 }
 fs.cpSync(path.join(root, "db", "migrations"), path.join(db, "migrations"), { recursive: true });
 
-// 4. 束ねた入口に実行権を付ける。npm は Windows で shebang を読んで .cmd を作る。
+// npm は Windows で shebang を読んで .cmd を作るので、実行権が要る。
 for (const entry of ["cli"]) fs.chmodSync(path.join(dist, `${entry}.js`), 0o755);
 
-// 5. 同梱した依存の著作権表示とライセンス文。**束ねても同梱の義務は消えない**ので、
-// 配る物を作るたびに、そのときの node_modules から作り直す。
+// **束ねても同梱の義務は消えない。**配るたびに、そのときの node_modules から作り直す。
 run("node", ["scripts/third-party-notices.mjs"]);
 
 const count = (dir) =>
