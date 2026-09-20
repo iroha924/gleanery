@@ -27,7 +27,7 @@ const RULES = [
   // 型引数の有無を問わず pg の query を弾く。移行前はこれが既定だった。
   [/\.query\s*[(<]/g, "SQL を手で書いて pg の query へ渡している。builder か sql テンプレートで書く"],
   [/\.orderBy\(\s*\[/g, "orderBy(配列) は deprecated。orderBy(expr, 'asc') を重ねて書く"],
-  [/\.orderBy\(\s*['"][^'"]*\s+(?:asc|desc)['"]/g, "方向を文字列へ埋めない。orderBy(expr, 'desc') と書く"],
+  [/\.orderBy\(\s*([`'"])[^`'"]*\s+(?:asc|desc)\1/g, "方向を文字列へ埋めない。orderBy(expr, 'desc') と書く"],
 ];
 
 const files = [...walk(path.join(root, "server/src")), ...walk(path.join(root, "server/test"))];
