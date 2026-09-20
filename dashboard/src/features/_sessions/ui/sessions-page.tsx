@@ -14,7 +14,6 @@ import {
   DraftingCompassIcon,
   FileTextIcon,
   GitBranchIcon,
-  HashIcon,
   ListChecksIcon,
   MessagesSquareIcon,
   RouteIcon,
@@ -25,7 +24,7 @@ import {
 } from "lucide-react-motion";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { MarkdownText } from "@/components/answer";
+import { MarkdownText, repoUrlOf } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -40,7 +39,7 @@ import {
 } from "@/components/ui/empty";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
-import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import { Message, MessageAvatar, MessageContent, MessageFooter } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -200,10 +199,12 @@ function KnowledgeDetails({
   item,
   options,
   tone,
+  repo,
 }: {
   item: SessionKnowledge;
   options: SessionKnowledge[];
   tone: Section["tone"];
+  repo: string | null;
 }) {
   const related = options.filter((option) => option.decisionId === item.id);
   return (
@@ -212,7 +213,7 @@ function KnowledgeDetails({
         <span className={stanceClass(item.stance)}>{item.label}</span>
         <time className="text-muted-foreground tabular-nums">{formatDate(item.at)}</time>
       </div>
-      <MarkdownText text={item.body} className="text-base leading-7" />
+      <MarkdownText repo={repo} text={item.body} className="text-base leading-7" />
       {item.reason && (
         <div className="rounded-md border bg-card p-3">
           <p className="mb-1 text-sm font-medium text-muted-foreground">
@@ -222,13 +223,13 @@ function KnowledgeDetails({
                 ? "実行しなかった理由"
                 : "理由"}
           </p>
-          <MarkdownText text={item.reason} className="text-sm leading-6" />
+          <MarkdownText repo={repo} text={item.reason} className="text-sm leading-6" />
         </div>
       )}
       {item.confirmation && (
         <div>
           <p className="text-sm font-medium text-muted-foreground">確かめ方</p>
-          <MarkdownText text={item.confirmation} className="mt-1 text-sm leading-6" />
+          <MarkdownText repo={repo} text={item.confirmation} className="mt-1 text-sm leading-6" />
         </div>
       )}
       {item.downsides.length > 0 && (
@@ -236,7 +237,7 @@ function KnowledgeDetails({
           {item.downsides.map((text) => (
             <li key={text} className="grid grid-cols-[7rem_1fr] gap-2 text-sm leading-6">
               <span className="text-dont">引き受けた不利</span>
-              <MarkdownText text={text} className="text-sm leading-6" />
+              <MarkdownText repo={repo} text={text} className="text-sm leading-6" />
             </li>
           ))}
         </ul>
@@ -262,10 +263,12 @@ function SectionDialog({
   section,
   options,
   onClose,
+  repo,
 }: {
   section: Section | null;
   options: SessionKnowledge[];
   onClose: () => void;
+  repo: string | null;
 }) {
   return (
     <Dialog open={section !== null} onOpenChange={(open) => !open && onClose()}>
@@ -292,7 +295,13 @@ function SectionDialog({
             <ScrollArea className="min-h-0 pr-4">
               <div className="space-y-3">
                 {section.items.map((item) => (
-                  <KnowledgeDetails key={item.id} item={item} options={options} tone={section.tone} />
+                  <KnowledgeDetails
+                    key={item.id}
+                    item={item}
+                    options={options}
+                    tone={section.tone}
+                    repo={repo}
+                  />
                 ))}
               </div>
             </ScrollArea>
@@ -339,7 +348,7 @@ function SectionCard({ section, onOpen }: { section: Section; onOpen: () => void
 
 // ---- 作業の現在地 ----
 
-function WorkCard({ work }: { work: SessionWork }) {
+function WorkCard({ work, repo }: { work: SessionWork; repo: string | null }) {
   const status = WORK_STATUS[work.status] ?? { label: work.status, variant: "secondary" as const };
   return (
     <section className="space-y-3 rounded-md border border-do/25 bg-do/5 p-4">
@@ -355,11 +364,11 @@ function WorkCard({ work }: { work: SessionWork }) {
       <div className="grid gap-3 md:grid-cols-2">
         <div>
           <p className="text-sm font-medium text-muted-foreground">目指すところ</p>
-          <MarkdownText text={work.goal} className="mt-1 text-sm leading-6" />
+          <MarkdownText repo={repo} text={work.goal} className="mt-1 text-sm leading-6" />
         </div>
         <div>
           <p className="text-sm font-medium text-muted-foreground">いまの状況</p>
-          <MarkdownText text={work.current} className="mt-1 text-sm leading-6" />
+          <MarkdownText repo={repo} text={work.current} className="mt-1 text-sm leading-6" />
         </div>
       </div>
       {work.next.length > 0 && (
@@ -391,7 +400,7 @@ function WorkCard({ work }: { work: SessionWork }) {
 
 const FILE_ACTION = { edit: "編集", read: "読んだ", review: "指摘" } as const;
 
-function Turn({ message }: { message: SessionMessage }) {
+function Turn({ message, repo }: { message: SessionMessage; repo: string | null }) {
   const mine = message.speaker === "self";
   // AI の応答は長い。読むのは自分の発言が主なので、応答は畳んでおき、開けば全文を出す。
   const [open, setOpen] = useState(mine);
@@ -401,8 +410,11 @@ function Turn({ message }: { message: SessionMessage }) {
       <MessageAvatar
         className={cn(
           // transform は content-visibility の paint containment で切り落とされる。margin なら行が伸びる。
-          "mt-[5px] size-7 min-w-0 self-start rounded-full border group-has-data-[slot=message-footer]/message:translate-y-0",
-          mine ? "bg-card" : "bg-secondary/60 text-muted-foreground",
+          // **負の margin にしない。**上へはみ出した分は同じ paint containment で切られる。
+          "size-7 min-w-0 self-start rounded-full border group-has-data-[slot=message-footer]/message:translate-y-0",
+          // 1 行目の中心へそろえる。半径 14px に対し、AI 側は leading-7 の半分で 14px、
+          // 自分の発言は BubbleContent の p-3 が 12px 加わって 26px。
+          mine ? "mt-3 bg-card" : "bg-secondary/60 text-muted-foreground",
         )}
         aria-hidden="true"
       >
@@ -415,7 +427,7 @@ function Turn({ message }: { message: SessionMessage }) {
         {mine ? (
           <Bubble variant="default">
             <BubbleContent className="p-3 [&_a]:text-primary-foreground [&_code]:bg-primary-foreground/15 [&_code]:text-primary-foreground [&_pre]:border-primary-foreground/20 [&_pre]:bg-primary-foreground/10 [&_pre]:text-primary-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
-              <MarkdownText text={message.body} />
+              <MarkdownText repo={repo} text={message.body} />
             </BubbleContent>
           </Bubble>
         ) : (
@@ -428,7 +440,7 @@ function Turn({ message }: { message: SessionMessage }) {
                   "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]",
               )}
             >
-              <MarkdownText text={message.body} />
+              <MarkdownText repo={repo} text={message.body} />
             </div>
             {long && (
               <Button
@@ -461,8 +473,40 @@ function Turn({ message }: { message: SessionMessage }) {
             ))}
           </ul>
         )}
+        <MessageFooter className="px-0">
+          <CopyBody body={message.body} />
+        </MessageFooter>
       </MessageContent>
     </Message>
+  );
+}
+
+/** 発言 1 件を写す。畳んであっても、写るのは本文の全文である。 */
+function CopyBody({ body }: { body: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            aria-label="この発言をコピー"
+            onClick={() => {
+              navigator.clipboard
+                .writeText(body)
+                .then(() => setCopied(true))
+                .catch(() => toast.error("この発言をコピーできなかった"));
+            }}
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{copied ? "コピーしました" : "この発言をコピー"}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -498,7 +542,15 @@ function ArtifactCard({ artifact, onOpen }: { artifact: SessionArtifact; onOpen:
   );
 }
 
-function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | null; onClose: () => void }) {
+function ArtifactDialog({
+  artifact,
+  onClose,
+  repo,
+}: {
+  artifact: SessionArtifact | null;
+  onClose: () => void;
+  repo: string | null;
+}) {
   return (
     <Dialog open={artifact !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="grid max-h-[82vh] grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden p-6 sm:max-w-[48rem] [&>*]:min-w-0">
@@ -519,7 +571,7 @@ function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | nul
               </DialogDescription>
             </DialogHeader>
             <ScrollArea className="min-h-0 pr-4">
-              <MarkdownText text={artifact.content} className="text-sm leading-6" />
+              <MarkdownText repo={repo} text={artifact.content} className="text-sm leading-6" />
             </ScrollArea>
           </>
         )}
@@ -533,7 +585,7 @@ function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | nul
 function ResumeCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="mt-3 flex max-w-full items-center rounded-md border bg-card">
+    <div className="ml-auto flex min-w-0 items-center rounded-md border bg-card">
       <code className="min-w-0 flex-1 overflow-x-auto px-3 py-2 font-mono text-sm text-foreground">
         {command}
       </code>
@@ -582,6 +634,8 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
   const lastAt = d?.messages.at(-1)?.sentAt ?? null;
   const said = d?.messages.filter((m) => m.speaker === "self").length ?? 0;
   const resume = d ? resumeCommand(d.origin, d.sessionId) : null;
+  // 本文の #123 は、その session の作業場所の issue を指す。
+  const repo = repoUrlOf(d?.projectKey);
 
   return (
     <Dialog open={id !== null} onOpenChange={(open) => !open && onClose()}>
@@ -601,41 +655,35 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                 {d.title?.split("\n")[0] ?? "（題なし）"}
               </DialogTitle>
               <DialogDescription asChild>
-                <div className="space-y-2 text-left">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {d.branch && (
-                      <Badge variant="outline" className="font-mono">
-                        <GitBranchIcon />
-                        {d.branch}
-                      </Badge>
-                    )}
-                    <Badge variant="info">
-                      <MessagesSquareIcon />
-                      あなたの発言 {said}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-left">
+                  {d.branch && (
+                    <Badge variant="outline" className="font-mono">
+                      <GitBranchIcon />
+                      {d.branch}
                     </Badge>
-                    <Badge variant="secondary">
-                      <ScaleIcon />
-                      判断 {decisions.length}
-                    </Badge>
-                  </div>
-                  <Marker>
+                  )}
+                  <Badge variant="info">
+                    <MessagesSquareIcon />
+                    あなたの発言 {said}
+                  </Badge>
+                  <Badge variant="secondary">
+                    <ScaleIcon />
+                    判断 {decisions.length}
+                  </Badge>
+                  {/* Marker は基底が w-full なので、打ち消さないと 1 つで 1 行を占める。 */}
+                  <Marker className="w-auto shrink-0">
                     <MarkerIcon>
                       <CalendarIcon />
                     </MarkerIcon>
-                    <MarkerContent className="text-sm">
+                    <MarkerContent className="whitespace-nowrap text-sm">
                       {formatDate(d.startedAt)}
                       {lastAt && ` 〜 ${formatDate(lastAt)}`}
                     </MarkerContent>
                   </Marker>
-                  <Marker>
-                    <MarkerIcon>
-                      <HashIcon />
-                    </MarkerIcon>
-                    <MarkerContent className="font-mono text-sm">{d.sessionId}</MarkerContent>
-                  </Marker>
+                  {/* 再開コマンドは長い。残りの幅を取り、収まらなければ中で横スクロールする。 */}
+                  {resume && <ResumeCommand command={resume} />}
                 </div>
               </DialogDescription>
-              {resume && <ResumeCommand command={resume} />}
             </>
           ) : (
             <>
@@ -657,7 +705,7 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
             {d.work.length > 0 && (
               <div className="space-y-3">
                 {d.work.map((w) => (
-                  <WorkCard key={w.id} work={w} />
+                  <WorkCard key={w.id} work={w} repo={repo} />
                 ))}
               </div>
             )}
@@ -679,10 +727,10 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                 <MessageScrollerProvider autoScroll={false} defaultScrollPosition="start">
                   <MessageScroller>
                     <MessageScrollerViewport className="pt-3 pr-4">
-                      <MessageScrollerContent role="list" className="gap-4">
+                      <MessageScrollerContent role="list" className="gap-8">
                         {d.messages.map((m) => (
                           <MessageScrollerItem key={m.id} messageId={m.id} role="listitem">
-                            <Turn message={m} />
+                            <Turn message={m} repo={repo} />
                           </MessageScrollerItem>
                         ))}
                       </MessageScrollerContent>
@@ -740,8 +788,9 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
           section={selectedSection}
           options={d?.knowledge.filter((k) => k.kind === "option") ?? []}
           onClose={() => setSelectedSection(null)}
+          repo={repo}
         />
-        <ArtifactDialog artifact={selectedArtifact} onClose={() => setSelectedArtifact(null)} />
+        <ArtifactDialog artifact={selectedArtifact} onClose={() => setSelectedArtifact(null)} repo={repo} />
       </DialogContent>
     </Dialog>
   );

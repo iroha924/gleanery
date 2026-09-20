@@ -159,6 +159,8 @@ const app = new Hono()
         "c.started_at as startedAt",
         sql<number>`p.id::int`.as("projectId"),
         "p.name as project",
+        // 本文の #123 を issue へ繋ぐのに、表示名ではなく key が要る（ホストが入っている）。
+        "p.key as projectKey",
         sql<string>`${sql.raw(TITLE)}`.as("title"),
       ])
       .where("c.id", "=", id)
