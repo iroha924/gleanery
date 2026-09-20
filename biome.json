@@ -15,7 +15,8 @@
       "dashboard/*.mjs",
       "scripts/**/*.mjs",
       "*.json",
-      "!dashboard/src/components/ui"
+      "!dashboard/src/components/ui",
+      "!server/src/db-types.ts"
     ]
   },
   "formatter": {

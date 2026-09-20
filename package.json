@@ -17,6 +17,8 @@
     "test": "bun run --cwd server test && bun run --cwd dashboard test",
     "verify": "bun run check && bun run bundle && bun run test",
     "bundle": "node scripts/bundle.mjs",
+    "codegen": "node scripts/codegen.mjs",
+    "codegen:check": "node scripts/codegen.mjs --check",
     "db:apply": "node server/src/admin.ts apply",
     "db:migrate": "node server/src/admin.ts migrate",
     "db:roles": "node server/src/admin.ts roles",
