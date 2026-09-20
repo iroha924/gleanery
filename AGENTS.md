@@ -63,6 +63,10 @@ dashboard・Honoの実行時動作、DB schema・権限・データ変換、認�
 `plugin/skills/`・`plugin/agents/`・MCP・CLI・npm配布物を変える場合はPRを使う。
 影響範囲を即答できない変更もPRへ寄せる。
 
+npm配布物・version・bundleの入力・検査scriptを変えたcommitは、`.claude/agents/review-shipping`へ
+渡してから出す（Claude Codeのみ）。`git diff`に出ない面 — tarballの中身、検査の空振り、版の据え置き —
+だけを見るrepository専用のreviewerで、`plugin/agents/`の配布reviewerとは担当が重ならない。
+
 ## 最小command索引
 
 ```bash
