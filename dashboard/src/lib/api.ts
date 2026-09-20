@@ -1,6 +1,6 @@
 import { get } from "@/lib/api-client";
 
-// API の型。**サーバーの戻り値をここで 1 回だけ書く。**
+// API の型。サーバーの戻り値をここで 1 回だけ書く。
 // 画面ごとに書くと、片方だけ直したときに気付けない。
 
 /** 通ってよい道か（do）、いけない道か（dont）。札の色を分ける。 */
@@ -34,7 +34,7 @@ export type Fact = {
   context: string | null;
 };
 
-/** 聞かれたことへの返信案。**missing なら記録に無い**ので、その場で作らない。 */
+/** 聞かれたことへの返信案。missing なら記録に無いので、その場で作らない。 */
 export type Reply = {
   asked: string | null;
   missing: boolean;
@@ -44,12 +44,12 @@ export type Reply = {
 
 export const api = {
   projects: () => get<Project[]>("/api/projects"),
-  /** 参照（k: / m: / s: / w:）の全文。**選んだ作業場所の外は「無い」と返る。** */
+  /** 参照（k: / m: / s: / w:）の全文。選んだ作業場所の外は「無い」と返る。 */
   read: (ref: string, projects: number[]) =>
     get<{ text: string }>(`/api/read?${new URLSearchParams({ ref, projects: projects.join(",") })}`).then(
       (r) => r.text,
     ),
-  /** 会議で聞かれたことへの返信案。**記録にあることしか返さない。** */
+  /** 会議で聞かれたことへの返信案。記録にあることしか返さない。 */
   reply: async (heard: string, projects: number[]): Promise<Reply> => {
     const res = await fetch("/api/reply", {
       method: "POST",

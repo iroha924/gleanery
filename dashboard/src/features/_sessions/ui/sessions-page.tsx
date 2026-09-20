@@ -38,9 +38,17 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -389,65 +397,66 @@ function Turn({ message }: { message: SessionMessage }) {
   const [open, setOpen] = useState(mine);
   const long = !mine && message.body.split("\n").length > 50;
   return (
-    <li>
-      <Message align={mine ? "end" : "start"}>
-        <MessageAvatar
-          className={cn(
-            "size-7 min-w-0 translate-y-[5px] self-start rounded-full border",
-            mine ? "bg-card" : "bg-secondary/60 text-muted-foreground",
-          )}
-          aria-hidden="true"
+    <Message align={mine ? "end" : "start"}>
+      <MessageAvatar
+        className={cn(
+          "size-7 min-w-0 translate-y-[5px] self-start rounded-full border",
+          mine ? "bg-card" : "bg-secondary/60 text-muted-foreground",
+        )}
+        aria-hidden="true"
+      >
+        {mine ? <UserRoundIcon className="size-3.5" /> : <BotIcon className="size-3.5" />}
+      </MessageAvatar>
+      {/* 誰の発言かは左右とアイコンだけで示している。読み上げには位置も色も届かない。 */}
+      <span className="sr-only">{mine ? "あなた" : "AI"}</span>
+      <MessageContent>
+        <Bubble
+          variant="muted"
+          className="has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-2 has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-foreground/25"
         >
-          {mine ? <UserRoundIcon className="size-3.5" /> : <BotIcon className="size-3.5" />}
-        </MessageAvatar>
-        {/* 誰の発言かは左右とアイコンだけで示している。読み上げには位置も色も届かない。 */}
-        <span className="sr-only">{mine ? "あなた" : "AI"}</span>
-        <MessageContent>
-          <Bubble
-            variant={mine ? "outline" : "muted"}
-            className="has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-2 has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-foreground/25"
-          >
-            <BubbleContent
-              className={cn(
-                "p-3",
-                long && !open && "max-h-40 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]",
-              )}
-            >
-              <MarkdownText text={message.body} className="text-sm leading-6" />
-            </BubbleContent>
-            {long && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="self-start"
-                onClick={() => setOpen(!open)}
-              >
-                {open ? "折りたたむ" : "全文を読む"}
-              </Button>
+          {/* 自分の発言だけ色相で分ける。明度で分けると、地・AI・自分が同じ明るさの 3 枚重ねになって境界が読めない。
+                親の variant は子より詳細度が高いので、`!` でないと勝てない。 */}
+          <BubbleContent
+            className={cn(
+              "p-3",
+              mine && "border-earth-slate/25! bg-earth-slate/12!",
+              long && !open && "max-h-40 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]",
             )}
-          </Bubble>
-          {message.truncated && (
-            <p className="text-xs text-muted-foreground">
-              大きすぎる発言なので冒頭と末尾だけを保存した（元は{" "}
-              {message.originalBytes.toLocaleString("ja-JP")} bytes）
-            </p>
+          >
+            <MarkdownText text={message.body} className="text-sm leading-6" />
+          </BubbleContent>
+          {long && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="self-start"
+              onClick={() => setOpen(!open)}
+            >
+              {open ? "折りたたむ" : "全文を読む"}
+            </Button>
           )}
-          {message.files.length > 0 && (
-            <ul className="flex flex-wrap gap-1.5 group-data-[align=end]/message:justify-end">
-              {message.files.map((f) => (
-                <li key={`${f.action}:${f.path}`}>
-                  <Badge variant="outline" className="font-mono text-xs">
-                    <FileTextIcon className="size-3" />
-                    {FILE_ACTION[f.action]} {f.path}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          )}
-        </MessageContent>
-      </Message>
-    </li>
+        </Bubble>
+        {message.truncated && (
+          <p className="text-xs text-muted-foreground">
+            大きすぎる発言なので冒頭と末尾だけを保存した（元は {message.originalBytes.toLocaleString("ja-JP")}{" "}
+            bytes）
+          </p>
+        )}
+        {message.files.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5 group-data-[align=end]/message:justify-end">
+            {message.files.map((f) => (
+              <li key={`${f.action}:${f.path}`}>
+                <Badge variant="outline" className="font-mono text-xs">
+                  <FileTextIcon className="size-3" />
+                  {FILE_ACTION[f.action]} {f.path}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+      </MessageContent>
+    </Message>
   );
 }
 
@@ -653,28 +662,40 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                 <TabsTrigger value="artifacts">成果物 {d.artifacts.length}</TabsTrigger>
               )}
             </TabsList>
-            <ScrollArea className="min-h-0 flex-1 pr-4">
-              <TabsContent value="conversation" className="pt-3">
-                {d.messages.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    この session の会話は記録されていない（trace だけで残した session）。
-                  </p>
-                ) : (
-                  <ol className="space-y-4">
-                    {d.messages.map((m) => (
-                      <Turn key={m.id} message={m} />
-                    ))}
-                  </ol>
-                )}
-              </TabsContent>
-              <TabsContent value="knowledge" className="pt-3">
+            {/* 会話だけ MessageScroller にする。長い転記は先頭から読むので既定は先頭のままで、
+                末尾へ飛ぶボタンと先頭へ戻るボタンを両方出す（自動追従はしない。転記は増えない）。 */}
+            <TabsContent value="conversation" className="min-h-0 flex-1">
+              {d.messages.length === 0 ? (
+                <p className="pt-3 text-sm text-muted-foreground">
+                  この session の会話は記録されていない（trace だけで残した session）。
+                </p>
+              ) : (
+                <MessageScrollerProvider autoScroll={false} defaultScrollPosition="start">
+                  <MessageScroller>
+                    <MessageScrollerViewport className="pt-3 pr-4">
+                      <MessageScrollerContent role="list" className="gap-4">
+                        {d.messages.map((m) => (
+                          <MessageScrollerItem key={m.id} messageId={m.id} role="listitem">
+                            <Turn message={m} />
+                          </MessageScrollerItem>
+                        ))}
+                      </MessageScrollerContent>
+                    </MessageScrollerViewport>
+                    <MessageScrollerButton direction="start" />
+                    <MessageScrollerButton direction="end" />
+                  </MessageScroller>
+                </MessageScrollerProvider>
+              )}
+            </TabsContent>
+            <TabsContent value="knowledge" className="min-h-0 flex-1">
+              <ScrollArea className="h-full pr-4">
                 {decisions.length === 0 ? (
-                  <p className="text-sm leading-6 text-muted-foreground">
+                  <p className="pt-3 text-sm leading-6 text-muted-foreground">
                     この session では判断を残していない。残すなら、その session で{" "}
                     <code className="font-mono">/gleanery:trace</code> を実行する。
                   </p>
                 ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-3 pt-3 md:grid-cols-2">
                     {sectionsOf(d.knowledge).map((section) => (
                       <SectionCard
                         key={section.id}
@@ -684,24 +705,28 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                     ))}
                   </div>
                 )}
-              </TabsContent>
-              {d.artifacts.length > 0 && (
-                <TabsContent value="artifacts" className="space-y-3 pt-3">
-                  <p className="text-sm text-muted-foreground">
-                    この session が触れた要件定義と設計書。承認済みとして同期された本文を表示する。
-                  </p>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {d.artifacts.map((artifact) => (
-                      <ArtifactCard
-                        key={artifact.path}
-                        artifact={artifact}
-                        onOpen={() => setSelectedArtifact(artifact)}
-                      />
-                    ))}
+              </ScrollArea>
+            </TabsContent>
+            {d.artifacts.length > 0 && (
+              <TabsContent value="artifacts" className="min-h-0 flex-1">
+                <ScrollArea className="h-full pr-4">
+                  <div className="space-y-3 pt-3">
+                    <p className="text-sm text-muted-foreground">
+                      この session が触れた要件定義と設計書。承認済みとして同期された本文を表示する。
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {d.artifacts.map((artifact) => (
+                        <ArtifactCard
+                          key={artifact.path}
+                          artifact={artifact}
+                          onOpen={() => setSelectedArtifact(artifact)}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </TabsContent>
-              )}
-            </ScrollArea>
+                </ScrollArea>
+              </TabsContent>
+            )}
           </Tabs>
         ) : null}
 
@@ -743,9 +768,11 @@ function SearchToolbar({
           if (draft.trim()) onSearch(draft.trim());
         }}
       >
-        <div className="relative min-w-0 flex-1">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
+        <InputGroup className="min-w-0 flex-1 bg-background">
+          <InputGroupAddon>
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={
@@ -756,9 +783,8 @@ function SearchToolbar({
                   : "判断や経緯で探す"
             }
             aria-label="セッションを検索"
-            className="h-10 bg-background pr-3 pl-9"
           />
-        </div>
+        </InputGroup>
         {query && (
           <Button type="button" variant="ghost" onClick={onClear}>
             クリア

@@ -1,4 +1,5 @@
 import { Link, useMatchRoute } from "@tanstack/react-router";
+import { cn } from "cn";
 import {
   AudioLinesIcon,
   ChevronDownIcon,
@@ -103,7 +104,7 @@ function Logo() {
   );
 }
 
-/** 最後の取り込み。`gleanery harvest` を打ったときだけ走るので、間が空くのは異常ではない。**失敗だけ目立たせる。** */
+/** 最後の取り込み。`gleanery harvest` を打ったときだけ走るので、間が空くのは異常ではない。失敗だけ目立たせる。 */
 function syncNote(p: Project): { text: string; failed: boolean } {
   const failed = p.connectors.find((c) => c.lastError);
   if (failed)
@@ -176,7 +177,9 @@ function ProjectSwitcher() {
                   <GitBranchIcon className="mt-0.5 size-4 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{project.name}</span>
-                    <span className={`block text-xs ${note.failed ? "text-error" : "text-muted-foreground"}`}>
+                    <span
+                      className={cn("block text-xs", note.failed ? "text-error" : "text-muted-foreground")}
+                    >
                       {note.text} ・ セッション {project.sessions}
                     </span>
                   </span>

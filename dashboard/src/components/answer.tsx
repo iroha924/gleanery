@@ -2,6 +2,7 @@ import { cn } from "cn";
 import type { Components } from "react-markdown";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Table } from "@/components/ui/table";
 
 const JAPANESE_URL_PAIRS = [
   ["（", "）"],
@@ -88,11 +89,9 @@ function remarkStoredMarkdown() {
   };
 }
 
-// 答えは Markdown で返る。**素のまま出すと `**太字**` も表もそのまま見える**ので描画する。
-// GFM を入れるのは表を使うため（「どこで解決しているか」の比較が表で返ってくる）。
-//
-// リンクは**新しいタブ**で開く。いまの会話を捨てさせないため。
-// `rel` は付ける — target="_blank" だけだと開いた先から window.opener を触れる。
+// 素のまま出すと `**太字**` も表もそのまま見えるので描画する。
+// GFM は表のため（「どこで解決しているか」の比較が表で返ってくる）。
+// リンクは新しいタブで開き、いまの会話を捨てさせない。`rel` が無いと開いた先から window.opener を触れる。
 const COMPONENTS: Components = {
   // 取り込んだ記録には第三者由来の Markdown もある。画像 URL は閲覧だけで外部へ通信するため表示しない。
   img: ({ alt }) => (
@@ -116,18 +115,14 @@ const COMPONENTS: Components = {
     className ? (
       <code className={className}>{children}</code>
     ) : (
-      <code className="rounded bg-muted px-1 py-0.5 font-mono text-sm">{children}</code>
+      <code className="rounded bg-muted px-1 py-0.5 font-mono text-sm wrap-anywhere">{children}</code>
     ),
   pre: ({ children }) => (
     // 長い行で画面が横に伸びないよう、ここだけ横スクロールさせる。
     <pre className="overflow-x-auto rounded-md border bg-muted/50 p-3 font-mono text-sm">{children}</pre>
   ),
-  // 表は幅が読めないので、はみ出す分はこの中でスクロールさせる。
-  table: ({ children }) => (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-base">{children}</table>
-    </div>
-  ),
+  // 幅が読めないので、はみ出す分は Table のラッパーの中でスクロールさせる。
+  table: ({ children }) => <Table className="border-collapse">{children}</Table>,
   th: ({ children }) => <th className="border-b px-2 py-1 text-left font-medium">{children}</th>,
   td: ({ children }) => <td className="border-b px-2 py-1 align-top">{children}</td>,
   h1: ({ children }) => <h1 className="text-base font-semibold">{children}</h1>,

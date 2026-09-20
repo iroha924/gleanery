@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, type Project } from "@/lib/api";
 
-// いま何を見ているか。**1 箇所で決めて全画面が従う。**
+// いま何を見ているか。1 箇所で決めて全画面が従う。
 // プロジェクトはセッション中ほぼ変わらないので、画面ごとに毎回選ばせない。
 //
 // `""` は「すべて」。チャットと会議だけは 1 つ選ばれていることを求める（混ぜると別の仕事の決定が答えに入る）。
@@ -60,7 +60,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       : null;
     if (!target) return { target, setTarget, projects: list, project: null, label: "すべて", failed };
     const p = list?.find((x) => String(x.id) === target) ?? null;
-    // **消えた作業場所を選んだままにしない。**一覧が届いて見つからなければ「すべて」に戻す。
+    // 消えた作業場所を選んだままにしない。一覧が届いて見つからなければ「すべて」に戻す。
     if (list && !p) {
       return { target: "", setTarget, projects: list, project: null, label: "すべて", failed };
     }
