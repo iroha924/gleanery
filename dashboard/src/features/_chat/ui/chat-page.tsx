@@ -91,7 +91,13 @@ function Source({ source }: { source: ChatSource }) {
       .finally(() => setReading(false));
   };
   return (
-    <Dialog onOpenChange={(open) => !open && (setFull(null), setFailed(null))}>
+    <Dialog
+      onOpenChange={(open) => {
+        if (open) return;
+        setFull(null);
+        setFailed(null);
+      }}
+    >
       <DialogTrigger asChild>
         <button
           type="button"

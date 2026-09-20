@@ -596,7 +596,7 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
         {detail.isPending ? (
           <Skeleton className="h-80 w-full" />
         ) : detail.error ? (
-          <p className="text-base text-dont">{String(detail.error)}</p>
+          <Failed what="このセッション" error={detail.error} />
         ) : d ? (
           <ScrollArea className="min-h-0 pr-4">
             <div className="space-y-5">
@@ -876,6 +876,20 @@ function SessionRowView({
   );
 }
 
+/**
+ * 引けなかったことを利用者へ伝える。**例外の文字列をそのまま出さない** —
+ * `Error: /api/sessions が 500` は読み手が何もできない文である。
+ */
+function Failed({ what, error }: { what: string; error: unknown }) {
+  const detail = error instanceof Error ? error.message : null;
+  return (
+    <p role="alert" className="text-base text-destructive leading-[1.9]">
+      {what}を読めませんでした。
+      {detail && <span className="text-muted-foreground text-sm"> （{detail}）</span>}
+    </p>
+  );
+}
+
 export function SessionsPage() {
   const { target } = useProject();
   const projectId = target ? Number(target) : undefined;
@@ -942,7 +956,7 @@ export function SessionsPage() {
   }, [selected, sessions.data]);
 
   if (sessions.isPending) return <Skeleton className="h-96 w-full" />;
-  if (sessions.error) return <p className="text-base text-dont">{String(sessions.error)}</p>;
+  if (sessions.isError) return <Failed what="セッションの一覧" error={sessions.error} />;
   const showProject = projectId === undefined;
 
   return (
@@ -962,7 +976,7 @@ export function SessionsPage() {
             <Skeleton className="h-32 w-full" />
           </div>
         ) : results.error ? (
-          <p className="text-base text-dont">{String(results.error)}</p>
+          <Failed what="検索の結果" error={results.error} />
         ) : (
           <SearchResults found={results.data} onOpen={openSession} />
         )

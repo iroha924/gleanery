@@ -133,7 +133,8 @@ const ROUTE_ALLOWED = [
   /^@tanstack\/react-router$/,
   /^zod$/,
   /^@\/features\/_[^/]+\/ui\//,
-  /^@\/components\/dashboard-shell$/,
+  // route の骨格（外枠と、描画に失敗したときの受け皿）だけは components から引ける。
+  /^@\/components\/(dashboard-shell|route-failed)$/,
 ];
 for (const file of sourceFiles) {
   if (!isInside(file, routesDirectory)) continue;

@@ -22,6 +22,97 @@ description: gleaneryの画面（Vite + React + TanStack Router）またはHono 
 Vite、TanStack Router、TanStack Query、Honoは、入っている版の型定義か公式ドキュメントで現行の形を
 確認する。記憶だけでAPIを選ばない。
 
+入っている版と、確認済みの一次情報。**版を上げたときはここを取り直す。**
+
+| 依存 | 版 | 規約に効く事実 |
+|---|---|---|
+| react | 19.3.0 | `forwardRef`不要、`<Context>`をproviderとして直接書ける、ref callbackがcleanupを返せる |
+| babel-plugin-react-compiler | 1.0.0 | `compilationMode`既定`infer`。PascalCase / `use`接頭辞が最適化の条件 |
+| @tanstack/react-query | 5.102.8 | `throwOnError`既定`false`、`retry`既定3、mutationのretryは0 |
+| @tanstack/react-router | 1.170.38 | zod v4はアダプタ不要。`routeTree.gen.ts`はcommitする（公式FAQ） |
+| typescript | 7.0.2 | **APIを持たない**のでtypescript-eslintが動かない。`strict`は既定で`true` |
+| tailwindcss | 4.3.3 | `@theme`でCSS側に設定。`shadow-sm`等の意味がv3から変わっている |
+| biome | 2.5.12 | a11yルール36本が全部recommended。`useReactCompiler`は**内部エラーで落ちる**（実測） |
+
+- [React Compiler 1.0](https://react.dev/blog/2025/10/07/react-compiler-1)
+- [preserve-manual-memoization](https://react.dev/reference/eslint-plugin-react-hooks/lints/preserve-manual-memoization)
+- [TanStack Query - Queries](https://tanstack.com/query/latest/docs/framework/react/guides/queries)
+- [TanStack Router - Search Params](https://tanstack.com/router/latest/docs/framework/react/guide/search-params)
+- [Tailwind v4 Upgrade Guide](https://tailwindcss.com/docs/upgrade-guide)
+- [Radix Accessibility](https://www.radix-ui.com/primitives/docs/overview/accessibility)
+
+## 状態をどこへ置くか
+
+上から順に当てはめ、最初に当たったところへ置く。
+
+| 条件 | 置き場所 |
+|---|---|
+| URLで共有・ブックマークできるべきか | routeの`validateSearch` |
+| サーバーから来たデータか | TanStack Query |
+| 画面をまたいで保つ利用者の選択か | `localStorage` + Context（今は作業場所の選択だけ） |
+| それ以外 | `useState` |
+
+**storeを足さない。**zustand / jotaiは依存に無く、Contextが1つで足りている。
+
+`localStorage`は読み書きの両方をtry/catchで囲む。失敗しても画面は動かす（プライベートウィンドウで
+落ちる）。**失敗をUIへ出さない**のは、利用者が対処できないため。
+
+## Queryの作法
+
+- 分岐は`isPending` → `isError` → 本体。`isLoading`は使わない（v5では`isPending && isFetching`の派生）
+- バックグラウンド再取得の表示は`isFetching`。`isPending`と混ぜない
+- `queryKey`は配列の先頭に概念名、続けて絞り込みの値。同じ概念に別の綴りを使わない
+- `enabled`で止めるなら、型のほうも絞る。`as string`で通すと、止まっていない経路で壊れる
+- `retry`は既定3で、`127.0.0.1`を叩くこの構成では失敗表示が最大7秒遅れる。4xxを再試行しない形にする
+- `throwOnError: true`へ寄せるなら`QueryErrorResetBoundary`を必ず併記する（無いとErrorBoundaryを
+  リセットしてもクエリがerrorのままで再試行できない）
+- `useSuspenseQuery`は1コンポーネント内の複数クエリが直列になるので、この構成では採らない
+
+## React Compilerの落とし穴
+
+**「ビルドが通る」は「最適化された」の証拠にならない。**Compilerは Rules of React 違反を見つけると
+黙ってそのコンポーネントを飛ばす。
+
+- 依存配列が半端な`useMemo`が1つあると、`preserve-manual-memoization`により**そのコンポーネントの
+  最適化ごと落ちる**
+- 確認手段はReact DevToolsの✨バッジだけ。**Biomeの`useReactCompiler`は内部エラーで落ちるので使えない**
+  （実測: `dashboard/src/hooks/use-mobile.ts`で "derived from an internal Biome error"）
+- ESLintの`eslint-plugin-react-hooks`は公式の推奨だが、TypeScript 7にAPIが無いため
+  typescript-eslintが動かず、この構成では入れられない
+- 一時的に外すなら`"use no memo"`。**恒久的な解にしない**（公式が debugging tool と明記）
+
+## Tailwindとshadcn
+
+- 色・間隔・角丸は`src/styles.css`の`@theme`で定義した意味のある名前から選ぶ。生のhexを書かない
+- 条件付きのクラスは`cn()`。テンプレートリテラルで組み立てると、同じ分岐が別の書き方で複製される
+- **クラスの順序は規約にしない。**公式ツールはPrettierプラグインだけで、このリポジトリはBiomeで
+  整形している。Biomeの`useSortedClasses`はnurseryで`@theme`の値を知らないため、公式の順序と一致しない
+- `components/ui/`はshadcnがコードとして配ったもので、編集禁止ではない。手を入れたら理由をコメントに残す
+  （実例: `sidebar.tsx`はCookieからlocalStorageへ変えてある）
+- 薄いラッパーを作らない。variantを足したいときは`cva`の定義側へ足す
+
+## アクセシビリティ
+
+Radixが引き受けるのはrole・focus・キーボードで、**テキストは引き受けない**。
+
+- `input` / `textarea`には関連付けたlabelか`aria-label`
+- アイコンだけのボタンには`aria-label`
+- `Dialog`には`Title`と`Description`。視覚的に隠すなら`VisuallyHidden`、消すなら
+  `aria-describedby={undefined}`を`Content`へ渡す
+- 流れ込む領域には`aria-live`
+- マウスだけで届く操作を作らない。`div`に`onClick`を付けるなら、その時点で`button`を使う
+
+Biomeのa11yルール36本が全部recommendedで効いている。ただし`biome.json`が`components/ui`を
+除外しているので、**Radixラッパーだけ素通りする**。そこを触るときは目で確かめる。
+
+## テスト
+
+画面のテストはVitest + Testing Library。**状態遷移を利用者から見える形で検査する。**
+
+- roleとaccessible nameで引く（`getByRole("button", { name: "..." })`）。クラス名やtest idで引かない
+- 最初に書くべきは、失敗と空の表示。成功だけのテストは、実際に壊れる面を守らない
+- E2Eは最初から作らない。ブラウザ固有の挙動と見た目は実ブラウザで確かめる
+
 ## 境界
 
 - `server/src`のMCP・CLI・hookを画面のbuildへ取り込まない
