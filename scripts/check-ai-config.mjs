@@ -193,7 +193,13 @@ const agentEntries = agentDirectories.flatMap((directory) => {
 const agentFiles = agentEntries;
 for (const relative of agentEntries) {
   const file = path.basename(relative);
-  const fields = frontmatter(relative, read(relative));
+  const source = read(relative);
+  const fields = frontmatter(relative, source);
+  // 範囲の読み方は起動側（plugin/skills/review/SKILL.md の Step 3）が渡す。レビュアーへ写すと、
+  // 片方だけ直したときに PR 番号の入口が静かに壊れる。
+  if (relative.startsWith("plugin/agents/") && /(?:gh pr|git) diff/.test(source)) {
+    fail(`${relative}: 範囲の読み方をレビュアーへ書かない。起動側が渡す`);
+  }
   for (const required of ["name", "description", "tools", "model", "effort", "maxTurns"]) {
     if (!fields[required]) fail(`${relative}: ${required}が無い`);
   }
