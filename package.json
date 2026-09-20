@@ -15,7 +15,7 @@
     "typecheck": "bun run --cwd server typecheck && bun run --cwd dashboard typecheck",
     "check": "bun run lint && bun run architecture && bun run verify:ai && bun run naming && bun run typecheck",
     "test": "bun run --cwd server test",
-    "verify": "bun run check && bun run build && bun run test",
+    "verify": "bun run check && bun run bundle && bun run test",
     "bundle": "node scripts/bundle.mjs",
     "db:apply": "node server/src/admin.ts apply",
     "db:migrate": "node server/src/admin.ts migrate",
