@@ -72,7 +72,8 @@ if (distinct.length !== 1) {
 const INPUTS = [
   "plugin/",
   // .claude-plugin/marketplace.json は入れない。**リポジトリ直下にあり npm の files に入らない**ので、
-  // これを変えても配る tarball の中身は 1 バイトも変わらない。版の一致だけは MANIFESTS が見る。
+  // これを変えても配る tarball の中身は 1 バイトも変わらない。版の一致は MANIFESTS が、
+  // 取得元の変更は rerouted() が見る。
 
   "server/src/",
   "server/package.json",
@@ -113,10 +114,23 @@ const withoutVersion = (text) => {
 };
 
 const ref = base ?? "HEAD";
-const changed = git("diff", "--cached", "--name-only", ref, "--", ...INPUTS)
-  .split("\n")
-  .filter(Boolean)
-  .filter((f) => !(f in MANIFESTS) || withoutVersion(at(ref, f)) !== withoutVersion(staged(f)));
+/**
+ * 取得元が変わったのに版が据え置かれた marketplace。**tarball の中身は 1 バイトも変わらないが、
+ * 利用者の取得先が変わる。**複製は版が変わったときだけ起きるので、版を上げないと古い取得元の
+ * 複製で動き続ける。`INPUTS` は配る物の入力の一覧なのでここへは足さず、この 1 本だけ別に見る。
+ */
+const rerouted = () => {
+  const f = ".claude-plugin/marketplace.json";
+  return withoutVersion(at(ref, f)) !== withoutVersion(staged(f)) ? [f] : [];
+};
+
+const changed = [
+  ...git("diff", "--cached", "--name-only", ref, "--", ...INPUTS)
+    .split("\n")
+    .filter(Boolean)
+    .filter((f) => !(f in MANIFESTS) || withoutVersion(at(ref, f)) !== withoutVersion(staged(f))),
+  ...rerouted(),
+];
 if (changed.length === 0) process.exit(0);
 
 const MANIFEST = "plugin/.claude-plugin/plugin.json";
