@@ -33,7 +33,13 @@ const EXPECTED = {
     ],
   },
   "comments.md": {
-    match: ["server/src/db.ts", "dashboard/src/lib/api.ts", "scripts/bundle.mjs", "lefthook.yml"],
+    match: [
+      "server/src/db.ts",
+      "dashboard/src/lib/api.ts",
+      "scripts/bundle.mjs",
+      "lefthook.yml",
+      "db/compose.yaml",
+    ],
     notMatch: ["README.md", "AGENTS.md", "package.json"],
   },
 };

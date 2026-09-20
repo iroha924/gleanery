@@ -5,6 +5,7 @@ tools: Read, Grep, Glob, Bash
 skills:
   - plugin-release
 model: opus
+# 読む先が有限（tarball の中身と検査スクリプト）。深さより、配る形での再現で決まる。
 effort: medium
 maxTurns: 40
 color: yellow
@@ -39,9 +40,10 @@ tar xzf "$out"/*.tgz -C "$out"
 **tarball も展開先もリポジトリの外へ置く。**中で展開すると、同梱先を取り違えても親を辿って当たり、
 通ってしまう。`plugin/` に `.tgz` を残さない（親が `git add -A` で巻き込む）。
 
-**`bun run bundle` は `plugin/dist` を作り直し、画面もビルドし直す。**親が `verify` を走らせている
-最中に重ねると、同じ出力先へ 2 本が書く。始める前に `git status` を見て、走っていそうなら
-bundle を飛ばして既存の `plugin/dist` を pack するだけにする。
+**`bun run bundle` は `plugin/dist` を消してから作り直し、画面もビルドし直す。**出力は全部
+gitignore 対象なので、`git status` では走行中の bundle もその出力も見えない。**検出できないので、
+重ならないことは呼び出し側の責任である**（`bun run verify` と同時にこのレビューを渡さない）。
+重なった疑いがあるなら、pack した中身のファイル数を数えて報告し、結論を出さない。
 
 - `plugin-release` の「届けるまで」手順 4 が挙げる物が全部あるか。**両 manifest が欠けた tarball は
   plugin として一切ロードされない**のに、`dist/` だけ数えると緑で通る。`db/migrations` も配る物である
