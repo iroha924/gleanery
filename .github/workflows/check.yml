@@ -71,6 +71,10 @@ jobs:
       - name: 画面と Hono を検証
         run: bun run verify
 
+      # 一時 PostgreSQL を立てる。理由と生成元は scripts/codegen.mjs の冒頭にある。
+      - name: DB の型が schema.sql と合っているか
+        run: bun run codegen:check
+
       # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
       # （ignore されたファイルは差分に現れない）。npm が実際に詰めるものを一覧し、リポジトリの
       # 外へ展開して起動する。ここが唯一「利用者が受け取る形」を見る場所である。

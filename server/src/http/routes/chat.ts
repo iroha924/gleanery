@@ -27,13 +27,12 @@ const titleSchema = z.object({ question: z.string().trim().min(1).max(20_000) })
 // 答えは保存しない。直近の往復は画面が持ち、次の質問と一緒に送ってくる。
 const app = new Hono().post("/chat", zValidator("json", chatSchema), async (c) => {
   const body = c.req.valid("json");
-  const pool = await db();
   return streamSSE(c, async (stream) => {
     const closed = new AbortController();
     stream.onAbort(() => closed.abort());
     const signal = AbortSignal.any([c.req.raw.signal, closed.signal]);
     try {
-      for await (const chunk of chat(pool, env, { ...body, signal })) {
+      for await (const chunk of chat(db, env, { ...body, signal })) {
         await stream.writeSSE({ event: chunk.type, data: JSON.stringify(chunk) });
       }
     } catch (error) {

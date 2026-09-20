@@ -1,38 +1,39 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { fillKnowledge } from "../src/embeddings.ts";
+import { fakeDb } from "./fake-db.ts";
 
 /** ready でない知識の行を返し、書き戻しと失敗の記録を覚える偽の DB。 */
-function fakeDb(ids: string[]) {
+function pendingDb(ids: string[]) {
   const rejected: string[] = [];
   const stored: string[] = [];
-  const query = async (sql: string, params: unknown[] = []) => {
-    if (sql.includes("from gleanery.knowledge_embedding e join")) {
-      const skip = new Set(params[2] as string[]);
-      return {
-        rows: ids
-          .filter((id) => !skip.has(id))
-          .map((id) => ({
-            id,
-            kind: "finding",
-            heading: null,
-            body: `本文 ${id}`,
-            reason: null,
-            source_hash: Buffer.alloc(32),
-          })),
-      };
-    }
+  const { db } = fakeDb((sql, params) => {
     if (sql.includes("set status = 'error'")) {
-      rejected.push(String(params[0]));
-      return { rows: [], rowCount: 1 };
+      rejected.push(String(params[1]));
+      return [{}];
     }
     if (sql.includes("set embedding")) {
-      stored.push(...(params[0] as string[]));
-      return { rows: [], rowCount: (params[0] as string[]).length };
+      const written = (params.find(Array.isArray) as string[] | undefined) ?? [];
+      stored.push(...written);
+      return written.map(() => ({}));
     }
-    throw new Error(`想定外の SQL: ${sql}`);
-  };
-  return { rejected, stored, db: { query } as never };
+    if (sql.includes('"gleanery"."knowledge_embedding"')) {
+      // 飛ばす id の一覧だけが配列で渡る（status・attempts・limit はスカラ）。
+      const skip = new Set((params.find(Array.isArray) as string[] | undefined) ?? []);
+      return ids
+        .filter((id) => !skip.has(id))
+        .map((id) => ({
+          id,
+          kind: "finding",
+          heading: null,
+          body: `本文 ${id}`,
+          reason: null,
+          source_hash: Buffer.alloc(32),
+        }));
+    }
+    return new Error(`想定外の SQL: ${sql}`);
+  });
+  return { rejected, stored, db };
 }
 
 /** Voyage を差し替える。bad に入った本文だけを 400 で拒み、status を渡すと全部をその status で返す。 */
@@ -51,11 +52,11 @@ function stubVoyage(opts: { bad?: string[]; status?: number }): () => void {
 
 // 行の責任でない失敗を数えると、障害の間に回した同期だけで行が意味検索から永久に外れる。
 test("鍵が無い・認証や障害の失敗では試行回数を数えずに止める", async () => {
-  const none = fakeDb(["1", "2"]);
+  const none = pendingDb(["1", "2"]);
   assert.match((await fillKnowledge(none.db, {})).stopped ?? "", /VOYAGE_API_KEY/);
   const restore = stubVoyage({ status: 401 });
   try {
-    const f = fakeDb(["1", "2"]);
+    const f = pendingDb(["1", "2"]);
     const r = await fillKnowledge(f.db, { VOYAGE_API_KEY: "k" });
     assert.match(r.stopped ?? "", /401/);
     assert.deepEqual(f.rejected, []);
@@ -67,7 +68,7 @@ test("鍵が無い・認証や障害の失敗では試行回数を数えずに�
 test("本文を受け付けない行だけを数え、残りは埋める", async () => {
   const restore = stubVoyage({ bad: ["本文 2"] });
   try {
-    const f = fakeDb(["1", "2", "3"]);
+    const f = pendingDb(["1", "2", "3"]);
     const r = await fillKnowledge(f.db, { VOYAGE_API_KEY: "k" });
     assert.deepEqual([r.embedded, r.failed, r.stopped], [2, 1, undefined]);
     assert.deepEqual(f.rejected, ["2"]);
@@ -82,7 +83,7 @@ test("短い本文も拒まれるなら要求全体の問題とみなし、行�
   const restore = stubVoyage({ status: 400 });
   try {
     for (const ids of [["1", "2", "3"], ["1"]]) {
-      const f = fakeDb(ids);
+      const f = pendingDb(ids);
       const r = await fillKnowledge(f.db, { VOYAGE_API_KEY: "k" });
       assert.match(r.stopped ?? "", /どの本文も受け付けられなかった/);
       assert.deepEqual(f.rejected, []);
@@ -96,7 +97,7 @@ test("短い本文も拒まれるなら要求全体の問題とみなし、行�
 test("全行が拒まれても短い本文が通るなら、行の問題として数える", async () => {
   const restore = stubVoyage({ bad: ["本文"] });
   try {
-    const f = fakeDb(["1", "2"]);
+    const f = pendingDb(["1", "2"]);
     const r = await fillKnowledge(f.db, { VOYAGE_API_KEY: "k" });
     assert.deepEqual([r.embedded, r.failed, r.stopped], [0, 2, undefined]);
     assert.deepEqual(f.rejected.sort(), ["1", "2"]);

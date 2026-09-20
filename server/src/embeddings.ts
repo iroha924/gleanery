@@ -7,7 +7,9 @@
 // 数えると、障害の間に回した同期だけで行が意味検索から永久に外れる。数えるのは、その 1 行だけを送って
 // Voyage が本文を受け付けなかったときだけで、上限に達した行はもう送らない（毎回の同期で同じ失敗を繰り返さない）。
 
-import { type Db, EMBED_MODEL, type Env, embed, VoyageError, vec } from "./db.ts";
+import { type Kysely, type SqlBool, sql } from "kysely";
+import { EMBED_MODEL, type Env, embed, VoyageError, vec } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { knowledgeText, type MessageEmbedInput, messageText } from "./knowledge.ts";
 import { reason, sha256 } from "./text.ts";
 
@@ -26,33 +28,28 @@ const why = (e: unknown): string => reason(e).slice(0, 500);
 
 // **書き戻すのは、読んだ時点から本文が変わっていない行だけ。**変わっていれば取り込みが pending に戻しており、
 // 古い本文の結果（成功でも失敗でも）で上書きすると、新しい本文が古いベクトルで引かれるか、取り直されなくなる。
-async function store(db: Db, t: Table, rows: Pending[], vectors: number[][]): Promise<number> {
-  const r = await db.query(
-    `update gleanery.${t.name} e set embedding = x.v::extensions.halfvec, status = 'ready', model = $5,
-       source_hash = x.hash, last_error = null, updated_at = now()
-     from unnest($1::text[], $2::bytea[], $3::bytea[], $4::text[]) as x(id, stored, hash, v)
-     where e.${t.id}::text = x.id and e.source_hash = x.stored`,
-    [
-      rows.map((x) => x.id),
-      rows.map((x) => x.stored),
-      rows.map((x) => sha256(x.text)),
-      vectors.map(vec),
-      EMBED_MODEL,
-    ],
-  );
-  return r.rowCount ?? 0;
+// 知識と発言で同じ形の更新を、表と id の列だけ変えて使う。表名が実行時に決まるので組み立てる。
+async function store(db: Kysely<DB>, t: Table, rows: Pending[], vectors: number[][]): Promise<number> {
+  const r = await sql`
+    update ${sql.table(`gleanery.${t.name}`)} e
+       set embedding = x.v::extensions.halfvec, status = 'ready', model = ${EMBED_MODEL},
+           source_hash = x.hash, last_error = null, updated_at = now()
+      from unnest(${rows.map((x) => x.id)}::text[], ${rows.map((x) => x.stored)}::bytea[],
+                  ${rows.map((x) => sha256(x.text))}::bytea[], ${vectors.map(vec)}::text[])
+           as x(id, stored, hash, v)
+     where e.${sql.ref(t.id)}::text = x.id and e.source_hash = x.stored`.execute(db);
+  return Number(r.numAffectedRows ?? 0);
 }
 
-async function reject(db: Db, t: Table, row: Pending, e: unknown): Promise<void> {
-  await db.query(
-    `update gleanery.${t.name} set status = 'error', attempts = attempts + 1, last_error = $3, updated_at = now()
-     where ${t.id}::text = $1 and source_hash = $2`,
-    [row.id, row.stored, why(e)],
-  );
+async function reject(db: Kysely<DB>, t: Table, row: Pending, e: unknown): Promise<void> {
+  await sql`
+    update ${sql.table(`gleanery.${t.name}`)}
+       set status = 'error', attempts = attempts + 1, last_error = ${why(e)}, updated_at = now()
+     where ${sql.ref(t.id)}::text = ${row.id} and source_hash = ${row.stored}`.execute(db);
 }
 
 async function run(
-  db: Db,
+  db: Kysely<DB>,
   env: Env,
   t: Table,
   load: (skip: string[]) => Promise<Pending[]>,
@@ -111,57 +108,59 @@ async function run(
 }
 
 /** ready でない知識を埋める。埋め込み文は本体から作り直す。 */
-export function fillKnowledge(db: Db, env: Env): Promise<Filled> {
+export function fillKnowledge(db: Kysely<DB>, env: Env): Promise<Filled> {
   return run(db, env, { name: "knowledge_embedding", id: "knowledge_id" }, async (skip) => {
-    const r = await db.query<{
-      id: string;
-      kind: string;
-      heading: string | null;
-      body: string;
-      reason: string | null;
-      source_hash: Buffer;
-    }>(
-      `select k.id::text, k.kind, k.heading, k.body, k.reason, e.source_hash
-       from gleanery.knowledge_embedding e join gleanery.knowledge k on k.id = e.knowledge_id
-       where e.status <> 'ready' and e.attempts < $1 and not (e.knowledge_id::text = any($3::text[]))
-       order by e.updated_at limit $2`,
-      [MAX_ATTEMPTS, BATCH, skip],
-    );
-    return r.rows.map((k) => ({ id: k.id, text: knowledgeText(k), stored: k.source_hash }));
+    const rows = await db
+      .selectFrom("gleanery.knowledge_embedding as e")
+      .innerJoin("gleanery.knowledge as k", "k.id", "e.knowledge_id")
+      .select([
+        sql<string>`k.id::text`.as("id"),
+        "k.kind",
+        "k.heading",
+        "k.body",
+        "k.reason",
+        "e.source_hash",
+      ])
+      .where("e.status", "<>", "ready")
+      .where("e.attempts", "<", MAX_ATTEMPTS)
+      .where(sql<SqlBool>`not (e.knowledge_id::text = any(${skip}::text[]))`)
+      .orderBy("e.updated_at")
+      .limit(BATCH)
+      .execute();
+    return rows.map((k) => ({ id: k.id, text: knowledgeText(k), stored: k.source_hash }));
   });
 }
 
 /** ready でない発言を埋める。 */
-export function fillMessages(db: Db, env: Env): Promise<Filled> {
+export function fillMessages(db: Kysely<DB>, env: Env): Promise<Filled> {
   return run(db, env, { name: "message_embedding", id: "message_id" }, async (skip) => {
-    const r = await db.query<{
-      id: string;
-      body: string;
-      speaker_kind: string;
-      handle: string | null;
-      project: string;
-      source_kind: string | null;
-      external_id: string | null;
-      title: string | null;
-      paths: string[];
-      source_hash: Buffer;
-    }>(
-      `select m.id::text, m.body, m.speaker_kind, i.handle, p.name as project,
-              s.kind as source_kind, s.external_id, s.title,
-              coalesce(array(select f.path from gleanery.message_file f
-                             where f.message_id = m.id and f.action = 'review' order by f.path), '{}') as paths,
-              e.source_hash
-       from gleanery.message_embedding e
-       join gleanery.message m on m.id = e.message_id
-       join gleanery.conversation c on c.id = m.conversation_id
-       join gleanery.project p on p.id = c.project_id
-       left join gleanery.source_item s on s.id = c.source_item_id
-       left join gleanery.person_identity i on i.id = m.identity_id
-       where e.status <> 'ready' and e.attempts < $1 and not (e.message_id::text = any($3::text[]))
-       order by e.updated_at limit $2`,
-      [MAX_ATTEMPTS, BATCH, skip],
-    );
-    return r.rows.map((m) => {
+    const rows = await db
+      .selectFrom("gleanery.message_embedding as e")
+      .innerJoin("gleanery.message as m", "m.id", "e.message_id")
+      .innerJoin("gleanery.conversation as c", "c.id", "m.conversation_id")
+      .innerJoin("gleanery.project as p", "p.id", "c.project_id")
+      .leftJoin("gleanery.source_item as s", "s.id", "c.source_item_id")
+      .leftJoin("gleanery.person_identity as i", "i.id", "m.identity_id")
+      .select([
+        sql<string>`m.id::text`.as("id"),
+        "m.body",
+        "m.speaker_kind",
+        "i.handle",
+        "p.name as project",
+        "s.kind as source_kind",
+        "s.external_id",
+        "s.title",
+        sql<string[]>`coalesce(array(select f.path from gleanery.message_file f
+          where f.message_id = m.id and f.action = 'review' order by f.path), '{}')`.as("paths"),
+        "e.source_hash",
+      ])
+      .where("e.status", "<>", "ready")
+      .where("e.attempts", "<", MAX_ATTEMPTS)
+      .where(sql<SqlBool>`not (e.message_id::text = any(${skip}::text[]))`)
+      .orderBy("e.updated_at")
+      .limit(BATCH)
+      .execute();
+    return rows.map((m) => {
       const input: MessageEmbedInput = {
         body: m.body,
         speakerKind: m.speaker_kind,

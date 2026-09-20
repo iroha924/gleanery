@@ -8,7 +8,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Db } from "./db.ts";
+import type { Kysely } from "kysely";
+import type { DB } from "./db-types.ts";
 
 export type Place = { key: string; root: string; name: string };
 
@@ -111,9 +112,9 @@ export function nameLocal(dir: string, name: string): Place {
 }
 
 /** その作業場所の project id。無ければ null（作るのは `gleanery project add` だけ）。 */
-export async function projectId(db: Db, key: string): Promise<number | null> {
-  const r = await db.query<{ id: string }>("select id from gleanery.project where key = $1", [key]);
-  return r.rows[0] ? Number(r.rows[0].id) : null;
+export async function projectId(db: Kysely<DB>, key: string): Promise<number | null> {
+  const r = await db.selectFrom("gleanery.project").select("id").where("key", "=", key).executeTakeFirst();
+  return r ? Number(r.id) : null;
 }
 
 /**
@@ -166,19 +167,22 @@ export type Connector = { id: string; headOid: string | null; snapshotAt: Date |
  * 同期の成否と、最後に入れた snapshot はここへ書く（`gleanery doctor` と画面が最後の同期を出す）。
  */
 export async function connectorOf(
-  db: Db,
+  db: Kysely<DB>,
   projectId: number,
   provider: "github" | "docs",
 ): Promise<Connector> {
-  await db.query(
-    "insert into gleanery.connector (project_id, provider) values ($1, $2) on conflict (project_id, provider) do nothing",
-    [projectId, provider],
-  );
-  const r = await db.query<{ id: string; head_oid: string | null; snapshot_at: Date | null }>(
-    "select id, head_oid, snapshot_at from gleanery.connector where project_id = $1 and provider = $2 for update",
-    [projectId, provider],
-  );
-  const row = r.rows[0];
+  await db
+    .insertInto("gleanery.connector")
+    .values({ project_id: String(projectId), provider })
+    .onConflict((oc) => oc.columns(["project_id", "provider"]).doNothing())
+    .execute();
+  const row = await db
+    .selectFrom("gleanery.connector")
+    .select(["id", "head_oid", "snapshot_at"])
+    .where("project_id", "=", String(projectId))
+    .where("provider", "=", provider)
+    .forUpdate()
+    .executeTakeFirst();
   if (!row) throw new Error(`取り込み元を作れなかった: ${provider}`);
   return { id: row.id, headOid: row.head_oid, snapshotAt: row.snapshot_at };
 }

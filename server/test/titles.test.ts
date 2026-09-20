@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Db } from "../src/db.ts";
 import { cleanTitle, describeTitles, fillTitles } from "../src/titles.ts";
+import { fakeDb } from "./fake-db.ts";
 
 test("題の飾りを落とす。鍵括弧・引用符・句点で囲まれても中身だけを残す", () => {
   assert.equal(
@@ -24,9 +24,9 @@ test("題は文字数ではなくバイトで切る", () => {
 });
 
 test("鍵が無ければ題を付けず、理由を返す", async () => {
-  const db = {
-    query: () => assert.fail("鍵が無いのに DB を引いた"),
-  } as unknown as Db;
+  const { db } = fakeDb(() => {
+    assert.fail("鍵が無いのに DB を引いた");
+  });
   assert.deepEqual(await fillTitles(db, {}), { titled: 0, stopped: "OPENAI_API_KEY が無い" });
 });
 

@@ -6,9 +6,10 @@
 //
 // 形の検査はここに 1 つだけ置き、`gleanery trace check` と `gleanery trace save` が同じ関数を通る。
 
-import type pg from "pg";
+import { type Kysely, type SqlBool, sql } from "kysely";
 import { z } from "zod";
 import { EMBED_MODEL, type Env, inTransaction } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { type Filled, fillKnowledge } from "./embeddings.ts";
 import { conversationId, knowledgeText, STATUSES } from "./knowledge.ts";
 import { mask, sha256, tsvector } from "./text.ts";
@@ -276,9 +277,31 @@ export function rows(t: Trace): Row[] {
   return out;
 }
 
-/** 知識の行を 1 往復で書く形。**変わった行だけを書き**、全部の行の id を返す（子の decision_id に要る）。 */
-const UPSERT = `with incoming as (
-    select * from jsonb_to_recordset($3::jsonb) as t(
+/** `t(...)` の列と対。綴りがずれた列は例外を出さずに null で入るので、ここで型に縛る。 */
+type UpsertRow = {
+  source_key: string;
+  kind: string;
+  status: string | null;
+  confidence: string | null;
+  decision_id: string | null;
+  superseded_by_id: string | null;
+  work_item_id: string | null;
+  heading: string | null;
+  body: string;
+  reason: string | null;
+  confirmation: string | null;
+  command: string | null;
+  downsides: string[];
+  refs: string[];
+  occurred_at: string;
+  content_hash: string;
+  lexemes: string;
+};
+
+/** 変わった行だけを書き、書いた行と内容が同じで書かなかった行の両方の id を返す（子の decision_id に要る）。 */
+const upsert = (projectId: number, conversation: string, rows: UpsertRow[]) =>
+  sql<{ id: string; source_key: string; written: boolean }>`with incoming as (
+    select * from jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) as t(
       source_key text, kind text, status text, confidence text, decision_id bigint, superseded_by_id bigint,
       work_item_id bigint, heading text, body text, reason text, confirmation text, command text,
       downsides text[], refs text[], occurred_at timestamptz, content_hash text, lexemes text)
@@ -286,7 +309,8 @@ const UPSERT = `with incoming as (
     insert into gleanery.knowledge (project_id, conversation_id, work_item_id, source_key, kind, status, confidence,
                                  decision_id, superseded_by_id, heading, body, reason, confirmation, command,
                                  downsides, refs, occurred_at, content_hash, lexemes)
-    select $1, $2, t.work_item_id, t.source_key, t.kind, t.status, t.confidence, t.decision_id, t.superseded_by_id,
+    select ${projectId}, ${conversation}, t.work_item_id, t.source_key, t.kind, t.status, t.confidence,
+           t.decision_id, t.superseded_by_id,
            t.heading, t.body, t.reason, t.confirmation, t.command, t.downsides, t.refs, t.occurred_at,
            decode(t.content_hash, 'hex'), t.lexemes::tsvector
     from incoming t
@@ -303,12 +327,12 @@ const UPSERT = `with incoming as (
   select id::text, source_key, true as written from written
   union all
   select k.id::text, k.source_key, false from gleanery.knowledge k
-  where k.project_id = $1 and k.source_key in (select source_key from incoming)
+  where k.project_id = ${projectId} and k.source_key in (select source_key from incoming)
     and k.source_key not in (select source_key from written)`;
 
 /** 記録を入れる。同じ session の同じ key は上書きし、書かれていない要素は残す（後から足した trace は追記になる）。 */
 export async function saveTrace(
-  client: pg.Client,
+  db: Kysely<DB>,
   env: Env,
   projectId: number,
   t: Trace,
@@ -319,34 +343,49 @@ export async function saveTrace(
   const earliest = t.items.map((i) => i.at).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
   const startedAt = t.session.startedAt ?? earliest ?? new Date().toISOString();
 
-  const result = await inTransaction(client, async () => {
+  const result = await inTransaction(db, async (trx) => {
     // 自動記録がこの session を先に作っていれば、そのまま使う（id は同じ規則で決まる）。
-    await client.query(
-      `insert into gleanery.conversation (id, project_id, origin, external_id, branch, started_at)
-       values ($1, $2, $3, $4, $5, $6) on conflict (id) do nothing`,
-      [conversation, projectId, t.session.host, t.session.id, t.session.branch ?? null, startedAt],
-    );
+    await trx
+      .insertInto("gleanery.conversation")
+      .values({
+        id: conversation,
+        project_id: String(projectId),
+        origin: t.session.host,
+        external_id: t.session.id,
+        branch: t.session.branch ?? null,
+        started_at: startedAt,
+      })
+      .onConflict((oc) => oc.column("id").doNothing())
+      .execute();
     let workId: string | null = null;
     if (t.work) {
-      const w = await client.query<{ id: string }>(
-        `insert into gleanery.work_item (project_id, source_key, title, goal, current, next, status, conversation_id, updated_at)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, now())
-         on conflict (project_id, source_key) do update set
-           title = excluded.title, goal = excluded.goal, current = excluded.current, next = excluded.next,
-           status = excluded.status, conversation_id = excluded.conversation_id, updated_at = now()
-         returning id`,
-        [
-          projectId,
-          t.work.key,
-          t.work.title,
-          t.work.goal,
-          t.work.current,
-          t.work.next,
-          t.work.status,
-          conversation,
-        ],
-      );
-      workId = w.rows[0]?.id ?? null;
+      const w = await trx
+        .insertInto("gleanery.work_item")
+        .values({
+          project_id: String(projectId),
+          source_key: t.work.key,
+          title: t.work.title,
+          goal: t.work.goal,
+          current: t.work.current,
+          next: t.work.next,
+          status: t.work.status,
+          conversation_id: conversation,
+          updated_at: sql`now()`,
+        })
+        .onConflict((oc) =>
+          oc.columns(["project_id", "source_key"]).doUpdateSet((eb) => ({
+            title: eb.ref("excluded.title"),
+            goal: eb.ref("excluded.goal"),
+            current: eb.ref("excluded.current"),
+            next: eb.ref("excluded.next"),
+            status: eb.ref("excluded.status"),
+            conversation_id: eb.ref("excluded.conversation_id"),
+            updated_at: sql`now()`,
+          })),
+        )
+        .returning("id")
+        .executeTakeFirst();
+      workId = w?.id ?? null;
     }
 
     // 別の session の決定を指す参照を、ここで引く。無ければ止める（壊れた参照を黙って落とさない）。
@@ -360,11 +399,14 @@ export async function saveTrace(
       ]),
     ].filter((k) => !all.some((x) => x.key === k));
     if (outside.length) {
-      const found = await client.query<{ id: string; source_key: string }>(
-        "select id, source_key from gleanery.knowledge where project_id = $1 and kind = 'decision' and source_key = any($2)",
-        [projectId, outside],
-      );
-      for (const f of found.rows) idOf.set(f.source_key, f.id);
+      const found = await trx
+        .selectFrom("gleanery.knowledge")
+        .select(["id", "source_key"])
+        .where("project_id", "=", String(projectId))
+        .where("kind", "=", "decision")
+        .where(sql<SqlBool>`source_key = any(${outside})`)
+        .execute();
+      for (const f of found) idOf.set(f.source_key, f.id);
       const missing = outside.filter((k) => !idOf.has(k));
       if (missing.length) throw new Error(`この作業場所に無い決定を指している: ${missing.join(" / ")}`);
     }
@@ -372,20 +414,17 @@ export async function saveTrace(
     // **DB 側の覆しを優先する。**別の session が後で覆した決定を、古い session の再 trace が「採用」に戻さない。
     // work を省いた再 trace は、既に結んだ作業（とその題の見出し）から要素を外さない。
     // 読んだ行は commit まで掴む。掴まないと、読んでから書くまでの間に別の trace が付けた覆しを上書きで消す。
-    const prior = await client.query<{
-      source_key: string;
-      superseded_by_id: string | null;
-      work_item_id: string | null;
-      heading: string | null;
-    }>(
-      `select source_key, superseded_by_id, work_item_id, heading from gleanery.knowledge
-       where project_id = $1 and source_key = any($2) for update`,
-      [projectId, all.map((r) => r.key)],
-    );
+    const prior = await trx
+      .selectFrom("gleanery.knowledge")
+      .select(["source_key", "superseded_by_id", "work_item_id", "heading"])
+      .where("project_id", "=", String(projectId))
+      .where(sql<SqlBool>`source_key = any(${all.map((r) => r.key)})`)
+      .forUpdate()
+      .execute();
     const laterBy = new Map(
-      prior.rows.flatMap((p) => (p.superseded_by_id ? [[p.source_key, p.superseded_by_id]] : [])),
+      prior.flatMap((p) => (p.superseded_by_id ? [[p.source_key, p.superseded_by_id]] : [])),
     );
-    const priorOf = new Map(prior.rows.map((p) => [p.source_key, p]));
+    const priorOf = new Map(prior.map((p) => [p.source_key, p]));
     for (const r of all) {
       if (r.kind === "decision" && laterBy.has(r.key) && !r.supersededBy) r.status = "superseded";
       if (r.kind === "option" && r.status === "chosen" && r.parent && laterBy.has(r.parent))
@@ -443,11 +482,11 @@ export async function saveTrace(
           },
         };
       });
-      const got = await client.query<{ id: string; source_key: string; written: boolean }>(UPSERT, [
+      const got = await upsert(
         projectId,
         conversation,
-        JSON.stringify(payload.map((x) => x.json)),
-      ]);
+        payload.map((x) => x.json),
+      ).execute(trx);
       const byKey = new Map(payload.map((x) => [x.row.key, x]));
       for (const g of got.rows) {
         idOf.set(g.source_key, g.id);
@@ -461,41 +500,40 @@ export async function saveTrace(
     // 決定を書き直したら、その決定の案は入力の案で置き換える。書き直した案の数が減っても、古い案を棄却として残さない。
     const decisionIds = decisions.map((d) => idOf.get(d.key)).filter((x): x is string => Boolean(x));
     if (decisionIds.length) {
-      await client.query(
-        `delete from gleanery.knowledge where project_id = $1 and kind = 'option' and decision_id = any($2::bigint[])
-           and not (source_key = any($3))`,
-        [projectId, decisionIds, all.filter((r) => r.kind === "option").map((r) => r.key)],
-      );
+      await trx
+        .deleteFrom("gleanery.knowledge")
+        .where("project_id", "=", String(projectId))
+        .where("kind", "=", "option")
+        .where(sql<SqlBool>`decision_id = any(${decisionIds})`)
+        .where(sql<SqlBool>`source_key <> all(${all.filter((r) => r.kind === "option").map((r) => r.key)})`)
+        .execute();
     }
 
     // ファイルと埋め込みは書き直した行の分だけ。
     if (written.length) {
       const ids = written.map((w) => w.id);
-      await client.query("delete from gleanery.knowledge_file where knowledge_id = any($1::bigint[])", [ids]);
+      await trx
+        .deleteFrom("gleanery.knowledge_file")
+        .where(sql<SqlBool>`knowledge_id = any(${ids})`)
+        .execute();
       const files = written.flatMap((w) => w.row.files.map((f) => ({ id: w.id, ...f })));
       if (files.length) {
-        await client.query(
-          `insert into gleanery.knowledge_file (knowledge_id, path, role, line_start, line_end)
-           select t.id, t.path, t.role, t.line, t.line from unnest($1::bigint[], $2::text[], $3::text[], $4::int[])
-             as t(id, path, role, line)
-           on conflict do nothing`,
-          [
-            files.map((f) => f.id),
-            files.map((f) => f.path),
-            files.map((f) => f.role),
-            files.map((f) => f.line ?? null),
-          ],
-        );
+        await sql`
+          insert into gleanery.knowledge_file (knowledge_id, path, role, line_start, line_end)
+          select t.id, t.path, t.role, t.line, t.line
+            from unnest(${files.map((f) => f.id)}::bigint[], ${files.map((f) => f.path)}::text[],
+                        ${files.map((f) => f.role)}::text[], ${files.map((f) => f.line ?? null)}::int[])
+                 as t(id, path, role, line)
+          on conflict do nothing`.execute(trx);
       }
-      await client.query(
-        `insert into gleanery.knowledge_embedding (knowledge_id, model, source_hash, status)
-         select t.id, $3, t.hash, 'pending' from unnest($1::bigint[], $2::bytea[]) as t(id, hash)
-         on conflict (knowledge_id) do update set
-           source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0, last_error = null,
-           updated_at = now()
-         where gleanery.knowledge_embedding.source_hash <> excluded.source_hash`,
-        [ids, written.map((w) => sha256(w.embedText)), EMBED_MODEL],
-      );
+      await sql`
+        insert into gleanery.knowledge_embedding (knowledge_id, model, source_hash, status)
+        select t.id, ${EMBED_MODEL}, t.hash, 'pending'
+          from unnest(${ids}::bigint[], ${written.map((w) => sha256(w.embedText))}::bytea[]) as t(id, hash)
+        on conflict (knowledge_id) do update set
+          source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0, last_error = null,
+          updated_at = now()
+        where gleanery.knowledge_embedding.source_hash <> excluded.source_hash`.execute(trx);
     }
 
     // 別の session の決定を覆したら、その決定を superseded にして後継を指す。
@@ -507,30 +545,32 @@ export async function saveTrace(
       const older = idOf.get(sourceKey(t, i.supersedes));
       if (!newer || !older) throw new Error(`覆す決定を引けなかった: ${i.supersedes}`);
       // 輪を作らない。後継の側を遡って older に着くなら、older はもう newer の後にある。
-      const loop = await client.query(
-        `with recursive chain(id) as (
-           select superseded_by_id from gleanery.knowledge where id = $1
-           union select k.superseded_by_id from gleanery.knowledge k join chain c on k.id = c.id
-         ) select 1 from chain where id = $2 limit 1`,
-        [newer, older],
-      );
-      if (loop.rowCount) throw new Error(`${i.key} と ${i.supersedes} が互いに覆し合う形になる`);
-      const r = await client.query(
-        `update gleanery.knowledge set status = 'superseded', superseded_by_id = $2
-         where id = $1 and (status <> 'superseded' or superseded_by_id is distinct from $2)`,
-        [older, newer],
-      );
-      if (r.rowCount) {
+      const loop = await sql`
+        with recursive chain(id) as (
+          select superseded_by_id from gleanery.knowledge where id = ${newer}
+          union select k.superseded_by_id from gleanery.knowledge k join chain c on k.id = c.id
+        ) select 1 from chain where id = ${older} limit 1`.execute(trx);
+      if (loop.rows.length) throw new Error(`${i.key} と ${i.supersedes} が互いに覆し合う形になる`);
+      const r = await trx
+        .updateTable("gleanery.knowledge")
+        .set({ status: "superseded", superseded_by_id: newer })
+        .where("id", "=", older)
+        .where(sql`(status <> 'superseded' or superseded_by_id is distinct from ${newer})`.$castTo<boolean>())
+        .executeTakeFirst();
+      if (Number(r.numUpdatedRows)) {
         superseded++;
         // その決定で採った案は「当時は採った案」になる。
-        await client.query(
-          "update gleanery.knowledge set status = 'was_chosen' where decision_id = $1 and kind = 'option' and status = 'chosen'",
-          [older],
-        );
+        await trx
+          .updateTable("gleanery.knowledge")
+          .set({ status: "was_chosen" })
+          .where("decision_id", "=", older)
+          .where("kind", "=", "option")
+          .where("status", "=", "chosen")
+          .execute();
       }
     }
     return { written: written.length, superseded };
   });
 
-  return { ...result, embedding: await fillKnowledge(client, env) };
+  return { ...result, embedding: await fillKnowledge(db, env) };
 }

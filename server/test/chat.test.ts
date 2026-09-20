@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { expandNames, runTool, SYSTEM } from "../src/chat.ts";
 import type { Person } from "../src/search.ts";
+import { fakeDb } from "./fake-db.ts";
 
 const people: Person[] = [
   { display: "◯◯さん", handles: ["reviewer-a", "レビュアー A"], isSelf: false },
@@ -26,14 +27,16 @@ test("質問者本人と、表に無い名前の扱いを渡す", () => {
 });
 
 const recorder = () => {
-  const sql: string[] = [];
-  const params: unknown[][] = [];
-  const query = async (s: string, p: unknown[] = []) => {
-    sql.push(s);
-    params.push(p);
-    return { rows: s.includes("count(*)") ? [{ n: "0" }] : [] };
+  const { db, calls } = fakeDb((s) => (s.includes("count(*)") ? [{ n: "0" }] : []));
+  return {
+    db,
+    get sql() {
+      return calls.map((c) => c.sql);
+    },
+    get params() {
+      return calls.map((c) => [...c.parameters]);
+    },
   };
-  return { sql, params, db: { query } as never };
 };
 
 // 記録に紛れた命令文が read で別の作業場所を開かせても、選んだ作業場所の外は「無い」になる。

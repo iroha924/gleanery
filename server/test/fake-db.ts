@@ -1,0 +1,74 @@
+// 実 DB へ繋がずに kysely を動かす。返す行を順に配り、実行された SQL を記録する。
+//
+// **DummyDriver では足りない。**0.29.6 の実装は常に `{ rows: [] }` を返すので、返ってきた行で分岐する検査が
+// 書けない（公式 API ページは「execute すると throw」と書いているが、実装と食い違う）。
+
+import {
+  type CompiledQuery,
+  type DatabaseConnection,
+  type Driver,
+  Kysely,
+  PostgresAdapter,
+  PostgresIntrospector,
+  PostgresQueryCompiler,
+  type QueryResult,
+} from "kysely";
+import type { DB } from "../src/db-types.ts";
+
+export type Call = { sql: string; parameters: readonly unknown[] };
+
+/**
+ * `respond` が、実行された SQL・パラメータ・何回目かを見て、返す行か投げるエラーを決める。既定は空の結果。
+ */
+export function fakeDb(
+  respond: (
+    sql: string,
+    parameters: readonly unknown[],
+    nth: number,
+  ) => readonly unknown[] | Error = () => [],
+): {
+  db: Kysely<DB>;
+  calls: Call[];
+} {
+  const calls: Call[] = [];
+  let next = 0;
+  const note = (sql: string): void => {
+    calls.push({ sql, parameters: [] });
+  };
+  const connection: DatabaseConnection = {
+    async executeQuery<R>(q: CompiledQuery): Promise<QueryResult<R>> {
+      // 実行しない代わりに、実行できない形を弾く。空配列を kysely の `in` / `not in` へ渡すと
+      // `in ()` が出て PostgreSQL が構文エラーにする。記録するだけの double は、これを緑で通してしまう
+      // （実測: 空配列の 6 箇所が 184/184 pass のまま本番で落ちる形で入った）。
+      if (/\b(?:not )?in \(\)/i.test(q.sql)) {
+        throw new Error(`空の配列を in / not in へ渡している。any / all で書く:\n${q.sql}`);
+      }
+      calls.push({ sql: q.sql, parameters: q.parameters });
+      const step = respond(q.sql, q.parameters, next++);
+      if (step instanceof Error) throw step;
+      // 影響行数は返した行数として渡す。insert / update の件数を見る呼び出し側が、行を返せば数えられる。
+      return { rows: step as R[], numAffectedRows: BigInt(step.length) };
+    },
+    streamQuery<R>(): AsyncIterableIterator<QueryResult<R>> {
+      throw new Error("stream は使わない");
+    },
+  };
+  const driver: Driver = {
+    init: async () => {},
+    acquireConnection: async () => connection,
+    beginTransaction: async () => note("begin"),
+    commitTransaction: async () => note("commit"),
+    rollbackTransaction: async () => note("rollback"),
+    releaseConnection: async () => {},
+    destroy: async () => {},
+  };
+  const db = new Kysely<DB>({
+    dialect: {
+      createAdapter: () => new PostgresAdapter(),
+      createDriver: () => driver,
+      createIntrospector: (d) => new PostgresIntrospector(d),
+      createQueryCompiler: () => new PostgresQueryCompiler(),
+    },
+  });
+  return { db, calls };
+}

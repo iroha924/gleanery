@@ -20,9 +20,10 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type pg from "pg";
+import { type Kysely, type SqlBool, sql } from "kysely";
 import { ARTIFACT_PATH } from "./artifacts.ts";
-import { connect, EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, vec } from "./db.ts";
+import { EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, open, vec } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
@@ -443,12 +444,12 @@ type Vectors = Map<Spooled, { text: string; v: number[] | undefined }>;
  * 「もう入っている」。
  */
 export async function write(
-  db: pg.Client,
+  db: Kysely<DB>,
   batch: Spooled[],
   projects: Map<string, Project>,
   vectors: Vectors,
 ): Promise<number> {
-  return inTransaction(db, async () => {
+  return inTransaction(db, async (trx) => {
     const conversations = new Map<
       string,
       { project: number; host: Host; session: string; branch: string | null; at: string }
@@ -468,19 +469,12 @@ export async function write(
         });
     }
     const c = [...conversations];
-    await db.query(
-      `insert into gleanery.conversation (id, project_id, origin, external_id, branch, started_at)
-       select * from unnest($1::uuid[], $2::bigint[], $3::text[], $4::text[], $5::text[], $6::timestamptz[])
-       on conflict do nothing`,
-      [
-        c.map(([id]) => id),
-        c.map(([, v]) => v.project),
-        c.map(([, v]) => v.host),
-        c.map(([, v]) => v.session),
-        c.map(([, v]) => v.branch),
-        c.map(([, v]) => v.at),
-      ],
-    );
+    await sql`
+      insert into gleanery.conversation (id, project_id, origin, external_id, branch, started_at)
+      select * from unnest(${c.map(([id]) => id)}::uuid[], ${c.map(([, v]) => v.project)}::bigint[],
+                           ${c.map(([, v]) => v.host)}::text[], ${c.map(([, v]) => v.session)}::text[],
+                           ${c.map(([, v]) => v.branch)}::text[], ${c.map(([, v]) => v.at)}::timestamptz[])
+      on conflict do nothing`.execute(trx);
     const messages = batch.flatMap((m) => {
       const p = m.kind === "message" ? projects.get(m.project) : undefined;
       if (m.kind !== "message" || !p) return [];
@@ -489,47 +483,33 @@ export async function write(
         { m, conversation, id: uuidFrom(conversation, m.id), indexed: indexesMessage(m.host, m.speaker) },
       ];
     });
-    const inserted = await db.query(
-      `insert into gleanery.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
-                                  original_bytes, sent_at, content_hash, lexemes)
-       select t.id, t.conversation, t.external, t.turn, t.speaker, t.body, t.truncated, t.bytes, t.at, t.hash,
-              t.lex::tsvector
-       from unnest($1::uuid[], $2::uuid[], $3::text[], $4::text[], $5::text[], $6::text[], $7::boolean[],
-                   $8::int[], $9::timestamptz[], $10::bytea[], $11::text[])
-         as t(id, conversation, external, turn, speaker, body, truncated, bytes, at, hash, lex)
-       on conflict do nothing`,
-      [
-        messages.map((x) => x.id),
-        messages.map((x) => x.conversation),
-        messages.map((x) => x.m.id),
-        messages.map((x) => x.m.turn),
-        messages.map((x) => x.m.speaker),
-        messages.map((x) => x.m.body),
-        messages.map((x) => x.m.truncated),
-        messages.map((x) => x.m.originalBytes),
-        messages.map((x) => x.m.at),
-        messages.map((x) => sha256(x.m.body)),
-        messages.map((x) => (x.indexed ? tsvector(x.m.body) : null)),
-      ],
-    );
+    const inserted = await sql`
+      insert into gleanery.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
+                                    original_bytes, sent_at, content_hash, lexemes)
+      select t.id, t.conversation, t.external, t.turn, t.speaker, t.body, t.truncated, t.bytes, t.at, t.hash,
+             t.lex::tsvector
+        from unnest(${messages.map((x) => x.id)}::uuid[], ${messages.map((x) => x.conversation)}::uuid[],
+                    ${messages.map((x) => x.m.id)}::text[], ${messages.map((x) => x.m.turn)}::text[],
+                    ${messages.map((x) => x.m.speaker)}::text[], ${messages.map((x) => x.m.body)}::text[],
+                    ${messages.map((x) => x.m.truncated)}::boolean[],
+                    ${messages.map((x) => x.m.originalBytes)}::int[],
+                    ${messages.map((x) => x.m.at)}::timestamptz[],
+                    ${messages.map((x) => sha256(x.m.body))}::bytea[],
+                    ${messages.map((x) => (x.indexed ? tsvector(x.m.body) : null))}::text[])
+             as t(id, conversation, external, turn, speaker, body, truncated, bytes, at, hash, lex)
+      on conflict do nothing`.execute(trx);
     // 埋め込みが取れなかった発言は pending で入れ、次の同期（ingest の鍵）が取り直す。
     const embedded = messages.flatMap((x) => {
       const e = vectors.get(x.m);
       return e ? [{ id: x.id, text: e.text, v: e.v }] : [];
     });
-    await db.query(
-      `insert into gleanery.message_embedding (message_id, model, source_hash, status, embedding)
-       select t.id, $5, t.hash, t.status, t.v::extensions.halfvec
-       from unnest($1::uuid[], $2::bytea[], $3::text[], $4::text[]) as t(id, hash, status, v)
-       on conflict do nothing`,
-      [
-        embedded.map((x) => x.id),
-        embedded.map((x) => sha256(x.text)),
-        embedded.map((x) => (x.v ? "ready" : "pending")),
-        embedded.map((x) => (x.v ? vec(x.v) : null)),
-        EMBED_MODEL,
-      ],
-    );
+    await sql`
+      insert into gleanery.message_embedding (message_id, model, source_hash, status, embedding)
+      select t.id, ${EMBED_MODEL}, t.hash, t.status, t.v::extensions.halfvec
+        from unnest(${embedded.map((x) => x.id)}::uuid[], ${embedded.map((x) => sha256(x.text))}::bytea[],
+                    ${embedded.map((x) => (x.v ? "ready" : "pending"))}::text[],
+                    ${embedded.map((x) => (x.v ? vec(x.v) : null))}::text[]) as t(id, hash, status, v)
+      on conflict do nothing`.execute(trx);
     // 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの会話の DB に無ければ（途中で別の作業場所へ移った session など）
     // 結ぶ先が無いので捨てる。
     const files = batch.flatMap((r) => {
@@ -543,14 +523,14 @@ export async function write(
         },
       ];
     });
-    await db.query(
-      `insert into gleanery.message_file (message_id, path, action)
-       select t.message, t.path, t.action from unnest($1::uuid[], $2::text[], $3::text[]) as t(message, path, action)
+    await sql`
+      insert into gleanery.message_file (message_id, path, action)
+      select t.message, t.path, t.action
+        from unnest(${files.map((f) => f.message)}::uuid[], ${files.map((f) => f.path)}::text[],
+                    ${files.map((f) => f.action)}::text[]) as t(message, path, action)
        where exists (select 1 from gleanery.message m where m.id = t.message)
-       on conflict do nothing`,
-      [files.map((f) => f.message), files.map((f) => f.path), files.map((f) => f.action)],
-    );
-    return inserted.rowCount ?? 0;
+      on conflict do nothing`.execute(trx);
+    return Number(inserted.numAffectedRows ?? 0);
   });
 }
 
@@ -577,7 +557,7 @@ export async function flush(
   const unlock = lock();
   if (!unlock) return { sent: 0, dropped: 0, rejected: 0, busy: true };
   const dir = spoolDir();
-  let client: pg.Client | null = null;
+  let client: Kysely<DB> | null = null;
   try {
     const names = fs
       .readdirSync(dir)
@@ -593,15 +573,17 @@ export async function flush(
         fs.rmSync(path.join(dir, name), { force: true }); // 読めない残骸
       }
     }
-    const db = await connect(env, "capture");
+    // 版を確かめない。確かめると、DB を上げた PC 以外の記録が plugin の更新まで全部止まる。
+    const db = open(env, "capture", false);
     client = db;
     const projects = new Map(
       (
-        await db.query<{ id: string; key: string; name: string }>(
-          "select id, key, name from gleanery.project where key = any($1)",
-          [[...new Set(records.map((x) => x.r.project))]],
-        )
-      ).rows.map((p) => [p.key, { id: Number(p.id), name: p.name }]),
+        await db
+          .selectFrom("gleanery.project")
+          .select(["id", "key", "name"])
+          .where(sql<SqlBool>`key = any(${[...new Set(records.map((x) => x.r.project))]})`)
+          .execute()
+      ).map((p) => [p.key, { id: Number(p.id), name: p.name }]),
     );
     const known = records.filter((x) => projects.has(x.r.project));
     const dropped = records.length - known.length;
@@ -677,7 +659,7 @@ export async function flush(
     writeState({ flushedAt: new Date().toISOString(), error: reason(e).slice(0, 300) });
     throw e;
   } finally {
-    await client?.end().catch(() => {});
+    await client?.destroy().catch(() => {});
     unlock();
   }
 }

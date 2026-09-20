@@ -107,10 +107,9 @@ const app = new Hono()
     try {
       // 会議で聞かれるのは「どんな設計だったっけ？」と「あの時◯◯さんはなんて書いてた？」。
       // 判断と文書（設計書を含む）と、人の発言の両方から引く。
-      const pool = await db();
       const [knowledge, said] = await Promise.all([
-        searchKnowledge(pool, env, { question: heard, projects, kinds: [...KINDS], limit: 6 }),
-        searchMessages(pool, env, { question: heard, projects, limit: 4 }),
+        searchKnowledge(db, env, { question: heard, projects, kinds: [...KINDS], limit: 6 }),
+        searchMessages(db, env, { question: heard, projects, limit: 4 }),
       ]);
       const rows = [...knowledge, ...said];
       const facts = rows.map(

@@ -28,6 +28,9 @@ pre-commit:
         set -e
         bun run bundle
         bun run scripts/check-mcp-version.mjs
+    - name: sql
+      glob: "{server/src/**/*.ts,server/test/**/*.ts,scripts/check-sql.mjs}"
+      run: bun run sql
     - name: pairs
       glob: "{db/schema.sql,server/src/*.ts,dashboard/src/features/_sessions/api/sessions.ts,README.md,plugin/skills/review/SKILL.md,plugin/agents/*.md,scripts/check-pairs.mjs}"
       # git add をここに書かない。無条件に走ると README の別件の編集まで巻き込む。

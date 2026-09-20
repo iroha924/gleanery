@@ -19,7 +19,7 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { dbDir } from "./assets.ts";
-import { connect, type Db, type Env, GLOBAL_ENV, inTransaction, KEY, loadEnv, parseEnv } from "./db.ts";
+import { connect, type Db, type Env, GLOBAL_ENV, inClientTransaction, KEY, loadEnv, parseEnv } from "./db.ts";
 import { reason } from "./text.ts";
 
 // 同梱物の在り処は assets.ts が 1 箇所で決める（配る形と作業ツリーで置かれ方が違う）。
@@ -76,7 +76,7 @@ async function applySchema(env: Env): Promise<boolean> {
   try {
     const exists = await c.query("select 1 from pg_namespace where nspname = 'gleanery'");
     if (exists.rowCount) return false;
-    await inTransaction(c, () => c.query(fs.readFileSync(SCHEMA(), "utf8")));
+    await inClientTransaction(c, () => c.query(fs.readFileSync(SCHEMA(), "utf8")));
     return true;
   } finally {
     await c.end();
@@ -164,7 +164,7 @@ export async function migrate(yes: boolean): Promise<void> {
         return;
       }
     }
-    const applied = await inTransaction(c, async () => {
+    const applied = await inClientTransaction(c, async () => {
       // DDL が表の lock を待ち続けると、後ろに並んだほかの接続の query まで止まる。
       await c.query("set local lock_timeout = '10s'");
       const lock = await c.query<{ ok: boolean }>("select pg_try_advisory_xact_lock($1::bigint) as ok", [

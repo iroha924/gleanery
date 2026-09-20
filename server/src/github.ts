@@ -10,8 +10,9 @@
 // GitHub から来た文字列は全部 clean() を通す（NUL が 1 つあると transaction ごと落ち、毎日の同期が止まる）。
 
 import { execFileSync } from "node:child_process";
-import type pg from "pg";
+import { type Kysely, type SqlBool, sql } from "kysely";
 import { EMBED_MODEL, inTransaction } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { conversationId, indexesMessage, messageText, type SpeakerKind } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
 import { clean, sha256, tsvector, uuidFrom } from "./text.ts";
@@ -257,18 +258,18 @@ const itemHash = (i: Item): Buffer =>
  * **読み始めた時刻が、既に入っている snapshot より古ければ書かない**（遅れて commit した同期が新しい状態を巻き戻さない）。
  */
 export async function syncGithub(
-  client: pg.Client,
+  db: Kysely<DB>,
   projectId: number,
   projectName: string,
   repo: string,
 ): Promise<string> {
   // snapshot の時刻は DB の時計で取る。PC の時計が進んでいると、その差の分だけ他の PC の同期が止まる。
-  const snapshotAt = (await client.query<{ now: Date }>("select now()")).rows[0]?.now;
+  const snapshotAt = (await sql<{ now: Date }>`select now()`.execute(db)).rows[0]?.now;
   if (!snapshotAt) throw new Error("DB の時刻を取れなかった");
   const { items, said } = await collect(cliSource(repo));
 
-  const counts = await inTransaction(client, async () => {
-    const connector = await connectorOf(client, projectId, "github");
+  const counts = await inTransaction(db, async (trx) => {
+    const connector = await connectorOf(trx, projectId, "github");
     // 取得を始めた後に、別の同期がより新しい取得を入れていれば書かない（遅れた古い取得で巻き戻さない）。
     if (connector.snapshotAt && snapshotAt.getTime() < connector.snapshotAt.getTime()) return null;
 
@@ -279,84 +280,108 @@ export async function syncGithub(
       for (const s of list) if (s.author) users.set(s.author.id, s.author.login);
     const ids = new Map<number, string>();
     if (users.size) {
-      await client.query(
-        `insert into gleanery.person_identity (provider, external_id, handle)
-         select 'github', t.id, t.handle from unnest($1::text[], $2::text[]) as t(id, handle)
-         on conflict (provider, external_id) do update set handle = excluded.handle
-           where gleanery.person_identity.handle <> excluded.handle`,
-        [[...users.keys()].map(String), [...users.values()]],
-      );
-      const all = await client.query<{ id: string; external_id: string }>(
-        "select id, external_id from gleanery.person_identity where provider = 'github' and external_id = any($1)",
-        [[...users.keys()].map(String)],
-      );
-      for (const x of all.rows) ids.set(Number(x.external_id), x.id);
+      await sql`
+        insert into gleanery.person_identity (provider, external_id, handle)
+        select 'github', t.id, t.handle
+          from unnest(${[...users.keys()].map(String)}::text[], ${[...users.values()]}::text[]) as t(id, handle)
+        on conflict (provider, external_id) do update set handle = excluded.handle
+          where gleanery.person_identity.handle <> excluded.handle`.execute(trx);
+      const all = await trx
+        .selectFrom("gleanery.person_identity")
+        .select(["id", "external_id"])
+        .where("provider", "=", "github")
+        .where(sql<SqlBool>`external_id = any(${[...users.keys()].map(String)})`)
+        .execute();
+      for (const x of all) ids.set(Number(x.external_id), x.id);
     }
     const identity = (u: User) => (u ? (ids.get(u.id) ?? null) : null);
 
     const known = new Map(
       (
-        await client.query<{ id: string; external_id: string; content_hash: Buffer }>(
-          "select id, external_id, content_hash from gleanery.source_item where connector_id = $1",
-          [connector.id],
-        )
-      ).rows.map((r) => [r.external_id, r]),
+        await trx
+          .selectFrom("gleanery.source_item")
+          .select(["id", "external_id", "content_hash"])
+          .where("connector_id", "=", connector.id)
+          .execute()
+      ).map((r) => [r.external_id, r]),
     );
     // 既に入っている発言を 1 回で読む。変わっていない PR・issue では 1 往復もしない。
     const stored = new Map(
       (
-        await client.query<{ id: string; content_hash: Buffer }>(
-          `select m.id, m.content_hash from gleanery.message m
-           join gleanery.conversation c on c.id = m.conversation_id
-           join gleanery.source_item s on s.id = c.source_item_id
-           where s.connector_id = $1`,
-          [connector.id],
-        )
-      ).rows.map((r) => [r.id, r.content_hash]),
+        await trx
+          .selectFrom("gleanery.message as m")
+          .innerJoin("gleanery.conversation as c", "c.id", "m.conversation_id")
+          .innerJoin("gleanery.source_item as s", "s.id", "c.source_item_id")
+          .select(["m.id", "m.content_hash"])
+          .where("s.connector_id", "=", connector.id)
+          .execute()
+      ).map((r) => [r.id, r.content_hash]),
     );
 
     const sourceId = new Map([...known].map(([n, r]) => [n, r.id]));
     const changedItems = items.filter((i) => !known.get(String(i.number))?.content_hash.equals(itemHash(i)));
     if (changedItems.length) {
-      const r = await client.query<{ id: string; external_id: string }>(
-        `insert into gleanery.source_item (connector_id, external_id, kind, title, state, url, author_identity_id,
-                                        source_created_at, source_updated_at, closed_at, content_hash, synced_at)
-         select $1, t.number, t.kind, t.title, t.state, t.url, t.author, t.created, t.updated, t.closed,
-                decode(t.hash, 'hex'), now()
-         from jsonb_to_recordset($2::jsonb) as t(number text, kind text, title text, state text, url text,
-                                                 author bigint, created timestamptz, updated timestamptz,
-                                                 closed timestamptz, hash text)
-         on conflict (connector_id, external_id) do update set
-           kind = excluded.kind, title = excluded.title, state = excluded.state, url = excluded.url,
-           author_identity_id = excluded.author_identity_id, source_created_at = excluded.source_created_at,
-           source_updated_at = excluded.source_updated_at, closed_at = excluded.closed_at,
-           content_hash = excluded.content_hash, synced_at = now()
-         returning id, external_id`,
-        [
-          connector.id,
-          JSON.stringify(
-            changedItems.map((i) => ({
-              number: String(i.number),
-              kind: i.kind,
-              title: i.title,
-              state: i.state,
-              url: i.url,
-              author: identity(i.author),
-              created: i.createdAt,
-              updated: i.updatedAt,
-              closed: i.closedAt,
-              hash: itemHash(i).toString("hex"),
-            })),
-          ),
-        ],
-      );
+      // キーの綴りは下の `t(...)` と対で持つ。片方だけ変えると、その列は例外も出さずに null で入る。
+      // 型を書けば、綴り違いと欠落はコンパイルで落ちる。
+      const itemRows: {
+        number: string;
+        kind: string;
+        title: string;
+        state: string;
+        url: string | null;
+        author: string | null;
+        created: string;
+        updated: string;
+        closed: string | null;
+        hash: string;
+      }[] = changedItems.map((i) => ({
+        number: String(i.number),
+        kind: i.kind,
+        title: i.title,
+        state: i.state,
+        url: i.url,
+        author: identity(i.author),
+        created: i.createdAt,
+        updated: i.updatedAt,
+        closed: i.closedAt,
+        hash: itemHash(i).toString("hex"),
+      }));
+      const r = await sql<{ id: string; external_id: string }>`
+        insert into gleanery.source_item (connector_id, external_id, kind, title, state, url, author_identity_id,
+                                          source_created_at, source_updated_at, closed_at, content_hash, synced_at)
+        select ${connector.id}, t.number, t.kind, t.title, t.state, t.url, t.author, t.created, t.updated, t.closed,
+               decode(t.hash, 'hex'), now()
+          from jsonb_to_recordset(${JSON.stringify(itemRows)}::jsonb)
+               as t(number text, kind text, title text, state text, url text,
+                    author bigint, created timestamptz, updated timestamptz,
+                    closed timestamptz, hash text)
+        on conflict (connector_id, external_id) do update set
+          kind = excluded.kind, title = excluded.title, state = excluded.state, url = excluded.url,
+          author_identity_id = excluded.author_identity_id, source_created_at = excluded.source_created_at,
+          source_updated_at = excluded.source_updated_at, closed_at = excluded.closed_at,
+          content_hash = excluded.content_hash, synced_at = now()
+        returning id, external_id`.execute(trx);
       for (const x of r.rows) sourceId.set(x.external_id, x.id);
     }
 
+    /** 下の `jsonb_to_recordset` の `t(...)` と対。綴りがずれた列は例外を出さずに null で入る。 */
+    type MessageRow = {
+      id: string;
+      conversation: string;
+      external: string;
+      reply: string | null;
+      speaker: string;
+      identity: string | null;
+      body: string;
+      url: string | null;
+      at: string;
+      hash: string;
+      lex: string | null;
+    };
     // 変わった発言だけを集める。返信は同じ文で親を書くので順は問わない（外部キーは文の終わりで確かめられる）。
     const live = new Set<string>();
     const conversations = new Map<string, { source: string; external: string; at: string }>();
-    const messages = [];
+    const messages: { s: Said; indexed: boolean; embedText: string; json: MessageRow }[] = [];
     for (const item of items) {
       const source = sourceId.get(String(item.number));
       if (!source) throw new Error(`PR・issue を書けなかった: #${item.number}`);
@@ -409,85 +434,81 @@ export async function syncGithub(
     }
     if (conversations.size) {
       const c = [...conversations];
-      await client.query(
-        `insert into gleanery.conversation (id, project_id, source_item_id, origin, external_id, started_at)
-         select t.id, $1, t.source, 'github', t.external, t.at
-         from unnest($2::uuid[], $3::bigint[], $4::text[], $5::timestamptz[]) as t(id, source, external, at)
-         on conflict (id) do nothing`,
-        [
-          projectId,
-          c.map(([id]) => id),
-          c.map(([, v]) => v.source),
-          c.map(([, v]) => v.external),
-          c.map(([, v]) => v.at),
-        ],
-      );
+      await sql`
+        insert into gleanery.conversation (id, project_id, source_item_id, origin, external_id, started_at)
+        select t.id, ${projectId}, t.source, 'github', t.external, t.at
+          from unnest(${c.map(([id]) => id)}::uuid[], ${c.map(([, v]) => v.source)}::bigint[],
+                      ${c.map(([, v]) => v.external)}::text[], ${c.map(([, v]) => v.at)}::timestamptz[])
+               as t(id, source, external, at)
+        on conflict (id) do nothing`.execute(trx);
     }
     if (messages.length) {
-      await client.query(
-        `insert into gleanery.message (id, conversation_id, external_id, reply_to_id, speaker_kind, identity_id, body,
-                                    original_bytes, url, sent_at, content_hash, lexemes)
-         select t.id, t.conversation, t.external, t.reply, t.speaker, t.identity, t.body, octet_length(t.body), t.url,
-                t.at, decode(t.hash, 'hex'), t.lex::tsvector
-         from jsonb_to_recordset($1::jsonb) as t(id uuid, conversation uuid, external text, reply uuid, speaker text,
-                                                 identity bigint, body text, url text, at timestamptz, hash text,
-                                                 lex text)
-         on conflict (id) do update set
-           reply_to_id = excluded.reply_to_id, speaker_kind = excluded.speaker_kind,
-           identity_id = excluded.identity_id, body = excluded.body, original_bytes = excluded.original_bytes,
-           url = excluded.url, sent_at = excluded.sent_at, content_hash = excluded.content_hash,
-           lexemes = excluded.lexemes`,
-        [JSON.stringify(messages.map((m) => m.json))],
-      );
+      await sql`
+        insert into gleanery.message (id, conversation_id, external_id, reply_to_id, speaker_kind, identity_id, body,
+                                      original_bytes, url, sent_at, content_hash, lexemes)
+        select t.id, t.conversation, t.external, t.reply, t.speaker, t.identity, t.body, octet_length(t.body), t.url,
+               t.at, decode(t.hash, 'hex'), t.lex::tsvector
+          from jsonb_to_recordset(${JSON.stringify(messages.map((m) => m.json))}::jsonb)
+               as t(id uuid, conversation uuid, external text, reply uuid, speaker text,
+                    identity bigint, body text, url text, at timestamptz, hash text, lex text)
+        on conflict (id) do update set
+          reply_to_id = excluded.reply_to_id, speaker_kind = excluded.speaker_kind,
+          identity_id = excluded.identity_id, body = excluded.body, original_bytes = excluded.original_bytes,
+          url = excluded.url, sent_at = excluded.sent_at, content_hash = excluded.content_hash,
+          lexemes = excluded.lexemes`.execute(trx);
       const written = messages.map((m) => m.json.id);
-      await client.query("delete from gleanery.message_file where message_id = any($1::uuid[])", [written]);
+      await trx
+        .deleteFrom("gleanery.message_file")
+        .where(sql<SqlBool>`message_id = any(${written})`)
+        .execute();
       const files = messages.flatMap((m) => (m.s.file ? [{ id: m.json.id, ...m.s.file }] : []));
       if (files.length) {
-        await client.query(
-          `insert into gleanery.message_file (message_id, path, action, line_start, line_end)
-           select t.id, t.path, 'review', t.first, t.last
-           from unnest($1::uuid[], $2::text[], $3::int[], $4::int[]) as t(id, path, first, last)`,
-          [
-            files.map((f) => f.id),
-            files.map((f) => f.path),
-            files.map((f) => f.startLine ?? f.line),
-            files.map((f) => f.line ?? f.startLine),
-          ],
+        await sql`
+          insert into gleanery.message_file (message_id, path, action, line_start, line_end)
+          select t.id, t.path, 'review', t.first, t.last
+            from unnest(${files.map((f) => f.id)}::uuid[], ${files.map((f) => f.path)}::text[],
+                        ${files.map((f) => f.startLine ?? f.line)}::int[],
+                        ${files.map((f) => f.line ?? f.startLine)}::int[]) as t(id, path, first, last)`.execute(
+          trx,
         );
       }
       const embed = messages.filter((m) => m.indexed);
       if (embed.length) {
-        await client.query(
-          `insert into gleanery.message_embedding (message_id, model, source_hash, status)
-           select t.id, $3, t.hash, 'pending' from unnest($1::uuid[], $2::bytea[]) as t(id, hash)
-           on conflict (message_id) do update set
-             source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0,
-             last_error = null, updated_at = now()
-           where gleanery.message_embedding.source_hash <> excluded.source_hash`,
-          [embed.map((m) => m.json.id), embed.map((m) => sha256(m.embedText)), EMBED_MODEL],
-        );
+        await sql`
+          insert into gleanery.message_embedding (message_id, model, source_hash, status)
+          select t.id, ${EMBED_MODEL}, t.hash, 'pending'
+            from unnest(${embed.map((m) => m.json.id)}::uuid[],
+                        ${embed.map((m) => sha256(m.embedText))}::bytea[]) as t(id, hash)
+          on conflict (message_id) do update set
+            source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0,
+            last_error = null, updated_at = now()
+          where gleanery.message_embedding.source_hash <> excluded.source_hash`.execute(trx);
       }
     }
     // GitHub で消されたコメントは消す。一覧は完全なもの（取れなかったら collect が投げてここに来ない）。
     const gone = [...stored.keys()].filter((id) => !live.has(id));
     const messagesRemoved = gone.length
-      ? ((await client.query("delete from gleanery.message where id = any($1::uuid[])", [gone])).rowCount ??
-        0)
+      ? Number(
+          (await trx.deleteFrom("gleanery.message").where(sql<SqlBool>`id = any(${gone})`).executeTakeFirst())
+            .numDeletedRows,
+        )
       : 0;
     // 一覧から消えた PR・issue（削除された、別のリポジトリへ移された）は行ごと消す。
-    const removed = await client.query(
-      "delete from gleanery.source_item where connector_id = $1 and not (external_id = any($2))",
-      [connector.id, items.map((i) => String(i.number))],
-    );
-    await client.query(
-      "update gleanery.connector set snapshot_at = $2, last_success_at = now(), last_error = null where id = $1",
-      [connector.id, snapshotAt],
-    );
+    const removed = await trx
+      .deleteFrom("gleanery.source_item")
+      .where("connector_id", "=", connector.id)
+      .where(sql<SqlBool>`external_id <> all(${items.map((i) => String(i.number))})`)
+      .executeTakeFirst();
+    await trx
+      .updateTable("gleanery.connector")
+      .set({ snapshot_at: snapshotAt, last_success_at: sql`now()`, last_error: null })
+      .where("id", "=", connector.id)
+      .execute();
     return {
       itemsWritten: changedItems.length,
       messagesWritten: messages.length,
       messagesRemoved,
-      itemsRemoved: removed.rowCount ?? 0,
+      itemsRemoved: Number(removed.numDeletedRows),
     };
   });
 

@@ -6,8 +6,10 @@
 // 付けられなかった session は題を持たないまま残り、次の harvest で取り直す。画面は題が無ければ
 // 最初の発言の冒頭で代用するので、生成が止まっている間も一覧は読める。
 
+import { type Kysely, type SqlBool, sql } from "kysely";
 import OpenAI from "openai";
-import type { Db, Env } from "./db.ts";
+import type { Env } from "./db.ts";
+import type { DB } from "./db-types.ts";
 import { framed } from "./search.ts";
 import { head, reason } from "./text.ts";
 
@@ -64,23 +66,28 @@ export function cleanTitle(text: string): string {
  * どの行でも同じく起きるもので、行の側に原因が無い。数えて諦めると、障害の間に回した harvest だけで
  * その session が永久に題を持たなくなる。
  */
-export async function fillTitles(db: Db, env: Env): Promise<Titled> {
+export async function fillTitles(db: Kysely<DB>, env: Env): Promise<Titled> {
   if (!env.OPENAI_API_KEY) return { titled: 0, stopped: "OPENAI_API_KEY が無い" };
   // 題を付けられるのは発言のある session だけ。trace だけで残した session は、結んだ作業の題で足りる。
-  const pending = await db.query<{ id: string; turns: Turn[] }>(
-    `select c.id::text,
-            (select json_agg(json_build_object('speaker', x.speaker_kind, 'body', x.body) order by x.sent_at)
-             from (select m.speaker_kind, m.body, m.sent_at from gleanery.message m
-                   where m.conversation_id = c.id order by m.sent_at limit $2) x) as turns
-     from gleanery.conversation c
-     where c.title is null and c.origin <> 'github'
-       and exists (select 1 from gleanery.message m where m.conversation_id = c.id)
-     order by c.started_at desc limit $1`,
-    [BATCH, TURNS],
-  );
+  const pending = await db
+    .selectFrom("gleanery.conversation as c")
+    .select([
+      sql<string>`c.id::text`.as("id"),
+      sql<
+        Turn[]
+      >`(select json_agg(json_build_object('speaker', x.speaker_kind, 'body', x.body) order by x.sent_at)
+        from (select m.speaker_kind, m.body, m.sent_at from gleanery.message m
+              where m.conversation_id = c.id order by m.sent_at limit ${TURNS}) x)`.as("turns"),
+    ])
+    .where("c.title", "is", null)
+    .where("c.origin", "<>", "github")
+    .where(sql<SqlBool>`exists (select 1 from gleanery.message m where m.conversation_id = c.id)`)
+    .orderBy("c.started_at", "desc")
+    .limit(BATCH)
+    .execute();
   const openai = new OpenAI({ apiKey: env.OPENAI_API_KEY });
   let titled = 0;
-  for (const row of pending.rows) {
+  for (const row of pending) {
     let title: string;
     try {
       title = await titleOf(openai, row.turns);
@@ -90,11 +97,13 @@ export async function fillTitles(db: Db, env: Env): Promise<Titled> {
     }
     if (!title) continue;
     // 読んだ後に取り込みが題を付けていれば、そちらを残す。
-    const r = await db.query("update gleanery.conversation set title = $2 where id = $1 and title is null", [
-      row.id,
-      title,
-    ]);
-    titled += r.rowCount ?? 0;
+    const r = await db
+      .updateTable("gleanery.conversation")
+      .set({ title })
+      .where("id", "=", row.id)
+      .where("title", "is", null)
+      .executeTakeFirst();
+    titled += Number(r.numUpdatedRows);
   }
   return { titled };
 }

@@ -6,7 +6,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Kysely, PostgresDialect, type Transaction } from "kysely";
 import pg from "pg";
+import type { DB } from "./db-types.ts";
 
 export type Env = Record<string, string | undefined>;
 
@@ -59,8 +61,8 @@ export const KEY: Record<Role, string> = {
   capture: "GLEANERY_DB_URL_CAPTURE",
 };
 
-/** MCP と CLI が期待する schema の版。db/schema.sql の schema コメントと同じ数にする（テストが突き合わせる）。 */
-export const SCHEMA_REVISION = 4;
+/** MCP・CLI・画面が期待する schema の版（自動記録は確かめない）。db/schema.sql のコメントと同じ数にする。 */
+export const SCHEMA_REVISION = 5;
 
 /** pg は int8（bigint と count(*)）を string、timestamptz を Date で返す。`query<T>` の結果型はこれに合わせて書く。 */
 export type Db = Pick<pg.Client, "query">;
@@ -130,41 +132,65 @@ export async function connect(env: Env, role: Role): Promise<pg.Client> {
 }
 
 /**
- * 長命のプロセス（画面の API と MCP）が使う接続。同時に来たクエリを 1 本へ積まない。
+ * role ごとの接続。pool は最初のクエリで作り、そこで schema の版を確かめる。
+ * 起動時に確かめると、DB に届かないだけで MCP が立ち上がらなくなる。失敗は覚えず、次のクエリで作り直す。
  *
- * 返すのは「最初の呼び出しで schema の版を確かめてから pool を渡す」関数。起動時に確かめると、
- * DB に届かないだけで MCP が立ち上がらなくなる。失敗は覚えず、次の呼び出しで確かめ直す。
+ * 自動記録だけは確かめない。plugin の版は PC ごとに上がるので、確かめると revision を上げた瞬間に、
+ * その PC の plugin が上がるまで記録が丸ごと止まる。旧版のまま書き続け、DB が弾いた行だけ rejected へ回す。
  */
-export function lazyPool(env: Env, role: Role): () => Promise<pg.Pool> {
-  let ready: Promise<pg.Pool> | null = null;
-  return () => {
-    ready ??= (async () => {
-      const p = new pg.Pool({
-        ...settings(env, role),
-        max: 5,
-        idleTimeoutMillis: 30_000,
-        allowExitOnIdle: true,
-      });
-      // 借りている間の切断は、pg が reject の後に emit("error") まで行う。受け手が無いとプロセスごと落ちる。
-      p.on("connect", (client) => client.on("error", () => {}));
-      p.on("error", () => {});
+export function open(env: Env, role: Role, checkVersion = true): Kysely<DB> {
+  return new Kysely<DB>({
+    dialect: new PostgresDialect({
+      pool: async () => {
+        const p = new pg.Pool({
+          ...settings(env, role),
+          max: 5,
+          idleTimeoutMillis: 30_000,
+          allowExitOnIdle: true,
+        });
+        // 借りている間の切断は、pg が reject の後に emit("error") まで行う。受け手が無いとプロセスごと落ちる。
+        p.on("connect", (client) => client.on("error", () => {}));
+        p.on("error", () => {});
+        if (checkVersion) {
+          try {
+            await checkSchema(p);
+          } catch (e) {
+            await p.end().catch(() => {});
+            throw e;
+          }
+        }
+        return p;
+      },
+    }),
+  });
+}
+
+/**
+ * transaction を張り、失敗の理由を保つ。kysely は rollback を try で囲まないので、rollback 自体が
+ * 失敗すると元の例外がそちらで置き換わる（接続が切れたときに SQLSTATE が消える）。自動記録はその
+ * SQLSTATE で「その記録が原因の失敗か」を判定しているので、置き換わると値の誤りが待ち行列に残り続ける。
+ * 接続は kysely が返すので、ここでは理由だけを保つ。
+ */
+export async function inTransaction<T>(db: Kysely<DB>, fn: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
+  let inner: unknown;
+  let failed = false;
+  try {
+    return await db.transaction().execute(async (trx) => {
       try {
-        await checkSchema(p);
+        return await fn(trx);
       } catch (e) {
-        await p.end().catch(() => {});
+        inner = e;
+        failed = true;
         throw e;
       }
-      return p;
-    })().catch((e: unknown) => {
-      ready = null;
-      throw e;
     });
-    return ready;
-  };
+  } catch (e) {
+    throw failed ? inner : e;
+  }
 }
 
 /** 1 つの接続を占有して transaction を張る。失敗したら rollback して元の例外を投げる。 */
-export async function inTransaction<T>(client: pg.Client, fn: () => Promise<T>): Promise<T> {
+export async function inClientTransaction<T>(client: pg.Client, fn: () => Promise<T>): Promise<T> {
   await client.query("begin");
   try {
     const out = await fn();

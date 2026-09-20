@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
-import type pg from "pg";
 import {
   answersOf,
   captureNotice,
@@ -21,6 +20,7 @@ import {
 } from "../src/capture.ts";
 import { conversationId } from "../src/knowledge.ts";
 import { bytes, mask, sha256, uuidFrom } from "../src/text.ts";
+import { fakeDb } from "./fake-db.ts";
 
 // HOME を差し替えて本物の待ち行列を守っている。bun の os.homedir() は差し替えに追従せず、本物の待ち行列を消す。
 if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
@@ -423,13 +423,7 @@ test("閉じタグの後ろに文が付く通知も外し、区切りの無い�
 });
 
 test("DB へ書くとき、ファイルは turn ではなく待ち行列に書いた持ち主の発言の id へ結ぶ", async () => {
-  const calls: { sql: string; params: unknown[] }[] = [];
-  const db = {
-    query: async (sql: string, params: unknown[] = []) => {
-      calls.push({ sql, params });
-      return { rows: [], rowCount: 0 };
-    },
-  } as unknown as pg.Client;
+  const { db, calls } = fakeDb();
   const said = "t1:self:0123456789abcdef";
   const base = {
     v: 1 as const,
@@ -455,8 +449,10 @@ test("DB へ書くとき、ファイルは turn ではなく待ち行列に書�
   ];
   await write(db, batch, new Map([["git:github.com/o/r", { id: 7, name: "r" }]]), new Map());
   const anchor = uuidFrom(conversationId(7, "claude-code", "s1"), said);
-  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message ("))?.params[0], [anchor]);
-  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message_file"))?.params[0], [
+  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message ("))?.parameters[0], [
+    anchor,
+  ]);
+  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message_file"))?.parameters[0], [
     anchor,
   ]);
 });
