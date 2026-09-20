@@ -187,6 +187,11 @@ export type Seen = {
   /** 作業ツリーの plugin/。cwd か CLI の置き場所が gleanery の repository のときだけ見える。 */
   repository: Install | null;
   cli: Install;
+  /**
+   * `npm i -g` で入れた CLI。実行中のものとは別に古いまま残りうる（plugin の cache とも更新の操作が違う）。
+   * null は入っていないか、npm を叩けなかったとき。
+   */
+  global: Install | null;
   /** null は導入されていない、"unknown" は claude コマンドが使えず観測できなかった。 */
   claude: Install | null | "unknown";
   codex: Install[];
@@ -275,7 +280,17 @@ export function observe(cwdRoot: string): Seen {
     running = null;
   }
 
-  return { repository, cli: install(ROOT), claude, codex, codexCache, running };
+  // **plugin の cache とは別経路である。**`claude plugin update` では上がらず、DB の revision が
+  // 上がった日に、古い CLI だけが「revision N を期待している」で落ちる。
+  let global: Install | null = null;
+  try {
+    const at = path.join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "gleanery");
+    if (fs.existsSync(at)) global = install(at);
+  } catch {
+    global = null;
+  }
+
+  return { repository, cli: install(ROOT), global, claude, codex, codexCache, running };
 }
 
 function safeDirs(dir: string): string[] {
@@ -293,6 +308,7 @@ function safeDirs(dir: string): string[] {
 // 更新後も動いている MCP は旧版のパスのまま。Claude Code は対話端末の session なら
 // /reload-plugins で新しいパスへ移る（公式 plugins-reference）。Codex は開き直す。
 const UPDATE = {
+  global: "npm i -g gleanery@<版>",
   claude:
     "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery の後、開いている session で /reload-plugins",
   codex:
@@ -363,6 +379,12 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
 
   row("この CLI", s.cli, against(s.cli).note);
 
+  if (s.global && path.resolve(s.global.root) !== path.resolve(s.cli.root)) {
+    const { note, update } = against(s.global);
+    if (update) todo.add("global");
+    row("npm i -g の CLI", s.global, note);
+  }
+
   if (s.claude === "unknown") say("none", "Claude Code", "不明（claude plugin list --json が使えない）");
   else if (s.claude === null) say("none", "Claude Code", "導入されていない");
   else {
@@ -422,7 +444,8 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
 
   if (todo.size) {
     lines.push("  更新するには:");
-    for (const k of todo) lines.push(`    ${k === "claude" ? "Claude Code" : "Codex"}: ${UPDATE[k]}`);
+    const NAME = { global: "npm の CLI", claude: "Claude Code", codex: "Codex" } as const;
+    for (const k of todo) lines.push(`    ${NAME[k]}: ${UPDATE[k]}`);
     lines.push(
       "    届く中身は各ホストの marketplace の取得元で決まる。GitHub から取る設定なら、push していない変更は届かない",
     );

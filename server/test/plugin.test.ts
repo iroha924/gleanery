@@ -40,11 +40,33 @@ function plugin(where: string, version: string, body = "x"): Install {
 const seen = (over: Partial<Seen>): Seen => ({
   repository: null,
   cli: plugin("cli", "0.10.19"),
+  global: null,
   claude: null,
   codex: [],
   codexCache: path.join(tmp, "codex", "plugins", "cache"),
   running: [],
   ...over,
+});
+
+test("npm i -g の CLI が古ければ、行と更新手順の両方に出る", () => {
+  // plugin の cache とは別経路なので、ホストの更新では上がらない。
+  const { lines, issues } = report(
+    seen({ cli: plugin("cli", "0.33.12"), global: plugin("global", "0.32.0") }),
+  );
+  const row = lines.find((l) => l.includes("npm i -g の CLI"));
+  assert.ok(row?.includes("0.32.0"), row);
+  assert.ok(row?.includes("より古い"), row);
+  assert.ok(issues.includes("npm i -g の CLI"));
+  assert.ok(
+    lines.some((l) => l.includes("npm の CLI: npm i -g gleanery@")),
+    lines.join("\n"),
+  );
+});
+
+test("実行中の CLI と同じ置き場所なら、npm i -g の行は出さない", () => {
+  const same = plugin("one", "0.33.12");
+  const { lines } = report(seen({ cli: same, global: same }));
+  assert.equal(lines.filter((l) => l.includes("npm i -g の CLI")).length, 0, lines.join("\n"));
 });
 
 test("版は数値で比べる（0.10.9 < 0.10.18）", () => {

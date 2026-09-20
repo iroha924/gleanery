@@ -83,9 +83,12 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
 1. Claude Code: marketplaceを更新してinstallし直し、開いているsessionで`/reload-plugins`。
    対話端末の無いsessionはMCPが次のsessionまで旧版のまま
 2. Codex: 同じくmarketplaceを更新してから開き直す
-3. `gleanery doctor`で、両ホストの導入済みcacheが同じ版・同じ中身になり、実行中のMCPに張り直しの指示が
-   残っていないことを見る
-4. 反映後のsessionから`recall`を呼び、変更したMCP tool、Skill、Agentの中身を確かめる。自動記録を変えたなら、
+3. **`npm i -g gleanery@<版>`も叩く。**`npm i -g`で入れたCLIはplugin のcacheと別経路で、
+   ホストの更新では上がらない。**DBのrevisionを上げた回は、これを忘れると古いCLIだけが
+   「revision N を期待している」で落ちる**（実測: revision 5へ上げた後、globalのCLIが0.32.0のまま残った）
+4. `gleanery doctor`で、両ホストの導入済みcacheとnpmのCLIが同じ版・同じ中身になり、実行中のMCPに
+   張り直しの指示が残っていないことを見る
+5. 反映後のsessionから`recall`を呼び、変更したMCP tool、Skill、Agentの中身を確かめる。自動記録を変えたなら、
    そのsessionの発言がダッシュボードの`/sessions`に出ることと、`gleanery doctor`の「自動記録」行に待ちが
    残っていないことも見る
 
