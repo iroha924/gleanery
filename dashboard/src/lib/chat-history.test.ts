@@ -11,9 +11,11 @@ const entry = (id: string, projectKey: string, updatedAt: string): ChatEntry => 
   updatedAt,
 });
 
+// **id は書いた順と逆に並ぶ綴りにする。**IndexedDB は index キー → 主キーの順で返すので、
+// 昇順の id を使うと、保存の並べ替えが無くても正しい順に見えてしまう。
 const turns = (...contents: string[]): Turn[] =>
   contents.map((content, index) => ({
-    id: `t${index}`,
+    id: `${"zyxwvu"[index]}-${index}`,
     role: index % 2 === 0 ? "user" : "assistant",
     content,
   }));

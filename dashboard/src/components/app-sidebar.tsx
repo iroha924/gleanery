@@ -157,7 +157,7 @@ function ChatHistoryGroup({ onNavigate }: { onNavigate: () => void }) {
                     <AlertDialogCancel>やめる</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={() => {
-                        void remove(entry.id);
+                        remove.mutate(entry.id);
                         if (entry.id === opened) show(undefined);
                       }}
                     >

@@ -8,7 +8,7 @@
 //
 // 作業場所は数値 ID ではなく `project.key` で持つ。DB を作り直すと同じ ID が別の作業場所を指す。
 
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { ChatSource } from "./api";
 import { useProject } from "./project";
@@ -39,8 +39,7 @@ export type ChatEntry = {
 
 type StoredTurn = Turn & { chatId: string; at: number };
 
-// .tsx では `<T>` が JSX タグに見えるので、末尾のカンマで型引数だと示す。
-const promised = <T,>(request: IDBRequest<T>): Promise<T> =>
+const promised = <T>(request: IDBRequest<T>): Promise<T> =>
   new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("IndexedDB が失敗した"));
@@ -118,51 +117,36 @@ export async function deleteChat(id: string): Promise<void> {
   db.close();
 }
 
-// ---- 画面をまたぐ状態 ----
+// ---- 一覧の取り回し ----
 
-// サイドバーの一覧とチャットの画面が同じ一覧を見る。別々に読むと、質問した後どちらかが古いままになる。
-type Ctx = {
-  entries: ChatEntry[];
-  /** 書いた後に呼ぶ。作業場所が選ばれていなければ空にする。 */
-  reload: () => Promise<void>;
-  remove: (id: string) => Promise<void>;
-};
+// **キャッシュと無効化を自分で持たない。**provider と useEffect で書いていたが、
+// 保存のあと一覧を読み直す経路が依存配列の identity に載り、止まる理由を別の effect の
+// 副作用に頼っていた。queryKey が同じなら Query が 1 つの状態を配るので、サイドバーと
+// チャットの画面が別々の state を持つ問題も消える。
+const KEY = "chat-history";
 
-const ChatHistoryContext = createContext<Ctx | null>(null);
-
-export function ChatHistoryProvider({ children }: { children: ReactNode }) {
+export function useChatHistory() {
   const { project } = useProject();
   const projectKey = project?.key ?? null;
-  const [entries, setEntries] = useState<ChatEntry[]>([]);
+  const client = useQueryClient();
+  const invalidate = () => client.invalidateQueries({ queryKey: [KEY] });
 
-  useEffect(() => {
-    if (!projectKey) {
-      setEntries([]);
-      return;
-    }
-    listChats(projectKey)
-      .then(setEntries)
-      .catch(() => toast.error("チャットの履歴を読めなかった"));
-  }, [projectKey]);
+  const list = useQuery({
+    queryKey: [KEY, projectKey],
+    queryFn: projectKey === null ? skipToken : () => listChats(projectKey),
+  });
 
-  const reload = async () => setEntries(projectKey ? await listChats(projectKey) : []);
+  const save = useMutation({
+    mutationFn: ({ entry, turns }: { entry: ChatEntry; turns: Turn[] }) => saveChat(entry, turns),
+    onSuccess: invalidate,
+    onError: () => toast.error("チャットの履歴を書けなかった"),
+  });
 
-  const remove = async (id: string) => {
-    try {
-      await deleteChat(id);
-      await reload();
-    } catch {
-      toast.error("その会話を消せなかった");
-    }
-  };
+  const remove = useMutation({
+    mutationFn: deleteChat,
+    onSuccess: invalidate,
+    onError: () => toast.error("その会話を消せなかった"),
+  });
 
-  return (
-    <ChatHistoryContext.Provider value={{ entries, reload, remove }}>{children}</ChatHistoryContext.Provider>
-  );
-}
-
-export function useChatHistory(): Ctx {
-  const ctx = useContext(ChatHistoryContext);
-  if (!ctx) throw new Error("ChatHistoryProvider の外で useChatHistory を呼んでいる");
-  return ctx;
+  return { entries: list.data ?? [], save, remove };
 }
