@@ -19,8 +19,10 @@ const searchQuery = z.object({
   project: positiveId.optional(),
 });
 
-// session の題。持ち主の最初の発言、無ければ（trace だけで残した session）結んだ作業の題。
+// session の題。harvest が付けた題（server/src/titles.ts）。まだ付いていなければ持ち主の最初の発言、
+// それも無ければ（trace だけで残した session）結んだ作業の題。
 const TITLE = `coalesce(
+  c.title,
   (select left(m.body, 200) from gleanery.message m
    where m.conversation_id = c.id and m.speaker_kind = 'self' order by m.sent_at limit 1),
   (select w.title from gleanery.work_item w where w.conversation_id = c.id order by w.updated_at desc limit 1))`;
