@@ -20,6 +20,24 @@
 
 止めるのは `--test-timeout=60000`（`server/package.json`）で、こちらが正本である。
 
+## kysely のコードは 2 通りで検査する
+
+DB へ繋がないのは同じで、見たいものによって道具が変わる。
+
+- **生成される SQL だけを見る**: builder の `compile()` を呼ぶ。実行しないので driver は要らない
+- **返ってきた行で分岐する**: `server/test/fake-db.ts` の `fakeDb(respond)` を使う。`respond` が SQL と
+  パラメータと回数を見て、返す行か投げるエラーを決める
+
+**`DummyDriver` を行の検査に使わない。**公式 API ページは「execute すると throw する」と書いているが、
+0.29.6 の実装は `{ rows: [] }` を返す（`dist/driver/dummy-driver.js`）。行を返さないことに気付かないまま
+「空の結果で正しく動いた」と読める。
+
+**SQL を部分一致で判定するときは、更新と読み出しを取り違えないよう順番を決める。**kysely は表名を
+`"gleanery"."knowledge_embedding"` の形で統一して出すので、同じ表への `update` が `select` 用の分岐に入る。
+実測: 埋め込みの補充のテストで、`store` の UPDATE が読み出しの分岐に食われて件数が 2 倍になった。
+
+パラメータの番号は組み立て側が決める。`$2` のような位置を検査に埋め込まない（移行で 1 度ずれた）。
+
 ## 配る物は展開して見る
 
 `plugin/dist` と `plugin/db` は追跡しないので、`git diff` には出ない。`npm pack` して

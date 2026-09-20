@@ -62,6 +62,31 @@ DBを作り直すcommandは無い。空から作るのは空のDBへ`db:apply`�
    `knowledge_check2`のような番号が付き、本番と空のDBで番号がずれうる
 6. downは書かない
 
+## SQL の書き方
+
+application のクエリは kysely で書き、結果型は推論させる。`server/src/db-types.ts` は `db/schema.sql` を当てた
+使い捨ての PostgreSQL から生成した物で、**手で直さない**（`bun run codegen` で作り直し、CI の `codegen:check` が
+schema.sql とのずれを落とす）。schema を変えたら同じ commit で流し直す。
+
+手書きの結果型と、kysely の deprecated な呼び出しは `bun run sql` が落とす。**型では止まらない**ので、
+検査を外すなら代わりの止め方を用意する。
+
+raw SQL（`sql` テンプレート）を使ってよいのは次だけで、ほかは builder で書く。
+
+| 使う場所 | 理由 |
+|---|---|
+| pgvector の `operator(extensions.<#>)`、全文検索の `@@` と `ts_rank_cd` | kysely の operator に無い。schema 修飾は role が `search_path` に `extensions` を持たないため必要 |
+| `jsonb_to_recordset`、`unnest` | テーブル値関数。builder に無い |
+| 表名や id の列が実行時に決まるもの（埋め込みの補充、session の検索） | `sql.table` / `sql.ref` で組み立てる |
+| owner の migration（複文）と advisory lock | kysely の instance を持てない（版の照合より前に走る） |
+
+**`sql<T>` の `T` は SQL から推論されない。**呼び出し側が書いた型がそのまま結果型になるので、列を変えたら
+必ず手で直す。省くと `unknown` になる。
+
+`jsonb_to_recordset` と `unnest` へ渡す JSON は、**列定義の隣に行の型を書く**。キーの綴りがずれた列は
+例外を出さずに null で入る（Issue #47 がその経路だった）。実測で、型を付けた時点で `at` の nullable の
+取り違えが 1 件落ちた。
+
 ## 表の境界
 
 | 境界 | 表 | 書く口 |
