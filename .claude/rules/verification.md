@@ -24,9 +24,8 @@
 
 DB へ繋がないのは同じで、見たいものによって道具が変わる。
 
-- **生成される SQL だけを見る**: builder の `compile()` を呼ぶ。実行しないので driver は要らない
-- **返ってきた行で分岐する**: `server/test/fake-db.ts` の `fakeDb(respond)` を使う。`respond` が SQL と
-  パラメータと回数を見て、返す行か投げるエラーを決める
+`server/test/fake-db.ts` の `fakeDb(respond)` を使う。`respond` が SQL とパラメータと回数を見て、
+返す行か投げるエラーを決める。生成された SQL は、返ってきた `calls` で見る。
 
 **`DummyDriver` を行の検査に使わない。**公式 API ページは「execute すると throw する」と書いているが、
 0.29.6 の実装は `{ rows: [] }` を返す（`dist/driver/dummy-driver.js`）。行を返さないことに気付かないまま

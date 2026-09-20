@@ -24,24 +24,18 @@ const walk = (dir) =>
 
 // 改行を跨いで見る。整形が引数を折り返すと、行ごとの正規表現は同じ書き方を取りこぼす。
 const RULES = [
-  [/\.query\s*</g, "結果型を手で書いている。kysely の推論を使う"],
-  // 型引数の無い query に SQL を組んで渡す形。移行前はこれが既定だった。
-  [/\.query\(\s*`/g, "SQL を文字列で組んで query へ渡している。builder か sql テンプレートで書く"],
+  // 型引数の有無を問わず pg の query を弾く。移行前はこれが既定だった。
+  [/\.query\s*[(<]/g, "SQL を手で書いて pg の query へ渡している。builder か sql テンプレートで書く"],
   [/\.orderBy\(\s*\[/g, "orderBy(配列) は deprecated。orderBy(expr, 'asc') を重ねて書く"],
   [/\.orderBy\(\s*['"][^'"]*\s+(?:asc|desc)['"]/g, "方向を文字列へ埋めない。orderBy(expr, 'desc') と書く"],
 ];
 
-// 識別子をそのまま SQL へ挿す口。外部入力を渡すと注入になるので、定数しか渡していないことを目で見る。
-const IDENTIFIER_SINKS = /\bsql\.(?:raw|table|ref|lit)\s*[(<]/g;
-
 const files = [...walk(path.join(root, "server/src")), ...walk(path.join(root, "server/test"))];
-let sinks = 0;
 for (const file of files) {
   const rel = path.relative(root, file);
   const text = fs.readFileSync(file, "utf8");
-  sinks += text.match(IDENTIFIER_SINKS)?.length ?? 0;
   for (const [re, why] of RULES) {
-    if (re.source.startsWith("\\.query") && RAW_QUERY_OK.has(rel)) continue;
+    if (re === RULES[0][0] && RAW_QUERY_OK.has(rel)) continue;
     for (const m of text.matchAll(re)) {
       fail.push(`${rel}:${text.slice(0, m.index).split("\n").length}: ${why}`);
     }
@@ -52,9 +46,6 @@ if (fail.length) {
   console.error(`SQL の書き方:\n${fail.map((f) => `  ${f}`).join("\n")}`);
   process.exit(1);
 }
-// `sql<T>` の T は SQL から推論されず、この検査も見ない（SKILL.md に書いてある）。件数だけ出す。
-const rawTyped = files.reduce((n, f) => n + (fs.readFileSync(f, "utf8").match(/\bsql<\{/g)?.length ?? 0), 0);
 console.log(
-  `SQL の書き方: .query< は ${RAW_QUERY_OK.size} ファイルの例外だけ、deprecated な orderBy は無い` +
-    `（sql<{…}> の手書き結果型 ${rawTyped} 件と、識別子を挿す ${sinks} 件は、この検査の対象外）`,
+  `SQL の書き方: pg の query は ${RAW_QUERY_OK.size} ファイルの例外だけ、deprecated な orderBy は無い`,
 );

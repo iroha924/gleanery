@@ -2,7 +2,6 @@
 //
 // **DummyDriver では足りない。**0.29.6 の実装は常に `{ rows: [] }` を返すので、返ってきた行で分岐する検査が
 // 書けない（公式 API ページは「execute すると throw」と書いているが、実装と食い違う）。
-// 生成される SQL だけを見るなら、これではなく builder の `compile()` を呼ぶ。
 
 import {
   type CompiledQuery,

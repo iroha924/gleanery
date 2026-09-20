@@ -31,12 +31,9 @@ const check = process.argv.includes("--check");
 const LABEL = "gleanery-codegen";
 const docker = (args, opts = {}) => execFileSync("docker", args, { encoding: "utf8", ...opts });
 const remove = () => spawnSync("docker", ["rm", "-f", NAME], { stdio: "ignore" });
-/** 前回が SIGINT や打ち切りで抜けて残した分を回収する。名前は毎回変わるので label で引く。 */
-const sweep = () => {
-  const left = spawnSync("docker", ["ps", "-aq", "--filter", `label=${LABEL}`], { encoding: "utf8" });
-  const ids = (left.stdout ?? "").split("\n").filter(Boolean);
-  if (ids.length) spawnSync("docker", ["rm", "-f", ...ids], { stdio: "ignore" });
-};
+// 起動時に古い分をまとめて消さない。label でも名前の接頭辞でも、並行して走っているもう一方の
+// 稼働中のコンテナに当たる（実測: filter は label のキー一致で、実行中でも rm -f が通る）。
+// SIGINT や打ち切りで抜けた残骸は `docker rm -f $(docker ps -aq --filter label=gleanery-codegen)` で消す。
 
 /** 立ち上がるまで待つ。pg_isready は初期化の途中でも一度 true を返すので、実際に問い合わせて確かめる。 */
 const waitReady = (deadlineMs = 60_000) => {
@@ -57,7 +54,6 @@ const waitReady = (deadlineMs = 60_000) => {
 
 const env = { ...process.env, POSTGRES_PASSWORD: crypto.randomBytes(24).toString("base64url") };
 
-sweep();
 try {
   // ポートは 0 を渡して空きを選ばせる。開発用の DB が 5432 を使っているので固定にできない。
   docker(

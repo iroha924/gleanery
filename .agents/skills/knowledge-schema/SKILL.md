@@ -84,10 +84,11 @@ builder に推論させるのは**select・join・別名・returning**で、そ�
 | 相関サブクエリと集計（`json_agg`、件数の副問い合わせ） | builder で書くと外側の足場だけが増える |
 | `exists`、`coalesce`、`case`、行値比較 `(a, b) < (c, d)` | 条件式。builder の型が効く面ではない |
 | 配列との照合（`= any(...)` / `<> all(...)`） | **kysely の `in` / `not in` は空配列に `in ()` を出し、PostgreSQL が構文エラーにする。**実行時に決まる配列はこちらで書く（リテラルの配列だけ `in` でよい） |
-| owner の migration（複文）と advisory lock | kysely の instance を持てない（版の照合より前に走る） |
+| owner の migration（複文）・advisory lock・接続時の版の照合 | kysely の instance を持てない（`db.ts` と `admin.ts` だけが例外で、検査もこの 2 ファイルを外す） |
 
-`bun run sql` が落とすのは `.query<T>` と deprecated な `orderBy` だけである。`sql<T>` の `T` は
-SQL から推論されず、検査も見ない。呼び出し側が書いた型がそのまま結果型になるので、列を変えたら手で直す。
+`bun run sql` が落とすのは、pg の `query` へ SQL を手で渡す形（`.query(` と `.query<`）と、deprecated な
+`orderBy` だけである。`sql<T>` の `T` は SQL から推論されず、検査も見ない。呼び出し側が書いた型が
+そのまま結果型になるので、列を変えたら手で直す。
 
 `jsonb_to_recordset` と `unnest` へ渡す JSON は、**列定義の隣に行の型を書く**。キーの綴りがずれた列は
 例外を出さずに null で入る。実測で、型を付けた時点で `at` の nullable の取り違えが 1 件落ちた。
