@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const developmentSkills = ["knowledge-schema", "next-hono", "plugin-agent-authoring", "plugin-release"];
+const developmentSkills = ["knowledge-schema", "ui-hono", "plugin-agent-authoring", "plugin-release"];
 
 function fail(message) {
   failures.push(message);
@@ -32,12 +32,26 @@ function frontmatter(relative, source) {
     return {};
   }
   const fields = {};
+  let listKey = null;
   for (const line of source.slice(4, end).split("\n")) {
-    const match = /^([A-Za-z][A-Za-z0-9-]*):\s*(.+)$/.exec(line);
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
+    // ブロックシーケンス（`skills:` の次行以降の `- 値`）を配列として拾う。
+    const item = /^\s+-\s*(.+)$/.exec(line);
+    if (item && listKey) {
+      fields[listKey].push(item[1].replace(/^['"]|['"]$/g, ""));
+      continue;
+    }
+    const match = /^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$/.exec(line);
     if (!match) {
       fail(`${relative}: frontmatterの行を解釈できない: ${line}`);
       continue;
     }
+    if (match[2] === "") {
+      listKey = match[1];
+      fields[listKey] = [];
+      continue;
+    }
+    listKey = null;
     fields[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
   }
   return fields;
@@ -56,7 +70,24 @@ const agents = read("AGENTS.md");
 const lines = agents.trimEnd().split("\n").length;
 const bytes = Buffer.byteLength(agents);
 if (lines >= 200) fail(`AGENTS.md: ${lines}行。200行未満にする`);
-if (bytes > 32 * 1024) fail(`AGENTS.md: ${bytes} bytes。Codex既定の32 KiBを超えている`);
+
+// **Codexはglobal → repo root → CWDまでのAGENTS.mdを連結し、32 KiBで打ち切る。**
+// rootだけを見ると、nestedを足したぶんが黙って切り捨てられる。ここではリポジトリ側の合計を見る
+// （持ち主の ~/.codex/AGENTS.md はマシンごとに違うので、その分の余白を引いて判定する）。
+const CODEX_LIMIT = 32 * 1024;
+// 持ち主の ~/.codex/AGENTS.md に見込む分。実測 18,638 bytes（2026-09-20）へ 1 KiB の伸びを足した。
+// **これを増やすとリポジトリ側の余白が減る。**足りなくなったら、まず nested を Skill へ移す。
+const USER_RESERVE = 19 * 1024;
+const nested = ["dashboard/AGENTS.md"];
+const nestedBytes = nested.map((f) => Buffer.byteLength(read(f)));
+const repoTotal = bytes + nestedBytes.reduce((a, b) => a + b, 0);
+if (repoTotal > CODEX_LIMIT - USER_RESERVE) {
+  fail(
+    `AGENTS.mdの合計が${repoTotal} bytes（root ${bytes} + nested ${nestedBytes.join(" + ")}）。` +
+      `Codexの32 KiBからglobal分${USER_RESERVE}を引いた${CODEX_LIMIT - USER_RESERVE}以内にする。` +
+      "長い手順は.agents/skills/へ移す",
+  );
+}
 if (read("CLAUDE.md").trim() !== "@AGENTS.md") fail("CLAUDE.md: @AGENTS.mdだけを正本として読む形ではない");
 if (read("dashboard/CLAUDE.md").trim() !== "@AGENTS.md") {
   fail("dashboard/CLAUDE.md: dashboard/AGENTS.mdをimportしていない");
@@ -148,16 +179,32 @@ for (const name of pluginSkills) {
   }
 }
 
-const agentDirectory = path.join(root, "plugin/agents");
-const agentFiles = fs.readdirSync(agentDirectory).filter((file) => file.endsWith(".md"));
-for (const file of agentFiles) {
-  const relative = `plugin/agents/${file}`;
+// 配る reviewer（plugin/agents）と repository 専用（.claude/agents）を同じ規則で見る。
+// **片方だけ検査すると、もう片方の壊れ方が静かに残る。**
+const agentDirectories = ["plugin/agents", ".claude/agents"];
+const agentEntries = agentDirectories.flatMap((directory) => {
+  const absolute = path.join(root, directory);
+  if (!fs.existsSync(absolute)) return [];
+  return fs
+    .readdirSync(absolute)
+    .filter((file) => file.endsWith(".md"))
+    .map((file) => `${directory}/${file}`);
+});
+const agentFiles = agentEntries;
+for (const relative of agentEntries) {
+  const file = path.basename(relative);
   const fields = frontmatter(relative, read(relative));
   for (const required of ["name", "description", "tools", "model", "effort", "maxTurns"]) {
     if (!fields[required]) fail(`${relative}: ${required}が無い`);
   }
   if (fields.name !== path.basename(file, ".md")) fail(`${relative}: nameがfile名と一致しない`);
   if (fields.model === "inherit") fail(`${relative}: modelをsessionから継承しない`);
+  // プリロードするSkillが無ければ、その名前は解決されず本文の前提が崩れる。
+  for (const name of Array.isArray(fields.skills) ? fields.skills : []) {
+    const repoSkill = fs.existsSync(path.join(root, ".agents/skills", name, "SKILL.md"));
+    const pluginSkill = fs.existsSync(path.join(root, "plugin/skills", name, "SKILL.md"));
+    if (!repoSkill && !pluginSkill) fail(`${relative}: skills の ${name} が実在しない`);
+  }
   if (!Number.isInteger(Number(fields.maxTurns)) || Number(fields.maxTurns) <= 0) {
     fail(`${relative}: maxTurnsは正の整数にする`);
   }

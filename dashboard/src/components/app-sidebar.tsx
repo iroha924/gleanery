@@ -118,7 +118,7 @@ function syncNote(p: Project): { text: string; failed: boolean } {
 }
 
 function ProjectSwitcher() {
-  const { target, setTarget, label, projects } = useProject();
+  const { target, setTarget, label, projects, failed } = useProject();
   const { setOpenMobile } = useSidebar();
   const pick = (value: string) => {
     setTarget(value === "all" ? "" : value);
@@ -152,7 +152,15 @@ function ProjectSwitcher() {
           </DropdownMenuRadioItem>
           <DropdownMenuGroup className="mt-2 border-t pt-2">
             <DropdownMenuLabel>作業場所</DropdownMenuLabel>
-            {projects === undefined && <p className="px-2 py-2 text-sm text-muted-foreground">読み込み中…</p>}
+            {failed ? (
+              // **失敗を「読み込み中」に見せない。**取れていないのに待たせ続けると、
+              // 利用者は待てば直ると思って待ち続ける（実測: 永遠に「読み込み中…」だった）。
+              <p role="alert" className="px-2 py-2 text-error text-sm leading-[1.8]">
+                作業場所を読めませんでした。{failed}
+              </p>
+            ) : (
+              projects === undefined && <p className="px-2 py-2 text-sm text-muted-foreground">読み込み中…</p>
+            )}
             {projects?.length === 0 && (
               <div className="mx-1 mb-2 rounded-md border border-dashed px-3 py-3">
                 <p className="text-sm font-medium">作業場所はまだありません</p>
@@ -168,7 +176,7 @@ function ProjectSwitcher() {
                   <GitBranchIcon className="mt-0.5 size-4 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{project.name}</span>
-                    <span className={`block text-xs ${note.failed ? "text-dont" : "text-muted-foreground"}`}>
+                    <span className={`block text-xs ${note.failed ? "text-error" : "text-muted-foreground"}`}>
                       {note.text} ・ セッション {project.sessions}
                     </span>
                   </span>

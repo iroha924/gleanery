@@ -3,7 +3,7 @@ import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [
@@ -26,6 +26,13 @@ export default defineConfig({
   ],
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "./src") },
+  },
+  // Vite の設定をそのまま使う。alias と plugin を二重に書かない。
+  test: {
+    environment: "jsdom",
+    globals: true,
+    include: ["src/**/*.test.tsx", "src/**/*.test.ts"],
+    setupFiles: ["./src/test-setup.ts"],
   },
   server: {
     host: "127.0.0.1",

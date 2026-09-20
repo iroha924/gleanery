@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import {
   ArrowUpIcon,
   BotIcon,
@@ -42,10 +43,9 @@ import {
 } from "@/components/ui/message-scroller";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api } from "@/lib/api";
 import { useProject } from "@/lib/project";
 import { stanceClass } from "@/lib/stance";
-import type { ChatSource, PolishOption } from "../api/chat";
+import { type ChatSource, type PolishOption, readFull } from "../api/chat";
 import { useChat } from "../model/use-chat";
 
 const EXAMPLES = [
@@ -78,18 +78,26 @@ function Marked({ text, marks }: { text: string; marks: string[] }) {
 function Source({ source }: { source: ChatSource }) {
   const { project } = useProject();
   const [full, setFull] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
-  const readFull = () => {
+  const openFull = () => {
     if (!project) return;
     setReading(true);
-    api
-      .read(source.ref, [project.id])
+    setFailed(null);
+    // **全文と失敗を同じ場所へ出さない。**混ぜると、読み手は本文かエラーかを区別できない。
+    readFull(source.ref, [project.id])
       .then(setFull)
-      .catch((error) => setFull(error instanceof Error ? error.message : String(error)))
+      .catch((error) => setFailed(error instanceof Error ? error.message : "全文を読めなかった"))
       .finally(() => setReading(false));
   };
   return (
-    <Dialog onOpenChange={(open) => !open && setFull(null)}>
+    <Dialog
+      onOpenChange={(open) => {
+        if (open) return;
+        setFull(null);
+        setFailed(null);
+      }}
+    >
       <DialogTrigger asChild>
         <button
           type="button"
@@ -99,14 +107,14 @@ function Source({ source }: { source: ChatSource }) {
             {source.n}
           </span>
           <span className="line-clamp-2 min-w-0 text-foreground/85">
-            <span className={`mr-1 ${stanceClass(source.stance)}`}>{source.label}</span>
+            <span className={cn("mr-1", stanceClass(source.stance))}>{source.label}</span>
             {source.text}
           </span>
         </button>
       </DialogTrigger>
       <DialogContent className="gap-5 p-6 sm:max-w-[42rem]">
         <DialogHeader>
-          <DialogTitle className={`pr-10 text-lg leading-[1.7] ${stanceClass(source.stance)}`}>
+          <DialogTitle className={cn("pr-10 text-lg leading-[1.7]", stanceClass(source.stance))}>
             {source.label}
           </DialogTitle>
           <DialogDescription className="font-mono text-xs tracking-[0.06em]">
@@ -116,13 +124,18 @@ function Source({ source }: { source: ChatSource }) {
         <p className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap pr-1 text-base leading-[2.1]">
           {full ?? source.text}
         </p>
+        {failed && (
+          <p role="alert" className="text-error text-sm leading-[1.9]">
+            {failed}
+          </p>
+        )}
         <DialogFooter className="-mx-6 -mb-6 p-5 sm:justify-start">
           {full === null && (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              onClick={readFull}
+              onClick={openFull}
               disabled={reading || !project}
             >
               {reading && <Spinner className="size-3" />}
@@ -333,7 +346,7 @@ export function ChatPage() {
                           {turn.stopped && (
                             <p className="text-muted-foreground text-base">生成を中断しました</p>
                           )}
-                          {turn.error && <p className="text-dont text-base">{turn.error}</p>}
+                          {turn.error && <p className="text-error text-base">{turn.error}</p>}
                           {turn.sources && (
                             <Sources
                               sources={turn.sources}
@@ -375,6 +388,7 @@ export function ChatPage() {
           >
             <InputGroup className="rounded-md bg-card">
               <InputGroupTextarea
+                aria-label="質問"
                 value={chat.draft}
                 onChange={(event) => chat.setDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -404,7 +418,7 @@ export function ChatPage() {
                       type="button"
                       size="icon-sm"
                       variant={chat.recorder ? "default" : "ghost"}
-                      className={`ml-auto ${chat.recorder ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+                      className={cn("ml-auto", chat.recorder && "bg-error text-white hover:bg-error/90")}
                       onClick={chat.listen}
                       disabled={chat.hearing || chat.preparing || chat.projects.length === 0}
                       aria-label={chat.recorder ? "録音を終了" : "録音を開始"}

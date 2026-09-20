@@ -1,4 +1,4 @@
-import type { Stance } from "@/lib/api";
+import { api, type Stance } from "@/lib/api";
 
 /** 答えの根拠。n は本文の [n] に対応する。ref は全文を読むときに /api/read へ渡す。 */
 export type ChatSource = {
@@ -89,3 +89,6 @@ export async function askStream(
     }
   }
 }
+
+/** 参照の全文。作業場所の外は「無い」と返る（サーバー側で絞る）。 */
+export const readFull = (ref: string, projects: number[]): Promise<string> => api.read(ref, projects);

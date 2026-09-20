@@ -38,7 +38,7 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
 
 該当する作業では、実装前に次のSkillを最後まで読む。
 
-- 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `next-hono`
+- 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `ui-hono`
 - DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
 - MCP、CLI、自動記録のhook、plugin Skill・Agentの配布: `plugin-release`
 - `plugin/agents/`とreview Agent: `plugin-agent-authoring`
@@ -63,9 +63,14 @@ dashboard・Honoの実行時動作、DB schema・権限・データ変換、認�
 `plugin/skills/`・`plugin/agents/`・MCP・CLI・npm配布物を変える場合はPRを使う。
 影響範囲を即答できない変更もPRへ寄せる。
 
-npm配布物・version・bundleの入力・検査scriptを変えたcommitは、`.claude/agents/review-shipping`へ
-渡してから出す（Claude Codeのみ）。`git diff`に出ない面 — tarballの中身、検査の空振り、版の据え置き —
-だけを見るrepository専用のreviewerで、`plugin/agents/`の配布reviewerとは担当が重ならない。
+repository専用のreviewerが2体ある（Claude Codeのみ、`.claude/agents/`）。**機械が判定できることは
+見ない**ので、`bun run verify`が通ってから渡す。担当は各定義にある。
+
+- `review-shipping`: 配布物・version・bundleの入力・検査scriptを変えたcommitの前。`verify`と同時に渡さない
+- `review-ui`: `dashboard/`を変えたcommitの前
+
+**Codex側に同じreviewerを置かない**（意図した非対称）。定義を二重に持つと基準が2箇所で古くなるので、
+Codexへは`codex-talk`で差分の場所と受け入れ条件を渡す。
 
 ## 最小command索引
 

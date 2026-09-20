@@ -13,6 +13,8 @@ type Ctx = {
   target: string;
   setTarget: (t: string) => void;
   projects: Project[] | undefined;
+  /** 一覧を引けなかった理由。取れているあいだは null */
+  failed: string | null;
   /** 選んだ作業場所。すべてなら null（一覧が届くまでも null。絞り込みには target を使う） */
   project: Project | null;
   label: string;
@@ -51,12 +53,19 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const value = useMemo<Ctx | null>(() => {
     if (target === null) return null;
     const list = projects.data;
-    if (!target) return { target, setTarget, projects: list, project: null, label: "すべて" };
+    const failed = projects.isError
+      ? projects.error instanceof Error
+        ? projects.error.message
+        : "作業場所の一覧を引けなかった"
+      : null;
+    if (!target) return { target, setTarget, projects: list, project: null, label: "すべて", failed };
     const p = list?.find((x) => String(x.id) === target) ?? null;
     // **消えた作業場所を選んだままにしない。**一覧が届いて見つからなければ「すべて」に戻す。
-    if (list && !p) return { target: "", setTarget, projects: list, project: null, label: "すべて" };
-    return { target, setTarget, projects: list, project: p, label: p?.name ?? "…" };
-  }, [target, setTarget, projects.data]);
+    if (list && !p) {
+      return { target: "", setTarget, projects: list, project: null, label: "すべて", failed };
+    }
+    return { target, setTarget, projects: list, project: p, label: p?.name ?? "…", failed };
+  }, [target, setTarget, projects.data, projects.isError, projects.error]);
 
   // 保存済みの範囲を読む前に子を出すと、一瞬だけ「すべて」で検索が走る。
   if (value === null) return null;
