@@ -1,4 +1,5 @@
 import { useRouterState } from "@tanstack/react-router";
+import { cn } from "cn";
 import { MotionIconConfig } from "lucide-react-motion";
 import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -15,9 +16,11 @@ function Body({ children }: { children: ReactNode }) {
 
   return (
     <div
-      className={`min-h-0 w-full flex-1 bg-card ${ownsScroll ? "overflow-hidden" : "overflow-y-auto"} ${
-        edgeToEdge ? "" : "px-4 pt-14 pb-4 md:p-6 lg:p-8"
-      }`}
+      className={cn(
+        "min-h-0 w-full flex-1 bg-card",
+        ownsScroll ? "overflow-hidden" : "overflow-y-auto",
+        !edgeToEdge && "px-4 pt-14 pb-4 md:p-6 lg:p-8",
+      )}
     >
       {children}
     </div>

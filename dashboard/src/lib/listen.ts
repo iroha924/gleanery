@@ -1,11 +1,11 @@
 // 会議の音声を OpenAI の Realtime へ流し続ける。
 //
-// **区切りを自分で決めない。**固定秒で切ると語の途中に切れ目が落ちるうえ、
+// 区切りを自分で決めない。固定秒で切ると語の途中に切れ目が落ちるうえ、
 // 「聞かれている最中」に間に合わない。Realtime は話しながら文字が返る。
 
 const URL_REALTIME = "wss://api.openai.com/v1/realtime?intent=transcription";
 
-/** 音を溜めずにそのまま渡すだけの処理器。**AudioWorklet は別ファイルを要求する**ので Blob で渡す。 */
+/** 音を溜めずにそのまま渡すだけの処理器。AudioWorklet は別ファイルを要求するので Blob で渡す。 */
 const WORKLET = `class P extends AudioWorkletProcessor {
   process(inputs) {
     const ch = inputs[0] && inputs[0][0];
@@ -15,7 +15,7 @@ const WORKLET = `class P extends AudioWorkletProcessor {
 }
 registerProcessor("pcm", P);`;
 
-/** Float32 (-1..1) を 16bit PCM の base64 へ。**Realtime は 24kHz mono の PCM しか受けない。** */
+/** Float32 (-1..1) を 16bit PCM の base64 へ。Realtime は 24kHz mono の PCM しか受けない。 */
 function encode(f32: Float32Array): string {
   const i16 = new Int16Array(f32.length);
   for (let i = 0; i < f32.length; i++) {
@@ -23,7 +23,7 @@ function encode(f32: Float32Array): string {
     i16[i] = v * 0x7fff;
   }
   const bytes = new Uint8Array(i16.buffer);
-  // **一度に String.fromCharCode へ渡さない。**引数が数万個になると落ちる。
+  // 一度に String.fromCharCode へ渡さない。引数が数万個になると落ちる。
   let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) {
     s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -39,13 +39,10 @@ export type Heard = {
 };
 
 /**
- * 1 系統を流し続ける。返るのは止めるための関数。
+ * 1 系統を流し続ける。返るのは止めるための関数。`onError` は繋ぎ直しても駄目だったときにだけ呼ぶ。
  *
- * **一時鍵は 10 分で切れる。**1 時間の会議なら 5 回張り直すことになるので、切れたら
- * 鍵を取り直して繋ぎ直す。音の経路（AudioContext と Worklet）は作り直さない —
- * 作り直すとその間の音が落ちるうえ、マイクの立ち上がりをもう一度待つことになる。
- *
- * `onError` は繋ぎ直しても駄目だったときにだけ呼ぶ。**一度の切断で会議を止めない。**
+ * 一時鍵は 10 分で切れるので取り直して繋ぎ直すが、音の経路（AudioContext と Worklet）は作り直さない。
+ * 作り直すとその間の音が落ち、マイクの立ち上がりをもう一度待つことになる。
  */
 export function listen(
   stream: MediaStream,
@@ -62,6 +59,7 @@ export function listen(
     stopped = true;
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close();
     ws = null;
+    // 閉じ損ねても会議はもう終わっている。利用者に取れる手が無いので捨てる。
     ctx.close().catch(() => {});
   };
 
@@ -96,7 +94,8 @@ export function listen(
       } else if (ev.type === "conversation.item.input_audio_transcription.completed" && ev.item_id) {
         onHeard({ itemId: ev.item_id, text: ev.transcript ?? "", done: true });
       } else if (ev.type === "error") {
-        onError(ev.error?.message ?? "聞き取りが止まった");
+        const detail = ev.error?.message;
+        onError(detail ? `聞き取りが止まった（${detail}）` : "聞き取りが止まった");
       }
     };
 
