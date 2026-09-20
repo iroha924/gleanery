@@ -10,11 +10,11 @@ import { identify, localRoots, nameLocal, normalizeRemote, patchPaths, relativeT
 if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
 
 test("ssh と https の remote が同じ key へ揃う", () => {
-  const want = "github.com/iroha924/hir4ta-developer";
-  assert.equal(normalizeRemote("git@github.com:iroha924/hir4ta-developer.git"), want);
-  assert.equal(normalizeRemote("https://github.com/iroha924/hir4ta-developer.git"), want);
-  assert.equal(normalizeRemote("https://github.com/iroha924/hir4ta-developer"), want);
-  assert.equal(normalizeRemote("ssh://git@github.com/iroha924/hir4ta-developer.git"), want);
+  const want = "github.com/iroha924/gleanery";
+  assert.equal(normalizeRemote("git@github.com:iroha924/gleanery.git"), want);
+  assert.equal(normalizeRemote("https://github.com/iroha924/gleanery.git"), want);
+  assert.equal(normalizeRemote("https://github.com/iroha924/gleanery"), want);
+  assert.equal(normalizeRemote("ssh://git@github.com/iroha924/gleanery.git"), want);
 });
 
 // key は DB へ平文で入る。「最初の @ まで」で切ると、パスワードに @ があるとき断片が残る。

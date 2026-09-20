@@ -72,7 +72,8 @@ if (distinct.length !== 1) {
 const INPUTS = [
   "plugin/",
   // .claude-plugin/marketplace.json は入れない。**リポジトリ直下にあり npm の files に入らない**ので、
-  // これを変えても配る tarball の中身は 1 バイトも変わらない。版の一致だけは MANIFESTS が見る。
+  // これを変えても配る tarball の中身は 1 バイトも変わらない。版の一致は MANIFESTS が、
+  // 取得元は scripts/check-ai-config.mjs が見る。
 
   "server/src/",
   "server/package.json",
@@ -100,8 +101,8 @@ const withoutVersion = (text) => {
   try {
     const o = JSON.parse(text);
     delete o.version;
-    // 版の数字だけを落とす。**取得元（source の種類と package 名）は残す** —
-    // そこが変わるのは配布経路の変更なので、版を上げずに通してはいけない。
+    // 版の数字だけを落とす。取得元（source の種類と package 名）が変わったかは
+    // ここでは見ない — scripts/check-ai-config.mjs が版に関わらず無条件で落とす。
     for (const p of Array.isArray(o.plugins) ? o.plugins : []) {
       delete p.version;
       if (p.source && typeof p.source === "object") delete p.source.version;
