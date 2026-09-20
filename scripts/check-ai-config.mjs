@@ -128,6 +128,25 @@ try {
   if (pluginManifest.skills !== "./skills/") {
     fail("plugin/.codex-plugin/plugin.json: 利用者向けSkillの入口は./skills/に限る");
   }
+  if (pluginManifest.hooks !== "./hooks/codex.json") {
+    fail("plugin/.codex-plugin/plugin.json: Codexのhookは./hooks/codex.jsonを読む");
+  }
+  const codexHooks = JSON.parse(read("plugin/hooks/codex.json")).hooks;
+  const codexCapture = ["$", '{PLUGIN_ROOT}/dist/capture.js" codex'].join("");
+  const codexCaptureWindows =
+    "powershell.exe -NoProfile -NonInteractive -Command node $env:PLUGIN_ROOT/dist/capture.js codex";
+  for (const event of ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "Interrupt"]) {
+    const commands = codexHooks?.[event]?.flatMap((group) => group.hooks ?? []) ?? [];
+    if (!commands.some((hook) => hook.command?.includes(codexCapture))) {
+      fail(`plugin/hooks/codex.json: ${event}がCodexの自動記録へ繋がっていない`);
+    }
+    if (!commands.some((hook) => hook.commandWindows === codexCaptureWindows)) {
+      fail(`plugin/hooks/codex.json: ${event}のWindows用自動記録がない`);
+    }
+    if (commands.some((hook) => hook.async)) {
+      fail(`plugin/hooks/codex.json: ${event}を非同期にすると会話の順序を保てない`);
+    }
+  }
   const marketplace = JSON.parse(read(".claude-plugin/marketplace.json"));
   const entry = marketplace.plugins?.[0];
   const src = entry?.source;
