@@ -75,7 +75,8 @@ dev は Vite の proxy が `127.0.0.1:4924` へ流す。**`changeOrigin` を立�
 ## 見た目と操作
 
 - 色は `src/styles.css` の意味で選ぶ。`do` / `dont` は**判断の極性**、`error` はシステムの失敗、
-  `destructive` は破壊的操作。今は `dont` と `error` が同じ値だが、名前を混ぜない
+  `destructive` は破壊的操作、`live` は録音・生成が動いていること。4 つは今同じ値だが、名前を混ぜない
+  （録音中に `error` を、中断ボタンに `destructive` を使っていた。値を分けた時点で意味が入れ替わる）
 - 条件付きのクラスは `cn()` で書く。テンプレートリテラルで組み立てない
 - `components/ui/` の Radix ラッパーは role・focus・キーボードを引き受けるが、**テキストは引き受けない**。
   アイコンだけのボタンには `aria-label`、Dialog には Title と Description を必ず書く

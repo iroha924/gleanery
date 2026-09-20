@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "gleanery",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "description": "会話を自動で残し、過去の決定・棄却した案・制約・発言を引く。glean = 落ち穂を拾い集める",
   "author": {
     "name": "iroha924",
