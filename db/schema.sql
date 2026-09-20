@@ -12,7 +12,7 @@ create schema if not exists extensions;
 create extension if not exists vector with schema extensions;
 
 create schema gleanery;
-comment on schema gleanery is 'gleanery schema revision 4';
+comment on schema gleanery is 'gleanery schema revision 5';
 revoke all on schema gleanery from public;
 
 -- git remote を正規化した key（`git:github.com/owner/repo`）か、remote の無い作業場所に各 PC の設定で付けた key。
@@ -84,7 +84,10 @@ create table gleanery.source_item (
         and closed_at is null
       else path is null and body is null and state in ('open', 'merged', 'closed') and (state = 'open') = (closed_at is null)
     end
-  )
+  ),
+  -- 上の CHECK は state が NULL だと式全体が NULL になって通る。closed_at との対もそのとき守られない。
+  constraint source_item_state_required
+    check (kind in ('document', 'requirements', 'design') or state is not null)
 );
 create index source_item_listing on gleanery.source_item (connector_id, kind, state, source_updated_at desc);
 
