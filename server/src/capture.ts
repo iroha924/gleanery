@@ -22,7 +22,7 @@ import os from "node:os";
 import path from "node:path";
 import { type Kysely, type SqlBool, sql } from "kysely";
 import { ARTIFACT_PATH } from "./artifacts.ts";
-import { EMBED_MODEL, type Env, embed, KEY, loadEnv, open, vec } from "./db.ts";
+import { EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, open, vec } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
@@ -449,7 +449,7 @@ export async function write(
   projects: Map<string, Project>,
   vectors: Vectors,
 ): Promise<number> {
-  return db.transaction().execute(async (trx) => {
+  return inTransaction(db, async (trx) => {
     const conversations = new Map<
       string,
       { project: number; host: Host; session: string; branch: string | null; at: string }

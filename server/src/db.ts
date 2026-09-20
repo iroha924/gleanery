@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Kysely, PostgresDialect } from "kysely";
+import { Kysely, PostgresDialect, type Transaction } from "kysely";
 import pg from "pg";
 import type { DB } from "./db-types.ts";
 
@@ -163,6 +163,30 @@ export function open(env: Env, role: Role, checkVersion = true): Kysely<DB> {
       },
     }),
   });
+}
+
+/**
+ * transaction を張り、失敗の理由を保つ。kysely は rollback を try で囲まないので、rollback 自体が
+ * 失敗すると元の例外がそちらで置き換わる（接続が切れたときに SQLSTATE が消える）。自動記録はその
+ * SQLSTATE で「その記録が原因の失敗か」を判定しているので、置き換わると値の誤りが待ち行列に残り続ける。
+ * 接続は kysely が返すので、ここでは理由だけを保つ。
+ */
+export async function inTransaction<T>(db: Kysely<DB>, fn: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
+  let inner: unknown;
+  let failed = false;
+  try {
+    return await db.transaction().execute(async (trx) => {
+      try {
+        return await fn(trx);
+      } catch (e) {
+        inner = e;
+        failed = true;
+        throw e;
+      }
+    });
+  } catch (e) {
+    throw failed ? inner : e;
+  }
 }
 
 /** 1 つの接続を占有して transaction を張る。失敗したら rollback して元の例外を投げる。 */

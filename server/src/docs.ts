@@ -12,7 +12,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { type Kysely, type SqlBool, sql } from "kysely";
 import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underGleanery } from "./artifacts.ts";
-import { EMBED_MODEL } from "./db.ts";
+import { EMBED_MODEL, inTransaction } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { knowledgeText } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
@@ -364,7 +364,7 @@ export async function syncDocs(
   const commit = commitOf(root, opts.remote);
   const { docs, skipped } = collectDocs(root, commit);
 
-  const done = await db.transaction().execute(async (trx) => {
+  const done = await inTransaction(db, async (trx) => {
     const connector = await connectorOf(trx, projectId, "docs");
     const before = connector.headOid;
     if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))

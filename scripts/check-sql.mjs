@@ -25,7 +25,8 @@ const walk = (dir) =>
 // 改行を跨いで見る。整形が引数を折り返すと、行ごとの正規表現は同じ書き方を取りこぼす。
 const RULES = [
   // 型引数の有無を問わず pg の query を弾く。移行前はこれが既定だった。
-  [/\.query\s*[(<]/g, "SQL を手で書いて pg の query へ渡している。builder か sql テンプレートで書く"],
+  // Hono の `c.req.query(...)` は別物なので、直前が `req.` のものは見ない。
+  [/(?<!req)\.query\s*[(<]/g, "SQL を手で書いて pg の query へ渡している。builder か sql テンプレートで書く"],
   [/\.orderBy\(\s*\[/g, "orderBy(配列) は deprecated。orderBy(expr, 'asc') を重ねて書く"],
   [/\.orderBy\(\s*([`'"])[^`'"]*\s+(?:asc|desc)\1/g, "方向を文字列へ埋めない。orderBy(expr, 'desc') と書く"],
 ];
