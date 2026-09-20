@@ -30,34 +30,40 @@ const read = (p) => {
   }
 };
 
-/** name を、どのワークスペースの node_modules からでも引く（先に見つかったものを使う）。 */
-const locate = (name) => {
-  for (const w of WORKSPACES) {
-    const dir = path.join(root, w, "node_modules", name);
-    if (fs.existsSync(path.join(dir, "package.json"))) return dir;
+/**
+ * name を from から辿って解決する。node の解決と同じく、近い node_modules から上へ探す。
+ * 同じ名前で版が違う実体が並ぶので（実測: server に react 19.2.8、dashboard に 19.3.0）、
+ * どのワークスペースから来た依存かで解決先を変えないと、配る物と違う版を載せる。
+ */
+const resolveFrom = (from, name) => {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    const cand = path.join(dir, "node_modules", name);
+    if (fs.existsSync(path.join(cand, "package.json"))) return cand;
+    if (path.dirname(dir) === dir || dir === root) return null;
   }
-  return null;
 };
-const manifest = (name) => {
-  const dir = locate(name);
+const manifestAt = (dir) => {
   const raw = dir && read(path.join(dir, "package.json"));
   return raw ? JSON.parse(raw) : null;
 };
 
-// 推移閉包。**dependencies と optionalDependencies の両方を辿る。**
-const seen = new Set();
+// 推移閉包。解決先の実体 path で数える（同じ名前の別版を 1 つに潰さない）。
+// dependencies と optionalDependencies の両方を辿る。
+const seen = new Map();
 const queue = [];
 for (const w of WORKSPACES) {
-  const p = JSON.parse(read(path.join(root, w, "package.json")));
-  queue.push(...Object.keys({ ...p.dependencies, ...p.optionalDependencies }));
+  const base = path.join(root, w);
+  const p = JSON.parse(read(path.join(base, "package.json")));
+  for (const n of Object.keys({ ...p.dependencies, ...p.optionalDependencies })) queue.push([base, n]);
 }
 while (queue.length) {
-  const name = queue.shift();
-  if (seen.has(name)) continue;
-  const m = manifest(name);
-  if (!m) continue; // 解決されていない optional / peer は成果物にも入らない
-  seen.add(name);
-  queue.push(...Object.keys({ ...m.dependencies, ...m.optionalDependencies }));
+  const [from, name] = queue.shift();
+  const dir = resolveFrom(from, name);
+  if (!dir || seen.has(dir)) continue; // 解決されない optional / peer は成果物にも入らない
+  const m = manifestAt(dir);
+  if (!m) continue;
+  seen.set(dir, name);
+  for (const n of Object.keys({ ...m.dependencies, ...m.optionalDependencies })) queue.push([dir, n]);
 }
 
 /**
@@ -87,8 +93,7 @@ function fromReadme(dir) {
   return null;
 }
 
-const licenseText = (name) => {
-  const dir = locate(name);
+const licenseText = (dir) => {
   if (!dir) return null;
   let names = [];
   try {
@@ -113,10 +118,7 @@ const licenseText = (name) => {
 };
 
 /** Apache-2.0 の 4(d) が要求する NOTICE の内容。 */
-const noticeText = (name) => {
-  const dir = locate(name);
-  return (dir && read(path.join(dir, "NOTICE"))?.trim()) ?? null;
-};
+const noticeText = (dir) => read(path.join(dir, "NOTICE"))?.trim() ?? null;
 
 /**
  * ライセンス文を同梱しない package のための写し。
@@ -146,21 +148,25 @@ const source = (m) => {
   );
 };
 
-const entries = [...seen].sort().map((name) => {
-  const m = manifest(name);
-  const spdx = typeof m?.license === "string" ? m.license : (m?.license?.type ?? "不明");
-  const own = licenseText(name) ?? (upstreamText(name) ? { text: upstreamText(name), from: "上流" } : null);
-  const spare = own ? null : spareText(spdx);
-  return {
-    name,
-    version: m?.version ?? "不明",
-    spdx,
-    text: own?.text ?? spare,
-    from: own?.from ?? (spare ? `${spdx} の定型` : null),
-    notice: noticeText(name),
-    source: source(m),
-  };
-});
+const entries = [...seen]
+  .map(([dir, name]) => ({ dir, name }))
+  .sort((a, b) => a.name.localeCompare(b.name) || a.dir.localeCompare(b.dir))
+  .map(({ dir, name }) => {
+    const m = manifestAt(dir);
+    const spdx = typeof m?.license === "string" ? m.license : (m?.license?.type ?? "不明");
+    const up = upstreamText(name);
+    const own = licenseText(dir) ?? (up ? { text: up, from: "上流" } : null);
+    const spare = own ? null : spareText(spdx);
+    return {
+      name,
+      version: m?.version ?? "不明",
+      spdx,
+      text: own?.text ?? spare,
+      from: own?.from ?? (spare ? `${spdx} の定型` : null),
+      notice: noticeText(dir),
+      source: source(m),
+    };
+  });
 
 const missing = entries.filter((e) => !e.text);
 const out = [
