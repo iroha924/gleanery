@@ -228,6 +228,34 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
   );
 }
 
+// ---- レビュアーが範囲の読み方を持たず、起動側から受け取る形になっているか ----
+//
+// 読み方の正本は plugin/skills/review/SKILL.md の Step 3 の 1 箇所にしかない。レビュアー側へ写すと、
+// 片方だけ直したときに PR 番号の入口が静かに壊れる（実測: 5 体のうち 2 体しか `gh pr diff` を扱えず、
+// 残り 3 体は base がローカルに無いと範囲を解決できなかった）。
+//
+// **名前を並べるのは範囲を持たない側にする。**足した定義が既定で検査される側に入る。
+const NO_SCOPE = new Set(["review-validator.md"]);
+const SCOPE_SENTENCE = /\*\*渡された読み方だけを使い、渡された層だけがレビュー対象である。\*\*/g;
+const NO_FALLBACK = /範囲が解決できないなら、現在のファイルを読みにいかず/g;
+
+for (const name of fs
+  .readdirSync("plugin/agents")
+  .filter((f) => f.endsWith(".md") && !NO_SCOPE.has(f))
+  .sort()) {
+  const file = `plugin/agents/${name}`;
+  const body = read(file).replace(/^---\n[\s\S]*?\n---\n/, "");
+  for (const [pattern, what] of [
+    [SCOPE_SENTENCE, "**渡された読み方だけを使い、渡された層だけがレビュー対象である。**"],
+    [NO_FALLBACK, "範囲が解決できないなら、現在のファイルを読みにいかず…"],
+  ]) {
+    const hits = [...body.matchAll(pattern)];
+    if (hits.length !== 1) {
+      fail.push(`${file} の本文に「${what}」が ${hits.length} 件ある。ちょうど 1 件にする`);
+    }
+  }
+}
+
 // ---- レビュアーが untrusted として名指しする列挙が、全定義でそろっているか ----
 //
 // レビュアーはそれぞれ独立したプロンプトなので、同じ列挙を写すしかない。**狭い側だけが、untrusted な

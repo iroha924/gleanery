@@ -176,7 +176,7 @@ finding の一覧を足す（下の「ラウンドを重ねるとき」）。
 |---|---|
 | コミット済み | `git diff <base>...HEAD`。PR 番号の入口では `gh pr diff <番号>`（base がローカルに無くても読める） |
 | 未コミット・追跡済み | `git diff HEAD` |
-| 未追跡 | パスを 1 行ずつ。**全文を読ませる** |
+| 未追跡 | パスを 1 行ずつ。**`Read` で全文を読ませる** —— シェルへ渡させない（名前は PR を出した側が決める） |
 
 **空だった層も「空」と書く。**書かないと、レビュアーが黙って working tree を読みにいく。
 
@@ -215,19 +215,22 @@ finding の一覧を足す（下の「ラウンドを重ねるとき」）。
 | **Claude** | `codex exec --ephemeral -s read-only -c model_reasoning_effort=<定義の effort> --output-schema <schema> -o <out> -` |
 | **Codex** | `claude -p --agent gleanery:review-<名> --effort <定義の effort> --no-session-persistence --output-format json` |
 
-**どちらもプロンプトのファイルを stdin へ渡す。**`< ファイル` と書かない —— **PowerShell では `<` が構文エラーになり、
-そのホストではレーンが 1 本も立たない。**
+**どちらもプロンプトのファイルを stdin へ渡す。**ホストのシェルに合う形で書く ——
+**`< ファイル` は PowerShell では構文エラーになり、そのホストではレーンが 1 本も立たない。**
 
 ```bash
 # POSIX
-claude -p --agent "$agent" --effort "$effort" --output-format json < "$prompt_file"
+cat "$prompt_file" | claude -p --agent "$agent" --effort "$effort" --no-session-persistence --output-format json
 ```
 
 ```powershell
 # PowerShell
 Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
-  & claude -p --agent $agent --effort $effort --output-format json
+  & claude -p --agent $agent --effort $effort --no-session-persistence --output-format json
 ```
+
+**例からフラグを落とさない。**写されるのは説明ではなく例のほうで、`--no-session-persistence` が
+落ちた例を写すと、下で塞いだはずの権限の拡大がそこだけ開く。
 
 **`codex exec review` を使わない。**あちらは `--base` と `--uncommitted` で範囲を指定できるが、
 **`--base` とカスタムプロンプトは併用できない**（実測 2026-09-09: `error: the argument
@@ -261,7 +264,10 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 **それが `--agent` 経由で効くかは観測できていない。**打ち切りの検出は Step 4 の体裁の判定に頼る。
 
 **この経路では `--resume` を使わない。**1 回の呼び出しで、一覧を先頭に全件出し、続けて全 finding の全文を番号順に出させる。
-プロンプトにそう書けば、レビュアーの「求められたものだけ返す」とも両立する。
+**プロンプトの末尾にそう書く** —— レビュアーの既定は「全文は要求されたものだけ返す」なので、
+書かなければ一覧だけが返り、**続きを求める経路はもう無い。**
+
+> この呼び出しは 1 回だけで、続きを求める経路が無い。一覧を全件出したあと、同じ応答で全 finding の全文を番号順に続けよ。
 
 避けているのは全文の切り詰めではなく**権限の拡大**である。**`--resume` に `--agent` を書き落とすと、
 レビュアーは `Edit` と `Write` を持ったまま走る**（実測: tools が 2 個から 51 個になった。
@@ -326,8 +332,12 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 全部を 1 つの background の仕事にまとめ、`wait` で全レーンの完了まで返らせる。
 
 ```bash
+# effort は定義ごとに違う。ここで揃えると、そのレーンだけ深さが変わる
 for name in adversarial security conventions cleanup precedent; do
-  codex exec --ephemeral -s read-only -c model_reasoning_effort="$effort" -o "out/$name.txt" - < "prompt/$name.md" &
+  effort=$(sed -n 's/^effort: //p' "$A/review-$name.md")
+  cat "prompt/$name.md" |
+    codex exec --ephemeral -s read-only -c model_reasoning_effort="$effort" \
+      --output-schema "$schema" -o "out/$name.txt" - &
 done
 wait
 ```

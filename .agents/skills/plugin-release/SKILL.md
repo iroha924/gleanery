@@ -61,6 +61,7 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
    - `plugin/.codex-plugin/plugin.json`
    - marketplaceの`npm` sourceの**exact version**（範囲や`latest`を書かない。同じcommitが時期によって
      別のtarballを解決する）
+   - gitのtag
 3. marketplace entry直下に`version`を置かない。`plugin.json`が無警告で優先され、古い値がupdateを隠す
 4. clean な staging directoryからtarballを1回だけ作り、**その中身を展開して検査する**
    - `npm pack --json`のfile一覧に、必要なものが全部あるか（`dist/`、`db/`、`skills/`、`agents/`、
@@ -69,19 +70,10 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
    - 展開した先で`node dist/cli.js --version`が動くか
 5. **検査したそのtarballをpublishする**（`npm publish <file>.tgz`）。publishのときに作り直さない。
    `prepublishOnly`は`npm pack`では走らないので、lifecycleに任せきらない
-6. npmから exact version を取り直してもう一度smoke testする
-7. **ここで初めてmainへmergeする。**中身は変えない
-8. mergeしたcommitにtagを付ける
+6. publishの**後で**、marketplaceのnpm source versionを切り替えるcommitを入れる。同じmergeに入れると、
+   未公開のversionを指す時間ができて新規installが失敗する
+7. npmから exact version を取り直してもう一度smoke testする
 
-**publishはmergeより前に置く。**4箇所の一致はpre-commitとCIが同じcommitで要求するので、
-marketplaceだけを後から切り替えることはできない。**mergeがdefault branchを動かした瞬間から、
-そこが指すversionは公開されていなければならない。**
-
-実測（2026-09-21）: npmの最新が`0.32.0`のとき、mainのmarketplaceは`0.33.8`を指していた。
-**その間に入れた人はinstallに失敗する。**tagも1本も無かった。順序を決めていなかったのが原因で、
-過去分のtagは遡って作らない。
-
-publish後に直すことになったら、同じversionを使わずもう1つ上げる。
 同じname/versionは再publishできない。壊れたtarballを同じversionで直せないので、4の検査を飛ばさない。
 
 ## 届いたことを確かめる

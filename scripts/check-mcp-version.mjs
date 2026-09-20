@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// plugin の配布物が変わったのに版が上がっていないものを落とす。pre-commit は作業ブランチが分岐した
-// 地点から、CI は `--base` で渡した commit から、それぞれ HEAD までをまとめて見る。
+// plugin の配布物が変わったのに版が上がっていないものを落とす。pre-commit はこれから作る commit を、
+// CI は `--base` で渡した commit から HEAD までをまとめて見る。
 //
 // 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
 // 見るのはソースではなくバンドルそのもの — `mcp.js` には search.ts も db.ts も
@@ -10,7 +10,6 @@ import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 
 const { base } = parseArgs({ options: { base: { type: "string" } } }).values;
-const DEFAULT_BRANCH = "main";
 
 const git = (...a) => execFileSync("git", a, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 const at = (ref, file) => {
@@ -114,20 +113,7 @@ const withoutVersion = (text) => {
   }
 };
 
-// 作業ブランチなら分岐した地点と比べる。直前の commit と比べると、**1 つの PR で plugin/ を 2 回
-// 触っただけで版をもう一度要求する** — release version は PR につき 1 つなので、それでは配れない
-// 番号が commit の数だけ増える。既定ブランチで直接 commit するときは分岐が無いので直前と比べる。
-const branchPoint = () => {
-  const head = git("rev-parse", "--abbrev-ref", "HEAD").trim();
-  if (head === DEFAULT_BRANCH) return "HEAD";
-  try {
-    return git("merge-base", "HEAD", DEFAULT_BRANCH).trim();
-  } catch {
-    return "HEAD";
-  }
-};
-
-const ref = base ?? branchPoint();
+const ref = base ?? "HEAD";
 const changed = git("diff", "--cached", "--name-only", ref, "--", ...INPUTS)
   .split("\n")
   .filter(Boolean)
