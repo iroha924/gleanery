@@ -8,7 +8,7 @@
 // --check は生成し直して既存の db-types.ts と比べ、違えば落とす。schema.sql を変えたのに
 // 型を作り直し忘れた commit をここで止める。CI がこれを走らせる。
 //
-// **資格情報を argv へ出さない。**一時 DB のパスワードは環境変数で docker と codegen へ渡す
+// 資格情報を argv へ出さない。一時 DB のパスワードは環境変数で docker と codegen へ渡す
 // （docker の `-e NAME` は値を書かずに親の環境から取る）。
 
 import { execFileSync, spawnSync } from "node:child_process";

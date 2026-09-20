@@ -71,7 +71,7 @@ jobs:
       - name: 画面と Hono を検証
         run: bun run verify
 
-      # **型は schema.sql から作り直して比べる。**手元の DB から作ると、その DB の drift が型へ写る。
+      # 型は schema.sql から作り直して比べる。手元の DB から作ると、その DB の drift が型へ写る。
       # schema.sql を当てた使い捨ての PostgreSQL だけを生成元にする（scripts/codegen.mjs）。
       # schema を変えたのに型を作り直し忘れた commit をここで止める。
       - name: DB の型が schema.sql と合っているか
