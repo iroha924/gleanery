@@ -7,6 +7,7 @@ import { test } from "node:test";
 import type { Artifact } from "../src/artifacts.ts";
 import { collectDocs, commitOf, docHash, isAncestor, projectDocs, sections, syncDocs } from "../src/docs.ts";
 import { knowledgeText } from "../src/knowledge.ts";
+import { fakeDb } from "./fake-db.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
 // 説明と、その説明が指すコマンドが別々の断片になる。
@@ -205,18 +206,20 @@ test("大文字の拡張子の文書にも最終更新日が付き、大きす�
  * onRead は connector を読んだ瞬間に走る（その間に別の同期が新しい commit を入れた、を再現する）。
  */
 function headOnly(head: string, onRead: () => void = () => {}) {
-  const sql: string[] = [];
-  const query = async (text: string) => {
-    sql.push(text);
-    if (/^(begin|commit|rollback)$/.test(text) || text.startsWith("insert into gleanery.connector"))
-      return { rows: [] };
-    if (text.startsWith("select id, head_oid")) {
+  const { db, calls } = fakeDb((text) => {
+    if (text.includes('insert into "gleanery"."connector"')) return [];
+    if (text.includes('"head_oid"')) {
       onRead();
-      return { rows: [{ id: "1", head_oid: head, snapshot_at: null }] };
+      return [{ id: "1", head_oid: head, snapshot_at: null }];
     }
-    throw new Error(`書かないはずの SQL: ${text}`);
+    return new Error(`書かないはずの SQL: ${text}`);
+  });
+  return {
+    get sql() {
+      return calls.map((c) => c.sql);
+    },
+    client: db,
   };
-  return { sql, client: { query } as never };
 }
 
 // 同じ朝に 2 本の同期が走り、新しい commit を先に入れられた側が失敗を報告しない。巻き戻しと分岐は止めて、画面に出す。

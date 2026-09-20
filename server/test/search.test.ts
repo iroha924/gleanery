@@ -252,7 +252,7 @@ test("read は参照の形を先に確かめ、範囲を渡すと作業場所で
 
 // 同じ時刻の発言が前後の上限を超えて並んでも、対象の発言を落とさない。
 test("前後の発言は時刻と id の組で切る", async () => {
-  const { db, calls } = fakeDb((_s, nth) =>
+  const { db, calls } = fakeDb((_s, _p, nth) =>
     nth === 0 ? [{ conversation_id: "c", sent_at: new Date() }] : [],
   );
   await read(db, ["m:00000000-0000-8000-8000-000000000001"], 4096);

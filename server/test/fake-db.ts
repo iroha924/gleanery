@@ -19,9 +19,15 @@ import type { DB } from "../src/db-types.ts";
 export type Call = { sql: string; parameters: readonly unknown[] };
 
 /**
- * `respond` が、実行された SQL と何回目かを見て、返す行か投げるエラーを決める。既定は空の結果。
+ * `respond` が、実行された SQL・パラメータ・何回目かを見て、返す行か投げるエラーを決める。既定は空の結果。
  */
-export function fakeDb(respond: (sql: string, nth: number) => readonly unknown[] | Error = () => []): {
+export function fakeDb(
+  respond: (
+    sql: string,
+    parameters: readonly unknown[],
+    nth: number,
+  ) => readonly unknown[] | Error = () => [],
+): {
   db: Kysely<DB>;
   calls: Call[];
 } {
@@ -33,9 +39,10 @@ export function fakeDb(respond: (sql: string, nth: number) => readonly unknown[]
   const connection: DatabaseConnection = {
     async executeQuery<R>(q: CompiledQuery): Promise<QueryResult<R>> {
       calls.push({ sql: q.sql, parameters: q.parameters });
-      const step = respond(q.sql, next++);
+      const step = respond(q.sql, q.parameters, next++);
       if (step instanceof Error) throw step;
-      return { rows: step as R[] };
+      // 影響行数は返した行数として渡す。insert / update の件数を見る呼び出し側が、行を返せば数えられる。
+      return { rows: step as R[], numAffectedRows: BigInt(step.length) };
     },
     streamQuery<R>(): AsyncIterableIterator<QueryResult<R>> {
       throw new Error("stream は使わない");
