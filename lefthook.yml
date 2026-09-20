@@ -17,7 +17,7 @@ pre-commit:
       glob: "{dashboard/src/**/*.ts,dashboard/src/**/*.tsx,server/src/server.ts,scripts/check-dashboard-boundaries.mjs,package.json}"
       run: bun run architecture
     - name: ai-config
-      glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,plugin/agents/**,plugin/skills/**,scripts/check-ai-config.mjs,package.json}"
+      glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,.claude-plugin/**,plugin/agents/**,plugin/skills/**,scripts/check-ai-config.mjs,package.json}"
       run: bun run verify:ai
     # 版の判定は bundle の後でなければ意味が無い。別ジョブにすると parallel なので、
     # 作り直す前のバンドルを読んで素通りする（実測: 4/4 で通った）。
