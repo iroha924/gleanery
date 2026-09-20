@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Kysely, PostgresDialect, type Transaction } from "kysely";
+import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
 import type { DB } from "./db-types.ts";
 
@@ -61,7 +61,7 @@ export const KEY: Record<Role, string> = {
   capture: "GLEANERY_DB_URL_CAPTURE",
 };
 
-/** MCP と CLI が期待する schema の版。db/schema.sql の schema コメントと同じ数にする（テストが突き合わせる）。 */
+/** MCP・CLI・画面が期待する schema の版（自動記録は確かめない）。db/schema.sql のコメントと同じ数にする。 */
 export const SCHEMA_REVISION = 5;
 
 /** pg は int8（bigint と count(*)）を string、timestamptz を Date で返す。`query<T>` の結果型はこれに合わせて書く。 */
@@ -134,8 +134,11 @@ export async function connect(env: Env, role: Role): Promise<pg.Client> {
 /**
  * role ごとの接続。pool は最初のクエリで作り、そこで schema の版を確かめる。
  * 起動時に確かめると、DB に届かないだけで MCP が立ち上がらなくなる。失敗は覚えず、次のクエリで作り直す。
+ *
+ * **自動記録だけは確かめない。**plugin の版は PC ごとに上がるので、確かめると revision を上げた瞬間に、
+ * その PC の plugin が上がるまで記録が丸ごと止まる。旧版のまま書き続け、DB が弾いた行だけ rejected へ回す。
  */
-export function open(env: Env, role: Role): Kysely<DB> {
+export function open(env: Env, role: Role, checkVersion = true): Kysely<DB> {
   return new Kysely<DB>({
     dialect: new PostgresDialect({
       pool: async () => {
@@ -148,35 +151,18 @@ export function open(env: Env, role: Role): Kysely<DB> {
         // 借りている間の切断は、pg が reject の後に emit("error") まで行う。受け手が無いとプロセスごと落ちる。
         p.on("connect", (client) => client.on("error", () => {}));
         p.on("error", () => {});
-        try {
-          await checkSchema(p);
-        } catch (e) {
-          await p.end().catch(() => {});
-          throw e;
+        if (checkVersion) {
+          try {
+            await checkSchema(p);
+          } catch (e) {
+            await p.end().catch(() => {});
+            throw e;
+          }
         }
         return p;
       },
     }),
   });
-}
-
-/**
- * transaction を張る。**kysely の `transaction().execute()` を使わない。**あちらは rollback を await してから
- * 投げ直すので、rollback が失敗するとその例外が元の原因を覆う。ここは元の例外を残す。
- */
-export async function inTransaction<T>(db: Kysely<DB>, fn: (trx: Transaction<DB>) => Promise<T>): Promise<T> {
-  const trx = await db.startTransaction().execute();
-  try {
-    const out = await fn(trx);
-    await trx.commit().execute();
-    return out;
-  } catch (e) {
-    await trx
-      .rollback()
-      .execute()
-      .catch(() => {});
-    throw e;
-  }
 }
 
 /** 1 つの接続を占有して transaction を張る。失敗したら rollback して元の例外を投げる。 */

@@ -10,8 +10,8 @@
 // GitHub から来た文字列は全部 clean() を通す（NUL が 1 つあると transaction ごと落ち、毎日の同期が止まる）。
 
 import { execFileSync } from "node:child_process";
-import { type Kysely, sql } from "kysely";
-import { EMBED_MODEL, inTransaction } from "./db.ts";
+import { type Kysely, type SqlBool, sql } from "kysely";
+import { EMBED_MODEL } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { conversationId, indexesMessage, messageText, type SpeakerKind } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
@@ -268,7 +268,7 @@ export async function syncGithub(
   if (!snapshotAt) throw new Error("DB の時刻を取れなかった");
   const { items, said } = await collect(cliSource(repo));
 
-  const counts = await inTransaction(db, async (trx) => {
+  const counts = await db.transaction().execute(async (trx) => {
     const connector = await connectorOf(trx, projectId, "github");
     // 取得を始めた後に、別の同期がより新しい取得を入れていれば書かない（遅れた古い取得で巻き戻さない）。
     if (connector.snapshotAt && snapshotAt.getTime() < connector.snapshotAt.getTime()) return null;
@@ -290,7 +290,7 @@ export async function syncGithub(
         .selectFrom("gleanery.person_identity")
         .select(["id", "external_id"])
         .where("provider", "=", "github")
-        .where("external_id", "in", [...users.keys()].map(String))
+        .where(sql<SqlBool>`external_id = any(${[...users.keys()].map(String)})`)
         .execute();
       for (const x of all) ids.set(Number(x.external_id), x.id);
     }
@@ -321,8 +321,8 @@ export async function syncGithub(
     const sourceId = new Map([...known].map(([n, r]) => [n, r.id]));
     const changedItems = items.filter((i) => !known.get(String(i.number))?.content_hash.equals(itemHash(i)));
     if (changedItems.length) {
-      // **キーの綴りは下の `t(...)` と対で持つ。**片方だけ変えると、その列は例外も出さずに null で入る
-      // （Issue #47 はそれで state が null になりうる経路だった）。型を書けば、綴り違いと欠落は落ちる。
+      // **キーの綴りは下の `t(...)` と対で持つ。**片方だけ変えると、その列は例外も出さずに null で入る。
+      // 型を書けば、綴り違いと欠落はコンパイルで落ちる。
       const itemRows: {
         number: string;
         kind: string;
@@ -444,7 +444,10 @@ export async function syncGithub(
           url = excluded.url, sent_at = excluded.sent_at, content_hash = excluded.content_hash,
           lexemes = excluded.lexemes`.execute(trx);
       const written = messages.map((m) => m.json.id);
-      await trx.deleteFrom("gleanery.message_file").where("message_id", "in", written).execute();
+      await trx
+        .deleteFrom("gleanery.message_file")
+        .where(sql<SqlBool>`message_id = any(${written})`)
+        .execute();
       const files = messages.flatMap((m) => (m.s.file ? [{ id: m.json.id, ...m.s.file }] : []));
       if (files.length) {
         await sql`
@@ -473,7 +476,7 @@ export async function syncGithub(
     const gone = [...stored.keys()].filter((id) => !live.has(id));
     const messagesRemoved = gone.length
       ? Number(
-          (await trx.deleteFrom("gleanery.message").where("id", "in", gone).executeTakeFirst())
+          (await trx.deleteFrom("gleanery.message").where(sql<SqlBool>`id = any(${gone})`).executeTakeFirst())
             .numDeletedRows,
         )
       : 0;
@@ -481,11 +484,7 @@ export async function syncGithub(
     const removed = await trx
       .deleteFrom("gleanery.source_item")
       .where("connector_id", "=", connector.id)
-      .where(
-        "external_id",
-        "not in",
-        items.map((i) => String(i.number)),
-      )
+      .where(sql<SqlBool>`external_id <> all(${items.map((i) => String(i.number))})`)
       .executeTakeFirst();
     await trx
       .updateTable("gleanery.connector")

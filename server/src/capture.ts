@@ -20,9 +20,9 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type Kysely, sql } from "kysely";
+import { type Kysely, type SqlBool, sql } from "kysely";
 import { ARTIFACT_PATH } from "./artifacts.ts";
-import { EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, open, vec } from "./db.ts";
+import { EMBED_MODEL, type Env, embed, KEY, loadEnv, open, vec } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
@@ -449,7 +449,7 @@ export async function write(
   projects: Map<string, Project>,
   vectors: Vectors,
 ): Promise<number> {
-  return inTransaction(db, async (trx) => {
+  return db.transaction().execute(async (trx) => {
     const conversations = new Map<
       string,
       { project: number; host: Host; session: string; branch: string | null; at: string }
@@ -573,14 +573,15 @@ export async function flush(
         fs.rmSync(path.join(dir, name), { force: true }); // 読めない残骸
       }
     }
-    const db = open(env, "capture");
+    // 版を確かめない。確かめると、DB を上げた PC 以外の記録が plugin の更新まで全部止まる。
+    const db = open(env, "capture", false);
     client = db;
     const projects = new Map(
       (
         await db
           .selectFrom("gleanery.project")
           .select(["id", "key", "name"])
-          .where("key", "in", [...new Set(records.map((x) => x.r.project))])
+          .where(sql<SqlBool>`key = any(${[...new Set(records.map((x) => x.r.project))]})`)
           .execute()
       ).map((p) => [p.key, { id: Number(p.id), name: p.name }]),
     );

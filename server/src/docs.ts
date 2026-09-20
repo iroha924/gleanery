@@ -10,9 +10,9 @@
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { type Kysely, sql } from "kysely";
+import { type Kysely, type SqlBool, sql } from "kysely";
 import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underGleanery } from "./artifacts.ts";
-import { EMBED_MODEL, inTransaction } from "./db.ts";
+import { EMBED_MODEL } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { knowledgeText } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
@@ -364,7 +364,7 @@ export async function syncDocs(
   const commit = commitOf(root, opts.remote);
   const { docs, skipped } = collectDocs(root, commit);
 
-  const done = await inTransaction(db, async (trx) => {
+  const done = await db.transaction().execute(async (trx) => {
     const connector = await connectorOf(trx, projectId, "docs");
     const before = connector.headOid;
     if (before && before !== commit && !opts.reset && !isAncestor(root, before, commit))
@@ -426,12 +426,8 @@ export async function syncDocs(
       // 節が消えた・key が変わったものを先に消す。残すと撤回した記述が検索で返る。
       await trx
         .deleteFrom("gleanery.knowledge")
-        .where("source_item_id", "in", [...sourceOf.values()])
-        .where(
-          "source_key",
-          "not in",
-          sections.map((x) => x.s.key),
-        )
+        .where(sql<SqlBool>`source_item_id = any(${[...sourceOf.values()]})`)
+        .where(sql<SqlBool>`source_key <> all(${sections.map((x) => x.s.key)})`)
         .execute();
       for (let i = 0; i < sections.length; i += CHUNK) {
         const part = sections.slice(i, i + CHUNK);
@@ -465,11 +461,7 @@ export async function syncDocs(
     const removed = await trx
       .deleteFrom("gleanery.source_item")
       .where("connector_id", "=", connector.id)
-      .where(
-        "external_id",
-        "not in",
-        docs.map((d) => d.path),
-      )
+      .where(sql<SqlBool>`external_id <> all(${docs.map((d) => d.path)})`)
       .executeTakeFirst();
     await trx
       .updateTable("gleanery.connector")

@@ -25,10 +25,11 @@ DBの正本は`db/schema.sql`の1本で、今の形だけを表す。Prisma・Dr
 `db/migrations/NNNN_<名前>.sql`は、既存のDBをrevision N-1からNへ進める手順で、正本ではない。NNNNは
 当てた後のrevision（4桁）。最初の1本はrevision 3で、本番に入っていた旧migrationの残りを消す。
 
-版はschemaのコメント（`gleanery schema revision N`）のrevisionだけで持つ。MCP・CLI・画面のAPIは最初の接続で
+版はschemaのコメント（`gleanery schema revision N`）のrevisionだけで持つ。MCP・CLI・画面のAPIは最初のクエリで
 DBのrevisionを`server/src/db.ts`の`SCHEMA_REVISION`と等値で照合し、食い違えば止まる。DBが古ければ
-`bun run db:migrate`を案内する。MCPと画面のAPIは、照合が一度通るとプロセスが終わるまでその結果を保持する
-（`lazyPool`）。
+`bun run db:migrate`を案内する。照合が一度通るとプロセスが終わるまでその結果を保つ（`open`）。
+**自動記録だけは照合しない**（`open(env, "capture", false)`）。確かめると、DBを上げたPC以外の記録が
+pluginの更新まで全部止まり、下の手順4の段階移行が成立しなくなる。
 
 `bun run db:migrate`（`server/src/admin.ts`、owner鍵）は、DBのrevisionより新しいmigrationを1回の
 transactionで番号順に当て、同じtransactionでschemaのコメントを最後の番号へ上げる。`db:migrate`どうしは
@@ -68,24 +69,24 @@ application のクエリは kysely で書き、結果型は推論させる。`se
 使い捨ての PostgreSQL から生成した物で、**手で直さない**（`bun run codegen` で作り直し、CI の `codegen:check` が
 schema.sql とのずれを落とす）。schema を変えたら同じ commit で流し直す。
 
-手書きの結果型と、kysely の deprecated な呼び出しは `bun run sql` が落とす。**型では止まらない**ので、
-検査を外すなら代わりの止め方を用意する。
+builder に推論させるのは**select・join・別名・returning**で、そこが移行の狙いだった。
+`where` の条件式と集計は `sql` テンプレートで書いてよい（実際そうなっている）。
 
-raw SQL（`sql` テンプレート）を使ってよいのは次だけで、ほかは builder で書く。
-
-| 使う場所 | 理由 |
+| `sql` で書く | 理由 |
 |---|---|
 | pgvector の `operator(extensions.<#>)`、全文検索の `@@` と `ts_rank_cd` | kysely の operator に無い。schema 修飾は role が `search_path` に `extensions` を持たないため必要 |
 | `jsonb_to_recordset`、`unnest` | テーブル値関数。builder に無い |
-| 表名や id の列が実行時に決まるもの（埋め込みの補充、session の検索） | `sql.table` / `sql.ref` で組み立てる |
+| 表名や id の列が実行時に決まるもの | `sql.table` / `sql.ref` で組み立てる |
+| 相関サブクエリと集計（`json_agg`、件数の副問い合わせ） | builder で書くと外側の足場だけが増える |
+| `exists`、`coalesce`、`case`、行値比較 `(a, b) < (c, d)` | 条件式。builder の型が効く面ではない |
+| 配列との照合（`= any(...)` / `<> all(...)`） | **kysely の `in` / `not in` は空配列に `in ()` を出し、PostgreSQL が構文エラーにする。**実行時に決まる配列はこちらで書く（リテラルの配列だけ `in` でよい） |
 | owner の migration（複文）と advisory lock | kysely の instance を持てない（版の照合より前に走る） |
 
-**`sql<T>` の `T` は SQL から推論されない。**呼び出し側が書いた型がそのまま結果型になるので、列を変えたら
-必ず手で直す。省くと `unknown` になる。
+`bun run sql` が落とすのは `.query<T>` と deprecated な `orderBy` だけである。`sql<T>` の `T` は
+SQL から推論されず、検査も見ない。呼び出し側が書いた型がそのまま結果型になるので、列を変えたら手で直す。
 
 `jsonb_to_recordset` と `unnest` へ渡す JSON は、**列定義の隣に行の型を書く**。キーの綴りがずれた列は
-例外を出さずに null で入る（Issue #47 がその経路だった）。実測で、型を付けた時点で `at` の nullable の
-取り違えが 1 件落ちた。
+例外を出さずに null で入る。実測で、型を付けた時点で `at` の nullable の取り違えが 1 件落ちた。
 
 ## 表の境界
 

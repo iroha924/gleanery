@@ -25,7 +25,7 @@ import { type Kysely, sql } from "kysely";
 import { dbDown, dbInit, dbUp, migrate } from "./admin.ts";
 import { check, init } from "./artifacts.ts";
 import { flush, readState, rejectedDir } from "./capture.ts";
-import { type Env, inTransaction, KEY, loadEnv, open, type Role } from "./db.ts";
+import { type Env, KEY, loadEnv, open, type Role } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { syncDocs } from "./docs.ts";
 import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
@@ -902,7 +902,7 @@ const root = buildRouteMap({
           if (!display || handles.length === 0)
             throw new Error("呼び名と、GitHub のハンドルを 1 つ以上指定する");
           // 持ち主の付け替えは 1 つの transaction で。途中で落ちると持ち主が 0 人になる。
-          const linked = await inTransaction(db, async (trx) => {
+          const linked = await db.transaction().execute(async (trx) => {
             if (flags.me)
               await trx
                 .updateTable("gleanery.person")

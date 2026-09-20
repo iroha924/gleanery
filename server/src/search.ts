@@ -830,21 +830,23 @@ async function readMessage(
         where f.message_id = m.id order by f.path)`.as("paths"),
     )
     .where("m.conversation_id", "=", t.conversation_id);
-  const rows = await withPaths
-    .where(sql<SqlBool>`(m.sent_at, m.id) < (${t.sent_at}, ${id}::uuid)`)
-    .orderBy("m.sent_at", "desc")
-    .orderBy("m.id", "desc")
-    .limit(around)
-    .unionAll(
-      withPaths
-        .where(sql<SqlBool>`(m.sent_at, m.id) >= (${t.sent_at}, ${id}::uuid)`)
-        .orderBy("m.sent_at")
-        .orderBy("m.id")
-        .limit(around + 1),
-    )
-    .orderBy("sent_at")
-    .orderBy("id")
-    .execute();
+  // **前後を 1 本の union にしない。**各枝の order by と limit を括弧で囲まない SQL が出て、
+  // PostgreSQL が構文エラーにする。2 回引いて、前側を逆順に戻してから繋ぐ。
+  const [before, after] = await Promise.all([
+    withPaths
+      .where(sql<SqlBool>`(m.sent_at, m.id) < (${t.sent_at}, ${id}::uuid)`)
+      .orderBy("m.sent_at", "desc")
+      .orderBy("m.id", "desc")
+      .limit(around)
+      .execute(),
+    withPaths
+      .where(sql<SqlBool>`(m.sent_at, m.id) >= (${t.sent_at}, ${id}::uuid)`)
+      .orderBy("m.sent_at")
+      .orderBy("m.id")
+      .limit(around + 1)
+      .execute(),
+  ]);
+  const rows = [...before.reverse(), ...after];
   const per = Math.floor(budget / Math.max(rows.length, 1));
   return rows
     .map((m) => {

@@ -6,9 +6,9 @@
 //
 // 形の検査はここに 1 つだけ置き、`gleanery trace check` と `gleanery trace save` が同じ関数を通る。
 
-import { type Kysely, sql } from "kysely";
+import { type Kysely, type SqlBool, sql } from "kysely";
 import { z } from "zod";
-import { EMBED_MODEL, type Env, inTransaction } from "./db.ts";
+import { EMBED_MODEL, type Env } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { type Filled, fillKnowledge } from "./embeddings.ts";
 import { conversationId, knowledgeText, STATUSES } from "./knowledge.ts";
@@ -323,7 +323,7 @@ export async function saveTrace(
   const earliest = t.items.map((i) => i.at).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
   const startedAt = t.session.startedAt ?? earliest ?? new Date().toISOString();
 
-  const result = await inTransaction(db, async (trx) => {
+  const result = await db.transaction().execute(async (trx) => {
     // 自動記録がこの session を先に作っていれば、そのまま使う（id は同じ規則で決まる）。
     await trx
       .insertInto("gleanery.conversation")
@@ -384,7 +384,7 @@ export async function saveTrace(
         .select(["id", "source_key"])
         .where("project_id", "=", String(projectId))
         .where("kind", "=", "decision")
-        .where("source_key", "in", outside)
+        .where(sql<SqlBool>`source_key = any(${outside})`)
         .execute();
       for (const f of found) idOf.set(f.source_key, f.id);
       const missing = outside.filter((k) => !idOf.has(k));
@@ -398,11 +398,7 @@ export async function saveTrace(
       .selectFrom("gleanery.knowledge")
       .select(["source_key", "superseded_by_id", "work_item_id", "heading"])
       .where("project_id", "=", String(projectId))
-      .where(
-        "source_key",
-        "in",
-        all.map((r) => r.key),
-      )
+      .where(sql<SqlBool>`source_key = any(${all.map((r) => r.key)})`)
       .forUpdate()
       .execute();
     const laterBy = new Map(
@@ -488,19 +484,18 @@ export async function saveTrace(
         .deleteFrom("gleanery.knowledge")
         .where("project_id", "=", String(projectId))
         .where("kind", "=", "option")
-        .where("decision_id", "in", decisionIds)
-        .where(
-          "source_key",
-          "not in",
-          all.filter((r) => r.kind === "option").map((r) => r.key),
-        )
+        .where(sql<SqlBool>`decision_id = any(${decisionIds})`)
+        .where(sql<SqlBool>`source_key <> all(${all.filter((r) => r.kind === "option").map((r) => r.key)})`)
         .execute();
     }
 
     // ファイルと埋め込みは書き直した行の分だけ。
     if (written.length) {
       const ids = written.map((w) => w.id);
-      await trx.deleteFrom("gleanery.knowledge_file").where("knowledge_id", "in", ids).execute();
+      await trx
+        .deleteFrom("gleanery.knowledge_file")
+        .where(sql<SqlBool>`knowledge_id = any(${ids})`)
+        .execute();
       const files = written.flatMap((w) => w.row.files.map((f) => ({ id: w.id, ...f })));
       if (files.length) {
         await sql`
