@@ -179,6 +179,9 @@ for (const name of pluginSkills) {
   }
 }
 
+// claude --help の choices。渡した値が外れると Warning だけ出てセッション既定へ落ちる。
+const EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
 // 配る reviewer（plugin/agents）と repository 専用（.claude/agents）を同じ規則で見る。
 // **片方だけ検査すると、もう片方の壊れ方が静かに残る。**
 const agentDirectories = ["plugin/agents", ".claude/agents"];
@@ -193,12 +196,21 @@ const agentEntries = agentDirectories.flatMap((directory) => {
 const agentFiles = agentEntries;
 for (const relative of agentEntries) {
   const file = path.basename(relative);
-  const fields = frontmatter(relative, read(relative));
+  const source = read(relative);
+  const fields = frontmatter(relative, source);
   for (const required of ["name", "description", "tools", "model", "effort", "maxTurns"]) {
     if (!fields[required]) fail(`${relative}: ${required}が無い`);
   }
   if (fields.name !== path.basename(file, ".md")) fail(`${relative}: nameがfile名と一致しない`);
   if (fields.model === "inherit") fail(`${relative}: modelをsessionから継承しない`);
+  if (!EFFORT_LEVELS.has(fields.effort)) {
+    fail(`${relative}: effortは${[...EFFORT_LEVELS].join(" / ")}のどれかにする（${fields.effort}）`);
+  }
+  // 本文でも effort を名指しして理由を書いている定義がある。片方だけ直すと、読む人と CLI が違う値を見る。
+  const named = /`effort: ([a-z]+)`/.exec(source.replace(/^---\n[\s\S]*?\n---\n/, ""));
+  if (named && named[1] !== fields.effort) {
+    fail(`${relative}: frontmatterのeffortは${fields.effort}だが本文は${named[1]}と書いている`);
+  }
   // プリロードするSkillが無ければ、その名前は解決されず本文の前提が崩れる。
   for (const name of Array.isArray(fields.skills) ? fields.skills : []) {
     const repoSkill = fs.existsSync(path.join(root, ".agents/skills", name, "SKILL.md"));
