@@ -174,11 +174,17 @@ finding の一覧を足す（下の「ラウンドを重ねるとき」）。
 
 | 層 | 渡す形 |
 |---|---|
-| コミット済み | `git diff <base>...HEAD`。PR 番号の入口では `gh pr diff <番号>`（base がローカルに無くても読める） |
+| コミット済み | `git diff <base>...HEAD` |
 | 未コミット・追跡済み | `git diff HEAD` |
-| 未追跡 | パスを 1 行ずつ。**`Read` で全文を読ませる** —— シェルへ渡させない（名前は PR を出した側が決める） |
+| 未追跡 | パスを 1 行ずつ。**ファイルとして読ませる** —— 名前をシェルへ渡させない（決めるのは PR を出した側である） |
 
 **空だった層も「空」と書く。**書かないと、レビュアーが黙って working tree を読みにいく。
+
+**PR 番号の入口では 1 層だけになる。**2 層目と 3 層目は起動側の作業ツリーの話で、その PR とは関係がない。
+埋めると、**自分の未コミットの編集を PR #N の指摘として受け取る。**空と書く。
+
+**その 1 層も、コマンドではなくファイルで渡す。**`gh pr diff <番号>` を起動側が実行して gitignore 対象のパスへ書き、
+そのパスを渡す。**Codex のレーンはネットワークを持たないので、`gh` を渡しても実行できない**（下の「サンドボックス」）。
 
 **抑制の指示を書かない。**「重大なものだけ」「3 件以内で」の類は文字どおり従われ、
 実在する指摘を失う。**絞り込みは Step 5 の仕事である。**
@@ -256,10 +262,17 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 | 渡すもの | なぜ |
 |---|---|
 | `--agent gleanery:review-<名>` | 持ち主の設定に `agent` があっても上書きする。存在しない名前は stderr へ出して **exit 1** で落ちる |
-| `--effort <定義の effort>` | フロントマターの値を写す。応答に effort は出ないので、渡すこと自体が唯一の保証になる |
+| `--effort <定義の effort>` | フロントマターの値を写す。**モデルの上限を超える値は、`json` 出力では警告も出ずに上限へ落ちる**（公式の model-config）。上限内の値だけを定義に置く |
 | `--no-session-persistence` | セッションをディスクへ残さない。**後から `--resume` できなくなるのが要点である**（下） |
 
 **`--model` を渡さない。**定義の `model: opus` が効く（実測: init イベントが `claude-opus-5` を返した）。
+
+**この経路だけは permission を渡せる。**起動側が argv を組むので、`--settings` が効く
+（実測: `--settings '{"permissions":{"deny":["Bash"]}}' --agent gleanery:review-security` で、
+定義は解決したまま `Bash` が消えた）。下の「塞ぐ手段は無い」は**プラグインが配る側の話**で、ここには当たらない。
+**それでも塞げるのは `Bash` だけである** —— `--agent` の時点で `Edit` も `Write` も無く、`Bash` を消すと
+レビュアーは diff を読めない。`--restricted` は `--tools` で名指しすれば `Bash` を残すが、
+**プラグイン由来の定義ごと落とす**ので使えない（実測: `not found. Available agents: claude, Explore, …`、exit 1）。
 **`--max-turns` は 2.1.278 に無い**（`--help` に 0 件）。ターン数の上限はフロントマターの `maxTurns` だけで、
 **それが `--agent` 経由で効くかは観測できていない。**打ち切りの検出は Step 4 の体裁の判定に頼る。
 
@@ -317,7 +330,7 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 
 ### Codex のレーンは 15 分前後かかる。途中で殺さない
 
-**実測（2026-09-09）: 完走したレーンは 15.5 分。**`effort: xhigh` はさらに長い。
+**実測（2026-09-09）: 完走したレーンは 15.5 分。**深い観点ほど長い。
 
 **`collab: Wait` を停止の合図と読まない。**同じ日の 3 レーンで、**`collab: Wait` が最多（14 回）だった
 レーンが完走し**、1 回しか出ていないレーンを進行中に殺した。相関が無い。
@@ -329,18 +342,8 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 
 **完了を通知させる。**レーンを 1 本ずつ background へ投げると、**返ってくるのはレーンの完了ではなく起動の完了**である。
 以後は完了を知る手段がポーリングだけになり、**「まだ走っている」と「終わって出力を書いた」が区別できなくなる。**
-全部を 1 つの background の仕事にまとめ、`wait` で全レーンの完了まで返らせる。
-
-```bash
-# effort は定義ごとに違う。ここで揃えると、そのレーンだけ深さが変わる
-for name in adversarial security conventions cleanup precedent; do
-  effort=$(sed -n 's/^effort: //p' "$A/review-$name.md")
-  cat "prompt/$name.md" |
-    codex exec --ephemeral -s read-only -c model_reasoning_effort="$effort" \
-      --output-schema "$schema" -o "out/$name.txt" - &
-done
-wait
-```
+全部を 1 つの background の仕事にまとめ、**全レーンの完了まで返らせる**（POSIX なら `wait`、PowerShell なら
+`Wait-Job`）。レーンごとの `effort` はその定義から読む —— 1 つの値で回すと、そのレーンだけ深さが変わる。
 
 実測（2026-09-21）: 起動だけを待つ形にしたため、5 レーンが完走して出力を書き終えた後も
 **3 レーンを「走行中」と報告していた。**行の伸びと `pgrep` を数えても、完了した瞬間は分からない。

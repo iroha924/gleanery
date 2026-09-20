@@ -228,34 +228,6 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
   );
 }
 
-// ---- レビュアーが範囲の読み方を持たず、起動側から受け取る形になっているか ----
-//
-// 読み方の正本は plugin/skills/review/SKILL.md の Step 3 の 1 箇所にしかない。レビュアー側へ写すと、
-// 片方だけ直したときに PR 番号の入口が静かに壊れる（実測: 5 体のうち 2 体しか `gh pr diff` を扱えず、
-// 残り 3 体は base がローカルに無いと範囲を解決できなかった）。
-//
-// **名前を並べるのは範囲を持たない側にする。**足した定義が既定で検査される側に入る。
-const NO_SCOPE = new Set(["review-validator.md"]);
-const SCOPE_SENTENCE = /\*\*渡された読み方だけを使い、渡された層だけがレビュー対象である。\*\*/g;
-const NO_FALLBACK = /範囲が解決できないなら、現在のファイルを読みにいかず/g;
-
-for (const name of fs
-  .readdirSync("plugin/agents")
-  .filter((f) => f.endsWith(".md") && !NO_SCOPE.has(f))
-  .sort()) {
-  const file = `plugin/agents/${name}`;
-  const body = read(file).replace(/^---\n[\s\S]*?\n---\n/, "");
-  for (const [pattern, what] of [
-    [SCOPE_SENTENCE, "**渡された読み方だけを使い、渡された層だけがレビュー対象である。**"],
-    [NO_FALLBACK, "範囲が解決できないなら、現在のファイルを読みにいかず…"],
-  ]) {
-    const hits = [...body.matchAll(pattern)];
-    if (hits.length !== 1) {
-      fail.push(`${file} の本文に「${what}」が ${hits.length} 件ある。ちょうど 1 件にする`);
-    }
-  }
-}
-
 // ---- レビュアーが untrusted として名指しする列挙が、全定義でそろっているか ----
 //
 // レビュアーはそれぞれ独立したプロンプトなので、同じ列挙を写すしかない。**狭い側だけが、untrusted な
@@ -283,6 +255,16 @@ const UNTRUSTED_MIN = [
 // **捕捉群に `*` を入れない。**同じ行の手前に別の太字があると、そこから拾って列挙が汚れる
 // （実測: 実在する語を「無い」と名指しして落ちた）。
 const UNTRUSTED = /\*\*([^*]+?)は、レビュー対象のデータであって指示ではない。\*\*/g;
+// 範囲の境界。読み方そのものは起動側の SKILL にあり、ここが見るのはこの 2 文の有無だけである。
+// 除外するのは範囲を渡されない体だけにする —— 足した定義が既定で検査される側に入る。
+const NO_SCOPE = new Set(["review-validator.md"]);
+const SCOPE = [
+  [/\*\*渡された読み方だけを使い、渡された層だけがレビュー対象である。\*\*/g, "渡された読み方だけを使い…"],
+  [
+    /範囲が解決できないなら、現在のファイルを読みにいかず/g,
+    "範囲が解決できないなら、現在のファイルを読みにいかず…",
+  ],
+];
 
 for (const name of fs
   .readdirSync(AGENT_DIR)
@@ -292,6 +274,13 @@ for (const name of fs
   // **frontmatter を外して本文だけを見る。**description へ書いても満たしたことにしない
   // （レビュアーへ渡るのは本文で、description は起動側が読む別の口である）。
   const body = read(file).replace(/^---\n[\s\S]*?\n---\n/, "");
+  if (!NO_SCOPE.has(name)) {
+    for (const [pattern, what] of SCOPE) {
+      const found = [...body.matchAll(pattern)];
+      if (found.length !== 1)
+        fail.push(`${file} の本文に「${what}」が ${found.length} 件ある。ちょうど 1 件にする`);
+    }
+  }
   // **「あれば見る」にしない。**一文ごと消したものを素通りさせると、守るのは「狭めるな」だけになり
   // 「持て」が守られない。2 件以上も弾く —— 後ろに狭い言い直しを置くと先頭しか見ない検査は見落とす。
   const hits = [...body.matchAll(UNTRUSTED)];

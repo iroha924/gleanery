@@ -206,6 +206,11 @@ for (const relative of agentEntries) {
   if (!EFFORT_LEVELS.has(fields.effort)) {
     fail(`${relative}: effortは${[...EFFORT_LEVELS].join(" / ")}のどれかにする（${fields.effort}）`);
   }
+  // 本文でも effort を名指しして理由を書いている定義がある。片方だけ直すと、読む人と CLI が違う値を見る。
+  const named = /`effort: ([a-z]+)`/.exec(source.replace(/^---\n[\s\S]*?\n---\n/, ""));
+  if (named && named[1] !== fields.effort) {
+    fail(`${relative}: frontmatterのeffortは${fields.effort}だが本文は${named[1]}と書いている`);
+  }
   // プリロードするSkillが無ければ、その名前は解決されず本文の前提が崩れる。
   for (const name of Array.isArray(fields.skills) ? fields.skills : []) {
     const repoSkill = fs.existsSync(path.join(root, ".agents/skills", name, "SKILL.md"));
