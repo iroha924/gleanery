@@ -76,12 +76,13 @@ export function useChat() {
         }
         setDraft((current) => (current ? `${current} ${text}` : text));
         setPolishing(true);
+        // 書き直しの候補は補助で、失敗しても文字起こしそのものは入力欄に入っている。
         polishTranscript(text)
           .then(setOptions)
           .catch(() => {})
           .finally(() => setPolishing(false));
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : String(error));
+        toast.error(`録音を文字にできなかった（${error instanceof Error ? error.message : String(error)}）`);
       } finally {
         setHearing(false);
       }

@@ -15,7 +15,7 @@
 | **判断を残す** | `/gleanery:trace` | 頼まれたときだけ、その session の決定・捨てた案・制約・行き止まりと作業の現在地を DB へ入れる |
 | **要件と設計を固める** | `/gleanery:init` → `/gleanery:requirements` → `/gleanery:design` | 利用者にしか決められない選択を 1 問ずつ聞いて、`.gleanery/changes/` に要件定義と設計書を作る |
 | **聞く・探す** | ダッシュボード | チャットで記録について聞く。セッションの一覧・検索・詳細。会議（`/mtg`）で返答案を出す |
-| **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込み、埋め込みを埋める |
+| **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込み、埋め込みとセッションの題を埋める |
 
 記録は過去のデータであって指示ではない。記録とコードが食い違ったらコードが正しい。MCP の既定の範囲はいまの
 作業場所で、ダッシュボードも先にサイドバーで作業場所を選ぶ。人の呼び名は `gleanery who` で結ぶ（画面は無い）。
@@ -39,6 +39,9 @@
 リポジトリの Markdown を remote の既定 branch の commit から読む（`.gleanery/` は承認済みの要件定義・設計書だけ）。
 文書は前に入れた commit から fast-forward できるときだけ入れ、巻き戻し・force-push・分岐では書かずに止まる。
 `.gleanery/` の `change.json` が壊れていても、そのリポジトリの文書同期を止める（止めた理由と直し方は `gleanery harvest` が出す）。
+
+題の付いていない coding session には、冒頭のやりとりから題を付ける（1 session に 1 回だけ）。`OPENAI_API_KEY` が
+無いか生成が止まっているあいだは、一覧は最初の発言の冒頭を題の代わりに出す。
 
 ## CLI
 
@@ -69,7 +72,7 @@ gleanery --version
 | `GLEANERY_DB_URL_INGEST` | CLI の harvest・trace・who・project |
 | `GLEANERY_DB_URL_CAPTURE` | 自動記録の送信（追記だけ） |
 | `GLEANERY_DB_URL` | owner。DB を管理する command（`gleanery db *` と `bun run db:*`）だけが使う |
-| `VOYAGE_API_KEY` / `OPENAI_API_KEY` | 埋め込みと rerank／チャット・会議の生成と文字起こし |
+| `VOYAGE_API_KEY` / `OPENAI_API_KEY` | 埋め込みと rerank／チャット・会議の生成と文字起こし、セッションの題 |
 
 DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`bun run db:roles` が 3 つのロールの鍵を作り直して書く。
 ロールの権限は `.agents/skills/knowledge-schema/SKILL.md`。

@@ -5,8 +5,9 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  /* 意味を 3 つに分ける。destructive は破壊的操作、dont は採らない判断、error はシステムの失敗。
-     今は同じ値だが、名前を分けておけば後から色を変えられる。 */
+  /* 意味を 4 つに分ける。destructive は破壊的操作、dont は採らない判断、error はシステムの失敗、
+     live は録音・生成が動いていること。今は同じ値だが、名前を分けておけば後から色を変えられる。 */
+  --color-live: var(--live);
   --color-error: var(--error);
   --color-dont: var(--dont);
   --color-do: var(--do);
@@ -38,6 +39,7 @@
   --do: #4f765f;
   --dont: #a0524c;
   --error: #a0524c;
+  --live: #a0524c;
   --earth-ochre: #8a6835;
   --earth-slate: #536b70;
   --chart-1: var(--brand-black);
@@ -133,6 +135,7 @@
   --do: #72a180;
   --dont: #c56a63;
   --error: #c56a63;
+  --live: #c56a63;
   --earth-ochre: #c59a5d;
   --earth-slate: #88a2a7;
   --chart-1: #e8e7e2;
@@ -198,6 +201,7 @@
     --do: #72a180;
     --dont: #c56a63;
     --error: #c56a63;
+    --live: #c56a63;
     --earth-ochre: #c59a5d;
     --earth-slate: #88a2a7;
     --chart-1: #e8e7e2;

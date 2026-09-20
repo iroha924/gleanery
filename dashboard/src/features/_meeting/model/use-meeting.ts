@@ -14,7 +14,7 @@ export const clock = (s: number) =>
   `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /**
- * 会議のかんぺの状態。**話者を推定せず、記憶でも答えない。**
+ * 会議のかんぺの状態。話者を推定せず、記憶でも答えない。
  *
  * 自分の声はマイクから、相手の声は画面共有の音声から、別々に流す。混ざった 1 本を後から
  * 分けようとすると当たらない（実測: OpenAI の diarize は文字起こしが崩れ、6.6 倍遅い）。
@@ -23,6 +23,7 @@ export function useMeeting() {
   const [lines, setLines] = useState<Line[]>([]);
   const [on, setOn] = useState(false);
   const [reply, setReply] = useState<Reply | null>(null);
+  const [replyFailed, setReplyFailed] = useState<string | null>(null);
   const [thinking, setThinking] = useState(false);
   const closers = useRef<(() => void)[]>([]);
   const streams = useRef<MediaStream[]>([]);
@@ -55,12 +56,13 @@ export function useMeeting() {
     // 半端な文で検索することになり、当たらないうえ課金だけ増える。
     if (who === "them" && h.done && h.text.trim() && projects.length > 0) {
       setThinking(true);
+      setReplyFailed(null);
       askReply(h.text, projects)
         .then((r) => {
           // 問われていない発言なら、いま出ている案を消さずに置く。
           if (r.asked) setReply(r);
         })
-        .catch((e) => toast.error(e instanceof Error ? e.message : "返信案を引けなかった"))
+        .catch((e) => setReplyFailed(e instanceof Error ? e.message : String(e)))
         .finally(() => setThinking(false));
     }
   };
@@ -77,7 +79,7 @@ export function useMeeting() {
       toast.error("画面の共有が始まらなかった");
       return;
     }
-    // **音声のない共有は使えない。**映像だけ取れても相手の声が入らない。
+    // 音声のない共有は使えない。映像だけ取れても相手の声が入らない。
     if (them.getAudioTracks().length === 0) {
       for (const t of them.getTracks()) t.stop();
       toast.error("音声が共有されていません。共有するとき「音声を共有」を入れてください");
@@ -88,7 +90,7 @@ export function useMeeting() {
       me = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
       for (const t of them.getTracks()) t.stop();
-      toast.error(e instanceof Error ? e.message : "マイクを使えなかった");
+      toast.error(`マイクを使えなかった（${e instanceof Error ? e.message : String(e)}）`);
       return;
     }
     // ブラウザ側の「共有を停止」で終わったときも畳む。
@@ -99,13 +101,24 @@ export function useMeeting() {
     streams.current = [them, me];
     setLines([]);
     setReply(null);
+    setReplyFailed(null);
     setOn(true);
-    // 鍵は listen が要るたびに取り直す。**10 分で切れる**ので、渡し切りにしない。
+    // 鍵は listen が要るたびに取り直す。10 分で切れるので、渡し切りにしない。
     closers.current = [
       listen(them, realtimeToken, (h) => heard("them", h), toast.error),
       listen(me, realtimeToken, (h) => heard("me", h), toast.error),
     ];
   };
 
-  return { lines, on, reply, thinking, projectLabel, canStart: projects.length > 0, start, stop };
+  return {
+    lines,
+    on,
+    reply,
+    replyFailed,
+    thinking,
+    projectLabel,
+    canStart: projects.length > 0,
+    start,
+    stop,
+  };
 }

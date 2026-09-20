@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { skipToken, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useRouter } from "@tanstack/react-router";
 import { cn } from "cn";
 import {
   ArrowLeftIcon,
   BotIcon,
+  CalendarIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -13,6 +14,7 @@ import {
   DraftingCompassIcon,
   FileTextIcon,
   GitBranchIcon,
+  HashIcon,
   ListChecksIcon,
   MessagesSquareIcon,
   RouteIcon,
@@ -22,8 +24,10 @@ import {
   UserRoundIcon,
 } from "lucide-react-motion";
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { MarkdownText } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -34,7 +38,17 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
+import { Message, MessageAvatar, MessageContent } from "@/components/ui/message";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -86,13 +100,13 @@ const resumeCommand = (host: string, sessionId: string): string | null => {
 
 const WORK_STATUS: Record<
   string,
-  { label: string; variant: "info" | "destructive" | "warning" | "success" | "secondary" }
+  { label: string; variant: "info" | "warning" | "success" | "secondary" | "outline" }
 > = {
   active: { label: "進行中", variant: "info" },
-  blocked: { label: "止まっている", variant: "destructive" },
-  paused: { label: "中断中", variant: "warning" },
+  blocked: { label: "止まっている", variant: "warning" },
+  paused: { label: "中断中", variant: "secondary" },
   done: { label: "完了", variant: "success" },
-  abandoned: { label: "取りやめ", variant: "secondary" },
+  abandoned: { label: "取りやめ", variant: "outline" },
 };
 
 // ---- 判断（trace で残したもの）----
@@ -255,7 +269,7 @@ function SectionDialog({
 }) {
   return (
     <Dialog open={section !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="grid max-h-[82vh] grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden p-6 sm:max-w-[48rem]">
+      <DialogContent className="grid max-h-[82vh] grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden p-6 sm:max-w-[48rem] [&>*]:min-w-0">
         {section && (
           <>
             <DialogHeader className="pr-8">
@@ -379,40 +393,50 @@ const FILE_ACTION = { edit: "編集", read: "読んだ", review: "指摘" } as c
 
 function Turn({ message }: { message: SessionMessage }) {
   const mine = message.speaker === "self";
-  // AI の応答は長い。読むのは持ち主の発言が主なので、応答は畳んでおき、開けば全文を出す。
+  // AI の応答は長い。読むのは自分の発言が主なので、応答は畳んでおき、開けば全文を出す。
   const [open, setOpen] = useState(mine);
-  const long = !mine && message.body.length > 600;
+  const long = !mine && message.body.split("\n").length > 50;
   return (
-    <li className={cn("flex gap-3", mine ? "" : "pl-6")}>
-      <span
+    <Message align={mine ? "end" : "start"}>
+      <MessageAvatar
         className={cn(
-          "mt-1 flex size-7 flex-none items-center justify-center rounded-full border",
+          "size-7 min-w-0 translate-y-[5px] self-start rounded-full border",
           mine ? "bg-card" : "bg-secondary/60 text-muted-foreground",
         )}
         aria-hidden="true"
       >
         {mine ? <UserRoundIcon className="size-3.5" /> : <BotIcon className="size-3.5" />}
-      </span>
-      <div className="min-w-0 flex-1 space-y-2">
-        <p className="text-xs text-muted-foreground tabular-nums">
-          {mine ? "持ち主" : "AI の最後の応答"} ・ {formatDate(message.sentAt)}
-        </p>
-        <div
-          className={cn(
-            "rounded-md border p-3",
-            mine ? "bg-card" : "bg-secondary/25",
-            long && !open
-              ? "max-h-40 overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]"
-              : "",
-          )}
+      </MessageAvatar>
+      {/* 誰の発言かは左右とアイコンだけで示している。読み上げには位置も色も届かない。 */}
+      <span className="sr-only">{mine ? "あなた" : "AI"}</span>
+      <MessageContent>
+        <Bubble
+          variant="muted"
+          className="has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-2 has-[button:hover]:*:data-[slot=bubble-content]:inset-ring-foreground/25"
         >
-          <MarkdownText text={message.body} className="text-sm leading-6" />
-        </div>
-        {long && (
-          <Button type="button" variant="ghost" size="sm" className="-ml-2" onClick={() => setOpen(!open)}>
-            {open ? "畳む" : "全文を読む"}
-          </Button>
-        )}
+          {/* 自分の発言だけ色相で分ける。明度で分けると、地・AI・自分が同じ明るさの 3 枚重ねになって境界が読めない。
+                親の variant は子より詳細度が高いので、`!` でないと勝てない。 */}
+          <BubbleContent
+            className={cn(
+              "p-3",
+              mine && "border-earth-slate/25! bg-earth-slate/12!",
+              long && !open && "max-h-40 [mask-image:linear-gradient(to_bottom,black_70%,transparent)]",
+            )}
+          >
+            <MarkdownText text={message.body} className="text-sm leading-6" />
+          </BubbleContent>
+          {long && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="self-start"
+              onClick={() => setOpen(!open)}
+            >
+              {open ? "折りたたむ" : "全文を読む"}
+            </Button>
+          )}
+        </Bubble>
         {message.truncated && (
           <p className="text-xs text-muted-foreground">
             大きすぎる発言なので冒頭と末尾だけを保存した（元は {message.originalBytes.toLocaleString("ja-JP")}{" "}
@@ -420,7 +444,7 @@ function Turn({ message }: { message: SessionMessage }) {
           </p>
         )}
         {message.files.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5">
+          <ul className="flex flex-wrap gap-1.5 group-data-[align=end]/message:justify-end">
             {message.files.map((f) => (
               <li key={`${f.action}:${f.path}`}>
                 <Badge variant="outline" className="font-mono text-xs">
@@ -431,8 +455,8 @@ function Turn({ message }: { message: SessionMessage }) {
             ))}
           </ul>
         )}
-      </div>
-    </li>
+      </MessageContent>
+    </Message>
   );
 }
 
@@ -471,7 +495,7 @@ function ArtifactCard({ artifact, onOpen }: { artifact: SessionArtifact; onOpen:
 function ArtifactDialog({ artifact, onClose }: { artifact: SessionArtifact | null; onClose: () => void }) {
   return (
     <Dialog open={artifact !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="grid max-h-[82vh] grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden p-6 sm:max-w-[48rem]">
+      <DialogContent className="grid max-h-[82vh] grid-rows-[auto_minmax(0,1fr)] gap-4 overflow-hidden p-6 sm:max-w-[48rem] [&>*]:min-w-0">
         {artifact && (
           <>
             <DialogHeader className="pr-8">
@@ -517,7 +541,10 @@ function ResumeCommand({ command }: { command: string }) {
               className="mr-1 shrink-0"
               aria-label="再開コマンドをコピー"
               onClick={() => {
-                navigator.clipboard.writeText(command).then(() => setCopied(true));
+                navigator.clipboard
+                  .writeText(command)
+                  .then(() => setCopied(true))
+                  .catch(() => toast.error("再開コマンドをコピーできなかった"));
               }}
             >
               {copied ? <CheckIcon /> : <CopyIcon />}
@@ -542,17 +569,17 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
   }
   const detail = useQuery({
     queryKey: ["session", id],
-    queryFn: () => loadSession(id as string),
-    enabled: id !== null,
+    queryFn: id === null ? skipToken : () => loadSession(id),
   });
   const d = detail.data;
   const decisions = d?.knowledge.filter((k) => k.kind !== "option") ?? [];
   const lastAt = d?.messages.at(-1)?.sentAt ?? null;
   const said = d?.messages.filter((m) => m.speaker === "self").length ?? 0;
+  const resume = d ? resumeCommand(d.origin, d.sessionId) : null;
 
   return (
     <Dialog open={id !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="grid max-h-[88vh] grid-rows-[auto_minmax(0,1fr)] gap-5 overflow-hidden p-6 sm:max-w-[58rem]">
+      <DialogContent className="grid max-h-[88vh] grid-rows-[auto_minmax(0,1fr)] gap-5 overflow-hidden p-6 sm:max-w-[min(calc(100%-2rem),max(58rem,60vw))] [&>*]:min-w-0">
         <DialogHeader className="pr-8">
           <Button type="button" variant="ghost" size="sm" className="-ml-2 w-fit" onClick={onClose}>
             <ArrowLeftIcon />
@@ -565,31 +592,50 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                 <span className="text-sm text-muted-foreground">{d.project}</span>
               </div>
               <DialogTitle className="line-clamp-2 text-left text-lg leading-snug">
-                {d.title?.split("\n")[0] ?? "（持ち主の発言なし）"}
+                {d.title?.split("\n")[0] ?? "（題なし）"}
               </DialogTitle>
-              <DialogDescription className="space-y-1 text-left">
-                <span className="block font-mono text-sm break-all">Session ID: {d.sessionId}</span>
-                <span className="flex flex-wrap gap-x-4 gap-y-1">
-                  <span>
-                    {formatDate(d.startedAt)}
-                    {lastAt && ` 〜 ${formatDate(lastAt)}`}
-                  </span>
-                  {d.branch && (
-                    <span className="inline-flex items-center gap-1">
-                      <GitBranchIcon className="size-3" />
-                      {d.branch}
-                    </span>
-                  )}
-                  <span>持ち主の発言 {said}</span>
-                  <span>判断 {decisions.length}</span>
-                </span>
+              <DialogDescription asChild>
+                <div className="space-y-2 text-left">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {d.branch && (
+                      <Badge variant="outline" className="font-mono">
+                        <GitBranchIcon />
+                        {d.branch}
+                      </Badge>
+                    )}
+                    <Badge variant="info">
+                      <MessagesSquareIcon />
+                      あなたの発言 {said}
+                    </Badge>
+                    <Badge variant="secondary">
+                      <ScaleIcon />
+                      判断 {decisions.length}
+                    </Badge>
+                  </div>
+                  <Marker>
+                    <MarkerIcon>
+                      <CalendarIcon />
+                    </MarkerIcon>
+                    <MarkerContent className="text-sm">
+                      {formatDate(d.startedAt)}
+                      {lastAt && ` 〜 ${formatDate(lastAt)}`}
+                    </MarkerContent>
+                  </Marker>
+                  <Marker>
+                    <MarkerIcon>
+                      <HashIcon />
+                    </MarkerIcon>
+                    <MarkerContent className="font-mono text-sm">{d.sessionId}</MarkerContent>
+                  </Marker>
+                </div>
               </DialogDescription>
-              {resumeCommand(d.origin, d.sessionId) && (
-                <ResumeCommand command={resumeCommand(d.origin, d.sessionId) as string} />
-              )}
+              {resume && <ResumeCommand command={resume} />}
             </>
           ) : (
-            <DialogTitle>セッション詳細</DialogTitle>
+            <>
+              <DialogTitle>セッション詳細</DialogTitle>
+              <DialogDescription>選んだ session の会話と、残した判断を出す。</DialogDescription>
+            </>
           )}
         </DialogHeader>
 
@@ -598,52 +644,73 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
         ) : detail.isError ? (
           <Failed what="このセッション" error={detail.error} />
         ) : d ? (
-          <ScrollArea className="min-h-0 pr-4">
-            <div className="space-y-5">
-              {d.work.map((w) => (
-                <WorkCard key={w.id} work={w} />
-              ))}
-              <Tabs defaultValue={decisions.length > 0 ? "knowledge" : "conversation"}>
-                <TabsList>
-                  <TabsTrigger value="conversation">会話 {d.messages.length}</TabsTrigger>
-                  <TabsTrigger value="knowledge">判断 {decisions.length}</TabsTrigger>
-                  {d.artifacts.length > 0 && (
-                    <TabsTrigger value="artifacts">成果物 {d.artifacts.length}</TabsTrigger>
-                  )}
-                </TabsList>
-                <TabsContent value="conversation" className="pt-3">
-                  {d.messages.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      この session の会話は記録されていない（trace だけで残した session）。
-                    </p>
-                  ) : (
-                    <ol className="space-y-4">
-                      {d.messages.map((m) => (
-                        <Turn key={m.id} message={m} />
-                      ))}
-                    </ol>
-                  )}
-                </TabsContent>
-                <TabsContent value="knowledge" className="pt-3">
-                  {decisions.length === 0 ? (
-                    <p className="text-sm leading-6 text-muted-foreground">
-                      この session では判断を残していない。残すなら、その session で{" "}
-                      <code className="font-mono">/gleanery:trace</code> を実行する。
-                    </p>
-                  ) : (
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {sectionsOf(d.knowledge).map((section) => (
-                        <SectionCard
-                          key={section.id}
-                          section={section}
-                          onOpen={() => setSelectedSection(section)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-                {d.artifacts.length > 0 && (
-                  <TabsContent value="artifacts" className="space-y-3 pt-3">
+          <Tabs
+            defaultValue={decisions.length > 0 ? "knowledge" : "conversation"}
+            className="flex min-h-0 flex-col gap-3"
+          >
+            {d.work.length > 0 && (
+              <div className="space-y-3">
+                {d.work.map((w) => (
+                  <WorkCard key={w.id} work={w} />
+                ))}
+              </div>
+            )}
+            <TabsList>
+              <TabsTrigger value="conversation">会話 {d.messages.length}</TabsTrigger>
+              <TabsTrigger value="knowledge">判断 {decisions.length}</TabsTrigger>
+              {d.artifacts.length > 0 && (
+                <TabsTrigger value="artifacts">成果物 {d.artifacts.length}</TabsTrigger>
+              )}
+            </TabsList>
+            {/* 会話だけ MessageScroller にする。長い転記は先頭から読むので既定は先頭のままで、
+                末尾へ飛ぶボタンと先頭へ戻るボタンを両方出す（自動追従はしない。転記は増えない）。 */}
+            <TabsContent value="conversation" className="min-h-0 flex-1">
+              {d.messages.length === 0 ? (
+                <p className="pt-3 text-sm text-muted-foreground">
+                  この session の会話は記録されていない（trace だけで残した session）。
+                </p>
+              ) : (
+                <MessageScrollerProvider autoScroll={false} defaultScrollPosition="start">
+                  <MessageScroller>
+                    <MessageScrollerViewport className="pt-3 pr-4">
+                      <MessageScrollerContent role="list" className="gap-4">
+                        {d.messages.map((m) => (
+                          <MessageScrollerItem key={m.id} messageId={m.id} role="listitem">
+                            <Turn message={m} />
+                          </MessageScrollerItem>
+                        ))}
+                      </MessageScrollerContent>
+                    </MessageScrollerViewport>
+                    <MessageScrollerButton direction="start" />
+                    <MessageScrollerButton direction="end" />
+                  </MessageScroller>
+                </MessageScrollerProvider>
+              )}
+            </TabsContent>
+            <TabsContent value="knowledge" className="min-h-0 flex-1">
+              <ScrollArea className="h-full pr-4">
+                {decisions.length === 0 ? (
+                  <p className="pt-3 text-sm leading-6 text-muted-foreground">
+                    この session では判断を残していない。残すなら、その session で{" "}
+                    <code className="font-mono">/gleanery:trace</code> を実行する。
+                  </p>
+                ) : (
+                  <div className="grid gap-3 pt-3 md:grid-cols-2">
+                    {sectionsOf(d.knowledge).map((section) => (
+                      <SectionCard
+                        key={section.id}
+                        section={section}
+                        onOpen={() => setSelectedSection(section)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </TabsContent>
+            {d.artifacts.length > 0 && (
+              <TabsContent value="artifacts" className="min-h-0 flex-1">
+                <ScrollArea className="h-full pr-4">
+                  <div className="space-y-3 pt-3">
                     <p className="text-sm text-muted-foreground">
                       この session が触れた要件定義と設計書。承認済みとして同期された本文を表示する。
                     </p>
@@ -656,11 +723,11 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
                         />
                       ))}
                     </div>
-                  </TabsContent>
-                )}
-              </Tabs>
-            </div>
-          </ScrollArea>
+                  </div>
+                </ScrollArea>
+              </TabsContent>
+            )}
+          </Tabs>
         ) : null}
 
         <SectionDialog
@@ -701,9 +768,11 @@ function SearchToolbar({
           if (draft.trim()) onSearch(draft.trim());
         }}
       >
-        <div className="relative min-w-0 flex-1">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
+        <InputGroup className="min-w-0 flex-1 bg-background">
+          <InputGroupAddon>
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={
@@ -714,9 +783,8 @@ function SearchToolbar({
                   : "判断や経緯で探す"
             }
             aria-label="セッションを検索"
-            className="h-10 bg-background pr-3 pl-9"
           />
-        </div>
+        </InputGroup>
         {query && (
           <Button type="button" variant="ghost" onClick={onClear}>
             クリア
@@ -780,7 +848,7 @@ function SearchResults({ found, onOpen }: { found: FoundSession[]; onOpen: (id: 
           >
             <span className="flex items-start justify-between gap-4">
               <span className="min-w-0">
-                <span className="block truncate font-medium">{session.title ?? "（持ち主の発言なし）"}</span>
+                <span className="block truncate font-medium">{session.title ?? "（題なし）"}</span>
                 <span className="mt-1 block text-sm text-muted-foreground">
                   {hostLabel(session.origin)} ・ {session.project} ・ {session.sessionId.slice(0, 8)}
                 </span>
@@ -793,7 +861,7 @@ function SearchResults({ found, onOpen }: { found: FoundSession[]; onOpen: (id: 
             <span className="mt-4 block space-y-3 border-t pt-3">
               {session.hits.slice(0, 3).map((hit) => (
                 <span key={hit.ref} className="grid gap-1 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-3">
-                  <span className={`text-sm ${stanceClass(hit.stance)}`}>{hit.label}</span>
+                  <span className={cn("text-sm", stanceClass(hit.stance))}>{hit.label}</span>
                   <span className="min-w-0">
                     <span className="line-clamp-2 block text-sm leading-6">{hit.text}</span>
                     {hit.reason && (
@@ -825,7 +893,7 @@ function SessionRowView({
   onOpen: (id: string) => void;
 }) {
   const open = () => onOpen(session.id);
-  const title = session.title?.split("\n")[0] ?? "（持ち主の発言なし）";
+  const title = session.title?.split("\n")[0] ?? "（題なし）";
   return (
     <TableRow
       id={`session-row-${session.id}`}
@@ -920,8 +988,7 @@ export function SessionsPage() {
   });
   const results = useQuery({
     queryKey: ["session-search", query, mode, projectId],
-    queryFn: () => searchSessions(query as string, mode, projectId),
-    enabled: query !== undefined,
+    queryFn: query === undefined ? skipToken : () => searchSessions(query, mode, projectId),
     staleTime: 60_000,
   });
   // 検索の条件が変われば 1 ページ目に戻し、開いていた詳細は閉じる。

@@ -12,7 +12,7 @@ create schema if not exists extensions;
 create extension if not exists vector with schema extensions;
 
 create schema gleanery;
-comment on schema gleanery is 'gleanery schema revision 3';
+comment on schema gleanery is 'gleanery schema revision 4';
 revoke all on schema gleanery from public;
 
 -- git remote を正規化した key（`git:github.com/owner/repo`）か、remote の無い作業場所に各 PC の設定で付けた key。
@@ -98,6 +98,7 @@ create table gleanery.conversation (
   external_id text not null,
   branch text,
   started_at timestamptz not null,
+  title text,
   unique (project_id, origin, external_id),
   check ((origin = 'github') = (source_item_id is not null))
 );

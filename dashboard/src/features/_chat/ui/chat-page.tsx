@@ -9,6 +9,7 @@ import {
   UserRoundIcon,
 } from "lucide-react-motion";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Answer } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
@@ -74,7 +75,7 @@ function Marked({ text, marks }: { text: string; marks: string[] }) {
   );
 }
 
-/** 根拠 1 件。**全文はその場で読む**（選んでいる作業場所の外は読めない）。 */
+/** 根拠 1 件。全文はその場で読む（選んでいる作業場所の外は読めない）。 */
 function Source({ source }: { source: ChatSource }) {
   const { project } = useProject();
   const [full, setFull] = useState<string | null>(null);
@@ -165,10 +166,13 @@ function Copy({ text, label }: { text: string; label: string }) {
       aria-label={label}
       className="size-7 text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover/message:opacity-100"
       onClick={() => {
-        navigator.clipboard.writeText(text).then(() => {
-          setDone(true);
-          setTimeout(() => setDone(false), 1200);
-        });
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1200);
+          })
+          .catch(() => toast.error("クリップボードへ写せなかった"));
       }}
     >
       {done ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
@@ -185,7 +189,7 @@ function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
         <div className="rounded-md bg-secondary/70 p-4">
           <p className="text-muted-foreground text-sm">まとめています。いちばん近い記録:</p>
           <p className="mt-1.5 text-base leading-relaxed">
-            <span className={`mr-1 font-medium ${stanceClass(top.stance)}`}>{top.label}</span>
+            <span className={cn("mr-1 font-medium", stanceClass(top.stance))}>{top.label}</span>
             {top.text}
           </p>
         </div>
@@ -225,13 +229,15 @@ function PolishOptions({
       <Marker className="font-mono text-xs uppercase tracking-[0.14em]">
         <MarkerContent>書き直しの候補</MarkerContent>
         {options.length > 0 && (
-          <button
+          <Button
             type="button"
-            className="ml-auto text-sm text-muted-foreground underline-offset-2 hover:underline"
+            variant="link"
+            size="sm"
+            className="ml-auto h-auto p-0 text-muted-foreground"
             onClick={dismiss}
           >
             このままでいい
-          </button>
+          </Button>
         )}
       </Marker>
       {polishing ? (
@@ -276,8 +282,11 @@ export function ChatPage() {
         <MessageScrollerProvider>
           <MessageScroller className="flex-1">
             <MessageScrollerViewport>
+              {/* 答えはトークン単位で流れ込む。aria-busy が true のあいだ読み上げは変化を溜め、
+                  false になったところで 1 つの発話にまとめられる（WAI-ARIA 1.2 の aria-busy）。 */}
               <MessageScrollerContent
                 aria-busy={chat.busy}
+                aria-live="polite"
                 className="mx-auto w-full max-w-[48rem] px-6 pb-10"
               >
                 {chat.turns.length === 0 && (
@@ -346,7 +355,17 @@ export function ChatPage() {
                           {turn.stopped && (
                             <p className="text-muted-foreground text-base">生成を中断しました</p>
                           )}
-                          {turn.error && <p className="text-error text-base">{turn.error}</p>}
+                          {/* 枠と前置きで本文から切り離す。途中まで流れた答えの直後だと、
+                              どこまでが答えかが読めない。 */}
+                          {turn.error && (
+                            <p
+                              role="alert"
+                              className="rounded-md border border-error/40 bg-error/5 px-4 py-2.5 text-base text-error leading-[1.9]"
+                            >
+                              答えを出しきれませんでした。
+                              <span className="text-muted-foreground text-sm">（{turn.error}）</span>
+                            </p>
+                          )}
                           {turn.sources && (
                             <Sources
                               sources={turn.sources}
@@ -365,7 +384,8 @@ export function ChatPage() {
                 )}
               </MessageScrollerContent>
             </MessageScrollerViewport>
-            <MessageScrollerButton />
+            <MessageScrollerButton direction="start" />
+            <MessageScrollerButton direction="end" />
           </MessageScroller>
         </MessageScrollerProvider>
 
@@ -418,7 +438,7 @@ export function ChatPage() {
                       type="button"
                       size="icon-sm"
                       variant={chat.recorder ? "default" : "ghost"}
-                      className={cn("ml-auto", chat.recorder && "bg-error text-white hover:bg-error/90")}
+                      className={cn("ml-auto", chat.recorder && "bg-live text-white hover:bg-live/90")}
                       onClick={chat.listen}
                       disabled={chat.hearing || chat.preparing || chat.projects.length === 0}
                       aria-label={chat.recorder ? "録音を終了" : "録音を開始"}
@@ -453,7 +473,7 @@ export function ChatPage() {
                       <InputGroupButton
                         type="button"
                         size="icon-sm"
-                        variant="destructive"
+                        variant="secondary"
                         onClick={chat.stop}
                         aria-label="生成を中断"
                       >

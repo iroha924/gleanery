@@ -1,27 +1,28 @@
 import { cn } from "cn";
 import { MicIcon, SquareIcon } from "lucide-react-motion";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Marker, MarkerContent } from "@/components/ui/marker";
 import { Spinner } from "@/components/ui/spinner";
 import { clock, useMeeting } from "../model/use-meeting";
 
 /**
- * 会議のかんぺ。**記録にあることだけで返信案を作る。**
+ * 会議のかんぺ。記録にあることだけで返信案を作る。
  * 無いときは「無い」と出す — その場しのぎの案は、会議のあとで訂正する羽目になるので価値が負になる。
  */
 export function MeetingPage() {
-  const { lines, on, reply, thinking, projectLabel, canStart, start, stop } = useMeeting();
+  const { lines, on, reply, replyFailed, thinking, projectLabel, canStart, start, stop } = useMeeting();
 
   return (
     <div className="flex h-full min-h-0">
-      {/* かんぺが主。**会議中に読むのはこちらで、文字起こしは確認用。** */}
+      {/* かんぺが主。会議中に読むのはこちらで、文字起こしは確認用。 */}
       <div className="flex min-w-0 flex-1 flex-col gap-4 px-8 py-5">
         <header className="flex flex-none items-center gap-3">
           <Button
             type="button"
             onClick={on ? stop : start}
             disabled={!on && !canStart}
-            className={cn("rounded-md", on && "bg-error text-white hover:bg-error/90")}
+            className={cn("rounded-md", on && "bg-live text-white hover:bg-live/90")}
             aria-label={on ? "録音を終了する" : "会議の録音を始める"}
           >
             {on ? <SquareIcon className="size-3.5" /> : <MicIcon className="size-4" />}
@@ -29,17 +30,25 @@ export function MeetingPage() {
           </Button>
           {on && (
             <span className="flex items-center gap-2 text-muted-foreground text-sm">
-              <span className="size-1.5 animate-pulse rounded-full bg-error" aria-hidden />
+              <span className="size-1.5 animate-pulse rounded-full bg-live" aria-hidden />
               聞いています
             </span>
           )}
-          <span className="ml-auto rounded-md border px-2 py-1 font-mono text-xs text-muted-foreground">
+          <Badge variant="outline" className="ml-auto font-mono">
             {projectLabel}
-          </span>
+          </Badge>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {reply?.asked ? (
+          {replyFailed ? (
+            <p
+              role="alert"
+              className="rounded-md border border-error/40 bg-error/5 px-4 py-2.5 text-base text-error leading-[1.9]"
+            >
+              返信案を引けませんでした。
+              <span className="text-muted-foreground text-sm">（{replyFailed}）</span>
+            </p>
+          ) : reply?.asked ? (
             <div className="space-y-5">
               <div>
                 <Marker className="font-mono text-xs uppercase tracking-[0.14em]">
@@ -112,7 +121,7 @@ export function MeetingPage() {
         </div>
       </div>
 
-      {/* 文字起こしは従。**合っているかを目の端で確かめるためのもの。** */}
+      {/* 文字起こしは従。合っているかを目の端で確かめるためのもの。 */}
       <aside className="flex w-[22rem] flex-none flex-col gap-3 border-l bg-secondary/25 px-5 py-5">
         <Marker className="flex-none font-mono text-xs uppercase tracking-[0.14em]">
           <MarkerContent>聞こえたこと</MarkerContent>
