@@ -80,6 +80,8 @@ export type SessionDetail = {
   startedAt: string;
   projectId: number;
   project: string;
+  /** `git:github.com/owner/repo`。本文の #123 を issue へ繋ぐのに使う。 */
+  projectKey: string;
   /** 一覧と同じ題（持ち主の最初の発言、無ければ結んだ作業の題） */
   title: string | null;
   messages: SessionMessage[];

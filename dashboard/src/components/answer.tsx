@@ -26,6 +26,55 @@ type MarkdownNode = {
   position?: { start: { offset?: number }; end: { offset?: number } };
 };
 
+/** `git:github.com/owner/repo` から、その repository の URL を組み立てる。取れなければ null。 */
+export function repoUrlOf(projectKey: string | undefined): string | null {
+  const at = projectKey?.startsWith("git:") ? projectKey.slice(4) : null;
+  return at?.includes("/") ? `https://${at}` : null;
+}
+
+// 本文の `#123` を issue へ繋ぐ。GitHub は /issues/N を PR にも当てるので、どちらかを判る必要が無い。
+// **リンクとコードの中は触らない。**前後が語の一部のもの（`abc#46`、`#46a`）も拾わない。
+const ISSUE_REF = /(?<![\w#])#(\d{1,6})(?![\w-])/gu;
+
+function refsToLinks(value: string, repo: string): MarkdownNode[] | null {
+  const out: MarkdownNode[] = [];
+  let last = 0;
+  for (const m of value.matchAll(ISSUE_REF)) {
+    const at = m.index;
+    if (at > last) out.push({ type: "text", value: value.slice(last, at) });
+    out.push({ type: "link", url: `${repo}/issues/${m[1]}`, children: [{ type: "text", value: m[0] }] });
+    last = at + m[0].length;
+  }
+  if (out.length === 0) return null;
+  if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+  return out;
+}
+
+// remark は渡されたものを attacher として呼び、その戻り値を transformer に使う。
+// **transformer を直に返さない** —— tree を受け取れず undefined.children で落ちる。
+function remarkIssueRefs(repo: string) {
+  return () => (tree: MarkdownNode) => {
+    const walk = (parent: MarkdownNode) => {
+      const children = parent.children;
+      if (!children) return;
+      for (let i = 0; i < children.length; i += 1) {
+        const node = children[i];
+        if (node.type === "link") continue;
+        if (node.type !== "text") {
+          walk(node);
+          continue;
+        }
+        const replaced = refsToLinks(node.value ?? "", repo);
+        if (replaced) {
+          children.splice(i, 1, ...replaced);
+          i += replaced.length - 1;
+        }
+      }
+    };
+    walk(tree);
+  };
+}
+
 // 保存済み記録には `**強調**https://...（補足）` という区切りのない本文がある。
 // 構文木で隣接関係を確かめ、コードと正規の日本語 URL は書き換えない。
 function remarkStoredMarkdown() {
@@ -153,10 +202,24 @@ const INLINE_TEXT_COMPONENTS: Components = {
   a: ({ children }) => <>{children}</>,
 };
 
-export function MarkdownText({ text, className }: { text: string; className?: string }) {
+export function MarkdownText({
+  text,
+  className,
+  repo,
+}: {
+  text: string;
+  className?: string;
+  /** 渡すと本文の `#123` がその repository の issue へのリンクになる。 */
+  repo?: string | null;
+}) {
   return (
     <div className={cn("min-w-0 space-y-3 break-words text-base leading-7", className)}>
-      <Markdown remarkPlugins={[remarkGfm, remarkStoredMarkdown]} components={COMPACT_COMPONENTS}>
+      <Markdown
+        remarkPlugins={
+          repo ? [remarkGfm, remarkStoredMarkdown, remarkIssueRefs(repo)] : [remarkGfm, remarkStoredMarkdown]
+        }
+        components={COMPACT_COMPONENTS}
+      >
         {text}
       </Markdown>
     </div>
