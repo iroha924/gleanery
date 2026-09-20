@@ -11,7 +11,7 @@ import {
 } from "lucide-react-motion";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Answer } from "@/components/answer";
+import { Answer, repoUrlOf } from "@/components/answer";
 import { Badge } from "@/components/ui/badge";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Button } from "@/components/ui/button";
@@ -280,6 +280,9 @@ function PolishOptions({
 export function ChatPage() {
   const { chat: opened } = route.useSearch();
   const navigate = route.useNavigate();
+  // 答えの中の #123 は、いま選んでいる作業場所の issue を指す。選んでいなければリンクにしない。
+  const { project } = useProject();
+  const repo = repoUrlOf(project?.key);
   // 会話を作ったら URL へ載せる。載せないとリロードで開き直せない。
   const chat = useChat({
     onSaved: (id) => navigate({ search: { chat: id }, replace: true }),
@@ -306,7 +309,7 @@ export function ChatPage() {
               <MessageScrollerContent
                 aria-busy={chat.busy}
                 aria-live="polite"
-                className="mx-auto w-full max-w-[48rem] gap-4 px-6 pt-8 pb-10"
+                className="mx-auto w-full max-w-[48rem] gap-8 px-6 pt-8 pb-10"
               >
                 {chat.turns.length === 0 && (
                   <Empty className="min-h-[55vh] border-none">
@@ -342,14 +345,16 @@ export function ChatPage() {
                       <Message align="end">
                         <MessageAvatar
                           aria-hidden="true"
-                          className="mt-[5px] size-7 min-w-0 self-start rounded-full border group-has-data-[slot=message-footer]/message:translate-y-0 bg-card"
+                          // **負の margin にしない。**content-visibility の paint containment に切られる。
+                          // 1 行目の中心は、BubbleContent の p-3 が 12px 加わって 26px。
+                          className="mt-3 size-7 min-w-0 self-start rounded-full border bg-card group-has-data-[slot=message-footer]/message:translate-y-0"
                         >
                           <UserRoundIcon className="size-3.5" />
                         </MessageAvatar>
                         <span className="sr-only">あなた</span>
                         <MessageContent>
                           <Bubble variant="default">
-                            <BubbleContent className="whitespace-pre-wrap p-3 leading-relaxed [&_a]:text-primary-foreground [&_code]:bg-primary-foreground/15 [&_code]:text-primary-foreground [&_pre]:border-primary-foreground/20 [&_pre]:bg-primary-foreground/10 [&_pre]:text-primary-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
+                            <BubbleContent className="whitespace-pre-wrap p-3 leading-7 [&_a]:text-primary-foreground [&_code]:bg-primary-foreground/15 [&_code]:text-primary-foreground [&_pre]:border-primary-foreground/20 [&_pre]:bg-primary-foreground/10 [&_pre]:text-primary-foreground [&_td]:border-primary-foreground/20 [&_th]:border-primary-foreground/20">
                               {turn.content}
                             </BubbleContent>
                           </Bubble>
@@ -364,13 +369,14 @@ export function ChatPage() {
                       <Message>
                         <MessageAvatar
                           aria-hidden="true"
-                          className="mt-[5px] size-7 min-w-0 self-start rounded-full border group-has-data-[slot=message-footer]/message:translate-y-0 bg-secondary/60 text-muted-foreground"
+                          // AI 側は padding が無いので、leading-7 の半分がアイコンの半径と同じになる。
+                          className="size-7 min-w-0 self-start rounded-full border bg-secondary/60 text-muted-foreground group-has-data-[slot=message-footer]/message:translate-y-0"
                         >
                           <BotIcon className="size-3.5" />
                         </MessageAvatar>
                         <span className="sr-only">AI</span>
                         <MessageContent className="gap-3">
-                          {turn.content && <Answer text={turn.content} />}
+                          {turn.content && <Answer text={turn.content} repo={repo} />}
                           {!turn.content && !turn.error && !turn.stopped && chat.busy && (
                             <p className="flex items-center gap-2 text-muted-foreground text-base">
                               <Spinner /> 記録を探しています

@@ -249,10 +249,15 @@ export function MarkdownInline({
   );
 }
 
-export function Answer({ text }: { text: string }) {
+export function Answer({ text, repo }: { text: string; repo?: string | null }) {
   return (
     <div className="space-y-3 text-base">
-      <Markdown remarkPlugins={[remarkGfm, remarkStoredMarkdown]} components={COMPONENTS}>
+      <Markdown
+        remarkPlugins={
+          repo ? [remarkGfm, remarkStoredMarkdown, remarkIssueRefs(repo)] : [remarkGfm, remarkStoredMarkdown]
+        }
+        components={COMPONENTS}
+      >
         {text}
       </Markdown>
     </div>
