@@ -21,7 +21,7 @@ export function MeetingPage() {
             type="button"
             onClick={on ? stop : start}
             disabled={!on && !canStart}
-            className={cn("rounded-md", on && "bg-destructive text-white hover:bg-destructive/90")}
+            className={cn("rounded-md", on && "bg-error text-white hover:bg-error/90")}
             aria-label={on ? "録音を終了する" : "会議の録音を始める"}
           >
             {on ? <SquareIcon className="size-3.5" /> : <MicIcon className="size-4" />}
@@ -29,7 +29,7 @@ export function MeetingPage() {
           </Button>
           {on && (
             <span className="flex items-center gap-2 text-muted-foreground text-sm">
-              <span className="size-1.5 animate-pulse rounded-full bg-destructive" aria-hidden />
+              <span className="size-1.5 animate-pulse rounded-full bg-error" aria-hidden />
               聞いています
             </span>
           )}

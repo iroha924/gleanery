@@ -57,6 +57,19 @@ Vite、TanStack Router、TanStack Query、Honoは、入っている版の型定�
 `localStorage`は読み書きの両方をtry/catchで囲む。失敗しても画面は動かす（プライベートウィンドウで
 落ちる）。**失敗をUIへ出さない**のは、利用者が対処できないため。
 
+## URLの状態
+
+`validateSearch`にzodのschemaをそのまま渡す（**v4はアダプタ不要**。v3は`@tanstack/zod-adapter`が要った）。
+
+- 既定値は`stripSearchParams`でURLから消す。`?page=1`を出さない
+- 画面をまたいで保つものは`retainSearchParams`を**そのrouteに**付ける。rootに置くと、
+  検索語やページ番号がチャットや会議の画面へ漏れる
+- **middlewareの順は`stripSearchParams` → `retainSearchParams`。**逆にすると`retain`が`strip`の
+  結果を後から書き戻し、既定値がURLから消えない（この順序は公式ドキュメントに記載が無く、実測で決めた）
+- `Link`の`to`は文字列リテラルではなくroute参照を渡す。`from`を省くと絶対パスしか補完されない
+- 相対移動は`useNavigate({ from: Route.fullPath })`
+- routeを知らない共有componentは`useSearch({ strict: false })`
+
 ## Queryの作法
 
 - 分岐は`isPending` → `isError` → 本体。`isLoading`は使わない（v5では`isPending && isFetching`の派生）
@@ -75,8 +88,14 @@ Vite、TanStack Router、TanStack Query、Honoは、入っている版の型定�
 
 - 依存配列が半端な`useMemo`が1つあると、`preserve-manual-memoization`により**そのコンポーネントの
   最適化ごと落ちる**
-- 確認手段はReact DevToolsの✨バッジだけ。**Biomeの`useReactCompiler`は内部エラーで落ちるので使えない**
+- **Biomeの`useReactCompiler`は内部エラーで落ちるので使えない**
   （実測: `dashboard/src/hooks/use-mobile.ts`で "derived from an internal Biome error"）
+- 機械で拾う手段は`reactCompilerPreset({ logger })`。入っている版の型に`CompileSkipEvent`・
+  `CompileErrorEvent`・`CompileDiagnosticEvent`があり（`babel-plugin-react-compiler/dist/index.d.ts`）、
+  **飛ばされたコンポーネントを名前で取れる**。常用せず、疑ったときに検証用のbuildで回す
+- `panicThreshold`でコンパイル失敗をbuildエラーへ上げられる。本番buildでは上げない
+  （Rules of React違反のある1ファイルが全体のbuildを止める）
+- 目で見る手段はReact DevToolsのバッジ
 - ESLintの`eslint-plugin-react-hooks`は公式の推奨だが、TypeScript 7にAPIが無いため
   typescript-eslintが動かず、この構成では入れられない
 - 一時的に外すなら`"use no memo"`。**恒久的な解にしない**（公式が debugging tool と明記）

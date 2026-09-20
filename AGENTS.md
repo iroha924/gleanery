@@ -63,14 +63,14 @@ dashboard・Honoの実行時動作、DB schema・権限・データ変換、認�
 `plugin/skills/`・`plugin/agents/`・MCP・CLI・npm配布物を変える場合はPRを使う。
 影響範囲を即答できない変更もPRへ寄せる。
 
-次の2体はrepository専用のreviewerで、Claude Codeだけが持つ。`plugin/agents/`の配布reviewerとは
-担当が重ならず、**機械が判定できることは見ない**（`bun run verify`が通っている前提で渡す）。
+repository専用のreviewerが2体ある（Claude Codeのみ、`.claude/agents/`）。**機械が判定できることは
+見ない**ので、`bun run verify`が通ってから渡す。担当は各定義にある。
 
-- `review-shipping`: npm配布物・version・bundleの入力・検査scriptを変えたcommitの前。
-  `git diff`に出ない面 — tarballの中身、検査の空振り、版の据え置き。**`verify`と同時に渡さない**
-  （同じ出力先へ2本のbundleが書く）
-- `review-ui`: `dashboard/`を変えたcommitの前。4つの状態の抜け、keyboardとaccessible name、
-  routeとfeatureの責務、色と語彙の意味
+- `review-shipping`: 配布物・version・bundleの入力・検査scriptを変えたcommitの前。`verify`と同時に渡さない
+- `review-ui`: `dashboard/`を変えたcommitの前
+
+**Codex側に同じreviewerを置かない**（意図した非対称）。定義を二重に持つと基準が2箇所で古くなるので、
+Codexへは`codex-talk`で差分の場所と受け入れ条件を渡す。
 
 ## 最小command索引
 

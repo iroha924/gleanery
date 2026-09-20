@@ -126,9 +126,10 @@ for (const file of sourceFiles) {
   }
 }
 
-// **route entry に機能を書かない。**route 設定・search schema・feature の ui の import に限る。
-// 実装を直書きすると、その画面だけ層の検査から外れ（module root が無いため）、
-// 同じ機能が feature 側と route 側の 2 通りで書かれる余地が残る。
+// **route entry に機能を書かない。**import と、トップレベルの宣言の両方を見る。
+// JSX は自動 runtime なので import を増やさずに画面を書けてしまい、import だけでは保証にならない
+// （実測: `function Page() { return <div>…</div> }` は import 1 本で検査を通った）。
+// 実装を直書きすると、その画面だけ層の検査から外れる（module root が無いため）。
 const ROUTE_ALLOWED = [
   /^@tanstack\/react-router$/,
   /^zod$/,
@@ -136,14 +137,33 @@ const ROUTE_ALLOWED = [
   // route の骨格（外枠と、描画に失敗したときの受け皿）だけは components から引ける。
   /^@\/components\/(dashboard-shell|route-failed)$/,
 ];
+// route ファイルのトップレベルに置けるもの。ここに無い宣言は機能の直書きとみなす。
+const ROUTE_TOP_LEVEL = [
+  /^import\s/,
+  /^export const Route = create(?:File|Root)Route\(/,
+  /^const \w+ = z\./, // search schema
+  /^const \w+ = \{/, // 既定値などの定数
+];
 for (const file of sourceFiles) {
   if (!isInside(file, routesDirectory)) continue;
   if (path.basename(file) === "routeTree.gen.ts") continue;
+  const relative = path.relative(".", file);
+
   for (const specifier of importsOf(file)) {
     if (ROUTE_ALLOWED.some((allowed) => allowed.test(specifier))) continue;
     failures.push(
-      `${path.relative(".", file)} が ${specifier} を参照している。route entry は route 設定と ` +
+      `${relative} が ${specifier} を参照している。route entry は route 設定と ` +
         "search schema と feature の ui だけを持つ。実装は src/features/_名前/ へ置く",
+    );
+  }
+
+  // 継続行（インデント・閉じ括弧・空行・コメント）は宣言の一部なので見ない。
+  for (const [index, line] of fs.readFileSync(file, "utf8").split("\n").entries()) {
+    if (line === "" || /^[\s)}\];,]/.test(line) || /^\s*(\/\/|\/?\*)/.test(line)) continue;
+    if (ROUTE_TOP_LEVEL.some((allowed) => allowed.test(line))) continue;
+    failures.push(
+      `${relative}:${index + 1} の \`${line.slice(0, 48)}\` は route entry に置けない。` +
+        "route 設定・search schema・定数だけを置き、component は feature の ui から import する",
     );
   }
 }

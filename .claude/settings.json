@@ -1,8 +1,5 @@
 {
   "permissions": {
-    "deny": [
-      "Edit(dashboard/src/routeTree.gen.ts)",
-      "Write(dashboard/src/routeTree.gen.ts)"
-    ]
+    "deny": ["Edit(dashboard/src/routeTree.gen.ts)"]
   }
 }

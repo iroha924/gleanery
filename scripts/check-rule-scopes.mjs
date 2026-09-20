@@ -51,6 +51,12 @@ const ALWAYS = {
 
 /** glob を正規表現へ。`**` は階層をまたぎ、`*` は 1 階層に閉じる。 */
 function toRegExp(glob) {
+  // **未対応の構文を黙って通さない。**`[]` のブラケット式は Claude 側では有効だが、
+  // ここでは実装していないので、判定を誤るより落ちるほうを選ぶ。
+  if (/[[\]]/.test(glob)) {
+    failures.push(`paths の ${glob} はブラケット式を含む。この検査が未対応なので使わない`);
+    return /$^/;
+  }
   let out = "";
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i];
@@ -115,7 +121,25 @@ function frontmatterPaths(source, file) {
 }
 
 const failures = [];
-const files = fs.readdirSync(rulesDirectory).filter((f) => f.endsWith(".md"));
+
+/** `.claude/rules/` は再帰的に探索される（公式）。サブディレクトリの rule も同じ規則で見る。 */
+function walk(directory, prefix = "") {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const next = path.join(directory, entry.name);
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) return walk(next, relative);
+    return entry.name.endsWith(".md") ? [relative] : [];
+  });
+}
+const files = walk(rulesDirectory);
+
+// **期待と実在を完全一致させる。**片方だけ見ると、rule を消しても期待が残って通る。
+const declared = new Set([...Object.keys(EXPECTED), ...Object.keys(ALWAYS)]);
+for (const name of declared) {
+  if (!files.includes(name)) {
+    failures.push(`${name}: 期待に書いてあるが .claude/rules/ に無い。消したなら期待からも消す`);
+  }
+}
 const scoped = [];
 const always = [];
 

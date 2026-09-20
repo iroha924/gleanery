@@ -595,7 +595,7 @@ function SessionDialog({ id, onClose }: { id: string | null; onClose: () => void
 
         {detail.isPending ? (
           <Skeleton className="h-80 w-full" />
-        ) : detail.error ? (
+        ) : detail.isError ? (
           <Failed what="このセッション" error={detail.error} />
         ) : d ? (
           <ScrollArea className="min-h-0 pr-4">
@@ -883,7 +883,7 @@ function SessionRowView({
 function Failed({ what, error }: { what: string; error: unknown }) {
   const detail = error instanceof Error ? error.message : null;
   return (
-    <p role="alert" className="text-base text-destructive leading-[1.9]">
+    <p role="alert" className="text-base text-error leading-[1.9]">
       {what}を読めませんでした。
       {detail && <span className="text-muted-foreground text-sm"> （{detail}）</span>}
     </p>
@@ -975,7 +975,7 @@ export function SessionsPage() {
             <Skeleton className="h-32 w-full" />
             <Skeleton className="h-32 w-full" />
           </div>
-        ) : results.error ? (
+        ) : results.isError ? (
           <Failed what="検索の結果" error={results.error} />
         ) : (
           <SearchResults found={results.data} onOpen={openSession} />

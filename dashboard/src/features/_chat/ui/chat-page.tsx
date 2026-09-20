@@ -125,7 +125,7 @@ function Source({ source }: { source: ChatSource }) {
           {full ?? source.text}
         </p>
         {failed && (
-          <p role="alert" className="text-destructive text-sm leading-[1.9]">
+          <p role="alert" className="text-error text-sm leading-[1.9]">
             {failed}
           </p>
         )}
@@ -346,7 +346,7 @@ export function ChatPage() {
                           {turn.stopped && (
                             <p className="text-muted-foreground text-base">生成を中断しました</p>
                           )}
-                          {turn.error && <p className="text-dont text-base">{turn.error}</p>}
+                          {turn.error && <p className="text-error text-base">{turn.error}</p>}
                           {turn.sources && (
                             <Sources
                               sources={turn.sources}
@@ -388,6 +388,7 @@ export function ChatPage() {
           >
             <InputGroup className="rounded-md bg-card">
               <InputGroupTextarea
+                aria-label="質問"
                 value={chat.draft}
                 onChange={(event) => chat.setDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -417,7 +418,7 @@ export function ChatPage() {
                       type="button"
                       size="icon-sm"
                       variant={chat.recorder ? "default" : "ghost"}
-                      className={`ml-auto ${chat.recorder ? "bg-dont text-white hover:bg-dont/90" : ""}`}
+                      className={cn("ml-auto", chat.recorder && "bg-error text-white hover:bg-error/90")}
                       onClick={chat.listen}
                       disabled={chat.hearing || chat.preparing || chat.projects.length === 0}
                       aria-label={chat.recorder ? "録音を終了" : "録音を開始"}
