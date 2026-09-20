@@ -321,7 +321,7 @@ export async function syncGithub(
     const sourceId = new Map([...known].map(([n, r]) => [n, r.id]));
     const changedItems = items.filter((i) => !known.get(String(i.number))?.content_hash.equals(itemHash(i)));
     if (changedItems.length) {
-      // **キーの綴りは下の `t(...)` と対で持つ。**片方だけ変えると、その列は例外も出さずに null で入る。
+      // キーの綴りは下の `t(...)` と対で持つ。片方だけ変えると、その列は例外も出さずに null で入る。
       // 型を書けば、綴り違いと欠落はコンパイルで落ちる。
       const itemRows: {
         number: string;
@@ -364,10 +364,24 @@ export async function syncGithub(
       for (const x of r.rows) sourceId.set(x.external_id, x.id);
     }
 
+    /** 下の `jsonb_to_recordset` の `t(...)` と対。綴りがずれた列は例外を出さずに null で入る。 */
+    type MessageRow = {
+      id: string;
+      conversation: string;
+      external: string;
+      reply: string | null;
+      speaker: string;
+      identity: string | null;
+      body: string;
+      url: string | null;
+      at: string;
+      hash: string;
+      lex: string | null;
+    };
     // 変わった発言だけを集める。返信は同じ文で親を書くので順は問わない（外部キーは文の終わりで確かめられる）。
     const live = new Set<string>();
     const conversations = new Map<string, { source: string; external: string; at: string }>();
-    const messages = [];
+    const messages: { s: Said; indexed: boolean; embedText: string; json: MessageRow }[] = [];
     for (const item of items) {
       const source = sourceId.get(String(item.number));
       if (!source) throw new Error(`PR・issue を書けなかった: #${item.number}`);
@@ -402,7 +416,6 @@ export async function syncGithub(
           s,
           indexed,
           embedText,
-          // 下の jsonb_to_recordset の t(...) と対。綴りがずれた列は黙って null で入る。
           json: {
             id: messageId,
             conversation,

@@ -135,7 +135,7 @@ export async function connect(env: Env, role: Role): Promise<pg.Client> {
  * role ごとの接続。pool は最初のクエリで作り、そこで schema の版を確かめる。
  * 起動時に確かめると、DB に届かないだけで MCP が立ち上がらなくなる。失敗は覚えず、次のクエリで作り直す。
  *
- * **自動記録だけは確かめない。**plugin の版は PC ごとに上がるので、確かめると revision を上げた瞬間に、
+ * 自動記録だけは確かめない。plugin の版は PC ごとに上がるので、確かめると revision を上げた瞬間に、
  * その PC の plugin が上がるまで記録が丸ごと止まる。旧版のまま書き続け、DB が弾いた行だけ rejected へ回す。
  */
 export function open(env: Env, role: Role, checkVersion = true): Kysely<DB> {

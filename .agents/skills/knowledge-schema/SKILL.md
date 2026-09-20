@@ -62,6 +62,10 @@ DBを作り直すcommandは無い。空から作るのは空のDBへ`db:apply`�
 5. migrationで作る制約には名前を付け、schema.sqlにも同じ名前を書く。無名のCHECKは作った順に
    `knowledge_check2`のような番号が付き、本番と空のDBで番号がずれうる
 6. downは書かない
+7. **既存の行に当たる制約を足すときは、当てる前に違反する行が0件であることを確かめる。**`db:migrate`は未適用の
+   migrationを1つのtransactionで当てるので、1行でも当たると一緒に当てる他のmigrationも入らない（データは失わない）。
+   `not valid`で逃げない — `db:apply`した新しいDBと`db:migrate`で進めたDBで`pg_dump`の出力が変わり、下の「検証」の
+   M/F比較が必ず差分を出す
 
 ## SQL の書き方
 

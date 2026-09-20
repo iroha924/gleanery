@@ -20,7 +20,7 @@ import url from "node:url";
 const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
 const OUT = path.join(root, "server/src/db-types.ts");
 const SCHEMA = path.join(root, "db/schema.sql");
-// db/compose.yaml と同じ image。**digest で留める。**CI が third-party action を full SHA で
+// db/compose.yaml と同じ image。digest で留める。CI が third-party action を full SHA で
 // 固定しているのと同じ理由で、上流がタグを差し替えても取り込まない。版を上げるときは両方直す。
 const IMAGE =
   "pgvector/pgvector:0.8.6-pg18@sha256:2ba9ca5f2e7daa0f0e7723cba1ee9167bab54efd3640516a44ac1a928dd67e7a";
@@ -28,8 +28,15 @@ const IMAGE =
 const NAME = `gleanery-codegen-${crypto.randomBytes(4).toString("hex")}`;
 const check = process.argv.includes("--check");
 
+const LABEL = "gleanery-codegen";
 const docker = (args, opts = {}) => execFileSync("docker", args, { encoding: "utf8", ...opts });
 const remove = () => spawnSync("docker", ["rm", "-f", NAME], { stdio: "ignore" });
+/** 前回が SIGINT や打ち切りで抜けて残した分を回収する。名前は毎回変わるので label で引く。 */
+const sweep = () => {
+  const left = spawnSync("docker", ["ps", "-aq", "--filter", `label=${LABEL}`], { encoding: "utf8" });
+  const ids = (left.stdout ?? "").split("\n").filter(Boolean);
+  if (ids.length) spawnSync("docker", ["rm", "-f", ...ids], { stdio: "ignore" });
+};
 
 /** 立ち上がるまで待つ。pg_isready は初期化の途中でも一度 true を返すので、実際に問い合わせて確かめる。 */
 const waitReady = (deadlineMs = 60_000) => {
@@ -50,13 +57,28 @@ const waitReady = (deadlineMs = 60_000) => {
 
 const env = { ...process.env, POSTGRES_PASSWORD: crypto.randomBytes(24).toString("base64url") };
 
-remove();
+sweep();
 try {
   // ポートは 0 を渡して空きを選ばせる。開発用の DB が 5432 を使っているので固定にできない。
-  docker(["run", "-d", "--name", NAME, "-e", "POSTGRES_PASSWORD", "-p", "127.0.0.1:0:5432", IMAGE], {
-    env,
-    stdio: ["ignore", "ignore", "inherit"],
-  });
+  docker(
+    [
+      "run",
+      "-d",
+      "--name",
+      NAME,
+      "--label",
+      LABEL,
+      "-e",
+      "POSTGRES_PASSWORD",
+      "-p",
+      "127.0.0.1:0:5432",
+      IMAGE,
+    ],
+    {
+      env,
+      stdio: ["ignore", "ignore", "inherit"],
+    },
+  );
   waitReady();
 
   // schema.sql は role を自分で作る（create role ... login）ので、そのまま丸ごと当てられる。
@@ -109,7 +131,7 @@ try {
     console.error(
       `${path.relative(root, OUT)} が db/schema.sql と合っていない。\`bun run codegen\` で作り直す`,
     );
-    // **exit を呼ばない。**finally が飛んで、使い捨てのコンテナが残る。
+    // exit を呼ばない。finally が飛んで、使い捨てのコンテナが残る。
     process.exitCode = 1;
   }
 

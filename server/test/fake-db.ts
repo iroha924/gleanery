@@ -38,7 +38,7 @@ export function fakeDb(
   };
   const connection: DatabaseConnection = {
     async executeQuery<R>(q: CompiledQuery): Promise<QueryResult<R>> {
-      // **実行しない代わりに、実行できない形を弾く。**空配列を kysely の `in` / `not in` へ渡すと
+      // 実行しない代わりに、実行できない形を弾く。空配列を kysely の `in` / `not in` へ渡すと
       // `in ()` が出て PostgreSQL が構文エラーにする。記録するだけの double は、これを緑で通してしまう
       // （実測: 空配列の 6 箇所が 184/184 pass のまま本番で落ちる形で入った）。
       if (/\b(?:not )?in \(\)/i.test(q.sql)) {

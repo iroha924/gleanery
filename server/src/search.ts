@@ -830,7 +830,7 @@ async function readMessage(
         where f.message_id = m.id order by f.path)`.as("paths"),
     )
     .where("m.conversation_id", "=", t.conversation_id);
-  // **前後を 1 本の union にしない。**各枝の order by と limit を括弧で囲まない SQL が出て、
+  // 前後を 1 本の union にしない。各枝の order by と limit を括弧で囲まない SQL が出て、
   // PostgreSQL が構文エラーにする。2 回引いて、前側を逆順に戻してから繋ぐ。
   const [before, after] = await Promise.all([
     withPaths

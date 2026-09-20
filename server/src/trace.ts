@@ -277,9 +277,29 @@ export function rows(t: Trace): Row[] {
   return out;
 }
 
-/** 知識の行を 1 往復で書く形。**変わった行だけを書き**、全部の行の id を返す（子の decision_id に要る）。 */
-/** 書いた行と、内容が同じで書かなかった行の両方を返す。キーの綴りは `t(...)` と対で持つ。 */
-const upsert = (projectId: number, conversation: string, rows: unknown[]) =>
+/** `t(...)` の列と対。綴りがずれた列は例外を出さずに null で入るので、ここで型に縛る。 */
+type UpsertRow = {
+  source_key: string;
+  kind: string;
+  status: string | null;
+  confidence: string | null;
+  decision_id: string | null;
+  superseded_by_id: string | null;
+  work_item_id: string | null;
+  heading: string | null;
+  body: string;
+  reason: string | null;
+  confirmation: string | null;
+  command: string | null;
+  downsides: string[];
+  refs: string[];
+  occurred_at: string;
+  content_hash: string;
+  lexemes: string;
+};
+
+/** 変わった行だけを書き、書いた行と内容が同じで書かなかった行の両方の id を返す（子の decision_id に要る）。 */
+const upsert = (projectId: number, conversation: string, rows: UpsertRow[]) =>
   sql<{ id: string; source_key: string; written: boolean }>`with incoming as (
     select * from jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) as t(
       source_key text, kind text, status text, confidence text, decision_id bigint, superseded_by_id bigint,
