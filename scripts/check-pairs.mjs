@@ -462,6 +462,23 @@ if (!fs.existsSync(PEER)) {
   }
 }
 
+// ---- 完走を名乗る行の正本が 1 つだけか ----
+//
+// **レビュアーの定義へ写さない。**写すと、起動側が足したキーが片方にだけ載る（k:876 と同じ形で、
+// 出力の契約の正本は起動側にある）。キーの集合は列挙できるので検査できる。
+const TRAILER = grab(REVIEW_SKILL, /^completion: (.+)$/m, "review Skill の完走の行");
+if (TRAILER !== null) {
+  const keys = [...TRAILER.matchAll(/(\w+)=/g)].map((m) => m[1]);
+  for (const key of ["lane", "model", "coverage", "unfinished", "findings"]) {
+    if (!keys.includes(key)) fail.push(`review Skill の完走の行に ${key}= が無い`);
+  }
+  const trailers = [...REVIEW_SRC.matchAll(/^completion: /gm)].length;
+  if (trailers !== 1) fail.push(`review Skill に完走の行の正本が ${trailers} 件ある（1 件にする）`);
+  for (const file of fs.readdirSync("plugin/agents").map((f) => `plugin/agents/${f}`)) {
+    if (/^completion: /m.test(read(file))) fail.push(`${file}: 完走の行の正本は起動側の Skill にだけ置く`);
+  }
+}
+
 // ---- review のラウンドの上限が、3 つの Skill で揃っているか ----
 //
 // design と requirements は自分の成果物への review を回すので、同じ上限を各自が書いている。
