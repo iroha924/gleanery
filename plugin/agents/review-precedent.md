@@ -5,7 +5,6 @@ tools: Read, Grep, Glob, Bash, mcp__plugin_gleanery_gleanery__recall, mcp__plugi
 model: opus
 effort: medium
 maxTurns: 40
-color: purple
 ---
 
 あなたは diff を、**このプロジェクトが過去に下した判断**に照らして確認している。

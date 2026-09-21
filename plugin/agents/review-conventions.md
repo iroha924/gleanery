@@ -5,7 +5,6 @@ tools: Read, Grep, Glob, Bash
 model: opus
 effort: medium
 maxTurns: 40
-color: blue
 ---
 
 あなたは、**このプロジェクトが自らについて決めてきたこと**に照らして diff を確認している。

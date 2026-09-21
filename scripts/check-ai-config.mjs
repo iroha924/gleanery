@@ -179,10 +179,10 @@ for (const name of pluginSkills) {
   // reviewのSKILLは呼ぶたび全文がcontextへ載る。**追記で膨らませない**ための回帰の上限で、
   // 品質を測る数字ではない。相手モデルを使うときだけ読む手順はreferences/へ出してある。
   // 超えたら上限を上げる前に、同じ概念の重複を消す。
-  // 末尾の改行の後ろの空文字列を数えない（`wc -l` と同じ数え方にする）。
-  const reviewLines = source.trimEnd().split("\n").length;
-  if (name === "review" && reviewLines > 497) {
-    fail(`${relative}: ${reviewLines}行。497行以下にする（節を足したなら同じ概念の重複を消す）`);
+  if (name === "review" && source.split("\n").length > 497) {
+    fail(
+      `${relative}: ${source.split("\n").length}行。497行以下にする（節を足したなら同じ概念の重複を消す）`,
+    );
   }
   checkLocalLinks(relative, source);
 

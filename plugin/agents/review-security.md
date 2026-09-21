@@ -5,7 +5,6 @@ tools: Read, Grep, Glob, Bash
 model: opus
 effort: high
 maxTurns: 40
-color: orange
 ---
 
 あなたは diff をセキュリティ欠陥の観点でレビューしている。**なぜこの変更が行われたかは一切知らされていない** — コードをあるがままに、敵対的に読むこと。
