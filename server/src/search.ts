@@ -45,6 +45,10 @@ export type Hit = {
 
 const POOL = 40;
 const RERANK_POOL = 30;
+const queryOptions = (signal?: AbortSignal) => ({
+  signal,
+  inflightQueryAbortStrategy: "cancel query" as const,
+});
 
 /** 日付の形。暦にない日（2026-02-30）も弾く。MCP の入力の検査にも使う。 */
 export const DAY = z.iso.date();
@@ -77,10 +81,11 @@ export function fuse<T extends { ref: string }>(lists: T[][], k = 60): T[] {
   return [...acc.values()].sort((a, b) => b.s - a.s).map((x) => x.row);
 }
 
-async function queryVector(env: Env, question: string): Promise<number[] | null> {
+async function queryVector(env: Env, question: string, signal?: AbortSignal): Promise<number[] | null> {
   try {
-    return (await embed(env, [question], "query"))[0] ?? null;
+    return (await embed(env, [question], "query", signal))[0] ?? null;
   } catch {
+    signal?.throwIfAborted();
     // 埋め込みが落ちても語彙側で返す。
     return null;
   }
@@ -95,15 +100,22 @@ async function both<R>(
   question: string,
   lexical: (() => Promise<R[]>) | null,
   dense: (v: number[]) => Promise<R[]>,
+  signal?: AbortSignal,
 ): Promise<[R[], R[]]> {
   return await Promise.all([
     lexical ? lexical() : [],
-    queryVector(env, question).then((v) => (v ? dense(v) : [])),
+    queryVector(env, question, signal).then((v) => (v ? dense(v) : [])),
   ]);
 }
 
 /** 札を前置して再ランクする。**札が無いと、棄却した案が文字面の近さで 1 位に来る。** */
-async function rerank(env: Env, question: string, rows: Hit[], limit: number): Promise<Hit[]> {
+async function rerank(
+  env: Env,
+  question: string,
+  rows: Hit[],
+  limit: number,
+  signal?: AbortSignal,
+): Promise<Hit[]> {
   const pool = rows.slice(0, RERANK_POOL);
   const bare = () => pool.slice(0, limit);
   if (pool.length <= 1 || !env.VOYAGE_API_KEY) return bare();
@@ -115,7 +127,7 @@ async function rerank(env: Env, question: string, rows: Hit[], limit: number): P
   );
   try {
     const res = await fetch("https://api.voyageai.com/v1/rerank", {
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${env.VOYAGE_API_KEY}` },
       body: JSON.stringify({
@@ -132,6 +144,7 @@ async function rerank(env: Env, question: string, rows: Hit[], limit: number): P
       return row ? [{ ...row, relevance: d.relevance_score }] : [];
     });
   } catch {
+    signal?.throwIfAborted();
     return bare();
   }
 }
@@ -147,6 +160,7 @@ export type KnowledgeQuery = {
   since?: string | undefined;
   until?: string | undefined;
   limit: number;
+  signal?: AbortSignal | undefined;
 };
 
 /** 知識の共通の射影。join と列を 1 か所に持つ（結果の型はここから推論する）。 */
@@ -238,7 +252,7 @@ export async function searchKnowledge(db: Kysely<DB>, env: Env, q: KnowledgeQuer
             .orderBy(sql`ts_rank_cd(k.lexemes, ${words}::tsquery)`, "desc")
             .orderBy("k.occurred_at", "desc")
             .limit(POOL)
-            .execute()
+            .execute(queryOptions(q.signal))
       : null,
     (qv) =>
       knowledgeBase(db)
@@ -248,9 +262,10 @@ export async function searchKnowledge(db: Kysely<DB>, env: Env, q: KnowledgeQuer
         .where((eb) => eb.and(w))
         .orderBy(sql`e.embedding operator(extensions.<#>) ${vec(qv)}::extensions.halfvec`)
         .limit(POOL)
-        .execute(),
+        .execute(queryOptions(q.signal)),
+    q.signal,
   );
-  return rerank(env, q.question, fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]), q.limit);
+  return rerank(env, q.question, fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]), q.limit, q.signal);
 }
 
 export type MessageQuery = {
@@ -265,6 +280,7 @@ export type MessageQuery = {
   /** coding session の発言だけ（GitHub の会話を除く）。上位を取ってから落とすと、件数が欠ける */
   sessionsOnly?: boolean;
   limit: number;
+  signal?: AbortSignal | undefined;
 };
 
 /** 発言の共通の射影。join と列を 1 か所に持つ（結果の型はここから推論する）。 */
@@ -374,7 +390,7 @@ export async function searchMessages(db: Kysely<DB>, env: Env, q: MessageQuery):
       .where((eb) => eb.and(w))
       .orderBy("m.sent_at", "desc")
       .limit(q.limit)
-      .execute();
+      .execute(queryOptions(q.signal));
     return rows.map(messageHit);
   }
   const question = q.question;
@@ -389,7 +405,7 @@ export async function searchMessages(db: Kysely<DB>, env: Env, q: MessageQuery):
             .orderBy(sql`ts_rank_cd(m.lexemes, ${words}::tsquery)`, "desc")
             .orderBy("m.sent_at", "desc")
             .limit(POOL)
-            .execute()
+            .execute(queryOptions(q.signal))
       : null,
     (qv) =>
       messageBase(db)
@@ -399,9 +415,10 @@ export async function searchMessages(db: Kysely<DB>, env: Env, q: MessageQuery):
         .where((eb) => eb.and(w))
         .orderBy(sql`e.embedding operator(extensions.<#>) ${vec(qv)}::extensions.halfvec`)
         .limit(POOL)
-        .execute(),
+        .execute(queryOptions(q.signal)),
+    q.signal,
   );
-  return rerank(env, question, fuse([den.map(messageHit), lex.map(messageHit)]), q.limit);
+  return rerank(env, question, fuse([den.map(messageHit), lex.map(messageHit)]), q.limit, q.signal);
 }
 
 export type Work = {
@@ -423,7 +440,12 @@ export type WorkDetail = Work & {
 };
 
 /** 続きをやる作業。進行中（active / blocked / paused）を新しい順に。 */
-export async function openWork(db: Kysely<DB>, projects: Scope, limit = 3): Promise<Work[]> {
+export async function openWork(
+  db: Kysely<DB>,
+  projects: Scope,
+  limit = 3,
+  signal?: AbortSignal,
+): Promise<Work[]> {
   let q = db
     .selectFrom("gleanery.work_item as w")
     .innerJoin("gleanery.project as p", "p.id", "w.project_id")
@@ -439,7 +461,7 @@ export async function openWork(db: Kysely<DB>, projects: Scope, limit = 3): Prom
     ])
     .where("w.status", "in", ["active", "blocked", "paused"]);
   if (projects) q = q.where(sql<SqlBool>`w.project_id = any(${projects})`);
-  const rows = await q.orderBy("w.updated_at", "desc").limit(limit).execute();
+  const rows = await q.orderBy("w.updated_at", "desc").limit(limit).execute(queryOptions(signal));
   return rows.map((w) => ({
     ref: `w:${w.id}`,
     project: w.project,
@@ -457,6 +479,7 @@ export async function workDetail(
   db: Kysely<DB>,
   id: string,
   projects: Scope = null,
+  signal?: AbortSignal,
 ): Promise<WorkDetail | null> {
   const row = await db
     .selectFrom("gleanery.work_item as w")
@@ -473,7 +496,7 @@ export async function workDetail(
     ])
     .where("w.id", "=", id)
     .where(inScope("w.project_id", projects))
-    .executeTakeFirst();
+    .executeTakeFirst(queryOptions(signal));
   if (!row) return null;
   const hits = (
     await knowledgeBase(db)
@@ -486,7 +509,7 @@ export async function workDetail(
       .orderBy(sql`case k.status when 'blocking' then 0 else 1 end`)
       .orderBy("k.occurred_at", "desc")
       .limit(30)
-      .execute()
+      .execute(queryOptions(signal))
   ).map(knowledgeHit);
   return {
     ref: `w:${row.id}`,
@@ -569,6 +592,7 @@ export async function listItems(
     limit: number;
     offset?: number | undefined;
   },
+  signal?: AbortSignal,
 ): Promise<{ total: number; rows: Item[] }> {
   const w: Expression<SqlBool>[] = [sql<SqlBool>`s.kind in ('pull_request', 'issue')`];
   if (q.projects) w.push(sql<SqlBool>`cn.project_id = any(${q.projects})`);
@@ -593,7 +617,7 @@ export async function listItems(
     .leftJoin("gleanery.person_identity as i", "i.id", "s.author_identity_id")
     .leftJoin("gleanery.person as pe", "pe.id", "i.person_id")
     .where((eb) => eb.and(w));
-  const counted = await base.select((eb) => eb.fn.countAll().as("n")).executeTakeFirst();
+  const counted = await base.select((eb) => eb.fn.countAll().as("n")).executeTakeFirst(queryOptions(signal));
   const total = Number(counted?.n ?? 0);
   const rows = await base
     .select([
@@ -615,7 +639,7 @@ export async function listItems(
     .orderBy("s.id", "desc")
     .limit(q.limit)
     .offset(q.offset ?? 0)
-    .execute();
+    .execute(queryOptions(signal));
   return {
     total,
     rows: rows.map((x) => ({
@@ -637,7 +661,7 @@ export async function listItems(
 /** 名簿の 1 行。**推論しない** — 人が `gleanery who` で入れたものだけ。 */
 export type Person = { display: string; handles: string[]; isSelf: boolean };
 
-export async function directory(db: Kysely<DB>): Promise<Person[]> {
+export async function directory(db: Kysely<DB>, signal?: AbortSignal): Promise<Person[]> {
   const rows = await db
     .selectFrom("gleanery.person as pe")
     .leftJoin("gleanery.person_identity as i", "i.person_id", "pe.id")
@@ -651,7 +675,7 @@ export async function directory(db: Kysely<DB>): Promise<Person[]> {
     .groupBy("pe.id")
     .orderBy("pe.is_self", "desc")
     .orderBy("pe.display_name")
-    .execute();
+    .execute(queryOptions(signal));
   return rows.map((p) => ({ display: p.display_name, handles: p.handles, isSelf: p.is_self }));
 }
 
@@ -746,7 +770,7 @@ export async function read(
   db: Kysely<DB>,
   refs: string[],
   budget: number,
-  opts: { projects?: Scope; around?: number } = {},
+  opts: { projects?: Scope; around?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
   const each = Math.floor(budget / Math.max(refs.length, 1));
   const scope = opts.projects ?? null;
@@ -757,18 +781,25 @@ export async function read(
       continue;
     }
     const id = ref.slice(2);
-    if (ref.startsWith("k:")) out.push(await readKnowledge(db, id, each, scope));
-    else if (ref.startsWith("m:")) out.push(await readMessage(db, id, each, opts.around ?? 3, scope));
-    else if (ref.startsWith("s:")) out.push(await readSource(db, id, each, scope));
+    if (ref.startsWith("k:")) out.push(await readKnowledge(db, id, each, scope, opts.signal));
+    else if (ref.startsWith("m:"))
+      out.push(await readMessage(db, id, each, opts.around ?? 3, scope, opts.signal));
+    else if (ref.startsWith("s:")) out.push(await readSource(db, id, each, scope, opts.signal));
     else {
-      const w = await workDetail(db, id, scope);
+      const w = await workDetail(db, id, scope, opts.signal);
       out.push(w ? renderWork(w, each) : `${ref}: 無い`);
     }
   }
   return out.join("\n\n");
 }
 
-async function readKnowledge(db: Kysely<DB>, id: string, budget: number, projects: Scope): Promise<string> {
+async function readKnowledge(
+  db: Kysely<DB>,
+  id: string,
+  budget: number,
+  projects: Scope,
+  signal?: AbortSignal,
+): Promise<string> {
   const k = await knowledgeBase(db)
     .leftJoin("gleanery.conversation as c", "c.id", "k.conversation_id")
     .select([
@@ -780,7 +811,7 @@ async function readKnowledge(db: Kysely<DB>, id: string, budget: number, project
     ])
     .where("k.id", "=", id)
     .where(inScope("k.project_id", projects))
-    .executeTakeFirst();
+    .executeTakeFirst(queryOptions(signal));
   if (!k) return `k:${id}: 無い`;
   const files = await db
     .selectFrom("gleanery.knowledge_file")
@@ -788,12 +819,12 @@ async function readKnowledge(db: Kysely<DB>, id: string, budget: number, project
     .where("knowledge_id", "=", id)
     .orderBy("role")
     .orderBy("path")
-    .execute();
+    .execute(queryOptions(signal));
   const related = await knowledgeBase(db)
     .where(sql<SqlBool>`(k.decision_id = ${id} or k.id = ${k.decision_id})`)
     .orderBy("k.kind")
     .orderBy("k.occurred_at")
-    .execute();
+    .execute(queryOptions(signal));
   const lines = [
     renderHit(knowledgeHit(k), budget),
     k.confidence ? `  根拠の強さ: ${k.confidence}` : null,
@@ -813,6 +844,7 @@ async function readMessage(
   budget: number,
   around: number,
   projects: Scope,
+  signal?: AbortSignal,
 ): Promise<string> {
   const t = await db
     .selectFrom("gleanery.message as m")
@@ -820,7 +852,7 @@ async function readMessage(
     .select(["m.conversation_id", "m.sent_at"])
     .where("m.id", "=", id)
     .where(inScope("c.project_id", projects))
-    .executeTakeFirst();
+    .executeTakeFirst(queryOptions(signal));
   if (!t) return `m:${id}: 無い`;
   // 前後の turn も読む。AI の応答（索引していない）もここでは出す — 「それでいい」が何を指したかが分かる。
   // 並びは (sent_at, id)。同じ時刻の発言が並んでも、対象の発言が前後の件数の上限で落ちない。
@@ -838,13 +870,13 @@ async function readMessage(
       .orderBy("m.sent_at", "desc")
       .orderBy("m.id", "desc")
       .limit(around)
-      .execute(),
+      .execute(queryOptions(signal)),
     withPaths
       .where(sql<SqlBool>`(m.sent_at, m.id) >= (${t.sent_at}, ${id}::uuid)`)
       .orderBy("m.sent_at")
       .orderBy("m.id")
       .limit(around + 1)
-      .execute(),
+      .execute(queryOptions(signal)),
   ]);
   const rows = [...before.reverse(), ...after];
   const per = Math.floor(budget / Math.max(rows.length, 1));
@@ -857,7 +889,13 @@ async function readMessage(
     .join("\n\n");
 }
 
-async function readSource(db: Kysely<DB>, id: string, budget: number, projects: Scope): Promise<string> {
+async function readSource(
+  db: Kysely<DB>,
+  id: string,
+  budget: number,
+  projects: Scope,
+  signal?: AbortSignal,
+): Promise<string> {
   const s = await db
     .selectFrom("gleanery.source_item as s")
     .innerJoin("gleanery.connector as cn", "cn.id", "s.connector_id")
@@ -879,7 +917,7 @@ async function readSource(db: Kysely<DB>, id: string, budget: number, projects: 
     ])
     .where("s.id", "=", id)
     .where(inScope("cn.project_id", projects))
-    .executeTakeFirst();
+    .executeTakeFirst(queryOptions(signal));
   if (!s) return `s:${id}: 無い`;
   if (s.body !== null) {
     const title =
@@ -894,7 +932,7 @@ async function readSource(db: Kysely<DB>, id: string, budget: number, projects: 
         .select("body")
         .where("conversation_id", "=", s.conversation)
         .where("external_id", "=", "body")
-        .executeTakeFirst()
+        .executeTakeFirst(queryOptions(signal))
     : undefined;
   return [
     `【${s.kind === "pull_request" ? "PR" : "issue"}】#${s.external_id} ${s.title}（${s.state}）`,

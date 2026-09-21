@@ -1,7 +1,7 @@
 {
   "name": "gleanery",
-  "version": "0.33.14",
-  "description": "過去の決定・棄却した案・制約・発言を引く（会話の自動記録は Claude Code だけ）。glean = 落ち穂を拾い集める",
+  "version": "0.33.17",
+  "description": "会話を自動で残し、過去の決定・棄却した案・制約・発言を引く。glean = 落ち穂を拾い集める",
   "author": {
     "name": "iroha924",
     "email": "shunichi@hir4ta.com"
@@ -9,6 +9,6 @@
   "homepage": "https://github.com/iroha924/gleanery",
   "repository": "https://github.com/iroha924/gleanery",
   "skills": "./skills/",
-  "hooks": {},
+  "hooks": "./hooks/codex.json",
   "mcpServers": "./mcp/codex.json"
 }

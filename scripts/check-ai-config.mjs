@@ -70,6 +70,12 @@ const agents = read("AGENTS.md");
 const lines = agents.trimEnd().split("\n").length;
 const bytes = Buffer.byteLength(agents);
 if (lines >= 200) fail(`AGENTS.md: ${lines}行。200行未満にする`);
+if (!agents.includes("`plugin/skills/review/SKILL.md`を読む")) {
+  fail("AGENTS.md: Codexがreview Skillのcheckoutを正本として読む規約が無い");
+}
+if (!agents.includes("`Skill roots`にある`rN`の値と残りをそのまま結合する")) {
+  fail("AGENTS.md: Codexの短縮Skill pathを逐語的に解決する規約が無い");
+}
 
 // **Codexはglobal → repo root → CWDまでのAGENTS.mdを連結し、32 KiBで打ち切る。**
 // rootだけを見ると、nestedを足したぶんが黙って切り捨てられる。ここではリポジトリ側の合計を見る
@@ -121,6 +127,25 @@ try {
   const pluginManifest = JSON.parse(read("plugin/.codex-plugin/plugin.json"));
   if (pluginManifest.skills !== "./skills/") {
     fail("plugin/.codex-plugin/plugin.json: 利用者向けSkillの入口は./skills/に限る");
+  }
+  if (pluginManifest.hooks !== "./hooks/codex.json") {
+    fail("plugin/.codex-plugin/plugin.json: Codexのhookは./hooks/codex.jsonを読む");
+  }
+  const codexHooks = JSON.parse(read("plugin/hooks/codex.json")).hooks;
+  const codexCapture = ["$", '{PLUGIN_ROOT}/dist/capture.js" codex'].join("");
+  const codexCaptureWindows =
+    "powershell.exe -NoProfile -NonInteractive -Command node $env:PLUGIN_ROOT/dist/capture.js codex";
+  for (const event of ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "Interrupt"]) {
+    const commands = codexHooks?.[event]?.flatMap((group) => group.hooks ?? []) ?? [];
+    if (!commands.some((hook) => hook.command?.includes(codexCapture))) {
+      fail(`plugin/hooks/codex.json: ${event}がCodexの自動記録へ繋がっていない`);
+    }
+    if (!commands.some((hook) => hook.commandWindows === codexCaptureWindows)) {
+      fail(`plugin/hooks/codex.json: ${event}のWindows用自動記録がない`);
+    }
+    if (commands.some((hook) => hook.async)) {
+      fail(`plugin/hooks/codex.json: ${event}を非同期にすると会話の順序を保てない`);
+    }
   }
   const marketplace = JSON.parse(read(".claude-plugin/marketplace.json"));
   const entry = marketplace.plugins?.[0];

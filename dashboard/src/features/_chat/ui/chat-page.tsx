@@ -54,10 +54,10 @@ const route = getRouteApi("/");
 import { useChat } from "../model/use-chat";
 
 const EXAMPLES = [
+  "IndexedDBって何？",
   "このプロジェクトは何を解こうとしている？",
   "いまどこまで進んでいて、次は何をする？",
-  "触ってはいけないところはどこ？",
-  "何を試して駄目だった？",
+  "私が前に試して駄目だったことは？",
 ];
 
 function Marked({ text, marks }: { text: string; marks: string[] }) {
@@ -186,32 +186,24 @@ function Copy({ text, label }: { text: string; label: string }) {
 
 function Sources({ sources, busy }: { sources: ChatSource[]; busy: boolean }) {
   if (sources.length === 0) return null;
-  const top = sources[0];
+  if (busy)
+    return (
+      <div className="flex items-center gap-2 rounded-md bg-secondary/70 p-4 text-muted-foreground text-sm">
+        <Spinner className="size-3" /> {sources.length} 件の記録を参照しています
+      </div>
+    );
   return (
-    <div className="space-y-4">
-      {busy && top && (
-        <div className="rounded-md bg-secondary/70 p-4">
-          <p className="text-muted-foreground text-sm">まとめています。いちばん近い記録:</p>
-          <p className="mt-1.5 text-base leading-relaxed">
-            <span className={cn("mr-1 font-medium", stanceClass(top.stance))}>{top.label}</span>
-            {top.text}
-          </p>
-        </div>
-      )}
-      {!busy && (
-        <div className="space-y-1.5 border-t pt-4 pl-4">
-          <Marker className="font-mono text-xs uppercase tracking-[0.14em]">
-            <MarkerContent>Sources</MarkerContent>
-          </Marker>
-          <ol>
-            {sources.map((source) => (
-              <li key={source.n}>
-                <Source source={source} />
-              </li>
-            ))}
-          </ol>
-        </div>
-      )}
+    <div className="space-y-1.5 border-t pt-4 pl-4">
+      <Marker className="font-mono text-xs uppercase tracking-[0.14em]">
+        <MarkerContent>参照した記録</MarkerContent>
+      </Marker>
+      <ol>
+        {sources.map((source) => (
+          <li key={source.n}>
+            <Source source={source} />
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
@@ -315,11 +307,16 @@ export function ChatPage() {
                   <Empty className="min-h-[55vh] border-none">
                     <EmptyHeader className="max-w-md">
                       <EmptyTitle className="text-lg leading-[1.5] tracking-[-0.01em]">
-                        記録について聞く
+                        この作業場所について相談する
                       </EmptyTitle>
                       <EmptyDescription className="text-pretty leading-loose">
-                        記録（判断・会話・文書・PR）だけで答えます。記録に無いことは「無い」と答え、答えには根拠が付きます。
-                        会話はこの browser の中にだけ残ります（サーバーには送りません）。
+                        <span className="block">
+                          一般的な質問にはそのまま答え、この作業場所の判断・会話・文書・PRが必要なら記録を調べて根拠を示します。
+                        </span>
+                        <span className="mt-1 block">
+                          履歴はこのブラウザに保存します。回答時は質問・直近の会話・必要な記録を OpenAI API
+                          へ送りますが、gleanery の DB には保存しません。
+                        </span>
                       </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent className="mt-3 max-w-2xl flex-row flex-wrap justify-center gap-2">
@@ -339,7 +336,7 @@ export function ChatPage() {
                   </Empty>
                 )}
 
-                {chat.turns.map((turn) =>
+                {chat.turns.map((turn, index) =>
                   turn.role === "user" ? (
                     <MessageScrollerItem key={turn.id} messageId={turn.id} scrollAnchor>
                       <Message align="end">
@@ -377,11 +374,16 @@ export function ChatPage() {
                         <span className="sr-only">AI</span>
                         <MessageContent className="gap-3">
                           {turn.content && <Answer text={turn.content} repo={repo} />}
-                          {!turn.content && !turn.error && !turn.stopped && chat.busy && (
-                            <p className="flex items-center gap-2 text-muted-foreground text-base">
-                              <Spinner /> 記録を探しています
-                            </p>
-                          )}
+                          {!turn.content &&
+                            !turn.error &&
+                            !turn.stopped &&
+                            chat.busy &&
+                            index === chat.turns.length - 1 &&
+                            !turn.sources?.length && (
+                              <p className="flex items-center gap-2 text-muted-foreground text-base">
+                                <Spinner /> 考えています
+                              </p>
+                            )}
                           {turn.stopped && (
                             <p className="text-muted-foreground text-base">生成を中断しました</p>
                           )}
@@ -399,14 +401,16 @@ export function ChatPage() {
                           {turn.sources && (
                             <Sources
                               sources={turn.sources}
-                              busy={chat.busy && !turn.content && !turn.stopped}
+                              busy={chat.busy && index === chat.turns.length - 1 && !turn.stopped}
                             />
                           )}
-                          {turn.content && !chat.busy && !turn.stopped && (
-                            <MessageFooter className="px-0">
-                              <Copy text={turn.content} label="答えを写す" />
-                            </MessageFooter>
-                          )}
+                          {turn.content &&
+                            (!chat.busy || index !== chat.turns.length - 1) &&
+                            !turn.stopped && (
+                              <MessageFooter className="px-0">
+                                <Copy text={turn.content} label="答えを写す" />
+                              </MessageFooter>
+                            )}
                         </MessageContent>
                       </Message>
                     </MessageScrollerItem>

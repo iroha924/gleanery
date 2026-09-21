@@ -72,6 +72,11 @@ repository専用のreviewerが2体ある（Claude Codeのみ、`.claude/agents/`
 **Codex側に同じreviewerを置かない**（意図した非対称）。定義を二重に持つと基準が2箇所で古くなるので、
 Codexへは`codex-talk`で差分の場所と受け入れ条件を渡す。
 
+Codexがこのrepository自身をreviewするときは、導入済みcacheではなくcheckoutの
+`plugin/skills/review/SKILL.md`を読む。cacheは最後に公開した版で、作業中のSkill変更を含まない。
+Skill一覧の場所が`rN/...`なら、`Skill roots`にある`rN`の値と残りをそのまま結合する。
+marketplace名やplugin名が重なって見えても、pathの一部を推測で省かない。
+
 ## 最小command索引
 
 ```bash

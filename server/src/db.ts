@@ -219,7 +219,12 @@ export class VoyageError extends Error {
 /**
  * 埋め込みを取る。**input_type を省略しない。**Voyage は query と document で前置プロンプトを変える。
  */
-export async function embed(env: Env, texts: string[], inputType: "query" | "document"): Promise<number[][]> {
+export async function embed(
+  env: Env,
+  texts: string[],
+  inputType: "query" | "document",
+  signal?: AbortSignal,
+): Promise<number[][]> {
   if (!env.VOYAGE_API_KEY) throw new Error("VOYAGE_API_KEY が無い");
   if (texts.length === 0) return [];
   // 1 回の要求は 120,000 トークンかつ 1,000 件まで。日本語は 1 字がほぼ 1 トークンなので文字数で保守的に切る。
@@ -243,7 +248,7 @@ export async function embed(env: Env, texts: string[], inputType: "query" | "doc
   const out: number[][] = [];
   for (const batch of batches) {
     const res = await fetch(VOYAGE, {
-      signal: AbortSignal.timeout(30_000),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${env.VOYAGE_API_KEY}` },
       body: JSON.stringify({

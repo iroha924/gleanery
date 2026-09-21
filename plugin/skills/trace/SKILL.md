@@ -10,9 +10,9 @@ allowed-tools: Read, Bash(node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" trace *)
 
 対象: **$ARGUMENTS**
 
-Claude Code では会話が自動で残っている（持ち主の発言、AI の最後の応答、Edit・Write・Read で触ったファイル）。
+Claude Code と Codex では会話が自動で残っている（持ち主の発言、AI の最後の応答、編集したファイル）。
 **trace が残すのは、その会話から選んだ判断と、作業の現在地だけ**である。「やったこと一覧」は git log が持っているので
-書かない。Codex の会話はまだ自動では残らないので、Codex では自分の文脈から書く。
+書かない。
 
 ## このスキルが防ぐ失敗
 

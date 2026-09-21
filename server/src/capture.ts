@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、触ったファイルを残す。
 //
-// **記録のフックは手元の待ち行列へ書くだけにする。**網へは Stop のときにまとめて送る（async のフックなので待たせない）。
+// **記録のフックは手元の待ち行列へ書くだけにする。**網へは Stop が切り離したプロセスからまとめて送る。
 // DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は入力から決定的に作る）。
 //
 // **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
-// 「利用者の発言」として DB の 97.2% を占めた。見分けは 4 つで、どれも推測をしない。
+// 「利用者の発言」として DB の 97.2% を占めた。見分けは 5 つで、どれも推測をしない。
 //   - subagent の中の turn は hook 入力に agent_id が付く
-//   - エージェントが起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
+//   - Claude Code が起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
 //     CLAUDE_ENV_FILE に書いた GLEANERY_PARENT_SESSION を継ぐ。自分の session id と違えば子である
 //     （記録させたくない起動には、どの session とも一致しない値を置けばよい。値を「その session の id」にしてあるのは、
 //     この変数が将来 hook 自身の環境へ届く仕様になっても、持ち主の session では自分の id と一致して記録が止まらないようにするため）
+//   - Codex が shell から起動した別の Codex は親の CODEX_THREAD_ID を継ぐ。hook 入力の session id と違えば子である
 //   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
 //     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
 //   - 持ち主の session の中でも、背景タスクの完了・停止の通知と、channel・subagent・teammate・別の session からの伝言が
@@ -144,8 +145,11 @@ export function isOwnerTurn(
   input: HookInput,
   parent = process.env.GLEANERY_PARENT_SESSION,
   entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT,
+  codexParent?: string,
 ): boolean {
   if (!input.session_id || input.agent_id) return false;
+  // Codex が shell から起動した子は親の CODEX_THREAD_ID を継ぐ一方、hook 入力は子自身の session id を持つ。
+  if (codexParent && codexParent !== input.session_id) return false;
   if (parent) return parent === input.session_id;
   return entrypoint !== "sdk-cli";
 }
@@ -283,8 +287,10 @@ export function captureNotice(env: Env): string | null {
 /** フック 1 回ぶん。何が起きても作業は止めない（例外は呼び出し側で握る）。 */
 export function onHook(host: Host, input: HookInput): { flush: boolean; notice?: string | null } {
   const event = input.hook_event_name;
+  const owner = () =>
+    isOwnerTurn(input, undefined, undefined, host === "codex" ? process.env.CODEX_THREAD_ID : undefined);
   if (event === "SessionStart") {
-    if (!isOwnerTurn(input)) return { flush: false };
+    if (!owner()) return { flush: false };
     // エージェントが Bash から起動する子へ、この session の id を継がせる。
     const file = process.env.CLAUDE_ENV_FILE;
     if (file && input.session_id && /^[A-Za-z0-9_-]+$/.test(input.session_id)) {
@@ -292,7 +298,9 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     }
     return { flush: false, notice: captureNotice(loadEnv()) };
   }
-  if (!isOwnerTurn(input)) return { flush: false };
+  if (!owner()) return { flush: false };
+  // Interrupt は最大 3 秒で打ち切られる。新しい記録は作らないので、git と作業場所を調べず待ち行列だけ送る。
+  if (event === "Interrupt") return { flush: true };
   const place = identify(input.cwd ?? process.cwd());
   if (!place) return { flush: false };
   const turn = input.prompt_id ?? input.turn_id;
@@ -679,6 +687,8 @@ async function main(): Promise<void> {
   }
   const input = await readInput(process.stdin);
   const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
+  // Stop は成功終了時に JSON が必要。記録処理が失敗しても hook の契約を破らないよう先に返す。
+  if (host === "codex" && input.hook_event_name === "Stop") process.stdout.write("{}");
   const { flush: send, notice } = onHook(host, input);
   // systemMessage は持ち主に見える警告で、モデルの文脈には入らない。
   if (notice) process.stdout.write(JSON.stringify({ systemMessage: notice }));
