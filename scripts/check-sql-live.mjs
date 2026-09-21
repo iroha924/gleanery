@@ -120,6 +120,46 @@ await withTempDir(async (dir) => {
     });
     hook({ hook_event_name: "Stop", last_assistant_message: "通した。" });
     note("capture flush", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
+
+    // 登録していない作業場所の記録は、捨てずに退避する（#104）。持ち主が PC を変えて project add を
+    // する前に働くと、その間の発言がここへ来る。消すと二度と戻らない。
+    const stranger = makeRepo(dir, "https://github.com/example/stranger.git", "stranger");
+    const strangerTurn = { session_id: "live-3", prompt_id: "p9", cwd: stranger };
+    const strangerAs = { cwd: stranger, CLAUDE_CODE_SESSION_ID: "live-3" };
+    runHook(
+      { ...strangerTurn, hook_event_name: "UserPromptSubmit", prompt: "未登録の作業場所での発言" },
+      dir,
+      covDir,
+      strangerAs,
+    );
+    runHook(
+      { ...strangerTurn, hook_event_name: "Stop", last_assistant_message: "返した。" },
+      dir,
+      covDir,
+      strangerAs,
+    );
+    const strayed = runCli(["capture", "flush"], dir, covDir, strangerAs);
+    const kept = path.join(dir, ".gleanery", "spool", "unregistered");
+    const left = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
+    if (left.length === 0) {
+      failures.push(
+        `未登録の作業場所の記録が ${kept} に残っていない。捨てられた可能性がある\n${strayed.out.slice(0, 400)}`,
+      );
+    }
+
+    // 30 日より古い退避は刈る。上限が効かないと、登録しないまま使い続けたときに手元が埋まる。
+    const stale = path.join(kept, `${Date.now() - 40 * 24 * 60 * 60 * 1000}-0-stale.json`);
+    fs.writeFileSync(stale, JSON.stringify({ v: 1, kind: "message", project: "git:example/none" }));
+
+    // 作業場所を登録したら、退避した分がそのまま入る。ここが繋がらないと退避の意味が無い。
+    note("project add（退避先）", runCli(["project", "add", "--cwd", stranger], dir, covDir));
+    const retried = runCli(["capture", "flush"], dir, covDir, strangerAs);
+    if (!/新しく入った発言 [1-9]/.test(retried.out)) {
+      failures.push(`登録した後も、退避した記録が入っていない\n${retried.out.slice(0, 400)}`);
+    }
+    const after = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
+    if (after.length) failures.push(`送った後も退避が残っている: ${after.join(" / ")}`);
+    if (fs.existsSync(stale)) failures.push(`30 日より古い退避が刈られていない: ${stale}`);
     // doctor は外部サービスの鍵が無いと 1 で終わる。ここでは渡さないのが正しいので、終了コードでは
     // なく中身を見る。3 つのロールが繋がって schema の版が合うことは、この行だけが確かめている。
     const doctor = runCli(["doctor"], dir, covDir);

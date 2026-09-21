@@ -13,8 +13,8 @@ import { root } from "./temp-postgres.mjs";
 const TIMEOUT_MS = 120_000;
 
 /** 使い捨ての作業場所。git の remote を持たせて、作業場所の key を安定させる。 */
-export function makeRepo(dir, remote = "https://github.com/example/live.git") {
-  const repo = path.join(dir, "repo");
+export function makeRepo(dir, remote = "https://github.com/example/live.git", name = "repo") {
+  const repo = path.join(dir, name);
   fs.mkdirSync(repo, { recursive: true });
   const git = (...a) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" }).trim();
   execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
