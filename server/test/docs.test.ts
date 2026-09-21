@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import type { Artifact } from "../src/artifacts.ts";
 import { collectDocs, commitOf, docHash, isAncestor, projectDocs, sections, syncDocs } from "../src/docs.ts";
 import { knowledgeText } from "../src/knowledge.ts";
 import { fakeDb } from "./fake-db.ts";
+import { put, withRepo } from "./temp-repo.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
 // 説明と、その説明が指すコマンドが別々の断片になる。
@@ -92,28 +91,6 @@ test("見出しの無い本文も 1 件になる", () => {
   assert.equal(out[0]?.text, "@AGENTS.md");
   assert.equal(out[0]?.key, "doc:CLAUDE.md#claude.md");
 });
-
-/** 一時リポジトリを作り、fn に渡す。git は既定の設定を読まない。 */
-async function withRepo(
-  fn: (repo: string, git: (...a: string[]) => string) => void | Promise<void>,
-): Promise<void> {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-docs-")));
-  try {
-    const repo = path.join(dir, "repo");
-    execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });
-    const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { encoding: "utf8" }).trim();
-    git("config", "user.email", "t@example.com");
-    git("config", "user.name", "t");
-    fs.writeFileSync(path.join(dir, "outside.env"), "SECRET_TOKEN=sk-live-abc123\n");
-    await fn(repo, git);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-const put = (repo: string, rel: string, body: string) => {
-  fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
-  fs.writeFileSync(path.join(repo, rel), body);
-};
 
 // **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
 // commit の tree では symlink は mode 120000 の項目で、ディレクトリの symlink の先はそもそも tree に無い。

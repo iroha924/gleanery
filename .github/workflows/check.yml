@@ -71,9 +71,15 @@ jobs:
       - name: 画面と Hono を検証
         run: bun run verify
 
-      # 一時 PostgreSQL を立てる。理由と生成元は scripts/codegen.mjs の冒頭にある。
+      # 一時 PostgreSQL を立てる。理由と生成元は scripts/lib/temp-postgres.mjs の冒頭にある。
       - name: DB の型が schema.sql と合っているか
         run: bun run codegen:check
+
+      # 型もテストも、必ず実行時に落ちる SQL を素通りさせる（#85 で 2 種類・6 箇所）。
+      # テスト中に組み立てた SQL を集め、同じ一時 PostgreSQL へ EXPLAIN で通す。
+      # verify に入れない（Docker が要る）ので、pre-push ではなくここだけが見る。
+      - name: 組み立てた SQL を実 PostgreSQL が受け付けるか
+        run: bun run sql:parse
 
       # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
       # （ignore されたファイルは差分に現れない）。npm が実際に詰めるものを一覧し、リポジトリの

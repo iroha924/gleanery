@@ -28,6 +28,8 @@ pre-commit:
         set -e
         bun run bundle
         bun run scripts/check-mcp-version.mjs
+    # 見るのは SQL の書き方だけ。組み立てた SQL を実 PostgreSQL へ通す `sql:parse` は Docker が
+    # 要るのでここでは走らせない。構文エラー・消えた列・一意 index の無い on conflict は CI だけが見る。
     - name: sql
       glob: "{server/src/**/*.ts,server/test/**/*.ts,scripts/check-sql.mjs}"
       run: bun run sql
