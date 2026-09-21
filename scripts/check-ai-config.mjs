@@ -176,6 +176,14 @@ for (const name of pluginSkills) {
   if (fields.name !== name) fail(`${relative}: nameがdirectory名と一致しない`);
   if (!fields.description) fail(`${relative}: descriptionが無い`);
   if ((fields.description ?? "").length > 1024) fail(`${relative}: descriptionが1024文字を超えている`);
+  // reviewのSKILLは呼ぶたび全文がcontextへ載る。**追記で膨らませない**ための回帰の上限で、
+  // 品質を測る数字ではない。相手モデルを使うときだけ読む手順はreferences/へ出してある。
+  // 超えたら上限を上げる前に、同じ概念の重複を消す。
+  if (name === "review" && source.split("\n").length > 497) {
+    fail(
+      `${relative}: ${source.split("\n").length}行。497行以下にする（節を足したなら同じ概念の重複を消す）`,
+    );
+  }
   checkLocalLinks(relative, source);
 
   // Codexはdisable-model-invocationを解釈しないので、明示起動だけにするにはopenai.yamlも要る。

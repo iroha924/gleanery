@@ -421,6 +421,47 @@ if (OVERALL && CONTINUE && VERDICTS) {
   }
 }
 
+// ---- 相手モデルの起動手順を切り出した先と、残した安全条件が揃っているか ----
+//
+// 起動の綴りは references/peer-model.md にあり、**相手モデルを使うと決めたときだけ読む**。
+// **落とすと権限が広がるフラグは、SKILL.md 側にも書く。**読み忘れが権限の拡大へ直結しないための
+// 意図した二重化で、「SKILL.md に無ければ参照先にある」という片側だけの検査にはしない。
+const PEER = "plugin/skills/review/references/peer-model.md";
+const links = [...REVIEW_SRC.matchAll(/\(references\/peer-model\.md\)/g)].length;
+if (links !== 1)
+  fail.push(`review Skill から references/peer-model.md へのリンクが ${links} 件ある（1 件にする）`);
+if (!fs.existsSync(PEER)) {
+  fail.push(`${PEER} が無い`);
+} else {
+  const peer = read(PEER);
+  // 落とすと権限が広がるフラグ。SKILL.md の安全条件と、参照先の正本のコマンドの両方に要る。
+  for (const flag of ["--no-session-persistence", "--ephemeral", "-s read-only"]) {
+    if (!REVIEW_SRC.includes(flag)) fail.push(`review Skill の安全条件に ${flag} が無い`);
+  }
+  // **コマンドの綴りそのものを見る。**ファイル全体を探すと、説明の文に同じ語があるだけで通る
+  // （実測: 表からフラグを落としても、下の段落に綴りが残っていて検出できなかった）。
+  const command = (needle, what) => {
+    const found = [...peer.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]).filter((c) => c.includes(needle));
+    if (found.length === 0) fail.push(`${PEER} に ${what} の起動のコマンドが無い`);
+    return found;
+  };
+  for (const [needle, what, flags] of [
+    ["claude -p", "claude", ["--agent", "--effort", "--no-session-persistence", "--output-format json"]],
+    ["codex exec", "codex", ["--ephemeral", "-s read-only", "--output-schema", "-o "]],
+  ]) {
+    for (const flag of flags) {
+      if (!command(needle, what).some((c) => c.includes(flag))) {
+        fail.push(`${PEER} の ${what} の起動のコマンドに ${flag} が無い`);
+      }
+    }
+  }
+  // --resume は、--agent を書き落とすとレビュアーが Edit と Write を持ったまま走る経路を開く。
+  if (/`[^`]*claude -p[^`]*--resume/.test(peer)) fail.push(`${PEER} の claude の起動に --resume がある`);
+  for (const shell of ["# POSIX", "# PowerShell"]) {
+    if (!peer.includes(shell)) fail.push(`${PEER} に ${shell} の起動の例が無い`);
+  }
+}
+
 // ---- review のラウンドの上限が、3 つの Skill で揃っているか ----
 //
 // design と requirements は自分の成果物への review を回すので、同じ上限を各自が書いている。
