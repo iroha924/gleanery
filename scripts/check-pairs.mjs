@@ -485,6 +485,29 @@ if (TRAILER !== null) {
   }
 }
 
+// ---- 相手モデルを呼ぶ Skill が、権限の広がる呼び方をしていないか ----
+//
+// review と winnow の 2 本が `claude -p` と `codex exec` を綴る。**書き込める道具を渡す綴りは、
+// どちらの Skill にあっても落とす。**前回 winnow を足したとき、この検査が review だけを見ていたので
+// 同じ穴が素通りした（実測: tools 51 で untrusted な本文を読む経路が開いた）。
+for (const file of ["plugin/skills/winnow/SKILL.md", PEER]) {
+  if (!fs.existsSync(file)) {
+    fail.push(`${file} が無い`);
+    continue;
+  }
+  const source = read(file);
+  for (const tool of ["Edit", "Write", "NotebookEdit"]) {
+    if (new RegExp(`"tools"[^\\]]*${tool}`).test(source)) {
+      fail.push(`${file}: 相手モデルへ渡す "tools" に ${tool} がある`);
+    }
+  }
+  // `claude -p` を綴るなら、道具を渡す口を必ず添える。--agent だけでは既定の道具のまま立つ。
+  // **フラグを伴う綴りだけを見る** —— 「`claude -p` は …を返した」のような言及は起動のコマンドではない。
+  for (const command of [...source.matchAll(/`([^`\n]*claude -p -[^`\n]*)`/g)].map((m) => m[1])) {
+    if (!command.includes("--agents")) fail.push(`${file}: \`${command}\` に --agents が無い`);
+  }
+}
+
 // ---- review のラウンドの上限が、3 つの Skill で揃っているか ----
 //
 // design と requirements は自分の成果物への review を回すので、同じ上限を各自が書いている。
