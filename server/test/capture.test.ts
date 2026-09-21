@@ -37,6 +37,16 @@ test("subagent と、エージェントが起動した子と、印を継がな�
     "launchd や Codex から起動した claude -p",
   );
   assert.equal(isOwnerTurn({ session_id: "s1", agent_id: "a1" }, undefined, "cli"), false, "subagent");
+  assert.equal(
+    isOwnerTurn({ session_id: "child" }, undefined, undefined, "parent"),
+    false,
+    "Codex が起動した別 session",
+  );
+  assert.equal(
+    isOwnerTurn({ session_id: "s1" }, undefined, undefined, "s1"),
+    true,
+    "Codex の持ち主の session",
+  );
   assert.equal(isOwnerTurn({}, undefined, "cli"), false, "session の分からない入力");
 });
 
@@ -575,7 +585,7 @@ test("SessionStart は、この session の id を子へ継がせる", () => {
 
 test("Codex の apply_patch は見出しから編集先を読む", () => {
   reset();
-  const base = { session_id: "t1", turn_id: "turn-1", cwd: repoDir };
+  const base = { session_id: process.env.CODEX_THREAD_ID ?? "t1", turn_id: "turn-1", cwd: repoDir };
   onHook("codex", { ...base, hook_event_name: "UserPromptSubmit", prompt: "a.ts を直して" });
   onHook("codex", {
     ...base,
@@ -583,7 +593,83 @@ test("Codex の apply_patch は見出しから編集先を読む", () => {
     tool_name: "apply_patch",
     tool_input: { command: "*** Begin Patch\n*** Update File: server/src/a.ts\n@@\n+x\n*** End Patch" },
   });
+  const stopped = onHook("codex", {
+    ...base,
+    hook_event_name: "Stop",
+    last_assistant_message: "直した。",
+  });
+  assert.equal(stopped.flush, true);
+  assert.equal(
+    onHook("codex", { ...base, cwd: path.join(home, "not-registered"), hook_event_name: "Interrupt" }).flush,
+    true,
+  );
+  assert.deepEqual(
+    spooled().flatMap((x) => (x.kind === "message" ? [[x.host, x.speaker, x.body]] : [])),
+    [
+      ["codex", "self", "a.ts を直して"],
+      ["codex", "assistant", "直した。"],
+    ],
+  );
   const files = spooled().filter((x) => x.kind === "file");
   assert.equal(files.length, 1);
   assert.ok(files[0]?.kind === "file" && files[0].path === "server/src/a.ts" && files[0].host === "codex");
+});
+
+test("Codex のフック入口は host を分け、Stop に有効な JSON を返す", () => {
+  const entries = [
+    path.join(import.meta.dirname, "..", "src", "capture.ts"),
+    path.join(import.meta.dirname, "..", "..", "plugin", "dist", "capture.js"),
+  ];
+  for (const entry of entries) {
+    reset();
+    execFileSync(process.execPath, [entry, "codex"], {
+      input: JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        session_id: "s1",
+        turn_id: "turn-1",
+        cwd: repoDir,
+        prompt: "Codex から記録する",
+      }),
+      env: { ...process.env, HOME: home, CODEX_THREAD_ID: "s1" },
+      timeout: 10_000,
+    });
+    assert.deepEqual(
+      spooled().flatMap((m) => (m.kind === "message" ? [[m.host, m.body]] : [])),
+      [["codex", "Codex から記録する"]],
+      entry,
+    );
+    reset();
+    execFileSync(process.execPath, [entry, "codex"], {
+      input: JSON.stringify({
+        hook_event_name: "UserPromptSubmit",
+        session_id: "child",
+        turn_id: "turn-1",
+        cwd: repoDir,
+        prompt: "親が起動した Codex",
+      }),
+      env: { ...process.env, HOME: home, CODEX_THREAD_ID: "parent" },
+      timeout: 10_000,
+    });
+    assert.deepEqual(spooled(), [], entry);
+    const output = execFileSync(process.execPath, [entry, "codex"], {
+      input: JSON.stringify({ hook_event_name: "Stop" }),
+      env: { ...process.env, HOME: home },
+      timeout: 10_000,
+    }).toString();
+    assert.equal(output, "{}", entry);
+    const unwritableHome = path.join(home, "not-a-directory");
+    fs.writeFileSync(unwritableHome, "");
+    const failedOutput = execFileSync(process.execPath, [entry, "codex"], {
+      input: JSON.stringify({
+        hook_event_name: "Stop",
+        session_id: "s1",
+        turn_id: "turn-1",
+        cwd: repoDir,
+        last_assistant_message: "待ち行列へ書けない",
+      }),
+      env: { ...process.env, HOME: unwritableHome, CODEX_THREAD_ID: "s1" },
+      timeout: 10_000,
+    }).toString();
+    assert.equal(failedOutput, "{}", entry);
+  }
 });
