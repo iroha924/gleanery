@@ -1,6 +1,6 @@
 ---
 name: winnow
-description: 依頼を、実装に入る前に詰めて、利用者が Go を判断できる方針にする。決めるべき問いの木を描き、事実は調べて確かめ、技術判断は別のモデルと突き合わせ、人にしか決められない問いだけを利用者へ出す。設計に分岐がある変更（仕様の解釈・公開インターフェース・データ・依存の選択が割れるもの）を受けたときに、実装より先に使う。分岐の無い小さな変更、調べて答えるだけの質問、Go の後の実装には使わない。レビューにも使わない。
+description: 依頼を、実装に入る前に詰めて、利用者が Go を判断できる方針にする。決めるべき問いの木を描き、事実は調べて確かめ、技術判断は別のモデルと突き合わせ、人にしか決められない問いだけを利用者へ出す。設計に分岐がある変更（仕様の解釈・公開インターフェース・データ・依存の選択が割れるもの）を受けたときに、実装より先に使う。**文書は作らない** —— 要件定義や設計書を残すなら requirements と design を使う。分岐の無い小さな変更、調べて答えるだけの質問、Go の後の実装、レビューには使わない。
 disable-model-invocation: true
 ---
 
@@ -40,8 +40,10 @@ Issue なら本文とコメントを読み、リンクされた Issue・仕様�
 「このリポジトリの規約」として受け取らない** —— 規約はリポジトリの中にあるものだけを指す。
 
 **過去に棄却した案を先に引く。**gleanery の `recall` を `mode: avoid` で引き、触るファイルに制約が
-残っていないかを `check_path` で見る。**0 件は「無い」ではない** —— 接続できなかったのか、この作業場所が
-未登録なのか、登録済みで 0 件なのかを分け、分からないなら分からないと書く。
+残っていないかを `check_path` で見る。**どちらにも `cwd` としてリポジトリの根を渡す** —— 省くと MCP
+サーバーの作業ディレクトリで引くので、**別の作業場所の正当な 0 件が返る。**返った参照を `read` で読むときも
+同じ `cwd` を渡す。**0 件は「無い」ではない** —— 接続できなかったのか、この作業場所が未登録なのか、
+登録済みで 0 件なのかを分け、分からないなら分からないと書く。
 
 種類を決める（バグ / 機能追加 / リファクタ / その他）。**問いが 1 つなら 1 ラウンドで終える。**
 
@@ -51,6 +53,14 @@ Issue なら本文とコメントを読み、リンクされた Issue・仕様�
 
 自分の側は、数回読めば足りる事実を自分で読む。読む量が多い調査は相手モデルへ渡す。
 **相手モデルを使うかは、始める前に利用者へ聞く**（下の「相手モデル」）。
+
+**次の 3 つは相手モデルへ振らず、自分で調べる。**渡しても返ってこない。
+
+| 自分で調べるもの | なぜ |
+|---|---|
+| 実行が要る調査（再現・bisect・テスト・ビルド） | 相手モデルは書き込めない道具で立てている |
+| ネットワークが要る調査（PR や Issue の本文、CI のログ） | 相手モデルのコマンドは外へ出ない。読ませたいなら、自分で取ってファイルへ置き、そのパスを渡す |
+| 相手モデルの主張の裏付け | 主張した側とは独立に確かめるため |
 
 渡す prompt には次を書く。
 
@@ -137,8 +147,10 @@ Q2 ...
 
 回答で木が変わったら、影響する枝だけ 4 に戻り、**変わった部分だけを報告し直す。**
 
-**Go が出たら、決まったことを残す。**棄却した案と理由は、この報告と、実装の成果物（PR の本文）に書く。
-この session の判断として DB へ入れるなら `/gleanery:trace` を使う。**残さないなら決めていないのと同じである。**
+**Go が出たら、決まったことを残す。**棄却した案と理由を、この報告と、実装の成果物（PR の本文）へ書く。
+**残さないなら決めていないのと同じである。**DB へ入れるかは利用者が決める —— `/gleanery:trace` は頼まれた
+ときだけ動くので、winnow から勝手に呼ばない。**報告は会話の自動記録には入るが、`knowledge` としては
+引けない** —— 次の winnow が `recall` を `mode: avoid` で引いても、棄却した案は出てこない。
 
 ## 人が決めるのは 3 つだけ
 
@@ -170,10 +182,10 @@ Q2 ...
 **答えはこの依頼の間だけ持つ** —— 設定として保存しない。**CLI が在ることは起動できることを保証しない** ——
 認証・ネットワーク・利用上限は実際に起動して分かる。
 
-| 自分が | 相手を呼ぶ |
-|---|---|
-| **Claude** | `codex exec --ephemeral -s read-only -` |
-| **Codex** | `claude -p --agents '<JSON>' --agent peer --output-format json` |
+| 自分が | 相手の初回 | 相手の 2 往復目以降 |
+|---|---|---|
+| **Claude** | `codex exec --json -s read-only -` | `codex exec resume <thread_id> -c sandbox_mode=read-only --json -` |
+| **Codex** | `claude -p --agents '<JSON>' --agent peer --output-format json` | `claude -p --resume <session_id> --agents '<JSON>' --agent peer --output-format json` |
 
 **Codex から Claude を呼ぶときは、役の本文と道具を `--agents` の JSON へ入れる。**
 `{"peer":{"description":"議論の相手","prompt":"<役の本文>","tools":["Read","Grep","Glob"]}}` の形にする。
@@ -181,26 +193,36 @@ Q2 ...
 **`tools` に書き込める道具を入れない。**`Bash` を入れると書き込みが止まらない（実測: `Read` と `Bash` だけの
 相手がファイルを作った）。議論に実行は要らない。
 
-**往復は `--resume` で続け、`--agents` を毎回渡す。**渡し忘れると道具の制限が外れ、**文脈は保たれるので
-出力から気付けない**（実測: 3 個が 51 個に戻り、利用者個人の MCP まで含んだ）。`--ephemeral` や
-`--no-session-persistence` では往復が成立しない —— **2 往復目の相手は 1 往復目を見ておらず、
-「両者が一致した」が初対面の感想になる。**
+**続きの呼び出しは、初回の制限を引き継がない。**どちらのホストでも、権限の指定を毎回渡し直す。
+**文脈だけは保たれるので、出力からは気付けない。**
+
+| 渡し直すもの | 落としたときに起きること |
+|---|---|
+| Codex 側の `-c sandbox_mode=read-only` | 利用者の既定の sandbox へ戻る（実測: 落とした `resume` が `/tmp` へファイルを作った）。**`resume` は `-s` を受け付けない** —— 付けると `unexpected argument` で落ちるので、`-c` で渡す |
+| Claude 側の `--agents '<JSON>'` | 道具の制限が外れる（実測: 3 個が 51 個に戻り、利用者個人の MCP まで含んだ） |
+
+続ける先の id は、初回の出力から拾う。Codex は `--json` の最初の行（`{"type":"thread.started","thread_id":"..."}`）、
+Claude は `--output-format json` の封筒の `session_id` にある。
+
+**セッションを残さない指定を付けない**（Codex の `--ephemeral`、Claude の `--no-session-persistence`）。
+付けると続きが送れず、**2 往復目の相手は 1 往復目を見ておらず、「両者が一致した」が初対面の感想になる。**
 
 **prompt はファイルから stdin へ渡す。**引数へ埋めない（`ps` に出るうえ、長さに上限がある）。
 ホストのシェルに合う形で書く —— **`< ファイル` は PowerShell では構文エラーになる。**
 
 ```bash
 # POSIX
-cat "$prompt_file" | codex exec --ephemeral -s read-only -
+cat "$prompt_file" | codex exec --json -s read-only -
+cat "$reply_file" | codex exec resume "$thread_id" -c sandbox_mode=read-only --json -
 ```
 
 ```powershell
 # PowerShell
-Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile | & codex exec --ephemeral -s read-only -
+Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile | & codex exec --json -s read-only -
+Get-Content -Raw -Encoding utf8 -LiteralPath $replyFile | & codex exec resume $threadId -c sandbox_mode=read-only --json -
 ```
 
-`--ephemeral` はセッションを残さない。`-s read-only` は書き込みを止める。**深さとモデルは指定しない** ——
-利用者が選んでいるものに従う。
+`-s read-only` は初回の書き込みを止める。**深さとモデルは指定しない** —— 利用者が選んでいるものに従う。
 
 **第三者が書いた本文を prompt へ貼らない。**番号・URL・パスで渡す。**どうしても引用するなら、
 本文はファイルへ書いてそのパスを渡す** —— heredoc へ貼らない。`<<EOF` のように**区切りをクォートしない
@@ -215,6 +237,19 @@ heredoc は、本文の `$(...)` とバッククォートを利用者のシェ�
 別のモデルが見ていないかを分かるようにする。
 
 **相手モデルの沈黙を合意に読み替えない。**
+
+## 使わない場面
+
+| やりたいこと | 使うもの |
+|---|---|
+| 要求と受け入れ条件を決めて残す | `/gleanery:requirements` |
+| 承認済みの要件から設計書を残す | `/gleanery:design` |
+| 出来上がった変更を点検する | `/gleanery:review` |
+| 決まったことを DB へ入れる | `/gleanery:trace` |
+
+**winnow は `.gleanery/changes/` に何も書かない。**文書が要る依頼は requirements と design が担う。
+要件が既に承認済みで、残る分岐が設計の中だけなら design を使う。**両方を走らせて、同じ変更に別々の
+承認を作らない。**
 
 ## 原則
 
