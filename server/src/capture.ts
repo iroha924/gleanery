@@ -35,6 +35,15 @@ export const spoolDir = (): string => path.join(os.homedir(), ".gleanery", "spoo
 const stateFile = (): string => path.join(os.homedir(), ".gleanery", "capture.json");
 /** DB が受け付けなかった記録。消さずにここへ移し、doctor が数を出す（直してから戻せば送り直せる）。 */
 export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
+/**
+ * まだ登録していない作業場所の記録。消さずにここへ置く。フックは DB に触れないので、登録して
+ * あるかは送るときにしか分からない。消すと、あとから `project add` しても間の発言が戻らない。
+ * 次の送信がここも読むので、登録すればそのまま入る。
+ */
+export const unregisteredDir = (): string => path.join(spoolDir(), "unregistered");
+/** 退避の上限。手元を圧迫しない範囲で、PC を移して登録するまでの猶予をとる。 */
+const HOLD_DAYS = 30;
+const HOLD_MAX = 1000;
 
 type Host = Exclude<Origin, "github">;
 
@@ -93,6 +102,26 @@ export function fit(body: string): { body: string; truncated: boolean; originalB
     truncated: true,
     originalBytes: all,
   };
+}
+
+/**
+ * 退避した記録を刈り込む。上限を持たないと手元を圧迫する —— 登録しないまま使い続けると、
+ * 送れない記録が無限に貯まる。名前の先頭が置いた時刻（ミリ秒）なので、名前の順が古い順になる。
+ */
+function prune(held: string): void {
+  let files: string[];
+  try {
+    files = fs
+      .readdirSync(held)
+      .filter((f) => f.endsWith(".json") && !f.startsWith("."))
+      .sort();
+  } catch {
+    return; // まだ無い
+  }
+  const cutoff = Date.now() - HOLD_DAYS * 24 * 60 * 60 * 1000;
+  const stale = files.filter((f) => Number(f.split("-")[0]) < cutoff);
+  const over = files.slice(0, Math.max(0, files.length - HOLD_MAX));
+  for (const f of new Set([...stale, ...over])) fs.rmSync(path.join(held, f), { force: true });
 }
 
 function spool(record: Spooled): void {
@@ -358,7 +387,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
   return { flush: false };
 }
 
-type State = { flushedAt?: string; error?: string | null; dropped?: number };
+type State = { flushedAt?: string; error?: string | null; deferred?: number };
 
 function writeState(s: State): void {
   try {
@@ -372,7 +401,12 @@ function writeState(s: State): void {
  * 待ち行列と送信の状態。`stuck` は送れていないときの最後の失敗で、失敗が残っていて待ちもあるときだけ入る
  * （待ちが空になれば失敗は過去のもの）。session の開始時の警告と doctor が同じ判定を使う。
  */
-export function readState(): State & { pending: number; rejected: number; stuck: string | null } {
+export function readState(): State & {
+  pending: number;
+  rejected: number;
+  unregistered: number;
+  stuck: string | null;
+} {
   const count = (dir: string) => {
     try {
       return fs.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
@@ -380,7 +414,11 @@ export function readState(): State & { pending: number; rejected: number; stuck:
       return 0; // まだ無い
     }
   };
-  const counts = { pending: count(spoolDir()), rejected: count(rejectedDir()) };
+  const counts = {
+    pending: count(spoolDir()),
+    rejected: count(rejectedDir()),
+    unregistered: count(unregisteredDir()),
+  };
   // 欄ごとに型を確かめて読む（外から書き換えられても、doctor と SessionStart の警告を落とさない）。
   let raw: Record<string, unknown> = {};
   try {
@@ -394,7 +432,7 @@ export function readState(): State & { pending: number; rejected: number; stuck:
   return {
     flushedAt: typeof raw.flushedAt === "string" ? raw.flushedAt : undefined,
     error,
-    dropped: typeof raw.dropped === "number" ? raw.dropped : undefined,
+    deferred: typeof raw.deferred === "number" ? raw.deferred : undefined,
     ...counts,
     stuck: error && counts.pending > 0 ? error : null,
   };
@@ -561,24 +599,38 @@ const rejected = (e: unknown): boolean => {
  */
 export async function flush(
   env: Env,
-): Promise<{ sent: number; dropped: number; rejected: number; busy?: boolean }> {
+): Promise<{ sent: number; deferred: number; rejected: number; busy?: boolean }> {
   const unlock = lock();
-  if (!unlock) return { sent: 0, dropped: 0, rejected: 0, busy: true };
+  if (!unlock) return { sent: 0, deferred: 0, rejected: 0, busy: true };
   const dir = spoolDir();
   let client: Kysely<DB> | null = null;
   try {
-    const names = fs
-      .readdirSync(dir)
-      .filter((f) => f.endsWith(".json") && !f.startsWith("."))
-      .sort()
-      .slice(0, BATCH);
-    if (names.length === 0) return { sent: 0, dropped: 0, rejected: 0 };
-    const records: { name: string; r: Spooled }[] = [];
-    for (const name of names) {
+    // 退避した分も一緒に読む。作業場所を登録した後の送信で、そのまま入る。
+    const held = unregisteredDir();
+    const list = (from: string) => {
       try {
-        records.push({ name, r: JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as Spooled });
+        return fs
+          .readdirSync(from)
+          .filter((f) => f.endsWith(".json") && !f.startsWith("."))
+          .map((name) => ({ name, from }));
       } catch {
-        fs.rmSync(path.join(dir, name), { force: true }); // 読めない残骸
+        return []; // まだ無い
+      }
+    };
+    const names = [...list(dir), ...list(held)]
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .slice(0, BATCH);
+    if (names.length === 0) return { sent: 0, deferred: 0, rejected: 0 };
+    const records: { name: string; from: string; r: Spooled }[] = [];
+    for (const { name, from } of names) {
+      try {
+        records.push({
+          name,
+          from,
+          r: JSON.parse(fs.readFileSync(path.join(from, name), "utf8")) as Spooled,
+        });
+      } catch {
+        fs.rmSync(path.join(from, name), { force: true }); // 読めない残骸
       }
     }
     // 版を確かめない。確かめると、DB を上げた PC 以外の記録が plugin の更新まで全部止まる。
@@ -594,7 +646,7 @@ export async function flush(
       ).map((p) => [p.key, { id: Number(p.id), name: p.name }]),
     );
     const known = records.filter((x) => projects.has(x.r.project));
-    const dropped = records.length - known.length;
+    const strayed = records.filter((x) => !projects.has(x.r.project));
 
     // 埋め込みは transaction の前に取る。落ちたら pending で入れ、次の同期が取り直す。
     const toEmbed = known.flatMap((x) =>
@@ -619,7 +671,7 @@ export async function flush(
     const vectorOf: Vectors = new Map(toEmbed.map((m, n) => [m, { text: texts[n] ?? "", v: vectors?.[n] }]));
 
     let sent = 0;
-    const bad: { name: string; r: Spooled }[] = [];
+    const bad: { name: string; from: string; r: Spooled }[] = [];
     try {
       sent = await write(
         db,
@@ -653,16 +705,28 @@ export async function flush(
       fs.mkdirSync(rejectedDir(), { recursive: true, mode: 0o700 });
       for (const x of bad) {
         try {
-          fs.renameSync(path.join(dir, x.name), path.join(rejectedDir(), x.name));
+          fs.renameSync(path.join(x.from, x.name), path.join(rejectedDir(), x.name));
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // 並んだ送信が先に動かした
         }
       }
     }
-    const moved = new Set(bad.map((x) => x.name));
-    for (const x of records) if (!moved.has(x.name)) fs.rmSync(path.join(dir, x.name), { force: true });
-    writeState({ flushedAt: new Date().toISOString(), error: null, dropped });
-    return { sent, dropped, rejected: bad.length };
+    if (strayed.length) {
+      fs.mkdirSync(held, { recursive: true, mode: 0o700 });
+      for (const x of strayed) {
+        if (x.from === held) continue; // すでに退避してある
+        try {
+          fs.renameSync(path.join(x.from, x.name), path.join(held, x.name));
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // 並んだ送信が先に動かした
+        }
+      }
+    }
+    const moved = new Set([...bad, ...strayed].map((x) => x.name));
+    for (const x of records) if (!moved.has(x.name)) fs.rmSync(path.join(x.from, x.name), { force: true });
+    prune(held);
+    writeState({ flushedAt: new Date().toISOString(), error: null, deferred: strayed.length });
+    return { sent, deferred: strayed.length, rejected: bad.length };
   } catch (e) {
     writeState({ flushedAt: new Date().toISOString(), error: reason(e).slice(0, 300) });
     throw e;

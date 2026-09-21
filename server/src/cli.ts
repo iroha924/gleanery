@@ -24,7 +24,7 @@ import {
 import { type Kysely, sql } from "kysely";
 import { dbDown, dbInit, dbUp, migrate } from "./admin.ts";
 import { check, init } from "./artifacts.ts";
-import { flush, readState, rejectedDir } from "./capture.ts";
+import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
 import { type Env, inTransaction, KEY, loadEnv, open, type Role } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { syncDocs } from "./docs.ts";
@@ -316,7 +316,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
     "自動記録",
     `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
       s.stuck ? ` / 失敗: ${plain(s.stuck)}` : ""
-    }${s.dropped ? ` / 未登録の作業場所で捨てた ${s.dropped} 件` : ""}${
+    }${s.unregistered ? ` / 未登録の作業場所で退避した ${s.unregistered} 件（${unregisteredDir()}）` : ""}${
       s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
     }`,
   );
@@ -647,7 +647,7 @@ const captureRoutes = buildRouteMap({
           panel(
             "gleanery capture flush",
             [],
-            `新しく入った発言 ${r.sent} 件${r.dropped ? ` / 未登録の作業場所で捨てた ${r.dropped} 件` : ""}${
+            `新しく入った発言 ${r.sent} 件${r.deferred ? ` / 未登録の作業場所で退避した ${r.deferred} 件` : ""}${
               r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（${rejectedDir()} に残した）` : ""
             }`,
           ),
