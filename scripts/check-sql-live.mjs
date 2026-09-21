@@ -128,7 +128,7 @@ await withTempDir(async (dir) => {
         failures.push(`doctor が ${key} を健全と言わない\n${doctor.out.slice(0, 800)}`);
       }
     }
-    // 鍵を渡していないことは指摘されるはず。**件数では数えない** —— plugin の版や導入の状態は
+    // 鍵を渡していないことは指摘されるはず。件数では数えない —— plugin の版や導入の状態は
     // 手元の事情で変わり（npm へ入れた CLI と作業ツリーの中身が違う等）、この検査と関係なく増える。
     if (!/VOYAGE_API_KEY/.test(doctor.out)) {
       failures.push(
