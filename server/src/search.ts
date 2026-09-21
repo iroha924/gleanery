@@ -820,8 +820,11 @@ async function readKnowledge(
     .orderBy("role")
     .orderBy("path")
     .execute(queryOptions(signal));
+  // 本体と同じ範囲で絞る。決定に属する行は id で辿れるので、絞りが片方だけだと、選んだ作業場所の
+  // 外の本文が案と検証として応答に混ざる（id は連番で推測できる）。
   const related = await knowledgeBase(db)
     .where(sql<SqlBool>`(k.decision_id = ${id} or k.id = ${k.decision_id})`)
+    .where(inScope("k.project_id", projects))
     .orderBy("k.kind")
     .orderBy("k.occurred_at")
     .execute(queryOptions(signal));

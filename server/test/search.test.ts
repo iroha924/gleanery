@@ -293,6 +293,44 @@ test("read は参照の形を先に確かめ、範囲を渡すと作業場所で
   await assert.rejects(read(down, ["k:12"], 4096), /timeout/);
 });
 
+// 上の検査は、本体が 0 行で戻る経路しか見ていない。行を返して奥まで歩かせると、同じ決定に属する
+// 案と検証を引く問い合わせが増える。**そこに絞りが無いと、選んだ作業場所の外の本文が応答へ混ざる。**
+test("read は、同じ決定に属する案と検証にも作業場所の絞りを掛ける", async () => {
+  const { db, calls } = fakeDb((sql) =>
+    sql.includes('"gleanery"."knowledge" as "k"') && sql.includes('"k"."id" = $')
+      ? [
+          {
+            id: "12",
+            kind: "decision",
+            status: "accepted",
+            stance: null,
+            heading: "見出し",
+            body: "本文",
+            reason: null,
+            confirmation: null,
+            downsides: [],
+            occurred_at: new Date(),
+            project: "p",
+            refs: [],
+            confidence: null,
+            origin: null,
+            session: null,
+            decision_id: "12",
+          },
+        ]
+      : [],
+  );
+  await read(db, ["k:12"], 4096, { projects: [7] });
+  const related = calls.filter((c) => /k\.decision_id = \$/.test(c.sql));
+  assert.equal(related.length, 1, "同じ決定に属する行を引いている");
+  assert.match(
+    related[0]?.sql ?? "",
+    // kysely は sql.ref を引用符付きで出す。綴りの差で取りこぼさないよう、両方を通す。
+    /"?k"?\."?project_id"? = any/,
+    "案と検証も、選んだ作業場所の中だけから引く",
+  );
+});
+
 // 同じ時刻の発言が前後の上限を超えて並んでも、対象の発言を落とさない。
 test("前後の発言は時刻と id の組で切る", async () => {
   const { db, calls } = fakeDb((_s, _p, nth) =>
