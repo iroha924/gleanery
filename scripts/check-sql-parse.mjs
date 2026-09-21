@@ -15,7 +15,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { ALLOWED_UNCOVERED, callSites } from "./lib/sql-call-sites.mjs";
+import { ALLOWED_UNCOVERED, callSites, LIVE_FILES } from "./lib/sql-call-sites.mjs";
 import { root, withTempPostgres } from "./lib/temp-postgres.mjs";
 
 // pg は server の依存にある。ここから解決して、検査のために root へ依存を足さない。
@@ -96,7 +96,9 @@ const failures = await withTempPostgres("sql-parse", async ({ port, password }) 
 });
 
 // 空振りの検出。到達しなかった call site は、件数だけでなく file:line を毎回並べる。
-const sites = callSites(root);
+// 実 DB のレーンが受け持つファイルはここでは数えない。偽の db を差し込む継ぎ目が無く、
+// あちらが call site 単位で全部見る（scripts/check-sql-live.mjs）。
+const sites = callSites(root).filter((s) => !LIVE_FILES.some((f) => s.startsWith(`${f}:`)));
 const uncovered = sites.filter((s) => !observed.has(s));
 const byFile = new Map();
 for (const s of uncovered) {
@@ -148,6 +150,6 @@ if (failures.length || ledger.length) process.exit(1);
 
 console.log(
   `SQL: ${statements.length} 文（${rows.length} 回）を実 PostgreSQL が受け付けた。` +
-    `server/src の SQL 実行箇所 ${sites.length - uncovered.length} / ${sites.length} が到達済み` +
+    `偽の db から組み立てられる ${sites.length - uncovered.length} / ${sites.length} 箇所が到達済み` +
     (uncovered.length ? `（残り ${uncovered.length} 箇所は ALLOWED_UNCOVERED に理由付きで載せてある）` : ""),
 );
