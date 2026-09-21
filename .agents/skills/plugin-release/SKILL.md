@@ -63,18 +63,29 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
      別のtarballを解決する）
    - gitのtag
 3. marketplace entry直下に`version`を置かない。`plugin.json`が無警告で優先され、古い値がupdateを隠す
-4. clean な staging directoryからtarballを1回だけ作り、**その中身を展開して検査する**
+4. CIとレビューが通ったcommitを`<reviewed commit>`として固定する。そのcommitのcleanな
+   staging directoryからtarballを1回だけ作り、**その中身を展開して検査する**
    - `npm pack --json`のfile一覧に、必要なものが全部あるか（`dist/`、`db/`、`skills/`、
      `hooks/`、MCP manifest、plugin manifest）
    - source、env、secret、lockfile、`node_modules`が混ざっていないか
    - 展開した先で`node dist/cli.js --version`が動くか
-5. **検査したそのtarballをpublishする**（`npm publish <file>.tgz`）。publishのときに作り直さない。
-   `prepublishOnly`は`npm pack`では走らないので、lifecycleに任せきらない
-6. publishの**後で**、marketplaceのnpm source versionを切り替えるcommitを入れる。同じmergeに入れると、
-   未公開のversionを指す時間ができて新規installが失敗する
-7. npmから exact version を取り直してもう一度smoke testする
+5. 検査したそのtarballをcandidateとしてpublishする（`npm publish <file>.tgz --tag next`）。
+   publishのときに作り直さない。`prepublishOnly`は`npm pack`では走らないので、lifecycleに任せきらない。
+   `latest`はここでは動かさない
+6. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、registryから取り直した
+   exact versionを展開して、4と同じsmoke testを行う。失敗したらmergeせず、内容を直した
+   新しいversionでtarballの作成からやり直す。公開済みのversionは上書きできない
+7. exact versionのsmoke testが通った後だけ、レビュー済みの内容を変えずmainへmergeする。
+   merge後のcommitを`<merge commit>`とし、`git diff --exit-code <reviewed commit> <merge commit>`でtreeが
+   変わっていないことを確かめる。差分があればtagと`latest`への昇格を止める
+8. `git tag v<version> <merge commit>`でmerge commitへtagを付け、remoteへpushする。tagのpushが
+   失敗したら`latest`を動かさず再試行する
+9. `npm dist-tag add gleanery@<version> latest`で検査済みのversionを昇格する。merge前は旧安定版が
+   `latest`のままで、この操作が失敗してもmarketplaceは公開済みのexact versionを指す
+10. cleanな一時directoryで`npm pack gleanery@latest --silent`を実行し、展開して同じsmoke testを行う。
+    `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことも確かめる
 
-同じname/versionは再publishできない。壊れたtarballを同じversionで直せないので、4の検査を飛ばさない。
+同じname/versionは再publishできない。壊れたtarballを同じversionで直せないので、4と6の検査を飛ばさない。
 
 ## 届いたことを確かめる
 

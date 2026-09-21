@@ -123,6 +123,37 @@ for (const name of developmentSkills) {
   }
 }
 
+const releaseGuide = read(".agents/skills/plugin-release/SKILL.md");
+const releaseStart = releaseGuide.indexOf("## 届けるまで");
+const releaseEnd = releaseGuide.indexOf("## 届いたことを確かめる");
+const releaseSteps =
+  releaseStart === -1 || releaseEnd === -1 ? "" : releaseGuide.slice(releaseStart, releaseEnd);
+const releaseOrder = [
+  "npm publish <file>.tgz --tag next",
+  "npm pack gleanery@<version> --silent",
+  "mainへmergeする",
+  "git diff --exit-code <reviewed commit> <merge commit>",
+  "git tag v<version> <merge commit>",
+  "npm dist-tag add gleanery@<version> latest",
+  "npm pack gleanery@latest --silent",
+];
+let releaseCursor = -1;
+for (const step of releaseOrder) {
+  const position = releaseSteps.indexOf(step);
+  if (position === -1) {
+    fail(`.agents/skills/plugin-release/SKILL.md: release手順に \`${step}\` が無い`);
+  } else if (position <= releaseCursor) {
+    fail(`.agents/skills/plugin-release/SKILL.md: release手順の \`${step}\` の順序が逆転している`);
+  } else {
+    releaseCursor = position;
+  }
+}
+for (const [publish] of releaseSteps.matchAll(/npm publish[^\n`]*/g)) {
+  if (!publish.includes("--tag next")) {
+    fail(".agents/skills/plugin-release/SKILL.md: merge前のnpm publishは--tag nextでlatestを動かさない");
+  }
+}
+
 try {
   const pluginManifest = JSON.parse(read("plugin/.codex-plugin/plugin.json"));
   if (pluginManifest.skills !== "./skills/") {
