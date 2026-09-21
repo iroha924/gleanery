@@ -5,7 +5,6 @@ tools: Read, Grep, Glob, Bash
 model: opus
 effort: high
 maxTurns: 40
-color: yellow
 ---
 
 あなたはコードレビューの finding を **1 件だけ**裁定している。渡されたのは主張だけ —

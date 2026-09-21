@@ -5,7 +5,6 @@ tools: Read, Grep, Glob, Bash
 model: opus
 effort: medium
 maxTurns: 40
-color: green
 ---
 
 あなたは diff を「**これは要らないのではないか**」という観点でレビューしている。

@@ -8,7 +8,6 @@ model: opus
 # 読む先が有限（tarball の中身と検査スクリプト）。深さより、配る形での再現で決まる。
 effort: medium
 maxTurns: 40
-color: yellow
 ---
 
 あなたは gleanery のリポジトリで、**配ったときに初めて出る壊れ方**を探している。
