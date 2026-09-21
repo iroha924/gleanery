@@ -297,6 +297,147 @@ for (const name of fs
     );
 }
 
+// ---- review Skill の mode と、立てるレビュアーの集合が揃っているか ----
+//
+// 正本は SKILL.md の mode 表。起動側の説明・台帳の例・両ホストの起動手順が別々に観点を並べると、
+// **足した観点が片方にだけ載る**（実測: 層の表を 5 体へ写して既にずれていた。k:871）。
+// 集合として列挙できる対なので検査できる。どの観点が要るかという判断は見ない。
+const REVIEW_SKILL = "plugin/skills/review/SKILL.md";
+const MODE_TABLE = grab(
+  REVIEW_SKILL,
+  /\| mode \| 必須観点 \|\n\|[-| ]+\|\n([\s\S]*?)\n\n/,
+  "review Skill の mode 表",
+);
+if (MODE_TABLE !== null) {
+  const modes = new Map();
+  for (const line of MODE_TABLE.split("\n")) {
+    const m = line.match(/^\| `([a-z]+)` \| (.+?) \|$/);
+    if (!m) {
+      fail.push(
+        `review Skill の mode 表の行「${line.trim()}」は「| \`mode\` | \`名\` / \`名\` |」の形で書く`,
+      );
+      continue;
+    }
+    modes.set(m[1], words(m[2], "`", `review Skill の mode 表の ${m[1]}`));
+  }
+  for (const name of ["standard", "full"]) {
+    if (!modes.has(name)) fail.push(`review Skill の mode 表に ${name} が無い`);
+  }
+  const standard = modes.get("standard") ?? [];
+  const full = modes.get("full") ?? [];
+  // **standard が full の部分集合であること。**別々に並べると、full にだけ足した観点が standard から落ちる。
+  const outside = standard.filter((n) => !full.includes(n));
+  if (outside.length) fail.push(`review Skill の mode 表: standard の ${outside.join(" / ")} が full に無い`);
+  // 裁定役は観点ではない。候補ごとに要るときだけ立てるので、mode の起動計画に混ぜると毎回立つ。
+  for (const [mode, names] of modes) {
+    if (names.includes("review-validator"))
+      fail.push(`review Skill の mode 表: ${mode} に review-validator を入れない`);
+    for (const name of names) {
+      if (!fs.existsSync(`plugin/agents/${name}.md`)) {
+        fail.push(`review Skill の mode 表の ${name} に対応する plugin/agents/${name}.md が無い`);
+      }
+    }
+    if (new Set(names).size !== names.length)
+      fail.push(`review Skill の mode 表: ${mode} に同じ観点が 2 回ある`);
+  }
+  if (standard.length === 0) fail.push("review Skill の mode 表: standard に観点が 1 つも無い");
+  // **full は配る finder を全部立てる。**どれを standard に置くかは判断なので見ないが、
+  // ここを名前の列挙にすると、**新しい finder を足したときに mode 表から漏れても通る**（k:871 と同じ形）。
+  const finders = fs
+    .readdirSync("plugin/agents")
+    .filter((f) => f.endsWith(".md"))
+    .map((f) => f.slice(0, -3))
+    .filter((n) => n !== "review-validator");
+  const missing = finders.filter((n) => !full.includes(n));
+  if (missing.length) fail.push(`review Skill の mode 表: full に ${missing.join(" / ")} が無い`);
+}
+
+// ---- 全体の状態と継続判断が、正本の表と「### 形」の例で揃っているか ----
+//
+// 例は写されるものなので、**正本の語を変えたのに例が古いままだと、写した側が古い語を使う。**
+// どの失敗をどの状態に割り当てるかという意味は見ない。そこまで正規表現で見ようとすると
+// 散文の意味を検査することになる（k:879: 読み方を全部消しても表を付録へ移しても通った）。
+const REVIEW_SRC = read(REVIEW_SKILL);
+const vocab = (re, what) => {
+  const table = grab(REVIEW_SKILL, re, what);
+  if (table === null) return null;
+  const got = [...table.matchAll(/^\| `([A-Z_]+)` \|/gm)].map((m) => m[1]);
+  if (got.length === 0) {
+    fail.push(`${what} から語を 1 つも取り出せない`);
+    return null;
+  }
+  const dup = got.filter((v, i) => got.indexOf(v) !== i);
+  if (dup.length) fail.push(`${what} に ${dup.join(" / ")} が 2 回ある`);
+  return new Set(got);
+};
+const OVERALL = vocab(/\| 全体 \| 条件 \|\n\|[-| ]+\|\n([\s\S]*?)\n\n/, "review Skill の全体の状態の表");
+const CONTINUE = vocab(/\| 継続判断 \| 条件 \|\n\|[-| ]+\|\n([\s\S]*?)\n\n/, "review Skill の継続判断の表");
+// 例の中の「全体: X」「継続判断: X」が正本にあるか。例だけ古い語のまま残るのを捕まえる。
+for (const [label, allowed] of [
+  ["全体", OVERALL],
+  ["継続判断", CONTINUE],
+]) {
+  if (allowed === null) continue;
+  const used = [...REVIEW_SRC.matchAll(new RegExp(`^${label}: ([A-Z_]+)`, "gm"))].map((m) => m[1]);
+  if (used.length === 0) fail.push(`review Skill の「### 形」の例に「${label}: …」の行が無い`);
+  for (const v of used) {
+    if (!allowed.has(v))
+      fail.push(`review Skill の例の「${label}: ${v}」は表に無い語。表は ${[...allowed].join(" / ")}`);
+  }
+}
+// レーンの coverage。実行・打ち切りにだけ付き、未実行・不能には付かない（観測できなかったことと、計画に無いことを混ぜない）。
+const COVERAGE = new Set(["COMPLETE", "PARTIAL", "UNKNOWN"]);
+const coverageTable = grab(
+  REVIEW_SKILL,
+  /\| 状態 \| 意味 \| coverage \|\n\|[-| ]+\|\n([\s\S]*?)\n\n/,
+  "review Skill の状態と coverage の表",
+);
+for (const line of (coverageTable ?? "").split("\n")) {
+  const m = line.match(/^\| `([^`]+)` \| .* \| (.+?) \|$/);
+  if (!m) continue;
+  const [, state, cov] = m;
+  const got = [...cov.matchAll(/`([A-Z]+)`/g)].map((x) => x[1]);
+  if (["未実行", "不能"].includes(state)) {
+    if (got.length) fail.push(`review Skill: ${state} に coverage を持たせない（${got.join(" / ")}）`);
+    continue;
+  }
+  if (got.length === 0) fail.push(`review Skill: ${state} に coverage が書かれていない`);
+  const unknown = got.filter((g) => !COVERAGE.has(g));
+  if (unknown.length) fail.push(`review Skill: ${state} の coverage に ${unknown.join(" / ")} は無い`);
+}
+
+// 本文に出てくる印の語が、どれかの表にあるか。**表の中だけで語を改名すると、本文に古い語が残る**
+// （実測: DEGRADED を改名しても、例が別の語を使っていたので例との照合では落ちなかった）。
+const VERDICTS = vocab(/\| \| 意味 \|\n\|[-| ]+\|\n([\s\S]*?)\n\n/, "review Skill の裁定の表");
+if (OVERALL && CONTINUE && VERDICTS) {
+  const known = new Set([...OVERALL, ...CONTINUE, ...COVERAGE, ...VERDICTS]);
+  const orphan = [...new Set([...REVIEW_SRC.matchAll(/`([A-Z][A-Z_]+)`/g)].map((m) => m[1]))].filter(
+    (w) => !known.has(w),
+  );
+  if (orphan.length) {
+    fail.push(
+      `review Skill の本文にある ${orphan.join(" / ")} が、全体・継続判断・coverage・裁定のどの表にも無い`,
+    );
+  }
+}
+
+// ---- review のラウンドの上限が、3 つの Skill で揃っているか ----
+//
+// design と requirements は自分の成果物への review を回すので、同じ上限を各自が書いている。
+// **片方だけ変えると、同じ配布物の中で上限が 2 種類になる。**数字は列挙できる対なので検査できる
+// （何ラウンドが妥当かという判断は見ない）。
+const ROUND_LIMITS = new Map();
+for (const name of ["review", "design", "requirements"]) {
+  const file = `plugin/skills/${name}/SKILL.md`;
+  const got = grab(file, /上限は (\d+) ラウンド/, `${name} Skill のラウンドの上限`);
+  if (got !== null) ROUND_LIMITS.set(name, got);
+}
+if (ROUND_LIMITS.size === 3 && new Set(ROUND_LIMITS.values()).size !== 1) {
+  fail.push(
+    `review のラウンドの上限が Skill ごとに違う: ${[...ROUND_LIMITS].map(([k, v]) => `${k}=${v}`).join(" / ")}`,
+  );
+}
+
 // ---- README の CLI 一覧を `gleanery --help` から書き出す ----
 //
 // **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、
