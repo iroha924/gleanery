@@ -4,27 +4,38 @@
 **読まずに推測で組み立てない** —— ここにあるのは綴りだけでなく、落とすと権限が広がるフラグと、
 失敗が成功に見える経路である。読めなかったなら、そのレーンは `不能` にして立てない。
 
-レビュアーの定義ファイルの場所（`$A`）は SKILL.md の Step 3 が決める。ここで数え直さない。
+観点の本文の場所（`$R`）と、観点ごとに渡す道具は SKILL.md の Step 3 が決める。ここで数え直さない。
 
 ## 立てる
 
 | 自分が | 相手を呼ぶ |
 |---|---|
-| **Claude** | `codex exec --ephemeral -s read-only -c model_reasoning_effort=<定義の effort> --output-schema <schema> -o <out> -` |
-| **Codex** | `claude -p --agent gleanery:review-<名> --effort <定義の effort> --no-session-persistence --output-format json` |
+| **Claude** | `codex exec --ephemeral -s read-only --output-schema <schema> -o <out> -` |
+| **Codex** | `claude -p --agents '<JSON>' --agent <名> --no-session-persistence --output-format json` |
+
+**Codex から Claude を呼ぶときは、観点の本文を `--agents` の JSON へ入れる。**配る側にエージェントの定義が無いので、
+ここで組み立てる。`{"<名>":{"description":"...","prompt":"<観点の本文>","tools":["Read","Grep","Glob"]}}` の形で、
+`--agent <名>` で選ぶ。
+
+**`tools` は SKILL.md の表が決めたものをそのまま入れる。**実行が要る 3 つ（正しさ・セキュリティ・裁定役）には
+`Bash` が入り、残りには入らない。**`Bash` を入れた相手の書き込みは止まらない**（実測: `Read` と `Bash` だけの
+レビュアーが `probe.txt` を作った）。`Read` / `Grep` / `Glob` だけなら書き込む手段が無い（同じ実測で作られなかった）。
+
+**どちらの場合も差分はファイルで渡す。**`Bash` を渡さない観点は `git` を実行できず、渡す観点でも
+範囲を決めるのは PR を出した側なので、コマンドを組み立てさせない。
 
 **どちらもプロンプトのファイルを stdin へ渡す。**ホストのシェルに合う形で書く ——
 **`< ファイル` は PowerShell では構文エラーになり、そのホストではレーンが 1 本も立たない。**
 
 ```bash
 # POSIX
-cat "$prompt_file" | claude -p --agent "$agent" --effort "$effort" --no-session-persistence --output-format json
+cat "$prompt_file" | claude -p --agents "$agents_json" --agent "$name" --no-session-persistence --output-format json
 ```
 
 ```powershell
 # PowerShell
 Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
-  & claude -p --agent $agent --effort $effort --no-session-persistence --output-format json
+  & claude -p --agents $agentsJson --agent $name --no-session-persistence --output-format json
 ```
 
 **例からフラグを落とさない。**写されるのは説明ではなく例のほうで、`--no-session-persistence` が
@@ -42,31 +53,26 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 （実測: この形で 2 レーンが黙って落ちた）。
 
 `--ephemeral` はセッションを残さない。`-s read-only` は書き込みを止める。
-`--output-schema` は出力を固定する。`model_reasoning_effort` に**定義の `effort` を写す** —
-渡さないとセッションの既定に落ちる。
+`--output-schema` は出力を固定する。**深さは指定しない** —— 利用者が選んでいるものに従う。
 
-**Codex から Claude を呼ぶときは、定義の本文を渡さず `--agent` に名前を渡す。**CLI が定義を読むので、
-13 KB の本文を毎回組み立てなくてよい。
+**`--agents` の JSON は毎回組み立てる。**配る側にエージェントの定義が無いので、観点の本文と、
+SKILL.md の表が決めた道具をここで詰める。
 
 **渡すものは引数ではなく stdin へ置く。**範囲にはブランチ名とファイル名が入り、**それを決めるのは PR を出した側**である。
 引数は `ps` に出るうえ、長さにも上限がある。
 
 | 渡すもの | なぜ |
 |---|---|
-| `--agent gleanery:review-<名>` | 持ち主の設定に `agent` があっても上書きする。存在しない名前は stderr へ出して **exit 1** で落ちる |
-| `--effort <定義の effort>` | フロントマターの値を写す。**モデルの上限を超える値は、`json` 出力では警告も出ずに上限へ落ちる**（公式の model-config）。上限内の値だけを定義に置く |
+| `--agents '<JSON>'` と `--agent <名>` | 観点の本文と `tools` をその場で渡す。存在しない名前は stderr へ出して **exit 1** で落ちる |
 | `--no-session-persistence` | セッションをディスクへ残さない。**後から `--resume` できなくなるのが要点である**（下） |
 
-**`--model` を渡さない。**定義の `model: opus` が効く（実測: init イベントが `claude-opus-5` を返した）。
+**`--model` と `--effort` を渡さない。**利用者が選んでいるものに従う。
 
-**この経路だけは permission を渡せる。**起動側が argv を組むので、`--settings` が効く
-（実測: `--settings '{"permissions":{"deny":["Bash"]}}' --agent gleanery:review-security` で、
-定義は解決したまま `Bash` が消えた）。SKILL.md の「塞ぐ手段は無い」は**プラグインが配る側の話**で、ここには当たらない。
-**それでも塞げるのは `Bash` だけである** —— `--agent` の時点で `Edit` も `Write` も無く、`Bash` を消すと
-レビュアーは diff を読めない。`--restricted` は `--tools` で名指しすれば `Bash` を残すが、
-**プラグイン由来の定義ごと落とす**ので使えない（実測: `not found. Available agents: claude, Explore, …`、exit 1）。
-**`--max-turns` は 2.1.278 に無い**（`--help` に 0 件）。ターン数の上限はフロントマターの `maxTurns` だけで、
-**それが `--agent` 経由で効くかは観測できていない。**打ち切りの検出は Step 4 の体裁の判定に頼る。
+**`--settings` の `deny` を書き込みを止める手段として使わない。**名前で挙げたものしか消えず、
+**MCP 経由の書き込みが残る**（実測: `Edit` / `Write` / `Bash` を deny したレビュアーが、
+Serena 経由で `probe.txt` を作った）。止めるのは上の `tools` のほうである。
+
+**`--max-turns` は 2.1.278 に無い**（`--help` に 0 件）。打ち切りの検出は Step 4 の `completion` の行に頼る。
 
 **この経路では `--resume` を使わない。**1 回の呼び出しで、一覧を先頭に全件出し、続けて全 finding の全文を番号順に出させる。
 **プロンプトの末尾にそう書く** —— レビュアーの既定は「全文は要求されたものだけ返す」なので、
@@ -118,7 +124,7 @@ Codex の 5 レーンは 1 ラウンドに 104〜172 万トークンを使う（
 **完了を通知させる。**レーンを 1 本ずつ background へ投げると、**返ってくるのはレーンの完了ではなく起動の完了**である。
 以後は完了を知る手段がポーリングだけになり、**「まだ走っている」と「終わって出力を書いた」が区別できなくなる。**
 全部を 1 つの background の仕事にまとめ、**全レーンの完了まで返らせる**（POSIX なら `wait`、PowerShell なら
-`Wait-Job`）。レーンごとの `effort` はその定義から読む —— 1 つの値で回すと、そのレーンだけ深さが変わる。
+`Wait-Job`）。
 
 実測（2026-09-21）: 起動だけを待つ形にしたため、5 レーンが完走して出力を書き終えた後も
 **3 レーンを「走行中」と報告していた。**行の伸びと `pgrep` を数えても、完了した瞬間は分からない。

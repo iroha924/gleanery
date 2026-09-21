@@ -13,7 +13,7 @@
       "source": {
         "source": "npm",
         "package": "gleanery",
-        "version": "0.33.21"
+        "version": "0.33.23"
       },
       "author": {
         "name": "iroha924",

@@ -45,17 +45,17 @@ checkout した時点で上の表の下の行へ移る。
 
 ### 塞ぐ手段は無い
 
-**配布物から強制できるのは各レビュアーの `tools` だけである。**プラグインが配れる settings のキーは
-`agent` と `subagentStatusLine` の 2 つで、`sandbox` も `permissions` も配れない。`permissionMode` /
-`hooks` / `mcpServers` はプラグイン由来の agent では無視され、親が auto ならプラグイン由来でなくても
-無視される。サブエージェント単位の sandbox も無く、親のセッションの設定をそのまま使う
+**配布物から強制できるものは無い。**プラグインが配れる settings のキーは `agent` と
+`subagentStatusLine` の 2 つで、`sandbox` も `permissions` も配れない。`permissionMode` / `hooks` /
+`mcpServers` はプラグイン由来の agent では無視され、親が auto ならプラグイン由来でなくても無視される。
+サブエージェント単位の sandbox も無く、親のセッションの設定をそのまま使う
 （公式の plugins-reference / sub-agents / sandboxing。2026-09-19 に確認）。
 
-**その `tools` から `Bash` は外せない。**外すと diff も `git log` も読めず、`review-adversarial` の
-「走らせて出力を貼る」が丸ごと消える。**だからこのスキルは、自分たちが書いていないツリーのレビューを
-支えない。**レビュアーの本文へ「他人のツリーでは実行するな」と書く案は採らなかった — 信頼の判定を
-レビュアーへ渡す経路が無く、渡しても**誤った肯定には安全側が無い**（`gh pr checkout` の後に既定の
-入口で叩けば、範囲は「自分の変更」に見える）。
+**渡す道具は起動側が決める。**上の表のとおり、実行が要る 3 つにだけ `Bash` を渡す。
+**`Bash` を渡した相手の書き込みは止まらない**（実測: `Read` と `Bash` だけのレビュアーがファイルを作った）。
+**だからこのスキルは、自分たちが書いていないツリーのレビューを支えない。**レビュアーの本文へ
+「他人のツリーでは実行するな」と書く案は採らなかった — 信頼の判定をレビュアーへ渡す経路が無く、
+渡しても**誤った肯定には安全側が無い**（`gh pr checkout` の後に既定の入口で叩けば、範囲は「自分の変更」に見える）。
 
 **それでも他人のツリーを読ませるなら、層を入れるのは利用者の側である。**片方の限界を、もう片方を
 捨てる理由にしない。
@@ -114,7 +114,7 @@ PR のときは `gh pr view <番号> --json title,body,headRefName,baseRefName,f
 
 ## Step 2 — 読む先を見つける
 
-`review-conventions` と `review-precedent` が使う。**見つからないことは正常である。**
+`conventions` と `precedent` の観点が使う。**見つからないことは正常である。**
 
 ### 規約ファイル
 
@@ -161,30 +161,38 @@ stderr へ流して残りを続けるので、どのシェルでも同じ結果�
 
 | mode | 必須観点 |
 |---|---|
-| `standard` | `review-adversarial` / `review-security` / `review-conventions` |
-| `full` | `review-adversarial` / `review-security` / `review-conventions` / `review-cleanup` / `review-precedent` |
+| `standard` | `adversarial` / `security` / `conventions` |
+| `full` | `adversarial` / `security` / `conventions` / `cleanup` / `precedent` |
 
 **既定は `standard`。**覆うのは、直す基準（Step 7 の継続判断にある 4 つ）に直接対応する 3 観点である。`full` で足す 2 観点が拾うもの —— 明文化されていない再実装、一回限りの抽象、
 早すぎる共通化、浅すぎる修正、gleanery にだけ残された過去の判断 —— は `standard` では落ちうる。
 **落ちることを承知で既定を軽くしている。**
 
-| 観点 | 定義ファイル |
-|---|---|
-| 正しさ・データ損失 | `review-adversarial`（`$A/review-adversarial.md`） |
-| セキュリティ | `review-security`（`$A/review-security.md`） |
-| 明文化された規約 | `review-conventions`（`$A/review-conventions.md`） |
-| 冗長さ | `review-cleanup`（`$A/review-cleanup.md`） |
-| 過去の判断 | `review-precedent`（`$A/review-precedent.md`） |
+| 観点 | 本文 | 渡す道具 |
+|---|---|---|
+| 正しさ・データ損失 | `reviewers/adversarial.md` | `Read` `Grep` `Glob` `Bash` |
+| セキュリティ | `reviewers/security.md` | `Read` `Grep` `Glob` `Bash` |
+| 明文化された規約 | `reviewers/conventions.md` | `Read` `Grep` `Glob` |
+| 冗長さ | `reviewers/cleanup.md` | `Read` `Grep` `Glob` |
+| 過去の判断 | `reviewers/precedent.md` | `Read` `Grep` `Glob` + gleanery の MCP |
 
-**定義ファイルの在り処はホストで違う。**片方だけ書くともう片方で壊れる
+裁定役は `reviewers/validator.md`（`Read` `Grep` `Glob` `Bash`）。観点ではないので mode の起動計画に入れず、Step 6 で候補ごとに要るときだけ立てる。
+
+**`Bash` を渡すのは、実行が仕事の中心である 3 つだけ。**正しさは「最良の finding は何かを実行することから生まれる」、
+セキュリティは「報告する前に再現を試みる」、裁定役は再現が仕事そのものである。**残りは実行せずに済む観点なので渡さない** ——
+`Bash` を渡した相手は書き込みを止められない（実測: `Read` と `Bash` だけのレビュアーがファイルを作った）。
+
+**だから他人のツリーでは `Bash` を渡す 3 つを立てない。**下の「塞ぐ手段は無い」を読むこと。
+
+**本文の在り処はホストで違う。**片方だけ書くともう片方で壊れる
 （`${CLAUDE_PLUGIN_ROOT}` は Codex では空に展開され、Claude Code の cwd は
-利用者のプロジェクトなので相対パスは当たらない）。**以降、`A` は自分のホストの側を指す。**
+利用者のプロジェクトなので相対パスは当たらない）。**以降、`R` は自分のホストの側を指す。**
 
 ```bash
 # Claude Code
-A="${CLAUDE_PLUGIN_ROOT}/agents"
+R="${CLAUDE_PLUGIN_ROOT}/skills/review/reviewers"
 # Codex（このスキルのディレクトリからの相対パス）
-A="../../agents"
+R="reviewers"
 ```
 
 **渡すのは範囲と変更ファイル一覧だけ。**diff はレビュアーが自分で読む。2 ラウンド目以降は、前のラウンドで直した
@@ -210,25 +218,18 @@ finding の一覧を足す（下の「ラウンドを重ねるとき」）。
 **抑制の指示を書かない。**「重大なものだけ」「3 件以内で」の類は文字どおり従われ、
 実在する指摘を失う。**絞り込みは Step 5 の仕事である。**
 
-### 立て方はホストで違う。定義ファイルは同じ
+### 立て方は両ホストで同じ。本文をプロンプトとして渡す
 
-**`plugin/agents/` は Codex のプラグイン仕様に無いディレクトリだが、複製はマニフェストの
-フィルタではなくルートの丸ごとコピーなので、ファイルとしては両ホストに届く**（実測で 49/49 一致）。
-**Codex はそれをエージェント定義として解釈しないだけで、読むことはできる。**
+**`$R/<観点>.md` を読み、その全文をプロンプトの先頭に置く。**エージェントの定義ファイルとして配らないので、
+利用者が同名の定義を持っていても衝突しない。
 
 | | Claude Code | Codex |
 |---|---|---|
-| 立て方 | `Agent` ツール。`subagent_type` に **`gleanery:` を付けた名前**（`gleanery:review-adversarial`）を渡す（**`fork` にしない**） | `spawn_agent`。`$A/<名>.md` を `Read` し、**フロントマターを除いた本文をそのままプロンプトに渡す** |
-| 深さの固定 | 定義の `effort` が効く | `spawn_agent` の **`reasoning_effort`** に、定義の `effort` と同じ値を渡す |
+| 立て方 | `Agent` ツール。汎用のエージェント型に、本文と範囲を渡す（**`fork` にしない**） | `spawn_agent`。同じ本文と範囲を渡す |
 | 回収 | 完了通知（前面で返ったときはツールの戻り値） | `wait_agent` |
 
-**`effort` を渡し忘れない。**渡さないと、**セッションがたまたま浅い日にレビューだけ浅くなる。**
-定義のフロントマターに書いてある値が正本である。
-
-**`model` を上書きしない。**定義が `opus` に固定しているのは、**安いモデルで走っても出力は同じ形で
-返り、浅くなったことが観測できない**からである。疎通確認のように「立つかどうかだけ見たい」ときも、
-**レビューとして呼ぶ経路では上書きしない**（実測: 疎通確認のつもりで `haiku` を指定したものが、
-レビューを頼んだように見えた）。
+**`model` と `effort` を指定しない。**利用者が選んでいるものに従う。**そのぶん、セッションが浅い日は
+レビューも浅くなり、出力は同じ形で返るので気付けない。**深く見たい変更では、利用者が自分で深さを上げてから呼ぶ。
 
 ### 相手モデルを使うかは、始める前に利用者へ聞く
 
@@ -332,7 +333,7 @@ completion: lane=<観点> model=<claude|codex> coverage=<COMPLETE|PARTIAL> unfin
 
 ## Step 6 — 裁定する
 
-**再現の伴わない指摘だけを `review-validator` へ回す。**報告者が既に再現しているものは、
+**再現の伴わない指摘だけを `reviewers/validator.md` へ回す。**報告者が既に再現しているものは、
 その根拠をもって確定とする。**判定基準は発生源ではなく再現の有無に置く。**
 
 判定は 3 値。**`PLAUSIBLE` を既定にする。**
@@ -384,10 +385,9 @@ Claude が反証する。両方由来なら決定的な再現を優先する。
 **起動した後で切れた相手モデルを `DEGRADED` にしない。**それは `INCOMPLETE` である。
 **`INCOMPLETE` から「指摘なし」も「収束した」も導かない。**
 
-**`subagent_type` が解決しなかった場合を必ず拾う。**プラグインの版を上げ忘れた、
-セッションを張り直していない、同名の定義に上書きされている — どれも起動が失敗するだけで、
-**放っておくと「そのレーンは指摘 0 件だった」と読める。**立てた型の名前と、返ってきたかを
-1 行ずつ残すこと。
+**本文を渡せなかった場合を必ず拾う。**`$R/<観点>.md` が読めない、プラグインの版を上げ忘れた、
+セッションを張り直していない — どれも起動が失敗するだけで、**放っておくと「そのレーンは指摘 0 件だった」と
+読める。**本文を渡せなかったなら、**推測で観点を組み立てず**そのレーンを `不能` にする。
 
 ### (2) finding
 
@@ -442,13 +442,13 @@ Claude が反証する。両方由来なら決定的な再現を優先する。
 ```
 ✦ **gleanery review** · origin/main...HEAD · standard · 観点 3/5 × モデル 2 · ラウンド 1/2
 
-| 観点（立てた型） | Claude | Codex |
+| 観点（渡した本文） | Claude | Codex |
 |---|---|---|
-| 正しさ・データ損失（`gleanery:review-adversarial`） | ✓ 実行（2 件・COMPLETE） | ✓ 実行（1 件・COMPLETE） |
-| セキュリティ（`gleanery:review-security`） | △ 打ち切り（UNKNOWN） | ✓ 実行（0 件・COMPLETE） |
-| 明文化された規約（`gleanery:review-conventions`） | ✓ 実行（1 件・PARTIAL） | ✓ 実行（0 件・COMPLETE） |
-| 冗長さ（`gleanery:review-cleanup`） | ○ 未実行（standard では対象外） | ○ 未実行（standard では対象外） |
-| 過去の判断（`gleanery:review-precedent`） | ○ 未実行（standard では対象外） | ○ 未実行（standard では対象外） |
+| 正しさ・データ損失（`adversarial.md`） | ✓ 実行（2 件・COMPLETE） | ✓ 実行（1 件・COMPLETE） |
+| セキュリティ（`security.md`） | △ 打ち切り（UNKNOWN） | ✓ 実行（0 件・COMPLETE） |
+| 明文化された規約（`conventions.md`） | ✓ 実行（1 件・PARTIAL） | ✓ 実行（0 件・COMPLETE） |
+| 冗長さ（`cleanup.md`） | ○ 未実行（standard では対象外） | ○ 未実行（standard では対象外） |
+| 過去の判断（`precedent.md`） | ○ 未実行（standard では対象外） | ○ 未実行（standard では対象外） |
 
 全体: INCOMPLETE — セキュリティの Claude レーンが完走していない
 

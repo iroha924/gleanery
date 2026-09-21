@@ -1,6 +1,6 @@
 {
   "name": "gleanery",
-  "version": "0.33.21",
+  "version": "0.33.23",
   "description": "会話と判断を貯め、過去の決定・棄却した案・制約・発言を引く",
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,6 @@
     "dist",
     "db",
     "skills",
-    "agents",
     "hooks",
     "mcp",
     ".claude-plugin",

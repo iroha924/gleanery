@@ -215,9 +215,10 @@ for (const name of pluginSkills) {
 // claude --help の choices。渡した値が外れると Warning だけ出てセッション既定へ落ちる。
 const EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
-// 配る reviewer（plugin/agents）と repository 専用（.claude/agents）を同じ規則で見る。
-// **片方だけ検査すると、もう片方の壊れ方が静かに残る。**
-const agentDirectories = ["plugin/agents", ".claude/agents"];
+// repository 専用の reviewer（.claude/agents）を見る。配る reviewer は Agent 定義ではなく
+// plugin/skills/review/reviewers/ の本文になったので、frontmatter を持たない
+// （そちらの検査は check-pairs.mjs が持つ）。
+const agentDirectories = [".claude/agents"];
 const agentEntries = agentDirectories.flatMap((directory) => {
   const absolute = path.join(root, directory);
   if (!fs.existsSync(absolute)) return [];

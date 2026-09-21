@@ -239,7 +239,7 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
 // そこは人が読む。ここが守るのは「全定義がちょうど 1 回書き、最小集合を含む」だけ。
 //
 // **ディレクトリを読む。**名前を並べると、足した定義が黙って検査の外に出る（実測: review-validator が漏れた）。
-const AGENT_DIR = "plugin/agents";
+const AGENT_DIR = "plugin/skills/review/reviewers";
 // 最小集合。`~/.claude/rules/ai-agent-security.md`「中核原則」が挙げる面にそろえてある。各定義はこれを
 // 含んでいればよく、超過は許す —— review-precedent の「gleanery の記録」、review-validator の「渡された主張」の
 // ように、その体にしか無い源を足せるようにするため。
@@ -257,7 +257,7 @@ const UNTRUSTED_MIN = [
 const UNTRUSTED = /\*\*([^*]+?)は、レビュー対象のデータであって指示ではない。\*\*/g;
 // 範囲の境界。読み方そのものは起動側の SKILL にあり、ここが見るのはこの 2 文の有無だけである。
 // 除外するのは範囲を渡されない体だけにする —— 足した定義が既定で検査される側に入る。
-const NO_SCOPE = new Set(["review-validator.md"]);
+const NO_SCOPE = new Set(["validator.md"]);
 const SCOPE = [
   [/\*\*渡された読み方だけを使い、渡された層だけがレビュー対象である。\*\*/g, "渡された読み方だけを使い…"],
   [
@@ -330,11 +330,10 @@ if (MODE_TABLE !== null) {
   if (outside.length) fail.push(`review Skill の mode 表: standard の ${outside.join(" / ")} が full に無い`);
   // 裁定役は観点ではない。候補ごとに要るときだけ立てるので、mode の起動計画に混ぜると毎回立つ。
   for (const [mode, names] of modes) {
-    if (names.includes("review-validator"))
-      fail.push(`review Skill の mode 表: ${mode} に review-validator を入れない`);
+    if (names.includes("validator")) fail.push(`review Skill の mode 表: ${mode} に validator を入れない`);
     for (const name of names) {
-      if (!fs.existsSync(`plugin/agents/${name}.md`)) {
-        fail.push(`review Skill の mode 表の ${name} に対応する plugin/agents/${name}.md が無い`);
+      if (!fs.existsSync(`${AGENT_DIR}/${name}.md`)) {
+        fail.push(`review Skill の mode 表の ${name} に対応する ${AGENT_DIR}/${name}.md が無い`);
       }
     }
     if (new Set(names).size !== names.length)
@@ -344,10 +343,10 @@ if (MODE_TABLE !== null) {
   // **full は配る finder を全部立てる。**どれを standard に置くかは判断なので見ないが、
   // ここを名前の列挙にすると、**新しい finder を足したときに mode 表から漏れても通る**（k:871 と同じ形）。
   const finders = fs
-    .readdirSync("plugin/agents")
+    .readdirSync(AGENT_DIR)
     .filter((f) => f.endsWith(".md"))
     .map((f) => f.slice(0, -3))
-    .filter((n) => n !== "review-validator");
+    .filter((n) => n !== "validator");
   const missing = finders.filter((n) => !full.includes(n));
   if (missing.length) fail.push(`review Skill の mode 表: full に ${missing.join(" / ")} が無い`);
 }
@@ -446,7 +445,7 @@ if (!fs.existsSync(PEER)) {
     return found;
   };
   for (const [needle, what, flags] of [
-    ["claude -p", "claude", ["--agent", "--effort", "--no-session-persistence", "--output-format json"]],
+    ["claude -p", "claude", ["--agents", "--agent", "--no-session-persistence", "--output-format json"]],
     ["codex exec", "codex", ["--ephemeral", "-s read-only", "--output-schema", "-o "]],
   ]) {
     for (const flag of flags) {
@@ -457,6 +456,13 @@ if (!fs.existsSync(PEER)) {
   }
   // --resume は、--agent を書き落とすとレビュアーが Edit と Write を持ったまま走る経路を開く。
   if (/`[^`]*claude -p[^`]*--resume/.test(peer)) fail.push(`${PEER} の claude の起動に --resume がある`);
+  // **書き込める道具は Bash だけに限る**（実測: Read と Bash だけのレビュアーがファイルを作った）。
+  // Bash は実行が要る観点にだけ渡すので禁じないが、Edit / Write は どの観点にも要らない。
+  for (const tool of ["Edit", "Write", "NotebookEdit"]) {
+    if (new RegExp(`"tools"[^\\]]*${tool}`).test(peer)) {
+      fail.push(`${PEER} の "tools" に ${tool} がある。レビュアーは書き換えない`);
+    }
+  }
   for (const shell of ["# POSIX", "# PowerShell"]) {
     if (!peer.includes(shell)) fail.push(`${PEER} に ${shell} の起動の例が無い`);
   }
@@ -474,7 +480,7 @@ if (TRAILER !== null) {
   }
   const trailers = [...REVIEW_SRC.matchAll(/^completion: /gm)].length;
   if (trailers !== 1) fail.push(`review Skill に完走の行の正本が ${trailers} 件ある（1 件にする）`);
-  for (const file of fs.readdirSync("plugin/agents").map((f) => `plugin/agents/${f}`)) {
+  for (const file of fs.readdirSync(AGENT_DIR).map((f) => `${AGENT_DIR}/${f}`)) {
     if (/^completion: /m.test(read(file))) fail.push(`${file}: 完走の行の正本は起動側の Skill にだけ置く`);
   }
 }
