@@ -1,6 +1,6 @@
 ---
 name: review-shipping
-description: gleanery の変更が「配ったときに壊れないか」を、生成物と検査の空振りの面から確かめる独立レビュアー。コミット前・PR 前・publish 前に、diff に現れない壊れ方だけを拾わせる。use proactively（配布物・版・ライセンス・bundle の入力・検査スクリプト・テストを触ったとき）。diff を規約に照らす一般のレビューは plugin/agents/ の review-conventions が担当で、こちらは重ならない。
+description: gleanery の変更が「配ったときに壊れないか」を、生成物と検査の空振りの面から確かめる独立レビュアー。コミット前・PR 前・publish 前に、diff に現れない壊れ方だけを拾わせる。use proactively（配布物・版・ライセンス・bundle の入力・検査スクリプト・テストを触ったとき）。diff を規約に照らす一般のレビューは review Skill の conventions の観点が担当で、こちらは重ならない。
 tools: Read, Grep, Glob, Bash
 skills:
   - plugin-release

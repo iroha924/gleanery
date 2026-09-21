@@ -10,8 +10,16 @@
 
 | 自分が | 相手を呼ぶ |
 |---|---|
-| **Claude** | `codex exec --ephemeral -s read-only -c model_reasoning_effort=<定義の effort> --output-schema <schema> -o <out> -` |
-| **Codex** | `claude -p --agent gleanery:review-<名> --effort <定義の effort> --no-session-persistence --output-format json` |
+| **Claude** | `codex exec --ephemeral -s read-only --output-schema <schema> -o <out> -` |
+| **Codex** | `claude -p --agents '<JSON>' --agent <名> --no-session-persistence --output-format json` |
+
+**Codex から Claude を呼ぶときは、観点の本文を `--agents` の JSON へ入れる。**配る側にエージェントの定義が無いので、
+ここで組み立てる。`{"<名>":{"description":"...","prompt":"<観点の本文>","tools":["Read","Grep","Glob"]}}` の形で、
+`--agent <名>` で選ぶ。
+
+**`tools` に `Bash` を入れない。**入れると**書き込みが止まらない**（実測: `Read` と `Bash` だけのレビュアーが
+`probe.txt` を作った）。`Read` / `Grep` / `Glob` だけなら書き込む手段が無い（同じ実測で作られなかった）。
+そのぶん `git` を実行できないので、**差分はファイルで渡す。**
 
 **どちらもプロンプトのファイルを stdin へ渡す。**ホストのシェルに合う形で書く ——
 **`< ファイル` は PowerShell では構文エラーになり、そのホストではレーンが 1 本も立たない。**
@@ -53,20 +61,16 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 
 | 渡すもの | なぜ |
 |---|---|
-| `--agent gleanery:review-<名>` | 持ち主の設定に `agent` があっても上書きする。存在しない名前は stderr へ出して **exit 1** で落ちる |
-| `--effort <定義の effort>` | フロントマターの値を写す。**モデルの上限を超える値は、`json` 出力では警告も出ずに上限へ落ちる**（公式の model-config）。上限内の値だけを定義に置く |
+| `--agents '<JSON>'` と `--agent <名>` | 観点の本文と `tools` をその場で渡す。存在しない名前は stderr へ出して **exit 1** で落ちる |
 | `--no-session-persistence` | セッションをディスクへ残さない。**後から `--resume` できなくなるのが要点である**（下） |
 
-**`--model` を渡さない。**定義の `model: opus` が効く（実測: init イベントが `claude-opus-5` を返した）。
+**`--model` と `--effort` を渡さない。**利用者が選んでいるものに従う。
 
-**この経路だけは permission を渡せる。**起動側が argv を組むので、`--settings` が効く
-（実測: `--settings '{"permissions":{"deny":["Bash"]}}' --agent gleanery:review-security` で、
-定義は解決したまま `Bash` が消えた）。SKILL.md の「塞ぐ手段は無い」は**プラグインが配る側の話**で、ここには当たらない。
-**それでも塞げるのは `Bash` だけである** —— `--agent` の時点で `Edit` も `Write` も無く、`Bash` を消すと
-レビュアーは diff を読めない。`--restricted` は `--tools` で名指しすれば `Bash` を残すが、
-**プラグイン由来の定義ごと落とす**ので使えない（実測: `not found. Available agents: claude, Explore, …`、exit 1）。
-**`--max-turns` は 2.1.278 に無い**（`--help` に 0 件）。ターン数の上限はフロントマターの `maxTurns` だけで、
-**それが `--agent` 経由で効くかは観測できていない。**打ち切りの検出は Step 4 の体裁の判定に頼る。
+**`--settings` の `deny` を書き込みを止める手段として使わない。**名前で挙げたものしか消えず、
+**MCP 経由の書き込みが残る**（実測: `Edit` / `Write` / `Bash` を deny したレビュアーが、
+Serena 経由で `probe.txt` を作った）。止めるのは上の `tools` のほうである。
+
+**`--max-turns` は 2.1.278 に無い**（`--help` に 0 件）。打ち切りの検出は Step 4 の `completion` の行に頼る。
 
 **この経路では `--resume` を使わない。**1 回の呼び出しで、一覧を先頭に全件出し、続けて全 finding の全文を番号順に出させる。
 **プロンプトの末尾にそう書く** —— レビュアーの既定は「全文は要求されたものだけ返す」なので、

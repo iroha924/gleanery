@@ -9,7 +9,7 @@ description: gleaneryのMCP、CLI、自動記録のhook、画面の配布物、p
 
 - `server/src/mcp.ts`、`server/src/cli.ts`、`server/src/capture.ts`、またはそれらがimportするmoduleを変更する
 - `plugin/hooks/hooks.json`を変更する
-- `plugin/skills/`、`plugin/agents/`を変更する
+- `plugin/skills/`を変更する
 - 配布するversionを上げる、npmへpublishする
 - ローカル変更がClaude CodeやCodexに届かない原因を調べる
 
@@ -92,8 +92,8 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
    そのsessionの発言がダッシュボードの`/sessions`に出ることと、`gleanery doctor`の「自動記録」行に待ちが
    残っていないことも見る
 
-`plugin/agents/`もcache経由なので、保存やsession再起動だけでは新しい定義にならない。Agentを変更する
-場合は先に`plugin-agent-authoring`も読む。
+`plugin/skills/review/reviewers/`もcache経由なので、保存やsession再起動だけでは新しい本文にならない。
+観点を変更する場合は先に`plugin-agent-authoring`も読む。
 
 ## plugin Skill
 

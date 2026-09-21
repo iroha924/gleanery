@@ -41,7 +41,7 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
 - 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `ui-hono`
 - DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
 - MCP、CLI、自動記録のhook、plugin Skill・Agentの配布: `plugin-release`
-- `plugin/agents/`とreview Agent: `plugin-agent-authoring`
+- reviewの観点（`plugin/skills/review/reviewers/`）と立て方: `plugin-agent-authoring`
 
 Skill・Agent・rule自体を新規作成するときは、Claude Codeでは既存の`docs-author`、Codexでは組み込みの
 `skill-creator`を使う。一般的なexplorer / workerと重なるrepo Agentは作らず、独立contextや固定modelが
@@ -60,7 +60,7 @@ PRの要否はfile数ではなく影響面で決める。次をすべて満た�
 sessionで確認する。
 
 dashboard・Honoの実行時動作、DB schema・権限・データ変換、認証境界・secret、依存・build・CI、
-`plugin/skills/`・`plugin/agents/`・MCP・CLI・npm配布物を変える場合はPRを使う。
+`plugin/skills/`・MCP・CLI・npm配布物を変える場合はPRを使う。
 影響範囲を即答できない変更もPRへ寄せる。
 
 repository専用のreviewerが2体ある（Claude Codeのみ、`.claude/agents/`）。**機械が判定できることは
