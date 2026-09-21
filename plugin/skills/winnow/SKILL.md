@@ -199,7 +199,7 @@ Q2 ...
 | 渡し直すもの | 落としたときに起きること |
 |---|---|
 | Codex 側の `-c sandbox_mode=read-only` | 利用者の既定の sandbox へ戻る（実測: 落とした `resume` が `/tmp` へファイルを作った）。**`resume` は `-s` を受け付けない** —— 付けると `unexpected argument` で落ちるので、`-c` で渡す |
-| Claude 側の `--agents '<JSON>'` | 道具の制限が外れる（実測: 3 個が 51 個に戻り、利用者個人の MCP まで含んだ） |
+| Claude 側の `--agents '<JSON>'` | 役ごと失われ、**道具の制限が外れる。**CLI 自身が stdout の前に `the agent's tool restrictions no longer apply` と出すが、**封筒の JSON より前に出るので、パースしているだけでは読み飛ばす**（実測: 道具 3 個で立てた相手が、`--agents` を落とした `--resume` で 140 個になった） |
 
 続ける先の id は、初回の出力から拾う。Codex は `--json` の最初の行（`{"type":"thread.started","thread_id":"..."}`）、
 Claude は `--output-format json` の封筒の `session_id` にある。
