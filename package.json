@@ -20,6 +20,7 @@
     "codegen": "node scripts/codegen.mjs",
     "codegen:check": "node scripts/codegen.mjs --check",
     "sql:parse": "node scripts/check-sql-parse.mjs",
+    "sql:live": "node scripts/check-sql-live.mjs",
     "db:apply": "node server/src/admin.ts apply",
     "db:migrate": "node server/src/admin.ts migrate",
     "db:roles": "node server/src/admin.ts roles",

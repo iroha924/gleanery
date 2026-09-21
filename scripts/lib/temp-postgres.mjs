@@ -49,6 +49,45 @@ const waitReady = (name, deadlineMs = 60_000) => {
 };
 
 /**
+ * 操作ごとのロールに使い捨てのパスワードを付け、接続文字列を返す。`db/schema.sql` は
+ * パスワードを付けずにロールを作るので、繋ぐ側がここで付ける（server/src/admin.ts の roles と同じ形）。
+ *
+ * 生成した SQL は stdin で渡す。`-c` に載せると、docker の argv にパスワードが出る。
+ */
+export function roleUrls(name, port) {
+  const roles = ["gleanery_reader", "gleanery_ingest", "gleanery_capture"];
+  const passwords = roles.map(() => crypto.randomBytes(24).toString("base64url"));
+  docker(
+    [
+      "exec",
+      "-i",
+      name,
+      "psql",
+      "-U",
+      "postgres",
+      "-d",
+      "postgres",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-q",
+      "-f",
+      "-",
+    ],
+    {
+      // base64url は ' を含まないので、そのまま文字列リテラルに置ける（alter role はパラメータを取れない）。
+      input: roles.map((r, i) => `alter role ${r} with login password '${passwords[i]}';`).join("\n"),
+      stdio: ["pipe", "ignore", "inherit"],
+    },
+  );
+  return Object.fromEntries(
+    roles.map((r, i) => [
+      r.replace("gleanery_", ""),
+      `postgres://${r}:${passwords[i]}@127.0.0.1:${port}/postgres`,
+    ]),
+  );
+}
+
+/**
  * 一時 DB を立て、`db/schema.sql` を当てて `fn` へ接続先を渡す。戻り方によらず必ず消す。
  * `purpose` はコンテナ名に入るだけで、並行して走る別の用途と取り違えないための目印である。
  */

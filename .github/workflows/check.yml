@@ -74,6 +74,11 @@ jobs:
       - name: 組み立てた SQL を実 PostgreSQL が受け付けるか
         run: bun run sql:parse
 
+      # 偽の db を差し込む継ぎ目が無い CLI と画面の route は、配る entrypoint を子プロセスで起動して
+      # 実 DB へ通す。SQL だけでなく、鍵とロールの権限と接続の後始末もここが見る。
+      - name: CLI と画面の API を実 PostgreSQL に通す
+        run: bun run sql:live
+
       # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
       # （ignore されたファイルは差分に現れない）。npm が実際に詰めるものを一覧し、リポジトリの
       # 外へ展開して起動する。ここが唯一「利用者が受け取る形」を見る場所である。
