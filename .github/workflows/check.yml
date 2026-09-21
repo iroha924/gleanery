@@ -56,13 +56,6 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: node scripts/check-mcp-version.mjs --base "$BASE"
 
-      # **`code.ts` は rg を叩く。**ランナーには入っていない（実測: 無い状態で
-      # `code.test.ts` が 18 件中 8 件落ちる）。**探索そのものを確かめるテストなので、
-      # 偽物では代われない。**rg を起動できないことは結果に出るが、
-      # 出たところでその 8 件は確かめられない。
-      - name: ripgrep を入れる
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
-
       - name: 依存を入れる
         run: bun run setup
 
