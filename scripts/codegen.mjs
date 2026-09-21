@@ -35,13 +35,19 @@ const remove = () => spawnSync("docker", ["rm", "-f", NAME], { stdio: "ignore" }
 // 稼働中のコンテナに当たる（実測: filter は label のキー一致で、実行中でも rm -f が通る）。
 // SIGINT や打ち切りで抜けた残骸は `docker rm -f $(docker ps -aq --filter label=gleanery-codegen)` で消す。
 
-/** 立ち上がるまで待つ。pg_isready は初期化の途中でも一度 true を返すので、実際に問い合わせて確かめる。 */
+/**
+ * 立ち上がるまで待つ。**TCP で確かめる。**初期化と init script のあいだ、entrypoint は
+ * `listen_addresses=''` の一時 server を上げて、終わったら落としてから本番を上げ直す。
+ * 一時 server は TCP を listen しないので、socket 経由の `select 1` はこの窓でも通ってしまう
+ * （実測: 窓は約 100ms。CI で waitReady がそこで返り、続く schema の流し込みが
+ * `connection to server on socket … failed: No such file or directory` で落ちた）。
+ */
 const waitReady = (deadlineMs = 60_000) => {
   const until = Date.now() + deadlineMs;
   while (Date.now() < until) {
     const r = spawnSync(
       "docker",
-      ["exec", NAME, "psql", "-U", "postgres", "-d", "postgres", "-c", "select 1"],
+      ["exec", NAME, "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres", "-c", "select 1"],
       {
         stdio: "ignore",
       },
