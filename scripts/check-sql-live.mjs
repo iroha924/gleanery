@@ -128,8 +128,12 @@ await withTempDir(async (dir) => {
         failures.push(`doctor が ${key} を健全と言わない\n${doctor.out.slice(0, 800)}`);
       }
     }
-    if (!/直すもの 1 件: VOYAGE_API_KEY/.test(doctor.out)) {
-      failures.push(`doctor の指摘が、鍵を渡していないこと 1 件だけではない\n${doctor.out.slice(0, 800)}`);
+    // 鍵を渡していないことは指摘されるはず。**件数では数えない** —— plugin の版や導入の状態は
+    // 手元の事情で変わり（npm へ入れた CLI と作業ツリーの中身が違う等）、この検査と関係なく増える。
+    if (!/VOYAGE_API_KEY/.test(doctor.out)) {
+      failures.push(
+        `doctor が VOYAGE_API_KEY の不在を指摘しない。鍵が漏れている\n${doctor.out.slice(0, 800)}`,
+      );
     }
 
     // ---- 画面の API。reader だけを持つ子プロセスで起動する ----
