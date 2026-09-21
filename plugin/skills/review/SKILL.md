@@ -45,17 +45,17 @@ checkout した時点で上の表の下の行へ移る。
 
 ### 塞ぐ手段は無い
 
-**配布物から強制できるのは各レビュアーの `tools` だけである。**プラグインが配れる settings のキーは
-`agent` と `subagentStatusLine` の 2 つで、`sandbox` も `permissions` も配れない。`permissionMode` /
-`hooks` / `mcpServers` はプラグイン由来の agent では無視され、親が auto ならプラグイン由来でなくても
-無視される。サブエージェント単位の sandbox も無く、親のセッションの設定をそのまま使う
+**配布物から強制できるものは無い。**プラグインが配れる settings のキーは `agent` と
+`subagentStatusLine` の 2 つで、`sandbox` も `permissions` も配れない。`permissionMode` / `hooks` /
+`mcpServers` はプラグイン由来の agent では無視され、親が auto ならプラグイン由来でなくても無視される。
+サブエージェント単位の sandbox も無く、親のセッションの設定をそのまま使う
 （公式の plugins-reference / sub-agents / sandboxing。2026-09-19 に確認）。
 
-**その `tools` から `Bash` は外せない。**外すと diff も `git log` も読めず、`review-adversarial` の
-「走らせて出力を貼る」が丸ごと消える。**だからこのスキルは、自分たちが書いていないツリーのレビューを
-支えない。**レビュアーの本文へ「他人のツリーでは実行するな」と書く案は採らなかった — 信頼の判定を
-レビュアーへ渡す経路が無く、渡しても**誤った肯定には安全側が無い**（`gh pr checkout` の後に既定の
-入口で叩けば、範囲は「自分の変更」に見える）。
+**渡す道具は起動側が決める。**上の表のとおり、実行が要る 3 つにだけ `Bash` を渡す。
+**`Bash` を渡した相手の書き込みは止まらない**（実測: `Read` と `Bash` だけのレビュアーがファイルを作った）。
+**だからこのスキルは、自分たちが書いていないツリーのレビューを支えない。**レビュアーの本文へ
+「他人のツリーでは実行するな」と書く案は採らなかった — 信頼の判定をレビュアーへ渡す経路が無く、
+渡しても**誤った肯定には安全側が無い**（`gh pr checkout` の後に既定の入口で叩けば、範囲は「自分の変更」に見える）。
 
 **それでも他人のツリーを読ませるなら、層を入れるのは利用者の側である。**片方の限界を、もう片方を
 捨てる理由にしない。
@@ -114,7 +114,7 @@ PR のときは `gh pr view <番号> --json title,body,headRefName,baseRefName,f
 
 ## Step 2 — 読む先を見つける
 
-`review-conventions` と `review-precedent` が使う。**見つからないことは正常である。**
+`conventions` と `precedent` の観点が使う。**見つからないことは正常である。**
 
 ### 規約ファイル
 
@@ -168,15 +168,21 @@ stderr へ流して残りを続けるので、どのシェルでも同じ結果�
 早すぎる共通化、浅すぎる修正、gleanery にだけ残された過去の判断 —— は `standard` では落ちうる。
 **落ちることを承知で既定を軽くしている。**
 
-| 観点 | 本文 |
-|---|---|
-| 正しさ・データ損失 | `reviewers/adversarial.md` |
-| セキュリティ | `reviewers/security.md` |
-| 明文化された規約 | `reviewers/conventions.md` |
-| 冗長さ | `reviewers/cleanup.md` |
-| 過去の判断 | `reviewers/precedent.md` |
+| 観点 | 本文 | 渡す道具 |
+|---|---|---|
+| 正しさ・データ損失 | `reviewers/adversarial.md` | `Read` `Grep` `Glob` `Bash` |
+| セキュリティ | `reviewers/security.md` | `Read` `Grep` `Glob` `Bash` |
+| 明文化された規約 | `reviewers/conventions.md` | `Read` `Grep` `Glob` |
+| 冗長さ | `reviewers/cleanup.md` | `Read` `Grep` `Glob` |
+| 過去の判断 | `reviewers/precedent.md` | `Read` `Grep` `Glob` + gleanery の MCP |
 
-裁定役は `reviewers/validator.md`。観点ではないので mode の起動計画に入れず、Step 6 で候補ごとに要るときだけ立てる。
+裁定役は `reviewers/validator.md`（`Read` `Grep` `Glob` `Bash`）。観点ではないので mode の起動計画に入れず、Step 6 で候補ごとに要るときだけ立てる。
+
+**`Bash` を渡すのは、実行が仕事の中心である 3 つだけ。**正しさは「最良の finding は何かを実行することから生まれる」、
+セキュリティは「報告する前に再現を試みる」、裁定役は再現が仕事そのものである。**残りは実行せずに済む観点なので渡さない** ——
+`Bash` を渡した相手は書き込みを止められない（実測: `Read` と `Bash` だけのレビュアーがファイルを作った）。
+
+**だから他人のツリーでは `Bash` を渡す 3 つを立てない。**下の「塞ぐ手段は無い」を読むこと。
 
 **本文の在り処はホストで違う。**片方だけ書くともう片方で壊れる
 （`${CLAUDE_PLUGIN_ROOT}` は Codex では空に展開され、Claude Code の cwd は
@@ -327,7 +333,7 @@ completion: lane=<観点> model=<claude|codex> coverage=<COMPLETE|PARTIAL> unfin
 
 ## Step 6 — 裁定する
 
-**再現の伴わない指摘だけを `review-validator` へ回す。**報告者が既に再現しているものは、
+**再現の伴わない指摘だけを `reviewers/validator.md` へ回す。**報告者が既に再現しているものは、
 その根拠をもって確定とする。**判定基準は発生源ではなく再現の有無に置く。**
 
 判定は 3 値。**`PLAUSIBLE` を既定にする。**

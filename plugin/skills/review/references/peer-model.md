@@ -4,7 +4,7 @@
 **読まずに推測で組み立てない** —— ここにあるのは綴りだけでなく、落とすと権限が広がるフラグと、
 失敗が成功に見える経路である。読めなかったなら、そのレーンは `不能` にして立てない。
 
-レビュアーの定義ファイルの場所（`$A`）は SKILL.md の Step 3 が決める。ここで数え直さない。
+観点の本文の場所（`$R`）と、観点ごとに渡す道具は SKILL.md の Step 3 が決める。ここで数え直さない。
 
 ## 立てる
 
@@ -17,22 +17,25 @@
 ここで組み立てる。`{"<名>":{"description":"...","prompt":"<観点の本文>","tools":["Read","Grep","Glob"]}}` の形で、
 `--agent <名>` で選ぶ。
 
-**`tools` に `Bash` を入れない。**入れると**書き込みが止まらない**（実測: `Read` と `Bash` だけのレビュアーが
-`probe.txt` を作った）。`Read` / `Grep` / `Glob` だけなら書き込む手段が無い（同じ実測で作られなかった）。
-そのぶん `git` を実行できないので、**差分はファイルで渡す。**
+**`tools` は SKILL.md の表が決めたものをそのまま入れる。**実行が要る 3 つ（正しさ・セキュリティ・裁定役）には
+`Bash` が入り、残りには入らない。**`Bash` を入れた相手の書き込みは止まらない**（実測: `Read` と `Bash` だけの
+レビュアーが `probe.txt` を作った）。`Read` / `Grep` / `Glob` だけなら書き込む手段が無い（同じ実測で作られなかった）。
+
+**どちらの場合も差分はファイルで渡す。**`Bash` を渡さない観点は `git` を実行できず、渡す観点でも
+範囲を決めるのは PR を出した側なので、コマンドを組み立てさせない。
 
 **どちらもプロンプトのファイルを stdin へ渡す。**ホストのシェルに合う形で書く ——
 **`< ファイル` は PowerShell では構文エラーになり、そのホストではレーンが 1 本も立たない。**
 
 ```bash
 # POSIX
-cat "$prompt_file" | claude -p --agent "$agent" --effort "$effort" --no-session-persistence --output-format json
+cat "$prompt_file" | claude -p --agents "$agents_json" --agent "$name" --no-session-persistence --output-format json
 ```
 
 ```powershell
 # PowerShell
 Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
-  & claude -p --agent $agent --effort $effort --no-session-persistence --output-format json
+  & claude -p --agents $agentsJson --agent $name --no-session-persistence --output-format json
 ```
 
 **例からフラグを落とさない。**写されるのは説明ではなく例のほうで、`--no-session-persistence` が
@@ -50,11 +53,10 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
 （実測: この形で 2 レーンが黙って落ちた）。
 
 `--ephemeral` はセッションを残さない。`-s read-only` は書き込みを止める。
-`--output-schema` は出力を固定する。`model_reasoning_effort` に**定義の `effort` を写す** —
-渡さないとセッションの既定に落ちる。
+`--output-schema` は出力を固定する。**深さは指定しない** —— 利用者が選んでいるものに従う。
 
-**Codex から Claude を呼ぶときは、定義の本文を渡さず `--agent` に名前を渡す。**CLI が定義を読むので、
-13 KB の本文を毎回組み立てなくてよい。
+**`--agents` の JSON は毎回組み立てる。**配る側にエージェントの定義が無いので、観点の本文と、
+SKILL.md の表が決めた道具をここで詰める。
 
 **渡すものは引数ではなく stdin へ置く。**範囲にはブランチ名とファイル名が入り、**それを決めるのは PR を出した側**である。
 引数は `ps` に出るうえ、長さにも上限がある。
@@ -122,7 +124,7 @@ Codex の 5 レーンは 1 ラウンドに 104〜172 万トークンを使う（
 **完了を通知させる。**レーンを 1 本ずつ background へ投げると、**返ってくるのはレーンの完了ではなく起動の完了**である。
 以後は完了を知る手段がポーリングだけになり、**「まだ走っている」と「終わって出力を書いた」が区別できなくなる。**
 全部を 1 つの background の仕事にまとめ、**全レーンの完了まで返らせる**（POSIX なら `wait`、PowerShell なら
-`Wait-Job`）。レーンごとの `effort` はその定義から読む —— 1 つの値で回すと、そのレーンだけ深さが変わる。
+`Wait-Job`）。
 
 実測（2026-09-21）: 起動だけを待つ形にしたため、5 レーンが完走して出力を書き終えた後も
 **3 レーンを「走行中」と報告していた。**行の伸びと `pgrep` を数えても、完了した瞬間は分からない。

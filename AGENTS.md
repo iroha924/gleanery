@@ -40,7 +40,7 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
 
 - 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `ui-hono`
 - DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
-- MCP、CLI、自動記録のhook、plugin Skill・Agentの配布: `plugin-release`
+- MCP、CLI、自動記録のhook、plugin Skillの配布: `plugin-release`
 - reviewの観点（`plugin/skills/review/reviewers/`）と立て方: `plugin-agent-authoring`
 
 Skill・Agent・rule自体を新規作成するときは、Claude Codeでは既存の`docs-author`、Codexでは組み込みの

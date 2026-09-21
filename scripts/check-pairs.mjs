@@ -330,8 +330,7 @@ if (MODE_TABLE !== null) {
   if (outside.length) fail.push(`review Skill の mode 表: standard の ${outside.join(" / ")} が full に無い`);
   // 裁定役は観点ではない。候補ごとに要るときだけ立てるので、mode の起動計画に混ぜると毎回立つ。
   for (const [mode, names] of modes) {
-    if (names.includes("review-validator"))
-      fail.push(`review Skill の mode 表: ${mode} に review-validator を入れない`);
+    if (names.includes("validator")) fail.push(`review Skill の mode 表: ${mode} に validator を入れない`);
     for (const name of names) {
       if (!fs.existsSync(`${AGENT_DIR}/${name}.md`)) {
         fail.push(`review Skill の mode 表の ${name} に対応する ${AGENT_DIR}/${name}.md が無い`);
@@ -457,13 +456,12 @@ if (!fs.existsSync(PEER)) {
   }
   // --resume は、--agent を書き落とすとレビュアーが Edit と Write を持ったまま走る経路を開く。
   if (/`[^`]*claude -p[^`]*--resume/.test(peer)) fail.push(`${PEER} の claude の起動に --resume がある`);
-  // **Bash を渡すと書き込みが止まらない**（実測: Read と Bash だけのレビュアーがファイルを作った）。
-  // 渡してよい tools は列挙できるので検査する。
-  const toolsLine = peer.match(/"tools":\s*\[([^\]]*)\]/);
-  if (!toolsLine) {
-    fail.push(`${PEER} に相手モデルへ渡す "tools" の並びが無い`);
-  } else if (/Bash|Edit|Write|NotebookEdit/.test(toolsLine[1])) {
-    fail.push(`${PEER} の "tools" に書き込める道具がある（${toolsLine[1].trim()}）`);
+  // **書き込める道具は Bash だけに限る**（実測: Read と Bash だけのレビュアーがファイルを作った）。
+  // Bash は実行が要る観点にだけ渡すので禁じないが、Edit / Write は どの観点にも要らない。
+  for (const tool of ["Edit", "Write", "NotebookEdit"]) {
+    if (new RegExp(`"tools"[^\\]]*${tool}`).test(peer)) {
+      fail.push(`${PEER} の "tools" に ${tool} がある。レビュアーは書き換えない`);
+    }
   }
   for (const shell of ["# POSIX", "# PowerShell"]) {
     if (!peer.includes(shell)) fail.push(`${PEER} に ${shell} の起動の例が無い`);

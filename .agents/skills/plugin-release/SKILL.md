@@ -64,7 +64,7 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
    - gitのtag
 3. marketplace entry直下に`version`を置かない。`plugin.json`が無警告で優先され、古い値がupdateを隠す
 4. clean な staging directoryからtarballを1回だけ作り、**その中身を展開して検査する**
-   - `npm pack --json`のfile一覧に、必要なものが全部あるか（`dist/`、`db/`、`skills/`、`agents/`、
+   - `npm pack --json`のfile一覧に、必要なものが全部あるか（`dist/`、`db/`、`skills/`、
      `hooks/`、MCP manifest、plugin manifest）
    - source、env、secret、lockfile、`node_modules`が混ざっていないか
    - 展開した先で`node dist/cli.js --version`が動くか
