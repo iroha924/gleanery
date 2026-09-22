@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   directory,
+  diversify,
   framed,
   fuse,
   type Hit,
@@ -88,6 +89,39 @@ test("出自の日付は日本時間の年つき、一部だけ保存した発�
   );
   assert.match(out, /2026-01-15/);
   assert.match(out, /一部だけを保存した発言（元は 300,000 bytes）/);
+});
+
+// **同じファイルの節や同じ作業の記録で上位が埋まると、別の観点が消える。**実測で、上位 5 件のうち
+// 3 件以上が同じ出所だった問いが 79% あった（最大で 5 件すべて）。
+test("同じ出所は上限まで。落としたものは後ろへ回し、件数は減らさない", () => {
+  const rows = ["a1", "a2", "a3", "a4", "b1", "c1"].map((r) => hit({ ref: r }));
+  const origin = (h: { ref: string }) => h.ref[0] ?? "";
+  // limit 5 なら 1 出所 2 件まで。a は 2 件で打ち切り、b と c を入れ、足りない分を a の残りで埋める
+  assert.deepEqual(
+    diversify(rows, 5, origin).map((h) => h.ref),
+    ["a1", "a2", "b1", "c1", "a3"],
+  );
+  // **件数は減らさない。**候補が同じ出所だけでも limit まで返す
+  assert.deepEqual(
+    diversify(
+      ["a1", "a2", "a3"].map((r) => hit({ ref: r })),
+      3,
+      origin,
+    ).map((h) => h.ref),
+    ["a1", "a2", "a3"],
+  );
+});
+
+// **上限は limit に比例させる。**固定 2 件だと、画面の一覧（20 件）を埋めるのに 10 出所が要り、
+// 候補にそれだけの種類が無いと間引いたものが戻って元の並びに近づく（実測で最大 12 件が同じ出所だった）。
+test("間引く上限は limit に比例する", () => {
+  const rows = Array.from({ length: 12 }, (_, i) => hit({ ref: `a${i}` }));
+  const origin = () => "same";
+  assert.equal(diversify(rows, 5, origin).length, 5);
+  // limit 20 では 1 出所 4 件まで。同じ出所しか無ければ、足りない分は順位のまま戻る
+  const mixed = [...Array.from({ length: 8 }, (_, i) => hit({ ref: `a${i}` })), hit({ ref: "b0" })];
+  const got = diversify(mixed, 20, (h) => h.ref[0] ?? "").map((h) => h.ref);
+  assert.equal(got.indexOf("b0"), 4, "b0 は a の 4 件の後ろへ入る");
 });
 
 test("融合は参照ごとに順位を足し合わせる", () => {
