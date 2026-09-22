@@ -45,6 +45,10 @@ function bump(dir: string, version: string) {
   write(dir, "plugin/.codex-plugin/plugin.json", JSON.stringify({ version }));
 }
 
+function bumpPackage(dir: string, version: string) {
+  write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
+}
+
 function check(dir: string, ...args: string[]) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: "utf8" });
 }
@@ -103,6 +107,49 @@ test("基準が無ければ、index に入った plugin の変更を HEAD の版
     bump(r.dir, "1.0.1");
     r.git("add", "-A");
     const bumped = check(r.dir);
+    assert.equal(bumped.status, 0, bumped.stderr);
+  } finally {
+    r.done();
+  }
+});
+
+test("dashboard だけなら npm package の版だけを上げ、plugin の版は動かさない", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "1.0.0");
+    write(r.dir, "dashboard/src/app.tsx", "a");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+
+    write(r.dir, "dashboard/src/app.tsx", "b");
+    r.git("add", "-A");
+    const missed = check(r.dir, "--base", base);
+    assert.equal(missed.status, 1, missed.stderr);
+    assert.match(missed.stderr, /npm package/);
+
+    bumpPackage(r.dir, "1.0.1");
+    r.git("add", "-A");
+    const bumped = check(r.dir, "--base", base);
+    assert.equal(bumped.status, 0, bumped.stderr);
+  } finally {
+    r.done();
+  }
+});
+
+test("Hono だけなら npm package の版だけを上げ、plugin の版は動かさない", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "1.0.0");
+    write(r.dir, "server/src/http/routes/knowledge.ts", "a");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+
+    write(r.dir, "server/src/http/routes/knowledge.ts", "b");
+    bumpPackage(r.dir, "1.0.1");
+    r.git("add", "-A");
+    const bumped = check(r.dir, "--base", base);
     assert.equal(bumped.status, 0, bumped.stderr);
   } finally {
     r.done();

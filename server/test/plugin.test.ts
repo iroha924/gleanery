@@ -13,6 +13,7 @@ import {
   differingFiles,
   type Install,
   observe,
+  packageVersionAt,
   parsePs,
   report,
   type Seen,
@@ -33,8 +34,12 @@ function plugin(where: string, version: string, body = "x"): Install {
     path.join(root, ".claude-plugin", "plugin.json"),
     JSON.stringify({ name: "gleanery", version }),
   );
+  fs.writeFileSync(
+    path.join(root, "package.json"),
+    JSON.stringify({ name: "gleanery", version, type: "module" }),
+  );
   fs.writeFileSync(path.join(root, "dist", "mcp.js"), body);
-  return { version, root };
+  return { version, packageVersion: version, root };
 }
 
 const seen = (over: Partial<Seen>): Seen => ({
@@ -69,6 +74,48 @@ test("実行中の CLI と同じ置き場所なら、npm i -g の行は出さな
   assert.equal(lines.filter((l) => l.includes("npm i -g の CLI")).length, 0, lines.join("\n"));
 });
 
+test("dashboardだけをreleaseした版ではnpm packageとplugin channelを別々に出す", () => {
+  const repository = plugin("dashboard-release/plugin", "0.33.29");
+  repository.packageVersion = "0.33.30";
+  fs.writeFileSync(
+    path.join(repository.root, "package.json"),
+    JSON.stringify({ name: "gleanery", version: "0.33.30" }),
+  );
+  fs.mkdirSync(path.join(repository.root, "dist", "dashboard"), { recursive: true });
+  fs.writeFileSync(path.join(repository.root, "dist", "dashboard", "index.html"), "new");
+  const out = stripVTControlCharacters(
+    report(
+      seen({
+        repository,
+        cli: repository,
+        claude: plugin("dashboard-release/claude", "0.33.29"),
+        codex: [plugin("dashboard-release/codex", "0.33.29")],
+      }),
+    ).lines.join("\n"),
+  );
+  assert.match(out, /npm package の版[\s\S]*repository\s+0\.33\.30/);
+  assert.match(out, /plugin channel の版[\s\S]*repository\s+0\.33\.29/);
+  assert.doesNotMatch(out, /Claude Code .*←/);
+  assert.doesNotMatch(out, /Codex .*←/);
+});
+
+test("npm packageの版差があってもplugin固有の中身の差は隠さない", () => {
+  const repository = plugin("dashboard-tampered/plugin", "0.33.29", "new-mcp");
+  repository.packageVersion = "0.33.30";
+  fs.writeFileSync(
+    path.join(repository.root, "package.json"),
+    JSON.stringify({ name: "gleanery", version: "0.33.30", type: "module" }),
+  );
+  const out = report(
+    seen({
+      repository,
+      cli: repository,
+      claude: plugin("dashboard-tampered/claude", "0.33.29", "old-mcp"),
+    }),
+  ).lines.join("\n");
+  assert.match(out, /Claude Code .*同じ版なのに中身が違う（dist\/mcp\.js）/);
+});
+
 test("版は数値で比べる（0.10.9 < 0.10.18）", () => {
   assert.equal(compareVersions("0.10.9", "0.10.18"), -1);
   assert.equal(compareVersions("0.10.18", "0.10.18"), 0);
@@ -85,6 +132,7 @@ test("gleanery 以外の manifest と消えた root は版を持たない", () =
   assert.equal(versionAt(other), null);
   assert.equal(versionAt(path.join(tmp, "missing")), null);
   assert.equal(versionAt(plugin("ok", "0.1.0").root), "0.1.0");
+  assert.equal(packageVersionAt(plugin("package-ok", "0.2.0").root), "0.2.0");
 });
 
 test("中身の比較はホストが cache に足す印と .DS_Store を無視する", () => {
@@ -269,7 +317,7 @@ test("実行中の MCP を起動元から特定し、同じ場所に作り直さ
   const where = "obs/plugins/cache/gleanery/gleanery/0.0.1";
   const idle = "setInterval(() => {}, 1000);";
   const { root } = plugin(where, "0.0.1", idle);
-  const child = spawn(process.execPath, ["./dist/mcp.js"], { cwd: root, stdio: "ignore" });
+  const child = spawn("node", ["./dist/mcp.js"], { cwd: root, stdio: "ignore" });
   try {
     await new Promise((r) => setTimeout(r, 500));
     const mine = () => observe(tmp).running?.find((r) => r.pid === child.pid);
@@ -303,12 +351,12 @@ test("観測できないものは無いと言わず不明と出す", () => {
   assert.deepEqual(r.issues, [], "観測できないことは直すものに数えない");
 });
 
-test("gleanery --version は manifest の版を出す", () => {
+test("gleanery --version は npm package の版を出す", () => {
   const out = execFileSync(process.execPath, [path.join(SRC, "cli.ts"), "--version"], {
     encoding: "utf8",
     env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent" },
   });
-  assert.equal(out.trim().split(/\s+/)[0], versionAt(REPO_PLUGIN));
+  assert.equal(out.trim().split(/\s+/)[0], packageVersionAt(REPO_PLUGIN));
 });
 
 test("MCP の serverInfo は manifest の版を名乗る", async () => {

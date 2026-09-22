@@ -27,8 +27,8 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
 - 人向けとAI向けの出口は別々に動かす。CLIやdashboardの成功をMCP応答の成功とみなさない
 - 同じ値・分類・判断を変更したら`rg`で全参照を引き、対になる出口を探す。列挙できる対は検査へ足す
 - 新しい取り込み元は`gleanery harvest`にも接続する。手動commandだけを追加して完了にしない
-- 配布物を変更したらrelease versionを上げ、npm package・Claude/Codexのmanifest・marketplaceのnpm source versionを
-  一致させる。`plugin/dist`は追跡しない
+- dashboard・Honoだけならnpm versionを上げ、plugin manifest・marketplace・cacheは動かさない。
+  MCP・CLI・hook・plugin Skill/Agent・共有moduleならnpmと3つのplugin versionを揃える。`plugin/dist`は追跡しない
 - 新しい外部入力はsystem境界で検査する。資格情報を追跡file、command引数、logへ書かない
 - **配る物はWindowsでも動かす。**POSIX shell、`0600`のmode、`/tmp`固定path、`.cmd`をexecFileで起動する形に
   依存しない。**このrepositoryでの開発はmacOS / Linuxを前提にする** — `.claude/skills/`の4本のsymlinkと、

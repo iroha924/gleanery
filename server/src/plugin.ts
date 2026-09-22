@@ -1,7 +1,4 @@
-// 配布 plugin の版と、どこから動いているかを見る。
-//
-// **版を別に持たない。**正本は 3 つの manifest で、scripts/check-mcp-version.mjs が揃える。
-// ここは root の `.claude-plugin/plugin.json` を読むだけ。
+// npm packageと配布pluginの版、それぞれがどこから動いているかを見る。
 //
 // Claude Code と Codex はどちらも plugin を `<cache>/<marketplace>/gleanery/<版>/` へ複製して、
 // そこから MCP を起動する。directory 型 marketplace の Claude Code（2.1.268 で観測）と
@@ -15,11 +12,25 @@ import { fileURLToPath } from "node:url";
 import { type Mark, mark, pad } from "./panel.ts";
 
 const MANIFEST = path.join(".claude-plugin", "plugin.json");
+const PACKAGE = "package.json";
 
 /** root が gleanery の配布物ならその版。消えた cache や別の plugin なら null。 */
 export function versionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, MANIFEST), "utf8")) as {
+      name?: unknown;
+      version?: unknown;
+    };
+    return m.name === "gleanery" && typeof m.version === "string" ? m.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/** root が gleanery のnpm packageならその版。plugin channelの版とは独立して進みうる。 */
+export function packageVersionAt(root: string): string | null {
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(root, PACKAGE), "utf8")) as {
       name?: unknown;
       version?: unknown;
     };
@@ -173,7 +184,7 @@ function cwdOf(pid: number): { dir: string; replaced: boolean } | null {
 
 const CACHED = /\/plugins\/cache\/[^/]+\/gleanery\/[^/]+$/;
 
-export type Install = { version: string | null; root: string };
+export type Install = { version: string | null; packageVersion?: string | null; root: string };
 export type Running = {
   pid: number;
   started: Date;
@@ -202,7 +213,11 @@ export type Seen = {
 
 /** 外部コマンドを叩く観測をここに集める。判定は report() が行い、テストは Seen を組んで渡す。 */
 export function observe(cwdRoot: string): Seen {
-  const install = (root: string): Install => ({ version: versionAt(root), root });
+  const install = (root: string): Install => ({
+    version: versionAt(root),
+    packageVersion: packageVersionAt(root),
+    root,
+  });
 
   const repository =
     [path.dirname(ROOT), cwdRoot]
@@ -337,6 +352,28 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
       label,
       `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`,
     );
+  const packageInstall = (i: Install): Install => ({ version: i.packageVersion ?? null, root: i.root });
+  const packageBase = packageInstall(s.repository ?? s.cli);
+  const packageAgainst = (i: Install): { note?: string; update?: boolean } => {
+    const candidate = packageInstall(i);
+    if (!candidate.version || !packageBase.version) return {};
+    const c = compareVersions(candidate.version, packageBase.version);
+    if (c < 0) return { note: `repositoryのnpm package（${packageBase.version}）より古い`, update: true };
+    if (c > 0 && s.repository) {
+      return { note: `repositoryのnpm package（${packageBase.version}）より新しい。checkoutが古い` };
+    }
+    return {};
+  };
+
+  lines.push("npm package の版");
+  if (s.repository) row("repository", packageInstall(s.repository));
+  row("実行中の CLI", packageInstall(s.cli), packageAgainst(s.cli).note);
+  if (s.global && path.resolve(s.global.root) !== path.resolve(s.cli.root)) {
+    const { note, update } = packageAgainst(s.global);
+    if (update) todo.add("global");
+    row("npm i -g の CLI", packageInstall(s.global), note);
+  }
+  lines.push("");
   // **repository が無いほうが普通になる。**npm から入れた利用者は clone を持たないので、
   // そこで比べるのをやめると、CLI と plugin が別々に更新されてずれたことを誰も言わなくなる
   // （CLI は `npm i -g`、plugin は `claude plugin update` で、更新の操作が別々）。
@@ -363,7 +400,22 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     if (path.resolve(i.root) === path.resolve(base.root)) return {};
     // `tracked` は基準が repository の作業ツリーのときだけ立てる。導入先どうしの比較では、
     // 追跡の概念が無く、配られたファイルがそのまま両側にある。
-    const diff = differingFiles(base.root, i.root, { tracked: Boolean(s.repository) });
+    let diff = differingFiles(base.root, i.root, { tracked: Boolean(s.repository) });
+    // dashboard/Honoだけのreleaseではnpm packageが進み、plugin channelは同じ版に留まる。
+    // CLI bundleはserver.tsを含むため、dashboardの配布物とpackage metadataと一緒に差から外す。
+    if (
+      i.packageVersion &&
+      base.packageVersion &&
+      compareVersions(i.packageVersion, base.packageVersion) !== 0
+    ) {
+      diff = diff.filter(
+        (file) =>
+          file !== "package.json" &&
+          file !== "dist/cli.js" &&
+          file !== "THIRD_PARTY_NOTICES.md" &&
+          !file.startsWith("dist/dashboard/"),
+      );
+    }
     if (!diff.length) return {};
     const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
     return {
@@ -373,17 +425,11 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     };
   };
 
-  lines.push("plugin の版");
+  lines.push("plugin channel の版");
   if (s.repository) row("repository", s.repository);
   else say("none", "repository", "見えない。この CLI の版を基準に比べる");
 
-  row("この CLI", s.cli, against(s.cli).note);
-
-  if (s.global && path.resolve(s.global.root) !== path.resolve(s.cli.root)) {
-    const { note, update } = against(s.global);
-    if (update) todo.add("global");
-    row("npm i -g の CLI", s.global, note);
-  }
+  row("この CLI 内 plugin", s.cli, against(s.cli).note);
 
   if (s.claude === "unknown") say("none", "Claude Code", "不明（claude plugin list --json が使えない）");
   else if (s.claude === null) say("none", "Claude Code", "導入されていない");

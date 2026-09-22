@@ -98,6 +98,17 @@ if (read("CLAUDE.md").trim() !== "@AGENTS.md") fail("CLAUDE.md: @AGENTS.mdだけ
 if (read("dashboard/CLAUDE.md").trim() !== "@AGENTS.md") {
   fail("dashboard/CLAUDE.md: dashboard/AGENTS.mdをimportしていない");
 }
+const claudeVerification = read(".claude/rules/verification.md");
+for (const required of [
+  "bun run release:plan -- --base <前回のrelease commit>",
+  "`npm-only`: dashboard・Honoだけ",
+  "plugin manifest・marketplace・cacheは動かさない",
+  "bun run release:prepare -- --base <前回のrelease commit>",
+]) {
+  if (!claudeVerification.includes(required)) {
+    fail(`.claude/rules/verification.md: Claudeのrelease規約に \`${required}\` が無い`);
+  }
+}
 
 for (const name of developmentSkills) {
   const relative = `.agents/skills/${name}/SKILL.md`;

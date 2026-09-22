@@ -163,13 +163,16 @@ bun run dev          # API + ダッシュボード（前面でだけ使う。背
 bun run verify       # biome・architecture・verify:ai・tsc・test・画面のビルド（pre-push / CI と同じ）
 bun run test         # server の node:test
 bun run bundle       # 配布物を作り直す
+bun run release:plan -- --base <commit>  # 変更をreleaseなし / npm-only / pluginに分類する
+bun run release:prepare -- --base <commit> # cleanなreview済みcommitから検査済みtarballを作る
+bun run release:status                    # npm・tag・plugin cacheに残った工程を調べる
 ```
 
 - **DB を使う確認は、検証用の database で行う。**同じ container に `create database` で別に作り、
   `GLEANERY_ENV_DIR` にその鍵の `.env` を置いたディレクトリを指す。`~/.gleanery/env` より先に読まれる。
   `.env` に無い鍵は `env` で補われて**手元の本物の DB へ繋がる**ので、鍵は 4 つとも検証用に書く
-- MCP・フック・Skill の変更を届けるには、版を上げて merge し、install 済みの plugin を更新する
-  （`.agents/skills/plugin-release/SKILL.md`）。セッションを張り直すだけでは届かない
+- dashboard・Honoだけの変更はnpm packageだけをreleaseし、pluginは更新しない。MCP・フック・Skillの変更は
+  npmとpluginの版を揃えてreleaseし、install済みのpluginを更新する（`.agents/skills/plugin-release/SKILL.md`）
 
 構成は `server/`（取り込み・検索・MCP・自動記録・CLI・画面の API）、`dashboard/`（Vite + React の画面）、
 `plugin/`（配るもの）、`db/schema.sql`（DB の正本）、`db/migrations/`（既存の DB を進める手順）。
