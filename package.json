@@ -23,6 +23,8 @@
     "codegen": "node scripts/codegen.mjs",
     "evals:build": "node server/evals/build-cases.ts",
     "evals:retrieval": "node server/evals/retrieval.ts",
+    "evals:agentic": "node server/evals/agentic/run.ts",
+    "evals:judge": "node server/evals/agentic/judge.ts",
     "codegen:check": "node scripts/codegen.mjs --check",
     "sql:parse": "node scripts/check-sql-parse.mjs",
     "sql:live": "node scripts/check-sql-live.mjs",

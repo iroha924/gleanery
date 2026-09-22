@@ -1,0 +1,2693 @@
+{
+  "note": "PR のゲートで比べる基準。1 位は source_key で持つ（id は DB の入れ直しで変わる）。runs[].top[].grade は盲検の判定で、無いものは 1 位を返さなかったか発言（m:）を返した問い（direct に数えない）。slot は判定した組の指紋。ゲートは means（構成・split・モデルごとの平均）で比べる",
+  "measured_at": "2026-09-23",
+  "gleanery": "0.33.32",
+  "cases": "1bff48c40914791f",
+  "prompt_version": 1,
+  "knowledge": 805,
+  "judge_model": "opus",
+  "means": [
+    {
+      "config": "base",
+      "split": "dev",
+      "model": "sonnet",
+      "runs": 3,
+      "top1": 64.3,
+      "recall5": 76.2,
+      "direct": 75.4
+    },
+    {
+      "config": "base",
+      "split": "holdout",
+      "model": "sonnet",
+      "runs": 3,
+      "top1": 61.1,
+      "recall5": 72.2,
+      "direct": 65.1
+    },
+    {
+      "config": "base-opus",
+      "split": "holdout",
+      "model": "opus",
+      "runs": 1,
+      "top1": 81,
+      "recall5": 97.6,
+      "direct": 95.2
+    }
+  ],
+  "runs": [
+    {
+      "summary": {
+        "name": "base",
+        "split": "dev",
+        "model": "sonnet",
+        "ms": 104392,
+        "n": 42,
+        "top1": 57.1,
+        "recall5": 73.8,
+        "mrr": 0.651,
+        "turns": 3.1,
+        "cost_usd_list": 1.05,
+        "minutes": 1.7,
+        "errors": 0,
+        "cases": "1bff48c40914791f"
+      },
+      "top": [
+        {
+          "i": 0,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill@277dd681df0a"
+        },
+        {
+          "i": 2,
+          "rank": -1,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "no",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 4,
+          "rank": -1,
+          "key": "doc:plugin/agents/review-precedent.md#review-precedent.md",
+          "grade": "direct",
+          "slot": "doc:plugin/agents/review-precedent.md#review-precedent.md@02b920060284"
+        },
+        {
+          "i": 6,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 8,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high@8868c0032e8a"
+        },
+        {
+          "i": 10,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement@6bd5c89e8895"
+        },
+        {
+          "i": 12,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network@44ef7587262e"
+        },
+        {
+          "i": 14,
+          "rank": -1,
+          "key": "doc:skills/code-comments/SKILL.md#skill.md",
+          "grade": "partial",
+          "slot": "doc:skills/code-comments/SKILL.md#skill.md@892c51966cbd"
+        },
+        {
+          "i": 16,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests",
+          "grade": "partial",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests@47797910fc48"
+        },
+        {
+          "i": 18,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+        },
+        {
+          "i": 20,
+          "rank": 1,
+          "key": "doc:.claude/skills/deep-audit/SKILL.md#skill.md",
+          "grade": "direct",
+          "slot": "doc:.claude/skills/deep-audit/SKILL.md#skill.md@ad4490649af9"
+        },
+        {
+          "i": 22,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high@8868c0032e8a"
+        },
+        {
+          "i": 24,
+          "rank": 0,
+          "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers",
+          "grade": "direct",
+          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers@42247b292703"
+        },
+        {
+          "i": 26,
+          "rank": -1,
+          "key": "028d8608-604b-8a67-97c2-93f536a3c38c"
+        },
+        {
+          "i": 28,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+        },
+        {
+          "i": 30,
+          "rank": 2,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 32,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill@277dd681df0a"
+        },
+        {
+          "i": 34,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base@c46a5d655db8"
+        },
+        {
+          "i": 36,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache@cc32c856fd4a"
+        },
+        {
+          "i": 38,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add@faace2e128e4"
+        },
+        {
+          "i": 40,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+        },
+        {
+          "i": 42,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin@785e605fa69d"
+        },
+        {
+          "i": 44,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility@77013c9367ec"
+        },
+        {
+          "i": 46,
+          "rank": 1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects",
+          "grade": "partial",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects@a865862ee81b"
+        },
+        {
+          "i": 48,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported@f37bdee34153"
+        },
+        {
+          "i": 50,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement@6bd5c89e8895"
+        },
+        {
+          "i": 52,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape@ba1862d6de85"
+        },
+        {
+          "i": 54,
+          "rank": 1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan@3f3f52ac2372"
+        },
+        {
+          "i": 56,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8@9bb3501be4e8"
+        },
+        {
+          "i": 58,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use@886bf0c77197"
+        },
+        {
+          "i": 60,
+          "rank": 1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary@f242a0043fcd"
+        },
+        {
+          "i": 62,
+          "rank": 1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion",
+          "grade": "partial",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion@91302e6e5380"
+        },
+        {
+          "i": 64,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds@54893aeef018"
+        },
+        {
+          "i": 66,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty@aba59af933aa"
+        },
+        {
+          "i": 68,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget@ef620dc0fdbd"
+        },
+        {
+          "i": 70,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 72,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 74,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss@25086b93bbe0"
+        },
+        {
+          "i": 76,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check@5c580937c476"
+        },
+        {
+          "i": 78,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion@ce6bca8f6025"
+        },
+        {
+          "i": 80,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 82,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary@f242a0043fcd"
+        }
+      ]
+    },
+    {
+      "summary": {
+        "name": "base-r2",
+        "split": "dev",
+        "model": "sonnet",
+        "ms": 96518,
+        "n": 42,
+        "top1": 61.9,
+        "recall5": 73.8,
+        "mrr": 0.675,
+        "turns": 2.6,
+        "cost_usd_list": 0.85,
+        "minutes": 1.6,
+        "errors": 0,
+        "cases": "1bff48c40914791f"
+      },
+      "top": [
+        {
+          "i": 0,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects@a865862ee81b"
+        },
+        {
+          "i": 2,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 4,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-not-in-agents",
+          "grade": "no",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-not-in-agents@d3d281b62e6e"
+        },
+        {
+          "i": 6,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary:o2",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary:o2@c64bb05effc4"
+        },
+        {
+          "i": 8,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high@8868c0032e8a"
+        },
+        {
+          "i": 10,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget@ef620dc0fdbd"
+        },
+        {
+          "i": 12,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network@44ef7587262e"
+        },
+        {
+          "i": 14,
+          "rank": 0,
+          "key": "doc:skills/code-comments/SKILL.md#編集するとき",
+          "grade": "direct",
+          "slot": "doc:skills/code-comments/SKILL.md#編集するとき@72473a5f5f12"
+        },
+        {
+          "i": 16,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests",
+          "grade": "partial",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests@47797910fc48"
+        },
+        {
+          "i": 18,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+        },
+        {
+          "i": 20,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network",
+          "grade": "no",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network@44ef7587262e"
+        },
+        {
+          "i": 22,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high@8868c0032e8a"
+        },
+        {
+          "i": 24,
+          "rank": 0,
+          "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers",
+          "grade": "direct",
+          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers@42247b292703"
+        },
+        {
+          "i": 26,
+          "rank": -1,
+          "key": "028d8608-604b-8a67-97c2-93f536a3c38c"
+        },
+        {
+          "i": 28,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+        },
+        {
+          "i": 30,
+          "rank": 2,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 32,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill@277dd681df0a"
+        },
+        {
+          "i": 34,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base@c46a5d655db8"
+        },
+        {
+          "i": 36,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache@cc32c856fd4a"
+        },
+        {
+          "i": 38,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add@faace2e128e4"
+        },
+        {
+          "i": 40,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+        },
+        {
+          "i": 42,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin@785e605fa69d"
+        },
+        {
+          "i": 44,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility@77013c9367ec"
+        },
+        {
+          "i": 46,
+          "rank": 1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects",
+          "grade": "partial",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects@a865862ee81b"
+        },
+        {
+          "i": 48,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported@f37bdee34153"
+        },
+        {
+          "i": 50,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement@6bd5c89e8895"
+        },
+        {
+          "i": 52,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape@ba1862d6de85"
+        },
+        {
+          "i": 54,
+          "rank": 1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan@3f3f52ac2372"
+        },
+        {
+          "i": 56,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8@9bb3501be4e8"
+        },
+        {
+          "i": 58,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use@886bf0c77197"
+        },
+        {
+          "i": 60,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist@cf68f3ac5a38"
+        },
+        {
+          "i": 62,
+          "rank": 1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion",
+          "grade": "partial",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion@91302e6e5380"
+        },
+        {
+          "i": 64,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds@54893aeef018"
+        },
+        {
+          "i": 66,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty@aba59af933aa"
+        },
+        {
+          "i": 68,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget@ef620dc0fdbd"
+        },
+        {
+          "i": 70,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 72,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 74,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss@25086b93bbe0"
+        },
+        {
+          "i": 76,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check@5c580937c476"
+        },
+        {
+          "i": 78,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion@ce6bca8f6025"
+        },
+        {
+          "i": 80,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 82,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary@f242a0043fcd"
+        }
+      ]
+    },
+    {
+      "summary": {
+        "name": "base-r3",
+        "split": "dev",
+        "model": "sonnet",
+        "ms": 111260,
+        "n": 42,
+        "top1": 73.8,
+        "recall5": 81,
+        "mrr": 0.77,
+        "turns": 3.2,
+        "cost_usd_list": 1.05,
+        "minutes": 1.9,
+        "errors": 0,
+        "cases": "1bff48c40914791f"
+      },
+      "top": [
+        {
+          "i": 0,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+        },
+        {
+          "i": 2,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 4,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill",
+          "grade": "partial",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill@277dd681df0a"
+        },
+        {
+          "i": 6,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use@886bf0c77197"
+        },
+        {
+          "i": 8,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high@8868c0032e8a"
+        },
+        {
+          "i": 10,
+          "rank": 0,
+          "key": "doc:claude/skills/docs-audit/references/claude-md.md#claude.md監査ベースラインチェックリスト",
+          "grade": "direct",
+          "slot": "doc:claude/skills/docs-audit/references/claude-md.md#claude.md監査ベースラインチェックリスト@aa20c64e035d"
+        },
+        {
+          "i": 12,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network@44ef7587262e"
+        },
+        {
+          "i": 14,
+          "rank": 0,
+          "key": "doc:skills/code-comments/SKILL.md#編集するとき",
+          "grade": "direct",
+          "slot": "doc:skills/code-comments/SKILL.md#編集するとき@72473a5f5f12"
+        },
+        {
+          "i": 16,
+          "rank": 0,
+          "key": "doc:claude/skills/docs-author/references/rules.md#作った後",
+          "grade": "direct",
+          "slot": "doc:claude/skills/docs-author/references/rules.md#作った後@ffab4fb7f489"
+        },
+        {
+          "i": 18,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+        },
+        {
+          "i": 20,
+          "rank": 1,
+          "key": "doc:.claude/skills/deep-audit/SKILL.md#skill.md",
+          "grade": "direct",
+          "slot": "doc:.claude/skills/deep-audit/SKILL.md#skill.md@ad4490649af9"
+        },
+        {
+          "i": 22,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high@8868c0032e8a"
+        },
+        {
+          "i": 24,
+          "rank": 0,
+          "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers",
+          "grade": "direct",
+          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers@42247b292703"
+        },
+        {
+          "i": 26,
+          "rank": -1,
+          "key": "1f2d7d86-aaa1-8128-83e6-ebf279f3f157"
+        },
+        {
+          "i": 28,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+        },
+        {
+          "i": 30,
+          "rank": 2,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 32,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill@277dd681df0a"
+        },
+        {
+          "i": 34,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base@c46a5d655db8"
+        },
+        {
+          "i": 36,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache@cc32c856fd4a"
+        },
+        {
+          "i": 38,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add@faace2e128e4"
+        },
+        {
+          "i": 40,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+        },
+        {
+          "i": 42,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin@785e605fa69d"
+        },
+        {
+          "i": 44,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility@77013c9367ec"
+        },
+        {
+          "i": 46,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests@47797910fc48"
+        },
+        {
+          "i": 48,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported@f37bdee34153"
+        },
+        {
+          "i": 50,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement@6bd5c89e8895"
+        },
+        {
+          "i": 52,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape@ba1862d6de85"
+        },
+        {
+          "i": 54,
+          "rank": 1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan@3f3f52ac2372"
+        },
+        {
+          "i": 56,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8@9bb3501be4e8"
+        },
+        {
+          "i": 58,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use@886bf0c77197"
+        },
+        {
+          "i": 60,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist@cf68f3ac5a38"
+        },
+        {
+          "i": 62,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#machine-check-condition-target",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#machine-check-condition-target@6e74b3f784d8"
+        },
+        {
+          "i": 64,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds@54893aeef018"
+        },
+        {
+          "i": 66,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty@aba59af933aa"
+        },
+        {
+          "i": 68,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget@ef620dc0fdbd"
+        },
+        {
+          "i": 70,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 72,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 74,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss@25086b93bbe0"
+        },
+        {
+          "i": 76,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check@5c580937c476"
+        },
+        {
+          "i": 78,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion@ce6bca8f6025"
+        },
+        {
+          "i": 80,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o4",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o4@749c4f3bad8e"
+        },
+        {
+          "i": 82,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary@f242a0043fcd"
+        }
+      ]
+    },
+    {
+      "summary": {
+        "name": "base",
+        "split": "holdout",
+        "model": "sonnet",
+        "ms": 98732,
+        "n": 42,
+        "top1": 59.5,
+        "recall5": 71.4,
+        "mrr": 0.655,
+        "turns": 3,
+        "cost_usd_list": 0.98,
+        "minutes": 1.6,
+        "errors": 0,
+        "cases": "1bff48c40914791f"
+      },
+      "top": [
+        {
+          "i": 1,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#skill-firing-on-claude",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#skill-firing-on-claude@b3734cf70e71"
+        },
+        {
+          "i": 3,
+          "rank": -1,
+          "key": "doc:claude/skills/docs-audit/SKILL.md#トラブルシューティング",
+          "grade": "partial",
+          "slot": "doc:claude/skills/docs-audit/SKILL.md#トラブルシューティング@da980beac252"
+        },
+        {
+          "i": 5,
+          "rank": 0,
+          "key": "doc:skills/review-triage/SKILL.md#skill.md",
+          "grade": "direct",
+          "slot": "doc:skills/review-triage/SKILL.md#skill.md@6da8b2d4ba2d"
+        },
+        {
+          "i": 7,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 9,
+          "rank": 0,
+          "key": "doc:plugin/agents/review-validator.md#判定",
+          "grade": "direct",
+          "slot": "doc:plugin/agents/review-validator.md#判定@aa6a6bbff7cc"
+        },
+        {
+          "i": 11,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 13,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access@26b07983b0bf"
+        },
+        {
+          "i": 15,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#no-install-hook",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#no-install-hook@5cefb7367fbe"
+        },
+        {
+          "i": 17,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds",
+          "grade": "no",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds@54893aeef018"
+        },
+        {
+          "i": 19,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 21,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss@25086b93bbe0"
+        },
+        {
+          "i": 23,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 25,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#review-agent-side-effects@a865862ee81b"
+        },
+        {
+          "i": 27,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 29,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 31,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full@ced67420fbec"
+        },
+        {
+          "i": 33,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 35,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection@2ff8006f2e62"
+        },
+        {
+          "i": 37,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 39,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 41,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+        },
+        {
+          "i": 43,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source@34da35e74fcc"
+        },
+        {
+          "i": 45,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live@dde1b4178724"
+        },
+        {
+          "i": 47,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 49,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping@d6b8e03fa214"
+        },
+        {
+          "i": 51,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access@26b07983b0bf"
+        },
+        {
+          "i": 53,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o1",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o1@ee3d411198b4"
+        },
+        {
+          "i": 55,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage@1b5d564dee0b"
+        },
+        {
+          "i": 57,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+        },
+        {
+          "i": 59,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 61,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit@2cd6f760f2f6"
+        },
+        {
+          "i": 63,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape",
+          "grade": "partial",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape@375f8ebcce0c"
+        },
+        {
+          "i": 65,
+          "rank": 1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green",
+          "grade": "partial",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green@24499eeb2bf1"
+        },
+        {
+          "i": 67,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 69,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 71,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+          "grade": "partial",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+        },
+        {
+          "i": 73,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope@6fafa3f71f09"
+        },
+        {
+          "i": 75,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records@65667d7bf64e"
+        },
+        {
+          "i": 77,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry@63aa4afbf404"
+        },
+        {
+          "i": 79,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion@91302e6e5380"
+        },
+        {
+          "i": 81,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak@8403fb2e0ace"
+        },
+        {
+          "i": 83,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key@bfa327e0b415"
+        }
+      ]
+    },
+    {
+      "summary": {
+        "name": "base-r2",
+        "split": "holdout",
+        "model": "sonnet",
+        "ms": 110568,
+        "n": 42,
+        "top1": 61.9,
+        "recall5": 73.8,
+        "mrr": 0.679,
+        "turns": 3.1,
+        "cost_usd_list": 1,
+        "minutes": 1.8,
+        "errors": 0,
+        "cases": "1bff48c40914791f"
+      },
+      "top": [
+        {
+          "i": 1,
+          "rank": -1,
+          "key": "50cfe1d6-0317-899e-8835-c267a625e764"
+        },
+        {
+          "i": 3,
+          "rank": -1,
+          "key": "doc:claude/skills/docs-author/SKILL.md#phase-3-—-検証する",
+          "grade": "no",
+          "slot": "doc:claude/skills/docs-author/SKILL.md#phase-3-—-検証する@1c2fd3949f82"
+        },
+        {
+          "i": 5,
+          "rank": 0,
+          "key": "doc:skills/review-triage/SKILL.md#skill.md",
+          "grade": "direct",
+          "slot": "doc:skills/review-triage/SKILL.md#skill.md@6da8b2d4ba2d"
+        },
+        {
+          "i": 7,
+          "rank": 0,
+          "key": "doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く",
+          "grade": "direct",
+          "slot": "doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く@b01d6bf04f4d"
+        },
+        {
+          "i": 9,
+          "rank": 0,
+          "key": "doc:plugin/agents/review-validator.md#判定",
+          "grade": "direct",
+          "slot": "doc:plugin/agents/review-validator.md#判定@aa6a6bbff7cc"
+        },
+        {
+          "i": 11,
+          "rank": -1,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement:o4",
+          "grade": "no",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement:o4@8cf745712c96"
+        },
+        {
+          "i": 13,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-p-agent-flags",
+          "grade": "no",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-p-agent-flags@e9db831c5f6a"
+        },
+        {
+          "i": 15,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 17,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 19,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 21,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records:o2",
+          "grade": "no",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records:o2@8f798930c42c"
+        },
+        {
+          "i": 23,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 25,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "no",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 27,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 29,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 31,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full@ced67420fbec"
+        },
+        {
+          "i": 33,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 35,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection@2ff8006f2e62"
+        },
+        {
+          "i": 37,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 39,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 41,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+        },
+        {
+          "i": 43,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source@34da35e74fcc"
+        },
+        {
+          "i": 45,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live@dde1b4178724"
+        },
+        {
+          "i": 47,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 49,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping@d6b8e03fa214"
+        },
+        {
+          "i": 51,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access@26b07983b0bf"
+        },
+        {
+          "i": 53,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o1",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o1@ee3d411198b4"
+        },
+        {
+          "i": 55,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage@1b5d564dee0b"
+        },
+        {
+          "i": 57,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+        },
+        {
+          "i": 59,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 61,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit@2cd6f760f2f6"
+        },
+        {
+          "i": 63,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape",
+          "grade": "partial",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape@375f8ebcce0c"
+        },
+        {
+          "i": 65,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#promise-all-loses-stack",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#promise-all-loses-stack@47c266c3b634"
+        },
+        {
+          "i": 67,
+          "rank": 1,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry@63aa4afbf404"
+        },
+        {
+          "i": 69,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 71,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+          "grade": "partial",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+        },
+        {
+          "i": 73,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope@6fafa3f71f09"
+        },
+        {
+          "i": 75,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records@65667d7bf64e"
+        },
+        {
+          "i": 77,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry@63aa4afbf404"
+        },
+        {
+          "i": 79,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion@91302e6e5380"
+        },
+        {
+          "i": 81,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak@8403fb2e0ace"
+        },
+        {
+          "i": 83,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key@bfa327e0b415"
+        }
+      ]
+    },
+    {
+      "summary": {
+        "name": "base-r3",
+        "split": "holdout",
+        "model": "sonnet",
+        "ms": 120953,
+        "n": 42,
+        "top1": 61.9,
+        "recall5": 71.4,
+        "mrr": 0.667,
+        "turns": 2.8,
+        "cost_usd_list": 0.92,
+        "minutes": 2,
+        "errors": 0,
+        "cases": "1bff48c40914791f"
+      },
+      "top": [
+        {
+          "i": 1,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 3,
+          "rank": -1,
+          "key": "doc:claude/skills/docs-audit/SKILL.md#トラブルシューティング",
+          "grade": "partial",
+          "slot": "doc:claude/skills/docs-audit/SKILL.md#トラブルシューティング@da980beac252"
+        },
+        {
+          "i": 5,
+          "rank": 0,
+          "key": "doc:skills/review-triage/SKILL.md#skill.md",
+          "grade": "direct",
+          "slot": "doc:skills/review-triage/SKILL.md#skill.md@6da8b2d4ba2d"
+        },
+        {
+          "i": 7,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 9,
+          "rank": 0,
+          "key": "doc:plugin/agents/review-validator.md#判定",
+          "grade": "direct",
+          "slot": "doc:plugin/agents/review-validator.md#判定@aa6a6bbff7cc"
+        },
+        {
+          "i": 11,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 13,
+          "rank": -1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access@26b07983b0bf"
+        },
+        {
+          "i": 15,
+          "rank": -1,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#no-install-hook",
+          "grade": "no",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#no-install-hook@5cefb7367fbe"
+        },
+        {
+          "i": 17,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 19,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 21,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records:o2",
+          "grade": "no",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records:o2@8f798930c42c"
+        },
+        {
+          "i": 23,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 25,
+          "rank": -1,
+          "key": null
+        },
+        {
+          "i": 27,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 29,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 31,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full@ced67420fbec"
+        },
+        {
+          "i": 33,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 35,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection@2ff8006f2e62"
+        },
+        {
+          "i": 37,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 39,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 41,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+        },
+        {
+          "i": 43,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source@34da35e74fcc"
+        },
+        {
+          "i": 45,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live@dde1b4178724"
+        },
+        {
+          "i": 47,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 49,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping@d6b8e03fa214"
+        },
+        {
+          "i": 51,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access@26b07983b0bf"
+        },
+        {
+          "i": 53,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 55,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage@1b5d564dee0b"
+        },
+        {
+          "i": 57,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+        },
+        {
+          "i": 59,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 61,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit@2cd6f760f2f6"
+        },
+        {
+          "i": 63,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape",
+          "grade": "partial",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape@375f8ebcce0c"
+        },
+        {
+          "i": 65,
+          "rank": 1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green",
+          "grade": "partial",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green@24499eeb2bf1"
+        },
+        {
+          "i": 67,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 69,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 71,
+          "rank": -1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+          "grade": "partial",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+        },
+        {
+          "i": 73,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope@6fafa3f71f09"
+        },
+        {
+          "i": 75,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records@65667d7bf64e"
+        },
+        {
+          "i": 77,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry@63aa4afbf404"
+        },
+        {
+          "i": 79,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion@91302e6e5380"
+        },
+        {
+          "i": 81,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak@8403fb2e0ace"
+        },
+        {
+          "i": 83,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key@bfa327e0b415"
+        }
+      ]
+    },
+    {
+      "summary": {
+        "name": "base-opus",
+        "split": "holdout",
+        "model": "opus",
+        "ms": 165435,
+        "n": 42,
+        "top1": 81,
+        "recall5": 97.6,
+        "mrr": 0.889,
+        "turns": 3.8,
+        "cost_usd_list": 2.99,
+        "minutes": 2.8,
+        "errors": 0,
+        "cases": "1bff48c40914791f"
+      },
+      "top": [
+        {
+          "i": 1,
+          "rank": -1,
+          "key": "doc:claude/skills/atlas/SKILL.md#skill.md",
+          "grade": "direct",
+          "slot": "doc:claude/skills/atlas/SKILL.md#skill.md@55911c2c36fd"
+        },
+        {
+          "i": 3,
+          "rank": 0,
+          "key": "doc:claude/skills/docs-audit/references/skills.md#この対象のトラブルシューティング",
+          "grade": "direct",
+          "slot": "doc:claude/skills/docs-audit/references/skills.md#この対象のトラブルシューティング@cc51cc07572d"
+        },
+        {
+          "i": 5,
+          "rank": 0,
+          "key": "doc:skills/review-triage/SKILL.md#skill.md",
+          "grade": "direct",
+          "slot": "doc:skills/review-triage/SKILL.md#skill.md@6da8b2d4ba2d"
+        },
+        {
+          "i": 7,
+          "rank": 0,
+          "key": "doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く",
+          "grade": "direct",
+          "slot": "doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く@b01d6bf04f4d"
+        },
+        {
+          "i": 9,
+          "rank": 0,
+          "key": "doc:plugin/agents/review-validator.md#判定",
+          "grade": "direct",
+          "slot": "doc:plugin/agents/review-validator.md#判定@aa6a6bbff7cc"
+        },
+        {
+          "i": 11,
+          "rank": 0,
+          "key": "doc:README.md#設計の判断と実測",
+          "grade": "direct",
+          "slot": "doc:README.md#設計の判断と実測@d71256b5762b"
+        },
+        {
+          "i": 13,
+          "rank": 1,
+          "key": "doc:claude/skills/docs-audit/references/permissions.md#危険な機能フラグ",
+          "grade": "direct",
+          "slot": "doc:claude/skills/docs-audit/references/permissions.md#危険な機能フラグ@8422830da753"
+        },
+        {
+          "i": 15,
+          "rank": 0,
+          "key": "doc:plugin/skills/requirements/SKILL.md#このスキルが防ぐ失敗",
+          "grade": "direct",
+          "slot": "doc:plugin/skills/requirements/SKILL.md#このスキルが防ぐ失敗@0faeec71ef20"
+        },
+        {
+          "i": 17,
+          "rank": 0,
+          "key": "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#何が起きたら再評価するか",
+          "grade": "direct",
+          "slot": "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#何が起きたら再評価するか@c5f3bcc93e3a"
+        },
+        {
+          "i": 19,
+          "rank": 0,
+          "key": "doc:claude/skills/atlas/references/architecture.md#関係",
+          "grade": "direct",
+          "slot": "doc:claude/skills/atlas/references/architecture.md#関係@2c71386a78aa"
+        },
+        {
+          "i": 21,
+          "rank": 0,
+          "key": "doc:plugin/skills/trace/SKILL.md#このスキルが防ぐ失敗",
+          "grade": "direct",
+          "slot": "doc:plugin/skills/trace/SKILL.md#このスキルが防ぐ失敗@979c0dff03b5"
+        },
+        {
+          "i": 23,
+          "rank": 0,
+          "key": "doc:claude/skills/atlas/references/skill.md#何をノードにしないか",
+          "grade": "direct",
+          "slot": "doc:claude/skills/atlas/references/skill.md#何をノードにしないか@86d4befa90d1"
+        },
+        {
+          "i": 25,
+          "rank": 2,
+          "key": "doc:.claude/agents/review-ui.md#返す形",
+          "grade": "direct",
+          "slot": "doc:.claude/agents/review-ui.md#返す形@ecd5d8e9687f"
+        },
+        {
+          "i": 27,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 29,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+        },
+        {
+          "i": 31,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full@ced67420fbec"
+        },
+        {
+          "i": 33,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 35,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection@2ff8006f2e62"
+        },
+        {
+          "i": 37,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 39,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+        },
+        {
+          "i": 41,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+        },
+        {
+          "i": 43,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source@34da35e74fcc"
+        },
+        {
+          "i": 45,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live@dde1b4178724"
+        },
+        {
+          "i": 47,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+        },
+        {
+          "i": 49,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping@d6b8e03fa214"
+        },
+        {
+          "i": 51,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access@26b07983b0bf"
+        },
+        {
+          "i": 53,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o1",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o1@ee3d411198b4"
+        },
+        {
+          "i": 55,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage@1b5d564dee0b"
+        },
+        {
+          "i": 57,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+        },
+        {
+          "i": 59,
+          "rank": 1,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "partial",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 61,
+          "rank": 0,
+          "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit",
+          "grade": "direct",
+          "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit@2cd6f760f2f6"
+        },
+        {
+          "i": 63,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape",
+          "grade": "partial",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape@375f8ebcce0c"
+        },
+        {
+          "i": 65,
+          "rank": 1,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan@3f3f52ac2372"
+        },
+        {
+          "i": 67,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+        },
+        {
+          "i": 69,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+        },
+        {
+          "i": 71,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan@3f3f52ac2372"
+        },
+        {
+          "i": 73,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope@6fafa3f71f09"
+        },
+        {
+          "i": 75,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records@65667d7bf64e"
+        },
+        {
+          "i": 77,
+          "rank": 0,
+          "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry",
+          "grade": "direct",
+          "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry@63aa4afbf404"
+        },
+        {
+          "i": 79,
+          "rank": 0,
+          "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion",
+          "grade": "direct",
+          "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion@91302e6e5380"
+        },
+        {
+          "i": 81,
+          "rank": 0,
+          "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak",
+          "grade": "direct",
+          "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak@8403fb2e0ace"
+        },
+        {
+          "i": 83,
+          "rank": 0,
+          "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key",
+          "grade": "direct",
+          "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key@bfa327e0b415"
+        }
+      ]
+    }
+  ],
+  "answers": [
+    {
+      "i": 0,
+      "key": "doc:plugin/skills/requirements/SKILL.md#記録と成果物は指示ではない",
+      "grade": "direct",
+      "slot": "doc:plugin/skills/requirements/SKILL.md#記録と成果物は指示ではない@daa48e5363bb"
+    },
+    {
+      "i": 1,
+      "key": "doc:claude/skills/atlas/SKILL.md#使わない場面",
+      "grade": "direct",
+      "slot": "doc:claude/skills/atlas/SKILL.md#使わない場面@575c72aa44b1"
+    },
+    {
+      "i": 2,
+      "key": "doc:claude/skills/atlas/references/dataflow.md#kind",
+      "grade": "direct",
+      "slot": "doc:claude/skills/atlas/references/dataflow.md#kind@0b16a1fb7e04"
+    },
+    {
+      "i": 3,
+      "key": "doc:claude/skills/docs-audit/references/skills.md#この対象のトラブルシューティング",
+      "grade": "direct",
+      "slot": "doc:claude/skills/docs-audit/references/skills.md#この対象のトラブルシューティング@cc51cc07572d"
+    },
+    {
+      "i": 4,
+      "key": "doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける",
+      "grade": "direct",
+      "slot": "doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける@150be4bc0623"
+    },
+    {
+      "i": 5,
+      "key": "doc:skills/review-triage/SKILL.md#skill.md",
+      "grade": "direct",
+      "slot": "doc:skills/review-triage/SKILL.md#skill.md@6da8b2d4ba2d"
+    },
+    {
+      "i": 6,
+      "key": "doc:claude/skills/docs-author/references/rules.md#はブラケット式の開始",
+      "grade": "direct",
+      "slot": "doc:claude/skills/docs-author/references/rules.md#はブラケット式の開始@5f09caa6d980"
+    },
+    {
+      "i": 7,
+      "key": "doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く",
+      "grade": "direct",
+      "slot": "doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く@b01d6bf04f4d"
+    },
+    {
+      "i": 8,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high@8868c0032e8a"
+    },
+    {
+      "i": 9,
+      "key": "doc:plugin/agents/review-validator.md#判定",
+      "grade": "direct",
+      "slot": "doc:plugin/agents/review-validator.md#判定@aa6a6bbff7cc"
+    },
+    {
+      "i": 10,
+      "key": "doc:claude/skills/docs-audit/references/claude-md.md#claude.md監査ベースラインチェックリスト",
+      "grade": "direct",
+      "slot": "doc:claude/skills/docs-audit/references/claude-md.md#claude.md監査ベースラインチェックリスト@aa20c64e035d"
+    },
+    {
+      "i": 11,
+      "key": "doc:README.md#設計の判断と実測",
+      "grade": "direct",
+      "slot": "doc:README.md#設計の判断と実測@d71256b5762b"
+    },
+    {
+      "i": 12,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network@44ef7587262e"
+    },
+    {
+      "i": 13,
+      "key": "doc:claude/skills/docs-audit/references/permissions.md#過剰な許可",
+      "grade": "direct",
+      "slot": "doc:claude/skills/docs-audit/references/permissions.md#過剰な許可@f9d067d2ba99"
+    },
+    {
+      "i": 14,
+      "key": "doc:skills/code-comments/SKILL.md#編集するとき",
+      "grade": "direct",
+      "slot": "doc:skills/code-comments/SKILL.md#編集するとき@72473a5f5f12"
+    },
+    {
+      "i": 15,
+      "key": "doc:plugin/skills/requirements/SKILL.md#このスキルが防ぐ失敗",
+      "grade": "direct",
+      "slot": "doc:plugin/skills/requirements/SKILL.md#このスキルが防ぐ失敗@0faeec71ef20"
+    },
+    {
+      "i": 16,
+      "key": "doc:claude/skills/docs-author/references/rules.md#作った後",
+      "grade": "direct",
+      "slot": "doc:claude/skills/docs-author/references/rules.md#作った後@ffab4fb7f489"
+    },
+    {
+      "i": 17,
+      "key": "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#何が起きたら再評価するか",
+      "grade": "direct",
+      "slot": "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#何が起きたら再評価するか@c5f3bcc93e3a"
+    },
+    {
+      "i": 18,
+      "key": "doc:claude/skills/docs-audit/evals/how-to-run.md#claude-md",
+      "grade": "direct",
+      "slot": "doc:claude/skills/docs-audit/evals/how-to-run.md#claude-md@93117f7a3811"
+    },
+    {
+      "i": 19,
+      "key": "doc:claude/skills/atlas/references/architecture.md#関係",
+      "grade": "direct",
+      "slot": "doc:claude/skills/atlas/references/architecture.md#関係@2c71386a78aa"
+    },
+    {
+      "i": 20,
+      "key": "doc:.claude/skills/deep-audit/SKILL.md#deep-audit-—-リポジトリ全体の構造監査",
+      "grade": "direct",
+      "slot": "doc:.claude/skills/deep-audit/SKILL.md#deep-audit-—-リポジトリ全体の構造監査@9dee376b670e"
+    },
+    {
+      "i": 21,
+      "key": "doc:plugin/skills/trace/SKILL.md#このスキルが防ぐ失敗",
+      "grade": "direct",
+      "slot": "doc:plugin/skills/trace/SKILL.md#このスキルが防ぐ失敗@979c0dff03b5"
+    },
+    {
+      "i": 22,
+      "key": "doc:plugin/agents/review-adversarial.md#review-adversarial.md",
+      "grade": "direct",
+      "slot": "doc:plugin/agents/review-adversarial.md#review-adversarial.md@e42c687f1cab"
+    },
+    {
+      "i": 23,
+      "key": "doc:claude/skills/atlas/references/skill.md#何をノードにしないか",
+      "grade": "direct",
+      "slot": "doc:claude/skills/atlas/references/skill.md#何をノードにしないか@86d4befa90d1"
+    },
+    {
+      "i": 24,
+      "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers",
+      "grade": "direct",
+      "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers@42247b292703"
+    },
+    {
+      "i": 25,
+      "key": "doc:.claude/agents/review-ui.md#読む先が有限（変更した画面と規約ファイル）。深さより、利用者に何が起きるかの言い切りで決まる。",
+      "grade": "partial",
+      "slot": "doc:.claude/agents/review-ui.md#読む先が有限（変更した画面と規約ファイル）。深さより、利用者に何が起きるかの言い切りで決まる。@1a9790ee43ba"
+    },
+    {
+      "i": 26,
+      "key": "doc:README.md#役と規範を、賢さで消えないものだけに絞った（2026-09-21）",
+      "grade": "direct",
+      "slot": "doc:README.md#役と規範を、賢さで消えないものだけに絞った（2026-09-21）@53655ad5cdaa"
+    },
+    {
+      "i": 27,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+    },
+    {
+      "i": 28,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green@24499eeb2bf1"
+    },
+    {
+      "i": 29,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o2",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o2@713d4bebfc5f"
+    },
+    {
+      "i": 30,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#publish-before-merge",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#publish-before-merge@0ca9049bbde7"
+    },
+    {
+      "i": 31,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full@ced67420fbec"
+    },
+    {
+      "i": 32,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill@277dd681df0a"
+    },
+    {
+      "i": 33,
+      "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+      "grade": "direct",
+      "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+    },
+    {
+      "i": 34,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base@c46a5d655db8"
+    },
+    {
+      "i": 35,
+      "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection",
+      "grade": "direct",
+      "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection@2ff8006f2e62"
+    },
+    {
+      "i": 36,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache@cc32c856fd4a"
+    },
+    {
+      "i": 37,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+    },
+    {
+      "i": 38,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add@faace2e128e4"
+    },
+    {
+      "i": 39,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume:o2",
+      "grade": "partial",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume:o2@9ba246293c2f"
+    },
+    {
+      "i": 40,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording@447c42674f13"
+    },
+    {
+      "i": 41,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process@2156681fc7d4"
+    },
+    {
+      "i": 42,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin@785e605fa69d"
+    },
+    {
+      "i": 43,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source@34da35e74fcc"
+    },
+    {
+      "i": 44,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility@77013c9367ec"
+    },
+    {
+      "i": 45,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live@dde1b4178724"
+    },
+    {
+      "i": 46,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests@47797910fc48"
+    },
+    {
+      "i": 47,
+      "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+      "grade": "direct",
+      "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+    },
+    {
+      "i": 48,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported@f37bdee34153"
+    },
+    {
+      "i": 49,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping@d6b8e03fa214"
+    },
+    {
+      "i": 50,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement@6bd5c89e8895"
+    },
+    {
+      "i": 51,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access@26b07983b0bf"
+    },
+    {
+      "i": 52,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape@ba1862d6de85"
+    },
+    {
+      "i": 53,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db",
+      "grade": "partial",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db@cd0d5367f51c"
+    },
+    {
+      "i": 54,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#git-insteadof-get-url",
+      "grade": "partial",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#git-insteadof-get-url@4733402f3d2e"
+    },
+    {
+      "i": 55,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage@1b5d564dee0b"
+    },
+    {
+      "i": 56,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8@9bb3501be4e8"
+    },
+    {
+      "i": 57,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green@bdf28d25e382"
+    },
+    {
+      "i": 58,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use@886bf0c77197"
+    },
+    {
+      "i": 59,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#scope-contract-check",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#scope-contract-check@1387657834fb"
+    },
+    {
+      "i": 60,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist@cf68f3ac5a38"
+    },
+    {
+      "i": 61,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit@2cd6f760f2f6"
+    },
+    {
+      "i": 62,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#machine-check-condition-target",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#machine-check-condition-target@6e74b3f784d8"
+    },
+    {
+      "i": 63,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape",
+      "grade": "partial",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape@375f8ebcce0c"
+    },
+    {
+      "i": 64,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds@54893aeef018"
+    },
+    {
+      "i": 65,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#promise-all-loses-stack",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#promise-all-loses-stack@47c266c3b634"
+    },
+    {
+      "i": 66,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty@aba59af933aa"
+    },
+    {
+      "i": 67,
+      "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next",
+      "grade": "direct",
+      "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next@d8d610a91864"
+    },
+    {
+      "i": 68,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget@ef620dc0fdbd"
+    },
+    {
+      "i": 69,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher@cd6935447195"
+    },
+    {
+      "i": 70,
+      "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified",
+      "grade": "direct",
+      "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified@024d25d3e62e"
+    },
+    {
+      "i": 71,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan@3f3f52ac2372"
+    },
+    {
+      "i": 72,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume@e297b40b61a9"
+    },
+    {
+      "i": 73,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope@6fafa3f71f09"
+    },
+    {
+      "i": 74,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss@25086b93bbe0"
+    },
+    {
+      "i": 75,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records@65667d7bf64e"
+    },
+    {
+      "i": 76,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check@5c580937c476"
+    },
+    {
+      "i": 77,
+      "key": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry",
+      "grade": "direct",
+      "slot": "codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry@63aa4afbf404"
+    },
+    {
+      "i": 78,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion@ce6bca8f6025"
+    },
+    {
+      "i": 79,
+      "key": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion",
+      "grade": "direct",
+      "slot": "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion@91302e6e5380"
+    },
+    {
+      "i": 80,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o4",
+      "grade": "partial",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o4@749c4f3bad8e"
+    },
+    {
+      "i": 81,
+      "key": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak",
+      "grade": "direct",
+      "slot": "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak@8403fb2e0ace"
+    },
+    {
+      "i": 82,
+      "key": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary",
+      "grade": "direct",
+      "slot": "claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary@f242a0043fcd"
+    },
+    {
+      "i": 83,
+      "key": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key",
+      "grade": "direct",
+      "slot": "claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key@bfa327e0b415"
+    }
+  ]
+}
