@@ -195,21 +195,26 @@ const knowledgeBase = (db: Kysely<DB>) =>
 
 type KnowledgeRow = InferResult<ReturnType<typeof knowledgeBase>>[number];
 
-/** 1 つの出所から上位へ入れる上限。**同じファイルの節や同じ作業の記録で 5 件が埋まると、別の観点が消える。** */
-const PER_ORIGIN = 2;
+/**
+ * 1 つの出所から上位へ入れる上限。**同じファイルの節や同じ作業の記録で埋まると、別の観点が消える。**
+ * **`limit` に比例させる。**固定 2 件だと、画面の一覧（20 件）を埋めるのに 10 出所が要り、
+ * 候補にそれだけの種類が無いと間引いたものが戻って元の並びに近づく（実測: 最大 12 件が同じ出所だった）。
+ */
+const perOrigin = (limit: number): number => Math.max(2, Math.ceil(limit / 5));
 
 /**
  * 同じ出所（文書ならファイル、trace なら作業か session）が上位を占めないよう間引く。
  * **落としたものは捨てずに後ろへ回す。**limit に足りないときは順位のまま戻す。
  */
 function diversify<T>(rows: T[], limit: number, originOf: (r: T) => string): T[] {
+  const max = perOrigin(limit);
   const seen = new Map<string, number>();
   const kept: T[] = [];
   const spill: T[] = [];
   for (const r of rows) {
     const o = originOf(r);
     const n = seen.get(o) ?? 0;
-    if (n < PER_ORIGIN) {
+    if (n < max) {
       kept.push(r);
       seen.set(o, n + 1);
       if (kept.length >= limit) return kept;
