@@ -115,9 +115,11 @@ async function rerank(
   rows: Hit[],
   limit: number,
   signal?: AbortSignal,
+  /** 並べ替えて返す件数。間引く側が limit より多く要るときに広げる。 */
+  want = limit,
 ): Promise<Hit[]> {
   const pool = rows.slice(0, RERANK_POOL);
-  const bare = () => pool.slice(0, limit);
+  const bare = () => pool.slice(0, want);
   if (pool.length <= 1 || !env.VOYAGE_API_KEY) return bare();
   const docs = pool.map((h) =>
     `${h.label}${h.context ? `${h.context} / ` : ""}${h.speaker ? `${h.speaker}: ` : ""}${h.text}${h.reason ? ` — ${h.reason}` : ""}`.slice(
@@ -134,7 +136,7 @@ async function rerank(
         model: RERANK_MODEL,
         query: question,
         documents: docs,
-        top_k: Math.min(limit, docs.length),
+        top_k: Math.min(want, docs.length),
       }),
     });
     if (!res.ok) return bare();
@@ -186,10 +188,40 @@ const knowledgeBase = (db: Kysely<DB>) =>
       "s.kind as source_kind",
       "s.path",
       "s.url",
+      "k.work_item_id",
+      "k.source_key",
       "succ.body as successor",
     ]);
 
 type KnowledgeRow = InferResult<ReturnType<typeof knowledgeBase>>[number];
+
+/** 1 つの出所から上位へ入れる上限。**同じファイルの節や同じ作業の記録で 5 件が埋まると、別の観点が消える。** */
+const PER_ORIGIN = 2;
+
+/**
+ * 同じ出所（文書ならファイル、trace なら作業か session）が上位を占めないよう間引く。
+ * **落としたものは捨てずに後ろへ回す。**limit に足りないときは順位のまま戻す。
+ */
+function diversify<T>(rows: T[], limit: number, originOf: (r: T) => string): T[] {
+  const seen = new Map<string, number>();
+  const kept: T[] = [];
+  const spill: T[] = [];
+  for (const r of rows) {
+    const o = originOf(r);
+    const n = seen.get(o) ?? 0;
+    if (n < PER_ORIGIN) {
+      kept.push(r);
+      seen.set(o, n + 1);
+      if (kept.length >= limit) return kept;
+    } else spill.push(r);
+  }
+  return [...kept, ...spill].slice(0, limit);
+}
+
+/** その行がどこから来たか。文書はファイル、trace は作業（無ければ session）。 */
+const originOf = (r: KnowledgeRow): string =>
+  r.path ??
+  (r.work_item_id !== null ? `work:${r.work_item_id}` : (r.source_key.split("#")[0] ?? `k:${r.id}`));
 
 const knowledgeHit = (r: KnowledgeRow): Hit => ({
   ref: `k:${r.id}`,
@@ -265,7 +297,20 @@ export async function searchKnowledge(db: Kysely<DB>, env: Env, q: KnowledgeQuer
         .execute(queryOptions(q.signal)),
     q.signal,
   );
-  return rerank(env, q.question, fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]), q.limit, q.signal);
+  // 出所は Hit に載せない（公開する形を増やさない）。ref で引けるよう、この呼び出しの中だけで持つ。
+  const origin = new Map<string, string>();
+  for (const r of [...den, ...lex]) origin.set(`k:${r.id}`, originOf(r));
+  // **並べ替えは pool 全部にさせる。**上位だけを受け取ると、そこが同じ出所で埋まっていたとき
+  // 間引く先が無く、元の順位に戻る（実測: 同じ作業の記録が 5 件並んだ）。
+  const ranked = await rerank(
+    env,
+    q.question,
+    fuse([den.map(knowledgeHit), lex.map(knowledgeHit)]),
+    q.limit,
+    q.signal,
+    RERANK_POOL,
+  );
+  return diversify(ranked, q.limit, (h) => origin.get(h.ref) ?? h.ref);
 }
 
 export type MessageQuery = {
