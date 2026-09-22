@@ -206,7 +206,7 @@ const perOrigin = (limit: number): number => Math.max(2, Math.ceil(limit / 5));
  * 同じ出所（文書ならファイル、trace なら作業か session）が上位を占めないよう間引く。
  * **落としたものは捨てずに後ろへ回す。**limit に足りないときは順位のまま戻す。
  */
-function diversify<T>(rows: T[], limit: number, originOf: (r: T) => string): T[] {
+export function diversify<T>(rows: T[], limit: number, originOf: (r: T) => string): T[] {
   const max = perOrigin(limit);
   const seen = new Map<string, number>();
   const kept: T[] = [];

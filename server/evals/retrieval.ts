@@ -25,8 +25,21 @@ const db = open(env, "reader");
 // ref（k:12 / m:uuid）から、正解と突き合わせる鍵へ直す。
 // **id では突き合わせない。**入れ直しで変わるので、前後の比較が壊れる。
 const keyOf = new Map<string, string>();
-for (const r of await db.selectFrom("gleanery.knowledge").select(["id", "source_key"]).execute())
+// **出所は指標として持つ。**同じファイルの節や同じ作業の記録が上位を埋めていないかを、
+// top1 や recall と一緒に毎回出す（手元の一回限りの測定にすると、次に誰も再現できない）。
+const originOf = new Map<string, string>();
+for (const r of await db
+  .selectFrom("gleanery.knowledge as k")
+  .leftJoin("gleanery.source_item as s", "s.id", "k.source_item_id")
+  .select(["k.id", "k.source_key", "k.work_item_id", "s.path"])
+  .execute()) {
   keyOf.set(`k:${r.id}`, r.source_key);
+  originOf.set(
+    `k:${r.id}`,
+    r.path ??
+      (r.work_item_id !== null ? `work:${r.work_item_id}` : (r.source_key.split("#")[0] ?? `k:${r.id}`)),
+  );
+}
 for (const r of await db.selectFrom("gleanery.message").select("id").execute()) keyOf.set(`m:${r.id}`, r.id);
 
 const rank = (hits: Hit[], expect: string[]): number =>
@@ -126,7 +139,10 @@ for (const [name, fn] of Object.entries(strategies)) {
     hitK = 0,
     mrr = 0,
     ms = 0,
-    n = 0;
+    n = 0,
+    crowded = 0,
+    kinds = 0,
+    spread = 0;
   for (const c of cases) {
     const t0 = Date.now();
     const hits = await fn(c);
@@ -148,9 +164,28 @@ for (const [name, fn] of Object.entries(strategies)) {
     const row = perCase[c.q] ?? {};
     perCase[c.q] = row;
     row[name] = i < 0 ? "—" : i + 1;
+    if (name.startsWith("出荷") && c.source !== "message") {
+      const by = new Map<string, number>();
+      for (const h of hits) {
+        const o = originOf.get(h.ref) ?? h.ref;
+        by.set(o, (by.get(o) ?? 0) + 1);
+      }
+      kinds += by.size;
+      if (Math.max(0, ...by.values()) >= 3) crowded++;
+      spread++;
+    }
   }
   if (n === 0) continue;
+  // 上位に同じ出所が並んでいないか。出荷の経路（知識）だけで数える。
+  const diversity: Record<string, string> =
+    spread > 0
+      ? {
+          "同じ出所 3 件以上": `${((crowded / spread) * 100).toFixed(0)}%`,
+          出所の種類: (kinds / spread).toFixed(1),
+        }
+      : {};
   table[name] = {
+    ...diversity,
     問: n,
     top1: `${((hit1 / n) * 100).toFixed(0)}%`,
     [`recall@${K}`]: `${((hitK / n) * 100).toFixed(0)}%`,

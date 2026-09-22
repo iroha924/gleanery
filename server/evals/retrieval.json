@@ -1,5 +1,5 @@
 {
-  "note": "検索を測る問い。正解は knowledge なら source_key、message なら id。記録の本文から LLM が作ったので、実運用より易しい方向に偏る。ここで落ちるものは実運用でも落ちる、という下限の測定。 作業そのものを指す問いは、その作業の同じ種類の記録をどれも正解にする（1 件しか許さないと、同じ作業に決定が 4 つあるとき 3/4 が不正解になる）。",
+  "note": "検索を測る問い。正解は knowledge なら source_key、message なら id。記録の本文から LLM が作ったので、実運用より易しい方向に偏る。ここで落ちるものは実運用でも落ちる、という下限の測定。",
   "builtAt": "2026-09-22T12:37:51.758Z",
   "cases": [
     {
@@ -176,10 +176,7 @@
     },
     {
       "q": "本番級DBでSQL検証を入れた配布版は？",
-      "expect": [
-        "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green",
-        "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green"
-      ],
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green"],
       "kind": "other",
       "source": "knowledge"
     },
@@ -439,13 +436,7 @@
     },
     {
       "q": "PostgreSQLでSQLを検証し、0.33.29を配布する決定は？",
-      "expect": [
-        "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan",
-        "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process",
-        "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8",
-        "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records",
-        "claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping"
-      ],
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan"],
       "kind": "decision",
       "source": "knowledge"
     },
