@@ -48,6 +48,12 @@ await withTempDir(async (dir) => {
     // remote があるので --name は付けない（付けると CLI が止める）。key は git:github.com/example/live になる。
     note("project add", runCli(["project", "add", "--cwd", repo], dir, covDir));
     note("project list", runCli(["project", "list"], dir, covDir));
+    // 文書の除外。add は connector を作り、list は join で引き、remove は副問い合わせで絞る。
+    note("exclude add", runCli(["project", "exclude", "add", "--cwd", repo, "docs"], dir, covDir));
+    const excluded = note("exclude list", runCli(["project", "exclude", "list", "--cwd", repo], dir, covDir));
+    if (!/docs（directory）/.test(excluded.out))
+      failures.push(`exclude list が足した path を出していない\n${excluded.out.slice(0, 400)}`);
+    note("exclude remove", runCli(["project", "exclude", "remove", "--cwd", repo, "docs"], dir, covDir));
     // **harvest はここでは半分だけ通る。**作業場所の key は remote の綴りから決まるので、
     // github の URL を持たせると文書の同期が本物の remote を引きに行き、手元では届かない
     // （insteadOf で手元へ読み替えると `git remote get-url` もそちらを返し、key が github でなくなる）。

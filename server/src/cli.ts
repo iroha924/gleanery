@@ -33,7 +33,15 @@ import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { foot, inline, type Mark, mark, pad, panel, plain, rule, title, width } from "./panel.ts";
 import { observe, packageVersionAt, ROOT, report } from "./plugin.ts";
-import { identify, localRoots, nameLocal, type Place, projectId } from "./project.ts";
+import {
+  connectorOf,
+  identify,
+  localRoots,
+  nameLocal,
+  type Place,
+  projectId,
+  relativeTo,
+} from "./project.ts";
 import {
   directory,
   framed,
@@ -409,6 +417,116 @@ function limitOf(input: string): number {
   return n;
 }
 
+/** 除外に入れる path と、それが file か directory か。作業ツリーに無い path は打ち間違いとして落とす。 */
+function excludeTarget(
+  cwd: string,
+  target: string,
+): { place: Place; kind: "file" | "directory"; rel: string } {
+  const place = placeOf(cwd);
+  const rel = relativeTo(place.root, target, cwd);
+  if (!rel) throw new Error(`${target} は ${place.name}（${place.root}）の中に無い`);
+  // symlink は辿らない。commit の tree でも 1 項目で、先が directory でも本文としては読まれない。
+  const st = fs.lstatSync(path.join(place.root, rel), { throwIfNoEntry: false });
+  if (!st) throw new Error(`${rel} が作業ツリーに無い`);
+  return { place, kind: st.isDirectory() ? "directory" : "file", rel };
+}
+
+const excludeRoutes = buildRouteMap({
+  docs: {
+    brief: "文書の同期で取り込まない path",
+    fullDescription:
+      "追跡された Markdown が全部「事実を述べた文書」とは限らない（監査の fixture、穴埋めのテンプレート）。外したものは次の同期で、節も埋め込みも一緒に消える。",
+  },
+  routes: {
+    add: buildCommand({
+      docs: { brief: "取り込まない path を足す（ファイルかディレクトリ）" },
+      parameters: {
+        flags: { cwd: CWD },
+        positional: {
+          kind: "tuple",
+          parameters: [{ parse: String, brief: "外す path", placeholder: "path" }],
+        },
+      },
+      func: async (flags: { cwd?: string }, target: string) => {
+        const { place, kind, rel } = excludeTarget(flags.cwd ?? process.cwd(), target);
+        await withDb(loadEnv(), "ingest", async (db) => {
+          const id = await registered(db, place);
+          const connector = await connectorOf(db, id, "docs");
+          await db
+            .insertInto("gleanery.docs_exclude")
+            .values({ connector_id: connector.id, kind, path: rel })
+            .onConflict((oc) => oc.doNothing())
+            .execute();
+          console.log(
+            panel("gleanery project exclude add", [`${rel}（${kind}）`], "次の同期から取り込まない"),
+          );
+        });
+      },
+    }),
+    list: buildCommand({
+      docs: { brief: "その作業場所で取り込まない path" },
+      parameters: { flags: { cwd: CWD } },
+      func: async (flags: { cwd?: string }) => {
+        const place = placeOf(flags.cwd ?? process.cwd());
+        await withDb(loadEnv(), "reader", async (db) => {
+          const id = await registered(db, place);
+          const rows = await db
+            .selectFrom("gleanery.docs_exclude as x")
+            .innerJoin("gleanery.connector as c", (j) =>
+              j.onRef("c.id", "=", "x.connector_id").on("c.provider", "=", "docs"),
+            )
+            .select(["x.kind", "x.path"])
+            .where("c.project_id", "=", String(id))
+            .orderBy("x.path")
+            .execute();
+          console.log(
+            panel(
+              "gleanery project exclude list",
+              rows.map((r) => `${r.path}（${r.kind}）`),
+              rows.length ? `${rows.length} 件` : "除外なし",
+            ),
+          );
+        });
+      },
+    }),
+    remove: buildCommand({
+      docs: { brief: "取り込まない path を外す（次の同期で取り込みに戻る）" },
+      parameters: {
+        flags: { cwd: CWD },
+        positional: {
+          kind: "tuple",
+          parameters: [{ parse: String, brief: "戻す path", placeholder: "path" }],
+        },
+      },
+      func: async (flags: { cwd?: string }, target: string) => {
+        const cwd = flags.cwd ?? process.cwd();
+        const place = placeOf(cwd);
+        // 消すときは作業ツリーを見ない。外した後にその path が消えても、設定だけは消せる。
+        const rel = relativeTo(place.root, target, cwd);
+        if (!rel) throw new Error(`${target} は ${place.name}（${place.root}）の中に無い`);
+        await withDb(loadEnv(), "ingest", async (db) => {
+          const id = await registered(db, place);
+          const gone = await db
+            .deleteFrom("gleanery.docs_exclude")
+            .where("path", "=", rel)
+            .where(
+              sql<boolean>`connector_id in (
+                select id from gleanery.connector where project_id = ${id} and provider = 'docs')`,
+            )
+            .executeTakeFirst();
+          console.log(
+            panel(
+              "gleanery project exclude remove",
+              [rel],
+              Number(gone.numDeletedRows) ? "次の同期から取り込みに戻る" : "除外に入っていない",
+            ),
+          );
+        });
+      },
+    }),
+  },
+});
+
 const projectRoutes = buildRouteMap({
   docs: { brief: "記録する作業場所の登録と、消去" },
   routes: {
@@ -477,6 +595,7 @@ const projectRoutes = buildRouteMap({
         });
       },
     }),
+    exclude: excludeRoutes,
     forget: buildCommand({
       docs: { brief: "作業場所のデータを消す（--yes が無ければ数えるだけ）" },
       parameters: {

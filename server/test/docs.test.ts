@@ -3,7 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import type { Artifact } from "../src/artifacts.ts";
-import { collectDocs, commitOf, docHash, isAncestor, projectDocs, sections, syncDocs } from "../src/docs.ts";
+import {
+  collectDocs,
+  commitOf,
+  docHash,
+  excludedOf,
+  isAncestor,
+  projectDocs,
+  sections,
+  syncDocs,
+} from "../src/docs.ts";
 import { knowledgeText } from "../src/knowledge.ts";
 import { fakeDb } from "./fake-db.ts";
 import { put, withRepo } from "./temp-repo.ts";
@@ -112,6 +121,32 @@ test("commit の tree から読み、symlink の先は本文に入れない", as
   });
 });
 
+// 追跡された Markdown が全部「事実を述べた文書」とは限らない。監査の fixture は意図的に壊した見本で、
+// 取り込むと架空の規約が本物の手順より上位で返る（実測。iroha924/hir4ta-developer の bloated/CLAUDE.md）。
+test("除外した file と directory は取り込まない", async () => {
+  await withRepo((repo, git) => {
+    put(repo, "README.md", "# 本物\n中身\n");
+    put(repo, "evals/how-to-run.md", "# 回し方\n残す\n");
+    put(repo, "evals/fixtures/bloated.md", "# 架空\n嘘の規約\n");
+    put(repo, "evals/fixtures/deep/more.md", "# 深い\n嘘\n");
+    put(repo, "evals/fixtures-old/keep.md", "# 別\n残す\n");
+    put(repo, "assets/skeleton.md", "# TODO\nTODO\n");
+    put(repo, "assets/skeleton.md.bak.md", "# 似た名前\n残す\n");
+    git("add", "-A");
+    git("commit", "-qm", "x");
+    const { docs } = collectDocs(repo, commitOf(repo, false), {
+      files: ["assets/skeleton.md"],
+      directories: ["evals/fixtures"],
+    });
+    assert.deepEqual(docs.map((d) => d.path).sort(), [
+      "README.md",
+      "assets/skeleton.md.bak.md",
+      "evals/fixtures-old/keep.md",
+      "evals/how-to-run.md",
+    ]);
+  });
+});
+
 // 作業ツリーを読むと、書きかけの本文や、承認を外している最中の成果物が DB に入る。
 test("作業ツリーの未 commit の編集は読まず、commit した承認だけを見る", async () => {
   await withRepo((repo, git) => {
@@ -178,12 +213,27 @@ test("大文字の拡張子の文書にも最終更新日が付き、大きす�
   });
 });
 
+// 除外は docs の connector に付く。同期は transaction の外でこれを読み、blob を読む前に当てる。
+test("除外は docs の connector から読み、kind で file と directory に分かれる", async () => {
+  const { db, calls } = fakeDb(() => [
+    { kind: "file", path: "assets/skeleton.md" },
+    { kind: "directory", path: "evals/fixtures" },
+  ]);
+  assert.deepEqual(await excludedOf(db, 7), {
+    files: ["assets/skeleton.md"],
+    directories: ["evals/fixtures"],
+  });
+  assert.match(calls[0]?.sql ?? "", /"gleanery"\."docs_exclude"/);
+  assert.deepEqual(calls[0]?.parameters, ["docs", "7"]);
+});
+
 /**
  * 文書の connector に head だけを持つ偽の DB。書き込みの SQL が来たら失敗させる（この経路は何も書かない）。
  * onRead は connector を読んだ瞬間に走る（その間に別の同期が新しい commit を入れた、を再現する）。
  */
 function headOnly(head: string, onRead: () => void = () => {}) {
   const { db, calls } = fakeDb((text) => {
+    if (text.includes('"gleanery"."docs_exclude"')) return [];
     if (text.includes('insert into "gleanery"."connector"')) return [];
     if (text.includes('"head_oid"')) {
       onRead();

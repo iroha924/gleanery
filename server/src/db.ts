@@ -62,7 +62,7 @@ export const KEY: Record<Role, string> = {
 };
 
 /** MCP・CLI・画面が期待する schema の版（自動記録は確かめない）。db/schema.sql のコメントと同じ数にする。 */
-export const SCHEMA_REVISION = 5;
+export const SCHEMA_REVISION = 6;
 
 /** pg は int8（bigint と count(*)）を string、timestamptz を Date で返す。`query<T>` の結果型はこれに合わせて書く。 */
 export type Db = Pick<pg.Client, "query">;

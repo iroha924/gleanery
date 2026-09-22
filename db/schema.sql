@@ -12,7 +12,7 @@ create schema if not exists extensions;
 create extension if not exists vector with schema extensions;
 
 create schema gleanery;
-comment on schema gleanery is 'gleanery schema revision 5';
+comment on schema gleanery is 'gleanery schema revision 6';
 revoke all on schema gleanery from public;
 
 -- git remote を正規化した key（`git:github.com/owner/repo`）か、remote の無い作業場所に各 PC の設定で付けた key。
@@ -55,6 +55,18 @@ create table gleanery.connector (
   last_success_at timestamptz,
   last_error text,
   unique (project_id, provider)
+);
+
+-- docs の同期で取り込まない path。追跡された Markdown が全部「事実を述べた文書」とは限らない（監査の fixture）。
+-- **取り込む側の設定である。**読み取り専用の作業場所にも効かせたいので、リポジトリ側の manifest には置かない。
+-- file は path と完全一致、directory は `<path>/` で始まる path に当たる。docs の connector にだけ作る。
+create table gleanery.docs_exclude (
+  connector_id bigint not null references gleanery.connector (id) on delete cascade,
+  kind text not null check (kind in ('file', 'directory')),
+  path text not null check (
+    path <> '' and path !~ '^/' and path !~ '(^|/)\.\.(/|$)' and path !~ '/$' and path !~ '[[:cntrl:]]'
+  ),
+  primary key (connector_id, kind, path)
 );
 
 -- 取り込み元の今の状態。消えたと完全な一覧で確かめられた項目は行ごと消す（墓標を置かない）。
