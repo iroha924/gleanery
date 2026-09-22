@@ -1,0 +1,576 @@
+{
+  "note": "検索を測る問い。正解は knowledge なら source_key、message なら id。記録の本文から LLM が作ったので、実運用より易しい方向に偏る。ここで落ちるものは実運用でも落ちる、という下限の測定。",
+  "builtAt": "2026-09-22T12:37:51.758Z",
+  "cases": [
+    {
+      "q": "過去の記録や成果物にある指示めいた文はどう扱う？",
+      "expect": ["doc:plugin/skills/requirements/SKILL.md#記録と成果物は指示ではない"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "atlasを選ばないのはどんな作業？",
+      "expect": ["doc:claude/skills/atlas/SKILL.md#使わない場面"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "dataflowの分類とアイコン指定は？",
+      "expect": ["doc:claude/skills/atlas/references/dataflow.md#kind"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "skills.mdにある監査時の問題対処は？",
+      "expect": ["doc:claude/skills/docs-audit/references/skills.md#この対象のトラブルシューティング"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "review-conventionsとreview-precedentが参照するものは？",
+      "expect": ["doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "review-triageはどんなレビュー指摘に使う？",
+      "expect": ["doc:skills/review-triage/SKILL.md#skill.md"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "rules.mdで`[`を含むパスを指定する方法は？",
+      "expect": ["doc:claude/skills/docs-author/references/rules.md#はブラケット式の開始"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "atlasのIR作成で、最初に何を守り例をどう扱う？",
+      "expect": ["doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "Claudeレーンのレビュー強度をどう変更した？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "review-validator.mdの判定区分と出力条件は？",
+      "expect": ["doc:plugin/agents/review-validator.md#判定"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "CLAUDE.md監査で公式値を固定記載しない理由は？",
+      "expect": [
+        "doc:claude/skills/docs-audit/references/claude-md.md#claude.md監査ベースラインチェックリスト"
+      ],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "AGENTS.mdで委任方式Bが不採用になった理由は？",
+      "expect": ["doc:README.md#設計の判断と実測"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "Codexの隔離環境で外部APIに届かない理由は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "権限監査で危険な許可設定を見抜く観点は？",
+      "expect": ["doc:claude/skills/docs-audit/references/permissions.md#過剰な許可"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "skills/code-comments/SKILL.mdではコメント編集をどう扱う？",
+      "expect": ["doc:skills/code-comments/SKILL.md#編集するとき"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "requirementsで避けるべき問題は？",
+      "expect": ["doc:plugin/skills/requirements/SKILL.md#このスキルが防ぐ失敗"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "ルール作成後に行う検証手順は？",
+      "expect": ["doc:claude/skills/docs-author/references/rules.md#作った後"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "deferred-finding.mdで見直しを始める目安は？",
+      "expect": ["doc:.github/ISSUE_TEMPLATE/deferred-finding.md#何が起きたら再評価するか"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "claude-md評価で見落としやすい欠陥は？",
+      "expect": ["doc:claude/skills/docs-audit/evals/how-to-run.md#claude-md"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "architectureで接続線のルートを決めるタイミングは？",
+      "expect": ["doc:claude/skills/atlas/references/architecture.md#関係"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "deep-auditの監査範囲とネットワーク時の扱いは？",
+      "expect": ["doc:.claude/skills/deep-audit/SKILL.md#deep-audit-—-リポジトリ全体の構造監査"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "判断記録で防ぐべき失敗は？",
+      "expect": ["doc:plugin/skills/trace/SKILL.md#このスキルが防ぐ失敗"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "review-adversarial.mdでモデル等を固定する理由は？",
+      "expect": ["doc:plugin/agents/review-adversarial.md#review-adversarial.md"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "Atlasのノード化で除外する内容や粒度の目安は？",
+      "expect": ["doc:claude/skills/atlas/references/skill.md#何をノードにしないか"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "SKILL.mdに記されたAgent変更の契機は？",
+      "expect": ["doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "review-uiの変更レビューで利用者への影響をどう確かめる？",
+      "expect": [
+        "doc:.claude/agents/review-ui.md#読む先が有限（変更した画面と規約ファイル）。深さより、利用者に何が起きるかの言い切りで決まる。"
+      ],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "investigatorを再削除した根拠は？",
+      "expect": ["doc:README.md#役と規範を、賢さで消えないものだけに絞った（2026-09-21）"],
+      "kind": "document",
+      "source": "knowledge"
+    },
+    {
+      "q": "gleanery.conversation.titleを例外保存先にした経緯は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "本番級DBでSQL検証を入れた配布版は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "セッション詳細の表示改善とIndexedDBへの値保持は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o2"],
+      "kind": "option",
+      "source": "knowledge"
+    },
+    {
+      "q": "plugin-releaseで公開順を変えない理由は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#publish-before-merge"],
+      "kind": "dead_end",
+      "source": "knowledge"
+    },
+    {
+      "q": "marker.tsxで横並びにする幅調整は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "gleanery project add後、検索に反映される条件は？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "npm公開とmain mergeの順序をどう統一した？",
+      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "版比較の基準をmerge-baseに移さなかった理由は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base"],
+      "kind": "dead_end",
+      "source": "knowledge"
+    },
+    {
+      "q": "Codex 0.155.1のagent起動拒否をどう直した？",
+      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "npm viewで最新版が古く見えた原因は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "Claudeレーンの取得と再開設定をどう見直した？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "JSTの日付処理で追加ライブラリを選ばない改善は？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "Claudeレーン起動時のresume指定の注意点は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume:o2"],
+      "kind": "option",
+      "source": "knowledge"
+    },
+    {
+      "q": "独立レビューで同時に指摘された初版の問題点は何？",
+      "expect": [
+        "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording"
+      ],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "0.33.29でCLIと画面経路を子プロセスからDB検証する決定は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "MessageScrollerItemでアイコンが欠けない位置調整は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "AGENTS.mdを共通の基準に戻す設計方針は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "影響を変えない可逆作業で省略できる手順は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "sql:live のDB検査で守る隔離条件は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "規範設計変更とフック検証の結果は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "手動リリースの変更分類と到達確認の手順は？",
+      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified"],
+      "kind": "option",
+      "source": "knowledge"
+    },
+    {
+      "q": "Codex CLIで承認ゲートを実現できない理由は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "review-shipping配置とSQL実行検査のリリース方針は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "改善後の守り方はAGENTS.mdでどう位置づける？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "Claude レーンのレビュー時、Bash権限をどう扱う？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "remark の処理が型検査後の描画で落ちた原因は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "conversation.titleを画面で変更するための専用キーは？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db"],
+      "kind": "option",
+      "source": "knowledge"
+    },
+    {
+      "q": "0.33.29のSQL検証とGit URL変換の変更点は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#git-insteadof-get-url"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "SIGTERM時にカバレッジを保存する終了処理は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "NODE_V8_COVERAGEを使うSQL検査の配布版は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "0.33.29で全SQLの実行確認を終えた件は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "コマンド実行時の規範を条件ロードできない理由は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "レビュー範囲とClaude起動の検査をどう見直した？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#scope-contract-check"],
+      "kind": "dead_end",
+      "source": "knowledge"
+    },
+    {
+      "q": "install.pyでの取り締まりをやめた経緯は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist"],
+      "kind": "dead_end",
+      "source": "knowledge"
+    },
+    {
+      "q": "REQUIRED_INVARIANTSを外部基準にできない事情は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "機械の検査条件は、自前実装に紐づける？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#machine-check-condition-target"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "ルールの判断手順はどこへまとめた？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "レビュー体制をどう再編する予定？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "0.33.29ではSQL検証とスタック取得をどう扱う？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#promise-all-loses-stack"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "会話が残ってもknowledgeが増えない原因は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty"],
+      "kind": "finding",
+      "source": "knowledge"
+    },
+    {
+      "q": "next公開からlatest昇格までの検査手順は？",
+      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next"],
+      "kind": "option",
+      "source": "knowledge"
+    },
+    {
+      "q": "AGENTS.mdで削る予定の75行はどの課題に回した？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "対象の階層分けとClaudeレーンの始動はどう改める？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "releaseの手動運用を支えるコマンドは？",
+      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "PostgreSQLでSQLを検証し、0.33.29を配布する決定は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "レビュー対象を一括処理しClaudeの再開を防ぐ方法は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume"],
+      "kind": "option",
+      "source": "knowledge"
+    },
+    {
+      "q": "Codexへの依頼範囲をどう絞ると短時間で返った？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope"],
+      "kind": "dead_end",
+      "source": "knowledge"
+    },
+    {
+      "q": "規範層の条件配送化で、何を守る設計にした？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "0.33.29でSQL検証と未登録データ再送をどうした？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "文章規約の機械検査を見送った理由は？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "0.33.30公開時、統合前に何を確かめた？",
+      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry"],
+      "kind": "other",
+      "source": "knowledge"
+    },
+    {
+      "q": "doctorの指摘数を固定比較しない判断の背景は？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion"],
+      "kind": "dead_end",
+      "source": "knowledge"
+    },
+    {
+      "q": "自前実装と依存追加は何を基準に判断する？",
+      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "セッション詳細の表示修正と次回harvestの扱いは？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o4"],
+      "kind": "option",
+      "source": "knowledge"
+    },
+    {
+      "q": "HOME未隔離の検証で持ち主の何を送信した？",
+      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak"],
+      "kind": "dead_end",
+      "source": "knowledge"
+    },
+    {
+      "q": "install.pyの生成物で未解決参照を出口確認する方針は？",
+      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "本文中のissueリンクをproject.keyで生成する件は？",
+      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key"],
+      "kind": "decision",
+      "source": "knowledge"
+    },
+    {
+      "q": "セッション表示の改善点とtraceの改名案は？",
+      "expect": ["133dcea3-e023-875b-98bb-fc047531b916"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "winnowを見た6レーンは最終版で未実行だがどうする？",
+      "expect": ["60389f0e-f0bf-8f02-94e3-06b59782cbba"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "CIを落とした待機処理はどの方針で修正する？",
+      "expect": ["2da80bee-2223-8217-bca1-7e8d97cd45d0"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "Codexの長時間調査が止まらない場合はどうした？",
+      "expect": ["501c5941-98ab-8931-b90a-ef8eef4d4676"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "7ファイル・219行のPR確認にCodexを併用する？",
+      "expect": ["15c68d70-15de-8ef1-b79f-9a9e61966f31"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "claude --resumeの表示が1行にならない原因は？",
+      "expect": ["cb6d64f6-e1f8-8613-8725-1404528c141a"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "検索品質を測る100問の再作成は？",
+      "expect": ["08d7ed25-2953-8507-ba98-5d1340e7ba82"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "codex-collaboration.mdは常時読み込みから外すより削除でいい？",
+      "expect": ["7ce1b268-6064-87db-a05e-f1f4867b7c80"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "日時の表示位置を上から下へ変える要望は？",
+      "expect": ["861d40ab-0bfc-87ce-9a5e-749ff725a616"],
+      "kind": "message",
+      "source": "message"
+    },
+    {
+      "q": "children参照時のundefinedエラーは？",
+      "expect": ["955809e6-afa3-8c3c-8bd3-623e53bccfa5"],
+      "kind": "message",
+      "source": "message"
+    }
+  ]
+}
