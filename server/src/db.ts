@@ -117,7 +117,7 @@ export async function checkSchema(db: Db): Promise<void> {
     throw new Error(
       `DB の schema は revision ${Number.isNaN(got) ? "不明" : got}、このコードは revision ${SCHEMA_REVISION} を期待している。` +
         (got < SCHEMA_REVISION
-          ? "持ち主が gleanery のリポジトリで `bun run db:migrate` を当てる"
+          ? "持ち主が `gleanery db migrate` を当てる（この repository で作業しているなら `bun run db:migrate`）"
           : "gleanery を更新する"),
     );
   }
