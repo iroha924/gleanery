@@ -2,6 +2,18 @@
 
 **緑だったことと、検査したことは別である。**このリポジトリで実際に空振りした 4 つを挙げる。
 
+## releaseは分類から始める
+
+配布物へ入る変更では、versionを編集する前に
+`bun run release:plan -- --base <前回のrelease commit>`を実行する。表示された種別を変えて扱わない。
+
+- `none`: releaseしない
+- `npm-only`: dashboard・Honoだけ。`plugin/package.json`だけを上げ、plugin manifest・marketplace・cacheは動かさない
+- `plugin`: MCP・CLI・hook・plugin Skill/Agent・共有moduleを含む。npmと3つのplugin versionを同じ値へ上げる
+
+両方が混じれば`plugin`である。不可逆な操作は自動化せず、cleanなreview済みcommitで
+`bun run release:prepare -- --base <前回のrelease commit>`が残したtarballだけをpublishする。
+
 ## 実 DB へ繋ぐのは専用の検査レーンだけ
 
 `bun run test` の単体テストは、今後も実 DB と外部 API へ繋がない。**例外は `sql:live` の 1 本だけ**で、

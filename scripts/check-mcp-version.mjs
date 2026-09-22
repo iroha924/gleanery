@@ -8,6 +8,7 @@
 
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
+import { isPackageInput, releaseKind, withoutReleaseVersion } from "./lib/release-scope.mjs";
 
 const { base } = parseArgs({ options: { base: { type: "string" } } }).values;
 
@@ -27,13 +28,14 @@ try {
   process.exit(0);
 }
 
-// **版は 3 箇所にある。**片方だけ上げても届かないので、全部を見る。
+// plugin channel の版は 3 箇所にある。片方だけ上げても届かないので、全部を見る。
 // 実測（2026-09-09）: Claude 側が 13 回上がるあいだ、**Codex 側は作られたときの 0.1.0 のまま
 // 一度も上がっていなかった。**このゲート自身が Claude 側しか見ていなかったため、
 // 「版を上げ忘れたら止まる」という約束が片側にしか効いていなかった。
-// 配る正本は npm の package で、plugin の manifest はそれと同じ版を指す。1 つでもずれると届かない。
-const MANIFESTS = {
-  "plugin/package.json": (j) => j.version,
+// npm package はdashboard/Honoだけのreleaseでも進む。plugin channelの3つは互いに揃えるが、
+// npm packageより古い状態を許す。
+const PACKAGE = "plugin/package.json";
+const PLUGIN_MANIFESTS = {
   // **版は source の中にある。**entry 直下にも置くと、Claude Code は警告なく plugin.json を使い、
   // marketplace の値が黙って無視される（公式の plugin-marketplaces）。置き場所は 1 つに保つ。
   ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.source?.version,
@@ -45,19 +47,25 @@ const MANIFESTS = {
 const read = (f) => JSON.parse(git("show", `:${f}`));
 /** index（commit に入る内容）での姿。ref を空にすると `git show :path` になる。 */
 const staged = (f) => at("", f);
-const versions = Object.entries(MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
+const packageVersion = read(PACKAGE).version;
+const versions = Object.entries(PLUGIN_MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
 const distinct = [...new Set(versions.map(([, v]) => v))];
 if (distinct.length !== 1) {
   console.error(
     [
-      "プラグインの版が揃っていない。",
+      "plugin channel の版が揃っていない。",
       "",
       ...versions.map(([f, v]) => `  ${v}  ${f}`),
       "",
-      "  **配る先ごとにマニフェストがある。**片方だけ上げると、もう片方の利用者には",
-      "  古い中身が届き続ける。3 つとも同じ版にする。",
+      "  配る先ごとにmanifestがある。片方だけ上げると、もう片方の利用者には",
+      "  古い中身が届き続ける。plugin channelの3つを同じ版にする。",
     ].join("\n"),
   );
+  process.exit(1);
+}
+const pluginVersion = distinct[0];
+if (pluginVersion.localeCompare(packageVersion, undefined, { numeric: true }) > 0) {
+  console.error(`plugin channel（${pluginVersion}）をnpm package（${packageVersion}）より先へ進められない。`);
   process.exit(1);
 }
 
@@ -65,75 +73,59 @@ if (distinct.length !== 1) {
 // 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
 // `--base` へ変えるだけで同じ比べ方になる。
 //
-// **配る中身を変えうる入力を全部挙げる。**キャッシュへ複製されるのは mcp.js だけではなく、
-// 自動記録（dist/capture.js）もフックの定義もスキル（skills/**）も画面も DB の同梱物も入る。
-// dist と db は追跡しないので、ここから漏れた入力を変えると、中身が変わったのに版が据え置かれる。
-// src だけでなく、依存の版（lockfile）、build と型の設定、公開する物の一覧も中身を変える。
-const INPUTS = [
-  "plugin/",
-  // .claude-plugin/marketplace.json は入れない。**リポジトリ直下にあり npm の files に入らない**ので、
-  // これを変えても配る tarball の中身は 1 バイトも変わらない。版の一致は MANIFESTS が、
-  // 取得元は scripts/check-ai-config.mjs が見る。
-
-  "server/src/",
-  "server/package.json",
-  "server/bun.lock",
-  "server/tsconfig.json",
-  "dashboard/src/",
-  "dashboard/public/",
-  "dashboard/index.html",
-  "dashboard/package.json",
-  "dashboard/bun.lock",
-  "dashboard/tsconfig.json",
-  "dashboard/vite.config.ts",
-  "db/",
-  "scripts/bundle.mjs",
-  "scripts/third-party-notices.mjs",
-  "scripts/licenses/",
-];
 /**
  * manifest から版を落とした姿。**版だけを上げた commit を「中身が変わった」に数えない**ため。
  * ただし落とすのは版だけで、`files` と `bin` と MCP の起動引数は配る物を変えるので残す
  * （これを丸ごと除外していたため、公開する一覧を変えて版を据え置く commit が素通りしていた）。
  */
-const withoutVersion = (text) => {
-  if (text === null) return null;
-  try {
-    const o = JSON.parse(text);
-    delete o.version;
-    // 版の数字だけを落とす。取得元（source の種類と package 名）が変わったかは
-    // ここでは見ない — scripts/check-ai-config.mjs が版に関わらず無条件で落とす。
-    for (const p of Array.isArray(o.plugins) ? o.plugins : []) {
-      delete p.version;
-      if (p.source && typeof p.source === "object") delete p.source.version;
-    }
-    return JSON.stringify(o);
-  } catch {
-    return text;
-  }
-};
-
 const ref = base ?? "HEAD";
-const changed = git("diff", "--cached", "--name-only", ref, "--", ...INPUTS)
+const changed = git("diff", "--cached", "--name-only", ref)
   .split("\n")
   .filter(Boolean)
-  .filter((f) => !(f in MANIFESTS) || withoutVersion(at(ref, f)) !== withoutVersion(staged(f)));
+  .filter(isPackageInput)
+  .filter(
+    (f) =>
+      (f !== PACKAGE && !(f in PLUGIN_MANIFESTS)) ||
+      withoutReleaseVersion(at(ref, f)) !== withoutReleaseVersion(staged(f)),
+  );
 if (changed.length === 0) process.exit(0);
 
-const MANIFEST = "plugin/.claude-plugin/plugin.json";
-const was = JSON.parse(at(ref, MANIFEST) ?? "{}").version;
-const now = distinct[0];
-if (was !== now) process.exit(0);
+const kind = releaseKind(changed);
+const oldPackageVersion = JSON.parse(at(ref, PACKAGE) ?? "{}").version;
+const oldPluginVersion = JSON.parse(at(ref, "plugin/.claude-plugin/plugin.json") ?? "{}").version;
+
+if (kind === "npm") {
+  if (oldPluginVersion !== pluginVersion) {
+    console.error(
+      `dashboard/Honoだけの変更ではplugin channelを更新しない（${oldPluginVersion} → ${pluginVersion}）。`,
+    );
+    process.exit(1);
+  }
+  if (oldPackageVersion !== packageVersion) process.exit(0);
+  console.error(
+    `npm packageの${changed.length}個が変わったのに版が${packageVersion}のままになっている（${changed[0]}など）。\n\n` +
+      "  plugin manifestとmarketplaceは動かさず、plugin/package.jsonのversionだけを上げる。",
+  );
+  process.exit(1);
+}
+
+if (
+  oldPackageVersion !== packageVersion &&
+  oldPluginVersion !== pluginVersion &&
+  packageVersion === pluginVersion
+) {
+  process.exit(0);
+}
 
 console.error(
   [
-    `plugin/ の ${changed.length} 個が変わったのに版が ${now} のままになっている（${changed[0]} など）。`,
+    `plugin channelの${changed.length}個が変わったが、npm packageとpluginの版が揃って上がっていない（${changed[0]}など）。`,
     "",
     "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/gleanery/gleanery/<版>/ の複製から動く。",
-    "  複製は版が変わったときだけ起きるので、このままでは**どのセッションにも届かない**。",
+    "  複製は版が変わったときだけ起きるので、このままではsessionへ届かない。",
     "",
-    "  4つ（npm の package.json、Claude、Codex、marketplace）のversionを同じ値へ上げる。",
-    "  marketplace の取得元へ入れた後、`gleanery doctor` の「plugin の版」が出す更新手順を叩き、セッションを張り直す。",
+    "  npm packageとplugin channelの3 manifestを同じ新しいversionへ上げる。",
+    "  marketplace の取得元へ入れた後、`gleanery doctor` の「plugin channel の版」が出す更新手順を叩き、セッションを張り直す。",
   ].join("\n"),
 );
 process.exit(1);

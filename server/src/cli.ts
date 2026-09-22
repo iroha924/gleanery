@@ -32,7 +32,7 @@ import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { foot, inline, type Mark, mark, pad, panel, plain, rule, title, width } from "./panel.ts";
-import { observe, ROOT, report, versionAt } from "./plugin.ts";
+import { observe, packageVersionAt, ROOT, report } from "./plugin.ts";
 import { identify, localRoots, nameLocal, type Place, projectId } from "./project.ts";
 import {
   directory,
@@ -1007,7 +1007,7 @@ const root = buildRouteMap({
       },
     }),
     doctor: buildCommand({
-      docs: { brief: "plugin の版、鍵と接続、schema、同期と自動記録の状態" },
+      docs: { brief: "npm packageとpluginの版、鍵と接続、schema、同期と自動記録の状態" },
       parameters: {},
       func: () => doctor(loadEnv(), process.cwd()),
     }),
@@ -1085,7 +1085,7 @@ const app = buildApplication(
     version: version({
       brief: TEXT.briefs.version,
       alias: "v",
-      info: { getCurrentVersion: async () => `${versionAt(ROOT) ?? "不明"}  ${ROOT}` },
+      info: { getCurrentVersion: async () => `${packageVersionAt(ROOT) ?? "不明"}  ${ROOT}` },
     }),
   },
 );
