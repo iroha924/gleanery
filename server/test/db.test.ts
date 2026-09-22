@@ -22,9 +22,12 @@ const dbAt = (revision: number): Db =>
   ({ query: async () => ({ rows: [{ comment: `gleanery schema revision ${revision}` }] }) }) as unknown as Db;
 
 // 案内の文面は MCP の応答とフックで AI に届くので、実在する command だけを示す。
-test("DB の schema が古ければ db:migrate を案内し、db:reset を案内しない", async () => {
+// **配った先には repository が無い。**npm と marketplace から入れた利用者は `bun run` を打てないので、
+// 同梱の CLI（`gleanery db migrate`）を先に示す。revision を上げた回にだけ出る文面で、diff には現れない。
+test("DB の schema が古ければ配った先でも打てる command を案内し、db:reset を案内しない", async () => {
   await assert.rejects(checkSchema(dbAt(SCHEMA_REVISION - 1)), (e: unknown) => {
     assert.ok(e instanceof Error);
+    assert.match(e.message, /gleanery db migrate/);
     assert.match(e.message, /bun run db:migrate/);
     assert.doesNotMatch(e.message, /db:reset/);
     return true;

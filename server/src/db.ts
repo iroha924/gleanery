@@ -62,7 +62,7 @@ export const KEY: Record<Role, string> = {
 };
 
 /** MCP・CLI・画面が期待する schema の版（自動記録は確かめない）。db/schema.sql のコメントと同じ数にする。 */
-export const SCHEMA_REVISION = 5;
+export const SCHEMA_REVISION = 6;
 
 /** pg は int8（bigint と count(*)）を string、timestamptz を Date で返す。`query<T>` の結果型はこれに合わせて書く。 */
 export type Db = Pick<pg.Client, "query">;
@@ -117,7 +117,7 @@ export async function checkSchema(db: Db): Promise<void> {
     throw new Error(
       `DB の schema は revision ${Number.isNaN(got) ? "不明" : got}、このコードは revision ${SCHEMA_REVISION} を期待している。` +
         (got < SCHEMA_REVISION
-          ? "持ち主が gleanery のリポジトリで `bun run db:migrate` を当てる"
+          ? "持ち主が `gleanery db migrate` を当てる（この repository で作業しているなら `bun run db:migrate`）"
           : "gleanery を更新する"),
     );
   }

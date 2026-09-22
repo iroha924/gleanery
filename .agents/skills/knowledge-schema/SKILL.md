@@ -98,7 +98,7 @@ builder に推論させるのは**select・join・別名・returning**で、そ�
 | 境界 | 表 | 書く口 |
 |---|---|---|
 | 作業場所と人 | `project`、`person`、`person_identity` | CLI（project、who）、GitHub同期 |
-| 取り込み元の今の状態 | `connector`、`source_item` | GitHub同期、文書同期 |
+| 取り込み元の今の状態 | `connector`、`docs_exclude`、`source_item` | GitHub同期、文書同期、CLI（project exclude） |
 | 逐語の会話 | `conversation`、`message`、`message_file`、`message_embedding` | 自動記録、GitHub同期 |
 | 検索する知識 | `knowledge`、`knowledge_file`、`knowledge_embedding` | trace、文書同期 |
 | 作業の現在地 | `work_item` | trace |
@@ -187,6 +187,8 @@ fast-forwardでなければ一度だけ取り直し、前に入れたcommit以�
 検査は`server/src/artifacts.ts`にだけ置き、`gleanery check`（作業ツリー）と同期（commit tree）が同じ関数を通る。
 
 - 選別と検査を、埋め込みと文書のDB書き込みより前に済ませる。逆にすると、draftの節が埋め込みAPIへ送られる
+- 取り込まない`path`は`docs_exclude`（docsのconnectorに紐づく）に置き、blobを読む前に当てる。追跡された
+  Markdownが全部「事実を述べた文書」とは限らない（監査のfixtureは、取り込むと架空の規約が本物より上位で返る）
 - 追跡済みの成果物を持つchangeのmanifestが不正なら、そのrepositoryの文書同期を丸ごと止める。エラーには
   pathと理由だけを出し、ファイルの内容と未知のキー名は出さない
 - 原文は`source_item`（`kind`が`requirements` / `design`、`body`に原文）、検索するのは`knowledge`の
@@ -216,8 +218,10 @@ docker exec gleanery-db-1 psql -U postgres -c 'create database gleanery_f'
 - Mで主な表の件数が、当てる前後で同じ
 - 各鍵の禁止操作が`permission denied`のまま
 
-鍵は`GLEANERY_ENV_DIR/.env`に4つとも検証用のdatabaseへ向けて書く（ownerを書いてから`bun run db:roles`を
-叩くと、残る3つがそこへ書かれる）。`server/src/db.ts`の`loadEnv`はそこを先に読み、無い鍵だけ
+鍵は`GLEANERY_ENV_DIR/.env`に4つとも検証用のdatabaseへ向けて書く。**`bun run db:roles`で作らない。**
+ロールはdatabaseではなくクラスタ単位なので、検証用のdatabaseを指して叩いても本物のDBのパスワードごと
+変わり、`~/.gleanery/env`の3つの鍵が無効になる。`~/.gleanery/env`を写してdatabase名だけ差し替える
+（同じクラスタの同じロールなので、パスワードはそのまま通る）。`server/src/db.ts`の`loadEnv`はそこを先に読み、無い鍵だけ
 `~/.gleanery/env`で補うので、1つでも欠けるとその鍵は手元の本物のDBへ繋がる。ただし`readInto`は
 `process.env`にある鍵を上書きしないので、シェルに`GLEANERY_DB_URL*`をexportしているとそちらが`.env`より
 優先される。検証の前に、その鍵が検証用のdatabaseを向いていることを確かめる。

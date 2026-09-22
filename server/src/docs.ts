@@ -262,6 +262,14 @@ function lastTouched(root: string, commit: string): Map<string, string> {
   return at;
 }
 
+/** 取り込まない path。file は完全一致、directory は `<path>/` で始まるもの（`fixtures-old` は当たらない）。 */
+export type Excluded = { files: string[]; directories: string[] };
+
+const EXCLUDE_NONE: Excluded = { files: [], directories: [] };
+
+const excluded = (rel: string, ex: Excluded): boolean =>
+  ex.files.includes(rel) || ex.directories.some((d) => rel.startsWith(`${d}/`));
+
 export type Doc = {
   path: string;
   kind: "document" | "requirements" | "design";
@@ -314,9 +322,14 @@ const CHUNK = 500;
  * commit の tree から、入れる文書を組み立てる（DB に触らない）。`.gleanery` が不正なら、どれが承認済みかを
  * 決められないので投げる（呼び出し側は何も書かず、前回の状態を保つ）。
  */
-export function collectDocs(root: string, commit: string): { docs: Doc[]; skipped: number } {
+export function collectDocs(
+  root: string,
+  commit: string,
+  ex: Excluded = EXCLUDE_NONE,
+): { docs: Doc[]; skipped: number } {
   const tree = treeOf(root, commit);
-  const md = [...tree.entries].filter(([rel]) => /\.mdx?$/i.test(rel));
+  // **除外は blob を読む前に当てる。**読んでから捨てると、外したはずの本文が一度メモリへ載る。
+  const md = [...tree.entries].filter(([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex));
   const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
   // 大きすぎる manifest は読まない（検査が大きさだけで「大きすぎる」と返す）。読み込んでから測ると、1 本で同期ごと落ちる。
   const manifests = [...tree.entries].filter(
@@ -346,6 +359,22 @@ export function collectDocs(root: string, commit: string): { docs: Doc[]; skippe
   return { docs: projectDocs(bodies, include, lastTouched(root, commit)), skipped };
 }
 
+/** docs の connector に付いた除外。connector がまだ無ければ空（最初の同期でも読める）。 */
+export async function excludedOf(db: Kysely<DB>, projectId: number): Promise<Excluded> {
+  const rows = await db
+    .selectFrom("gleanery.docs_exclude as x")
+    .innerJoin("gleanery.connector as c", (j) =>
+      j.onRef("c.id", "=", "x.connector_id").on("c.provider", "=", "docs"),
+    )
+    .select(["x.kind", "x.path"])
+    .where("c.project_id", "=", String(projectId))
+    .execute();
+  return {
+    files: rows.flatMap((r) => (r.kind === "file" ? [r.path] : [])),
+    directories: rows.flatMap((r) => (r.kind === "directory" ? [r.path] : [])),
+  };
+}
+
 /**
  * 1 つの作業場所の文書を同期する。tree の一覧は完全なので、一覧から消えた文書は行ごと消す。
  *
@@ -362,7 +391,7 @@ export async function syncDocs(
   opts: { remote: boolean; reset?: boolean },
 ): Promise<string> {
   const commit = commitOf(root, opts.remote);
-  const { docs, skipped } = collectDocs(root, commit);
+  const { docs, skipped } = collectDocs(root, commit, await excludedOf(db, projectId));
 
   const done = await inTransaction(db, async (trx) => {
     const connector = await connectorOf(trx, projectId, "docs");

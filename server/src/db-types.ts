@@ -46,6 +46,12 @@ export interface GleaneryConversation {
   title: string | null;
 }
 
+export interface GleaneryDocsExclude {
+  connector_id: Int8;
+  kind: string;
+  path: string;
+}
+
 export interface GleaneryKnowledge {
   body: string;
   command: string | null;
@@ -182,6 +188,7 @@ export interface GleaneryWorkItem {
 export interface DB {
   "gleanery.connector": GleaneryConnector;
   "gleanery.conversation": GleaneryConversation;
+  "gleanery.docs_exclude": GleaneryDocsExclude;
   "gleanery.knowledge": GleaneryKnowledge;
   "gleanery.knowledge_embedding": GleaneryKnowledgeEmbedding;
   "gleanery.knowledge_file": GleaneryKnowledgeFile;
