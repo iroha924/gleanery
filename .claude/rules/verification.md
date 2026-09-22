@@ -33,6 +33,18 @@
 読み、使い捨ての DB へ送って未送信 4 件を消した。`loadEnv` も `~/.gleanery/env` へ落ちるので、
 環境変数から鍵を消すだけでは外部 API を止められない。
 
+## agentic の eval は持ち主の DB とサブスクを使う
+
+`bun run evals:agentic`（`server/evals/agentic/`）は、出荷の MCP を `claude -p` に渡して持ち主の実 DB を引かせる。
+測る物が持ち主の記録と持ち主の枠なので、`sql:live` の条件には当てはめず、**`bun run verify` にも CI にも入れない。**
+
+- `claude -p` に `--no-session-persistence` を付ける。実測: 付けずに回した実験で `~/.claude/projects/` に
+  1 問 1 つずつ、379 個のセッションが溜まった。付けても cwd ごとに空の `memory/` ができるので
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` も渡す（実測: 42 問で 42 個）
+- 作業ディレクトリは問いごとの一時ディレクトリにし、`--setting-sources project` と `--strict-mcp-config` で
+  持ち主の plugin と hook を読ませない。読ませると自動記録が eval の会話を持ち主の DB へ書く
+- 検証用（holdout）の問いはゲートの判定でだけ流す。見て直すと、ゲートが改善の途中を測るだけになる
+
 ## 黙って skip するテストを書かない
 
 前提が無いとき `continue` で飛ばすと、CI では常に飛んで緑になる。前提が無いなら落とす。
