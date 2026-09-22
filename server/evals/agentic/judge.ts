@@ -278,6 +278,6 @@ if (values.out) {
     runs: fresh,
     answers,
   };
-  fs.writeFileSync(values.out, `${JSON.stringify(baseline, null, 1)}\n`);
+  fs.writeFileSync(values.out, `${JSON.stringify(baseline, null, 2)}\n`);
   console.log(`書いた: ${values.out}`);
 }
