@@ -1,4 +1,4 @@
-// 配る tarball の中身の検査。release:prepare と CI が同じ一覧で見る（片方だけ広げると、もう片方が穴になる）。
+// 配る tarball の中身の一覧の検査。scripts/check-tarball.mjs を通して CI の check と release が同じ一覧で見る。
 
 import { execFileSync } from "node:child_process";
 

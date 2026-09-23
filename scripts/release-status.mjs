@@ -52,6 +52,14 @@ try {
 } catch {
   tags = null;
 }
+// stage の一覧は npm へのログインが要る。読めなければ「不明」にする
+const stagedText = attempt("npm", ["stage", "list", "gleanery", "--json"]);
+let staged = null;
+try {
+  staged = stagedText ? JSON.parse(stagedText) : null;
+} catch {
+  staged = null;
+}
 const remoteTags = attempt("git", ["ls-remote", "--tags", "origin"]);
 const globalRoot = attempt("npm", ["root", "-g"]);
 const globalPackage = globalRoot
@@ -93,6 +101,15 @@ console.log("npm package");
 console.log(`  repository: ${packageVersion}`);
 console.log(`  registry latest: ${tags?.latest ?? "不明"}`);
 console.log(`  registry next: ${tags?.next ?? "不明"}`);
+console.log(
+  `  staged: ${
+    Array.isArray(staged)
+      ? staged.length
+        ? staged.map((item) => `${item.version}（${item.id}）`).join(", ")
+        : "無し"
+      : "不明"
+  }`,
+);
 console.log(
   `  npm i -g: ${
     globalPackage.status === "ok"
@@ -150,7 +167,9 @@ if (marketplace && codexObserved && (codexCaches.length !== 1 || codexCaches[0] 
 if (marketplace && tags?.latest && marketplace.localeCompare(tags.latest, undefined, { numeric: true }) > 0) {
   issues.push("plugin channelがnpm latestより先へ進んでいる");
 }
+if (Array.isArray(staged) && staged.length) issues.push("承認も拒否もしていないstageが残っている");
 if (tags === null) unknowns.push("npmのdist-tagを観測できない");
+if (!Array.isArray(staged)) unknowns.push("npmのstageを観測できない（npm loginが要る）");
 if (remoteTags === null) unknowns.push("remote tagを観測できない");
 if (globalPackage.status === "unknown") unknowns.push("npm i -gのCLIを観測できない");
 if (!claudeObserved) unknowns.push("Claude cacheを観測できない");

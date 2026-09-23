@@ -1,7 +1,7 @@
 {
   "name": "gleanery",
-  "version": "0.37.0",
-  "description": "会話と判断を貯め、過去の決定・棄却した案・制約・発言を引く",
+  "version": "0.37.1",
+  "description": "Records Claude Code and Codex sessions on your machine and recalls past decisions, rejected options, constraints, and what was said.",
   "license": "MIT",
   "type": "module",
   "bin": {
