@@ -216,6 +216,7 @@ test("基準が無ければ、作業ブランチでは main から分かれた�
     write(r.dir, "plugin/skills/a.md", "a");
     r.git("add", "-A");
     r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
     r.git("branch", "-M", "main");
     r.git("update-ref", "refs/remotes/origin/main", "HEAD");
 
@@ -242,6 +243,14 @@ test("基準が無ければ、作業ブランチでは main から分かれた�
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
     r.git("reset", "-q", "--hard");
+    // 配布物を変えないブランチは、main が先へ進んでいても止めない
+    r.git("switch", "-q", "-c", "docs", base);
+    write(r.dir, "README.ja.md", "ja");
+    r.git("add", "-A");
+    const docs = check(r.dir);
+    assert.equal(docs.status, 0, docs.stderr);
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "feature");
 
     // ブランチの中での下げは、分かれた点より大きくても落とす
     bump(r.dir, "1.0.2");

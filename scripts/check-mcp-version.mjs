@@ -113,15 +113,17 @@ const oldPluginVersion = newest("plugin/.claude-plugin/plugin.json");
 
 // **下げは配布物が変わっていなくても落とす。**利用者の cache は新しいバージョンにしか入れ替わらない。
 // 基準（分かれた点）に加えて直前の commit とも比べる（ブランチの中で上げた後の下げを見逃さない）。
-const headVersion = (file, pick) => {
-  const text = at("HEAD", file);
-  return text ? pick(JSON.parse(text)) : undefined;
+const versionAt = (r, file) => {
+  const text = at(r, file);
+  return text ? JSON.parse(text).version : undefined;
 };
+const headVersion = (file) => versionAt("HEAD", file);
+// main の新しいバージョンとは比べない（配布物を変えない commit まで止める）。それは配布物が変わったときだけ見る
 for (const [was, now] of [
-  [oldPackageVersion, packageVersion],
-  [oldPluginVersion, pluginVersion],
-  [headVersion(PACKAGE, (j) => j.version), packageVersion],
-  [headVersion("plugin/.claude-plugin/plugin.json", (j) => j.version), pluginVersion],
+  [versionAt(ref, PACKAGE), packageVersion],
+  [versionAt(ref, "plugin/.claude-plugin/plugin.json"), pluginVersion],
+  [headVersion(PACKAGE), packageVersion],
+  [headVersion("plugin/.claude-plugin/plugin.json"), pluginVersion],
 ]) {
   if (was && compare(now, was) < 0) {
     console.error(`バージョンを ${was} から ${now} へ下げている。公開済みのバージョンより大きい値にする。`);
