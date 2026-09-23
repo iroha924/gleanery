@@ -4,11 +4,10 @@
 // **bundle して 1 ファイルにしても、同梱の義務は消えない。**MIT は著作権表示と許諾文の同梱を求め、
 // Apache-2.0 は 4 条で License の写しと（あれば）NOTICE の内容を求める。配る物には次が入るので対象になる。
 //
-//   dist/{cli,mcp,capture}.js  server の依存をバンドルしたもの（pg の optional な pg-cloudflare、Ink と React も入る）
+//   dist/{cli,mcp,capture}.js  server の依存をバンドルしたもの（Ink と React も入る）
 //
-// **optional を外さない。**「取り込まれない」と決めつけると、実際にバンドルされたものを落とす
-// （実測: pg-cloudflare が dist/cli.js に入っていた）。多く挙げる方へ倒す — 足りない側の誤りだけが
-// 義務違反になる。peer は解決された実体が node_modules にあるときだけ拾う。
+// **optional を外さない。**「取り込まれない」と決めつけると、実際にバンドルされたものを落とす。
+// 多く挙げる方へ倒す — 足りない側の誤りだけが義務違反になる。peer は解決された実体が node_modules にあるときだけ拾う。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -64,7 +63,7 @@ while (queue.length) {
 
 /**
  * その package が配っているライセンス文。
- * **README も見る。**本文を README にだけ置く package があり（pg-types、pgpass）、
+ * **README も見る。**本文を README にだけ置く package があり、
  * LICENSE ファイルだけを探すと本文を落として出典 URL しか出せない。
  */
 // **名前を固定で並べない。**`LICENSE-MIT.txt` `LICENSE.BSD` `LICENCE` のように綴りが割れていて、

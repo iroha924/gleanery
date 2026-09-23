@@ -28,7 +28,7 @@
   hook を `/hooks` で確認し、信頼した後から記録する（plugin の更新で hook が変わったときは、もう一度確認する）
 - 背景タスクの通知や別の session からの伝言は、決まった形で外す。載っていない形と、`/loop` で起きたときの文は
   持ち主の発言として入る
-- 貼った鍵は、形で分かるもの（決まった接頭辞の鍵、`KEY=…` や `"password": …` の代入、URL の資格情報、
+- 貼ったキーは、形で分かるもの（決まった接頭辞のキー、`KEY=…` や `"password": …` の代入、URL の資格情報、
   認証ヘッダ、`mysql -p`）だけ伏せる。**それ以外は伏せられないので貼らない**
 - 記録は手元の待ち行列（`~/.gleanery/spool`）を経て、turn の終わりに送る。**古い PC を手放す前に
   `gleanery capture flush` を 1 回通す**（待ち行列はそのマシンにしか無い）。送れないと session の開始時に警告が出る。
@@ -68,7 +68,7 @@ gleanery --version
 
 ## DB
 
-`~/.gleanery/gleanery.db` の 1 ファイル（SQLite、Node の組み込みの `node:sqlite`）。**鍵も外部サービスも要らない。**
+`~/.gleanery/gleanery.db` の 1 ファイル（SQLite、Node の組み込みの `node:sqlite`）。**資格情報も外部サービスも要らない。**
 `gleanery db init` が作る。検索は語の一致（FTS5）で、Claude Code・Codex が語を変えて引き直すことで意味の近さを補う。
 
 インターフェースごとに接続の役割を分けている。MCP と端末の画面は読むだけ、自動記録は追記だけで、取り込みと trace だけが書ける。

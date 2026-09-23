@@ -287,7 +287,7 @@ create index knowledge_file_path on knowledge_file (path, role);
 -- 自動記録（capture の接続）が書ける 3 つの view。server/src/sqlite.ts の authorizer が、capture にはこの view への
 -- insert と、下の trigger の中の書き込みだけを許す。source_item_id・identity_id・reply_to_id・url は view に無いので、
 -- GitHub の会話を作ることも、他人の身元を名乗ることもできない。会話の id は決定的に計算できるので、既存の会話へ
--- 発言を足すことは止めない（鍵が漏れた場合の残りの面）。
+-- 発言を足すことは止めない（自動記録の経路が悪用された場合に残る面）。
 create view capture_conversation as
   select id, project_id, origin, external_id, branch, started_at from conversation;
 create trigger capture_conversation_insert instead of insert on capture_conversation begin

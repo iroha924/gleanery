@@ -936,7 +936,7 @@ const dbRoutes = buildRouteMap({
 const root = buildRouteMap({
   docs: {
     brief: "過去の判断・会話・文書を溜めて引く",
-    fullDescription: "DB: ~/.gleanery/gleanery.db（gleanery db init で作る）。鍵は要らない",
+    fullDescription: "DB: ~/.gleanery/gleanery.db（gleanery db init で作る）。資格情報は要らない",
   },
   routes: {
     project: projectRoutes,

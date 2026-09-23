@@ -12,19 +12,26 @@ const base = (items: unknown[], extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 const decision = (over: Record<string, unknown> = {}) => ({
-  key: "d-halfvec",
+  key: "d-fts5",
   kind: "decision",
   status: "accepted",
   at,
-  text: "埋め込みは halfvec(1024) で持つ",
-  context: "容量を半分にしたい",
+  text: "全文検索は FTS5 で持つ",
+  context: "外部のサービスに頼らずに全文検索したい",
   options: [
-    { text: "halfvec", chosen: true },
-    { text: "vector", chosen: false, why: "容量が倍" },
+    { text: "FTS5", chosen: true },
+    { text: "外部の検索サービス", chosen: false, why: "資格情報とネットワークが要る" },
   ],
-  confirmation: "schema.sql の型が halfvec",
+  confirmation: "schema.sql の表が FTS5",
   ...over,
 });
+const trigram = {
+  options: [
+    { text: "trigram", chosen: true },
+    { text: "FTS5 の既定の語切り", chosen: false, why: "日本語の部分一致が弱い" },
+  ],
+  confirmation: "schema.sql の tokenize が trigram",
+};
 const problems = (raw: unknown) => checkTrace(raw).problems.join("\n");
 
 test("通る記録は、決定の案を option の行にし、key を session で一意にする", () => {
@@ -38,18 +45,18 @@ test("通る記録は、決定の案を option の行にし、key を session �
   assert.deepEqual(
     out.map((x) => [x.key, x.kind, x.status, x.parent]),
     [
-      ["claude-code:s1#d-halfvec", "decision", "accepted", null],
-      ["claude-code:s1#d-halfvec:o1", "option", "chosen", "claude-code:s1#d-halfvec"],
-      ["claude-code:s1#d-halfvec:o2", "option", "rejected", "claude-code:s1#d-halfvec"],
+      ["claude-code:s1#d-fts5", "decision", "accepted", null],
+      ["claude-code:s1#d-fts5:o1", "option", "chosen", "claude-code:s1#d-fts5"],
+      ["claude-code:s1#d-fts5:o2", "option", "rejected", "claude-code:s1#d-fts5"],
     ],
   );
-  assert.equal(out[2]?.reason, "容量が倍");
+  assert.equal(out[2]?.reason, "資格情報とネットワークが要る");
 });
 
 // 決定の価値は捨てた案にある。棄却理由の無い決定は、同じ案を再検討させる。
 test("棄却した案と理由・確かめ方の無い決定を通さない", () => {
   assert.match(
-    problems(base([decision({ options: [{ text: "halfvec", chosen: true }] })])),
+    problems(base([decision({ options: [{ text: "FTS5", chosen: true }] })])),
     /棄却した案と、その理由/,
   );
   assert.match(
@@ -70,7 +77,7 @@ test("棄却した案と理由・確かめ方の無い決定を通さない", ()
 
 test("根拠の無い fact と、理由の無い未実行の検証を通さない", () => {
   assert.match(
-    problems(base([{ key: "f-1", kind: "finding", at, text: "PostgreSQL は 18", confidence: "fact" }])),
+    problems(base([{ key: "f-1", kind: "finding", at, text: "SQLite は 3.50", confidence: "fact" }])),
     /fact には refs か evidence/,
   );
   assert.deepEqual(
@@ -80,9 +87,9 @@ test("根拠の無い fact と、理由の無い未実行の検証を通さな�
           key: "f-1",
           kind: "finding",
           at,
-          text: "PostgreSQL は 18",
+          text: "SQLite は 3.50",
           confidence: "fact",
-          refs: ["cmd:psql -c 'select version()'"],
+          refs: ["cmd:sqlite3 --version"],
         },
       ]),
     ).problems,
@@ -117,29 +124,27 @@ test("superseded は、この記録の別の決定が覆していなければな
   const ok = checkTrace(
     base([
       decision({ status: "superseded" }),
-      decision({ key: "d-vector", text: "vector に戻す", supersedes: "d-halfvec" }),
+      decision({ key: "d-like", text: "LIKE に戻す", supersedes: "d-fts5" }),
     ]),
   );
   assert.deepEqual(ok.problems, []);
   const out = rows(ok.trace as Trace);
-  const old = out.find((x) => x.key === "claude-code:s1#d-halfvec");
-  assert.equal(old?.supersededBy, "claude-code:s1#d-vector");
+  const old = out.find((x) => x.key === "claude-code:s1#d-fts5");
+  assert.equal(old?.supersededBy, "claude-code:s1#d-like");
   // 覆された決定で採った案を、採用のまま返さない。
-  assert.equal(out.find((x) => x.key === "claude-code:s1#d-halfvec:o1")?.status, "was_chosen");
+  assert.equal(out.find((x) => x.key === "claude-code:s1#d-fts5:o1")?.status, "was_chosen");
 });
 
 // 同じ記録で覆したのに有効のまま書くと、check を通って save だけが DB の CHECK で落ちる。
 test("この記録の中で覆された決定は superseded でなければならない", () => {
   assert.match(
-    problems(
-      base([decision(), decision({ key: "d-vector", text: "vector に戻す", supersedes: "d-halfvec" })]),
-    ),
-    /d-vector が覆しているので、status は superseded にする/,
+    problems(base([decision(), decision({ key: "d-like", text: "LIKE に戻す", supersedes: "d-fts5" })])),
+    /d-like が覆しているので、status は superseded にする/,
   );
 });
 
 // 根拠は後から辿れる形で持つ。種類の無い文字列は、何を指すのかが分からない。
-test("refs は種類を前置した形だけを通し、本文に貼った鍵は伏せてから持つ", () => {
+test("refs は種類を前置した形だけを通し、本文に貼ったキーは伏せてから持つ", () => {
   const fact = (refs: string[]) =>
     base([{ key: "f1", kind: "finding", at, text: "索引は要らない", confidence: "fact", refs }]);
   assert.match(problems(fact(["schema.sql"])), /commit: \/ url: \/ cmd:/);
@@ -236,9 +241,9 @@ test("記録を入れると決定・案・作業・ファイルが入り、同�
     );
     // 案を減らして書き直すと、古い案を棄却として残さない
     const three = [
-      { text: "halfvec", chosen: true },
-      { text: "vector", chosen: false, why: "容量が倍" },
-      { text: "bit", chosen: false, why: "精度が落ちる" },
+      { text: "FTS5", chosen: true },
+      { text: "外部の検索サービス", chosen: false, why: "資格情報とネットワークが要る" },
+      { text: "LIKE の全件走査", chosen: false, why: "件数に比例して遅い" },
     ];
     const options = () =>
       (
@@ -271,36 +276,41 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
       schema: "trace/1",
       session: { host: "claude-code", id: "s2" },
       items: [
-        decision({ key: "d-float", text: "埋め込みは float で持つ", supersedes: "claude-code:s1#d-halfvec" }),
+        decision({
+          ...trigram,
+          key: "d-trigram",
+          text: "全文検索は trigram で持つ",
+          supersedes: "claude-code:s1#d-fts5",
+        }),
       ],
     });
     assert.equal((await saveTrace(db.ingest, p, newer)).superseded, 1);
     const old = db.owner
       .prepare(
-        "select status, superseded_by_id is not null as later from knowledge where source_key = 'claude-code:s1#d-halfvec'",
+        "select status, superseded_by_id is not null as later from knowledge where source_key = 'claude-code:s1#d-fts5'",
       )
       .get();
     assert.deepEqual({ ...old }, { status: "superseded", later: 1 });
     assert.equal(
       (
         db.owner
-          .prepare("select status from knowledge where source_key = 'claude-code:s1#d-halfvec:o1'")
+          .prepare("select status from knowledge where source_key = 'claude-code:s1#d-fts5:o1'")
           .get() as { status: string }
       ).status,
       "was_chosen",
     );
     // 古い session を再 trace しても、DB 側の覆しを「採用」に戻さない
-    await saveTrace(db.ingest, p, valid(base([decision({ text: "halfvec で持つ（再 trace）" })])));
+    await saveTrace(db.ingest, p, valid(base([decision({ text: "FTS5 で持つ（再 trace）" })])));
     assert.equal(
       (
-        db.owner
-          .prepare("select status from knowledge where source_key = 'claude-code:s1#d-halfvec'")
-          .get() as { status: string }
+        db.owner.prepare("select status from knowledge where source_key = 'claude-code:s1#d-fts5'").get() as {
+          status: string;
+        }
       ).status,
       "superseded",
     );
     // 逆向きに覆し返すと輪になるので止める
-    const loop = valid(base([decision({ key: "d-loop", supersedes: "claude-code:s2#d-float" })]));
+    const loop = valid(base([decision({ key: "d-loop", supersedes: "claude-code:s2#d-trigram" })]));
     await saveTrace(db.ingest, p, loop);
     await assert.rejects(
       saveTrace(
@@ -309,7 +319,9 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
         valid({
           schema: "trace/1",
           session: { host: "claude-code", id: "s2" },
-          items: [decision({ key: "d-float", text: "float", supersedes: "claude-code:s1#d-loop" })],
+          items: [
+            decision({ ...trigram, key: "d-trigram", text: "trigram", supersedes: "claude-code:s1#d-loop" }),
+          ],
         }),
       ),
       /互いに覆し合う/,

@@ -81,7 +81,7 @@ if (args.includes("pulls/comments")) {
 
 /**
  * 子プロセスの環境。DB は一時 HOME の ~/.gleanery/gleanery.db（`gleanery db init` で作る）。
- * GitHub の鍵を渡さない（偽の gh だけを使う）。
+ * GitHub のキーを渡さない（偽の gh だけを使う）。
  */
 export function childEnv(dir, covDir, extra = {}) {
   const env = { ...process.env, ...extra };

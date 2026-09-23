@@ -155,7 +155,7 @@ test("PR・issue を今の状態に揃え、bot が作った issue と自動通�
   );
 });
 
-// NUL が 1 つあると PostgreSQL の text に入らず、同期の transaction ごと毎日落ちる。
+// GitHub から来た文字の NUL を落とす。旧構成では 1 つで同期の transaction ごと毎日落ちた。
 test("GitHub から来た題・handle・URL・path の NUL を落とし、マージ・クローズの時刻を持つ", async () => {
   const nul = "\u0000";
   const got = await collect({

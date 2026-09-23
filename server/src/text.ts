@@ -99,9 +99,9 @@ export const clean = (s: string): string => s.replaceAll("\u0000", "");
 export const visible = (s: string): string =>
   s.replace(/(?!\p{Join_Control}|\p{Variation_Selector})\p{Default_Ignorable_Code_Point}/gu, "");
 
-// 貼ってしまった鍵を DB・待ち行列へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
-// 形は 5 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報、認証ヘッダの値、
-// `mysql -p` のパスワード。載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
+// 貼ってしまったキーを DB・待ち行列へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
+// 形は 5 つ: 接頭辞の決まったキー、キーの名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報、認証ヘッダの値、
+// `mysql -p` のパスワード。載っていない形式のキーは伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
 // **どれも入力の長さに対して線形で終わる形に保つ。**フックは 128 KiB までの発言を、trace は上限の無い本文を通す。
 // 量指定子を隣り合わせない（同じ文字を取り合って二乗になる）。語の途中から照合を始めない（`eyJ-eyJ-…` で二乗になる）。
 const SECRETS: [RegExp, string][] = [
@@ -129,18 +129,18 @@ const AUTH_HEADER =
 // ほかの名前のヘッダに入れた bearer の値（`-H "X-Auth: bearer …"`、`{"X-Auth": "bearer …"}`）。
 const HEADER_BEARER = /(:[ \t]*(?:["'][ \t]*)?bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
 // 環境変数の形（大文字の名前への代入）。**値が変数の参照なら伏せない**（`PASSWORD=$DB_PASSWORD`）。
-// KEY は単独か、語の区切り（`_`）か鍵の語（MASTERKEY）の後だけ。PASS・PWD は `_` の後だけ
+// KEY は単独か、語の区切り（`_`）かキーの語（MASTERKEY）の後だけ。PASS・PWD は `_` の後だけ
 // （MONKEY=banana、COMPASS=north と、シェルの作業ディレクトリ PWD=/Users/… を消さない）。
 const ENV_ASSIGN =
   /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-// 設定ファイル・JSON・ヘッダ・URL・コードの形（名前が鍵の語で終わる。`:` `=` `:=` `=>`）。照合は鍵の語から始め、
+// 設定ファイル・JSON・ヘッダ・URL・コードの形（名前がキーの語で終わる。`:` `=` `:=` `=>`）。照合はキーの語から始め、
 // 名前の前半は見ない。
 const FIELD_NAME =
   /(?:(?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)["']?\s*(?::=|=>|[:=])\s*/gi;
 /** 引用符で囲んだ値として読む長さの上限。越える値は判定しない。 */
 const MAX_QUOTED = 4096;
 /**
- * 囲まない値は、先頭の 256 字で鍵らしいかを決め、伏せるときだけ続きを最後まで読む（鍵の語ごとに長く読み直さない）。
+ * 囲まない値は、先頭の 256 字でキーらしいかを決め、伏せるときだけ続きを最後まで読む（キーの語ごとに長く読み直さない）。
  * URL の次の引数（`&user=…`）は値に含めない。パスワードの中の `&`（`Xk9&mZ2p`）は値に含める。
  */
 const BARE_HEAD = /[^\s"',;)]{1,256}/y;
@@ -153,7 +153,7 @@ const bareAt = (re: RegExp, text: string, at: number): string => {
   return cut < 0 ? v : v.slice(0, cut);
 };
 /**
- * 代入の値が鍵らしいか。**鍵の名前に付いた値は、伏せる側に倒す**（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
+ * 代入の値がキーらしいか。**キーの名前に付いた値は、伏せる側に倒す**（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
  *   変数の参照（`${…}`、`$NAME`）は伏せない
  *   囲まない値: 数字と英字を両方含む 8 文字以上（`token = getToken()`、`password: string`、`#ff00aa` を消さない）
  *   囲んだ値: 8 文字以上は伏せる。例外は CSS の色、英数字を含まない文言（日本語だけ）、数字と英字の混ざった語を
@@ -167,8 +167,8 @@ function secretValue(quoted: boolean, v: string): boolean {
 }
 
 /**
- * 鍵の名前への代入を伏せる。**伏せなかった値の中も続けて見る**（`?refresh_token=$RT&client_secret=…` の後ろの鍵、
- * `"token": "run it with password='…'"` の中の鍵）。伏せた値は読み飛ばすので、読む量は入力の長さに比例する。
+ * キーの名前への代入を伏せる。**伏せなかった値の中も続けて見る**（`?refresh_token=$RT&client_secret=…` の後ろのキー、
+ * `"token": "run it with password='…'"` の中のキー）。伏せた値は読み飛ばすので、読む量は入力の長さに比例する。
  */
 function maskFields(text: string): string {
   let out = "";
@@ -232,7 +232,7 @@ function maskPrivateKeys(text: string): string {
 }
 
 export function mask(text: string): string {
-  // 代入・ヘッダ・URL を先に伏せる（値ごと消える）。残った裸の鍵を形で伏せる。
+  // 代入・ヘッダ・URL を先に伏せる（値ごと消える）。残った裸のキーを形で伏せる。
   let out = maskFields(
     maskPrivateKeys(text)
       .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
@@ -245,7 +245,7 @@ export function mask(text: string): string {
 }
 
 /**
- * 例外の理由の文。中のエラー（AggregateError の errors と cause）の理由も添える。pg は、複数のアドレスへの接続が
+ * 例外の理由の文。中のエラー（AggregateError の errors と cause）の理由も添える。Node の接続は、複数のアドレスが
  * すべて拒まれると理由の文が空の AggregateError を返し、fetch は本当の理由（名前解決の失敗など）を cause にだけ持つ。
  */
 export const reason = (e: unknown): string => explain(e, 0) || "理由の分からない失敗";

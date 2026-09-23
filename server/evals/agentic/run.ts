@@ -38,7 +38,7 @@ export type Result = {
   /** 正解の順位（0 始まり）。上位 5 件に無ければ -1 */
   rank: number;
   refs: string[];
-  /** refs を正解と同じ鍵（知識は source_key、発言は id）へ直したもの。DB を入れ直しても比べられる */
+  /** refs を正解と同じキー（知識は source_key、発言は id）へ直したもの。DB を入れ直しても比べられる */
   keys: (string | null)[];
   turns: number;
   cost: number;
@@ -111,7 +111,7 @@ async function main() {
   console.log(`結果: ${run}`);
 }
 
-/** ref から正解と同じ鍵へ。id では突き合わせない（入れ直しで変わる）。発言は id がそのまま鍵。 */
+/** ref から正解と同じキーへ。id では突き合わせない（入れ直しで変わる）。発言は id がそのままキー。 */
 async function keys(): Promise<(ref: string) => string | null> {
   const db = openReader();
   try {
