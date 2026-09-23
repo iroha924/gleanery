@@ -286,10 +286,21 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
   };
 }
 
+/** 作業の一覧に出す上限。超えた分は出さず、超えたことを more で返す（画面が黙って切らない）。 */
+export const WORK_LIMIT = 100;
+
 /** trace した作業を、終わったものも含めて新しい順に。再開に要る詳しい中身は search.ts の workDetail で読む。 */
-export async function listWork(db: Kysely<DB>, projects: Scope, limit = 100): Promise<Work[]> {
+export async function listWork(
+  db: Kysely<DB>,
+  projects: Scope,
+  limit = WORK_LIMIT,
+): Promise<{ items: Work[]; more: boolean }> {
   let q = workBase(db);
   if (projects) q = q.where("w.project_id", "in", projects);
-  const rows = await q.orderBy("w.updated_at", "desc").orderBy("w.id", "desc").limit(limit).execute();
-  return rows.map(toWork);
+  const rows = await q
+    .orderBy("w.updated_at", "desc")
+    .orderBy("w.id", "desc")
+    .limit(limit + 1)
+    .execute();
+  return { items: rows.slice(0, limit).map(toWork), more: rows.length > limit };
 }

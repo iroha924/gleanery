@@ -63,6 +63,23 @@ const ANSWER = [
   '最後の行に {"refs":["k:1","k:2"]} の形の JSON だけを出す（問いに最も直接答える記録を関連の高い順に最大 5 件）。',
 ].join("\n");
 
+/**
+ * 結果の置き場所。開始時に丸ごと消すので、消す前に OUT の中に収まることを確かめる。
+ * 名前は字句で限り、OUT と既にある `<name>` が symlink なら拒む（文字列では中でも、指す先は外になりうる）。
+ */
+export function runDir(out: string, name: string, split: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes(".."))
+    throw new Error(`--name は英数字で始まり、英数字と . _ - だけを使う（${JSON.stringify(name)}）`);
+  if (fs.lstatSync(out, { throwIfNoEntry: false })?.isSymbolicLink())
+    throw new Error(`結果の置き場所 ${out} が symlink なので使わない`);
+  const dir = path.join(out, name);
+  const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
+  if (stat?.isSymbolicLink()) throw new Error(`--name の置き場所 ${dir} が symlink なので使わない`);
+  if (stat && !fs.realpathSync(dir).startsWith(`${fs.realpathSync(out)}${path.sep}`))
+    throw new Error(`--name の置き場所 ${dir} が ${out} の外にある`);
+  return path.join(dir, split);
+}
+
 async function main() {
   const { values } = parseArgs({
     options: {
@@ -79,7 +96,7 @@ async function main() {
   const mcp = path.join(REPO, "plugin/dist/mcp.js");
   if (!fs.existsSync(mcp)) throw new Error("plugin/dist/mcp.js が無い。先に bun run bundle");
 
-  const run = path.join(OUT, values.name, split);
+  const run = runDir(OUT, values.name, split);
   fs.rmSync(run, { recursive: true, force: true });
   fs.mkdirSync(run, { recursive: true });
   const keyOf = await keys();

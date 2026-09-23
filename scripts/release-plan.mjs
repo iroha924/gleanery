@@ -29,6 +29,7 @@ const versionFiles = new Set([
   "plugin/package.json",
   "plugin/.claude-plugin/plugin.json",
   "plugin/.codex-plugin/plugin.json",
+  ".claude-plugin/marketplace.json",
 ]);
 const at = (revision, file) => {
   try {

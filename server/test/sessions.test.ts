@@ -127,10 +127,22 @@ test("作業の一覧は終わった作業も含め、プロジェクトで絞�
   });
   const only = await listWork(db.reader, [p2]);
   assert.deepEqual(
-    only.map((w) => [w.title, w.status]),
+    only.items.map((w) => [w.title, w.status]),
     [["終わった作業", "done"]],
   );
-  assert.ok((await listWork(db.reader, null)).length >= 2);
+  assert.equal(only.more, false);
+  assert.ok((await listWork(db.reader, null)).items.length >= 2);
+});
+
+test("作業の一覧が上限で切れたら、切れたことを返す", async () => {
+  const all = (await listWork(db.reader, null)).items.length;
+  assert.ok(all >= 2);
+  const cut = await listWork(db.reader, null, all - 1);
+  assert.equal(cut.items.length, all - 1);
+  assert.equal(cut.more, true);
+  const exact = await listWork(db.reader, null, all);
+  assert.equal(exact.items.length, all);
+  assert.equal(exact.more, false);
 });
 
 test("検索で当たった発言を session ごとにまとめ、題の囲みの札を外す", async () => {

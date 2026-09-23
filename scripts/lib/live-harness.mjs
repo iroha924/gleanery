@@ -47,9 +47,11 @@ export function fakeGh(dir) {
 // レビューのコメントの代わりに PR that が返り、pull_request_url が無くて落ちる。
 const args = process.argv.slice(2).join(" ");
 const out = (v) => process.stdout.write(JSON.stringify([v]));
-const person = { id: 1, login: "someone" };
 // 2 巡目は発言と issue を減らす。消えた発言・消えた issue を消す枝は、前より減ったときにしか通らない。
 const round2 = process.env.GLEANERY_FAKE_GH_ROUND === "2";
+// 第三者が書ける欄に端末の制御列を混ぜる（出す側が落とすかを見る）
+const evil = process.env.GLEANERY_FAKE_GH_ROUND === "hostile" ? "\\u001b[2J\\u001b]0;pwn\\u0007\\r" : "";
+const person = { id: 1, login: \`someone\${evil}\` };
 if (args.includes("pulls/comments")) {
   if (round2) { out([]); process.exit(0); }
   out([{ id: 11, pull_request_url: "https://api.github.com/repos/example/live/pulls/1", user: person,
@@ -62,7 +64,7 @@ if (args.includes("pulls/comments")) {
          html_url: "https://example.invalid/2#c12" }]);
 } else if (args.includes("pulls?")) {
   // 2 巡目は題だけを変える。題は発言の中身ではないので、発言を書き直さない。
-  out([{ number: 1, title: round2 ? "題を変えた PR" : "はじめの PR", body: "本文", state: "open", user: person,
+  out([{ number: 1, title: round2 ? "題を変えた PR" : \`はじめの PR\${evil}\`, body: \`本文\${evil}\`, state: "open", user: person,
          created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-02T00:00:00Z",
          html_url: "https://example.invalid/1", merged_at: null, closed_at: null }]);
 } else if (args.includes("issues?")) {

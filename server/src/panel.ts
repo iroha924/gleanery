@@ -2,6 +2,7 @@
 // CLI の出力は Ink で描く（server/src/tui/view.ts）。フックは Ink を読み込まないので、ここで文字列を組む。
 // AI だけが読む MCP の結果と trace context はどちらの形にもしない。
 
+import { stripVTControlCharacters } from "node:util";
 import chalk from "chalk";
 import { PALETTE } from "./palette.ts";
 import { visible } from "./text.ts";
@@ -50,8 +51,17 @@ export const panel = (head: string, lines: string[], end: string): string =>
  * 上書きしたり、制御文字で端末を乱したりさせない。改行（CR・VT・FF・NEL・行区切り）は LF にし、制御文字を落とし、
  * 見えない文字を visible で落とす（端末の人に見えない文を、この出力を読むエージェントにだけ読ませない）。
  */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 端末の文字列型の列（OSC・DCS・APC・PM・SOS）を終端まで落とす
+const STRING_SEQUENCE = /\u001b[\]P_^X][^\u0007\u001b]*(?:\u0007|\u001b\\)?/g;
+
 export const plain = (s: string): string =>
-  visible(s.replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n").replace(/(?![\t\n])\p{Cc}/gu, ""));
+  visible(
+    // 色やタイトルの列は ESC だけを落とすと中身（[31m など）が文字として残るので、列ごと先に落とす。
+    // stripVTControlCharacters は中身に ASCII 以外を含む OSC を落としきれないので、文字列型の列は先に自前で落とす
+    stripVTControlCharacters(s.replace(STRING_SEQUENCE, ""))
+      .replace(/\r\n?|[\v\f\u0085\p{Zl}\p{Zp}]/gu, "\n")
+      .replace(/(?![\t\n])\p{Cc}/gu, ""),
+  );
 
 /**
  * 1 行に収める文字（呼び名など）。外から来た文字を plain に通し、改行とタブを空白 1 つにする。ほかの空白（全角空白など）は

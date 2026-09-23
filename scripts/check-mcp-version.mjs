@@ -71,12 +71,7 @@ if (pluginVersion.localeCompare(packageVersion, undefined, { numeric: true }) > 
 // **変わったファイルも index（commit に入る内容）で見る。**作業ツリーを読むと、bundle が
 // 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
 // `--base` へ変えるだけで同じ比べ方になる。
-//
-/**
- * manifest からバージョンを落とした姿。**バージョンだけを上げた commit を「中身が変わった」に数えない**ため。
- * ただし落とすのはバージョンだけで、`files` と `bin` と MCP の起動引数は配る物を変えるので残す
- * （これを丸ごと除外していたため、公開する一覧を変えてバージョンを据え置く commit が素通りしていた）。
- */
+// manifest はバージョンを落とした姿（release-scope.mjs の withoutReleaseVersion）で比べる。
 const ref = base ?? "HEAD";
 const changed = git("diff", "--cached", "--name-only", ref)
   .split("\n")
@@ -87,14 +82,30 @@ const changed = git("diff", "--cached", "--name-only", ref)
       (f !== PACKAGE && !(f in PLUGIN_MANIFESTS)) ||
       withoutReleaseVersion(at(ref, f)) !== withoutReleaseVersion(staged(f)),
   );
-if (changed.length === 0) process.exit(0);
-
 const oldPackageVersion = JSON.parse(at(ref, PACKAGE) ?? "{}").version;
 const oldPluginVersion = JSON.parse(at(ref, "plugin/.claude-plugin/plugin.json") ?? "{}").version;
+/** major.minor.patch を数で比べる（文字列では 1.10.0 が 1.9.0 より小さくなる）。 */
+const compare = (a, b) => {
+  const [x, y] = [a, b].map((v) => String(v).split(".").map(Number));
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
+  return 0;
+};
+
+// **下げは配布物が変わっていなくても落とす。**利用者の cache は新しいバージョンにしか入れ替わらない。
+for (const [was, now] of [
+  [oldPackageVersion, packageVersion],
+  [oldPluginVersion, pluginVersion],
+]) {
+  if (was && compare(now, was) < 0) {
+    console.error(`バージョンを ${was} から ${now} へ下げている。公開済みのバージョンより大きい値にする。`);
+    process.exit(1);
+  }
+}
+if (changed.length === 0) process.exit(0);
 
 if (
-  oldPackageVersion !== packageVersion &&
-  oldPluginVersion !== pluginVersion &&
+  (!oldPackageVersion || compare(packageVersion, oldPackageVersion) > 0) &&
+  (!oldPluginVersion || compare(pluginVersion, oldPluginVersion) > 0) &&
   packageVersion === pluginVersion
 ) {
   process.exit(0);
