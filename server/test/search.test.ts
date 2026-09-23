@@ -525,6 +525,15 @@ test("編集フックへの出力は escape で伸びても上限に収まり、
   assert.ok(Buffer.byteLength(out) <= 2048, `${Buffer.byteLength(out)} bytes`);
   const parsed = JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } };
   assert.match(parsed.hookSpecificOutput.additionalContext, /記録 [0-9a-f]{12} ここまで/);
+  // 縮めすぎない。先頭の制約は残り、上限の近くまで使う
+  const found = hookContext(
+    `server/src/x.ts: 制約 制約本文開始${"\n".repeat(1800)}制約本文終了\n  出自: k:1`,
+    2048,
+  );
+  const context = (JSON.parse(found) as { hookSpecificOutput: { additionalContext: string } })
+    .hookSpecificOutput.additionalContext;
+  assert.match(context, /server\/src\/x\.ts: 制約 制約本文開始/);
+  assert.ok(Buffer.byteLength(found) > 2048 - 64, `${Buffer.byteLength(found)} bytes`);
 });
 
 // 「先週マージした PR」を作成日で絞ると、先週より前に作って先週マージしたものが落ちる。

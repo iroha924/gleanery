@@ -669,14 +669,15 @@ export function hookContext(body: string, budget: number): string {
     JSON.stringify({
       hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: framedWithin(body, b) },
     });
-  // 改行や引用符の escape で伸びた分だけ、本文の上限を縮めて作り直す。
-  let b = budget;
-  let out = wrap(b);
-  while (bytes(out) > budget && b > 0) {
-    b -= bytes(out) - budget;
-    out = wrap(b);
+  // 改行や引用符の escape で伸びる量は本文による。収まる最大の本文の上限を二分探索で探す（伸びた分を一度に引くと切りすぎる）。
+  let lo = 0;
+  let hi = budget;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (bytes(wrap(mid)) <= budget) lo = mid;
+    else hi = mid - 1;
   }
-  return out;
+  return wrap(lo);
 }
 
 const dateOf = (d: Date | null): string =>
