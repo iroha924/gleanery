@@ -59,7 +59,7 @@ test("基準を渡すと、その後に plugin を変えてバージョンを上
   try {
     bump(r.dir, "1.0.0");
     write(r.dir, "plugin/skills/a.md", "a");
-    write(r.dir, "README.md", "r");
+    write(r.dir, "README.ja.md", "r");
     r.git("add", "-A");
     r.git("commit", "-qm", "base");
     const base = r.git("rev-parse", "HEAD");
@@ -76,7 +76,7 @@ test("基準を渡すと、その後に plugin を変えてバージョンを上
     assert.equal(bumped.status, 0, bumped.stderr);
 
     const head = r.git("rev-parse", "HEAD");
-    write(r.dir, "README.md", "s");
+    write(r.dir, "README.ja.md", "s");
     r.git("commit", "-qam", "plugin 以外だけ変える");
     const other = check(r.dir, "--base", head);
     assert.equal(other.status, 0, other.stderr);

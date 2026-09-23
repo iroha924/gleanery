@@ -15,13 +15,22 @@ const complete = new Set([
   ".codex-plugin/plugin.json",
   "package.json",
   "THIRD_PARTY_NOTICES.md",
+  "README.md",
   ...tracked,
 ]);
 
 test("配る物が揃っていれば通り、追跡している manifest・Skill・hook の欠けを見つける", () => {
   assert.deepEqual(tarballProblems(complete, tracked), []);
-  for (const must of [".codex-plugin/plugin.json", "hooks/hooks.json", "skills/trace/SKILL.md"]) {
-    assert.ok(tracked.includes(must) || must.startsWith(".codex"), `${must} は追跡している配布物`);
+  for (const must of [
+    ".codex-plugin/plugin.json",
+    "hooks/hooks.json",
+    "skills/trace/SKILL.md",
+    "README.md",
+  ]) {
+    assert.ok(
+      tracked.includes(must) || must.startsWith(".codex") || must === "README.md",
+      `${must} は配布物`,
+    );
     const missing = new Set([...complete].filter((f) => f !== must));
     assert.match(
       tarballProblems(missing, tracked).join("\n"),

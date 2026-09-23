@@ -4,11 +4,9 @@
 // 片方のインターフェースだけ直しても、もう片方が動いてしまうので気付けない。
 //
 // **扱えるのは集合として列挙できる対だけ。**説明文が一致しているかは表現の揺れで
-// 判定できないので、そこは突き合わせずに**写しそのものを消す**（README の CLI 一覧を
-// `gleanery --help` から書き出す）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
+// 判定できないので、そこは突き合わせずに写しそのものを消す（README は CLI の一覧を持たず `gleanery --help` へ案内する）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
 // 別の形で 2 つのインターフェースが組み立てる）はここでは捕まらない。AGENTS.md の節がそれを扱う。
 
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 
 const read = (f) => fs.readFileSync(f, "utf8");
@@ -460,60 +458,6 @@ if (TRAILER !== null) {
   if (trailers !== 1) fail.push(`review Skill に完走の行の正本が ${trailers} 件ある（1 件にする）`);
   for (const file of fs.readdirSync(AGENT_DIR).map((f) => `${AGENT_DIR}/${f}`)) {
     if (/^completion: /m.test(read(file))) fail.push(`${file}: 完走の行の正本は起動側の Skill にだけ置く`);
-  }
-}
-
-// ---- README の CLI 一覧を `gleanery --help` から書き出す ----
-//
-// **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、
-// README 側だけが更新された説明が両方あった）。
-// 正本は `gleanery --help` — 端末で叩いた人が見るのはこちらで、README は読み物だから。
-// **CLI を実際に起動して取る。**spec から help を組み立てる作りなので、ソースを正規表現で
-// 舐めても使い方の行は再現できない。
-let help = null;
-try {
-  help = execFileSync("node", ["server/src/cli.ts", "--help"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-} catch (error) {
-  fail.push(`\`gleanery --help\` を起動できない: ${error instanceof Error ? error.message : String(error)}`);
-}
-const usage =
-  help === null
-    ? null
-    : (() => {
-        const m = help.match(/使い方:\n(.*?)\n\n/s);
-        if (!m?.[1]) {
-          fail.push(
-            "`gleanery --help` から使い方のブロックを取り出せない。check-pairs.mjs の正規表現が実物とずれている",
-          );
-          return null;
-        }
-        return m[1];
-      })();
-if (usage) {
-  const list = usage
-    .split("\n")
-    .map((l) => l.replace(/^ {2}/, ""))
-    .join("\n");
-  const before = read("README.md");
-  const block = /(## CLI\n\n```\n)[\s\S]*?(\n```\n)/;
-  // **「置換が起きたか」と「中身が変わったか」を分ける。**同じにすると、既に一致している
-  // ときと節が消えたときが区別できず、揃っているだけで落ちる。
-  if (!block.test(before)) {
-    fail.push("README.md の「## CLI」直後のコードブロックが見つからない。節を消したなら本スクリプトも直す");
-  } else {
-    // 置き換えは関数で渡す。文字列で渡すと、使い方の中の $& や $1 を置換パターンとして読む。
-    const after = before.replace(block, (_, open, close) => `${open}${list}${close}`);
-    if (after !== before) {
-      fs.writeFileSync("README.md", after);
-      // **書いたときだけ staged へ戻す。**呼び出し側で無条件に `git add README.md` すると、
-      // 一覧が既に一致している場合でも走り、README に残していた別件の編集を
-      // そのコミットへ巻き込む（生成物だけの plugin/dist とは違い、ここは人が書く本文を含む）。
-      execFileSync("git", ["add", "README.md"], { stdio: "ignore" });
-      console.log("README.md の CLI 一覧が `gleanery --help` とずれていたので、書き直して staged へ戻した");
-    }
   }
 }
 

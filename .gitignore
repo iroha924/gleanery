@@ -16,6 +16,9 @@ server/migrate-*.ts
 plugin/dist/
 plugin/db/
 
+# scripts/bundle.mjs がルートの README.md から写す。
+plugin/README.md
+
 # scripts/third-party-notices.mjs が node_modules から作り直す。
 plugin/THIRD_PARTY_NOTICES.md
 

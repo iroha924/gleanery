@@ -35,6 +35,7 @@ export function tarballProblems(paths, tracked) {
     ".codex-plugin/plugin.json",
     "package.json",
     "THIRD_PARTY_NOTICES.md",
+    "README.md",
     ...tracked,
   ]))
     if (!paths.has(required)) problems.push(`tarballに${required}が無い`);
