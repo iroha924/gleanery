@@ -122,31 +122,3 @@ test("trace check は DB に触らずに記録の形を確かめる", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
-
-test("init と check は資格情報の無い環境で動き、--cwd 以外の引数を拒否する", () => {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-cli-init-")));
-  try {
-    const first = run("init", "--cwd", dir);
-    assert.equal(first.code, 0, first.out);
-    assert.equal(first.out, `✦ gleanery init\n.gleanery を作った: ${dir}\n`);
-    assert.match(run("init", "--cwd", dir).out, /既に初期化済み/);
-    assert.equal(run("check", "--cwd", dir).code, 0);
-    for (const [bad, want] of [
-      [["init", "other", "--cwd", dir], /余分な引数: other/],
-      [["check", "--yes", "--cwd", dir], /知らないフラグ: --yes/],
-    ] as const) {
-      const r = run(...bad);
-      assert.notEqual(r.code, 0);
-      assert.match(r.out, want, r.out);
-    }
-    fs.mkdirSync(path.join(dir, ".gleanery/changes/a"));
-    fs.writeFileSync(path.join(dir, ".gleanery/changes/a/change.json"), "{");
-    const broken = run("check", "--cwd", dir);
-    assert.equal(broken.code, 1, broken.out);
-    assert.match(broken.out, /^ {2}✗ .*change\.json: JSON として読めない$/m);
-    // 端末でない出力先（launchd のログ、Skill が読む出力）には色の制御文字を混ぜない。
-    assert.equal(broken.out.includes(String.fromCodePoint(0x1b)), false, broken.out);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});

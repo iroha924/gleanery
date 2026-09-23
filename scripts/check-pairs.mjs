@@ -463,65 +463,6 @@ if (TRAILER !== null) {
   }
 }
 
-// ---- winnow の相手モデルの起動が、往復で権限を落とさないか ----
-//
-// **初回の制限は続きの呼び出しへ引き継がれない。**実測: `codex exec resume` は `-s` を受け付けず、
-// 省くと利用者の既定の sandbox へ戻って `/tmp` へファイルを作った。`claude -p --resume` は
-// `--agents` を落とすとツールが 3 個から 51 個へ戻る。**どちらも文脈は保たれるので出力から気付けない。**
-// review 側（PEER）は 1 回きりなので resume を持たず、観点によっては Bash を渡す。ここは winnow だけを見る。
-{
-  const file = "plugin/skills/winnow/SKILL.md";
-  const source = read(file);
-  // 議論に実行は要らないので、ツールは 3 つに固定する。**拒否リストにしない** ——
-  // 名前で挙げたものしか消えず、Bash や次に増えるツールが素通りする。
-  for (const tools of [...source.matchAll(/"tools":\s*(\[[^\]]*\])/g)].map((m) => m[1])) {
-    const got = JSON.parse(tools);
-    const want = ["Read", "Grep", "Glob"];
-    if (got.join(",") !== want.join(",")) {
-      fail.push(`${file}: 相手モデルへ渡す "tools" が ${tools}（${JSON.stringify(want)} にする）`);
-    }
-  }
-  const codex = [...source.matchAll(/`([^`\n]*codex exec[^`\n]*)`/g)].map((m) => m[1]);
-  const resumes = codex.filter((c) => c.includes("codex exec resume"));
-  const firsts = codex.filter((c) => !c.includes("codex exec resume"));
-  if (resumes.length === 0) fail.push(`${file}: 往復を続ける codex exec resume の綴りが無い`);
-  for (const command of firsts) {
-    if (!command.includes("-s read-only")) fail.push(`${file}: \`${command}\` に -s read-only が無い`);
-  }
-  for (const command of resumes) {
-    if (!command.includes("-c sandbox_mode=read-only")) {
-      fail.push(`${file}: \`${command}\` に -c sandbox_mode=read-only が無い`);
-    }
-  }
-  // セッションを残さない指定を付けると、2 往復目の相手が 1 往復目を見ていない。
-  for (const command of codex) {
-    if (command.includes("--ephemeral")) fail.push(`${file}: \`${command}\` に --ephemeral がある`);
-  }
-  for (const command of [...source.matchAll(/`([^`\n]*claude -p -[^`\n]*)`/g)].map((m) => m[1])) {
-    if (!command.includes("--agents")) fail.push(`${file}: \`${command}\` に --agents が無い`);
-  }
-  if (![...source.matchAll(/`([^`\n]*claude -p -[^`\n]*)`/g)].some((m) => m[1].includes("--resume"))) {
-    fail.push(`${file}: 往復を続ける claude -p --resume の綴りが無い`);
-  }
-}
-
-// ---- review のラウンドの上限が、3 つの Skill で揃っているか ----
-//
-// design と requirements は自分の成果物への review を回すので、同じ上限を各自が書いている。
-// **片方だけ変えると、同じ配布物の中で上限が 2 種類になる。**数字は列挙できる対なので検査できる
-// （何ラウンドが妥当かという判断は見ない）。
-const ROUND_LIMITS = new Map();
-for (const name of ["review", "design", "requirements"]) {
-  const file = `plugin/skills/${name}/SKILL.md`;
-  const got = grab(file, /上限は (\d+) ラウンド/, `${name} Skill のラウンドの上限`);
-  if (got !== null) ROUND_LIMITS.set(name, got);
-}
-if (ROUND_LIMITS.size === 3 && new Set(ROUND_LIMITS.values()).size !== 1) {
-  fail.push(
-    `review のラウンドの上限が Skill ごとに違う: ${[...ROUND_LIMITS].map(([k, v]) => `${k}=${v}`).join(" / ")}`,
-  );
-}
-
 // ---- README の CLI 一覧を `gleanery --help` から書き出す ----
 //
 // **突き合わせずに消す。**同じ説明を 2 箇所に書くと必ずずれる（実測: README 側にだけ書かれた説明と、

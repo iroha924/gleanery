@@ -79,7 +79,7 @@ test("無い session は null", async () => {
   assert.equal(await sessionDetail(db.reader, "無い"), null);
 });
 
-test("session の詳細は発言・触ったファイル・知識・作業・読んだ成果物をまとめ、知識に札を付ける", async () => {
+test("session の詳細は発言・触ったファイル・知識・作業をまとめ、知識に札を付ける", async () => {
   const conversation = `c-${p1}-a`;
   insert(db, "knowledge", {
     project_id: p1,
@@ -102,17 +102,6 @@ test("session の詳細は発言・触ったファイル・知識・作業・読
     conversation_id: conversation,
     updated_at: at("2026-09-10T00:03:00Z"),
   });
-  const docs = insert(db, "connector", { project_id: p1, provider: "docs" });
-  insert(db, "source_item", {
-    connector_id: docs,
-    external_id: "server/src/db.ts",
-    kind: "design",
-    title: "設計",
-    path: "server/src/db.ts",
-    body: "設計の本文",
-    metadata: '{"change":"c1","changeTitle":"作り替え"}',
-    content_hash: hash(),
-  });
   const found = await sessionDetail(db.reader, conversation);
   assert.equal(found?.title, "gleanery を SQLite へ移す 続きも");
   assert.deepEqual(
@@ -124,10 +113,6 @@ test("session の詳細は発言・触ったファイル・知識・作業・読
   );
   assert.equal(found?.knowledge[0]?.label, "【採用した決定】");
   assert.deepEqual(found?.work[0]?.next, ["次"]);
-  assert.deepEqual(
-    found?.artifacts.map((a) => [a.kind, a.title, a.content]),
-    [["design", "作り替え", "設計の本文"]],
-  );
 });
 
 test("作業の一覧は終わった作業も含め、プロジェクトで絞れる", async () => {

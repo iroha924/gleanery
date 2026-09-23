@@ -1,7 +1,7 @@
 // 端末の画面（gleanery dashboard）が読むセッション・プロジェクト・作業の一覧。**読むだけ**で、reader の接続を渡す。
 // 検索と参照は search.ts の関数を使い、ここには人向けの並べ方とまとめ方だけを置く。
 
-import { type Kysely, type SqlBool, sql } from "kysely";
+import { type Kysely, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
 import type { DB } from "./db-types.ts";
 import { labelOf } from "./knowledge.ts";
@@ -213,7 +213,7 @@ export async function searchSessions(
 
 export type SessionDetail = NonNullable<Awaited<ReturnType<typeof sessionDetail>>>;
 
-/** session 1 件の発言・触ったファイル・trace した知識と作業・読んだ承認済みの要件定義と設計書。無ければ null。 */
+/** session 1 件の発言・触ったファイル・trace した知識と作業。無ければ null。 */
 export async function sessionDetail(db: Kysely<DB>, id: string) {
   const conversation = await db
     .selectFrom("conversation as c")
@@ -276,27 +276,6 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
     .orderBy("k.id")
     .execute();
   const work = await workBase(db).where("w.conversation_id", "=", id).orderBy("w.id").execute();
-  // この session が触った承認済みの要件定義・設計書。同じプロジェクトで同期された原文だけを返す
-  // （任意の path を指定して別のプロジェクトの本文を取れる経路にしない）。
-  const artifacts = await db
-    .selectFrom("source_item as s")
-    .innerJoin("connector as cn", "cn.id", "s.connector_id")
-    .select([
-      "s.kind",
-      sql<string | null>`json_extract(s.metadata, '$.change')`.as("change"),
-      sql<string | null>`json_extract(s.metadata, '$.changeTitle')`.as("title"),
-      "s.path",
-      "s.body as content",
-      "s.synced_at as syncedAt",
-    ])
-    .where("s.kind", "in", ["requirements", "design"])
-    .where("cn.project_id", "=", conversation.projectId)
-    .where(
-      sql<SqlBool>`exists (select 1 from message_file f join message m on m.id = f.message_id
-        where f.path = s.path and m.conversation_id = ${id})`,
-    )
-    .orderBy("s.id")
-    .execute();
   return {
     ...conversation,
     startedAt: new Date(conversation.startedAt),
@@ -304,7 +283,6 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
     messages: messages.map((m) => ({ ...m, sentAt: new Date(m.sentAt), truncated: m.truncated === 1 })),
     knowledge: knowledge.map((k) => ({ ...k, at: new Date(k.at), label: labelOf(k) })),
     work: work.map(toWork),
-    artifacts: artifacts.map((a) => ({ ...a, syncedAt: new Date(a.syncedAt) })),
   };
 }
 

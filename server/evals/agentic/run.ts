@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // 出荷の plugin/dist/mcp.js を `claude -p` に渡して retrieval.json の問いを解かせる（先に bun run bundle）。
 // **実 DB と持ち主のサブスクを使うので verify に入れない。**結果は os.tmpdir()/gleanery-evals/<name>/<split>/ に残る。
 //   bun run evals:agentic -- --name base --split dev --model sonnet（同じ構成の繰り返しは base-r2, base-r3 と名付ける）
@@ -11,6 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { openReader } from "../../src/db.ts";
+import { retired } from "../cases.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -19,15 +21,23 @@ export const OUT = path.join(os.tmpdir(), "gleanery-evals");
 export type Case = { q: string; expect: string[]; kind: string; source: string };
 const CASES = fs.readFileSync(path.join(HERE, "../retrieval.json"), "utf8");
 export const { cases } = JSON.parse(CASES) as { cases: Case[] };
-/** 問いの集合の指紋。retrieval.json を作り直すと split の中身が入れ替わるので、違う集合どうしを比べない */
-export const CASES_SHA = crypto.createHash("sha256").update(CASES).digest("hex").slice(0, 16);
+/**
+ * 問いの集合の指紋。retrieval.json を作り直すと split の中身が入れ替わるので、違う集合どうしを比べない。
+ * 流す前に外す問い（retired）の添字も入れる（外す前に測った基準と、同じ集合として比べさせない）。
+ */
+export const CASES_SHA = crypto
+  .createHash("sha256")
+  .update(CASES)
+  .update(JSON.stringify(cases.flatMap((c, i) => (retired(c) ? [i] : []))))
+  .digest("hex")
+  .slice(0, 16);
 
 // 番号は retrieval.json の cases の添字で、変えない。dev（知識の偶数番）でツールを直し、holdout（奇数番）は
 // ゲートの判定でだけ流す（見て直すと、ゲートが改善の途中を測るだけになる）。message は正解が発言の id。
 export const SPLITS = {
-  dev: (c: Case, i: number) => c.source !== "message" && i % 2 === 0,
-  holdout: (c: Case, i: number) => c.source !== "message" && i % 2 === 1,
-  message: (c: Case) => c.source === "message",
+  dev: (c: Case, i: number) => c.source !== "message" && i % 2 === 0 && !retired(c),
+  holdout: (c: Case, i: number) => c.source !== "message" && i % 2 === 1 && !retired(c),
+  message: (c: Case) => c.source === "message" && !retired(c),
 } as const;
 export type Split = keyof typeof SPLITS;
 

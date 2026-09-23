@@ -56,14 +56,14 @@ test("DB のバージョンが違えば、読む接続も書く接続も開か�
   assert.throws(() => connectWriter("ingest", old), /revision/);
   const empty = path.join(path.dirname(old), "empty.db");
   new DatabaseSync(empty).close();
-  assert.throws(() => connectReader(empty), /gleanery db init/);
+  assert.throws(() => connectReader(empty), /gleanery init/);
 });
 
-// 空のファイルが「記録が 0 件」に見える。作るのは `gleanery db init` だけ。
+// 空のファイルが「記録が 0 件」に見える。作るのは `gleanery init` だけ。
 test("無い DB は作らずに止まる", () => {
   const missing = path.join(os.tmpdir(), `gleanery-missing-${process.pid}.db`);
-  assert.throws(() => connectReader(missing), /gleanery db init/);
-  assert.throws(() => connectWriter("capture", missing), /gleanery db init/);
+  assert.throws(() => connectReader(missing), /gleanery init/);
+  assert.throws(() => connectWriter("capture", missing), /gleanery init/);
   assert.equal(fs.existsSync(missing), false);
 });
 

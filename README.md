@@ -13,8 +13,6 @@
 | **編集の直前に知らせる** | 編集フック（`check_path`） | これから触るファイルに、過去に決めた制約や意図して残した負債がかかっていれば出す（パスの完全一致） |
 | **会話を残す** | 自動記録のフック（Claude Code / Codex） | 持ち主の発言・AI の最後の応答・編集したファイルを、登録したプロジェクトの session ごとに残す |
 | **判断を残す** | `/gleanery:trace` | 頼まれたときだけ、その session の決定・捨てた案・制約・行き止まりと作業の現在地を DB へ入れる |
-| **要件と設計を固める** | `/gleanery:init` → `/gleanery:requirements` → `/gleanery:design` | 利用者にしか決められない選択を 1 問ずつ聞いて、`.gleanery/changes/` に要件定義と設計書を作る |
-| **実装前に方針を詰める** | `/gleanery:winnow` | 決めるべき問いの木を描き、別のモデルと突き合わせて、Go を判断できる方針にする。文書は作らないので、要件定義が要る変更は上の 3 つを使う |
 | **変更をレビューする** | `/gleanery:review` | 観点ごとに独立したレビュアーを立てる。別のモデルにも同じ観点を渡して、片方にしか見えない欠陥を拾う |
 | **見る・探す** | `gleanery dashboard`（端末の画面） | セッションの一覧と詳細（AI の応答は Markdown を描く）、trace した作業の現在地、判断・文書・発言の検索。読むだけ |
 | **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込む |
@@ -41,9 +39,8 @@
 ## 取り込むもの
 
 `gleanery harvest` は GitHub の PR・issue（本文・レビュー・議論。bot の issue と自動通知は除く）を毎回全件取り、
-リポジトリの Markdown を remote の既定 branch の commit から読む（`.gleanery/` は承認済みの要件定義・設計書だけ）。
+リポジトリの Markdown を remote の既定 branch の commit から読む（`.gleanery/` の中は取り込まない）。
 文書は前に入れた commit から fast-forward できるときだけ入れ、巻き戻し・force-push・分岐では書かずに止まる。
-`.gleanery/` の `change.json` が壊れていても、そのリポジトリの文書同期を止める（止めた理由と直し方は `gleanery harvest` が出す）。
 
 セッションの一覧は、最初の発言の冒頭を題として出す（trace した作業に紐付くなら、その作業の題）。
 
@@ -56,9 +53,8 @@ gleanery search [--avoid] [--said me|others|名前] [--all] [--exact] [--cwd dir
 gleanery who [--me] <呼び名|ハンドル>...
 gleanery trace context|check|save ...
 gleanery capture flush ...
-gleanery db init|migrate|reindex ...
-gleanery init [--cwd dir]
-gleanery check [--cwd dir]
+gleanery db migrate|reindex ...
+gleanery init
 gleanery dashboard
 gleanery doctor
 gleanery advice
@@ -69,7 +65,7 @@ gleanery --version
 ## DB
 
 `~/.gleanery/gleanery.db` の 1 ファイル（SQLite、Node の組み込みの `node:sqlite`）。**資格情報も外部サービスも要らない。**
-`gleanery db init` が作る。検索は語の一致（FTS5）で、Claude Code・Codex が語を変えて引き直すことで意味の近さを補う。
+`gleanery init` が作る。検索は語の一致（FTS5）で、Claude Code・Codex が語を変えて引き直すことで意味の近さを補う。
 
 インターフェースごとに接続の役割を分けている。MCP と端末の画面は読むだけ、自動記録は追記だけで、取り込みと trace だけが書ける。
 役割ごとに何を拒むかは `.agents/skills/knowledge-schema/SKILL.md`。
@@ -87,7 +83,7 @@ gleanery --version
 
 ```bash
 bun run setup                          # server の依存を lockfile から入れる（Lefthook も入る）
-bun run cli db init                    # ~/.gleanery/gleanery.db を作り、db/schema.sql を当てる（冪等）
+bun run cli init                       # ~/.gleanery/gleanery.db を作り、db/schema.sql を当てる（冪等）
 bun run bundle                         # 配布物を作る（MCP・自動記録・CLI・同梱の告知）
 bun run cli doctor                     # Node、DB と schema のバージョン、全文検索の索引、同期と自動記録を確かめる
 bun run cli project add --cwd <repo>   # 記録するプロジェクトを登録する
@@ -99,7 +95,7 @@ bun run cli harvest --cwd <repo>       # 最初の取り込み
 
 ```bash
 npm i -g gleanery        # gleanery コマンドが PATH に出る
-gleanery db init
+gleanery init
 gleanery dashboard       # 端末の中で見る（Tab で画面、/ で検索、q で終わる）
 ```
 
@@ -118,7 +114,7 @@ claude plugin marketplace add iroha924/gleanery && claude plugin install gleaner
 codex plugin marketplace add iroha924/gleanery --ref main && codex plugin add gleanery@gleanery
 
 # 2. DB を作る
-gleanery db init
+gleanery init
 
 # 3. 確かめる（コマンド・plugin それぞれのバージョンと、DB を見る）
 gleanery doctor

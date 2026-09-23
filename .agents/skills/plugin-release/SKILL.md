@@ -27,8 +27,8 @@ Claude Codeはpackageをnpm clientで解決し、tarballをplugin cacheへ展開
 - CLIはInkを含むので`scripts/bundle-cli.ts`（`Bun.build`）でバンドルする。Inkは`DEV=true`のときだけ`react-devtools-core`を
   読みにいくので、`ink/build/devtools.js`を空のmoduleへ差し替える（差し替えないと、上の階層に`react-devtools-core`が
   ある環境で起動ごと落ちる）
-- 同梱の`db/schema.sql`（と、あれば`db/migrations`）を`gleanery db init` / `db migrate`が読む。CIは展開した
-  tarballの CLI で一時HOMEに`db init`を打って確かめる
+- 同梱の`db/schema.sql`（と、あれば`db/migrations`）を`gleanery init` / `gleanery db migrate`が読む。CIは展開した
+  tarballの CLI で一時HOMEに`init`を打って確かめる
 - cacheはバージョンが変わったときだけ更新される。`bun run bundle`やcommitだけでは届かず、publishまで届かない
 - CLIは実行した場所の`dist/cli.js`を読むため、CLIで動くことはMCPで動く証拠にならない
 - 自動記録のhookは`${CLAUDE_PLUGIN_ROOT}/dist/capture.js`を叩くので、これもcacheのバージョンで動く
@@ -127,11 +127,8 @@ release commandが同じものを読む。
 - 明示起動だけにするSkillは、SKILL.mdの`disable-model-invocation: true`（Claude Code）と、Skillディレクトリの
   `agents/openai.yaml`の`policy.allow_implicit_invocation: false`（Codex）を対で置く。Codexは前者を解釈しない。
   対は`verify:ai`が検査する
-- `allowed-tools`に`${CLAUDE_PLUGIN_ROOT}`を書いた事前承認は効く。2026-09-12に、一時リポジトリで
-  `claude -p "/gleanery:init" --plugin-dir <plugin> --permission-mode default --output-format json`を実行し、
-  `.gleanery`が作られて`permission_denials`が空だった（利用者の設定にgleaneryを許すBashのルールは無い）。
-  requirementsとdesignは書き込みを事前承認に入れない。承認済みの本文を確認なしで書き換えられると、
-  次の同期でそのままapprovedとして入る
+- `allowed-tools`に`${CLAUDE_PLUGIN_ROOT}`を書いた事前承認は効く（2026-09-12に、`claude -p "/gleanery:<skill>" --plugin-dir <plugin>
+  --permission-mode default --output-format json`で`permission_denials`が空だった。利用者の設定にgleaneryを許すBashのルールは無い）
 - 届いた後の確認では、Codexで`$gleanery:<skill>`の明示起動でも本文が読まれることを確かめる
 
 人向けのCLI出力とAI向けのMCP応答は別々に確認する。

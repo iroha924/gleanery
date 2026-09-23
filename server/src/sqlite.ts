@@ -11,7 +11,7 @@ import path from "node:path";
 import { constants as C, DatabaseSync } from "node:sqlite";
 
 /** MCP・CLI・端末の画面が期待する schema のバージョン。db/schema.sql の末尾の `pragma user_version` と同じ数にする。 */
-export const SCHEMA_REVISION = 1;
+export const SCHEMA_REVISION = 3;
 
 /** 接続の役割。owner は schema の適用、reader は読むだけ、ingest は取り込み、capture は会話の自動記録（追記だけ）。 */
 export type Role = "owner" | "reader" | "ingest" | "capture";
@@ -33,9 +33,9 @@ export function requireRuntime(): void {
     throw new Error(`gleanery は Node 24.15 以降で動く（いまは ${process.version}）。Node を上げる`);
 }
 
-/** 無い DB を黙って作らない（空のファイルが「記録が 0 件」に見える）。作るのは `gleanery db init` だけ。 */
+/** 無い DB を黙って作らない（空のファイルが「記録が 0 件」に見える）。作るのは `gleanery init` だけ。 */
 export function requireFile(file: string): void {
-  if (!fs.existsSync(file)) throw new Error(`DB が無い（${file}）。\`gleanery db init\` で作る`);
+  if (!fs.existsSync(file)) throw new Error(`DB が無い（${file}）。\`gleanery init\` で作る`);
 }
 
 /**
@@ -52,7 +52,7 @@ export function prepare(raw: DatabaseSync, checkVersion: boolean): void {
   const got = (raw.prepare("pragma user_version").get() as { user_version: number } | undefined)
     ?.user_version;
   if (got === SCHEMA_REVISION) return;
-  if (!got) throw new Error("DB に gleanery の schema が無い。`gleanery db init` で作る");
+  if (!got) throw new Error("DB に gleanery の schema が無い。`gleanery init` で作る");
   throw new Error(
     `DB の schema は revision ${got}、このコードは revision ${SCHEMA_REVISION} を期待している。` +
       (got < SCHEMA_REVISION ? "`gleanery db migrate` で進める" : "gleanery を更新する"),

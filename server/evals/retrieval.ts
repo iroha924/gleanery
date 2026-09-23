@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // 検索の精度を測る。目視ではなく、正解が分かる問いで数える。
 //
 // **出荷している関数そのものを測る。**eval が組み立てた経路は原因の切り分けにしか使わない。
@@ -16,10 +17,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openReader } from "../src/db.ts";
 import { type Hit, searchKnowledge, searchMessages, searchSplit } from "../src/search.ts";
+import { retired } from "./cases.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 type Case = { q: string; expect: string[]; kind: string; source: string };
-const { cases } = JSON.parse(fs.readFileSync(path.join(HERE, "retrieval.json"), "utf8")) as { cases: Case[] };
+const cases = (
+  JSON.parse(fs.readFileSync(path.join(HERE, "retrieval.json"), "utf8")) as { cases: Case[] }
+).cases.filter((c) => !retired(c));
 
 const K = 5;
 const db = openReader();

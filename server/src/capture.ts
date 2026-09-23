@@ -22,7 +22,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Kysely } from "kysely";
-import { ARTIFACT_PATH } from "./artifacts.ts";
 import { dbFile, inTransaction, iso, sqliteCode } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { openWriter } from "./db-write.ts";
@@ -238,7 +237,7 @@ function remember(session: string, id: string): void {
   const tmp = `${file}.${process.pid}`;
   fs.writeFileSync(tmp, id, { mode: 0o600 });
   // Windows は宛先を開いているプロセス（エディタ、ウイルス対策）がいる間 EPERM / EBUSY を返す。
-  // ここで諦めると、後続の編集と Read の記録が前の発言へ誤って結ばれるか、結ばれずに捨てられる。
+  // ここで諦めると、後続の編集の記録が前の発言へ誤って結ばれるか、結ばれずに捨てられる。
   // **実時間を空けて繰り返す。**空けずに回すと、相手が離す前に回数を使い切って同じ結果になる。
   for (let i = 0; ; i++) {
     try {
@@ -293,7 +292,7 @@ export function answersOf(input: HookInput): string | null {
  */
 export function captureNotice(file: string = dbFile()): string | null {
   if (!fs.existsSync(file))
-    return panel("gleanery: DB が無いので、会話を自動記録できない", [file], "gleanery db init で作る");
+    return panel("gleanery: DB が無いので、会話を自動記録できない", [file], "gleanery init で作る");
   const s = readState();
   if (s.stuck)
     return panel(
@@ -365,6 +364,8 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
       if (said) say(`${turn}:ask:${input.tool_use_id ?? at}`, "self", said);
       return { flush: false };
     }
+    // 読んだファイルは残さない（以前は要件定義・設計書を読んだことだけを残していた）。古い hook の設定からも届く。
+    if (tool === "Read") return { flush: false };
     const message = lastSaid(base.session);
     if (!message) return { flush: false }; // 持ち主がまだ何も言っていない session には結ぶ先が無い
     const cwd = input.cwd ?? place.root;
@@ -373,13 +374,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
         ? patchPaths(String(ti.command ?? ""))
         : [ti.file_path, ti.notebook_path].filter((p): p is string => typeof p === "string")
     ).flatMap((p) => relativeTo(place.root, p, cwd) ?? []);
-    const action = tool === "Read" ? "read" : "edit";
-    for (const p of files) {
-      // 読んだファイルは、要件定義・設計書だけを残す。画面のセッション詳細は、そのうち承認済みとして同期された
-      // バージョンだけを出す（draft を読んだ session も、後で承認された成果物に結ばれる）。
-      if (action === "read" && !ARTIFACT_PATH.test(p)) continue;
-      spool({ ...base, kind: "file", message, path: p, action });
-    }
+    for (const p of files) spool({ ...base, kind: "file", message, path: p, action: "edit" });
   }
   return { flush: false };
 }

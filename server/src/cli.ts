@@ -24,7 +24,6 @@ import {
 import { type Kysely, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
 import { dbInit, inspect, migrate, reindex } from "./admin.ts";
-import { check, init } from "./artifacts.ts";
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
 import { dbFile, inTransaction, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
 import type { DB } from "./db-types.ts";
@@ -362,7 +361,7 @@ async function doctor(cwd: string): Promise<void> {
   const file = dbFile();
   let usable = false;
   if (!runtime) say("none", "DB", "Node を上げるまで確かめられない");
-  else if (!fs.existsSync(file)) say("fail", "DB", `無い（${file}）。gleanery db init で作る`);
+  else if (!fs.existsSync(file)) say("fail", "DB", `無い（${file}）。gleanery init で作る`);
   else {
     try {
       const x = inspect(file);
@@ -911,11 +910,6 @@ async function boxed(head: string, fn: () => void | Promise<void>): Promise<void
 const dbRoutes = buildRouteMap({
   docs: { brief: "この PC の DB（~/.gleanery/gleanery.db）と schema" },
   routes: {
-    init: buildCommand({
-      docs: { brief: "この PC の DB を作る（あれば触らない。何度流してもよい）" },
-      parameters: {},
-      func: () => boxed("gleanery db init", () => dbInit()),
-    }),
     migrate: buildCommand({
       docs: { brief: "DB のバージョンより新しい db/migrations を当てる" },
       parameters: {
@@ -936,7 +930,7 @@ const dbRoutes = buildRouteMap({
 const root = buildRouteMap({
   docs: {
     brief: "過去の判断・会話・文書を溜めて引く",
-    fullDescription: "DB: ~/.gleanery/gleanery.db（gleanery db init で作る）。資格情報は要らない",
+    fullDescription: "DB: ~/.gleanery/gleanery.db（gleanery init で作る）。資格情報は要らない",
   },
   routes: {
     project: projectRoutes,
@@ -1241,43 +1235,9 @@ const root = buildRouteMap({
     capture: captureRoutes,
     db: dbRoutes,
     init: buildCommand({
-      docs: { brief: "要件定義と設計書の置き場所 .gleanery/ をリポジトリのルートに作る" },
-      parameters: { flags: { cwd: CWD } },
-      func: (flags: { cwd?: string }) => {
-        const r = init(flags.cwd ?? process.cwd());
-        console.log(
-          panel(
-            "gleanery init",
-            [],
-            r.created ? `.gleanery を作った: ${r.root}` : `.gleanery は既に初期化済み: ${r.root}`,
-          ),
-        );
-      },
-    }),
-    check: buildCommand({
-      docs: { brief: ".gleanery/ の change.json を検査する（DB に触らない）" },
-      parameters: { flags: { cwd: CWD } },
-      func: (flags: { cwd?: string }) => {
-        const r = check(flags.cwd ?? process.cwd());
-        if (r.problems.length) {
-          process.exitCode = 1;
-          console.error(
-            panel(
-              "gleanery check",
-              r.problems.map((p) => `${mark("fail")} ${p.path}: ${p.reason}`),
-              `.gleanery の検査で ${r.problems.length} 件の問題: ${r.root}`,
-            ),
-          );
-          return;
-        }
-        console.log(
-          panel(
-            "gleanery check",
-            [],
-            `${mark("ok")} .gleanery の検査は通った: ${r.root}（change ${r.changes} 件）`,
-          ),
-        );
-      },
+      docs: { brief: "この PC の DB（~/.gleanery/gleanery.db）を作る（あれば触らない。何度流してもよい）" },
+      parameters: {},
+      func: () => boxed("gleanery init", () => dbInit()),
     }),
     dashboard: buildCommand({
       docs: { brief: "セッション・作業・検索を端末の画面で見る（読むだけ）" },

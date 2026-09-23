@@ -28,7 +28,7 @@ await withTempDir(async (dir) => {
   fakeGh(dir);
 
   {
-    note("db init", runCli(["db", "init"], dir, covDir));
+    note("init", runCli(["init"], dir, covDir));
 
     // ---- CLI。作る → 取り込む → 引く → 消す、の順で通す ----
     // remote があるので --name は付けない（付けると CLI が止める）。key は git:github.com/example/live になる。

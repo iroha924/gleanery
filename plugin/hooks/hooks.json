@@ -24,7 +24,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Edit|Write|MultiEdit|NotebookEdit|Read|AskUserQuestion",
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit|AskUserQuestion",
         "hooks": [
           {
             "type": "command",

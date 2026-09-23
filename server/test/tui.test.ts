@@ -151,7 +151,6 @@ const detail: SessionDetail = {
     },
   ],
   work: [],
-  artifacts: [],
 };
 
 const hit: Hit = {

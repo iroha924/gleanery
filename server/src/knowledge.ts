@@ -41,7 +41,7 @@ export type SpeakerKind = (typeof SPEAKERS)[number];
 export const ORIGINS = ["claude-code", "codex", "github"] as const;
 export type Origin = (typeof ORIGINS)[number];
 
-// edit は編集、read は読んだ要件定義・設計書（承認は問わない）、review はレビューで指されたファイル。
+// edit は編集、review はレビューで指されたファイル。read は以前に読んだ要件定義・設計書の記録で、新しくは書かない。
 export const FILE_ACTIONS = ["edit", "read", "review"] as const;
 export type FileAction = (typeof FILE_ACTIONS)[number];
 
@@ -76,22 +76,15 @@ const LABEL: Labels = {
   question: { open: "【未解決の問い】", blocking: "【作業を止めている問い】", resolved: "【解決した問い】" },
 };
 
-/** 文書の札は、置き場所から決める。承認済みの要件定義・設計書と ADR は、説明文と重みが違う。 */
-function documentLabel(sourceKind: string | null | undefined, path: string | null | undefined): string {
-  if (sourceKind === "requirements") return "【承認済みの要件定義】";
-  if (sourceKind === "design") return "【承認済みの設計書】";
+/** 文書の札は、置き場所から決める。ADR は、説明文と重みが違う。 */
+function documentLabel(path: string | null | undefined): string {
   if (path && (/(^|\/)adrs?\//i.test(path) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(path)))
     return "【決定の記録・ADR】";
   return "【文書】";
 }
 
-export function labelOf(k: {
-  kind: string;
-  status: string | null;
-  source_kind?: string | null;
-  path?: string | null;
-}): string {
-  if (k.kind === "document") return documentLabel(k.source_kind, k.path);
+export function labelOf(k: { kind: string; status: string | null; path?: string | null }): string {
+  if (k.kind === "document") return documentLabel(k.path);
   const l = (LABEL as Record<string, string | Record<string, string>>)[k.kind];
   return typeof l === "string" ? l : ((k.status && l?.[k.status]) ?? "");
 }
