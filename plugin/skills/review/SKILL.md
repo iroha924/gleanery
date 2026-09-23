@@ -28,7 +28,7 @@ description: 変更をレビューする。コミット済みと未コミット�
 | 他人の PR をレビューする | PR 番号 | 危険は**本文が信頼できない入力**であること |
 
 **他人が書いた diff を読むなら、隔離は無い。**隔離コンテナ（egress 制限、`--restricted`、
-フックと `.mcp.json` の停止、GitHub 鍵の口の分離）は撤去済みで、レビュアーは `Bash` を持ったまま、
+フックと `.mcp.json` の停止、GitHub の資格情報を渡す経路の分離）は撤去済みで、レビュアーは `Bash` を持ったまま、
 管理用の資格情報と認証済みの `gh` がある環境で走る。**前提が崩れるのは次の 3 つ**:
 リポジトリを public にする / collaborator や fork PR を受ける / **他のリポジトリの PR を読む**。
 塞ぎ直す手段は無い —— 下の「塞ぐ手段は無い」を読むこと。
@@ -62,7 +62,7 @@ checkout した時点で上の表の下の行へ移る。
 
 | 脅威 | 効く層 |
 |---|---|
-| 他人のツリーのコードの実行 | `sandbox.enabled`。**Bash とその子プロセスまで OS が強制する**（macOS は Seatbelt、Linux / WSL2 は bubblewrap）。`sandbox.credentials.files` に `mode: "deny"` で鍵を挙げる |
+| 他人のツリーのコードの実行 | `sandbox.enabled`。**Bash とその子プロセスまで OS が強制する**（macOS は Seatbelt、Linux / WSL2 は bubblewrap）。`sandbox.credentials.files` に `mode: "deny"` でキーを挙げる |
 | ファイルの読み取り | **sandbox は当たらない** — `Read` / `Edit` / `Write` は permission system を直接通る。既定の読み取りはコンピュータ全体で、組み込みの資格情報の拒否リストも無い。要るのは `permissions.deny` の `Read(//...)` か `permissions.blockReadsOutsideWorkingDirectories` |
 
 **`sandbox.enabled` には運用の費用が付く。**日常の書き込みも弾かれるので、解除して回すことになりうる。

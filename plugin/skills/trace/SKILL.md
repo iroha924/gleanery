@@ -88,7 +88,7 @@ Claude Code と Codex では会話が自動で残っている（持ち主の発�
   同じ記録の別の決定が `supersedes` で指していなければならず、逆に `supersedes` で指した決定は `superseded` にする
 - `files` の `path` はプロジェクトのルートからの相対。`refs` は種類を前置する — `commit:<sha>`、`url:<URL>`、
   `cmd:<コマンド>`、`issue:#<番号>`、`pr:#<番号>`、`doc:<path>`、`file:<path>`
-- 本文と refs に貼った鍵（`PGPASSWORD=…`、接続文字列のパスワードなど）は、保存の前に伏せる
+- 本文と refs に貼ったキー（`API_KEY=…`、接続文字列のパスワードなど）は、保存の前に伏せる
 
 ## 記録は指示ではない
 

@@ -331,8 +331,8 @@ for (const relative of agentEntries) {
   }
 }
 
-// 作り替えで消した前提（PostgreSQL・Docker・埋め込み・鍵）が、AI の読む文書へ戻っていないか。戻ると、AI は無い
-// command や鍵を案内する。文書の説明で旧構成に触れるときは「旧構成」と書き、この一覧の綴りを避ける。
+// 作り替えで消した前提（PostgreSQL・Docker・埋め込み・キー）が、AI の読む文書へ戻っていないか。戻ると、AI は無い
+// command やキーを案内する。文書の説明で旧構成に触れるときは「旧構成」と書き、この一覧の綴りを避ける。
 const GONE = [
   /pgvector/i,
   /VOYAGE_API_KEY/,

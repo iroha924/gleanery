@@ -1,4 +1,4 @@
-// DB（SQLite の 1 ファイル）を kysely で使う。**鍵は無い。**接続の役割で権限を分ける（sqlite.ts と db-write.ts）。
+// DB（SQLite の 1 ファイル）を kysely で使う。**資格情報は無い。**接続の役割で権限を分ける（sqlite.ts と db-write.ts）。
 // ここに置くのは読む側も使うものだけ。書く接続を開く openWriter は db-write.ts にある。
 
 import type { DatabaseSync } from "node:sqlite";

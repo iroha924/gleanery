@@ -189,7 +189,7 @@ export function check(dir: string): { root: string; changes: number; problems: P
  * 文書の同期で取り込む成果物を決める。本文と manifest は同じ commit の tree から読むので、読む順に依存しない。
  *
  * 成果物の Markdown を持つ change だけを検査し、1 つでも不正なら problems を返す。
- * 呼び出し側はそのとき、埋め込みと DB 書き込みの前にそのリポジトリの同期を止める。
+ * 呼び出し側はそのとき、DB 書き込みの前にそのリポジトリの同期を止める。
  */
 export function selectArtifacts(
   snap: Snapshot,

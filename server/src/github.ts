@@ -42,7 +42,7 @@ export type RawIssue = {
   created_at: string;
   updated_at: string;
   html_url: string;
-  /** この鍵があるものは PR。issues エンドポイントは PR も返す */
+  /** このキーがあるものは PR。issues エンドポイントは PR も返す */
   pull_request?: unknown;
 };
 

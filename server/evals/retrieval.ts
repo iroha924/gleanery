@@ -24,7 +24,7 @@ const { cases } = JSON.parse(fs.readFileSync(path.join(HERE, "retrieval.json"), 
 const K = 5;
 const db = openReader();
 
-// ref（k:12 / m:uuid）から、正解と突き合わせる鍵へ直す。
+// ref（k:12 / m:uuid）から、正解と突き合わせるキーへ直す。
 // **id では突き合わせない。**入れ直しで変わるので、前後の比較が壊れる。
 const keyOf = new Map<string, string>();
 // **出所は指標として持つ。**同じファイルの節や同じ作業の記録が上位を埋めていないかを、

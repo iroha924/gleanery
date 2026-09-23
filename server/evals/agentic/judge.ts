@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 各構成の 1 位と eval の正解を、出所を伏せて Opus に判定させる。正解の鍵は各問 1 つで、同じ内容に答える別の記録を外れにするため。
+// 各構成の 1 位と eval の正解を、出所を伏せて Opus に判定させる。正解のキーは各問 1 つで、同じ内容に答える別の記録を外れにするため。
 // 判定は (問い, source_key, 判定モデル・プロンプト・本文の hash) ごとにキャッシュする。**id で持たない**（DB を入れ直すと変わる）。
 //   bun run evals:judge -- <run の結果の dir か baseline.json> ... [--out server/evals/agentic/baseline.json]
 
@@ -233,7 +233,7 @@ const rowsOut = runs.map((s) => {
   return {
     構成: `${origin.get(s)} ${s.summary.name} / ${s.summary.split} / ${s.summary.model}`,
     問: n,
-    "鍵の top1": `${s.summary.top1}%`,
+    "正解の top1": `${s.summary.top1}%`,
     "recall@5": `${s.summary.recall5}%`,
     "判定 direct": `${pct(s.top.filter((t) => t.grade === "direct").length, n)}%`,
     "direct+partial": `${pct(s.top.filter((t) => t.grade === "direct" || t.grade === "partial").length, n)}%`,
@@ -264,7 +264,12 @@ console.table(
   Object.fromEntries(
     means.map((m) => [
       m.name,
-      { 回数: m.runs, "鍵の top1": `${m.top1}%`, "recall@5": `${m.recall5}%`, "判定 direct": `${m.direct}%` },
+      {
+        回数: m.runs,
+        "正解の top1": `${m.top1}%`,
+        "recall@5": `${m.recall5}%`,
+        "判定 direct": `${m.direct}%`,
+      },
     ]),
   ),
 );

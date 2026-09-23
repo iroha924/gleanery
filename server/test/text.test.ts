@@ -66,10 +66,10 @@ test("例外の理由の文は、中のエラー（AggregateError の errors と
   assert.equal(reason(refused), "connect ECONNREFUSED ::1:1 / connect ECONNREFUSED 127.0.0.1:1");
   // fetch は本当の理由を cause にだけ持つ。
   const fetchFailed = new Error("fetch failed", {
-    cause: new Error("getaddrinfo ENOTFOUND api.voyageai.com"),
+    cause: new Error("getaddrinfo ENOTFOUND api.example.com"),
   });
-  assert.equal(reason(fetchFailed), "fetch failed（getaddrinfo ENOTFOUND api.voyageai.com）");
-  assert.equal(reason(new Error("鍵が無い")), "鍵が無い");
+  assert.equal(reason(fetchFailed), "fetch failed（getaddrinfo ENOTFOUND api.example.com）");
+  assert.equal(reason(new Error("キーが無い")), "キーが無い");
   assert.equal(reason(new Error("")), "理由の分からない失敗");
   // 理由の文が空なら種類の名前を理由にし、中のエラーのうち分かったものだけをつなぐ。
   const timeout = new Error("");

@@ -21,7 +21,7 @@ const at = z.iso.datetime({
   offset: true,
   message: "ISO 8601 のオフセット付きで書く（例 2026-09-13T10:00:00+09:00）",
 });
-// 記録は DB へ入り、MCP から引かれる。貼ってしまった鍵を伏せてから持つ（自動記録と同じ網）。
+// 記録は DB へ入り、MCP から引かれる。貼ってしまったキーを伏せてから持つ（自動記録と同じ網）。
 const text = z.string().trim().min(1).transform(mask);
 const file = z
   .object({
