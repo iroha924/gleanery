@@ -28,6 +28,13 @@ try {
   mainIsAncestor = false;
 }
 
+// 注釈付きの tag は `^{}` の行が指す commit を取る
+const refs = run("git", ["ls-remote", "origin", `refs/tags/${tag}`, `refs/tags/${tag}^{}`])
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => line.split("\t"));
+const tagCommit = (refs.find(([, ref]) => ref.endsWith("^{}")) ?? refs[0])?.[0] ?? null;
+
 const { problems, pull } = gateProblems({
   tag,
   commit,
@@ -40,6 +47,7 @@ const { problems, pull } = gateProblems({
       ?.source?.version,
   },
   mainIsAncestor,
+  tagCommit,
   pulls: api(`repos/${repo}/commits/${commit}/pulls`),
   runs: api(`repos/${repo}/actions/runs?head_sha=${commit}&event=pull_request&per_page=100`).workflow_runs,
 });

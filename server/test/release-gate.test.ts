@@ -18,6 +18,7 @@ const run = (name: string, conclusion = "success", id = 1) => ({
   head_sha: COMMIT,
   status: "completed",
   conclusion,
+  pull_requests: [{ number: 7, base: { ref: "main" } }],
 });
 const ok = {
   tag: "v1.2.3",
@@ -25,6 +26,7 @@ const ok = {
   repo: REPO,
   versions,
   mainIsAncestor: true,
+  tagCommit: COMMIT,
   pulls: [pull],
   runs: [run("check"), run("pr-body")],
 };
@@ -96,4 +98,26 @@ test("その commit の check と pr-body が最後の実行で成功してい�
     gateProblems({ ...ok, runs: [{ ...run("check"), event: "push" }, run("pr-body")] }).problems.join("\n"),
     /check/,
   );
+});
+
+test("別の PR の run は数えない", () => {
+  const other = (name: string) => ({
+    ...run(name),
+    pull_requests: [{ number: 9, base: { ref: "release" } }],
+  });
+  assert.match(
+    gateProblems({ ...ok, runs: [other("check"), other("pr-body")] }).problems.join("\n"),
+    /check/,
+  );
+  assert.match(
+    gateProblems({ ...ok, runs: [{ ...run("check"), pull_requests: [] }, run("pr-body")] }).problems.join(
+      "\n",
+    ),
+    /check/,
+  );
+});
+
+test("remote の tag が今もその commit を指していなければ拒む", () => {
+  assert.match(gateProblems({ ...ok, tagCommit: "b".repeat(40) }).problems.join("\n"), /tag/);
+  assert.match(gateProblems({ ...ok, tagCommit: null }).problems.join("\n"), /tag/);
 });

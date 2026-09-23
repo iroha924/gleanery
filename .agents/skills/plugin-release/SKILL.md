@@ -76,6 +76,14 @@ release commandが同じものを読む。
      別のtarballを解決する）
    - gitのtag
 2. marketplace entry直下に`version`を置かない。`plugin.json`が無警告で優先され、古い値がupdateを隠す
+最初のreleaseの前に一度だけ、持ち主が画面で設定する（無いとreleaseが止まる、または保護なしで進む）。
+
+- GitHub: environment `npm-release`（reviewerは持ち主、自己承認の禁止はoff、deploymentはtag `v*`を許す）。
+  `release.yml`の`prepare`は承認者のいないenvironmentを拒む
+- GitHub: tag `v*`の作成・更新・削除を持ち主だけに限るruleset
+- npm: trusted publisher（repository `iroha924/gleanery`、workflow `release.yml`、environment `npm-release`、
+  直接のpublishは許さずstageだけ）、2FA必須、tokenでのpublishを禁止
+
 3. PRを作り、CI（`check`・`pr-body`）とCodexのレビューを通す。PRのbranchにmainを取り込んだ状態にする
    （mainが先へ進んでいると、CIが検査したtreeとtagのtreeが一致しない）
 4. **PRのhead**に`git tag v<version> <head>`を打ってpushする。mainではなくheadに打つので、merge前に候補を検査できる。
@@ -92,8 +100,8 @@ release commandが同じものを読む。
 8. mergeの直前にPRのheadとbaseが動いていないことを見て、`gh pr merge <PR> --merge --match-head-commit <head>`で
    mergeする。`git diff --exit-code <head> <merge commit>`でtreeが変わっていないことを確かめる。差分があれば
    `latest`へ上げない
-9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、展開して
-   `node scripts/check-tarball.mjs <tgz>`が通ることを確かめる
+9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、リポジトリの
+   `node <repository>/scripts/check-tarball.mjs <tgz>`が通ることを確かめる
 10. `npm dist-tag add gleanery@<version> latest`で昇格する（OIDCはdist-tagに使えないので手元の認証で打つ）。
     `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
 11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
