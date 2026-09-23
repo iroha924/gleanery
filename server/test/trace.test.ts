@@ -17,14 +17,21 @@ const decision = (over: Record<string, unknown> = {}) => ({
   status: "accepted",
   at,
   text: "全文検索は FTS5 で持つ",
-  context: "容量を半分にしたい",
+  context: "外部のサービスに頼らずに全文検索したい",
   options: [
     { text: "FTS5", chosen: true },
-    { text: "vector", chosen: false, why: "容量が倍" },
+    { text: "外部の検索サービス", chosen: false, why: "資格情報とネットワークが要る" },
   ],
   confirmation: "schema.sql の表が FTS5",
   ...over,
 });
+const trigram = {
+  options: [
+    { text: "trigram", chosen: true },
+    { text: "FTS5 の既定の語切り", chosen: false, why: "日本語の部分一致が弱い" },
+  ],
+  confirmation: "schema.sql の tokenize が trigram",
+};
 const problems = (raw: unknown) => checkTrace(raw).problems.join("\n");
 
 test("通る記録は、決定の案を option の行にし、key を session で一意にする", () => {
@@ -43,7 +50,7 @@ test("通る記録は、決定の案を option の行にし、key を session �
       ["claude-code:s1#d-fts5:o2", "option", "rejected", "claude-code:s1#d-fts5"],
     ],
   );
-  assert.equal(out[2]?.reason, "容量が倍");
+  assert.equal(out[2]?.reason, "資格情報とネットワークが要る");
 });
 
 // 決定の価値は捨てた案にある。棄却理由の無い決定は、同じ案を再検討させる。
@@ -117,13 +124,13 @@ test("superseded は、この記録の別の決定が覆していなければな
   const ok = checkTrace(
     base([
       decision({ status: "superseded" }),
-      decision({ key: "d-vector", text: "vector に戻す", supersedes: "d-fts5" }),
+      decision({ key: "d-like", text: "LIKE に戻す", supersedes: "d-fts5" }),
     ]),
   );
   assert.deepEqual(ok.problems, []);
   const out = rows(ok.trace as Trace);
   const old = out.find((x) => x.key === "claude-code:s1#d-fts5");
-  assert.equal(old?.supersededBy, "claude-code:s1#d-vector");
+  assert.equal(old?.supersededBy, "claude-code:s1#d-like");
   // 覆された決定で採った案を、採用のまま返さない。
   assert.equal(out.find((x) => x.key === "claude-code:s1#d-fts5:o1")?.status, "was_chosen");
 });
@@ -131,8 +138,8 @@ test("superseded は、この記録の別の決定が覆していなければな
 // 同じ記録で覆したのに有効のまま書くと、check を通って save だけが DB の CHECK で落ちる。
 test("この記録の中で覆された決定は superseded でなければならない", () => {
   assert.match(
-    problems(base([decision(), decision({ key: "d-vector", text: "vector に戻す", supersedes: "d-fts5" })])),
-    /d-vector が覆しているので、status は superseded にする/,
+    problems(base([decision(), decision({ key: "d-like", text: "LIKE に戻す", supersedes: "d-fts5" })])),
+    /d-like が覆しているので、status は superseded にする/,
   );
 });
 
@@ -235,8 +242,8 @@ test("記録を入れると決定・案・作業・ファイルが入り、同�
     // 案を減らして書き直すと、古い案を棄却として残さない
     const three = [
       { text: "FTS5", chosen: true },
-      { text: "vector", chosen: false, why: "容量が倍" },
-      { text: "bit", chosen: false, why: "精度が落ちる" },
+      { text: "外部の検索サービス", chosen: false, why: "資格情報とネットワークが要る" },
+      { text: "LIKE の全件走査", chosen: false, why: "件数に比例して遅い" },
     ];
     const options = () =>
       (
@@ -270,6 +277,7 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
       session: { host: "claude-code", id: "s2" },
       items: [
         decision({
+          ...trigram,
           key: "d-trigram",
           text: "全文検索は trigram で持つ",
           supersedes: "claude-code:s1#d-fts5",
@@ -311,7 +319,9 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
         valid({
           schema: "trace/1",
           session: { host: "claude-code", id: "s2" },
-          items: [decision({ key: "d-trigram", text: "trigram", supersedes: "claude-code:s1#d-loop" })],
+          items: [
+            decision({ ...trigram, key: "d-trigram", text: "trigram", supersedes: "claude-code:s1#d-loop" }),
+          ],
         }),
       ),
       /互いに覆し合う/,
