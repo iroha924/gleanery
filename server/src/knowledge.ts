@@ -105,7 +105,7 @@ export const indexesMessage = (origin: string, speakerKind: string): boolean =>
 
 /**
  * 会話の id。GitHub の同期・trace・自動記録が同じ規則で作るので、どれが先に書いても同じ行になる。
- * 作業場所をまたいだ session（途中で別のリポジトリへ移った）は、作業場所ごとに別の会話になる。
+ * プロジェクトをまたいだ session（途中で別のリポジトリへ移った）は、プロジェクトごとに別の会話になる。
  */
 export const conversationId = (projectId: number, origin: Origin, externalId: string): string =>
   uuidFrom(String(projectId), origin, externalId);

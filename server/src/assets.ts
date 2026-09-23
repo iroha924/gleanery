@@ -6,7 +6,7 @@
 // 置かれ方は 2 つある。
 //   配る形    <package>/dist/cli.js から見て <package>/db（package.json の files が dist の隣へ置く）
 //   作業ツリー server/src/assets.ts から見て リポジトリ直下の db
-// bun build は import.meta.url を実行時の値に解決するので、束ねた後も自分の位置が分かる。
+// bun build は import.meta.url を実行時の値に解決するので、バンドルした後も自分の位置が分かる。
 
 import fs from "node:fs";
 import path from "node:path";

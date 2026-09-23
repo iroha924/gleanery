@@ -160,15 +160,32 @@ test("見出しの枠は、要点が長くても端末の幅を越えない", ()
   for (const line of lines) assert.ok(cols(line) <= 50, `${cols(line)} 桁: ${line}`);
 });
 
+// Ink は空白で折り返すと、その空白を続きの行の頭に残す。続きの行が 1 桁ずれないこと。
+test("空白で折り返した続きの行も、字下げの位置に揃う", () => {
+  const text =
+    "待ち 2 件 / 最後の送信 2026-09-23 11:48:11 / 未登録のプロジェクトで退避した 3 件 / 送れなかった 12 件";
+  for (let cols = 40; cols <= 70; cols++) {
+    const lines = asTerminal(cols, () => indent(`  ${text}`))
+      .split("\n")
+      .filter((l) => l.trim());
+    for (const line of lines)
+      assert.equal(stripVTControlCharacters(line).search(/\S/), 4, `${cols}: ${line}`);
+  }
+});
+
 test("色の付いた印で始まる行も、値の列の中で折り返す", () => {
   const colored = "\u001b[38;2;156;175;136m✓\u001b[39m";
-  const out = asTerminal(50, () =>
-    indent(
-      `  ${colored} 自動記録    待ち 2 件 / 最後の送信 2026-09-23 11:48:11 / 未登録の作業場所で退避した 3 件`,
-    ),
-  );
-  const lines = out.split("\n");
-  assert.ok(lines.length > 1, out);
-  const column = cols(lines[0]?.split("待ち")[0] ?? "");
-  for (const line of lines.slice(1)) assert.equal(stripVTControlCharacters(line).search(/\S/), column, out);
+  // 続きの行が全部空白で折り返される幅もあるので、幅を振る
+  for (let width = 40; width <= 100; width++) {
+    const out = asTerminal(width, () =>
+      indent(
+        `  ${colored} 自動記録    待ち 2 件 / 最後の送信 2026-09-23 11:48:11 / 未登録のプロジェクトで退避した 3 件 / 送れなかった 12 件`,
+      ),
+    );
+    const lines = out.split("\n");
+    assert.ok(lines.length > 1, out);
+    const column = cols(lines[0]?.split("待ち")[0] ?? "");
+    for (const line of lines.slice(1))
+      assert.equal(stripVTControlCharacters(line).search(/\S/), column, `${width}: ${out}`);
+  }
 });

@@ -30,7 +30,7 @@ const write = (repo: string, rel: string, body: string): void => {
 const manifest = (repo: string, slug: string, value: unknown): void =>
   write(repo, `.gleanery/changes/${slug}/change.json`, JSON.stringify(value));
 
-test("init は repository のどこから呼んでも根に作り、2 回目は既存として成功する", () => {
+test("init は repository のどこから呼んでもルートに作り、2 回目は既存として成功する", () => {
   withRepo((repo) => {
     fs.mkdirSync(path.join(repo, "sub", "deep"), { recursive: true });
     const first = init(path.join(repo, "sub", "deep"));

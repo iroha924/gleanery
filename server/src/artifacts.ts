@@ -90,7 +90,7 @@ function readJson(snap: Snapshot, rel: string): { value: unknown } | { reason: s
  */
 const zodReason = (e: z.ZodError): string =>
   e.issues
-    .map((i) => `${i.path.join(".") || "(根)"}: ${i.code === "custom" ? i.message : i.code}`)
+    .map((i) => `${i.path.join(".") || "(ルート)"}: ${i.code === "custom" ? i.message : i.code}`)
     .join(" / ");
 
 /** `.gleanery/changes` 配下で git が追っている path。git 管理外なら null。 */
@@ -219,13 +219,13 @@ export function selectArtifacts(
 
 /**
  * `.gleanery` 配下の Markdown か。承認済みの成果物以外は同期しない。**入れ子の `.gleanery` も含める** —
- * 根にしか承認の判定が無いので、サブディレクトリの draft が通常の文書として検索に入る。
+ * ルートにしか承認の判定が無いので、サブディレクトリの draft が通常の文書として検索に入る。
  */
 export const underGleanery = (rel: string): boolean =>
   rel.startsWith(`${GLEANERY}/`) || rel.includes(`/${GLEANERY}/`);
 
 /**
- * `.gleanery/` を作る。**Git リポジトリの中なら常に根へ**置く。
+ * `.gleanery/` を作る。**Git リポジトリの中なら常にルートへ**置く。
  *
  * **symlink を辿らない。**`mkdirSync` と `writeFileSync(..., { flag: "wx" })` は既存なら EEXIST で止まり、
  * O_EXCL は末端が symlink でも止まる。途中のディレクトリの symlink は O_EXCL でも辿るので、

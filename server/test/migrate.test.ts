@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { pendingMigrations } from "../src/admin.ts";
 import { SCHEMA_REVISION } from "../src/db.ts";
 
-test("DB の版より新しい migration だけを、revision の昇順で返す", () => {
+test("DB のバージョンより新しい migration だけを、revision の昇順で返す", () => {
   const files = ["0005_c.sql", "0003_a.sql", "0004_b.sql"];
   assert.deepEqual(pendingMigrations(files, 3), [
     { revision: 4, file: "0004_b.sql" },
@@ -17,7 +17,7 @@ test("DB の版より新しい migration だけを、revision の昇順で返す
   ]);
 });
 
-test("DB が最後の migration の版か、それより新しければ何も返さない", () => {
+test("DB が最後の migration のバージョンか、それより新しければ何も返さない", () => {
   const files = ["0003_a.sql", "0004_b.sql"];
   assert.deepEqual(pendingMigrations(files, 4), []);
   assert.deepEqual(pendingMigrations(files, 5), []);
@@ -44,8 +44,8 @@ test("`.` で始まる名前は migration として読まず、残りだけを�
   ]);
 });
 
-// 別々の branch で同じ番号を取ると、DB は片方だけを当てて版を進め、もう片方は二度と当たらない。
-test("同じ revision の migration が 2 本あれば、DB がその版を過ぎていても両方の名前を挙げて投げる", () => {
+// 別々の branch で同じ番号を取ると、DB は片方だけを当ててバージョンを進め、もう片方は二度と当たらない。
+test("同じ revision の migration が 2 本あれば、DB がそのバージョンを過ぎていても両方の名前を挙げて投げる", () => {
   for (const current of [2, 4]) {
     assert.throws(
       () => pendingMigrations(["0003_a.sql", "0004_b.sql", "0004_c.sql"], current),
@@ -60,14 +60,14 @@ test("同じ revision の migration が 2 本あれば、DB がその版を過�
   }
 });
 
-// 欠けた版を飛ばして次を当てると、DB の形が schema.sql からずれたまま版だけが揃う。
-test("DB の次の版から最後までに欠番があれば、欠けた revision を挙げて投げる", () => {
+// 欠けたバージョンを飛ばして次を当てると、DB の形が schema.sql からずれたままバージョンだけが揃う。
+test("DB の次のバージョンから最後までに欠番があれば、欠けた revision を挙げて投げる", () => {
   assert.throws(() => pendingMigrations(["0003_a.sql", "0005_c.sql"], 2), /(?<!\d)0*4(?!\d)/);
   assert.throws(() => pendingMigrations(["0004_b.sql"], 2), /(?<!\d)0*3(?!\d)/);
 });
 
 // SQLite の DB は schema.sql（revision 1）から始まり、ここの migration を順に当てて今の形へ進む。
-test("db/migrations は revision 2 から欠番も重複も無く続き、最後の版がコードと schema.sql の版に一致する", () => {
+test("db/migrations は revision 2 から欠番も重複も無く続き、最後のバージョンがコードと schema.sql のバージョンに一致する", () => {
   const dir = new URL("../../db/migrations/", import.meta.url);
   const revisions = (fs.existsSync(dir) ? fs.readdirSync(dir) : [])
     .filter((f) => !f.startsWith("."))

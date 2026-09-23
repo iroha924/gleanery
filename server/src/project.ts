@@ -1,7 +1,7 @@
-// 作業場所（project）の識別。
+// プロジェクト（project）の識別。
 //
 // key は git remote を正規化したもの（`git:github.com/owner/repo`）で、PC をまたいで同じになる。
-// remote の無い作業場所だけ、PC ごとの対応表（~/.gleanery/projects.json）で `local:<名前>` に結ぶ。
+// remote の無いプロジェクトだけ、PC ごとの対応表（~/.gleanery/projects.json）で `local:<名前>` に結ぶ。
 // ローカルのパスは DB に置かない。置き場所は PC ごとに違い、同期は各 PC で ~/Projects を見て探す。
 
 import { execFileSync } from "node:child_process";
@@ -49,7 +49,7 @@ const git = (dir: string, ...args: string[]): string | null => {
   }
 };
 
-/** 名前を付けた作業場所の対応表。**壊れていたら空とみなさない**（空として書き戻すと、ほかの対応が全部消える）。 */
+/** 名前を付けたプロジェクトの対応表。**壊れていたら空とみなさない**（空として書き戻すと、ほかの対応が全部消える）。 */
 function localMap(): Record<string, string> {
   let raw: string;
   try {
@@ -69,13 +69,13 @@ function localMap(): Record<string, string> {
   return m as Record<string, string>;
 }
 
-/** リポジトリの根。git の外なら dir そのもの。 */
+/** リポジトリのルート。git の外なら dir そのもの。 */
 export const rootOf = (dir: string): string =>
   git(path.resolve(dir), "rev-parse", "--show-toplevel") || path.resolve(dir);
 
 /**
- * dir が属する作業場所。どちらでもなければ null（記録も同期もしない）。
- * **根はリポジトリの top-level にする。**サブディレクトリから呼ばれても、相対パスの基点がずれない。
+ * dir が属するプロジェクト。どちらでもなければ null（記録も同期もしない）。
+ * **ルートはリポジトリの top-level にする。**サブディレクトリから呼ばれても、相対パスの基点がずれない。
  */
 export function identify(dir: string): Place | null {
   const given = path.resolve(dir);
@@ -83,7 +83,7 @@ export function identify(dir: string): Place | null {
   const root = top || given;
   const remote = top ? normalizeRemote(git(root, "remote", "get-url", "origin")) : null;
   if (remote) return { key: `git:${remote}`, root, name: remote.split("/").slice(1).join("/") || remote };
-  // git 管理外の作業場所は、サブディレクトリで作業していても名前を付けた根まで遡って引く。
+  // git 管理外のプロジェクトは、サブディレクトリで作業していても名前を付けたルートまで遡って引く。
   const map = localMap();
   for (let d = root; ; d = path.dirname(d)) {
     const local = map[d];
@@ -92,7 +92,7 @@ export function identify(dir: string): Place | null {
   }
 }
 
-/** remote の無い作業場所に、この PC で名前を付ける。 */
+/** remote の無いプロジェクトに、この PC で名前を付ける。 */
 export function nameLocal(dir: string, name: string): Place {
   if (!LOCAL_KEY.test(name)) throw new Error(`名前は小文字英数字と . _ - だけにする: ${name}`);
   // remote があれば key は remote から決まり、名前の key は二度と引かれない（登録しても届かない行になる）。
@@ -111,14 +111,14 @@ export function nameLocal(dir: string, name: string): Place {
   return { key: `local:${name}`, root, name };
 }
 
-/** その作業場所の project id。無ければ null（作るのは `gleanery project add` だけ）。 */
+/** そのプロジェクトの project id。無ければ null（作るのは `gleanery project add` だけ）。 */
 export async function projectId(db: Kysely<DB>, key: string): Promise<number | null> {
   const r = await db.selectFrom("project").select("id").where("key", "=", key).executeTakeFirst();
   return r?.id ?? null;
 }
 
 /**
- * この PC で、登録済みの作業場所の置き場所を探す。~/Projects の直下と、名前を付けた作業場所だけを見る。
+ * この PC で、登録済みのプロジェクトの置き場所を探す。~/Projects の直下と、名前を付けたプロジェクトだけを見る。
  * **同じ key の置き場所が 2 つあれば選ばない。**並び順で先に来た複製へ黙って同期しない。
  */
 export function localRoots(roots = [path.join(os.homedir(), "Projects")]): {
@@ -151,11 +151,11 @@ export function localRoots(roots = [path.join(os.homedir(), "Projects")]): {
   return { found, ambiguous };
 }
 
-/** 作業場所の根からの相対パス。根の外、または読めない形なら null。 */
+/** プロジェクトのルートからの相対パス。ルートの外、または読めない形なら null。 */
 export function relativeTo(root: string, file: string, cwd = root): string | null {
   const abs = path.resolve(cwd, file);
   const rel = path.relative(root, abs);
-  // `..config` のような名前は根の中にある。外へ出るのは `..` そのものか `../` で始まるものだけ。
+  // `..config` のような名前はルートの中にある。外へ出るのは `..` そのものか `../` で始まるものだけ。
   if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
   return rel.split(path.sep).join("/");
 }

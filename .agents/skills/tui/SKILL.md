@@ -18,12 +18,12 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 
 - MCP・他の CLI command・取り込みだけを変更する
 - DB schema や接続の役割を変更する。その場合は `knowledge-schema`
-- 版を上げて届ける。その場合は `plugin-release`（TUI は CLI の一部なので release の種別は `plugin`）
+- バージョンを上げて届ける。その場合は `plugin-release`（TUI は CLI の一部なので release の種別は `plugin`）
 
 ## 依存について知っておくこと
 
-記憶で API を選ばない。版は `server/package.json` が正本で、API は `server/node_modules/<package>` の型定義（`.d.ts`）を読む。
-下の事実は版を上げたときに崩れうるので、上げたら型定義で確かめ直す。
+記憶で API を選ばない。バージョンは `server/package.json` が正本で、API は `server/node_modules/<package>` の型定義（`.d.ts`）を読む。
+下の事実はバージョンを上げたときに崩れうるので、上げたら型定義で確かめ直す。
 
 | 依存 | 規約に効く事実 |
 |---|---|
@@ -31,9 +31,9 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 | @inkjs/ui | `TextInput`（`onSubmit`・`isDisabled`）と `Spinner` を使っている |
 | ink-scroll-view | `ScrollView` の ref の `scrollBy` / `scrollToTop` / `scrollToBottom` で動かす |
 | ink-link | 型が `children` を props の必須にしている |
-| marked | **marked-terminal の peer（`<16`）の外の版を、持ち主の決定で入れている** |
+| marked | **marked-terminal の peer（`<16`）の外のバージョンを、持ち主の決定で入れている** |
 | marked-terminal | 型を同梱しない。`@types/marked-terminal` は古い marked を引き込むので入れず、`marked-terminal.d.ts` で宣言する |
-| ink-testing-library | 描画と `stdin.write` の入力が Ink の今の版で動く。動かなくなったら `render` に偽の stdout を渡す形へ替える |
+| ink-testing-library | 描画と `stdin.write` の入力が Ink の今のバージョンで動く。動かなくなったら `render` に偽の stdout を渡す形へ替える |
 
 ## 置き場所
 
@@ -44,7 +44,7 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 | `tui/data.ts` | 画面が呼ぶ読み出しの型（`Data`）と本物の実装。test は偽の `Data` を渡す |
 | `tui/icons.ts` | 記号と読み込み中の回転（`TWINKLE`）を名前付きで持つ唯一の場所 |
 | `tui/markdown.ts` | AI の応答を ANSI にする |
-| `sessions.ts` | セッション・作業場所・作業の一覧の query |
+| `sessions.ts` | セッション・プロジェクト・作業の一覧の query |
 
 ## 書き方
 
@@ -95,9 +95,9 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 
 ## bundle
 
-CLI は出力も dashboard も Ink で描くので、Ink は `plugin/dist/cli.js` に束ねる（別ファイルに分けない）。
+CLI は出力も dashboard も Ink で描くので、Ink は `plugin/dist/cli.js` にバンドルする（別ファイルに分けない）。
 `scripts/bundle-cli.ts` が `Bun.build` で `cli.js` を作り（`scripts/bundle.mjs` から呼ぶ）、`react-devtools-core` と `ws` を
-空の module へ差し替える（開発時だけ通る経路なので挙動は変わらない）。`bun build` の command で束ねると、この差し替えが
+空の module へ差し替える（開発時だけ通る経路なので挙動は変わらない）。`bun build` の command でバンドルすると、この差し替えが
 できずに落ちる。MCP と自動記録（`mcp.js`・`capture.js`）は Ink を読まない。
 
 ## CLI の出力
@@ -115,7 +115,7 @@ CLI の command は `server/src/tui/view.ts` の部品で出す（`console.log` 
   端末のときだけで、pipe（AI が Bash から読む）では字下げした文字だけにし、折り返さない。見出しは `✦ <text>` の 1 行
 - **中身は必ず字下げし、締めの行だけを行頭に置く。**外から来た文字（PR の題、DB に残ったエラー文）は、枠・セル・字下げの
   中にだけ入れる。改行を含んでも、行頭の締めの行や状態の行を偽造できない（`server/test/view.test.ts`・`cli.test.ts`）
-- `search` の pipe は、記録の囲い（`framed`）を付けた MCP と同じ文字で出す（AI が読む出口）。端末では `cards` で出す
+- `search` の pipe は、記録の囲い（`framed`）を付けた MCP と同じ文字で出す（AI が読む出力）。端末では `cards` で出す
 - 自動記録のフックは Ink を読まないので `server/src/panel.ts` の形のまま出す
 - `@inkjs/ui` の部品は型が children を props の必須にしているので、`view.ts` の `part` で渡す
 
@@ -129,4 +129,4 @@ CLI の command は `server/src/tui/view.ts` の部品で出す（`console.log` 
    疑似端末を与えて入力を送る）。セッション一覧 → Enter で詳細 → Esc、Tab で作業の一覧 → Enter で詳細 → Esc、Tab で検索 → 語を打って
    Enter → 結果を Enter で全文、を通して `q` で終了コード 0 を見る。pipe から起動すると案内を出して 1 で終わる
 3. 日本語の本文で列と罫線が揃うこと、端末を狭くしたときに選んだ行が画面の外へ出ないことを目で見る
-4. 画面を変えた commit の前に `review-ui` を渡す（端末の画面の節がある）
+4. 画面を変えた commit の前に、画面のレビューを受ける（Claude Code では `review-ui`。端末の画面の節がある）

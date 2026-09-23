@@ -82,7 +82,7 @@ test("長い節は切り捨てずに続きへ回す", () => {
   assert.ok(joined.includes("段落59"), "末尾が落ちた");
 });
 
-// 節だけでは何の話か分からない。見出し（語彙索引で 3 倍に重い列）に、どの文書のどの節かを前置する。
+// 節だけでは何の話か分からない。見出し（全文検索の索引で 3 倍に重い列）に、どの文書のどの節かを前置する。
 test("節の見出しにはどの文書のどの節かが前置される", () => {
   const out = sections("docs/adr/0001-x.md", ["# 決定", "## Context", "背景の説明"].join("\n"));
   const s = out.find((x) => x.title === "Context");
@@ -340,7 +340,7 @@ test("成果物は承認済みだけを入れ、draft と .gleanery のそれ以
     [req, "# 要件\n\n## 背景\n### 経緯\n\n本文\n"],
     [".gleanery/changes/auth/design.md", "# 設計\n\n本文\n"],
     [".gleanery/notes.md", "# メモ\n\n本文\n"],
-    // 承認の判定は根の .gleanery にしか無いので、入れ子の .gleanery は通常の文書として入れない
+    // 承認の判定はルートの .gleanery にしか無いので、入れ子の .gleanery は通常の文書として入れない
     ["sub/.gleanery/changes/x/requirements.md", "# 入れ子\n\n本文\n"],
   ]);
   const got = projectDocs(bodies, new Map([[req, artifact]]), new Map());

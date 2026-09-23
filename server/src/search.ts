@@ -12,7 +12,7 @@ import type { DB } from "./db-types.ts";
 import { KINDS, labelOf } from "./knowledge.ts";
 import { bytes, ftsQuery, head, visible } from "./text.ts";
 
-/** 作業場所の絞り込み。null は全部（明示されたときだけ）。 */
+/** プロジェクトの絞り込み。null は全部（明示されたときだけ）。 */
 export type Scope = number[] | null;
 
 export type Hit = {
@@ -43,7 +43,7 @@ export type Hit = {
   originalBytes: number | null;
 };
 
-/** 語の順位付き検索（既定）か、部分一致か。部分一致は語に切れない固有名・記号・版番号に使う。 */
+/** 語の順位付き検索（既定）か、部分一致か。部分一致は語に切れない固有名・記号・バージョン番号に使う。 */
 export type Match = "words" | "exact";
 
 /** 間引く前に取る候補の数。 */
@@ -70,7 +70,7 @@ const contains = (cols: string[], needle: string): Expression<SqlBool> =>
     sql` or `,
   )})`;
 
-/** 語彙索引の上位。rowid と順位（bm25 は小さいほど良い）を返す副問い合わせ。 */
+/** 全文検索の索引の上位。rowid と順位（bm25 は小さいほど良い）を返す副問い合わせ。 */
 const knowledgeFts = (match: string) =>
   sql<{ rowid: number; rank: number }>`(select rowid, bm25(knowledge_fts, 3, 1) as rank
     from knowledge_fts where knowledge_fts match ${match})`.as("f");
@@ -479,7 +479,7 @@ export async function workDetail(
   };
 }
 
-/** 編集の前に出す、ファイルに直接かかる制約と負債。path は作業場所の根からの相対。 */
+/** 編集の前に出す、ファイルに直接かかる制約と負債。path はプロジェクトのルートからの相対。 */
 export type PathRule = { ref: string; label: string; text: string; reason: string | null; at: Date };
 
 export async function pathRules(db: Kysely<DB>, projectId: number): Promise<Map<string, PathRule[]>> {
@@ -814,7 +814,7 @@ export const REF = /^(?:[ksw]:\d{1,15}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 
 /**
  * 参照を読む。`k:` 知識、`m:` 発言とその前後、`s:` 取り込み元（文書の原文、PR・issue）、`w:` 作業。
- * projects を渡すと、その作業場所の外の参照は「無い」と返す（MCP と端末の画面は選んだ作業場所の外を読ませない）。
+ * projects を渡すと、そのプロジェクトの外の参照は「無い」と返す（MCP と端末の画面は選んだプロジェクトの外を読ませない）。
  */
 export async function read(
   db: Kysely<DB>,
@@ -889,7 +889,7 @@ async function readKnowledge(
   if (projects) q = q.where("k.project_id", "in", projects);
   const k = await q.executeTakeFirst(queryOptions(signal));
   if (!k) return `k:${id}: 無い`;
-  // 本体と同じ範囲で絞る。決定に属する行は id で辿れるので、絞りが片方だけだと、選んだ作業場所の
+  // 本体と同じ範囲で絞る。決定に属する行は id で辿れるので、絞りが片方だけだと、選んだプロジェクトの
   // 外の本文が案と検証として応答に混ざる（id は連番で推測できる）。
   let r = knowledgeBase(db).where(sql<SqlBool>`(k.decision_id = ${id} or k.id = ${k.decision_id})`);
   if (projects) r = r.where("k.project_id", "in", projects);

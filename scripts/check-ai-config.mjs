@@ -91,7 +91,34 @@ if (bytes > CODEX_LIMIT - USER_RESERVE) {
       "長い手順は.agents/skills/へ移す",
   );
 }
-if (read("CLAUDE.md").trim() !== "@AGENTS.md") fail("CLAUDE.md: @AGENTS.mdだけを正本として読む形ではない");
+// **CLAUDE.md は Claude Code 専用、AGENTS.md は Codex 専用。**Claude Code は CLAUDE.md があると AGENTS.md を読まず、
+// Codex は CLAUDE.md を読まない（どちらも 2026-09-23 に実験で確かめた）。互いを import すると、両方が両方を読む。
+const claudeMd = read("CLAUDE.md");
+if (/^@\S*AGENTS\.md\s*$/m.test(claudeMd)) fail("CLAUDE.md: AGENTS.mdをimportしている。両者は別々に読ませる");
+const claudeLines = claudeMd.trimEnd().split("\n").length;
+// 公式の目安は 200 行未満。常時ロードは paths の無い rule と合わせて効くので、CLAUDE.md 単体はその半分に抑える。
+if (claudeLines >= 100)
+  fail(`CLAUDE.md: ${claudeLines}行。100行未満にし、手順はSkill、fileに紐付く規約はpaths付きのruleへ移す`);
+// Codex は Claude Code の仕組み（rule・reviewer・Claude 専用 Skill）を使えない。書くと、無い物を探すか、代わりに別の AI を立てようとする。
+for (const word of [".claude/rules", ".claude/agents", "review-shipping", "review-ui", "docs-author"])
+  if (agents.includes(word)) fail(`AGENTS.md: Claude Code側の仕組み（${word}）を書いている。Codexは使えない`);
+
+// 両方に写した規約が片側だけで消えないよう、`<!-- invariant: 名前 -->` の集合を突き合わせる。
+// 実例: 設定 repository で分けたとき、書き直しで 1 句が片側から消えて気付かれなかった。
+const invariants = (source) =>
+  new Set([...source.matchAll(/<!-- invariant: ([a-z0-9-]+) -->/g)].map((m) => m[1]));
+const claudeSide = new Set(
+  ["CLAUDE.md", ...fs.readdirSync(path.join(root, ".claude/rules")).map((f) => `.claude/rules/${f}`)].flatMap(
+    (f) => [...invariants(read(f))],
+  ),
+);
+const codexSide = invariants(agents);
+if (codexSide.size < 20)
+  fail(`AGENTS.md: invariantが${codexSide.size}個しか読めない。印の形が崩れていないか`);
+for (const id of claudeSide)
+  if (!codexSide.has(id)) fail(`AGENTS.md: invariant ${id} がCLAUDE.md側にだけある`);
+for (const id of codexSide)
+  if (!claudeSide.has(id)) fail(`CLAUDE.md・.claude/rules: invariant ${id} がAGENTS.md側にだけある`);
 const claudeVerification = read(".claude/rules/verification.md");
 for (const required of [
   "bun run release:plan -- --base <前回のrelease commit>",
@@ -161,7 +188,7 @@ for (const [publish] of releaseSteps.matchAll(/npm publish[^\n`]*/g)) {
 try {
   const pluginManifest = JSON.parse(read("plugin/.codex-plugin/plugin.json"));
   if (pluginManifest.skills !== "./skills/") {
-    fail("plugin/.codex-plugin/plugin.json: 利用者向けSkillの入口は./skills/に限る");
+    fail("plugin/.codex-plugin/plugin.json: 利用者向けSkillの置き場所は./skills/に限る");
   }
   if (pluginManifest.hooks !== "./hooks/codex.json") {
     fail("plugin/.codex-plugin/plugin.json: Codexのhookは./hooks/codex.jsonを読む");
@@ -304,9 +331,19 @@ const GONE = [
 ];
 const docs = [
   "AGENTS.md",
-  ".claude/rules/verification.md",
+  "CLAUDE.md",
+  ...fs.readdirSync(path.join(root, ".claude/rules")).map((f) => `.claude/rules/${f}`),
   ...developmentSkills.map((name) => `.agents/skills/${name}/SKILL.md`),
   ...pluginSkills.map((name) => `plugin/skills/${name}/SKILL.md`),
+  ...pluginSkills.flatMap((name) => {
+    const dir = path.join(root, "plugin/skills", name, "references");
+    return fs.existsSync(dir)
+      ? fs
+          .readdirSync(dir)
+          .filter((f) => f.endsWith(".md"))
+          .map((f) => `plugin/skills/${name}/references/${f}`)
+      : [];
+  }),
   ...agentFiles,
   // 配る manifest の keywords と説明も、利用者に旧構成を見せる
   "plugin/package.json",
@@ -325,5 +362,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `AI設定: AGENTS ${lines}行 / ${bytes} bytes、開発Skill ${developmentSkills.length}件、plugin Skill ${pluginSkills.length}件、Agent ${agentFiles.length}件`,
+  `AI設定: CLAUDE ${claudeLines}行、AGENTS ${lines}行 / ${bytes} bytes、invariant ${codexSide.size}件、開発Skill ${developmentSkills.length}件、plugin Skill ${pluginSkills.length}件、Agent ${agentFiles.length}件`,
 );

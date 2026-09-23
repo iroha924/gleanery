@@ -86,7 +86,7 @@ Claude Code と Codex では会話が自動で残っている（持ち主の発�
 - **覆した決定を消さない。**新しい決定の `supersedes` に古い決定の key を書く。別の session の決定は
   context が出す `<host>:<session>#<key>` の形で書く。この記録の中で `superseded` にした決定は、
   同じ記録の別の決定が `supersedes` で指していなければならず、逆に `supersedes` で指した決定は `superseded` にする
-- `files` の `path` は作業場所の根からの相対。`refs` は種類を前置する — `commit:<sha>`、`url:<URL>`、
+- `files` の `path` はプロジェクトのルートからの相対。`refs` は種類を前置する — `commit:<sha>`、`url:<URL>`、
   `cmd:<コマンド>`、`issue:#<番号>`、`pr:#<番号>`、`doc:<path>`、`file:<path>`
 - 本文と refs に貼った鍵（`PGPASSWORD=…`、接続文字列のパスワードなど）は、保存の前に伏せる
 

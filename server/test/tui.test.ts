@@ -445,7 +445,7 @@ test("狭い端末でも上の枠は 3 行で、画面が端末の高さを超�
   }
 });
 
-test("作業場所を切り替えると、セッションの一覧は 1 ページ目から読み直す", async () => {
+test("プロジェクトを切り替えると、セッションの一覧は 1 ページ目から読み直す", async () => {
   const pages: [number | null, number][] = [];
   const data = fake({
     here: { project: null, name: null },
@@ -521,11 +521,11 @@ test("AI の応答の表は、端末より広くても折らずに行ごとに�
   r.unmount();
 });
 
-test("作業場所の一覧を読めないとき、狭い端末でも「読めなかった」が見える", async () => {
+test("プロジェクトの一覧を読めないとき、狭い端末でも「読めなかった」が見える", async () => {
   const data = fake({ projects: async () => Promise.reject(new Error("接続できない")) });
   for (const columns of [50, 80]) {
     const frame = await frameAt(columns, 12, data);
-    assert.match(frame.split("\n")[1] ?? "", /作業場所の一覧を読めなかった/, frame);
+    assert.match(frame.split("\n")[1] ?? "", /プロジェクトの一覧を読めなかった/, frame);
   }
 });
 

@@ -22,7 +22,7 @@ fs.mkdirSync(dist, { recursive: true });
 for (const entry of ["mcp", "capture"]) {
   run("bun", ["build", `server/src/${entry}.ts`, "--target=node", "--outfile", `plugin/dist/${entry}.js`]);
 }
-// CLI は Ink を含み、その開発用の import を差し替える plugin が要るので、Bun.build の script で束ねる。
+// CLI は Ink を含み、その開発用の import を差し替える plugin が要るので、Bun.build の script でバンドルする。
 run("bun", ["scripts/bundle-cli.ts"]);
 
 // plugin の cache には repository が無いので、schema（と、あれば migrations）を持たせる。
@@ -36,7 +36,7 @@ if (fs.existsSync(path.join(root, "db", "migrations")))
 // npm は Windows で shebang を読んで .cmd を作るので、実行権が要る。
 for (const entry of ["cli"]) fs.chmodSync(path.join(dist, `${entry}.js`), 0o755);
 
-// **束ねても同梱の義務は消えない。**配るたびに、そのときの node_modules から作り直す。
+// **バンドルしても同梱の義務は消えない。**配るたびに、そのときの node_modules から作り直す。
 run("node", ["scripts/third-party-notices.mjs"]);
 
 const count = (dir) =>

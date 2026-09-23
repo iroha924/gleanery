@@ -31,7 +31,7 @@ test("remote に埋まった資格情報は key へ持ち込まない", () => {
       assert.ok(!got.includes(leak), `${url} → ${got} に ${leak} が残っている`);
     }
   }
-  // ポートは識別子ではない。付けると同じリポジトリが 2 つの作業場所に割れる。
+  // ポートは識別子ではない。付けると同じリポジトリが 2 つのプロジェクトに割れる。
   assert.equal(normalizeRemote("https://user:pass@host:2222/o/r.git"), "host/o/r");
   assert.equal(normalizeRemote("git@gitlab.com:org/team/repo.git"), "gitlab.com/org/team/repo");
   assert.equal(normalizeRemote(""), null);
@@ -47,7 +47,7 @@ function repo(remote: string | null): { dir: string; done: () => void } {
 }
 
 // 相対パスの基点がサブディレクトリにずれると、同じファイルが別の path として記録される。
-test("リポジトリの途中から見ても、根と key は同じ", () => {
+test("リポジトリの途中から見ても、ルートと key は同じ", () => {
   const r = repo("https://github.com/o/r.git");
   try {
     for (const d of [r.dir, path.join(r.dir, "a"), path.join(r.dir, "a", "b")]) {
@@ -61,8 +61,8 @@ test("リポジトリの途中から見ても、根と key は同じ", () => {
   }
 });
 
-// remote も名前も無い場所の会話を、どこかの作業場所へ推測で入れない。
-test("remote も名前も無い場所は作業場所にならない", () => {
+// remote も名前も無い場所の会話を、どこかのプロジェクトへ推測で入れない。
+test("remote も名前も無い場所はプロジェクトにならない", () => {
   const r = repo(null);
   try {
     assert.equal(identify(r.dir), null);
@@ -72,18 +72,18 @@ test("remote も名前も無い場所は作業場所にならない", () => {
   }
 });
 
-test("相対パスは根からの形にし、根の外は null", () => {
+test("相対パスはルートからの形にし、ルートの外は null", () => {
   assert.equal(relativeTo("/w/repo", "/w/repo/server/src/db.ts"), "server/src/db.ts");
   assert.equal(relativeTo("/w/repo", "src/db.ts", "/w/repo/server"), "server/src/db.ts");
   assert.equal(relativeTo("/w/repo", "/w/other/x.ts"), null);
   assert.equal(relativeTo("/w/repo", "../x.ts"), null);
   assert.equal(relativeTo("/w/repo", "/w/repo"), null);
-  // `..` で始まる名前は根の中にある。
+  // `..` で始まる名前はルートの中にある。
   assert.equal(relativeTo("/w/repo", "/w/repo/..config/a.ts"), "..config/a.ts");
   assert.equal(relativeTo("/w/repo", "/w/repo/..."), "...");
 });
 
-// 空とみなして書き戻すと、ほかの作業場所の名前が全部消える。
+// 空とみなして書き戻すと、ほかのプロジェクトの名前が全部消える。
 test("名前の対応表が壊れていたら読み飛ばさずに止め、remote のある場所には名前を付けない", () => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-map-")));
   const realHome = process.env.HOME;
@@ -112,7 +112,7 @@ test("名前の対応表が壊れていたら読み飛ばさずに止め、remot
 // 同じ remote のクローンが 2 つあると、並び順で先に来た方へ黙って同期してしまう。
 test("同じ key の置き場所が 2 つあれば選ばない", () => {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-roots-")));
-  // この PC の名前の対応表を読ませない（名前を付けた作業場所が found に混ざる）。
+  // この PC の名前の対応表を読ませない（名前を付けたプロジェクトが found に混ざる）。
   const realHome = process.env.HOME;
   process.env.HOME = tmp;
   try {

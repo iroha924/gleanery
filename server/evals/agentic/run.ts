@@ -22,7 +22,7 @@ export const { cases } = JSON.parse(CASES) as { cases: Case[] };
 /** 問いの集合の指紋。retrieval.json を作り直すと split の中身が入れ替わるので、違う集合どうしを比べない */
 export const CASES_SHA = crypto.createHash("sha256").update(CASES).digest("hex").slice(0, 16);
 
-// 番号は retrieval.json の cases の添字で、変えない。dev（知識の偶数番）で道具を直し、holdout（奇数番）は
+// 番号は retrieval.json の cases の添字で、変えない。dev（知識の偶数番）でツールを直し、holdout（奇数番）は
 // ゲートの判定でだけ流す（見て直すと、ゲートが改善の途中を測るだけになる）。message は正解が発言の id。
 export const SPLITS = {
   dev: (c: Case, i: number) => c.source !== "message" && i % 2 === 0,
@@ -43,13 +43,13 @@ export type Result = {
   turns: number;
   cost: number;
   ms: number;
-  /** 実際に使われたモデルの ID と Claude Code の版（trace の init から）。別名（sonnet / opus）の指す先は変わる */
+  /** 実際に使われたモデルの ID と Claude Code のバージョン（trace の init から）。別名（sonnet / opus）の指す先は変わる */
   resolved: { model: string | null; claude: string | null };
   error?: string;
 };
 
 const ANSWER = [
-  "gleanery の recall と read には all_projects: true を付ける（記録は複数の作業場所にまたがる）。",
+  "gleanery の recall と read には all_projects: true を付ける（記録は複数のプロジェクトにまたがる）。",
   '最後の行に {"refs":["k:1","k:2"]} の形の JSON だけを出す（問いに最も直接答える記録を関連の高い順に最大 5 件）。',
 ].join("\n");
 
@@ -59,7 +59,7 @@ async function main() {
       name: { type: "string", default: "base" },
       split: { type: "string", default: "dev" },
       model: { type: "string", default: "sonnet" },
-      // 渡さなければ Claude Code の既定の effort で測る（基準もそうして取った）。既定は版で変わるので、版と一緒に記録する
+      // 渡さなければ Claude Code の既定の effort で測る（基準もそうして取った）。既定はバージョンで変わるので、バージョンと一緒に記録する
       effort: { type: "string" },
       par: { type: "string", default: "4" },
     },
@@ -94,7 +94,7 @@ async function main() {
     split,
     model: values.model,
     // --effort が無ければ、環境変数、それも無ければモデルの既定（2.1.280 では Sonnet 5 は high、Opus 5.5 は medium）で決まる。
-    // 作業場所は一時ディレクトリなので、repository の設定の effortLevel は読まれない
+    // プロジェクトは一時ディレクトリなので、repository の設定の effortLevel は読まれない
     effort:
       values.effort ??
       (process.env.CLAUDE_CODE_EFFORT_LEVEL ? `環境変数 ${process.env.CLAUDE_CODE_EFFORT_LEVEL}` : "既定"),
@@ -137,7 +137,7 @@ async function solve(
   const dir = path.join(o.run, `q${i}`);
   fs.mkdirSync(dir);
   // 作業ディレクトリは repository でも ~/.gleanery でもない空の場所にする。持ち主の CLAUDE.md・plugin・hook を
-  // 読ませると、測るのが出荷の道具ではなく持ち主の設定になる（hook は自動記録まで走らせる）。
+  // 読ませると、測るのが出荷のツールではなく持ち主の設定になる（hook は自動記録まで走らせる）。
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
   const config = path.join(dir, "mcp.json");
   // 評価用に写した DB を測るときは GLEANERY_DB で指す。MCP へ明示して渡す（親の環境が届くかに頼らない）。
@@ -164,7 +164,7 @@ async function solve(
         "",
         "--allowedTools",
         "mcp__gleanery__recall,mcp__gleanery__read",
-        // stream-json は道具の呼び出しを 1 行ずつ出す。json では最後の応答しか残らず、なぜ外したかを追えない
+        // stream-json はツールの呼び出しを 1 行ずつ出す。json では最後の応答しか残らず、なぜ外したかを追えない
         "--output-format",
         "stream-json",
         "--verbose",

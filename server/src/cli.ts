@@ -154,7 +154,7 @@ async function registered(db: Kysely<DB>, place: Place): Promise<number> {
 
 /**
  * 検索の 1 件を、端末で人が読む項目にする。札は種類ごとの色の Badge、本文は先頭だけ、出所は薄く 2 行で切らずに出す。
- * 作業場所を 1 つに絞っているときは、見出しに出ているので出所から作業場所を外す
+ * プロジェクトを 1 つに絞っているときは、見出しに出ているので出所からプロジェクトを外す
  */
 function hitCard(x: Hit, scoped: boolean): Card {
   // 文書の節は見出し（path と節）が題になる。判断の記録の heading は作業の題で出所と同じなので、本文の 1 行目を題にする
@@ -189,7 +189,7 @@ const githubRepo = (key: string): string | null =>
   key.match(/^git:github\.com\/([^/]+\/[^/]+)$/)?.[1] ?? null;
 
 /**
- * 1 つの作業場所を同期する。**GitHub と文書は互いに独立**なので、片方が落ちてももう片方は回す。
+ * 1 つのプロジェクトを同期する。**GitHub と文書は互いに独立**なので、片方が落ちてももう片方は回す。
  * 失敗は取り込み元の last_error に残し（doctor と画面が出す）、最後にまとめて投げる。
  */
 async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = false): Promise<string[]> {
@@ -312,7 +312,7 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
     );
     const edited = [...new Set(messages.flatMap((m) => m.paths.map((p) => p.path)))];
     return [
-      `session: ${session.host} ${session.id}（作業場所 ${place.name}）`,
+      `session: ${session.host} ${session.id}（プロジェクト ${place.name}）`,
       messages.length
         ? `\n# この session の会話（自動記録）\n\n${said.join("\n\n")}`
         : "\n# この session の会話\n\nまだ記録されていない。自分の文脈から書く。",
@@ -344,7 +344,7 @@ async function doctor(cwd: string): Promise<void> {
     console.log(indent(`  ${mark(m)} ${pad(label, 26)}${text}`));
   };
   console.log(title("gleanery doctor"));
-  // DB より先に出す。版の食い違いは DB と無関係に見たい。
+  // DB より先に出す。バージョンの食い違いは DB と無関係に見たい。
   const plugin = report(observe(identify(cwd)?.root ?? cwd));
   issues.push(...plugin.issues);
   // 行頭から始まる行は節の見出し、字下げした行はその中身（plugin.ts の report が組む形）
@@ -370,7 +370,7 @@ async function doctor(cwd: string): Promise<void> {
       say("ok", "DB", `${file}（${(x.bytes / 1024 / 1024).toFixed(1)} MB）`);
       say(
         usable ? "ok" : "fail",
-        "schema の版",
+        "schema のバージョン",
         usable
           ? `revision ${x.revision}`
           : `revision ${x.revision}、このコードは ${SCHEMA_REVISION}（${x.revision < SCHEMA_REVISION ? "gleanery db migrate で進める" : "gleanery を更新する"}）`,
@@ -378,7 +378,7 @@ async function doctor(cwd: string): Promise<void> {
       const broken = Object.entries(x.fts).filter(([, v]) => v !== null);
       say(
         broken.length ? "fail" : "ok",
-        "語彙索引",
+        "全文検索の索引",
         broken.length
           ? `壊れている: ${broken.map(([k, v]) => `${k}（${plain(v ?? "")}）`).join(" / ")}。gleanery db reindex で作り直す`
           : "整っている",
@@ -393,7 +393,7 @@ async function doctor(cwd: string): Promise<void> {
     "自動記録",
     `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
       s.stuck ? ` / 失敗: ${plain(s.stuck)}` : ""
-    }${s.unregistered ? ` / 未登録の作業場所で退避した ${s.unregistered} 件（${unregisteredDir()}）` : ""}${
+    }${s.unregistered ? ` / 未登録のプロジェクトで退避した ${s.unregistered} 件（${unregisteredDir()}）` : ""}${
       s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
     }`,
   );
@@ -408,13 +408,13 @@ async function doctor(cwd: string): Promise<void> {
           .orderBy("p.name")
           .orderBy("cn.provider")
           .execute();
-        if (rows.length) console.log(`\n${section("作業場所")}`);
+        if (rows.length) console.log(`\n${section("プロジェクト")}`);
         const label = (x: (typeof rows)[number]) => `${x.name} ${x.provider ?? "未同期"}`;
         const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
         for (const x of rows) {
           // 取り込みは gleanery harvest を打ったときだけ走る。間が空くのは運用どおりなので、失敗だけを直すものに数える。
           const m: Mark = x.last_error ? "fail" : x.provider === null || !x.last_success_at ? "none" : "ok";
-          count(m, `作業場所 ${label(x)}`);
+          count(m, `プロジェクト ${label(x)}`);
           const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
           console.log(
             indent(
@@ -431,7 +431,7 @@ async function doctor(cwd: string): Promise<void> {
       say("fail", "DB", `読めない: ${plain(reason(e))}`);
     }
   }
-  // 件数は行の数で数え、名前だけ重ねない（同じ名前の Codex の cache や作業場所が複数あっても件数は減らさない）。
+  // 件数は行の数で数え、名前だけ重ねない（同じ名前の Codex の cache やプロジェクトが複数あっても件数は減らさない）。
   console.log(
     `${closing(
       `${mark(issues.length ? "warn" : "ok")} ${
@@ -452,7 +452,7 @@ async function doctor(cwd: string): Promise<void> {
 const CWD = {
   kind: "parsed",
   parse: String,
-  brief: "作業場所のディレクトリ（既定はいまのディレクトリ）",
+  brief: "プロジェクトのディレクトリ（既定はいまのディレクトリ）",
   placeholder: "dir",
   optional: true,
 } as const;
@@ -524,7 +524,7 @@ const excludeRoutes = buildRouteMap({
       },
     }),
     list: buildCommand({
-      docs: { brief: "その作業場所で取り込まない path" },
+      docs: { brief: "そのプロジェクトで取り込まない path" },
       parameters: { flags: { cwd: CWD } },
       func: async (flags: { cwd?: string }) => {
         const place = placeOf(flags.cwd ?? process.cwd());
@@ -609,17 +609,17 @@ const excludeRoutes = buildRouteMap({
 });
 
 const projectRoutes = buildRouteMap({
-  docs: { brief: "記録する作業場所の登録と、消去" },
+  docs: { brief: "記録するプロジェクトの登録と、消去" },
   routes: {
     add: buildCommand({
-      docs: { brief: "作業場所を登録する（remote が無いなら --name でこの PC での名前を付ける）" },
+      docs: { brief: "プロジェクトを登録する（remote が無いなら --name でこの PC での名前を付ける）" },
       parameters: {
         flags: {
           cwd: CWD,
           name: {
             kind: "parsed",
             parse: String,
-            brief: "remote を持たない作業場所に、この PC での名前を付ける",
+            brief: "remote を持たないプロジェクトに、この PC での名前を付ける",
             placeholder: "名前",
             optional: true,
           },
@@ -643,7 +643,7 @@ const projectRoutes = buildRouteMap({
                 {
                   kind: "fields",
                   rows: [
-                    ["作業場所", place.name],
+                    ["プロジェクト", place.name],
                     ["key", place.key],
                     ["置き場所", place.root],
                   ],
@@ -656,7 +656,7 @@ const projectRoutes = buildRouteMap({
       },
     }),
     list: buildCommand({
-      docs: { brief: "登録済みの作業場所と、最後の同期" },
+      docs: { brief: "登録済みのプロジェクトと、最後の同期" },
       parameters: {},
       func: async () => {
         const { found, ambiguous } = localRoots();
@@ -699,7 +699,7 @@ const projectRoutes = buildRouteMap({
                     {
                       kind: "note",
                       tone: "info",
-                      text: "登録した作業場所は無い。gleanery project add で登録する",
+                      text: "登録したプロジェクトは無い。gleanery project add で登録する",
                     },
                   ],
               cards.length ? `${cards.length} 件` : "登録なし",
@@ -710,12 +710,12 @@ const projectRoutes = buildRouteMap({
     }),
     exclude: excludeRoutes,
     forget: buildCommand({
-      docs: { brief: "作業場所のデータを消す（--yes が無ければ数えるだけ）" },
+      docs: { brief: "プロジェクトのデータを消す（--yes が無ければ数えるだけ）" },
       parameters: {
         flags: { yes: { kind: "boolean", brief: "本当に消す（元に戻せない）", optional: true } },
         positional: {
           kind: "tuple",
-          parameters: [{ parse: String, brief: "消す作業場所の key か名前", placeholder: "key|名前" }],
+          parameters: [{ parse: String, brief: "消すプロジェクトの key か名前", placeholder: "key|名前" }],
         },
       },
       func: async (flags: { yes?: boolean }, target: string) => {
@@ -727,7 +727,7 @@ const projectRoutes = buildRouteMap({
             .execute();
           const p = hit[0];
           if (hit.length !== 1 || !p)
-            throw new Error(`${target} に当たる作業場所が ${hit.length} 件ある。key で指定する`);
+            throw new Error(`${target} に当たるプロジェクトが ${hit.length} 件ある。key で指定する`);
           const x = await db
             .selectFrom("project")
             .select([
@@ -743,7 +743,7 @@ const projectRoutes = buildRouteMap({
           const counts: Block = {
             kind: "fields",
             rows: [
-              ["作業場所", p.name],
+              ["プロジェクト", p.name],
               ["key", p.key],
               ["会話", `${x?.conversations} 件`],
               ["発言", `${x?.messages} 件`],
@@ -882,7 +882,7 @@ const captureRoutes = buildRouteMap({
                 rows: [
                   ["新しく入った発言", `${r.sent} 件`],
                   ...(r.deferred
-                    ? ([["未登録の作業場所で退避", `${r.deferred} 件`]] as [string, string][])
+                    ? ([["未登録のプロジェクトで退避", `${r.deferred} 件`]] as [string, string][])
                     : []),
                   ...(r.rejected
                     ? ([["DB が受け付けなかった", `${r.rejected} 件（${rejectedDir()} に残した）`]] as [
@@ -926,7 +926,7 @@ const dbRoutes = buildRouteMap({
       func: (flags: { yes?: boolean }) => boxed("gleanery db migrate", () => migrate(flags.yes === true)),
     }),
     reindex: buildCommand({
-      docs: { brief: "語彙索引を作り直す（検索の語の切り方を変えた後に打つ）" },
+      docs: { brief: "全文検索の索引を作り直す（検索の語の切り方を変えた後に打つ）" },
       parameters: {},
       func: () => boxed("gleanery db reindex", () => reindex()),
     }),
@@ -942,25 +942,25 @@ const root = buildRouteMap({
     project: projectRoutes,
     harvest: buildCommand({
       docs: {
-        brief: "この PC にある作業場所の GitHub と文書を同期する",
+        brief: "この PC にあるプロジェクトの GitHub と文書を同期する",
         fullDescription:
-          "文書は remote の既定 branch から入れ、fast-forward でなければ止まる（--reset-docs はその作業場所を今の状態に揃える）。",
+          "文書は remote の既定 branch から入れ、fast-forward でなければ止まる（--reset-docs はそのプロジェクトを今の状態に揃える）。",
       },
       parameters: {
         flags: {
           cwd: CWD,
           "reset-docs": {
             kind: "boolean",
-            brief: "文書をその作業場所の今の状態に揃える（--cwd と一緒にだけ使える）",
+            brief: "文書をそのプロジェクトの今の状態に揃える（--cwd と一緒にだけ使える）",
             optional: true,
           },
         },
       },
       func: async (flags: { cwd?: string; "reset-docs"?: boolean }) => {
         const resetDocs = flags["reset-docs"] === true;
-        // 揃え直しは作業場所を 1 つ名指ししたときだけ（全件の同期で、比較不能な作業場所をまとめて上書きしない）。
+        // 揃え直しはプロジェクトを 1 つ名指ししたときだけ（全件の同期で、比較不能なプロジェクトをまとめて上書きしない）。
         if (resetDocs && !flags.cwd)
-          throw new Error("--reset-docs は --cwd で作業場所を 1 つ指定したときだけ使える");
+          throw new Error("--reset-docs は --cwd でプロジェクトを 1 つ指定したときだけ使える");
         // ログは追記で残るので、いつ走ったかを見出しに必ず出す。
         const startedAt = new Date();
         console.log(title(`gleanery harvest ${startedAt.toLocaleString("sv-SE")}`));
@@ -1040,10 +1040,10 @@ const root = buildRouteMap({
             placeholder: "me|others|名前",
             optional: true,
           },
-          all: { kind: "boolean", brief: "すべての作業場所から引く", optional: true },
+          all: { kind: "boolean", brief: "すべてのプロジェクトから引く", optional: true },
           exact: {
             kind: "boolean",
-            brief: "部分一致で引く（語に切れない固有名・記号・版番号）",
+            brief: "部分一致で引く（語に切れない固有名・記号・バージョン番号）",
             optional: true,
           },
           cwd: CWD,
@@ -1090,7 +1090,7 @@ const root = buildRouteMap({
                 match,
                 limit: flags.limit,
               }).then((x) => [...x.records, ...x.documents]);
-          const where = place ? place.name : "すべての作業場所";
+          const where = place ? place.name : "すべてのプロジェクト";
           const end = `${hits.length ? `${hits.length} 件` : "該当なし"} / ${where}`;
           // pipe はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
           // 端末では人が読むので、札を Badge にした項目で出す
@@ -1121,7 +1121,7 @@ const root = buildRouteMap({
                       text:
                         !flags.exact && question && ftsQuery(question) === null
                           ? "引ける語が無い（ひらがなだけ・記号だけの問い）。漢字・カタカナ・英語の語で引くか、--exact で部分一致を引く"
-                          : `当たらなかった。語を変えるか${flags.exact ? "" : "、--exact で部分一致を引くか"}${place ? "、--all で全部の作業場所から引く" : "、別の語で引く"}`,
+                          : `当たらなかった。語を変えるか${flags.exact ? "" : "、--exact で部分一致を引くか"}${place ? "、--all で全部のプロジェクトから引く" : "、別の語で引く"}`,
                     },
                   ],
               end,
@@ -1241,7 +1241,7 @@ const root = buildRouteMap({
     capture: captureRoutes,
     db: dbRoutes,
     init: buildCommand({
-      docs: { brief: "要件定義と設計書の置き場所 .gleanery/ をリポジトリの根に作る" },
+      docs: { brief: "要件定義と設計書の置き場所 .gleanery/ をリポジトリのルートに作る" },
       parameters: { flags: { cwd: CWD } },
       func: (flags: { cwd?: string }) => {
         const r = init(flags.cwd ?? process.cwd());

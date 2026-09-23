@@ -41,13 +41,13 @@ const reader = () => connectReader(db.file);
 const ingest = () => connectWriter("ingest", db.file);
 const capture = () => connectWriter("capture", db.file);
 
-// 版が食い違ったまま書くと、列の意味が黙ってずれる。コードと schema の版は同じ数でなければならない。
-test("コードが期待する schema の版は db/schema.sql の user_version と同じ", () => {
+// バージョンが食い違ったまま書くと、列の意味が黙ってずれる。コードと schema のバージョンは同じ数でなければならない。
+test("コードが期待する schema のバージョンは db/schema.sql の user_version と同じ", () => {
   const text = fs.readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8");
   assert.equal(Number(text.match(/pragma user_version = (\d+);/)?.[1]), SCHEMA_REVISION);
 });
 
-test("DB の版が違えば、読む接続も書く接続も開かずに止まり、進め方を案内する", () => {
+test("DB のバージョンが違えば、読む接続も書く接続も開かずに止まり、進め方を案内する", () => {
   const old = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-old-")), "old.db");
   const raw = new DatabaseSync(old);
   raw.exec(`pragma user_version = ${SCHEMA_REVISION + 1}`);
@@ -129,7 +129,7 @@ test("自動記録の接続は 3 つの view にだけ書け、FTS も同じ文�
     ),
     null,
   );
-  // 結ぶ先の無いファイルは黙って捨てる（途中で別の作業場所へ移った session）
+  // 結ぶ先の無いファイルは黙って捨てる（途中で別のプロジェクトへ移った session）
   assert.equal(
     attempt(
       capture,

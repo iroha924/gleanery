@@ -258,7 +258,7 @@ const chunks = <T>(xs: T[], n = 1000): T[][] =>
   Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, (i + 1) * n));
 
 /**
- * 1 つの作業場所の GitHub を同期する。repo は `owner/name`。
+ * 1 つのプロジェクトの GitHub を同期する。repo は `owner/name`。
  * **読み始めた時刻が、既に入っている snapshot より古ければ書かない**（遅れて commit した同期が新しい状態を巻き戻さない）。
  */
 export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string): Promise<string> {

@@ -4,7 +4,7 @@
 -- 境界は 3 つ。取り込み元の今の状態（connector / source_item）、逐語の会話（conversation / message）、
 -- 検索する知識（knowledge）。作業の現在地（work_item）は更新される状態なので知識とは表を分ける。
 --
--- 版は末尾の `pragma user_version`。MCP・CLI・端末の画面は開くときに server/src/db.ts の SCHEMA_REVISION と
+-- バージョンは末尾の `pragma user_version`。MCP・CLI・端末の画面は開くときに server/src/db.ts の SCHEMA_REVISION と
 -- 突き合わせ、食い違えば止まる。空の DB は `gleanery db init` が作る（server/src/admin.ts）。
 -- 全表 STRICT（型違いを拒む）。主キーは全部 not null を書く（SQLite は integer 以外の主キーに NULL を許す）。
 -- journal_mode・foreign_keys は接続ごとに server/src/sqlite.ts が設定する（ここには書かない）。
@@ -15,7 +15,7 @@
 
 create table project (
   id integer primary key autoincrement not null,
-  -- git remote を正規化した key（`git:github.com/owner/repo`）か、remote の無い作業場所に各 PC の設定で付けた key。
+  -- git remote を正規化した key（`git:github.com/owner/repo`）か、remote の無いプロジェクトに各 PC の設定で付けた key。
   -- ローカルのパスは置かない。置き場所は PC ごとに違う。
   key text not null unique check (
     (key glob 'git:*' and key not glob '*[ ' || char(9) || '-' || char(13) || ']*' and length(key) > 4)
@@ -44,7 +44,7 @@ create table person_identity (
 ) strict;
 create index person_identity_handle on person_identity (provider, lower(handle));
 
--- 取り込み元ごとの、最後に入れた版と直近の成否。secret は置かない（同期する PC の環境にある）。
+-- 取り込み元ごとの、最後に入れたバージョンと直近の成否。secret は置かない（同期する PC の環境にある）。
 -- 文書は入れた commit（head_oid）。次の同期は、それから fast-forward できる commit だけを自動で入れる。
 -- GitHub は取得を始めた時刻（snapshot_at）。それより前に始めた取得は、遅れて commit しても書かない。
 create table connector (
@@ -61,7 +61,7 @@ create table connector (
 ) strict;
 
 -- docs の同期で取り込まない path。追跡された Markdown が全部「事実を述べた文書」とは限らない（監査の fixture）。
--- **取り込む側の設定である。**読み取り専用の作業場所にも効かせたいので、リポジトリ側の manifest には置かない。
+-- **取り込む側の設定である。**読み取り専用のプロジェクトにも効かせたいので、リポジトリ側の manifest には置かない。
 -- file は path と完全一致、directory は `<path>/` で始まる path に当たる。docs の connector にだけ作る。
 create table docs_exclude (
   connector_id integer not null references connector (id) on delete cascade,
@@ -141,7 +141,7 @@ create table message (
   url text,
   sent_at text not null check (strftime('%Y-%m-%dT%H:%M:%fZ', sent_at) is sent_at),
   content_hash blob not null check (length(content_hash) = 32),
-  -- 語彙索引に入れるか。coding session の AI の応答と自動通知は 0（判定は capture.ts / github.ts の indexesMessage）
+  -- 全文検索の索引に入れるか。coding session の AI の応答と自動通知は 0（判定は capture.ts / github.ts の indexesMessage）
   indexed integer not null check (indexed in (0, 1)),
   unique (conversation_id, external_id),
   check (truncated = 1 or original_bytes = length(cast(body as blob))),
@@ -151,7 +151,7 @@ create index message_order on message (conversation_id, sent_at);
 create index message_by_identity on message (identity_id, sent_at desc) where identity_id is not null;
 create index message_self on message (sent_at desc) where speaker_kind = 'self';
 
--- 語彙索引。rowid = message.seq。語は gleanery_terms()（server/src/text.ts の terms() を接続ごとに登録）で切る。
+-- 全文検索の索引。rowid = message.seq。語は gleanery_terms()（server/src/text.ts の terms() を接続ごとに登録）で切る。
 -- 関数を登録していない接続からの書き込みは no such function で失敗する（索引を黙って欠かさない）。
 create virtual table message_fts using fts5(lexemes, content='', contentless_delete=1);
 create trigger message_fts_ai after insert on message when new.indexed = 1 begin
@@ -167,7 +167,7 @@ end;
 
 -- 発言に結んだファイル。自動記録は、編集したファイル（edit）と読んだ要件定義・設計書（read）を、触る前に持ち主が
 -- 最後にした発言へ結ぶ。GitHub の同期は、レビューで指されたファイル（review）をそのレビューの発言へ結ぶ。
--- path は project の根からの相対。
+-- path は project のルートからの相対。
 create table message_file (
   message_id text not null references message (id) on delete cascade,
   path text not null check (path <> '' and path not glob '/*' and path not glob '*[/]..[/]*' and path not glob '..[/]*'
@@ -256,7 +256,7 @@ create table knowledge (
 create index knowledge_listing on knowledge (project_id, kind, status, occurred_at desc);
 create index knowledge_work on knowledge (work_item_id) where work_item_id is not null;
 
--- 語彙索引。rowid = knowledge.id。列は見出し（h）と本文 + 理由（b）。検索は bm25(knowledge_fts, 3, 1)。
+-- 全文検索の索引。rowid = knowledge.id。列は見出し（h）と本文 + 理由（b）。検索は bm25(knowledge_fts, 3, 1)。
 -- trace の見出しには作業の題が、文書の節の見出しには path と見出しの段が入る。
 create virtual table knowledge_fts using fts5(h, b, content='', contentless_delete=1);
 create trigger knowledge_fts_ai after insert on knowledge begin
@@ -307,7 +307,7 @@ create trigger capture_message_insert instead of insert on capture_message begin
   on conflict do nothing;
 end;
 
--- 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの DB に無ければ（途中で別の作業場所へ移った session など）捨てる。
+-- 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの DB に無ければ（途中で別のプロジェクトへ移った session など）捨てる。
 create view capture_message_file as select message_id, path, action from message_file;
 create trigger capture_message_file_insert instead of insert on capture_message_file begin
   insert into message_file (message_id, path, action)

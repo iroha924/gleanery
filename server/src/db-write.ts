@@ -64,7 +64,7 @@ const TRIGGER_WRITES: Record<string, Set<string>> = {
 };
 
 /**
- * capture が直接読んでよい列。作業場所の対応と、送る発言が既に在るか（件数を数える）だけ。**本文は読めない。**
+ * capture が直接読んでよい列。プロジェクトの対応と、送る発言が既に在るか（件数を数える）だけ。**本文は読めない。**
  * trigger の中の読み（外部キーと一意制約の確かめ）は別に許す。
  */
 const CAPTURE_READS: Record<string, Set<string>> = {
@@ -84,7 +84,7 @@ function captureAuthorizer(
   triggerOrView: string | null,
 ): number {
   const table = p1 ?? "";
-  // _config（FTS5 の版などの設定。語は入らない）は、新しい接続が仮想表を開く prepare の中で読まれる。
+  // _config（FTS5 のバージョンなどの設定。語は入らない）は、新しい接続が仮想表を開く prepare の中で読まれる。
   const fts = SHADOW.test(table) && (!own || (action === C.SQLITE_READ && table.endsWith("_config")));
   if (action === C.SQLITE_INSERT) {
     if (CAPTURE_VIEWS.has(table)) return C.SQLITE_OK;
@@ -119,7 +119,7 @@ export function connectWriter(role: WriteRole, file: string = dbFile(), create =
   if (!create) requireFile(file);
   const raw = new DatabaseSync(file);
   try {
-    // 版は ingest だけが確かめる。owner は版を扱う側で、capture は旧版の plugin のまま書き続ける
+    // バージョンは ingest だけが確かめる。owner はバージョンを扱う側で、capture は旧バージョンの plugin のまま書き続ける
     // （確かめると、DB を上げてから plugin を上げるまで記録が丸ごと止まる。弾かれた行は rejected/ へ回る）。
     prepare(raw, role === "ingest");
     raw.function("gleanery_terms", { deterministic: true }, (text) => terms(String(text ?? "")).join(" "));

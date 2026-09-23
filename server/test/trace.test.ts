@@ -320,12 +320,12 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
 });
 
 // 壊れた参照を黙って落とさない。途中まで書いた状態も残さない（1 つの transaction）。
-test("この作業場所に無い決定を指す記録は、何も書かずに止まる", async () => {
+test("このプロジェクトに無い決定を指す記録は、何も書かずに止まる", async () => {
   const db = tempDb();
   try {
     const p = project(db);
     const t = valid(base([decision({ supersedes: "claude-code:other#d-none" })]));
-    await assert.rejects(saveTrace(db.ingest, p, t), /この作業場所に無い決定/);
+    await assert.rejects(saveTrace(db.ingest, p, t), /このプロジェクトに無い決定/);
     assert.equal((db.owner.prepare("select count(*) as n from conversation").get() as { n: number }).n, 0);
   } finally {
     await db.done();

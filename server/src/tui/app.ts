@@ -214,7 +214,7 @@ function SessionList(p: {
         items: v.items,
         selected,
         height: p.height - 1,
-        empty: "この作業場所には自動記録したセッションがまだ無い。",
+        empty: "このプロジェクトには自動記録したセッションがまだ無い。",
         row: (s, on) =>
           h(
             Box,
@@ -409,7 +409,7 @@ function WorkView(p: { data: Data; ref: string; project: number | null; height: 
     what: "作業",
     render: (w) =>
       w === null
-        ? h(Text, { dimColor: true }, "この作業は無い（別の作業場所の作業か、消された）。")
+        ? h(Text, { dimColor: true }, "この作業は無い（別のプロジェクトの作業か、消された）。")
         : h(
             Scroll,
             { height: p.height, active: p.active },
@@ -522,7 +522,7 @@ function SearchView(p: {
                       oneLine(x.heading ? `${x.heading} — ${x.text}` : x.text),
                     ),
                   ),
-                  // 作業場所の列は幅を決めて切る（名前の長さで行ごとに列がずれないように）
+                  // プロジェクトの列は幅を決めて切る（名前の長さで行ごとに列がずれないように）
                   h(
                     Box,
                     { flexShrink: 0, width: 22, marginLeft: 2 },
@@ -565,14 +565,14 @@ export function App({ data }: { data: Data }) {
   const projectList = projectsLoad.status === "ok" ? projectsLoad.value : [];
   const projectName =
     project === null
-      ? "全部の作業場所"
+      ? "全部のプロジェクト"
       : (projectList.find((x) => x.id === project)?.name ??
         (project === data.here.project ? data.here.name : null) ??
         `#${project}`);
   // 失敗のときは名前を出さない。狭い端末で頭から切ると、何ができなかったかが消える
   const projectLabel =
     projectsLoad.status === "error"
-      ? `${ICONS.error} 作業場所の一覧を読めなかった`
+      ? `${ICONS.error} プロジェクトの一覧を読めなかった`
       : `${ICONS.project} ${projectName}`;
 
   useInput((input, key) => {
@@ -595,7 +595,7 @@ export function App({ data }: { data: Data }) {
       setDetail(null);
       setTyping(true);
     } else if (input === "p" && detail === null) {
-      // 作業場所を順に切り替える。最後の次は全部の作業場所。一覧を読めなくても、起動した作業場所へは戻れる
+      // プロジェクトを順に切り替える。最後の次は全部のプロジェクト。一覧を読めなくても、起動したプロジェクトへは戻れる
       const ids = [...new Set([...projectList.map((x) => x.id), data.here.project])].filter(
         (x): x is number => x !== null,
       );
@@ -611,7 +611,7 @@ export function App({ data }: { data: Data }) {
   const listActive = detail === null;
   const list =
     tab === "sessions"
-      ? // 作業場所を変えたら 1 ページ目から読み直す（前の作業場所のページ番号を持ち越すと、空のページを「無い」と出す）
+      ? // プロジェクトを変えたら 1 ページ目から読み直す（前のプロジェクトのページ番号を持ち越すと、空のページを「無い」と出す）
         h(SessionList, {
           key: `sessions-${project ?? "all"}`,
           data,
@@ -657,7 +657,7 @@ export function App({ data }: { data: Data }) {
       ? "Enter 引く  Esc 打つのをやめる  Tab 画面"
       : `q 終わる  Enter 開く${
           tab === "sessions" ? "  ← → h l ページ" : tab === "search" ? "  m 判断 / 発言  i 打つ" : ""
-        }  ↑↓ j k 選ぶ  PgUp PgDn めくる  Tab S-Tab 画面  / 検索  p 作業場所  g G 端へ`;
+        }  ↑↓ j k 選ぶ  PgUp PgDn めくる  Tab S-Tab 画面  / 検索  g G 端へ  p プロジェクト`;
 
   return h(
     Box,

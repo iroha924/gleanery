@@ -12,7 +12,7 @@ pre-commit:
     - name: ai-config
       glob: "{AGENTS.md,CLAUDE.md,.agents/skills/**,.claude/skills/**,.claude-plugin/**,plugin/skills/review/reviewers/**,plugin/skills/**,scripts/check-ai-config.mjs,package.json}"
       run: bun run verify:ai
-    # 版の判定は bundle の後でなければ意味が無い。別ジョブにすると parallel なので、
+    # バージョンの判定は bundle の後でなければ意味が無い。別ジョブにすると parallel なので、
     # 作り直す前のバンドルを読んで素通りする（実測: 4/4 で通った）。
     - name: bundle
       glob: "{server/src/**/*.ts,db/**,scripts/bundle.mjs,scripts/bundle-cli.ts,plugin/**,.claude-plugin/**}"

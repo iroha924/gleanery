@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// untrusted な文章を読む出口（MCP・端末の画面）が、書く接続（server/src/db-write.ts）を持たないことを見る。
+// untrusted な文章を読むインターフェース（MCP・端末の画面）が、書く接続（server/src/db-write.ts）を持たないことを見る。
 //
-// **接続の役割は import の向きで分ける。**読む出口の entry から import を辿って db-write.ts に届けば、読んだ文章に
-// 唆されて書く経路ができる（AGENTS.md の実行境界）。型でも authorizer でも止まらない — 書く接続を開いてしまえば、
+// **接続の役割は import の向きで分ける。**読むインターフェースの entry から import を辿って db-write.ts に届けば、読んだ文章に
+// 唆されて書く経路ができる（CLAUDE.md・AGENTS.md の実行境界）。型でも authorizer でも止まらない — 書く接続を開いてしまえば、
 // authorizer はその役割の書き込みを許す。
 
 import fs from "node:fs";
@@ -10,7 +10,7 @@ import path from "node:path";
 import url from "node:url";
 
 const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
-/** 読むだけの出口。ここから辿れる module は書く接続を import してはいけない。 */
+/** 読むだけのインターフェース。ここから辿れる module は書く接続を import してはいけない。 */
 const READERS = ["server/src/mcp.ts", "server/src/tui/tui.ts"];
 const WRITER = "server/src/db-write.ts";
 
@@ -55,10 +55,10 @@ for (const entry of READERS)
     fail.push(`${entry} の import を辿れていない`);
 
 if (fail.length) {
-  console.error(`読む出口の境界:\n${fail.map((f) => `  ${f}`).join("\n")}`);
+  console.error(`読むインターフェースの境界:\n${fail.map((f) => `  ${f}`).join("\n")}`);
   process.exit(1);
 }
 const count = new Set(READERS.flatMap((e) => [...reach(e).keys()])).size;
 console.log(
-  `読む出口の境界: ${READERS.join(" / ")} から辿れる ${count} module は書く接続を import していない`,
+  `読むインターフェースの境界: ${READERS.join(" / ")} から辿れる ${count} module は書く接続を import していない`,
 );

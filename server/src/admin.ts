@@ -1,8 +1,8 @@
 // この PC の DB（~/.gleanery/gleanery.db）の面倒を見る。持ち主が手元で叩く。owner の接続（authorizer を掛けない）で繋ぐ。
 //
 //   gleanery db init              DB を作り、db/schema.sql を当てる。何度流してもよい（あれば触らない）
-//   gleanery db migrate [--yes]   DB の版（user_version）より新しい db/migrations を当てる
-//   gleanery db reindex           語彙索引（FTS）を作り直す。server/src/text.ts の terms() の規則を変えた後に打つ
+//   gleanery db migrate [--yes]   DB のバージョン（user_version）より新しい db/migrations を当てる
+//   gleanery db reindex           全文検索の索引（FTS）を作り直す。server/src/text.ts の terms() の規則を変えた後に打つ
 
 import fs from "node:fs";
 import path from "node:path";
@@ -96,7 +96,7 @@ export function dbInit(file: string = dbFile()): void {
 }
 
 /**
- * 名前の NNNN は当てた後の版。名前の形と重複は当てるものが無くても検査する（飛ばした 1 本は、版が進むと二度と当たらない）。
+ * 名前の NNNN は当てた後のバージョン。名前の形と重複は当てるものが無くても検査する（飛ばした 1 本は、バージョンが進むと二度と当たらない）。
  */
 export function pendingMigrations(files: string[], current: number): { revision: number; file: string }[] {
   const all = files
@@ -123,7 +123,7 @@ export function pendingMigrations(files: string[], current: number): { revision:
 }
 
 /**
- * DB の版より新しい migration を 1 つの transaction で当て、同じ transaction で user_version を上げる。
+ * DB のバージョンより新しい migration を 1 つの transaction で当て、同じ transaction で user_version を上げる。
  * **当てる前に一覧を出して確かめる。**端末でないときは打たせられないので `--yes` を要る形にする。
  */
 export async function migrate(
@@ -159,7 +159,7 @@ export async function migrate(
   }
   const applied = withOwner(file, (raw) =>
     immediate(raw, () => {
-      // 確かめている間に別の db migrate が版を進めていれば、その残りだけを当てる。
+      // 確かめている間に別の db migrate がバージョンを進めていれば、その残りだけを当てる。
       const now = pendingMigrations(files, versionOf(raw));
       for (const m of now) raw.exec(fs.readFileSync(path.join(dir, m.file), "utf8"));
       const last = now.at(-1);
@@ -172,7 +172,7 @@ export async function migrate(
 }
 
 /**
- * 語彙索引を作り直す。**terms() の規則を変えた PR は、release の手順にこれを書く。**
+ * 全文検索の索引を作り直す。**terms() の規則を変えた PR は、release の手順にこれを書く。**
  * 規則を変えても、既存の行の索引は書いたときの規則のまま残り、問いの語と合わなくなる。
  */
 export function reindex(file: string = dbFile()): void {
@@ -201,7 +201,7 @@ export type Inspection = {
   revision: number;
   /** DB と WAL のファイルの大きさ（バイト） */
   bytes: number;
-  /** 語彙索引の integrity-check。壊れていれば理由の文 */
+  /** 全文検索の索引の integrity-check。壊れていれば理由の文 */
   fts: { knowledge: string | null; message: string | null };
 };
 

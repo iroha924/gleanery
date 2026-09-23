@@ -14,7 +14,7 @@ export const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), 
 /** 子プロセスの上限。超えたら殺して、その事実を検査の失敗として扱う。 */
 const TIMEOUT_MS = 120_000;
 
-/** 使い捨ての作業場所。git の remote を持たせて、作業場所の key を安定させる。 */
+/** 使い捨てのプロジェクト。git の remote を持たせて、プロジェクトの key を安定させる。 */
 export function makeRepo(dir, remote = "https://github.com/example/live.git", name = "repo") {
   const repo = path.join(dir, name);
   fs.mkdirSync(repo, { recursive: true });
@@ -25,7 +25,7 @@ export function makeRepo(dir, remote = "https://github.com/example/live.git", na
   git("remote", "add", "origin", remote);
   fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
   fs.writeFileSync(path.join(repo, "docs/design.md"), "# 設計\n\n判断の理由をここに書く。\n");
-  fs.writeFileSync(path.join(repo, "README.md"), "# live\n\n検査のための作業場所。\n");
+  fs.writeFileSync(path.join(repo, "README.md"), "# live\n\n検査のためのプロジェクト。\n");
   git("add", "-A");
   git("commit", "-qm", "docs");
   return repo;

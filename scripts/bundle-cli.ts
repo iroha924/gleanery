@@ -1,4 +1,4 @@
-// CLI（server/src/cli.ts）を plugin/dist/cli.js の 1 ファイルに束ねる。scripts/bundle.mjs から bun で呼ぶ。
+// CLI（server/src/cli.ts）を plugin/dist/cli.js の 1 ファイルにバンドルする。scripts/bundle.mjs から bun で呼ぶ。
 // CLI は出力と dashboard の画面を Ink で描く。Ink は DEV=true で react-devtools-core が見つかると ink/build/devtools.js を
 // 読み込み、その中で ws と react-devtools-core を使う。devtools.js を丸ごと空の module にし、2 つを束に入れない。
 
