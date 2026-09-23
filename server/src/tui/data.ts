@@ -6,6 +6,7 @@ import { openReader } from "../db.ts";
 import { identify, projectId } from "../project.ts";
 import {
   type Hit,
+  missing,
   read,
   searchMessages,
   searchSplit,
@@ -35,7 +36,8 @@ export type Data = {
   works(project: number | null): Promise<Work[]>;
   work(ref: string, project: number | null): Promise<WorkDetail | null>;
   search(question: string, mode: Mode, project: number | null): Promise<Hit[]>;
-  read(ref: string, project: number | null): Promise<string>;
+  /** 参照の先が無ければ null */
+  read(ref: string, project: number | null): Promise<string | null>;
 };
 
 /** 全文を読むときの上限。MCP の read（8KB）より広く取る — 人が画面で読むので、切った先を読みに行く手段が無い。 */
@@ -60,7 +62,10 @@ export async function liveData(cwd: string): Promise<{ data: Data; close: () => 
       const { records, documents } = await searchSplit(db, { question, projects: scope(p), limit: 20 });
       return [...records, ...documents];
     },
-    read: (ref, p) => read(db, [ref], READ_BYTES, { projects: scope(p) }),
+    read: async (ref, p) => {
+      const text = await read(db, [ref], READ_BYTES, { projects: scope(p) });
+      return text === missing(ref) ? null : text;
+    },
   };
   return { data, close: () => db.destroy() };
 }

@@ -8,6 +8,7 @@ import Link from "ink-link";
 import { ScrollView, type ScrollViewRef } from "ink-scroll-view";
 import { createElement as h, type ReactNode, useEffect, useRef, useState } from "react";
 import { kindColor, PALETTE } from "../palette.ts";
+import { width } from "../panel.ts";
 import type { Hit } from "../search.ts";
 import type { SessionDetail, SessionRow } from "../sessions.ts";
 import { ftsQuery, reason } from "../text.ts";
@@ -27,6 +28,21 @@ type Detail = { kind: "session"; id: string } | { kind: "work"; ref: string } | 
 
 /** 画面の上（タブ）と下（操作の案内）が使う行数。本文の高さはこれを引いて決める。 */
 const CHROME = 4;
+
+/**
+ * 操作の案内を幅に収まる lines 行までに詰める。キーと説明の組は途中で割らない。入らない組は後ろから落とす
+ * （大事なキーを前に並べてある）。幅は panel.ts の width で数える（記号を広めに数えるので、はみ出さない向きに外れる）。
+ */
+export function helpLines(items: string[], columns: number, lines = 2): string[] {
+  const out: string[] = [];
+  for (const item of items) {
+    const last = out.at(-1);
+    if (last !== undefined && width(`${last}  ${item}`) <= columns) out[out.length - 1] = `${last}  ${item}`;
+    else if (out.length < lines && width(item) <= columns) out.push(item);
+    else break;
+  }
+  return out;
+}
 const PAGE = 50;
 
 const when = (d: Date | null) => (d ? new Date(d).toLocaleString("sv-SE").slice(0, 16) : "—");
@@ -542,15 +558,17 @@ function SearchView(p: {
 
 function ReadView(p: { data: Data; refId: string; project: number | null; height: number; active: boolean }) {
   const load = useLoad(() => p.data.read(p.refId, p.project), [p.refId, p.project]);
-  return h(Pending<string>, {
+  return h(Pending<string | null>, {
     load,
     what: "全文",
     render: (text) =>
-      h(
-        Scroll,
-        { height: p.height, active: p.active },
-        ...text.split("\n").map((line, i) => h(Text, { key: i }, line || " ")),
-      ),
+      text === null
+        ? h(Text, { dimColor: true }, "この記録は無い（消されたか、選んだプロジェクトの外の記録）。")
+        : h(
+            Scroll,
+            { height: p.height, active: p.active },
+            ...text.split("\n").map((line, i) => h(Text, { key: i }, line || " ")),
+          ),
   });
 }
 
@@ -604,7 +622,35 @@ export function App({ data }: { data: Data }) {
     }
   });
 
-  const height = Math.max(3, rows - CHROME);
+  // 終わり方と戻り方、その画面にしか無いキーを先に置き、どの画面でも同じキーを後ろへ回す（入らなければ後ろから切れる）
+  const items = detail
+    ? [
+        "q 終わる",
+        "Esc 戻る",
+        "↑↓ j k 動かす",
+        "PgUp PgDn Space めくる",
+        "g G 端へ",
+        "/ 検索",
+        "Tab S-Tab 画面",
+      ]
+    : typing
+      ? ["Enter 引く", "Esc 打つのをやめる", "Tab 画面"]
+      : [
+          "q 終わる",
+          "Enter 開く",
+          ...(tab === "sessions" ? ["← → h l ページ"] : tab === "search" ? ["m 判断 / 発言", "i 打つ"] : []),
+          "↑↓ j k 選ぶ",
+          "PgUp PgDn めくる",
+          "Tab S-Tab 画面",
+          "/ 検索",
+          "g G 端へ",
+          "p プロジェクト",
+        ];
+  const packed = helpLines(items, columns - 2);
+  // 2 行にすると一覧に 3 行が残らない高さでは 1 行に戻す（選んだ行が画面の外へ出る）
+  const help = packed.length > 1 && rows - CHROME - 1 < 3 ? helpLines(items, columns - 2, 1) : packed;
+
+  const height = Math.max(1, rows - CHROME - (help.length - 1));
   // タブの名前を出すと 1 行に収まらない幅では、アイコンだけにする（折れると上の枠が 4 行になり、画面がはみ出す）
   const narrow = columns < 64;
   // 詳細を開いている間も一覧は隠すだけで残す。作り直すと、選んでいた行・ページ・検索の語が Esc で消える
@@ -649,15 +695,6 @@ export function App({ data }: { data: Data }) {
     ),
     shown ? h(Box, { key: "detail", flexDirection: "column", flexGrow: 1 }, shown) : null,
   ];
-
-  // 端末が狭いと右から切れる。終わり方と戻り方、その画面にしか無いキーを先に置き、どの画面でも同じキーを後ろへ回す
-  const help = detail
-    ? "q 終わる  Esc 戻る  ↑↓ j k 動かす  PgUp PgDn Space めくる  g G 端へ  / 検索  Tab S-Tab 画面"
-    : typing
-      ? "Enter 引く  Esc 打つのをやめる  Tab 画面"
-      : `q 終わる  Enter 開く${
-          tab === "sessions" ? "  ← → h l ページ" : tab === "search" ? "  m 判断 / 発言  i 打つ" : ""
-        }  ↑↓ j k 選ぶ  PgUp PgDn めくる  Tab S-Tab 画面  / 検索  g G 端へ  p プロジェクト`;
 
   return h(
     Box,
@@ -704,6 +741,10 @@ export function App({ data }: { data: Data }) {
       ),
     ),
     h(Box, { flexGrow: 1, flexDirection: "column", paddingX: 1, overflow: "hidden" }, ...body),
-    h(Box, { height: 1, flexShrink: 0 }, h(Text, { dimColor: true, wrap: "truncate-end" }, ` ${help}`)),
+    h(
+      Box,
+      { height: help.length, flexShrink: 0, flexDirection: "column" },
+      ...help.map((line, i) => h(Text, { key: i, dimColor: true, wrap: "truncate-end" }, ` ${line}`)),
+    ),
   );
 }
