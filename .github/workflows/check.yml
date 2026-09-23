@@ -52,7 +52,7 @@ jobs:
         env:
           # PR では checkout した merge commit の 1 つ目の親が merge 先、main への push では push 前の commit。
           # 利用者に届くかは前の main とバージョンが違うかで決まるので、この範囲をまとめて比べる。
-          # バージョン上げを配布物と同じ commit に入れる決まりは pre-commit が commit ごとに見る。
+          # pre-commit は作業ブランチでは main から分かれた点と比べる（scripts/check-mcp-version.mjs）。
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: node scripts/check-mcp-version.mjs --base "$BASE"
 

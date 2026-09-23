@@ -31,7 +31,7 @@ bun run cli -- dashboard  # 端末の画面。TTY が要るので前面でだけ
 - CLI・dashboard と MCP は別々に確かめる。片方の成功はもう片方の成功ではない <!-- invariant: exits-separate -->
 - 値・分類・判断を変えたら `rg` で全参照を引き、対になるインターフェースも直す。列挙できる対は検査へ足す <!-- invariant: rg-pairs -->
 - 新しい取り込み元は `gleanery harvest` にも繋ぐ <!-- invariant: harvest -->
-- 配布物に入る変更は、npm と 3 つの plugin manifest のバージョンを同じ値へ上げ、同じ commit に入れる <!-- invariant: version-sync -->
+- 配布物に入る変更は、npm と 3 つの plugin manifest のバージョンを同じ値へ上げ、同じ branch（PR）に入れる <!-- invariant: version-sync -->
 - 外部入力は system 境界で検査する。資格情報を追跡ファイル・command 引数・log に書かない <!-- invariant: boundary-validation -->
 - 配る物は Windows でも動かす。POSIX shell・`0600`・`/tmp` 固定・`.cmd` の execFile に依存しない <!-- invariant: windows -->
 

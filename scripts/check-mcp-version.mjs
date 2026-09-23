@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// plugin の配布物が変わったのにバージョンが上がっていないものを落とす。pre-commit はこれから作る commit を、
-// CI は `--base` で渡した commit から HEAD までをまとめて見る。
+// plugin の配布物が変わったのにバージョンが上がっていないものを落とす。pre-commit はこれから作る commit を
+// 含めた作業ブランチ全体を（main の上では直前の commit と）、CI は `--base` で渡した commit から HEAD までをまとめて見る。
 //
 // 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
 // 見るのはソースではなくバンドルそのもの — `mcp.js` には search.ts も db.ts も
@@ -72,7 +72,17 @@ if (pluginVersion.localeCompare(packageVersion, undefined, { numeric: true }) > 
 // 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
 // `--base` へ変えるだけで同じ比べ方になる。
 // manifest はバージョンを落とした姿（release-scope.mjs の withoutReleaseVersion）で比べる。
-const ref = base ?? "HEAD";
+// 基準を渡されなければ、作業ブランチでは main から分かれた点と比べる（ブランチの中で 1 回上げれば後の commit を積める）。
+// main の上と、分かれた点を取れないときは HEAD と比べる。CI は `--base` で PR の範囲全体を見る。
+function defaultBase() {
+  try {
+    if (git("symbolic-ref", "--quiet", "--short", "HEAD").trim() === "main") return "HEAD";
+    return git("merge-base", "HEAD", "refs/remotes/origin/main").trim();
+  } catch {
+    return "HEAD";
+  }
+}
+const ref = base ?? defaultBase();
 const changed = git("diff", "--cached", "--name-only", ref)
   .split("\n")
   .filter(Boolean)

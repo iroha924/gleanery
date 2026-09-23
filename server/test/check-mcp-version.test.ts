@@ -208,3 +208,43 @@ test("4 箇所のバージョンだけを揃えて上げた commit は、配布�
     r.done();
   }
 });
+
+test("基準が無ければ、作業ブランチでは main から分かれた点と比べる（ブランチの中で 1 回上げれば、後の commit を積める）", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "1.0.0");
+    write(r.dir, "plugin/skills/a.md", "a");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    r.git("branch", "-M", "main");
+    r.git("update-ref", "refs/remotes/origin/main", "HEAD");
+
+    r.git("switch", "-q", "-c", "feature");
+    write(r.dir, "plugin/skills/a.md", "b");
+    bump(r.dir, "1.0.1");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "変えて上げる");
+
+    write(r.dir, "plugin/skills/a.md", "c");
+    r.git("add", "-A");
+    const next = check(r.dir);
+    assert.equal(next.status, 0, next.stderr);
+
+    // ブランチの中で一度も上げていなければ落とす
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "-c", "other", "main");
+    write(r.dir, "plugin/skills/a.md", "d");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+
+    // main の上では、これまでどおり HEAD と比べる
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "main");
+    r.git("merge", "-q", "--ff-only", "feature");
+    write(r.dir, "plugin/skills/a.md", "e");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+  } finally {
+    r.done();
+  }
+});

@@ -1,5 +1,5 @@
 // AI の応答（Markdown）を、端末の幅に合わせた ANSI の文字列にする。Ink の <Text> へそのまま渡す。
-// marked-terminal 7.3.0 の peer は marked <16 だが、18 を入れている（tasks.md PR 2）。壊れたら test/tui.test.ts が落ちる。
+// marked-terminal 7.3.0 の peer は marked <16 だが、18 を入れている（.agents/skills/tui/SKILL.md）。壊れたら test/tui.test.ts が落ちる。
 
 import { styleText } from "node:util";
 import { Marked } from "marked";
