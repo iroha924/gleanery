@@ -64,31 +64,14 @@ jobs:
       - name: lint・型・bundle・test・SQL の到達・子プロセスのレーン
         run: bun run verify
 
-      # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
-      # （ignore されたファイルは差分に現れない）。npm が実際に詰めるものを一覧し、リポジトリの
-      # 外へ展開して起動する。ここが唯一「利用者が受け取る形」を見る場所である。
+      # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない。
+      # 一覧の検査・リポジトリの外での起動・DB の作成は release と同じ script が見る。
       - name: 配る tarball が自己完結しているか
         run: |
           set -e
-          bun run bundle
           cd plugin
           tgz="$(npm pack --silent)"
-          # 必須と禁止の一覧は release:prepare と共有する（scripts/lib/tarball.mjs）
           node ../scripts/check-tarball.mjs "$tgz"
-          # **リポジトリの外へ出す。**中で展開すると、同梱物を取り違えても親を辿って当たり、通ってしまう。
-          out="$(mktemp -d)"
-          tar xzf "$tgz" -C "$out"
-          node "$out/package/dist/cli.js" --help > /dev/null
-          node "$out/package/dist/cli.js" db --help > /dev/null
-          # 同梱物を配った配置のまま引けるか。dist と db の相対関係は
-          # server/test/assets.test.ts が候補の計算ごと検査している。
-          test -f "$out/package/dist/../db/schema.sql"
-          # バンドルした CLI が node:sqlite と同梱の schema で DB を作れるか。HOME は一時ディレクトリ。
-          home="$(mktemp -d)"
-          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" init > /dev/null
-          test -f "$home/.gleanery/gleanery.db"
-          # Web の画面の資産は配らない（端末の画面へ移した）。残っていれば bundle の消し忘れ
-          test ! -e "$out/package/dist/dashboard"
 
       # 同じ知識が複数のインターフェースに写されている場所の突き合わせ。README の CLI 一覧がずれていると、
       # check-pairs.mjs は書き直して staged へ戻し、0 で終わる。index ではなく HEAD と比べて落とす。

@@ -151,7 +151,6 @@ bun run verify       # biome・verify:ai・境界・tsc・bundle・test（全 SQ
 bun run test         # server の node:test
 bun run bundle       # 配布物を作り直す
 bun run release:plan -- --base <commit>  # 変更をreleaseなし / pluginに分類する
-bun run release:prepare -- --base <commit> # cleanなreview済みcommitから検査済みtarballを作る
 bun run release:status                    # npm・tag・plugin cacheに残った工程を調べる
 ```
 

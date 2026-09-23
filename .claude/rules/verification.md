@@ -5,7 +5,7 @@
 - 配布物に入る変更は、バージョンを編集する前に `bun run release:plan -- --base <前回のrelease commit>` を流し、出た種別で扱う <!-- invariant: release-plan -->
   - `none`: release しない
   - `plugin`: 配布物に入る変更（MCP・CLI・端末の画面・hook・plugin Skill/Agent・共有 module）。npm と 3 つの plugin manifest を同じバージョンへ上げる
-- publish するのは、review 済みの clean な commit で `bun run release:prepare -- --base <前回のrelease commit>` が残した tarball だけ。publish と dist-tag は手で打つ
+- npm へ出すのは、PR の head に打った `v<version>` の tag から `.github/workflows/release.yml` が stage した tarball だけ。手元から `npm publish` しない。stage の承認・merge・latest への昇格は `plugin-release` Skill の手順で手で打つ
 
 ## test
 

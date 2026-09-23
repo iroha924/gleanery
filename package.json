@@ -14,7 +14,6 @@
     "verify": "bun run check && bun run bundle && bun run sql:reach && bun run sql:live",
     "bundle": "node scripts/bundle.mjs",
     "release:plan": "node scripts/release-plan.mjs",
-    "release:prepare": "node scripts/release-prepare.mjs",
     "release:status": "node scripts/release-status.mjs",
     "codegen": "node scripts/codegen.mjs",
     "evals:retrieval": "node server/evals/retrieval.ts",

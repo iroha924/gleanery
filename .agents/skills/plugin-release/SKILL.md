@@ -76,32 +76,37 @@ release commandが同じものを読む。
      別のtarballを解決する）
    - gitのtag
 2. marketplace entry直下に`version`を置かない。`plugin.json`が無警告で優先され、古い値がupdateを隠す
-3. CIとレビューが通ったcommitを`<reviewed commit>`として固定する。そのcommitのcleanな状態で
-   `bun run release:prepare -- --base <前回のrelease commit>`を実行する。これは`verify`とbundleを行い、
-   staging directoryへtarballを1回だけ作って展開し、次を検査する
-   - `npm pack --json`のfile一覧に、必要なものが全部あるか（`dist/`、`db/`、`skills/`、
-     `hooks/`、MCP manifest、plugin manifest）
-   - source（`src/*.ts`）、`.env`、lockfile、`node_modules`が混ざっていないか（`scripts/lib/tarball.mjs`。ファイル名で見るだけで、中身の secret は見ない）
-   - 展開した先で`node dist/cli.js --version`が動くか
-4. 検査したそのtarballをcandidateとしてpublishする（`npm publish <file>.tgz --tag next`）。
-   publishのときに作り直さない。`prepublishOnly`は`npm pack`では走らないので、lifecycleに任せきらない。
-   `latest`はここでは動かさない
-5. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、registryから取り直した
-   exact versionを展開して、4と同じsmoke testを行う。失敗したらmergeせず、内容を直した
-   新しいversionでtarballの作成からやり直す。公開済みのversionは上書きできない
-6. exact versionのsmoke testが通った後だけ、レビュー済みの内容を変えずmainへmergeする。
-   merge後のcommitを`<merge commit>`とし、`git diff --exit-code <reviewed commit> <merge commit>`でtreeが
-   変わっていないことを確かめる。差分があればtagと`latest`への昇格を止める
-7. `git tag v<version> <merge commit>`でmerge commitへtagを付け、remoteへpushする。tagのpushが
-   失敗したら`latest`を動かさず再試行する
-8. `npm dist-tag add gleanery@<version> latest`で検査済みのversionを昇格する。merge前は旧安定バージョンが
-   `latest`のままで、この操作が失敗してもmarketplaceは公開済みのexact versionを指す
-9. cleanな一時directoryで`npm pack gleanery@latest --silent`を実行し、展開して同じsmoke testを行う。
-    `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことも確かめる
-10. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
+3. PRを作り、CI（`check`・`pr-body`）とCodexのレビューを通す。PRのbranchにmainを取り込んだ状態にする
+   （mainが先へ進んでいると、CIが検査したtreeとtagのtreeが一致しない）
+4. **PRのhead**に`git tag v<version> <head>`を打ってpushする。mainではなくheadに打つので、merge前に候補を検査できる。
+   tagは持ち主だけが作れる（rulesetで限る）
+5. `.github/workflows/release.yml`が動く。`prepare`がtagと全versionの一致、tagのcommitがmainへ向かうopenなPRのhead
+   であること、そのheadで`check`と`pr-body`が成功していることを確かめ（`scripts/release-gate.mjs`）、`verify`の後に
+   `npm pack`して`scripts/check-tarball.mjs`で検査する（一覧、リポジトリの外での起動、一時HOMEでの`init`）。
+   SHA-512とintegrityがjob summaryに出る
+6. environment `npm-release`を承認すると、`stage`が同じ判定をもう一度通し、同じtarballのSHA-512を照合してから
+   `npm stage publish <tgz> --tag next --provenance`を打つ。stage IDがjob summaryに出る
+7. 手元で`npm stage download <stage-id>`を打ち、`shasum -a 512`の値が5のSHA-512と一致することを確かめる。
+   npmjs.comのStaged Packagesでprovenanceを確かめ、2FAで承認する（`npm stage approve <stage-id>`でもよい）。
+   一致しない・provenanceが無いなら承認せず`npm stage reject <stage-id>`
+8. mergeの直前にPRのheadとbaseが動いていないことを見て、`gh pr merge <PR> --merge --match-head-commit <head>`で
+   mergeする。`git diff --exit-code <head> <merge commit>`でtreeが変わっていないことを確かめる。差分があれば
+   `latest`へ上げない
+9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、展開して
+   `node scripts/check-tarball.mjs <tgz>`が通ることを確かめる
+10. `npm dist-tag add gleanery@<version> latest`で昇格する（OIDCはdist-tagに使えないので手元の認証で打つ）。
+    `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
+11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
     一覧し、残った工程が無いことを確かめる。観測に失敗した項目は「無い」ではなく「不明」と出る
 
-同じname/versionは再publishできない。壊れたtarballを同じversionで直せないので、4と6の検査を飛ばさない。
+**同じ`v<version>`のtagを打ち直さない。**同じversionは二度stageもpublishもできず、provenanceの参照先も追えなくなる。
+
+- stageの前後で失敗した: stageを`npm stage reject`し、直してversionを上げ、新しいtagで出し直す
+- 承認した後にmergeできなかった: `latest`へ上げず、`npm dist-tag add gleanery@<直前の正常版> next`で`next`を戻し、
+  新しいversionで出し直す
+- `stage`の成功後にrunを再実行しない（同じversionのstageが衝突する）
+
+mergeからnpmの承認までの間は、marketplaceが未公開のversionを指さないよう、承認をmergeより先に済ませる（7→8の順）。
 
 ## 届いたことを確かめる
 

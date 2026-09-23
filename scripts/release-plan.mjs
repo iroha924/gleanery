@@ -57,14 +57,14 @@ const actions =
   kind === "none"
     ? []
     : [
-        `npm publish <検査済みtgz> --tag next`,
-        `npm pack gleanery@${packageVersion} --silent`,
-        "review済みのtreeをmainへmerge",
-        "git diff --exit-code <reviewed commit> <merge commit>",
-        `git tag v${packageVersion} <merge commit>`,
-        `git push origin v${packageVersion}`,
+        "PRのCI（check・pr-body）とCodexのレビューを通し、branchにmainを取り込む",
+        `git tag v${packageVersion} <PR head> && git push origin v${packageVersion}`,
+        "release.ymlのprepareを見て、environment npm-releaseを承認する",
+        "npm stage download <stage-id> のSHA-512をjob summaryと照合し、provenanceを見て2FAで承認",
+        "gh pr merge <PR> --merge --match-head-commit <PR head>",
+        "git diff --exit-code <PR head> <merge commit>",
+        `npm pack gleanery@${packageVersion} --silent のSHA-512を照合`,
         `npm dist-tag add gleanery@${packageVersion} latest`,
-        "npm pack gleanery@latest --silent",
         "bun run release:status",
         "Claude/Codexのplugin cacheを更新してsessionを張り直す",
       ];

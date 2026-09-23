@@ -125,7 +125,7 @@ const claudeVerification = read(".claude/rules/verification.md");
 for (const required of [
   "bun run release:plan -- --base <前回のrelease commit>",
   "`plugin`: 配布物に入る変更",
-  "bun run release:prepare -- --base <前回のrelease commit>",
+  "`.github/workflows/release.yml` が stage した tarball だけ",
 ]) {
   if (!claudeVerification.includes(required)) {
     fail(`.claude/rules/verification.md: Claudeのrelease規約に \`${required}\` が無い`);
@@ -180,13 +180,13 @@ const releaseEnd = releaseGuide.indexOf("## 届いたことを確かめる");
 const releaseSteps =
   releaseStart === -1 || releaseEnd === -1 ? "" : releaseGuide.slice(releaseStart, releaseEnd);
 const releaseOrder = [
-  "npm publish <file>.tgz --tag next",
+  "git tag v<version> <head>",
+  "npm stage publish <tgz> --tag next --provenance",
+  "npm stage download <stage-id>",
+  "--match-head-commit <head>",
+  "git diff --exit-code <head> <merge commit>",
   "npm pack gleanery@<version> --silent",
-  "mainへmergeする",
-  "git diff --exit-code <reviewed commit> <merge commit>",
-  "git tag v<version> <merge commit>",
   "npm dist-tag add gleanery@<version> latest",
-  "npm pack gleanery@latest --silent",
 ];
 let releaseCursor = -1;
 for (const step of releaseOrder) {

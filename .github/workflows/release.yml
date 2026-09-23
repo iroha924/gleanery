@@ -1,0 +1,159 @@
+# npm へ出す候補を CI で作って stage する。publish は持ち主が npmjs.com で 2FA の承認をしたときだけ起きる。
+#
+# 持ち主が PR の head に `v<version>` の tag を打つと動く（merge の前）。prepare が tag と PR と CI を検査して tarball を作り、
+# stage が environment `npm-release` の承認の後に同じ tarball を `npm stage publish --tag next` へ渡す。
+# 承認・merge・latest への昇格は持ち主の手元の手順（.agents/skills/plugin-release/SKILL.md）。
+#
+# シークレットを置かない。npm へは trusted publishing（OIDC）で届き、provenance が付く。
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  # release の手順そのものを変えた PR では、stage の手前まで走らせる
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/release-gate.mjs
+      - scripts/check-tarball.mjs
+      - scripts/lib/release-gate.mjs
+      - scripts/lib/tarball.mjs
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      sha512: ${{ steps.pack.outputs.sha512 }}
+      tgz: ${{ steps.pack.outputs.tgz }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.21.0"
+
+      # tag 名と全 version の一致、main へ向かう open な PR の head であること、その PR の check と pr-body の成功
+      - name: stage してよい tag か
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-gate.mjs --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+
+      - name: 依存を入れる
+        run: bun run setup
+
+      - name: lint・型・bundle・test・SQL の到達・子プロセスのレーン
+        run: bun run verify
+
+      # verify が追跡ファイルを書き換えたなら、tag の commit と配る物がずれる
+      - name: 作業ツリーが tag の commit のままか
+        run: git diff --exit-code
+
+      # **検査した tarball をそのまま配る。**stage の job で作り直さない。
+      - name: tarball を作って検査する
+        id: pack
+        run: |
+          set -e
+          out="$RUNNER_TEMP/release"
+          mkdir -p "$out"
+          tgz="$(cd plugin && npm pack --silent --pack-destination "$out")"
+          node scripts/check-tarball.mjs "$out/$tgz"
+          sha512="$(sha512sum "$out/$tgz" | cut -d' ' -f1)"
+          integrity="sha512-$(openssl dgst -sha512 -binary "$out/$tgz" | base64 -w0)"
+          echo "tgz=$tgz" >> "$GITHUB_OUTPUT"
+          echo "sha512=$sha512" >> "$GITHUB_OUTPUT"
+          {
+            echo "### 検査した tarball"
+            echo
+            echo "- file: \`$tgz\`"
+            echo "- SHA-512: \`$sha512\`"
+            echo "- integrity: \`$integrity\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/release/${{ steps.pack.outputs.tgz }}
+          retention-days: 7
+          if-no-files-found: error
+
+  stage:
+    needs: prepare
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # 持ち主が承認するまで始まらない。trusted publisher はこの workflow とこの environment に限る
+    environment: npm-release
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # npm stage は npm 11.15.0 から。Node 24.21.0 は npm 11.19.0 を同梱する
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.21.0"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: npm が stage を持つ版か
+        run: |
+          set -e
+          version="$(npm --version)"
+          IFS=. read -r major minor _ <<< "$version"
+          if [ "$major" -lt 11 ] || { [ "$major" -eq 11 ] && [ "$minor" -lt 15 ]; }; then
+            echo "npm $version は stage を持たない" >&2
+            exit 1
+          fi
+
+      # 承認を待つ間に PR の head や main が動いていないか、もう一度見る
+      - name: stage してよい tag か（承認の後）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-gate.mjs --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/release
+
+      - name: 検査した tarball と同じか
+        env:
+          TGZ: ${{ needs.prepare.outputs.tgz }}
+          SHA512: ${{ needs.prepare.outputs.sha512 }}
+        run: |
+          set -e
+          actual="$(sha512sum "$RUNNER_TEMP/release/$TGZ" | cut -d' ' -f1)"
+          test "$actual" = "$SHA512"
+
+      # 同じ version は二度 stage できない。この step が成功した後に run を再実行しない（失敗したら version を上げて出し直す）
+      - name: npm へ stage する
+        env:
+          TGZ: ${{ needs.prepare.outputs.tgz }}
+        run: |
+          set -eo pipefail
+          npm stage publish "$RUNNER_TEMP/release/$TGZ" --tag next --provenance 2>&1 | tee "$RUNNER_TEMP/stage.log"
+          {
+            echo "### stage"
+            echo
+            echo '```'
+            grep -E "staged with id|integrity|shasum" "$RUNNER_TEMP/stage.log" || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
