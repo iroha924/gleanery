@@ -92,19 +92,36 @@ const changed = git("diff", "--cached", "--name-only", ref)
       (f !== PACKAGE && !(f in PLUGIN_MANIFESTS)) ||
       withoutReleaseVersion(at(ref, f)) !== withoutReleaseVersion(staged(f)),
   );
-const oldPackageVersion = JSON.parse(at(ref, PACKAGE) ?? "{}").version;
-const oldPluginVersion = JSON.parse(at(ref, "plugin/.claude-plugin/plugin.json") ?? "{}").version;
 /** major.minor.patch を数で比べる（文字列では 1.10.0 が 1.9.0 より小さくなる）。 */
 const compare = (a, b) => {
   const [x, y] = [a, b].map((v) => String(v).split(".").map(Number));
   for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
   return 0;
 };
+// 基準を渡されないときは、分かれた点の後に main が出したバージョンも超える必要がある（CI は PR を今の main と比べる）。
+// origin/main が手元の main より古いこともあるので、両方を見て一番新しいものを取る
+const versionRefs = base ? [ref] : [ref, "refs/heads/main", "refs/remotes/origin/main"];
+const newest = (file) =>
+  versionRefs
+    .map((r) => at(r, file))
+    .filter((text) => text !== null)
+    .map((text) => JSON.parse(text).version)
+    .filter((v) => typeof v === "string")
+    .reduce((a, b) => (a === undefined || compare(b, a) > 0 ? b : a), undefined);
+const oldPackageVersion = newest(PACKAGE);
+const oldPluginVersion = newest("plugin/.claude-plugin/plugin.json");
 
 // **下げは配布物が変わっていなくても落とす。**利用者の cache は新しいバージョンにしか入れ替わらない。
+// 基準（分かれた点）に加えて直前の commit とも比べる（ブランチの中で上げた後の下げを見逃さない）。
+const headVersion = (file, pick) => {
+  const text = at("HEAD", file);
+  return text ? pick(JSON.parse(text)) : undefined;
+};
 for (const [was, now] of [
   [oldPackageVersion, packageVersion],
   [oldPluginVersion, pluginVersion],
+  [headVersion(PACKAGE, (j) => j.version), packageVersion],
+  [headVersion("plugin/.claude-plugin/plugin.json", (j) => j.version), pluginVersion],
 ]) {
   if (was && compare(now, was) < 0) {
     console.error(`バージョンを ${was} から ${now} へ下げている。公開済みのバージョンより大きい値にする。`);

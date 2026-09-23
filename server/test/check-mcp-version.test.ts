@@ -230,6 +230,27 @@ test("基準が無ければ、作業ブランチでは main から分かれた�
     const next = check(r.dir);
     assert.equal(next.status, 0, next.stderr);
 
+    // 分かれた後に main が同じバージョンを出していたら、それを超えるまで落とす（CI は今の main と比べる）
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "main");
+    bump(r.dir, "1.0.1");
+    write(r.dir, "plugin/skills/b.md", "main");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "main が同じ番号を出す");
+    r.git("switch", "-q", "feature");
+    write(r.dir, "plugin/skills/a.md", "c2");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+    r.git("reset", "-q", "--hard");
+
+    // ブランチの中での下げは、分かれた点より大きくても落とす
+    bump(r.dir, "1.0.2");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "もう一度上げる");
+    bump(r.dir, "1.0.1");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+
     // ブランチの中で一度も上げていなければ落とす
     r.git("reset", "-q", "--hard");
     r.git("switch", "-q", "-c", "other", "main");
@@ -240,7 +261,6 @@ test("基準が無ければ、作業ブランチでは main から分かれた�
     // main の上では、これまでどおり HEAD と比べる
     r.git("reset", "-q", "--hard");
     r.git("switch", "-q", "main");
-    r.git("merge", "-q", "--ff-only", "feature");
     write(r.dir, "plugin/skills/a.md", "e");
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
