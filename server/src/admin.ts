@@ -21,6 +21,10 @@ import { parseArgs } from "node:util";
 import { dbDir } from "./assets.ts";
 import { connect, type Db, type Env, GLOBAL_ENV, inClientTransaction, KEY, loadEnv, parseEnv } from "./db.ts";
 import { reason } from "./text.ts";
+import { indent } from "./tui/view.ts";
+
+/** CLI の他の出力と同じく字下げする（見出しと締めは cli.ts の db command が付ける） */
+const say = (text: string) => console.log(indent(text));
 
 // 同梱物の在り処は assets.ts が 1 箇所で決める（配る形と作業ツリーで置かれ方が違う）。
 const SCHEMA = (): string => path.join(dbDir(), "schema.sql");
@@ -88,7 +92,7 @@ async function apply(): Promise<void> {
   const t = target(env[KEY.owner]);
   if (!(await applySchema(env)))
     throw new Error(`${t} には gleanery の schema が既にある。既存の DB は \`gleanery db migrate\` で進める`);
-  console.log(`当てた: ${t}`);
+  say(`当てた: ${t}`);
 }
 
 /**
@@ -143,12 +147,12 @@ export async function migrate(yes: boolean): Promise<void> {
     const current = await revisionOf(c);
     const todo = pendingMigrations(files, current);
     if (todo.length === 0) {
-      console.log(`当てるものは無い: ${t} は revision ${current}`);
+      say(`当てるものは無い: ${t} は revision ${current}`);
       return;
     }
-    console.log(`接続先: ${t}`);
-    console.log(`いまの revision: ${current}`);
-    console.log(`当てる: ${todo.map((m) => m.file).join(" / ")}`);
+    say(`接続先: ${t}`);
+    say(`いまの revision: ${current}`);
+    say(`当てる: ${todo.map((m) => m.file).join(" / ")}`);
     if (!yes) {
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       // 標準入力が EOF で閉じても question は settle せず、owner の接続を開いたまま止まる。
@@ -159,7 +163,7 @@ export async function migrate(yes: boolean): Promise<void> {
       ).trim();
       rl.close();
       if (typed !== t) {
-        console.log("一致しないので止めた。");
+        say("一致しないので止めた。");
         process.exitCode = 1;
         return;
       }
@@ -178,8 +182,8 @@ export async function migrate(yes: boolean): Promise<void> {
       if (last) await c.query(`comment on schema gleanery is 'gleanery schema revision ${last.revision}'`);
       return now;
     });
-    console.log(`当てた: ${applied.map((m) => m.file).join(" / ") || "無し"}`);
-    console.log(`${t} は revision ${await revisionOf(c)}`);
+    say(`当てた: ${applied.map((m) => m.file).join(" / ") || "無し"}`);
+    say(`${t} は revision ${await revisionOf(c)}`);
   } finally {
     await c.end();
   }
@@ -235,8 +239,7 @@ async function roles(given: string): Promise<void> {
     }
   } finally {
     await c.end();
-    if (done.length)
-      console.log(`${t} のロールに新しいパスワードを付け、${done.join(" / ")} を ${file} に書いた。`);
+    if (done.length) say(`${t} のロールに新しいパスワードを付け、${done.join(" / ")} を ${file} に書いた。`);
   }
 }
 
@@ -282,13 +285,13 @@ function compose(env: Env, ...args: string[]): void {
 export function dbUp(): void {
   const env = loadEnv();
   compose(env, "up", "-d");
-  console.log(`起動した: ${target(env[KEY.owner])}`);
+  say(`起動した: ${target(env[KEY.owner])}`);
 }
 
 export function dbDown(): void {
   const env = loadEnv();
   compose(env, "down");
-  console.log("止めた（データは残る）");
+  say("止めた（データは残る）");
 }
 
 /** 起動した直後の PostgreSQL は接続を受けるまで数秒かかる。受けるまで待つ。 */
@@ -325,19 +328,19 @@ export async function dbInit(): Promise<void> {
     const file = await writeKeys(GLOBAL_ENV, {
       [KEY.owner]: `postgres://postgres:${password}@127.0.0.1:5432/gleanery`,
     });
-    console.log(`owner の鍵を作った: ${file}`);
+    say(`owner の鍵を作った: ${file}`);
   } else {
-    console.log(`owner の鍵は既にある: ${GLOBAL_ENV}`);
+    say(`owner の鍵は既にある: ${GLOBAL_ENV}`);
   }
   const env = loadEnv();
   compose(env, "up", "-d");
-  console.log(`起動した: ${target(env[KEY.owner])}`);
+  say(`起動した: ${target(env[KEY.owner])}`);
   await waitForDb(env);
   const applied = await applySchema(env);
-  console.log(applied ? "schema を当てた" : "schema は既にある");
+  say(applied ? "schema を当てた" : "schema は既にある");
   const have = parseEnv(fs.readFileSync(GLOBAL_ENV, "utf8"));
   if (needsRoleKeys(applied, have)) await roles(GLOBAL_ENV);
-  else console.log("3 つのロールの鍵は既にある");
+  else say("3 つのロールの鍵は既にある");
 }
 
 async function main(): Promise<void> {

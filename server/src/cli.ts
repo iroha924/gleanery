@@ -31,8 +31,9 @@ import { syncDocs } from "./docs.ts";
 import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
-import { foot, inline, type Mark, mark, pad, panel, plain, rule, title, width } from "./panel.ts";
-import { observe, packageVersionAt, ROOT, report } from "./plugin.ts";
+import { kindColor } from "./palette.ts";
+import { inline, type Mark, mark, pad, plain, width } from "./panel.ts";
+import { observe, packageVersionAt, ROOT, report, UPDATE_NOTE } from "./plugin.ts";
 import {
   connectorOf,
   identify,
@@ -45,6 +46,7 @@ import {
 import {
   directory,
   framed,
+  type Hit,
   openWork,
   renderHits,
   renderWork,
@@ -52,10 +54,22 @@ import {
   searchMessages,
   workDetail,
 } from "./search.ts";
-import { DEFAULT_PORT, parsePort, start } from "./server.ts";
 import { head, reason } from "./text.ts";
 import { describeTitles, fillTitles } from "./titles.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
+import { runTui } from "./tui/tui.ts";
+import {
+  type Block,
+  type Card,
+  closing,
+  document,
+  failure,
+  indent,
+  panel,
+  section,
+  steps,
+  title,
+} from "./tui/view.ts";
 
 /**
  * エラーの枠の見出し。**振り分けが決めた道の名前だけで作る**（打った引数そのものは入れない）。
@@ -63,8 +77,8 @@ import { checkTrace, saveTrace } from "./trace.ts";
  */
 let heading = "gleanery";
 
-/** 止まったときの枠。本文は rule が 1 行ずつ `│ ` を付けるので、引数に仕込んだ改行で締めの行を作れない。 */
-const failed = (body: string): string => panel(heading, [plain(body)], `${mark("fail")} 止まった`);
+/** 止まったときの塊。本文は字下げされるので、引数に仕込んだ改行で行頭の締めの行を作れない（tui/view.ts）。 */
+const failed = (body: string): string => failure(heading, plain(body));
 
 /** 引数の解釈で出た失敗の文。stricli の例外の種類ごとに、何が悪いかを名指しする。 */
 const describeScannerError = (e: ArgumentScannerError): string =>
@@ -98,7 +112,7 @@ const TEXT: ApplicationText = {
   briefs: {
     help: "使い方を出す",
     helpAll: "隠しているコマンドとフラグも含めた使い方を出す",
-    version: "この CLI の版と置き場所",
+    version: "この CLI のバージョンと置き場所",
     argumentEscapeSequence: "これより後ろは全部を引数として読む",
   },
   noCommandRegisteredForInput: ({ input, corrections }) =>
@@ -135,6 +149,36 @@ async function registered(db: Kysely<DB>, place: Place): Promise<number> {
   if (id === null)
     throw new Error(`${place.name} は gleanery に登録されていない。\`gleanery project add\` で登録する`);
   return id;
+}
+
+/**
+ * 検索の 1 件を、端末で人が読む項目にする。札は種類ごとの色の Badge、本文は先頭だけ、出所は薄く 2 行で切らずに出す。
+ * 作業場所を 1 つに絞っているときは、見出しに出ているので出所から作業場所を外す
+ */
+function hitCard(x: Hit, scoped: boolean): Card {
+  // 文書の節は見出し（path と節）が題になる。判断の記録の heading は作業の題で出所と同じなので、本文の 1 行目を題にする
+  const [first = "", ...rest] = plain(x.text).split("\n");
+  const doc = x.kind === "document" && x.heading !== null;
+  const title = doc ? plain(x.heading ?? "") : first;
+  const body = [
+    head((doc ? [first, ...rest] : rest).join("\n").trim(), 600),
+    x.reason ? `理由: ${plain(x.reason)}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return {
+    badge: { text: x.label.replace(/^【|】$/g, ""), color: kindColor(x.kind, x.status) },
+    title,
+    ...(body ? { body } : {}),
+    // 1 行目は参照（read に渡す）と日時と話者、2 行目は出所の題（作業・PR・issue）
+    meta: [
+      [x.ref, x.at.toLocaleString("sv-SE").slice(0, 16), x.speaker, scoped ? null : x.project]
+        .filter(Boolean)
+        .map((v) => plain(String(v)))
+        .join(" · "),
+      ...(x.context ? [plain(x.context)] : []),
+    ],
+  };
 }
 
 /** trace の記録を読む。`-` は標準入力（Skill はファイルを作らずに渡す）。 */
@@ -286,14 +330,16 @@ async function doctor(env: Env, cwd: string): Promise<void> {
   };
   const say = (m: Mark, label: string, text: string) => {
     count(m, label);
-    console.log(rule(`${mark(m)} ${pad(label, 26)}${text}`));
+    console.log(indent(`  ${mark(m)} ${pad(label, 26)}${text}`));
   };
   console.log(title("gleanery doctor"));
   // DB より先に出す。版の食い違いは DB と無関係に見たい。
   const plugin = report(observe(identify(cwd)?.root ?? cwd));
   issues.push(...plugin.issues);
-  for (const line of plugin.lines) console.log(rule(line));
-  console.log(rule(""));
+  // 行頭から始まる行は節の見出し、字下げした行はその中身（plugin.ts の report が組む形）
+  for (const line of plugin.lines) console.log(/^\S/.test(line) ? section(line) : indent(line));
+  if (plugin.updates.length) console.log(steps("更新するには", plugin.updates, UPDATE_NOTE));
+  console.log(`\n${section("鍵と接続")}`);
   // owner の鍵は schema の適用にしか使わないので、ここでは繋がない（DDL の鍵を使う場面を増やさない）。
   for (const role of ["reader", "ingest", "capture"] as const) {
     if (!env[KEY[role]]) {
@@ -363,7 +409,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
           .orderBy("p.name")
           .orderBy("cn.provider")
           .execute();
-        if (rows.length) console.log(`${rule("")}\n${rule("作業場所")}`);
+        if (rows.length) console.log(`\n${section("作業場所")}`);
         const label = (x: (typeof rows)[number]) => `${x.name} ${x.provider ?? "未同期"}`;
         const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
         for (const x of rows) {
@@ -372,7 +418,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
           count(m, `作業場所 ${label(x)}`);
           const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
           console.log(
-            rule(
+            indent(
               `  ${mark(m)} ${pad(label(x), column)}${
                 x.last_success_at
                   ? `最後の取り込み ${x.last_success_at.toLocaleString("sv-SE")}`
@@ -388,16 +434,18 @@ async function doctor(env: Env, cwd: string): Promise<void> {
   }
   // 件数は行の数で数え、名前だけ重ねない（同じ名前の Codex の cache や作業場所が複数あっても件数は減らさない）。
   console.log(
-    foot(
-      issues.length
-        ? `直すもの ${issues.length} 件: ${[...new Set(issues)]
-            .map((name) => {
-              const n = issues.filter((x) => x === name).length;
-              return n > 1 ? `${name} ×${n}` : name;
-            })
-            .join(" / ")}`
-        : "直すものは無い",
-    ),
+    `${closing(
+      `${mark(issues.length ? "warn" : "ok")} ${
+        issues.length
+          ? `直すもの ${issues.length} 件: ${[...new Set(issues)]
+              .map((name) => {
+                const n = issues.filter((x) => x === name).length;
+                return n > 1 ? `${name} ×${n}` : name;
+              })
+              .join(" / ")}`
+          : "直すものは無い"
+      }`,
+    )}`,
   );
 }
 
@@ -458,7 +506,20 @@ const excludeRoutes = buildRouteMap({
             .onConflict((oc) => oc.doNothing())
             .execute();
           console.log(
-            panel("gleanery project exclude add", [`${rel}（${kind}）`], "次の同期から取り込まない"),
+            document(
+              "gleanery project exclude add",
+              place.name,
+              [
+                {
+                  kind: "fields",
+                  rows: [
+                    ["path", rel],
+                    ["種類", kind === "file" ? "ファイル" : "ディレクトリ"],
+                  ],
+                },
+              ],
+              `${mark("ok")} 次の同期から取り込まない`,
+            ),
           );
         });
       },
@@ -480,9 +541,24 @@ const excludeRoutes = buildRouteMap({
             .orderBy("x.path")
             .execute();
           console.log(
-            panel(
+            document(
               "gleanery project exclude list",
-              rows.map((r) => `${r.path}（${r.kind}）`),
+              place.name,
+              rows.length
+                ? [
+                    {
+                      kind: "table",
+                      head: ["path", "種類"],
+                      rows: rows.map((r) => [plain(r.path), r.kind === "file" ? "ファイル" : "ディレクトリ"]),
+                    },
+                  ]
+                : [
+                    {
+                      kind: "note",
+                      tone: "info",
+                      text: "取り込まない path は無い（全部の文書を取り込んでいる）",
+                    },
+                  ],
               rows.length ? `${rows.length} 件` : "除外なし",
             ),
           );
@@ -515,10 +591,13 @@ const excludeRoutes = buildRouteMap({
             )
             .executeTakeFirst();
           console.log(
-            panel(
+            document(
               "gleanery project exclude remove",
-              [rel],
-              Number(gone.numDeletedRows) ? "次の同期から取り込みに戻る" : "除外に入っていない",
+              place.name,
+              [{ kind: "fields", rows: [["path", rel]] }],
+              Number(gone.numDeletedRows)
+                ? `${mark("ok")} 次の同期から取り込みに戻る`
+                : `${mark("none")} 除外に入っていない`,
             ),
           );
         });
@@ -555,12 +634,20 @@ const projectRoutes = buildRouteMap({
             .returning("id")
             .executeTakeFirst();
           console.log(
-            panel(
+            document(
               "gleanery project add",
-              [],
-              added
-                ? `登録した: ${place.name}（${place.key}）`
-                : `既に登録済み: ${place.name}（${place.key}）`,
+              undefined,
+              [
+                {
+                  kind: "fields",
+                  rows: [
+                    ["作業場所", place.name],
+                    ["key", place.key],
+                    ["置き場所", place.root],
+                  ],
+                },
+              ],
+              added ? `${mark("ok")} 登録した` : `${mark("none")} 既に登録済み`,
             ),
           );
         });
@@ -579,17 +666,39 @@ const projectRoutes = buildRouteMap({
             .groupBy("p.id")
             .orderBy("p.name")
             .execute();
-          const rows = listed.map((x) => {
-            const where =
-              found.get(x.key) ??
-              (ambiguous.has(x.key) ? "置き場所が複数ある（同期しない）" : "この PC に無い");
-            return `${x.name}  ${x.key}\n  ${where}${x.last ? ` / 最後の同期 ${x.last.toLocaleString("sv-SE")}` : ""}`;
+          const home = os.homedir();
+          const cards = listed.map((x) => {
+            const root = found.get(x.key);
+            const where = root
+              ? root.startsWith(`${home}${path.sep}`)
+                ? `~${root.slice(home.length)}`
+                : root
+              : ambiguous.has(x.key)
+                ? "置き場所が複数ある（同期しない）"
+                : "この PC に無い";
+            return {
+              title: x.name,
+              body: where,
+              meta: [
+                x.key,
+                x.last ? `最後の同期 ${x.last.toLocaleString("sv-SE").slice(0, 16)}` : "まだ同期していない",
+              ],
+            };
           });
           console.log(
-            panel(
+            document(
               "gleanery project list",
-              rows,
-              rows.length ? `${rows.length} 件` : "登録なし。gleanery project add で登録する",
+              undefined,
+              cards.length
+                ? [{ kind: "cards", items: cards }]
+                : [
+                    {
+                      kind: "note",
+                      tone: "info",
+                      text: "登録した作業場所は無い。gleanery project add で登録する",
+                    },
+                  ],
+              cards.length ? `${cards.length} 件` : "登録なし",
             ),
           );
         });
@@ -635,19 +744,30 @@ const projectRoutes = buildRouteMap({
             ])
             .where("id", "=", p.id)
             .executeTakeFirst();
-          const counts = `${p.name}（${p.key}）: 会話 ${x?.conversations} / 発言 ${x?.messages} / 知識 ${x?.knowledge} / 取り込み元の項目 ${x?.items}`;
+          const counts: Block = {
+            kind: "fields",
+            rows: [
+              ["作業場所", p.name],
+              ["key", p.key],
+              ["会話", `${x?.conversations} 件`],
+              ["発言", `${x?.messages} 件`],
+              ["知識", `${x?.knowledge} 件`],
+              ["取り込み元の項目", `${x?.items} 件`],
+            ],
+          };
           if (flags.yes !== true) {
             console.log(
-              panel(
+              document(
                 "gleanery project forget",
-                [counts],
-                "消していない。消すなら --yes を付ける。元に戻せない",
+                undefined,
+                [counts, { kind: "note", tone: "warning", text: "消すなら --yes を付ける。元に戻せない" }],
+                `${mark("none")} 消していない`,
               ),
             );
             return;
           }
           await db.deleteFrom("gleanery.project").where("id", "=", p.id).execute();
-          console.log(panel("gleanery project forget", [counts], "消した"));
+          console.log(document("gleanery project forget", undefined, [counts], `${mark("ok")} 消した`));
         });
       },
     }),
@@ -763,18 +883,40 @@ const captureRoutes = buildRouteMap({
           return;
         }
         console.log(
-          panel(
+          document(
             "gleanery capture flush",
-            [],
-            `新しく入った発言 ${r.sent} 件${r.deferred ? ` / 未登録の作業場所で退避した ${r.deferred} 件` : ""}${
-              r.rejected ? ` / DB が受け付けなかった ${r.rejected} 件（${rejectedDir()} に残した）` : ""
-            }`,
+            undefined,
+            [
+              {
+                kind: "fields",
+                rows: [
+                  ["新しく入った発言", `${r.sent} 件`],
+                  ...(r.deferred
+                    ? ([["未登録の作業場所で退避", `${r.deferred} 件`]] as [string, string][])
+                    : []),
+                  ...(r.rejected
+                    ? ([["DB が受け付けなかった", `${r.rejected} 件（${rejectedDir()} に残した）`]] as [
+                        string,
+                        string,
+                      ][])
+                    : []),
+                ],
+              },
+            ],
+            `${mark(r.rejected ? "warn" : "ok")} 送った`,
           ),
         );
       },
     }),
   },
 });
+
+/** admin.ts の 1 行ずつの出力に見出しと締めを付ける。失敗は stricli の exceptionWhileRunningCommand が塊にする */
+async function boxed(head: string, fn: () => void | Promise<void>): Promise<void> {
+  console.log(title(head));
+  await fn();
+  console.log(closing(`${mark("ok")} 終わった`));
+}
 
 const dbRoutes = buildRouteMap({
   docs: { brief: "この PC の PostgreSQL（docker compose）と schema" },
@@ -784,26 +926,26 @@ const dbRoutes = buildRouteMap({
         brief: "この PC の DB を用意する（鍵づくり・起動・schema・ロールの鍵。何度流してもよい）",
       },
       parameters: {},
-      func: () => dbInit(),
+      func: () => boxed("gleanery db init", dbInit),
     }),
     up: buildCommand({
       docs: { brief: "DB を起動する" },
       parameters: {},
-      func: () => dbUp(),
+      func: () => boxed("gleanery db up", dbUp),
     }),
     down: buildCommand({
       docs: { brief: "DB を止める（データは残る）" },
       parameters: {},
-      func: () => dbDown(),
+      func: () => boxed("gleanery db down", dbDown),
     }),
     migrate: buildCommand({
-      docs: { brief: "DB の版より新しい db/migrations を当てる" },
+      docs: { brief: "DB のバージョンより新しい db/migrations を当てる" },
       parameters: {
         flags: {
           yes: { kind: "boolean", brief: "接続先の確認を省く（端末でないときは必須）", optional: true },
         },
       },
-      func: (flags: { yes?: boolean }) => migrate(flags.yes === true),
+      func: (flags: { yes?: boolean }) => boxed("gleanery db migrate", () => migrate(flags.yes === true)),
     }),
   },
 });
@@ -841,7 +983,7 @@ const root = buildRouteMap({
         const startedAt = new Date();
         console.log(title(`gleanery harvest ${startedAt.toLocaleString("sv-SE")}`));
         await flush(env).catch((e: unknown) =>
-          console.error(rule(`${mark("fail")} 自動記録の送信に失敗: ${plain(reason(e))}`)),
+          console.error(indent(`${mark("fail")} 自動記録の送信に失敗: ${plain(reason(e))}`)),
         );
         const failures: string[] = [];
         let done = 0;
@@ -860,7 +1002,7 @@ const root = buildRouteMap({
               const root = only?.root ?? found.get(p.key);
               if (!root) {
                 console.log(
-                  rule(
+                  indent(
                     `${mark("none")} ${p.name}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`,
                   ),
                 );
@@ -869,7 +1011,7 @@ const root = buildRouteMap({
               try {
                 const place = { key: p.key, root, name: p.name };
                 for (const line of await syncOne(db, Number(p.id), place, resetDocs)) {
-                  console.log(rule(`${mark("ok")} ${p.name} / ${line}`));
+                  console.log(indent(`${mark("ok")} ${p.name} / ${line}`));
                 }
                 done++;
               } catch (e) {
@@ -877,7 +1019,7 @@ const root = buildRouteMap({
                 failures.push(p.name);
                 const lines = plain(reason(e)).split("\n");
                 console.error(
-                  rule(
+                  indent(
                     [
                       `${mark("fail")} ${p.name}`,
                       ...lines.map((l) => (l.trim() ? `  ${l.trim()}` : "")),
@@ -892,17 +1034,17 @@ const root = buildRouteMap({
               describeFill("発言の埋め込み", await fillMessages(db, env)),
               describeTitles(await fillTitles(db, env)),
             ])
-              if (line) console.log(rule(line));
+              if (line) console.log(indent(line));
           });
         } catch (e) {
           // 見出しを出した後で止まっても、枠を閉じてから終わる（ログは日をまたいで追記される）。
-          console.error(rule(`${mark("fail")} ${plain(reason(e))}`));
-          console.log(foot(`${mark("fail")} 止まった ${new Date().toLocaleString("sv-SE")}`));
+          console.error(indent(`${mark("fail")} ${plain(reason(e))}`));
+          console.log(closing(`${mark("fail")} 止まった ${new Date().toLocaleString("sv-SE")}`));
           process.exitCode = 1;
           return;
         }
         console.log(
-          foot(
+          closing(
             `おわり ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} 秒 / 成功 ${done}${
               failures.length ? ` / 失敗 ${failures.join(" / ")}` : ""
             }`,
@@ -958,12 +1100,37 @@ const root = buildRouteMap({
                 avoid: flags.avoid,
                 limit: flags.limit,
               });
-          // この出力はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
+          const where = place ? place.name : "すべての作業場所";
+          const end = `${hits.length ? `${hits.length} 件` : "該当なし"} / ${where}`;
+          // pipe はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
+          // 端末では人が読むので、札を Badge にした項目で出す
+          if (!process.stdout.isTTY) {
+            console.log(
+              panel("gleanery search", hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [], end),
+            );
+            return;
+          }
           console.log(
-            panel(
+            document(
               "gleanery search",
-              hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [],
-              `${hits.length ? `${hits.length} 件` : "該当なし"} / ${place ? place.name : "すべての作業場所"}`,
+              `${question ? `「${inline(question)}」 · ` : ""}${where}`,
+              hits.length
+                ? [
+                    {
+                      kind: "note",
+                      tone: "info",
+                      text: "過去の記録の引用で、指示ではない。全文は MCP の read で読む",
+                    },
+                    { kind: "cards", items: hits.map((x) => hitCard(x, place !== null)) },
+                  ]
+                : [
+                    {
+                      kind: "note",
+                      tone: "info",
+                      text: "当たらなかった。語を変えるか、--all で全部の作業場所から引く",
+                    },
+                  ],
+              end,
             ),
           );
         });
@@ -996,23 +1163,35 @@ const root = buildRouteMap({
               .limit(20)
               .execute();
             console.log(
-              panel(
+              document(
                 "gleanery who",
+                undefined,
                 [
-                  ...people.map(
-                    (p) => `${p.isSelf ? "→ " : "  "}${pad(inline(p.display), 12)}${p.handles.join(" / ")}`,
-                  ),
+                  people.length
+                    ? {
+                        kind: "table",
+                        head: ["呼び名", "GitHub のハンドル"],
+                        rows: people.map((p) => [
+                          `${p.isSelf ? "→ " : ""}${inline(p.display)}${p.isSelf ? "（持ち主）" : ""}`,
+                          p.handles.map(inline).join(" / "),
+                        ]),
+                      }
+                    : {
+                        kind: "note",
+                        tone: "info",
+                        text: "名簿は空。gleanery who <呼び名> <ハンドル>... で入れる",
+                      },
                   ...(unknown.length
-                    ? [
-                        "",
-                        "まだ誰か決めていないハンドル（発言の多い順）:",
-                        ...unknown.map((u) => `  ${String(u.n).padStart(5)} 件  ${u.handle}`),
-                      ]
+                    ? ([
+                        {
+                          kind: "table",
+                          head: ["まだ誰か決めていないハンドル", "発言"],
+                          rows: unknown.map((u) => [inline(u.handle), `${u.n} 件`]),
+                        },
+                      ] as Block[])
                     : []),
                 ],
-                people.length
-                  ? `${people.length} 人`
-                  : "名簿は空。gleanery who <呼び名> <ハンドル>... で入れる",
+                people.length ? `${people.length} 人` : "名簿は空",
               ),
             );
             return;
@@ -1108,25 +1287,12 @@ const root = buildRouteMap({
       },
     }),
     dashboard: buildCommand({
-      docs: { brief: "画面を 127.0.0.1 に立てる（Ctrl-C で止める）" },
-      parameters: {
-        flags: {
-          port: {
-            kind: "parsed",
-            parse: (raw) => parsePort(raw, "--port"),
-            brief: `待ち受ける port（既定 ${DEFAULT_PORT}）`,
-            optional: true,
-          },
-        },
-      },
-      func: (flags: { port?: number }) => {
-        // 前面で動かし続ける。**背景へ回さない** — 止め方が Ctrl-C だけなので、
-        // 端末から見えなくなると止められないプロセスが残る。
-        start(flags.port ?? parsePort(process.env.GLEANERY_DASHBOARD_PORT));
-      },
+      docs: { brief: "セッション・作業・検索を端末の画面で見る（読むだけ）" },
+      parameters: {},
+      func: () => runTui(process.cwd()),
     }),
     doctor: buildCommand({
-      docs: { brief: "npm packageとpluginの版、鍵と接続、schema、同期と自動記録の状態" },
+      docs: { brief: "npm packageとpluginのバージョン、鍵と接続、schema、同期と自動記録の状態" },
       parameters: {},
       func: () => doctor(loadEnv(), process.cwd()),
     }),
@@ -1156,15 +1322,25 @@ const root = buildRouteMap({
           });
         const shown = rows.filter((r) => r.shown > 0);
         const since = rows[0]?.at;
+        const ratio = shown.length / Math.max(rows.length, 1);
         console.log(
-          panel(
+          document(
             "gleanery advice",
+            since ? `${new Date(since).toLocaleString("sv-SE").slice(0, 16)} から` : undefined,
             [
-              `フックが走った編集   ${rows.length} 回`,
-              `制約を出した         ${shown.length} 回`,
-              ...(since ? [`記録の始まり         ${new Date(since).toLocaleString("sv-SE")}`] : []),
+              {
+                kind: "fields",
+                rows: [
+                  ["フックが走った編集", `${rows.length} 回`],
+                  ["制約を出した", `${shown.length} 回`],
+                  ...(since
+                    ? ([["記録の始まり", new Date(since).toLocaleString("sv-SE")]] as [string, string][])
+                    : []),
+                ],
+              },
+              { kind: "meter", label: "制約を出した割合", ratio, text: `${(ratio * 100).toFixed(1)}%` },
             ],
-            `制約を出した割合 ${((shown.length / Math.max(rows.length, 1)) * 100).toFixed(1)}%`,
+            `${mark("ok")} 編集 ${rows.length} 回のうち ${shown.length} 回で制約を出した`,
           ),
         );
       },

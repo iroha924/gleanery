@@ -31,14 +31,15 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
   MCP・CLI・hook・plugin Skill/Agent・共有moduleならnpmと3つのplugin versionを揃える。`plugin/dist`は追跡しない
 - 新しい外部入力はsystem境界で検査する。資格情報を追跡file、command引数、logへ書かない
 - **配る物はWindowsでも動かす。**POSIX shell、`0600`のmode、`/tmp`固定path、`.cmd`をexecFileで起動する形に
-  依存しない。**このrepositoryでの開発はmacOS / Linuxを前提にする** — `.claude/skills/`の4本のsymlinkと、
+  依存しない。**このrepositoryでの開発はmacOS / Linuxを前提にする** — `.claude/skills/`の5本のsymlinkと、
   `artifacts.test.ts` / `docs.test.ts`の`symlinkSync`が要る
 
 ## 作業別Skill
 
 該当する作業では、実装前に次のSkillを最後まで読む。
 
-- 画面（Vite + React + TanStack Router）、Hono、画面のAPI通信: `ui-hono`
+- 端末の画面（Ink）: `tui`
+- Webの画面（Vite + React）とHono API: `ui-hono`
 - DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
 - MCP、CLI、自動記録のhook、plugin Skillの配布: `plugin-release`
 - reviewの観点（`plugin/skills/review/reviewers/`）と立て方: `plugin-agent-authoring`

@@ -19,9 +19,11 @@ const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: "inherit"
 // クラス名が潰れると英語へ戻る。
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
-for (const entry of ["mcp", "capture", "cli"]) {
+for (const entry of ["mcp", "capture"]) {
   run("bun", ["build", `server/src/${entry}.ts`, "--target=node", "--outfile", `plugin/dist/${entry}.js`]);
 }
+// CLI は Ink を含み、その開発用の import を差し替える plugin が要るので、Bun.build の script で束ねる。
+run("bun", ["scripts/bundle-cli.ts"]);
 
 // 配る先は server/src/assets.ts が dashboardRoot() で探す位置。
 run("bun", ["run", "--cwd", "dashboard", "build"]);

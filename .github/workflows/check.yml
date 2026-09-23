@@ -42,10 +42,10 @@ jobs:
         with:
           bun-version: 1.4.0
 
-      # テストは node の test runner で走る。server/package.json の engines は >=22.18。
+      # テストは node の test runner で走る。engines の下限（>=24.15）そのもので通ることを見る。
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: "24.15"
 
       # 依存の導入と verify より前に置く。手前で落ちた main への push は、その範囲を二度と見ない。
       - name: plugin の版が上がっているか

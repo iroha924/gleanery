@@ -13,6 +13,7 @@ const EXACT_PACKAGE_INPUTS = new Set([
   "dashboard/tsconfig.node.json",
   "dashboard/vite.config.ts",
   "scripts/bundle.mjs",
+  "scripts/bundle-cli.ts",
   "scripts/third-party-notices.mjs",
 ]);
 

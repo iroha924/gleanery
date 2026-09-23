@@ -1,9 +1,9 @@
-// 人へ出す表示の形。見出しは ✦、中身は行頭の │、締めは ╰─。フックの表示と CLI はこの形で出し、Skill の報告も同じ
-// 見出しと印でそろえる。右端を持たないのは、フックからは画面の幅が分からず、決め打ちの幅だと狭い画面で崩れるため。
-// 人も AI も読む CLI の出力（search・check・trace check / save）もこの形にする。AI だけが読む MCP の結果と
-// trace context はこの形にしない。
+// 自動記録のフックが人へ出す表示の形（見出しは ✦、中身は行頭の │、締めは ╰─）と、CLI と共有する印・文字の整え方。
+// CLI の出力は Ink で描く（server/src/tui/view.ts）。フックは Ink を読み込まないので、ここで文字列を組む。
+// AI だけが読む MCP の結果と trace context はどちらの形にもしない。
 
-import { styleText } from "node:util";
+import chalk from "chalk";
+import { PALETTE } from "./palette.ts";
 import { visible } from "./text.ts";
 
 /** ok は良い、warn は見る、fail は壊れている、none は情報（無い・不明・待っているだけ）。印の字は MARKS にだけ書く。 */
@@ -11,20 +11,25 @@ export type Mark = "ok" | "warn" | "fail" | "none";
 
 // review Skill の台帳が同じ印を書く（Skill からはこのファイルを読めない）。scripts/check-pairs.mjs が突き合わせる。
 const MARKS = {
-  ok: ["✓", "green"],
-  warn: ["△", "yellow"],
-  fail: ["✗", "red"],
-  none: ["○", "gray"],
+  ok: ["✓", PALETTE.sage],
+  warn: ["△", PALETTE.ochre],
+  fail: ["✗", PALETTE.failure],
+  none: ["○", PALETTE.taupe],
 } as const;
 
 /**
  * 色は標準出力と標準エラーの両方が端末のときだけ付ける（どちらかをファイルやパイプへ流したら、どちらの行にも付けない）。
- * 両方が端末なら、NO_COLOR・FORCE_COLOR=0・TERM=dumb などは styleText が見る。
+ * 両方が端末なら、NO_COLOR・FORCE_COLOR=0・TERM=dumb と端末の色数は chalk が見る（アースカラーを色数に合わせて落とす）。
  */
-export const mark = (m: Mark): string =>
-  process.stdout.isTTY && process.stderr.isTTY
-    ? styleText(MARKS[m][1], MARKS[m][0], { stream: process.stdout })
-    : MARKS[m][0];
+const colored = () => Boolean(process.stdout.isTTY && process.stderr.isTTY);
+
+export const mark = (m: Mark): string => (colored() ? chalk.hex(MARKS[m][1])(MARKS[m][0]) : MARKS[m][0]);
+
+/** 読み飛ばしてよい補足（パスなど）を薄くする。色の条件は mark と同じ */
+export const faint = (text: string): string => (colored() ? chalk.dim(text) : text);
+
+/** 直す理由を黄土にする。色の条件は mark と同じ */
+export const caution = (text: string): string => (colored() ? chalk.hex(PALETTE.ochre)(text) : text);
 
 export const title = (text: string): string => `✦ ${text}`;
 
