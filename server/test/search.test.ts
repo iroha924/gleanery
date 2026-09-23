@@ -4,12 +4,15 @@ import {
   directory,
   diversify,
   framed,
+  framedWithin,
   type Hit,
+  hookContext,
   listItems,
   openWork,
   pathRules,
   read,
   renderHits,
+  renderWork,
   searchKnowledge,
   searchMessages,
   searchSplit,
@@ -431,11 +434,98 @@ test("split の JSON と read の全文は上限に収まり、切っても JSON
   assert.equal(parsed.records.length + parsed.documents.length + parsed.omitted, 15);
   assert.ok(parsed.documents.length > 0, "文書も上限の中に入る");
   const out = await read(db.reader, [`k:${big}`], 8192, { projects: [p1] });
-  assert.ok(Buffer.byteLength(out) <= 8192 + 400, `${Buffer.byteLength(out)} bytes`);
+  assert.ok(Buffer.byteLength(out) <= 8192, `${Buffer.byteLength(out)} bytes`);
   assert.match(out, /長さの上限で/);
 });
 
+// 上限は呼び出し側が渡した値で、渡された文字列の長さに左右されない。
+test("作業の題と読めない参照が長くても、read と resume は上限に収まる", async () => {
+  const bad = await read(db.reader, ["x".repeat(9000)], 8192, { projects: [p1] });
+  assert.ok(Buffer.byteLength(bad) <= 8192, `${Buffer.byteLength(bad)} bytes`);
+  assert.match(bad, /読めない参照/);
+  const long = "題".repeat(5000);
+  const w = {
+    ref: "w:1",
+    project: "o/r",
+    title: long,
+    goal: long,
+    current: long,
+    next: [long],
+    status: "active",
+    updatedAt: new Date("2026-09-10T00:00:00Z"),
+    questions: [],
+    walls: [],
+  };
+  const out = renderWork(w, 4096);
+  assert.ok(Buffer.byteLength(out) <= 4096, `${Buffer.byteLength(out)} bytes`);
+  // 見出しと「残り N 件」の書き添えも上限の内に入る
+  const many = Array.from({ length: 2 }, () => hit({ text: long }));
+  const full = renderWork({ ...w, questions: many, walls: many }, 4096);
+  assert.ok(Buffer.byteLength(full) <= 4096, `${Buffer.byteLength(full)} bytes`);
+  const hits = renderHits(many, 1000);
+  assert.ok(Buffer.byteLength(hits) <= 1000, `${Buffer.byteLength(hits)} bytes`);
+  // 取り込み元の題（文書の path）も上限の内に入る
+  const doc = documentSection(db, p1, { path: `docs/${"長".repeat(3000)}.md`, heading: "h", body: "本文" });
+  const source = db.owner.prepare("select source_item_id as s from knowledge where id = ?").get(doc)?.s;
+  const src = await read(db.reader, [`s:${source}`], 8192, { projects: [p1] });
+  assert.ok(Buffer.byteLength(src) <= 8192, `${Buffer.byteLength(src)} bytes`);
+  // 参照がいくつでも、区切りを含めて上限の内に入る
+  const two = await read(db.reader, [`k:${doc}`, `s:${source}`], 8192, { projects: [p1] });
+  assert.ok(Buffer.byteLength(two) <= 8192, `${Buffer.byteLength(two)} bytes`);
+});
+
+// MCP は枠（framed）を付けて返す。枠の分を本文の上限から引かないと、応答は上限を越える。
+test("枠を付けた応答も上限に収まり、小さい上限でも越えない", async () => {
+  const body = renderHits(
+    Array.from({ length: 10 }, () => hit({ text: "認".repeat(500) })),
+    4096,
+  );
+  const out = framedWithin(body, 4096);
+  assert.ok(Buffer.byteLength(out) <= 4096, `${Buffer.byteLength(out)} bytes`);
+  assert.match(out, /記録 [0-9a-f]{12} ここまで/);
+  const tiny = renderHits([hit()], 20);
+  assert.ok(Buffer.byteLength(tiny) <= 20, `${Buffer.byteLength(tiny)} bytes`);
+  const bad = await read(db.reader, ["x".repeat(40), "y".repeat(40)], 80, { projects: [p1] });
+  assert.ok(Buffer.byteLength(bad) <= 80, `${Buffer.byteLength(bad)} bytes`);
+});
+
+// 部分一致は本文を正規化せずに持つ。問いだけを NFKC にすると、全角の本文を同じ全角の問いで引けない。
+test("部分一致は全角の本文を同じ綴りの問いで引く", async () => {
+  const wide = knowledge(db, p1, { source_key: "s1#wide", body: "索引の名前は ＧＬＮ２ にする" });
+  const got = await searchKnowledge(db.reader, {
+    question: "ＧＬＮ２",
+    projects: [p1],
+    match: "exact",
+    limit: 5,
+  });
+  assert.deepEqual(refs(got), [`k:${wide}`]);
+});
+
 const hitOf = (id: number): Hit => hit({ ref: `k:${id}`, kind: "finding", stance: "neutral" });
+
+// 省いた件数の桁が増えると JSON が伸びる。長さを見た後で数を増やすと、上限を越えて枠の手前で切られ、JSON が壊れる。
+test("split の JSON は省いた件数の桁が増えても上限に収まる", () => {
+  const budget = 3836;
+  for (let n = 3600; n < 3760; n++) {
+    const first = { ...hitOf(1), heading: "a".repeat(n) };
+    const json = splitJson(
+      {
+        records: [first, ...Array.from({ length: 9 }, () => ({ ...hitOf(2), text: "b".repeat(400) }))],
+        documents: [{ ...hitOf(3), kind: "document", text: "c" }],
+      },
+      budget,
+    );
+    assert.ok(Buffer.byteLength(json) <= budget, `見出し ${n}: ${Buffer.byteLength(json)} bytes`);
+  }
+});
+
+// フックの出力は JSON の文字列にするので、改行や引用符の escape で伸びる。
+test("編集フックへの出力は escape で伸びても上限に収まり、JSON として読める", () => {
+  const out = hookContext(`制約\n\n${"x\n".repeat(2000)}`, 2048);
+  assert.ok(Buffer.byteLength(out) <= 2048, `${Buffer.byteLength(out)} bytes`);
+  const parsed = JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } };
+  assert.match(parsed.hookSpecificOutput.additionalContext, /記録 [0-9a-f]{12} ここまで/);
+});
 
 // 「先週マージした PR」を作成日で絞ると、先週より前に作って先週マージしたものが落ちる。
 test("PR・issue はマージ・クローズを聞いたらその日で絞り、それ以外は作成日", async () => {

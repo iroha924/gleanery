@@ -58,6 +58,8 @@ await withTempDir(async (dir) => {
       failures.push(`2 巡目の harvest が GitHub を回していない\n${again.out.slice(0, 400)}`);
     if (!/消えた 1 件/.test(again.out))
       failures.push(`2 巡目の harvest が消えた issue を消していない\n${again.out.slice(0, 400)}`);
+    if (!/PR・issue 1 件（書き直した 1 件/.test(again.out) || !/発言 \d+ 件（書き直した 0 件/.test(again.out))
+      failures.push(`2 巡目の harvest が題だけ変わった PR の発言を書き直した\n${again.out.slice(0, 400)}`);
 
     note("who（名簿）", runCli(["who"], dir, covDir));
     note("who（結ぶ）", runCli(["who", "--me", "私", "someone"], dir, covDir));

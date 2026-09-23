@@ -19,6 +19,7 @@ import {
   type Seen,
   versionAt,
 } from "../src/plugin.ts";
+import { tempDb } from "./temp-db.ts";
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 const REPO_PLUGIN = path.join(SRC, "..", "..", "plugin");
@@ -430,5 +431,43 @@ test("MCP の server instructions と道具の説明は 2,048 文字に収まる
     for (const t of tools) assert.ok([...(t.description ?? "")].length <= 2048, `${t.name} の説明が長すぎる`);
   } finally {
     await client.close();
+  }
+});
+
+// 枠を付けてから上限を見ないと、応答は枠の分だけ上限を越える。MCP の応答は必ず framedWithin を通す。
+test("MCP は枠を framedWithin でだけ付ける", () => {
+  const src = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/mcp.ts"),
+    "utf8",
+  );
+  assert.deepEqual(src.match(/(?<![\w.])framed\(/g) ?? [], []);
+  assert.ok(src.includes("framedWithin("), "framedWithin を呼んでいる");
+});
+
+// 未登録の作業場所の名前は remote の綴りから来る。長さを決めずに写すと、上限を越える。
+test("未登録の作業場所の名前が長くても、応答は上限に収まる", async () => {
+  const db = tempDb();
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-unreg-"));
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  execFileSync("git", ["remote", "add", "origin", `https://example.test/o/${"r".repeat(9000)}.git`], {
+    cwd: repo,
+  });
+  const client = new Client({ name: "test", version: "0" });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(SRC, "mcp.ts")],
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", GLEANERY_DB: db.file },
+      stderr: "ignore",
+    }),
+  );
+  try {
+    const r = await client.callTool({ name: "recall", arguments: { question: "x", cwd: repo } });
+    const t = (r.content as { text: string }[])[0]?.text ?? "";
+    assert.match(t, /登録されていない/);
+    assert.ok(Buffer.byteLength(t) <= 4096, `${Buffer.byteLength(t)} bytes`);
+  } finally {
+    await client.close();
+    await db.done();
   }
 });

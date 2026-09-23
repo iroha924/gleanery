@@ -48,7 +48,8 @@ function withOwner<T>(file: string, fn: (raw: DatabaseSync) => T, create = false
 
 /**
  * この PC の DB を用意する。**既にあれば触らない**ので何度流してもよい。
- * 一時ファイルへ schema を当ててから置き換える（途中で止まっても、schema の半分だけ当たった DB を残さない）。
+ * 一時ファイルへ schema を当ててから置く（途中で止まっても、schema の半分だけ当たった DB を残さない）。置き場所が先に
+ * 埋まっていれば置かずに止まる。
  */
 export function dbInit(file: string = dbFile()): void {
   if (fs.existsSync(file)) {
@@ -79,7 +80,15 @@ export function dbInit(file: string = dbFile()): void {
       },
       true,
     );
-    fs.renameSync(tmp, file);
+    // rename は先に置かれた DB を置き換える。link は置き場所が埋まっていれば EEXIST で止まる（同時の init の後から来た側）。
+    // hard link を持たない FS（FAT・exFAT など）では rename で置く。複製は途中で止まると半端な DB を残すので使わない。
+    try {
+      fs.linkSync(tmp, file);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EEXIST" || fs.existsSync(file))
+        throw new Error(`${file} は既にある（別の db init が先に作った）。打ち直せば確かめる`);
+      fs.renameSync(tmp, file);
+    }
   } finally {
     for (const f of [tmp, `${tmp}-wal`, `${tmp}-shm`]) fs.rmSync(f, { force: true });
   }

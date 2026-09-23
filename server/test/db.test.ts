@@ -169,6 +169,12 @@ test("自動記録の接続は、base table・知識・他人の発言・身元�
     ["select body from message"],
     ["select body from knowledge"],
     ["select lexemes from message_fts"],
+    // FTS の内部の表には索引の語がそのまま入る。FTS5 自身の読みは許し、この接続が組み立てた文からの読みは拒む
+    // （語の入らない _config は、仮想表を開く prepare の中で読まれるので許す）
+    ["select id, block from message_fts_data"],
+    ["select id, block from knowledge_fts_data"],
+    ["select * from message_fts_idx"],
+    ["select * from knowledge_fts_docsize"],
     ["delete from message_fts"],
     ["insert into message_fts (rowid, lexemes) values (999, 'x')"],
     ["attach database ':memory:' as x"],
@@ -194,7 +200,7 @@ test("自動記録の接続は、base table・知識・他人の発言・身元�
   );
 });
 
-// FTS5 の shadow table への書き込みは authorizer では止められない（FTS5 の内部の書き込みと区別できない）。defensive が止める。
+// ingest と owner の authorizer は FTS5 の shadow table への書き込みを FTS5 自身の書き込みと区別できない。defensive が止める。
 test("どの書く接続も FTS の内部の表を直接書き換えられない", () => {
   for (const open of [ingest, capture, () => connectWriter("owner", db.file)])
     for (const text of [

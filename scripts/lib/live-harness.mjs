@@ -61,7 +61,8 @@ if (args.includes("pulls/comments")) {
          body: "偽の db では権限が見えない", created_at: "2026-09-03T00:00:00Z",
          html_url: "https://example.invalid/2#c12" }]);
 } else if (args.includes("pulls?")) {
-  out([{ number: 1, title: "はじめの PR", body: "本文", state: "open", user: person,
+  // 2 巡目は題だけを変える。題は発言の中身ではないので、発言を書き直さない。
+  out([{ number: 1, title: round2 ? "題を変えた PR" : "はじめの PR", body: "本文", state: "open", user: person,
          created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-02T00:00:00Z",
          html_url: "https://example.invalid/1", merged_at: null, closed_at: null }]);
 } else if (args.includes("issues?")) {

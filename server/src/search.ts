@@ -63,10 +63,10 @@ const since = (col: string, d: string): Expression<SqlBool> => sql<SqlBool>`${sq
 const until = (col: string, d: string): Expression<SqlBool> =>
   sql<SqlBool>`${sql.ref(col)} < ${new Date(Date.parse(startOf(d)) + 86_400_000).toISOString()}`;
 
-/** 部分一致。大文字と小文字は ASCII だけ同一視する（SQLite の lower の範囲）。 */
+/** 部分一致。大文字と小文字は ASCII だけ同一視する（SQLite の lower の範囲）。本文は正規化せずに持つので、問いも正規化しない。 */
 const contains = (cols: string[], needle: string): Expression<SqlBool> =>
   sql<SqlBool>`(${sql.join(
-    cols.map((c) => sql`instr(lower(coalesce(${sql.ref(c)}, '')), lower(${needle.normalize("NFKC")})) > 0`),
+    cols.map((c) => sql`instr(lower(coalesce(${sql.ref(c)}, '')), lower(${needle})) > 0`),
     sql` or `,
   )})`;
 
@@ -658,6 +658,27 @@ export function framed(body: string): string {
   );
 }
 
+/** 本文を、枠を付けても budget に収まる長さへ切ってから枠を付ける。本文を作る側は inFrame(budget) で配分する。 */
+export const inFrame = (budget: number): number => budget - bytes(framed(""));
+export const framedWithin = (body: string, budget: number): string =>
+  framed(clipped(body, inFrame(budget), "この応答"));
+
+/** 編集フックの出力（PreToolUse の additionalContext）。 */
+export function hookContext(body: string, budget: number): string {
+  const wrap = (b: number) =>
+    JSON.stringify({
+      hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: framedWithin(body, b) },
+    });
+  // 改行や引用符の escape で伸びた分だけ、本文の上限を縮めて作り直す。
+  let b = budget;
+  let out = wrap(b);
+  while (bytes(out) > budget && b > 0) {
+    b -= bytes(out) - budget;
+    out = wrap(b);
+  }
+  return out;
+}
+
 const dateOf = (d: Date | null): string =>
   d ? d.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }) : "";
 const cut = (s: string, n: number): string => {
@@ -684,18 +705,23 @@ export function renderHit(h: Hit, perRow = 900): string {
 
 /** 件の並びを、全体の上限に収めて返す。 */
 export function renderHits(hits: Hit[], budget: number): string {
+  const omitted = (n: number) => `（残り ${n} 件は長さの上限で省いた。絞り込むか read で読む）`;
+  // 省いた旨の 1 行と区切りも上限の内に入れる。
+  const reserve = bytes(omitted(hits.length)) + 2;
   const parts: string[] = [];
   let used = 0;
   for (const [i, h] of hits.entries()) {
     const one = renderHit(h);
-    if (used + bytes(one) > budget) {
-      parts.push(`（残り ${hits.length - i} 件は長さの上限で省いた。絞り込むか read で読む）`);
+    const sep = parts.length ? 2 : 0;
+    if (used + sep + bytes(one) + (i < hits.length - 1 ? reserve : 0) > budget) {
+      parts.push(omitted(hits.length - i));
       break;
     }
     parts.push(one);
-    used += bytes(one);
+    used += sep + bytes(one);
   }
-  return parts.join("\n\n");
+  // 省いた旨の 1 行も入らない小さい上限では、それごと切る。
+  return head(parts.join("\n\n"), budget);
 }
 
 /** split の 1 件。本文は冒頭だけ（候補であり、全文は read で読む）。 */
@@ -736,9 +762,11 @@ export function splitJson(split: Split, budget: number): string {
   documents.forEach((d, i) => {
     queue.splice(Math.min(queue.length, i * 2 + 1), 0, ["documents", d]);
   });
+  // 省いた件数は最大（全件）の桁で見積もる。数えた後で桁が増えると、上限を越えて JSON ごと切られる。
+  const worst = () => bytes(JSON.stringify({ ...out, omitted: queue.length }));
   for (const [key, item] of queue) {
     out[key].push(item);
-    if (bytes(JSON.stringify(out)) > budget) {
+    if (worst() > budget) {
       out[key].pop();
       out.omitted++;
     }
@@ -747,23 +775,30 @@ export function splitJson(split: Split, budget: number): string {
 }
 
 export function renderWork(w: WorkDetail, budget: number): string {
-  const lines = [
-    `## ${w.title}（${w.project} / ${w.status} / ${dateOf(w.updatedAt)} 更新 / ${w.ref}）`,
-    `目指すところ: ${w.goal}`,
-    `いまの状況: ${w.current}`,
-    w.next.length ? `次にやること:\n${w.next.map((n) => `  - ${n}`).join("\n")}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
-  const rest = [
-    w.questions.length
-      ? `### 答えの無い問い\n\n${renderHits(w.questions, Math.floor((budget - bytes(lines)) / 2))}`
-      : null,
-    w.walls.length
-      ? `### 通ってはいけない道\n\n${renderHits(w.walls, Math.floor((budget - bytes(lines)) / 2))}`
-      : null,
-  ].filter(Boolean);
-  return [lines, ...rest].join("\n\n");
+  // 題・目指すところ・状況は長さを決めずに書ける。上限の半分で切り、残りを問いと道へ回す。
+  const lines = clipped(
+    [
+      `## ${w.title}（${w.project} / ${w.status} / ${dateOf(w.updatedAt)} 更新 / ${w.ref}）`,
+      `目指すところ: ${w.goal}`,
+      `いまの状況: ${w.current}`,
+      w.next.length ? `次にやること:\n${w.next.map((n) => `  - ${n}`).join("\n")}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    Math.floor(budget / 2),
+    w.ref,
+  );
+  const share = Math.floor((budget - bytes(lines)) / 2);
+  const section = (title: string, hits: Hit[]) => {
+    const heading = `\n\n### ${title}\n\n`;
+    return hits.length ? `${heading}${renderHits(hits, Math.max(share - bytes(heading), 0))}` : "";
+  };
+  // 配分の端数と、見出しだけで配分を越える小さい上限を最後に切る。
+  return clipped(
+    `${lines}${section("答えの無い問い", w.questions)}${section("通ってはいけない道", w.walls)}`,
+    budget,
+    w.ref,
+  );
 }
 
 /**
@@ -782,34 +817,43 @@ export async function read(
   budget: number,
   opts: { projects?: Scope; around?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
-  const each = Math.floor(budget / Math.max(refs.length, 1));
+  // 参照の間の空行も上限の内に入れる。
+  const each = Math.floor((budget - 2 * Math.max(refs.length - 1, 0)) / Math.max(refs.length, 1));
   const scope = opts.projects ?? null;
   const out: string[] = [];
   for (const ref of refs) {
-    if (!REF.test(ref)) {
-      out.push(`${ref}: 読めない参照（k: / s: / w: は数字、m: は uuid）`);
-      continue;
-    }
     const id = ref.slice(2);
-    if (ref.startsWith("k:")) out.push(await readKnowledge(db, Number(id), each, scope, opts.signal));
+    let text: string;
+    if (!REF.test(ref)) {
+      // 渡された文字列をそのまま写すと、長さで上限を越える。
+      const shown = head(ref, 40);
+      text = `${shown}${shown === ref ? "" : "…"}: 読めない参照（k: / s: / w: は数字、m: は uuid）`;
+    } else if (ref.startsWith("k:")) text = await readKnowledge(db, Number(id), each, scope, opts.signal);
     else if (ref.startsWith("m:"))
-      out.push(await readMessage(db, id, each, opts.around ?? 3, scope, opts.signal));
-    else if (ref.startsWith("s:")) out.push(await readSource(db, Number(id), each, scope, opts.signal));
+      text = await readMessage(db, id, each, opts.around ?? 3, scope, opts.signal);
+    else if (ref.startsWith("s:")) text = await readSource(db, Number(id), each, scope, opts.signal);
     else {
       const w = await workDetail(db, Number(id), scope, opts.signal);
-      out.push(w ? renderWork(w, each) : `${ref}: 無い`);
+      text = w ? renderWork(w, each) : `${ref}: 無い`;
     }
+    // 題や見出しは本文の配分の外で書くので、最後に上限で切る。
+    out.push(clipped(text, each, head(ref, 40)));
   }
   return out.join("\n\n");
 }
 
 /** 全文が上限を越えたときの書き添え。**切ったことを書く。**黙って切ると、続きが無いものとして読まれる。 */
 const clipped = (text: string, budget: number, ref: string): string => {
-  const h = head(text, budget);
-  return h.length < text.length
-    ? `${h}\n\n（${ref} は長さの上限で ${bytes(h).toLocaleString("en-US")} / ${bytes(text).toLocaleString("en-US")} bytes までを出した。` +
-        "残りは語を指定して部分一致で引く。MCP は recall の match: exact、CLI は gleanery search --exact）"
-    : text;
+  if (bytes(text) <= budget) return text;
+  // 書き添えも入らない小さい上限では、書き添えを付けずに切る。
+  const note = (shown: number) =>
+    `\n\n（${ref} は長さの上限で ${shown.toLocaleString("en-US")} / ${bytes(text).toLocaleString("en-US")} bytes までを出した。` +
+    "残りは語を指定して部分一致で引く。MCP は recall の match: exact、CLI は gleanery search --exact）";
+  // 書き添えも上限の内に入れる。出した量は全体より大きくならないので、全体の桁で見積もる。
+  const room = budget - bytes(note(bytes(text)));
+  if (room <= 0) return head(text, budget);
+  const h = head(text, room);
+  return `${h}${note(bytes(h))}`;
 };
 
 async function readKnowledge(

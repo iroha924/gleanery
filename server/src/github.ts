@@ -373,16 +373,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
         const messageId = uuidFrom(conversation, s.externalId);
         live.add(messageId);
         const hash = sha256(
-          JSON.stringify([
-            s.body,
-            s.speaker,
-            s.author?.id ?? null,
-            s.url,
-            s.at,
-            s.replyTo,
-            s.file,
-            item.title,
-          ]),
+          JSON.stringify([s.body, s.speaker, s.author?.id ?? null, s.url, s.at, s.replyTo, s.file]),
         );
         if (stored.get(messageId)?.equals(hash)) continue;
         conversations.set(conversation, { source, external: `${repo}#${item.number}`, at: item.createdAt });

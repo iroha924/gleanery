@@ -19,7 +19,9 @@ import { ROOT, versionAt } from "./plugin.ts";
 import { identify, type Place, patchPaths, projectId, relativeTo } from "./project.ts";
 import {
   DAY,
-  framed,
+  framedWithin,
+  hookContext,
+  inFrame,
   openWork,
   type PathRule,
   pathRules,
@@ -68,7 +70,7 @@ async function here(cwd?: string): Promise<Here> {
 
 const unregistered = (h: Here) =>
   h.place
-    ? `この作業場所（${h.place.name}）は gleanery に登録されていない。登録は \`gleanery project add\`。`
+    ? `この作業場所（${head(h.place.name, 200)}）は gleanery に登録されていない。登録は \`gleanery project add\`。`
     : "この場所は git の remote も名前も持たないので、どの作業場所か決められない。";
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
@@ -167,15 +169,16 @@ server.registerTool(
         if (works.length === 0) return text("進行中の作業は無い。");
         const only =
           works.length === 1 && works[0] ? await workDetail(db, Number(works[0].ref.slice(2))) : null;
-        if (only) return text(framed(renderWork(only, RECALL_BYTES)));
+        if (only) return text(framedWithin(renderWork(only, inFrame(RECALL_BYTES)), RECALL_BYTES));
         return text(
-          framed(
+          framedWithin(
             `進行中の作業（新しい順に ${works.length} 件${works.length === 10 ? "まで" : ""}）。続けるものの参照を read に渡す。\n\n${works
               .map(
                 (w) =>
-                  `- ${w.title}（${w.project} / ${w.status} / ${w.ref}）\n  いまの状況: ${head(w.current, 300)}`,
+                  `- ${head(w.title, 200)}（${w.project} / ${w.status} / ${w.ref}）\n  いまの状況: ${head(w.current, 300)}`,
               )
               .join("\n")}`,
+            RECALL_BYTES,
           ),
         );
       }
@@ -190,7 +193,11 @@ server.registerTool(
           until: a.until,
           limit,
         });
-        return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当する発言は無い。");
+        return text(
+          hits.length
+            ? framedWithin(renderHits(hits, inFrame(RECALL_BYTES)), RECALL_BYTES)
+            : "該当する発言は無い。",
+        );
       }
       if (!a.question?.trim()) return text("question が要る（mode: knowledge / avoid）。");
       const q = {
@@ -211,10 +218,14 @@ server.registerTool(
               ? "問いに引ける語が無い（ひらがなだけ・記号だけ）。漢字・カタカナ・英語の語に変えるか、match: exact で引く。"
               : "該当なし。語を変えて（同義語・英語・短い語、match: exact）引き直す。",
           );
-        return text(framed(splitJson(split, RECALL_BYTES)));
+        return text(framedWithin(splitJson(split, inFrame(RECALL_BYTES)), RECALL_BYTES));
       }
       const hits = await searchKnowledge(db, { ...q, kinds: a.kinds });
-      return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当なし。語を変えて引き直す。");
+      return text(
+        hits.length
+          ? framedWithin(renderHits(hits, inFrame(RECALL_BYTES)), RECALL_BYTES)
+          : "該当なし。語を変えて引き直す。",
+      );
     } catch (e) {
       return failed(e);
     }
@@ -241,7 +252,7 @@ server.registerTool(
       const h = await here(a.cwd);
       if (!a.all_projects && h.id === null) return text(unregistered(h));
       const projects = a.all_projects ? null : [h.id as number];
-      return text(framed(await read(db, a.refs, READ_BYTES, { projects })));
+      return text(framedWithin(await read(db, a.refs, inFrame(READ_BYTES), { projects }), READ_BYTES));
     } catch (e) {
       return failed(e);
     }
@@ -314,14 +325,8 @@ server.registerTool(
             `${f}: ${r.label}${r.text}${r.reason ? `\n  理由: ${r.reason}` : ""}\n  出自: ${r.ref}`,
         )
         .join("\n\n");
-      return reply(
-        framed(
-          head(
-            `編集するファイルに、過去に決めた制約がかかっている。欠陥に見えても意図かどうかを先に確かめる。\n\n${body}`,
-            PATH_BYTES,
-          ),
-        ),
-      );
+      const found = `編集するファイルに、過去に決めた制約がかかっている。欠陥に見えても意図かどうかを先に確かめる。\n\n${body}`;
+      return text(a.hook ? hookContext(found, PATH_BYTES) : framedWithin(found, PATH_BYTES));
     } catch (e) {
       // 編集は止めない（フックは許可を決めない）。ただし確かめていないことは伝える。
       return reply(`gleanery: このファイルにかかる制約を確かめられなかった（${head(reason(e), 200)}）。`);

@@ -72,24 +72,28 @@ const CAPTURE_READS: Record<string, Set<string>> = {
   message: new Set(["id"]),
 };
 
+/**
+ * `own` はこの接続が組み立てた文を prepare している間だけ true。FTS5 は内部の表（SHADOW）を読み書きする文を実行の途中で
+ * prepare するので、そちらだけを通せる。**内部の表には索引の語がそのまま入る**ので、組み立てた文からは読ませない。
+ */
 function captureAuthorizer(
+  own: boolean,
   action: number,
   p1: string | null,
   p2: string | null,
-  _db: string | null,
   triggerOrView: string | null,
 ): number {
   const table = p1 ?? "";
+  // _config（FTS5 の版などの設定。語は入らない）は、新しい接続が仮想表を開く prepare の中で読まれる。
+  const fts = SHADOW.test(table) && (!own || (action === C.SQLITE_READ && table.endsWith("_config")));
   if (action === C.SQLITE_INSERT) {
     if (CAPTURE_VIEWS.has(table)) return C.SQLITE_OK;
     if (triggerOrView !== null && TRIGGER_WRITES[triggerOrView]?.has(table)) return C.SQLITE_OK;
-    // FTS5 の内部の書き込み（triggerOrView は null で来る）。利用者の直接の書き込みは defensive が止める。
-    return SHADOW.test(table) ? C.SQLITE_OK : C.SQLITE_DENY;
+    return fts ? C.SQLITE_OK : C.SQLITE_DENY;
   }
-  if (action === C.SQLITE_UPDATE || action === C.SQLITE_DELETE)
-    return SHADOW.test(table) ? C.SQLITE_OK : C.SQLITE_DENY;
+  if (action === C.SQLITE_UPDATE || action === C.SQLITE_DELETE) return fts ? C.SQLITE_OK : C.SQLITE_DENY;
   if (action === C.SQLITE_READ) {
-    if (triggerOrView !== null || SHADOW.test(table)) return C.SQLITE_OK;
+    if (triggerOrView !== null || fts) return C.SQLITE_OK;
     return CAPTURE_READS[table]?.has(p2 ?? "") ? C.SQLITE_OK : C.SQLITE_DENY;
   }
   if (action === C.SQLITE_FUNCTION) return p2 === "gleanery_terms" ? C.SQLITE_OK : C.SQLITE_DENY;
@@ -124,7 +128,27 @@ export function connectWriter(role: WriteRole, file: string = dbFile(), create =
     throw e;
   }
   if (role === "ingest") raw.setAuthorizer(ingestAuthorizer);
-  else if (role === "capture") raw.setAuthorizer(captureAuthorizer);
+  else if (role === "capture") {
+    let own = false;
+    raw.setAuthorizer((action, p1, p2, _db, triggerOrView) =>
+      captureAuthorizer(own, action, p1, p2, triggerOrView),
+    );
+    // exec は prepare と実行を分けられないので、実行の間も own のまま（FTS5 の内部の読みも拒まれる）。capture は exec を使わない。
+    const prepare = raw.prepare.bind(raw);
+    const exec = raw.exec.bind(raw);
+    const mark =
+      <A extends unknown[], R>(f: (...a: A) => R) =>
+      (...a: A): R => {
+        own = true;
+        try {
+          return f(...a);
+        } finally {
+          own = false;
+        }
+      };
+    raw.prepare = mark(prepare);
+    raw.exec = mark(exec);
+  }
   return raw;
 }
 

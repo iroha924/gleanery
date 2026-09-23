@@ -53,6 +53,46 @@ test("db init は DB を WAL で作って版を付け、2 度目は触らない"
   );
 });
 
+// 2 つの db init が同時に「まだ無い」を見ても、後から置く側が先に置かれて記録の入った DB を空の DB で置き換えない。
+test("db init は置く直前に先に置かれた DB を置き換えない", async (t) => {
+  const file = path.join(tmp(), "gleanery.db");
+  await quiet(() => dbInit(file));
+  const w = connectWriter("owner", file);
+  w.prepare("insert into project (key, name) values ('git:x/y', 'x/y')").run();
+  w.close();
+  // 存在の確かめをすり抜けた側を再現する。
+  t.mock.method(fs, "existsSync", (f: fs.PathLike) =>
+    String(f) === file ? false : fs.statSync(f, { throwIfNoEntry: false }) !== undefined,
+  );
+  await assert.rejects(async () => quiet(() => dbInit(file)), /既に/);
+  t.mock.restoreAll();
+  const raw = new DatabaseSync(file, { readOnly: true });
+  assert.equal((raw.prepare("select count(*) as n from project").get() as { n: number }).n, 1);
+  raw.close();
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(file)).filter((f) => f.includes(".tmp")),
+    [],
+  );
+});
+
+test("hard link を持たない FS では rename で置く", async (t) => {
+  const file = path.join(tmp(), "gleanery.db");
+  t.mock.method(fs, "linkSync", () => {
+    throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+  });
+  await quiet(() => dbInit(file));
+  const raw = new DatabaseSync(file, { readOnly: true });
+  assert.equal(
+    (raw.prepare("pragma user_version").get() as { user_version: number }).user_version,
+    SCHEMA_REVISION,
+  );
+  raw.close();
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(file)).filter((f) => f.includes(".tmp")),
+    [],
+  );
+});
+
 // 別のアプリの DB を同じ名前で置いていたとき、上から schema を当てて壊さない。
 test("db init は gleanery の DB でないファイルを上書きしない", async () => {
   const file = path.join(tmp(), "gleanery.db");
