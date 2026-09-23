@@ -1,5 +1,5 @@
 // DB ファイルの在り処と、読むだけの接続。**書く接続は db-write.ts にだけ置く。**
-// untrusted な文章を読む出口（MCP・端末の画面・search）が書く接続へ届かないよう、module を分けて
+// untrusted な文章を読むインターフェース（MCP・端末の画面・search）が書く接続へ届かないよう、module を分けて
 // scripts/check-architecture.mjs が import の向きを止める。
 //
 // 守るのは「gleanery のコードが誤って・untrusted な文章に唆されて書く」経路で、OS の権限境界ではない
@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { constants as C, DatabaseSync } from "node:sqlite";
 
-/** MCP・CLI・端末の画面が期待する schema の版。db/schema.sql の末尾の `pragma user_version` と同じ数にする。 */
+/** MCP・CLI・端末の画面が期待する schema のバージョン。db/schema.sql の末尾の `pragma user_version` と同じ数にする。 */
 export const SCHEMA_REVISION = 1;
 
 /** 接続の役割。owner は schema の適用、reader は読むだけ、ingest は取り込み、capture は会話の自動記録（追記だけ）。 */
@@ -25,7 +25,7 @@ export const dbFile = (): string =>
 
 /**
  * Node が権限境界に要る API を持つか。**弱い状態で続行しない。**`engines` は npm では警告だけになることがあるので、
- * MCP・自動記録・CLI・端末の画面の全入口で確かめる（setAuthorizer は v24.10、enableDefensive は v24.12）。
+ * MCP・自動記録・CLI・端末の画面の全エントリポイントで確かめる（setAuthorizer は v24.10、enableDefensive は v24.12）。
  */
 export function requireRuntime(): void {
   const proto = DatabaseSync.prototype as unknown as Record<string, unknown>;

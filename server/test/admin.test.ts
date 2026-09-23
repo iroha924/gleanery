@@ -25,7 +25,7 @@ async function quiet<T>(fn: () => T | Promise<T>): Promise<T> {
   }
 }
 
-test("db init は DB を WAL で作って版を付け、2 度目は触らない", async () => {
+test("db init は DB を WAL で作ってバージョンを付け、2 度目は触らない", async () => {
   const file = path.join(tmp(), "nested", "gleanery.db");
   await quiet(() => dbInit(file));
   const raw = new DatabaseSync(file, { readOnly: true });
@@ -105,7 +105,7 @@ test("db init は gleanery の DB でないファイルを上書きしない", a
   );
 });
 
-test("db reindex は語彙索引を作り直し、doctor の確かめが通る", async () => {
+test("db reindex は全文検索の索引を作り直し、doctor の確かめが通る", async () => {
   const file = path.join(tmp(), "gleanery.db");
   await quiet(() => dbInit(file));
   const w = connectWriter("owner", file);
@@ -151,8 +151,8 @@ test("gleanery db init は HOME の .gleanery に DB を作る", () => {
   assert.equal(inspect(path.join(home, ".gleanery", "gleanery.db")).revision, SCHEMA_REVISION);
 });
 
-// 当てる途中で落ちたら、前半だけ確定して版が上がらないまま残らない（打ち直すと二重に当たる）。
-test("db migrate は新しい migration を 1 つの transaction で当てて版を上げ、落ちたら何も残さない", async () => {
+// 当てる途中で落ちたら、前半だけ確定してバージョンが上がらないまま残らない（打ち直すと二重に当たる）。
+test("db migrate は新しい migration を 1 つの transaction で当ててバージョンを上げ、落ちたら何も残さない", async () => {
   const dir = tmp();
   const file = path.join(dir, "gleanery.db");
   await quiet(() => dbInit(file));

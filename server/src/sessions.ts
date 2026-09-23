@@ -1,5 +1,5 @@
-// 端末の画面（gleanery dashboard）が読むセッション・作業場所・作業の一覧。**読むだけ**で、reader の接続を渡す。
-// 検索と参照は search.ts の関数を使い、ここには人向けの並べ方と束ね方だけを置く。
+// 端末の画面（gleanery dashboard）が読むセッション・プロジェクト・作業の一覧。**読むだけ**で、reader の接続を渡す。
+// 検索と参照は search.ts の関数を使い、ここには人向けの並べ方とまとめ方だけを置く。
 
 import { type Kysely, type SqlBool, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
@@ -276,8 +276,8 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
     .orderBy("k.id")
     .execute();
   const work = await workBase(db).where("w.conversation_id", "=", id).orderBy("w.id").execute();
-  // この session が触った承認済みの要件定義・設計書。同じ作業場所で同期された原文だけを返す
-  // （任意の path を指定して別の作業場所の本文を取れる入口にしない）。
+  // この session が触った承認済みの要件定義・設計書。同じプロジェクトで同期された原文だけを返す
+  // （任意の path を指定して別のプロジェクトの本文を取れる経路にしない）。
   const artifacts = await db
     .selectFrom("source_item as s")
     .innerJoin("connector as cn", "cn.id", "s.connector_id")

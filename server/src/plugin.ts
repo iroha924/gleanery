@@ -1,6 +1,6 @@
-// npm packageと配布pluginの版、それぞれがどこから動いているかを見る。
+// npm packageと配布pluginのバージョン、それぞれがどこから動いているかを見る。
 //
-// Claude Code と Codex はどちらも plugin を `<cache>/<marketplace>/gleanery/<版>/` へ複製して、
+// Claude Code と Codex はどちらも plugin を `<cache>/<marketplace>/gleanery/<バージョン>/` へ複製して、
 // そこから MCP を起動する。directory 型 marketplace の Claude Code（2.1.268 で観測）と
 // `--plugin-dir` だけは作業ツリーを直接読む。
 
@@ -14,7 +14,7 @@ import { caution, faint, type Mark, mark, pad, width } from "./panel.ts";
 const MANIFEST = path.join(".claude-plugin", "plugin.json");
 const PACKAGE = "package.json";
 
-/** root が gleanery の配布物ならその版。消えた cache や別の plugin なら null。 */
+/** root が gleanery の配布物ならそのバージョン。消えた cache や別の plugin なら null。 */
 export function versionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, MANIFEST), "utf8")) as {
@@ -27,7 +27,7 @@ export function versionAt(root: string): string | null {
   }
 }
 
-/** root が gleanery のnpm packageならその版。plugin channelの版とは独立して進みうる。 */
+/** root が gleanery のnpm packageならそのバージョン。plugin channelのバージョンとは独立して進みうる。 */
 export function packageVersionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, PACKAGE), "utf8")) as {
@@ -48,7 +48,7 @@ export const ROOT =
 
 /**
  * 起動元がまだ配布物として生きているか。
- * Codex は更新で旧版の cache を即座に消し、Claude Code は約 14 日残して `.orphaned_at` を置く。
+ * Codex は更新で旧バージョンの cache を即座に消し、Claude Code は約 14 日残して `.orphaned_at` を置く。
  * **`.orphaned_at` は補助の手がかり。**公式が書くのは orphaned という扱いだけで、ファイル名は観測値。
  * 無いことを「最新」の根拠にしない。
  */
@@ -69,14 +69,14 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-// Claude Code が cache の root に書き足す印（置き換えた版の `.orphaned_at`、使っている版の `.in_use/<pid>`）。
+// Claude Code が cache の root に書き足す印（置き換えたバージョンの `.orphaned_at`、使っているバージョンの `.in_use/<pid>`）。
 // **名前で挙げる。**ドットで始まるものをまとめて外すと、`.mcp.json` のような配布物の差まで黙って消える。
 const HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
 
 /**
  * bundle が作り、npm が配るが、git は追跡しないもの。
  * **ディレクトリだけでなくファイルも挙げる** — 同梱の告知を入れ忘れて、正常な導入先が
- * 「同じ版なのに中身が違う」と出た（実測: 自己比較で THIRD_PARTY_NOTICES.md だけが差になった）。
+ * 「同じバージョンなのに中身が違う」と出た（実測: 自己比較で THIRD_PARTY_NOTICES.md だけが差になった）。
  */
 const GENERATED = /^(dist|db)\/|^THIRD_PARTY_NOTICES\.md$/;
 
@@ -276,8 +276,8 @@ export function observe(cwdRoot: string): Seen {
       const now = versionAt(root);
       // 別の plugin の dist/mcp.js を除く。消えた cache は manifest を読めないので置き場所の形で見分ける。
       if (now === null && !cached) return [];
-      // 表示するのは起動時の版。消えた・作り直された cache はディレクトリ名がそれにあたる。作業ツリーは
-      // 起動後も書き換わるので、bundle か manifest が起動より新しければ今の版で動いているとは言えない。
+      // 表示するのは起動時のバージョン。消えた・作り直された cache はディレクトリ名がそれにあたる。作業ツリーは
+      // 起動後も書き換わるので、bundle か manifest が起動より新しければ今のバージョンで動いているとは言えない。
       let version = cwd.replaced || now === null ? (cached ? path.basename(root) : null) : now;
       if (!cached && version !== null) {
         try {
@@ -320,7 +320,7 @@ function safeDirs(dir: string): string[] {
 }
 
 // `plugin update` は marketplace を取り直すと公式に書かれていないので、先に取り直す。
-// 更新後も動いている MCP は旧版のパスのまま。Claude Code は対話端末の session なら
+// 更新後も動いている MCP は旧バージョンのパスのまま。Claude Code は対話端末の session なら
 // /reload-plugins で新しいパスへ移る（公式 plugins-reference）。Codex は開き直す。
 /** 古い導入の直し方。打つ command と、打った後にすること（after） */
 const UPDATE = {
@@ -345,7 +345,7 @@ export const UPDATE_NOTE =
 const RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "Codex の開き直し" };
 
 /**
- * doctor の plugin 節。**比較の基準は repository**（無ければ各ホストの導入済み版）で、
+ * doctor の plugin 節。**比較の基準は repository**（無ければ各ホストの導入済みバージョン）で、
  * 実行中の CLI は基準にしない。古い session の PATH にある cache の CLI を基準にすると、
  * 新しいほうを「古い」と言う逆転が起きる。
  */
@@ -404,9 +404,9 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
   const baseName = s.repository ? "repository" : "この CLI";
 
   /**
-   * 基準との食い違いと、ホストの更新で直るか。同じ版なら中身まで比べる（版を上げずに変えたものを見落とさない）。
-   * 導入側が新しいときと、同じ版で中身だけ違うときは、更新しても変わらないので手順を出さない
-   * （cache は版が変わったときだけ複製し直される）。
+   * 基準との食い違いと、ホストの更新で直るか。同じバージョンなら中身まで比べる（バージョンを上げずに変えたものを見落とさない）。
+   * 導入側が新しいときと、同じバージョンで中身だけ違うときは、更新しても変わらないので手順を出さない
+   * （cache はバージョンが変わったときだけ複製し直される）。
    */
   const against = (i: Install): { note?: string; update?: boolean } => {
     if (!fs.existsSync(i.root)) return { note: "導入先が無い。Skill のパスも無効", update: true };
@@ -449,7 +449,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
 
   if (s.codex.length === 0) say("none", "Codex", `見つからない（${short(s.codexCache)} を見た）`);
   for (const x of s.codex) {
-    // 入れ直すと Codex は旧版の cache を消す（codex-cli 0.153.4 で観測）。
+    // 入れ直すと Codex は旧バージョンの cache を消す（codex-cli 0.153.4 で観測）。
     const { note, update } =
       s.codex.length > 1
         ? { note: "cache が複数ある。どれを使うかは Codex が決める", update: true }
@@ -458,7 +458,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     row("Codex", x, note);
   }
 
-  // repository が見えないときの最低限: 同じ版なのに 2 つのホストで中身が違う。どちらが古いかは断定しない。
+  // repository が見えないときの最低限: 同じバージョンなのに 2 つのホストで中身が違う。どちらが古いかは断定しない。
   const x = s.codex.length === 1 ? s.codex[0] : undefined;
   if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
     if (fs.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {

@@ -18,7 +18,7 @@ import { connectorOf } from "./project.ts";
 import { clean, sha256 } from "./text.ts";
 
 export type Section = {
-  /** 作業場所の中で一意な key。`doc:<path>#<見出し>` */
+  /** プロジェクトの中で一意な key。`doc:<path>#<見出し>` */
   key: string;
   path: string;
   title: string;
@@ -134,10 +134,10 @@ const git = (root: string, args: string[], input?: Buffer): Buffer =>
   });
 
 /**
- * 同期する commit。remote を持つ作業場所は、remote の HEAD（既定 branch）をその場で取る。**ローカルの
+ * 同期する commit。remote を持つプロジェクトは、remote の HEAD（既定 branch）をその場で取る。**ローカルの
  * origin/HEAD は読まない** — fetch だけでは既定 branch の名前変更に追随しない。取れなければ投げる（前回の状態を保つ）。
  * 取った先は専用の ref に置く（共有の FETCH_HEAD は同じ PC の別の fetch に上書きされる）。
- * remote の無い作業場所は HEAD。branch を切り替えても fast-forward なら入る（戻すと止まる）。
+ * remote の無いプロジェクトは HEAD。branch を切り替えても fast-forward なら入る（戻すと止まる）。
  */
 export function commitOf(root: string, remote: boolean): string {
   if (remote) {
@@ -306,7 +306,7 @@ export function projectDocs(
 }
 
 /**
- * 文書を行へ投影する形の版。**節の割り方・札・metadata を変えたら上げる。**本文が同じでも hash が変わり、
+ * 文書を行へ投影する形のバージョン。**節の割り方・札・metadata を変えたら上げる。**本文が同じでも hash が変わり、
  * 次の同期で全文書が書き直される（上げないと、古い形の節が残り続ける）。
  */
 const PROJECTION = 1;
@@ -352,7 +352,7 @@ export function collectDocs(
   const { include, problems } = selectArtifacts(snap, [...bodies.keys()]);
   if (problems.length) {
     throw new Error(
-      `.gleanery が不正なので、この作業場所の文書を同期しない（前回の状態を保つ）:\n${problems
+      `.gleanery が不正なので、このプロジェクトの文書を同期しない（前回の状態を保つ）:\n${problems
         .map((p) => `  ${p.path}: ${p.reason}`)
         .join("\n")}`,
     );
@@ -376,7 +376,7 @@ export async function excludedOf(db: Kysely<DB>, projectId: number): Promise<Exc
 }
 
 /**
- * 1 つの作業場所の文書を同期する。tree の一覧は完全なので、一覧から消えた文書は行ごと消す。
+ * 1 つのプロジェクトの文書を同期する。tree の一覧は完全なので、一覧から消えた文書は行ごと消す。
  *
  * **自動で進めるのは fast-forward だけ。**そうでなければ一度だけ取り直す。前に入れた commit 以降まで進んでいれば、
  * 同時に走った別の同期が新しい commit を先に入れたので、何も書かずに終える（別の PC が入れた commit は、取り直すまで

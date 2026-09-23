@@ -76,13 +76,13 @@ test("実行中の CLI と同じ置き場所なら、npm i -g の行は出さな
   assert.equal(lines.filter((l) => l.includes("npm i -g の CLI")).length, 0, lines.join("\n"));
 });
 
-test("版は数値で比べる（0.10.9 < 0.10.18）", () => {
+test("バージョンは数値で比べる（0.10.9 < 0.10.18）", () => {
   assert.equal(compareVersions("0.10.9", "0.10.18"), -1);
   assert.equal(compareVersions("0.10.18", "0.10.18"), 0);
   assert.equal(compareVersions("1.0.0", "0.99.99"), 1);
 });
 
-test("gleanery 以外の manifest と消えた root は版を持たない", () => {
+test("gleanery 以外の manifest と消えた root はバージョンを持たない", () => {
   const other = path.join(tmp, "other");
   fs.mkdirSync(path.join(other, ".claude-plugin"), { recursive: true });
   fs.writeFileSync(
@@ -98,7 +98,7 @@ test("gleanery 以外の manifest と消えた root は版を持たない", () =
 test("中身の比較はホストが cache に足す印と .DS_Store を無視する", () => {
   const a = plugin("same-a", "0.1.0");
   const b = plugin("same-b", "0.1.0");
-  // Claude Code は置き換えた版に .orphaned_at を、使っている版に .in_use/<pid> を置く。
+  // Claude Code は置き換えたバージョンに .orphaned_at を、使っているバージョンに .in_use/<pid> を置く。
   fs.writeFileSync(path.join(b.root, ".orphaned_at"), "1");
   fs.mkdirSync(path.join(b.root, ".in_use"));
   fs.writeFileSync(path.join(b.root, ".in_use", "18278"), "");
@@ -193,7 +193,7 @@ test("古い cache の CLI から実行しても、新しい導入を古いと�
   assert.deepEqual(out.updates, []);
 });
 
-test("同じ版で中身が違えば、repository の CLI だけ新しい状態として出す", () => {
+test("同じバージョンで中身が違えば、repository の CLI だけ新しい状態として出す", () => {
   const repository = plugin("r3/plugin", "0.10.18", "new");
   const r = report(
     seen({
@@ -207,7 +207,7 @@ test("同じ版で中身が違えば、repository の CLI だけ新しい状態�
     out,
     /Codex [^\n]*\n +同じバージョンなのに中身が違う（dist\/mcp\.js）。repository の変更は、バージョンを上げて main へ入れるまで届かない/,
   );
-  // cache は版が変わったときだけ複製し直されるので、ホストを更新しても変わらない。
+  // cache はバージョンが変わったときだけ複製し直されるので、ホストを更新しても変わらない。
   assert.deepEqual(r.updates, []);
 });
 
@@ -235,7 +235,7 @@ test("repository が見えず Claude の導入先が消えていても落ちな�
   assert.match(out, /Claude Code [^\n]*\n +導入先が無い/);
 });
 
-test("実行中の MCP は起動元の状態と導入済みの版で判定する", () => {
+test("実行中の MCP は起動元の状態と導入済みのバージョンで判定する", () => {
   const installed = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19");
   const older = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18");
   const replaced = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.17", "0.10.17");
@@ -291,7 +291,7 @@ test("実行中の MCP を起動元から特定し、同じ場所に作り直さ
     const mine = () => observe(tmp).running?.find((r) => r.pid === child.pid);
     assert.equal(mine()?.version, "0.0.1");
     assert.equal(mine()?.replaced, false);
-    // 同じ版を入れ直すと Codex は同じパスに作り直す。プロセスは消えた旧ディレクトリを握ったまま。
+    // 同じバージョンを入れ直すと Codex は同じパスに作り直す。プロセスは消えた旧ディレクトリを握ったまま。
     fs.rmSync(root, { recursive: true });
     plugin(where, "0.0.1", idle);
     assert.equal(mine()?.replaced, true);
@@ -320,7 +320,7 @@ test("観測できないものは無いと言わず不明と出す", () => {
   assert.deepEqual(r.issues, [], "観測できないことは直すものに数えない");
 });
 
-test("gleanery --version は npm package の版を出す", () => {
+test("gleanery --version は npm package のバージョンを出す", () => {
   const out = execFileSync(process.execPath, [path.join(SRC, "cli.ts"), "--version"], {
     encoding: "utf8",
     env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent" },
@@ -328,7 +328,7 @@ test("gleanery --version は npm package の版を出す", () => {
   assert.equal(out.trim().split(/\s+/)[0], packageVersionAt(REPO_PLUGIN));
 });
 
-test("MCP の serverInfo は manifest の版を名乗る", async () => {
+test("MCP の serverInfo は manifest のバージョンを名乗る", async () => {
   // 資格情報なしで通る initialize だけを見る。ツールの応答は次のテストで DB へ繋いで見る。
   const client = new Client({ name: "test", version: "0" });
   await client.connect(
@@ -377,8 +377,8 @@ test("MCP の recall と read は、失敗の理由を空にせず isError で�
 });
 
 // npm から入れた利用者は repository を持たない。CLI は `npm i -g`、plugin は
-// `claude plugin update` で別々に更新されるので、**基準が無いと版ずれを誰も言わない**。
-test("repository が無くても、CLI と plugin の版ずれを出す", () => {
+// `claude plugin update` で別々に更新されるので、**基準が無いとバージョンのずれを誰も言わない**。
+test("repository が無くても、CLI と plugin のバージョンのずれを出す", () => {
   const older = report(
     seen({
       cli: plugin("npm-cli-new", "0.15.0"),
@@ -399,8 +399,8 @@ test("repository が無くても、CLI と plugin の版ずれを出す", () => 
   assert.match(newer, /npm i -g gleanery@0\.16\.0/);
 });
 
-// 同じ版なら中身まで比べる。repository が無い場合は「入れ直す」ほうを案内する。
-test("repository が無いとき、同じ版で中身が違えば入れ直しを案内する", () => {
+// 同じバージョンなら中身まで比べる。repository が無い場合は「入れ直す」ほうを案内する。
+test("repository が無いとき、同じバージョンで中身が違えば入れ直しを案内する", () => {
   const out = report(
     seen({
       cli: plugin("same-cli", "0.15.0", "new"),
@@ -410,9 +410,9 @@ test("repository が無いとき、同じ版で中身が違えば入れ直しを
   assert.match(out, /同じバージョンなのに中身が違う.*入れ直して揃える/);
 });
 
-// Claude Code は server instructions と道具の説明を 2,048 文字で切る（2.1.280 の mcp.md）。切れると、探し方の案内が
+// Claude Code は server instructions とツールの説明を 2,048 文字で切る（2.1.280 の mcp.md）。切れると、探し方の案内が
 // 途中で消えたまま届き、誰も気付かない。
-test("MCP の server instructions と道具の説明は 2,048 文字に収まる", async () => {
+test("MCP の server instructions とツールの説明は 2,048 文字に収まる", async () => {
   const client = new Client({ name: "test", version: "0" });
   await client.connect(
     new StdioClientTransport({
@@ -444,8 +444,8 @@ test("MCP は枠を framedWithin でだけ付ける", () => {
   assert.ok(src.includes("framedWithin("), "framedWithin を呼んでいる");
 });
 
-// 未登録の作業場所の名前は remote の綴りから来る。長さを決めずに写すと、上限を越える。
-test("未登録の作業場所の名前が長くても、応答は上限に収まる", async () => {
+// 未登録のプロジェクトの名前は remote の綴りから来る。長さを決めずに写すと、上限を越える。
+test("未登録のプロジェクトの名前が長くても、応答は上限に収まる", async () => {
   const db = tempDb();
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-unreg-"));
   execFileSync("git", ["init", "-q"], { cwd: repo });

@@ -27,6 +27,10 @@ const EXPECTED = {
       "AGENTS.md",
     ],
   },
+  "evals.md": {
+    match: ["server/evals/agentic/run.ts", "server/evals/agentic/judge.ts"],
+    notMatch: ["server/src/search.ts", "server/test/search.test.ts", "AGENTS.md"],
+  },
   "comments.md": {
     match: [
       "server/src/db.ts",

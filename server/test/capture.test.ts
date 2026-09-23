@@ -250,7 +250,7 @@ const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-cap
 const realHome = process.env.HOME;
 const repoDir = path.join(home, "repo");
 before(() => {
-  // この試験を Claude Code の Bash から走らせると、親の session の印と入口を継いでいる。
+  // この試験を Claude Code の Bash から走らせると、親の session を示す環境変数（GLEANERY_PARENT_SESSION と CLAUDE_CODE_ENTRYPOINT）を継いでいる。
   delete process.env.GLEANERY_PARENT_SESSION;
   delete process.env.CLAUDE_CODE_ENTRYPOINT;
   process.env.HOME = home;
@@ -476,7 +476,7 @@ test("DB へ書くとき、ファイルは turn ではなく待ち行列に書�
   }
 });
 
-test("エージェントが起動した子と、作業場所の外の session は何も書かない", () => {
+test("エージェントが起動した子と、プロジェクトの外の session は何も書かない", () => {
   reset();
   process.env.GLEANERY_PARENT_SESSION = "parent";
   try {
@@ -513,7 +513,7 @@ test("フックの入力は、多バイト文字が塊の境目で割れても�
 });
 
 test("記録のフックを起動すると、標準入力の持ち主の発言が待ち行列に入る", () => {
-  // 入口の判定と main の配線を通す。main は例外を握りつぶすので、壊れても記録が黙って止まるだけになる。
+  // エントリポイントの判定と main の配線を通す。main は例外を握りつぶすので、壊れても記録が黙って止まるだけになる。
   // 本番のフックが起動するのはバンドルした dist/capture.js なので、ソースと両方を通す。
   const entries = [
     path.join(import.meta.dirname, "..", "src", "capture.ts"),
@@ -626,7 +626,7 @@ test("Codex の apply_patch は見出しから編集先を読む", () => {
   assert.ok(files[0]?.kind === "file" && files[0].path === "server/src/a.ts" && files[0].host === "codex");
 });
 
-test("Codex のフック入口は host を分け、Stop に有効な JSON を返す", () => {
+test("Codex のフックのエントリポイントは host を分け、Stop に有効な JSON を返す", () => {
   const entries = [
     path.join(import.meta.dirname, "..", "src", "capture.ts"),
     path.join(import.meta.dirname, "..", "..", "plugin", "dist", "capture.js"),

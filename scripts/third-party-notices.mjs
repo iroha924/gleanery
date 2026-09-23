@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// 束ねた依存の著作権表示とライセンス文を集める。
+// バンドルした依存の著作権表示とライセンス文を集める。
 //
 // **bundle して 1 ファイルにしても、同梱の義務は消えない。**MIT は著作権表示と許諾文の同梱を求め、
 // Apache-2.0 は 4 条で License の写しと（あれば）NOTICE の内容を求める。配る物には次が入るので対象になる。
 //
-//   dist/{cli,mcp,capture}.js  server の依存を束ねたもの（pg の optional な pg-cloudflare、Ink と React も入る）
+//   dist/{cli,mcp,capture}.js  server の依存をバンドルしたもの（pg の optional な pg-cloudflare、Ink と React も入る）
 //
-// **optional を外さない。**「取り込まれない」と決めつけると、実際に束ねられたものを落とす
+// **optional を外さない。**「取り込まれない」と決めつけると、実際にバンドルされたものを落とす
 // （実測: pg-cloudflare が dist/cli.js に入っていた）。多く挙げる方へ倒す — 足りない側の誤りだけが
 // 義務違反になる。peer は解決された実体が node_modules にあるときだけ拾う。
 
@@ -16,7 +16,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-/** 束ねる入力を持つワークスペース。 */
+/** バンドルする入力を持つワークスペース。 */
 const WORKSPACES = ["server"];
 
 const read = (p) => {
@@ -29,7 +29,7 @@ const read = (p) => {
 
 /**
  * name を from から辿って解決する。node の解決と同じく、近い node_modules から上へ探す。
- * 同じ名前で版が違う実体が並ぶので（入れ子の chalk 4 と 5 など）、解決先の実体で数えないと、配る物と違う版を載せる。
+ * 同じ名前でバージョンが違う実体が並ぶので（入れ子の chalk 4 と 5 など）、解決先の実体で数えないと、配る物と違うバージョンを載せる。
  */
 const resolveFrom = (from, name) => {
   for (let dir = from; ; dir = path.dirname(dir)) {
@@ -43,7 +43,7 @@ const manifestAt = (dir) => {
   return raw ? JSON.parse(raw) : null;
 };
 
-// 推移閉包。解決先の実体 path で数える（同じ名前の別版を 1 つに潰さない）。
+// 推移閉包。解決先の実体 path で数える（同じ名前の別のバージョンを 1 つに潰さない）。
 // dependencies と optionalDependencies の両方を辿る。
 const seen = new Map();
 const queue = [];

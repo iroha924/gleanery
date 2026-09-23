@@ -51,7 +51,7 @@ export const at = (s: string): string => new Date(s).toISOString();
 /** fixture の hash（32 バイト）。 */
 export const hash = (n = 0): Buffer => Buffer.alloc(32, n);
 
-/** 作業場所を 1 つ入れて id を返す。 */
+/** プロジェクトを 1 つ入れて id を返す。 */
 export function project(db: TempDb, key = "git:github.com/o/r", name = "o/r"): number {
   return Number(
     db.owner.prepare("insert into project (key, name) values (?, ?) returning id").get(key, name)?.id,

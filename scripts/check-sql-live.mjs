@@ -40,7 +40,7 @@ await withTempDir(async (dir) => {
     if (!/^\s+docs\s+ディレクトリ$/m.test(excluded.out))
       failures.push(`exclude list が足した path を出していない\n${excluded.out.slice(0, 400)}`);
     note("exclude remove", runCli(["project", "exclude", "remove", "--cwd", repo, "docs"], dir, covDir));
-    // **harvest はここでは半分だけ通る。**作業場所の key は remote の綴りから決まるので、
+    // **harvest はここでは半分だけ通る。**プロジェクトの key は remote の綴りから決まるので、
     // github の URL を持たせると文書の同期が本物の remote を引きに行き、手元では届かない
     // （insteadOf で手元へ読み替えると `git remote get-url` もそちらを返し、key が github でなくなる）。
     // 無視せず、GitHub 側が通って文書側だけが落ちることを綴りで確かめる。
@@ -64,7 +64,7 @@ await withTempDir(async (dir) => {
     note("who（名簿）", runCli(["who"], dir, covDir));
     note("who（結ぶ）", runCli(["who", "--me", "私", "someone"], dir, covDir));
 
-    // trace の command は cwd の作業場所へ書き、記録の session がいまのホストの session と一致することを要る。
+    // trace の command は cwd のプロジェクトへ書き、記録の session がいまのホストの session と一致することを要る。
     const asSession = (id) => ({ cwd: repo, CLAUDE_CODE_SESSION_ID: id });
     const trace = path.join(dir, "trace.json");
     fs.writeFileSync(
@@ -117,13 +117,13 @@ await withTempDir(async (dir) => {
     hook({ hook_event_name: "Stop", last_assistant_message: "通した。" });
     note("capture flush", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
 
-    // 登録していない作業場所の記録は、捨てずに退避する（#104）。持ち主が PC を変えて project add を
+    // 登録していないプロジェクトの記録は、捨てずに退避する（#104）。持ち主が PC を変えて project add を
     // する前に働くと、その間の発言がここへ来る。消すと二度と戻らない。
     const stranger = makeRepo(dir, "https://github.com/example/stranger.git", "stranger");
     const strangerTurn = { session_id: "live-3", prompt_id: "p9", cwd: stranger };
     const strangerAs = { cwd: stranger, CLAUDE_CODE_SESSION_ID: "live-3" };
     runHook(
-      { ...strangerTurn, hook_event_name: "UserPromptSubmit", prompt: "未登録の作業場所での発言" },
+      { ...strangerTurn, hook_event_name: "UserPromptSubmit", prompt: "未登録のプロジェクトでの発言" },
       dir,
       covDir,
       strangerAs,
@@ -139,7 +139,7 @@ await withTempDir(async (dir) => {
     const left = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
     if (left.length === 0) {
       failures.push(
-        `未登録の作業場所の記録が ${kept} に残っていない。捨てられた可能性がある\n${strayed.out.slice(0, 400)}`,
+        `未登録のプロジェクトの記録が ${kept} に残っていない。捨てられた可能性がある\n${strayed.out.slice(0, 400)}`,
       );
     }
 
@@ -147,7 +147,7 @@ await withTempDir(async (dir) => {
     const stale = path.join(kept, `${Date.now() - 40 * 24 * 60 * 60 * 1000}-0-stale.json`);
     fs.writeFileSync(stale, JSON.stringify({ v: 1, kind: "message", project: "git:example/none" }));
 
-    // 作業場所を登録したら、退避した分がそのまま入る。ここが繋がらないと退避の意味が無い。
+    // プロジェクトを登録したら、退避した分がそのまま入る。ここが繋がらないと退避の意味が無い。
     note("project add（退避先）", runCli(["project", "add", "--cwd", stranger], dir, covDir));
     const retried = runCli(["capture", "flush"], dir, covDir, strangerAs);
     if (!/新しく入った発言\s+[1-9]/.test(retried.out)) {
@@ -156,13 +156,13 @@ await withTempDir(async (dir) => {
     const after = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
     if (after.length) failures.push(`送った後も退避が残っている: ${after.join(" / ")}`);
     if (fs.existsSync(stale)) failures.push(`30 日より古い退避が刈られていない: ${stale}`);
-    // doctor の終了コードでは見ない —— plugin の版や導入の状態は手元の事情で変わり（npm へ入れた CLI と
+    // doctor の終了コードでは見ない —— plugin のバージョンや導入の状態は手元の事情で変わり（npm へ入れた CLI と
     // 作業ツリーの中身が違う等）、この検査と関係なく 1 になる。DB の行だけを中身で見る。
     const doctor = runCli(["doctor"], dir, covDir);
     for (const [label, want] of [
-      ["schema の版", /✓ schema の版\s+revision \d+/],
-      ["語彙索引", /✓ 語彙索引\s+整っている/],
-      ["作業場所", /作業場所/],
+      ["schema のバージョン", /✓ schema のバージョン\s+revision \d+/],
+      ["全文検索の索引", /✓ 全文検索の索引\s+整っている/],
+      ["プロジェクト", /プロジェクト/],
     ]) {
       if (!want.test(doctor.out))
         failures.push(`doctor が ${label} を健全と言わない\n${doctor.out.slice(0, 800)}`);

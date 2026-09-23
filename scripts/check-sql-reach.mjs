@@ -5,7 +5,7 @@
 // 流すので、実行された call site は SQLite が構文・制約・authorizer ごと受け付けたことになる。検査するのは
 // 「実行されたか」だけで、実行されなかった call site を file:line で挙げる。
 //
-// 到達は V8 のカバレッジで数える（scripts/lib/coverage.mjs。子プロセスのレーンと同じ道具）。
+// 到達は V8 のカバレッジで数える（scripts/lib/coverage.mjs。子プロセスのレーンと同じツール）。
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

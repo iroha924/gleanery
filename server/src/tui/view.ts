@@ -69,6 +69,13 @@ const MARKED = /^(?:\u001b\[[0-9;]*m)*[✓△✗○](?:\u001b\[[0-9;]*m)* /;
  * （空白を文字のまま渡すと、折り返した 2 行目が 2 桁目へ戻り、どの項目の続きか分からなくなる）。印で始まる行は、2 つ以上
  * 続く空白を列の区切りとみなし、最後の列（値）の中で折り返す。空行は空行のまま
  */
+/** Ink は空白で折り返すと、その空白を続きの行の頭に残す（wrap-ansi の trim: false）。続きの行を列に揃えるため 1 つ落とす */
+const flush = (out: string, column: number): string =>
+  out
+    .split("\n")
+    .map((l, i) => (i > 0 && l.search(/\S/) === column + 1 ? l.slice(0, column) + l.slice(column + 1) : l))
+    .join("\n");
+
 export function indent(text: string): string {
   return text
     .split("\n")
@@ -76,17 +83,27 @@ export function indent(text: string): string {
       const body = line.trimStart();
       if (body === "") return "";
       const lead = line.length - body.length;
-      const columns = MARKED.test(body) ? /^(.*\S\s{2,})(\S.*)$/.exec(body) : null;
-      if (columns?.[1] && columns[2])
-        return draw(
-          h(
-            Box,
-            { paddingLeft: 2 + lead },
-            h(Box, { flexShrink: 0 }, h(Text, null, columns[1])),
-            h(Box, { flexShrink: 1, flexGrow: 1 }, h(Text, { wrap: "wrap" }, columns[2])),
-          ),
-        );
-      return draw(h(Box, { paddingLeft: 2 + lead }, h(Text, { wrap: "wrap" }, body)));
+      const cells = MARKED.test(body) ? /^(.*\S\s{2,})(\S.*)$/.exec(body) : null;
+      if (cells?.[1] && cells[2]) {
+        const row = (value: string) =>
+          draw(
+            h(
+              Box,
+              { paddingLeft: 2 + lead },
+              h(Box, { flexShrink: 0 }, h(Text, null, cells[1])),
+              h(Box, { flexShrink: 1, flexGrow: 1 }, h(Text, { wrap: "wrap" }, value)),
+            ),
+          );
+        const out = row(cells[2]);
+        if (!out.includes("\n")) return out;
+        // 値の列の位置は、空白を持たない値を同じ配置で描いたときの続きの行の字下げ（記号の幅を自分で数えない）
+        const column =
+          row("x".repeat(columns() * 2))
+            .split("\n")[1]
+            ?.search(/\S/) ?? 0;
+        return flush(out, column);
+      }
+      return flush(draw(h(Box, { paddingLeft: 2 + lead }, h(Text, { wrap: "wrap" }, body))), 2 + lead);
     })
     .join("\n");
 }

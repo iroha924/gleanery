@@ -28,7 +28,10 @@ const file = z
     path: z
       .string()
       .min(1)
-      .refine((p) => !p.startsWith("/") && !/(^|\/)\.\.(\/|$)/.test(p), "作業場所の根からの相対パスにする"),
+      .refine(
+        (p) => !p.startsWith("/") && !/(^|\/)\.\.(\/|$)/.test(p),
+        "プロジェクトのルートからの相対パスにする",
+      ),
     role: z.enum(["applies_to", "evidence"]),
     line: z.number().int().positive().optional(),
   })
@@ -184,10 +187,13 @@ export function checkTrace(
 ): { trace: Trace; problems: [] } | { trace: null; problems: string[] } {
   const r = traceSchema.safeParse(raw);
   if (r.success) return { trace: r.data, problems: [] };
-  return { trace: null, problems: r.error.issues.map((i) => `${i.path.join(".") || "(根)"}: ${i.message}`) };
+  return {
+    trace: null,
+    problems: r.error.issues.map((i) => `${i.path.join(".") || "(ルート)"}: ${i.message}`),
+  };
 }
 
-/** その session の要素の key。作業場所の中で一意にする。 */
+/** その session の要素の key。プロジェクトの中で一意にする。 */
 export const sourceKey = (t: Trace, k: string): string =>
   k.includes("#") ? k : `${t.session.host}:${t.session.id}#${k}`;
 
@@ -359,7 +365,7 @@ export async function saveTrace(
         .execute())
         idOf.set(f.source_key, f.id);
     const missing = outside.filter((k) => !idOf.has(k));
-    if (missing.length) throw new Error(`この作業場所に無い決定を指している: ${missing.join(" / ")}`);
+    if (missing.length) throw new Error(`このプロジェクトに無い決定を指している: ${missing.join(" / ")}`);
 
     // **DB 側の覆しを優先する。**別の session が後で覆した決定を、古い session の再 trace が「採用」に戻さない。
     // work を省いた再 trace は、既に結んだ作業（とその題の見出し）から要素を外さない。

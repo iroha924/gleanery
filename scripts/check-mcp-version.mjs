@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// plugin の配布物が変わったのに版が上がっていないものを落とす。pre-commit はこれから作る commit を、
+// plugin の配布物が変わったのにバージョンが上がっていないものを落とす。pre-commit はこれから作る commit を、
 // CI は `--base` で渡した commit から HEAD までをまとめて見る。
 //
 // 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
@@ -28,21 +28,21 @@ try {
   process.exit(0);
 }
 
-// plugin channel の版は 3 箇所にある。片方だけ上げても届かないので、全部を見る。
+// plugin channel のバージョンは 3 箇所にある。片方だけ上げても届かないので、全部を見る。
 // 実測（2026-09-09）: Claude 側が 13 回上がるあいだ、**Codex 側は作られたときの 0.1.0 のまま
 // 一度も上がっていなかった。**このゲート自身が Claude 側しか見ていなかったため、
-// 「版を上げ忘れたら止まる」という約束が片側にしか効いていなかった。
+// 「バージョンを上げ忘れたら止まる」という約束が片側にしか効いていなかった。
 // npm package と plugin channel の 3 つは、配布物を変えるたびに同じバージョンへ揃えて上げる。
 const PACKAGE = "plugin/package.json";
 const PLUGIN_MANIFESTS = {
-  // **版は source の中にある。**entry 直下にも置くと、Claude Code は警告なく plugin.json を使い、
+  // **バージョンは source の中にある。**entry 直下にも置くと、Claude Code は警告なく plugin.json を使い、
   // marketplace の値が黙って無視される（公式の plugin-marketplaces）。置き場所は 1 つに保つ。
   ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.source?.version,
   "plugin/.claude-plugin/plugin.json": (j) => j.version,
   "plugin/.codex-plugin/plugin.json": (j) => j.version,
 };
 
-// 版も index から読む。作業ツリーで上げただけの版は commit に入らない。
+// バージョンも index から読む。作業ツリーで上げただけのバージョンは commit に入らない。
 const read = (f) => JSON.parse(git("show", `:${f}`));
 /** index（commit に入る内容）での姿。ref を空にすると `git show :path` になる。 */
 const staged = (f) => at("", f);
@@ -73,9 +73,9 @@ if (pluginVersion.localeCompare(packageVersion, undefined, { numeric: true }) > 
 // `--base` へ変えるだけで同じ比べ方になる。
 //
 /**
- * manifest から版を落とした姿。**版だけを上げた commit を「中身が変わった」に数えない**ため。
- * ただし落とすのは版だけで、`files` と `bin` と MCP の起動引数は配る物を変えるので残す
- * （これを丸ごと除外していたため、公開する一覧を変えて版を据え置く commit が素通りしていた）。
+ * manifest からバージョンを落とした姿。**バージョンだけを上げた commit を「中身が変わった」に数えない**ため。
+ * ただし落とすのはバージョンだけで、`files` と `bin` と MCP の起動引数は配る物を変えるので残す
+ * （これを丸ごと除外していたため、公開する一覧を変えてバージョンを据え置く commit が素通りしていた）。
  */
 const ref = base ?? "HEAD";
 const changed = git("diff", "--cached", "--name-only", ref)

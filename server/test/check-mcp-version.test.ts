@@ -33,7 +33,7 @@ function write(dir: string, file: string, body: string) {
 
 function bump(dir: string, version: string) {
   write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
-  // 版は source の中に置く（entry 直下にも置くと Claude Code が黙って plugin.json を優先する）。
+  // バージョンは source の中に置く（entry 直下にも置くと Claude Code が黙って plugin.json を優先する）。
   write(
     dir,
     ".claude-plugin/marketplace.json",
@@ -54,7 +54,7 @@ function check(dir: string, ...args: string[]) {
 }
 
 // CI は checkout 直後で index が HEAD と同じなので、基準の commit と比べないと常に素通りする。
-test("基準を渡すと、その後に plugin を変えて版を上げていない範囲を落とす", () => {
+test("基準を渡すと、その後に plugin を変えてバージョンを上げていない範囲を落とす", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -71,7 +71,7 @@ test("基準を渡すと、その後に plugin を変えて版を上げていな
     assert.match(missed.stderr, /plugin\/skills\/a\.md/);
 
     bump(r.dir, "1.0.1");
-    r.git("commit", "-qam", "版を上げる");
+    r.git("commit", "-qam", "バージョンを上げる");
     const bumped = check(r.dir, "--base", base);
     assert.equal(bumped.status, 0, bumped.stderr);
 
@@ -85,7 +85,7 @@ test("基準を渡すと、その後に plugin を変えて版を上げていな
   }
 });
 
-test("基準が無ければ、index に入った plugin の変更を HEAD の版と比べる", () => {
+test("基準が無ければ、index に入った plugin の変更を HEAD のバージョンと比べる", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -100,7 +100,7 @@ test("基準が無ければ、index に入った plugin の変更を HEAD の版
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
 
-    // 版上げを stage し忘れると、commit には版上げが入らない。
+    // バージョン上げを stage し忘れると、commit にはバージョン上げが入らない。
     bump(r.dir, "1.0.1");
     assert.equal(check(r.dir).status, 1);
 

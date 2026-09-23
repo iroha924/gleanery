@@ -1,7 +1,7 @@
 # pre-commit が見ていないものを見る。
 #
 # **いちばんの価値は `bun run verify` の test と SQL の到達** — pre-commit は走らせず、pre-pushとCIで実行する。
-# 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。ただし plugin の版は
+# 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。ただし plugin のバージョンは
 # commit ごとではなく、merge 先か push 前の commit から HEAD までをまとめて見る。
 #
 # **シークレットを置かない。**DB は一時ディレクトリの SQLite で、テストは資格情報なしで通る。
@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  # main への push の run は取り消さない。取り消すと、版の検査がその push の範囲を二度と見ない。
+  # main への push の run は取り消さない。取り消すと、バージョンの検査がその push の範囲を二度と見ない。
   group: check-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
@@ -33,10 +33,10 @@ jobs:
       # third-party action は full commit SHA で pin する（タグは後から中身を差し替えられる）。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # 版の検査が比べる基準（merge 先と push 前の commit）を手元に置く。
+          # バージョンの検査が比べる基準（merge 先と push 前の commit）を手元に置く。
           fetch-depth: 0
 
-      # **bun の版を固定する。**浮かせると lockfile を読めない版が選ばれる
+      # **bun のバージョンを固定する。**浮かせると lockfile を読めないバージョンが選ばれる
       # （Vercel で実際に踏んだ: 1.3.14 が lockfileVersion 2 を読めず落ちた）。
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -48,11 +48,11 @@ jobs:
           node-version: ${{ matrix.node }}
 
       # 依存の導入と verify より前に置く。手前で落ちた main への push は、その範囲を二度と見ない。
-      - name: plugin の版が上がっているか
+      - name: plugin のバージョンが上がっているか
         env:
           # PR では checkout した merge commit の 1 つ目の親が merge 先、main への push では push 前の commit。
-          # 利用者に届くかは前の main と版が違うかで決まるので、この範囲をまとめて比べる。
-          # 版上げを配布物と同じ commit に入れる決まりは pre-commit が commit ごとに見る。
+          # 利用者に届くかは前の main とバージョンが違うかで決まるので、この範囲をまとめて比べる。
+          # バージョン上げを配布物と同じ commit に入れる決まりは pre-commit が commit ごとに見る。
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: node scripts/check-mcp-version.mjs --base "$BASE"
 
@@ -91,14 +91,14 @@ jobs:
           # 同梱物を配った配置のまま引けるか。dist と db の相対関係は
           # server/test/assets.test.ts が候補の計算ごと検査している。
           test -f "$out/package/dist/../db/schema.sql"
-          # 束ねた CLI が node:sqlite と同梱の schema で DB を作れるか。HOME は一時ディレクトリ。
+          # バンドルした CLI が node:sqlite と同梱の schema で DB を作れるか。HOME は一時ディレクトリ。
           home="$(mktemp -d)"
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" db init > /dev/null
           test -f "$home/.gleanery/gleanery.db"
           # Web の画面の資産は配らない（端末の画面へ移した）。残っていれば bundle の消し忘れ
           test ! -e "$out/package/dist/dashboard"
 
-      # 同じ知識が複数の出口に写されている場所の突き合わせ。README の CLI 一覧がずれていると、
+      # 同じ知識が複数のインターフェースに写されている場所の突き合わせ。README の CLI 一覧がずれていると、
       # check-pairs.mjs は書き直して staged へ戻し、0 で終わる。index ではなく HEAD と比べて落とす。
       - name: 対の突き合わせ
         run: |
@@ -107,7 +107,7 @@ jobs:
           git diff --exit-code HEAD -- README.md
 
   # **配る物は Windows でも動かす**（AGENTS.md）。この repository の開発は macOS / Linux が前提なので verify は回さず、
-  # 束ねた tarball が node_modules 無しで起動し、node:sqlite で DB を作れるかだけを見る。端末の画面のキー入力と罫線は
+  # バンドルした tarball が node_modules 無しで起動し、node:sqlite で DB を作れるかだけを見る。端末の画面のキー入力と罫線は
   # 実機でしか見えない（CI では確かめられない）。
   windows:
     runs-on: windows-latest
@@ -122,7 +122,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.15"
-      - name: 依存を入れて束ねる
+      - name: 依存を入れてバンドルする
         run: |
           set -e
           bun run setup
@@ -141,9 +141,9 @@ jobs:
           test -f "$home/.gleanery/gleanery.db"
           # doctor は plugin の導入の状態で 1 を返しうる（この runner に plugin は無い）。DB の行だけを見る。
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" doctor > doctor.out || true
-          grep -E "✓ schema の版" doctor.out
-          grep -E "✓ 語彙索引" doctor.out
-          # MCP が立ち上がり、道具の一覧を返すか。
+          grep -E "✓ schema のバージョン" doctor.out
+          grep -E "✓ 全文検索の索引" doctor.out
+          # MCP が立ち上がり、ツールの一覧を返すか。
           printf '%s\n' \
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
             '{"jsonrpc":"2.0","method":"notifications/initialized"}' \

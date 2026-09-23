@@ -1,6 +1,6 @@
 // TUI が読むものの口。**SQL をここにも画面にも書かない** — MCP・CLI と同じ関数（sessions.ts・search.ts）を呼ぶ。
 // 接続は reader だけで、この module から書く接続（db-write.ts）へ import を辿らせない（`bun run architecture`）。
-// プロセスの分離ではない — dashboard は CLI と同じプロセスで動き、束ねた cli.js には書く接続も入っている。
+// プロセスの分離ではない — dashboard は CLI と同じプロセスで動き、バンドルした cli.js には書く接続も入っている。
 
 import { openReader } from "../db.ts";
 import { identify, projectId } from "../project.ts";
@@ -27,7 +27,7 @@ export type Mode = "knowledge" | "said";
 
 /** 画面が使う読み出し。test では偽の関数を渡す。 */
 export type Data = {
-  /** 起動した場所の作業場所。未登録なら project は null で、全部の作業場所を見る */
+  /** 起動した場所のプロジェクト。未登録なら project は null で、全部のプロジェクトを見る */
   here: { project: number | null; name: string | null };
   projects(): Promise<Project[]>;
   sessions(project: number | null, page: number, pageSize: number): Promise<SessionsPage>;

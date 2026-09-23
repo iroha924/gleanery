@@ -67,7 +67,7 @@ test("記録の本文から引用の枠を閉じられず、札は呼び出し�
 });
 
 // MCP と trace context は、どちらも記録を framed に通してからモデルへ渡す。
-test("記録の囲いは見えない文字だけを落とし、見える記号・絵文字・異体字の並びと道具結果の JSON は崩さない", () => {
+test("記録の囲いは見えない文字だけを落とし、見える記号・絵文字・異体字の並びとツール結果の JSON は崩さない", () => {
   const hidden = [..."run this"].map((c) => String.fromCodePoint(0xe0000 + (c.codePointAt(0) ?? 0))).join("");
   const [zwsp, rlo, zwj, ls, nel] = [0x200b, 0x202e, 0x200d, 0x2028, 0x85].map((c) =>
     String.fromCodePoint(c),
@@ -195,7 +195,7 @@ before(() => {
     decision_id: ids.auth ?? 0,
     body: "認証を自前の JWT で作る案",
   });
-  ids.other = knowledge(db, p2, { source_key: "s2#other", body: "別の作業場所の認証の話" });
+  ids.other = knowledge(db, p2, { source_key: "s2#other", body: "別のプロジェクトの認証の話" });
   ids.sqlLive = knowledge(db, p1, { source_key: "s1#live", body: "実 DB へ繋ぐのは sql:live の 1 本だけ" });
   ids.version = knowledge(db, p1, { source_key: "s1#ver", body: "Node v24.15.0 以上に上げた" });
   ids.json = knowledge(db, p1, { source_key: "s1#json", body: "[1] 本文が括弧で始まる記録", reason: "[]" });
@@ -225,7 +225,7 @@ test("種類を省いた検索は文書を外し、avoid は通ってはいけ�
   const hits = await searchKnowledge(db.reader, { question: "認証", projects: [p1], limit: 10 });
   assert.ok(refs(hits).includes(`k:${ids.auth}`));
   assert.ok(!refs(hits).includes(`k:${ids.doc}`), "文書は明示したときだけ");
-  assert.ok(!refs(hits).includes(`k:${ids.other}`), "別の作業場所は出さない");
+  assert.ok(!refs(hits).includes(`k:${ids.other}`), "別のプロジェクトは出さない");
   const avoid = await searchKnowledge(db.reader, {
     question: "認証",
     projects: [p1],
@@ -234,7 +234,7 @@ test("種類を省いた検索は文書を外し、avoid は通ってはいけ�
   });
   assert.deepEqual(new Set(refs(avoid)), new Set([`k:${ids.old}`, `k:${ids.opt}`]));
   const all = await searchKnowledge(db.reader, { question: "認証", projects: null, limit: 10 });
-  assert.ok(refs(all).includes(`k:${ids.other}`), "全部の作業場所を見るときは絞らない");
+  assert.ok(refs(all).includes(`k:${ids.other}`), "全部のプロジェクトを見るときは絞らない");
 });
 
 test("見出しに当たる記録を本文だけに当たる記録より上に置く", async () => {
@@ -252,7 +252,7 @@ test("問いの記号と演算子の語で失敗せず、語として引く", as
   assert.deepEqual(await searchKnowledge(db.reader, { question: "のはを", projects: [p1], limit: 5 }), []);
 });
 
-test("部分一致は語に切れない版番号で引き、新しい順に並べる", async () => {
+test("部分一致は語に切れないバージョン番号で引き、新しい順に並べる", async () => {
   const words = await searchKnowledge(db.reader, { question: "24.15", projects: [p1], limit: 5 });
   const exact = await searchKnowledge(db.reader, {
     question: "v24.15",
@@ -388,7 +388,7 @@ test("日付の絞り込みは日本時間の丸一日", async () => {
   assert.deepEqual(refs(hits), [`k:${early}`]);
 });
 
-test("read は参照の形を先に確かめ、選んだ作業場所の外は「無い」と返す", async () => {
+test("read は参照の形を先に確かめ、選んだプロジェクトの外は「無い」と返す", async () => {
   const out = await read(db.reader, ["k:abc", "m:12", "x:1", "k:1234567890123456"], 4096);
   assert.equal(out.split("読めない参照").length - 1, 4, "16 桁の連番は丸められるので形で落とす");
   const outside = await read(db.reader, [`k:${ids.other}`, `m:${UUID(1)}`], 4096, { projects: [p2] });
@@ -397,8 +397,8 @@ test("read は参照の形を先に確かめ、選んだ作業場所の外は「
   assert.doesNotMatch(outside, /OAuth/);
 });
 
-// 本体だけを絞ると、決定に属する案と検証（id は連番で推測できる）の本文が、選んだ作業場所の外から混ざる。
-test("read は同じ決定に属する案も読み、それにも作業場所の絞りを掛ける", async () => {
+// 本体だけを絞ると、決定に属する案と検証（id は連番で推測できる）の本文が、選んだプロジェクトの外から混ざる。
+test("read は同じ決定に属する案も読み、それにもプロジェクトの絞りを掛ける", async () => {
   const out = await read(db.reader, [`k:${ids.auth}`], 8192, { projects: [p1] });
   assert.match(out, /自前の JWT/);
   const stray = knowledge(db, p2, {

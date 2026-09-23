@@ -8,7 +8,7 @@
 // DB は `GLEANERY_DB` で指せる（評価用に写した SQLite を測るとき）。
 // 比較したいときは、変更の前後で同じ retrieval.json を使う。問いを作り直すと比較にならない。
 //
-// これは agent を通らない一発の検索を測る。agent に道具として使わせた精度は agentic/run.ts が測り、そこでは
+// これは agent を通らない一発の検索を測る。agent にツールとして使わせた精度は agentic/run.ts が測り、そこでは
 // 知識の問いを偶数番（開発用）と奇数番（検証用、ゲートでだけ流す）に分けている。
 
 import fs from "node:fs";

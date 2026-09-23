@@ -24,7 +24,7 @@ export const ICONS = {
   file: "❐",
   /** branch */
   branch: "⎇",
-  /** 作業場所 */
+  /** プロジェクト */
   project: "⌂",
   /** trace した判断 */
   decision: "✧",

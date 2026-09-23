@@ -20,7 +20,7 @@ type Row = {
   body: string;
   reason: string | null;
 };
-/** slot は判定した組の指紋（source_key・判定モデル・プロンプトの版・本文）。どれかが変われば判定し直す */
+/** slot は判定した組の指紋（source_key・判定モデル・プロンプトのバージョン・本文）。どれかが変われば判定し直す */
 type Top = { i: number; rank: number; key: string | null; grade?: Grade; slot?: string };
 type System = { summary: ReturnType<typeof summarize>; top: Top[] };
 type Baseline = {
@@ -154,7 +154,7 @@ async function judge(i: number) {
   console.error(`q${i} 判定 ${keys.length} 件`);
 }
 
-/** この回に判定したモデルの ID（`--model` は別名で、指す先は版で変わる）。cache から引いた判定は数えない */
+/** この回に判定したモデルの ID（`--model` は別名で、指す先はバージョンで変わる）。cache から引いた判定は数えない */
 const judgedBy = new Set<string>();
 
 function claude(prompt: string): Promise<string> {
@@ -170,7 +170,7 @@ function claude(prompt: string): Promise<string> {
         "project",
         "--tools",
         "",
-        // 持ち主の claude.ai コネクタ（書き込みの道具を含む）を読ませない。判定に渡す本文は untrusted
+        // 持ち主の claude.ai コネクタ（書き込みのツールを含む）を読ませない。判定に渡す本文は untrusted
         "--strict-mcp-config",
         "--mcp-config",
         '{"mcpServers":{}}',
@@ -269,8 +269,8 @@ console.table(
   ),
 );
 
-// **比べる条件が揃っているか。**別名（sonnet / opus）の指す先と Claude Code の既定の effort は版で変わる。揃っていなければ、
-// 差は道具の差ではなくモデルか effort の差かもしれない（2026-09-23 に Opus 5.5 が既定になり、既定の effort が変わった）。
+// **比べる条件が揃っているか。**別名（sonnet / opus）の指す先と Claude Code の既定の effort はバージョンで変わる。揃っていなければ、
+// 差はツールの差ではなくモデルか effort の差かもしれない（2026-09-23 に Opus 5.5 が既定になり、既定の effort が変わった）。
 const conditionOf = (s: System) => {
   const x = s.summary as Partial<ReturnType<typeof summarize>>;
   return `モデル ${(x.resolved_models ?? ["記録なし"]).join("・")} / Claude Code ${(x.claude_code ?? ["記録なし"]).join("・")} / effort ${x.effort ?? "記録なし"}`;

@@ -1,4 +1,4 @@
-// db/schema.sql の制約が、PostgreSQL 版と同じものを拒み、同じものを通すか。
+// db/schema.sql の制約が、PostgreSQL の実装と同じものを拒み、同じものを通すか。
 // 書き込みは owner の接続で行う（authorizer ではなく schema そのものを見る）。
 
 import assert from "node:assert/strict";
@@ -124,7 +124,7 @@ test("発言の大きさは本文のバイト数と合い、主キーと id は 
 });
 
 // PostgreSQL の正規表現 `^(git:[^[:space:]]+|local:[a-z0-9][a-z0-9._-]*)$` と 12 例で突き合わせた（plan 3.3）。
-test("作業場所の key は PostgreSQL 版と同じものを通し、同じものを拒む", () => {
+test("プロジェクトの key は PostgreSQL の実装と同じものを通し、同じものを拒む", () => {
   const cases: [string, boolean][] = [
     ["git:github.com/o/r2", true],
     ["local:my-app.v2", true],

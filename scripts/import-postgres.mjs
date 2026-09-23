@@ -7,7 +7,7 @@
 //   node scripts/import-postgres.mjs --to <SQLite のファイル>
 //
 // 接続文字列は ~/.gleanery/env の GLEANERY_DB_URL（owner）から読む。**引数にも log にも出さない。**
-// 一時ファイルへ 1 つの transaction で入れ、件数・content_hash・外部キー・語彙索引を照合してから置き換える。
+// 一時ファイルへ 1 つの transaction で入れ、件数・content_hash・外部キー・全文検索の索引を照合してから置き換える。
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -310,5 +310,5 @@ for (const f of [`${tmp}-wal`, `${tmp}-shm`]) fs.rmSync(f, { force: true });
 console.log(
   `写した: ${dest}\n  ${Object.entries(counts)
     .map(([t, n]) => `${t} ${n}`)
-    .join(" / ")}\n  件数・content_hash・外部キー・語彙索引の照合は一致した`,
+    .join(" / ")}\n  件数・content_hash・外部キー・全文検索の索引の照合は一致した`,
 );

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// 同じ知識が複数の出口に写されている場所を突き合わせる。
+// 同じ知識が複数のインターフェースに写されている場所を突き合わせる。
 //
-// 片方の出口だけ直しても、もう片方が動いてしまうので気付けない。
+// 片方のインターフェースだけ直しても、もう片方が動いてしまうので気付けない。
 //
 // **扱えるのは集合として列挙できる対だけ。**説明文が一致しているかは表現の揺れで
 // 判定できないので、そこは突き合わせずに**写しそのものを消す**（README の CLI 一覧を
 // `gleanery --help` から書き出す）。集合にならない対（同じ検査を経路の各段で行う、同じデータを
-// 別の形で 2 つの出口が組み立てる）はここでは捕まらない。AGENTS.md の節がそれを扱う。
+// 別の形で 2 つのインターフェースが組み立てる）はここでは捕まらない。AGENTS.md の節がそれを扱う。
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -434,7 +434,7 @@ if (!fs.existsSync(PEER)) {
   }
   // --resume は、--agent を書き落とすとレビュアーが Edit と Write を持ったまま走る経路を開く。
   if (/`[^`]*claude -p[^`]*--resume/.test(peer)) fail.push(`${PEER} の claude の起動に --resume がある`);
-  // **書き込める道具は Bash だけに限る**（実測: Read と Bash だけのレビュアーがファイルを作った）。
+  // **書き込めるツールは Bash だけに限る**（実測: Read と Bash だけのレビュアーがファイルを作った）。
   // Bash は実行が要る観点にだけ渡すので禁じないが、Edit / Write は どの観点にも要らない。
   for (const tool of ["Edit", "Write", "NotebookEdit"]) {
     if (new RegExp(`"tools"[^\\]]*${tool}`).test(peer)) {
@@ -467,13 +467,13 @@ if (TRAILER !== null) {
 //
 // **初回の制限は続きの呼び出しへ引き継がれない。**実測: `codex exec resume` は `-s` を受け付けず、
 // 省くと利用者の既定の sandbox へ戻って `/tmp` へファイルを作った。`claude -p --resume` は
-// `--agents` を落とすと道具が 3 個から 51 個へ戻る。**どちらも文脈は保たれるので出力から気付けない。**
+// `--agents` を落とすとツールが 3 個から 51 個へ戻る。**どちらも文脈は保たれるので出力から気付けない。**
 // review 側（PEER）は 1 回きりなので resume を持たず、観点によっては Bash を渡す。ここは winnow だけを見る。
 {
   const file = "plugin/skills/winnow/SKILL.md";
   const source = read(file);
-  // 議論に実行は要らないので、道具は 3 つに固定する。**拒否リストにしない** ——
-  // 名前で挙げたものしか消えず、Bash や次に増える道具が素通りする。
+  // 議論に実行は要らないので、ツールは 3 つに固定する。**拒否リストにしない** ——
+  // 名前で挙げたものしか消えず、Bash や次に増えるツールが素通りする。
   for (const tools of [...source.matchAll(/"tools":\s*(\[[^\]]*\])/g)].map((m) => m[1])) {
     const got = JSON.parse(tools);
     const want = ["Read", "Grep", "Glob"];

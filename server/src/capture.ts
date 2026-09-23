@@ -7,7 +7,7 @@
 // **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
 // 「利用者の発言」として DB の 97.2% を占めた。見分けは 5 つで、どれも推測をしない。
 //   - subagent の中の turn は hook 入力に agent_id が付く
-//   - Claude Code が起動した子（Bash から叩いた claude -p、codex exec、codex-talk）は、親の SessionStart が
+//   - Claude Code が起動した子（Bash から叩いた claude -p や codex exec）は、親の SessionStart が
 //     CLAUDE_ENV_FILE に書いた GLEANERY_PARENT_SESSION を継ぐ。自分の session id と違えば子である
 //     （記録させたくない起動には、どの session とも一致しない値を置けばよい。値を「その session の id」にしてあるのは、
 //     この変数が将来 hook 自身の環境へ届く仕様になっても、持ち主の session では自分の id と一致して記録が止まらないようにするため）
@@ -37,7 +37,7 @@ const stateFile = (): string => path.join(os.homedir(), ".gleanery", "capture.js
 /** DB が受け付けなかった記録。消さずにここへ移し、doctor が数を出す（直してから戻せば送り直せる）。 */
 export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
 /**
- * まだ登録していない作業場所の記録。消さずにここへ置く。フックは DB に触れないので、登録して
+ * まだ登録していないプロジェクトの記録。消さずにここへ置く。フックは DB に触れないので、登録して
  * あるかは送るときにしか分からない。消すと、あとから `project add` しても間の発言が戻らない。
  * 次の送信がここも読むので、登録すればそのまま入る。
  */
@@ -80,7 +80,7 @@ export type Spooled =
       at: string;
     };
 
-/** 1 発言の上限。超えたら冒頭と末尾だけを残す（間違って貼った巨大なログで DB と語彙索引を埋めない）。 */
+/** 1 発言の上限。超えたら冒頭と末尾だけを残す（間違って貼った巨大なログで DB と全文検索の索引を埋めない）。 */
 export const MAX_MESSAGE = 128 * 1024;
 const KEEP = 8 * 1024;
 
@@ -189,7 +189,7 @@ export function isOwnerTurn(
  * 背景タスクの完了通知、背景 agent を止めた通知、channel・Slack・Web の取得結果・別の session・subagent・teammate からの
  * 伝言。Claude Code 2.1.270 で届く形として観測した（完了通知・止めた通知・伝言は手元の transcript に実物がある）。
  * **載っていない形は持ち主の発言として入る**（`/loop` で起きたときの prompt も、印の無い本文だけが届くので外せない）。
- * 版が上がったら hook の入力と transcript で取り直す。
+ * バージョンが上がったら hook の入力と transcript で取り直す。
  * **書き出しで外す。**機械の文を持ち主の発言と取り違えるより、持ち主が包みや通知の文面で書き始めた発言を落とす方を取る
  * （閉じタグの後ろに文が付く通知もある。手元の全 transcript では、持ち主の入力 830 件を 1 件も外さず、印の付いた通知と
  * 伝言 227 件をすべて外した）。文面は区切り（`:` か `.`）まで一致したときだけ外す。
@@ -325,7 +325,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     return { flush: false, notice: captureNotice() };
   }
   if (!owner()) return { flush: false };
-  // Interrupt は最大 3 秒で打ち切られる。新しい記録は作らないので、git と作業場所を調べず待ち行列だけ送る。
+  // Interrupt は最大 3 秒で打ち切られる。新しい記録は作らないので、git とプロジェクトを調べず待ち行列だけ送る。
   if (event === "Interrupt") return { flush: true };
   const place = identify(input.cwd ?? process.cwd());
   if (!place) return { flush: false };
@@ -376,7 +376,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     const action = tool === "Read" ? "read" : "edit";
     for (const p of files) {
       // 読んだファイルは、要件定義・設計書だけを残す。画面のセッション詳細は、そのうち承認済みとして同期された
-      // 版だけを出す（draft を読んだ session も、後で承認された成果物に結ばれる）。
+      // バージョンだけを出す（draft を読んだ session も、後で承認された成果物に結ばれる）。
       if (action === "read" && !ARTIFACT_PATH.test(p)) continue;
       spool({ ...base, kind: "file", message, path: p, action });
     }
@@ -568,7 +568,7 @@ export async function write(
           )
           .execute()
       ).length;
-    // 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの DB に無ければ（途中で別の作業場所へ移った session など）
+    // 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの DB に無ければ（途中で別のプロジェクトへ移った session など）
     // view の trigger が捨てる。
     const files = batch.flatMap((r) => {
       const p = r.kind === "file" ? projects.get(r.project) : undefined;
@@ -595,7 +595,7 @@ const rejected = (e: unknown): boolean => REJECTED.has(sqliteCode(e) ?? -1);
 
 /**
  * 待ち行列を DB へ送る。**鍵は capture（追記だけ）。**同じものを 2 回送っても行は増えない。
- * 登録されていない作業場所の記録は捨てる（記録するのは `gleanery project add` した作業場所だけ）。
+ * 登録されていないプロジェクトの記録は捨てる（記録するのは `gleanery project add` したプロジェクトだけ）。
  * **1 件の不正な記録で、以後の記録を止めない。**束が値の誤りで落ちたら 1 件ずつ送り直し、落ちた記録だけを
  * rejected/ へ移す（消さない）。接続断などの失敗は、束ごと待ち行列に残して次の送信で送り直す。
  *
@@ -609,7 +609,7 @@ export async function flush(
   const dir = spoolDir();
   let client: Kysely<DB> | null = null;
   try {
-    // 退避した分も一緒に読む。作業場所を登録した後の送信で、そのまま入る。
+    // 退避した分も一緒に読む。プロジェクトを登録した後の送信で、そのまま入る。
     const held = unregisteredDir();
     const list = (from: string) => {
       try {
@@ -637,7 +637,7 @@ export async function flush(
         fs.rmSync(path.join(from, name), { force: true }); // 読めない残骸
       }
     }
-    // 版を確かめない（db-write.ts）。確かめると、DB を上げてから plugin を上げるまで記録が丸ごと止まる。
+    // バージョンを確かめない（db-write.ts）。確かめると、DB を上げてから plugin を上げるまで記録が丸ごと止まる。
     const db = openWriter("capture", file);
     client = db;
     const projects = new Map(

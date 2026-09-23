@@ -1,6 +1,6 @@
 ---
 name: knowledge-schema
-description: gleaneryのDB schema（db/schema.sqlとdb/migrations、SQLite）、接続の役割とauthorizer、語彙索引（FTS5）、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、view、trigger、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。端末の画面だけの変更には使わない。
+description: gleaneryのDB schema（db/schema.sqlとdb/migrations、SQLite）、接続の役割とauthorizer、全文検索の索引（FTS5）、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、view、trigger、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。端末の画面だけの変更には使わない。
 ---
 
 # ナレッジschemaを変更する
@@ -10,7 +10,7 @@ description: gleaneryのDB schema（db/schema.sqlとdb/migrations、SQLite）、
 - `db/schema.sql`のtable、列、CHECK、index、view、triggerを変更する
 - `db/migrations`へ手順を足す、または`gleanery db migrate`を既存のDBへ当てる
 - 接続の役割（`server/src/sqlite.ts`・`server/src/db-write.ts`のauthorizer）を変える
-- 語彙索引（FTS5、`gleanery_terms`、`server/src/text.ts`の`terms()`）を変える
+- 全文検索の索引（FTS5、`gleanery_terms`、`server/src/text.ts`の`terms()`）を変える
 - `knowledge`の種類・状態・stance、`message`の話者、`conversation`の出自、`message_file`の操作を変更する
 - 取り込み元を足す、またはGitHub同期・文書同期・自動記録・traceの書き方を変える
 
@@ -19,19 +19,19 @@ description: gleaneryのDB schema（db/schema.sqlとdb/migrations、SQLite）、
 - 既存schemaを読むだけの端末の画面を変更する
 - DBを作るだけの作業を行う
 
-## 正本と版
+## 正本とバージョン
 
 DBは`node:sqlite`の1ファイル（`~/.gleanery/gleanery.db`）。正本は`db/schema.sql`の1本で、今の形だけを表す。
 Prisma・Drizzleのschemaを別の正本として足さない（Drizzleは不採用。FTS5の仮想表とtriggerを表せない）。
 新しいDBは`gleanery db init`が一時ファイルへschema.sqlを当ててからrenameして作る（何度流してもよい）。
 
-版は`pragma user_version`で持つ。schema.sqlの末尾の`pragma user_version = N`と`server/src/sqlite.ts`の
+バージョンは`pragma user_version`で持つ。schema.sqlの末尾の`pragma user_version = N`と`server/src/sqlite.ts`の
 `SCHEMA_REVISION`を同じ数にする。readerとingestの接続は開くときに照合し、食い違えば止まる。
 **自動記録（capture）だけは照合しない。**確かめると、DBを上げてからpluginを上げるまで記録が丸ごと止まる。
-旧版のまま書き続け、DBが弾いた記録は`rejected/`へ回る。
+旧バージョンのまま書き続け、DBが弾いた記録は`rejected/`へ回る。
 
 `db/migrations/NNNN_<名前>.sql`は既存のDBをrevision N-1からNへ進める手順で、正本ではない。schema.sqlが
-revision 1なので、最初の1本は`0002_`になる。`gleanery db migrate`（`server/src/admin.ts`、owner）は、DBの版より
+revision 1なので、最初の1本は`0002_`になる。`gleanery db migrate`（`server/src/admin.ts`、owner）は、DBのバージョンより
 新しいmigrationを1つのtransaction（`begin immediate`）で番号順に当て、同じtransactionで`user_version`を上げる。
 名前の形・重複・欠番は`pendingMigrations`が止める。`.`で始まる名前は読まない。
 
@@ -39,7 +39,7 @@ revision 1なので、最初の1本は`0002_`になる。`gleanery db migrate`�
 
 1. 同じcommitで、schema.sql（今の形）と`db/migrations/NNNN_<名前>.sql`（既存のDBを運ぶ手順）を両方変え、
    `user_version`と`SCHEMA_REVISION`をNNNNへ上げる。`server/test/migrate.test.ts`が「`db/migrations`は2から連続し、
-   最大が`SCHEMA_REVISION`とschema.sqlの版に一致する」を検査する
+   最大が`SCHEMA_REVISION`とschema.sqlのバージョンに一致する」を検査する
 2. `bun run codegen`で`server/src/db-types.ts`を作り直す（メモリ上のSQLiteにschema.sqlを当てて生成する）。
    **手で直さない。**CIの`codegen:check`がずれを落とす。JSONを文字列で持つ列（`refs`・`downsides`・`next`・
    `metadata`）の型は`scripts/codegen.mjs`の`overrides`が付ける。生成列（`knowledge.stance`）は型に出ないので、
@@ -49,7 +49,7 @@ revision 1なので、最初の1本は`0002_`になる。`gleanery db migrate`�
    NULLを返しCHECKを通る。書く側は`server/src/db.ts`の`iso()`を通す
 5. migrationに`BEGIN` / `COMMIT` / `ROLLBACK`を書かない。runnerがtransactionで包む。SQLiteのCHECKは行ごとに
    すぐ評価される（deferredが無い）ので、既存の行に当たる制約を足す前に、違反する行が0件であることを確かめる
-6. 旧版の自動記録は`db migrate`の後も新しいschemaへ書き続ける。captureの3つのviewの列を消す・改名する変更は、
+6. 旧バージョンの自動記録は`db migrate`の後も新しいschemaへ書き続ける。captureの3つのviewの列を消す・改名する変更は、
    全PCのpluginが上がった後の別のmigrationにする
 7. downは書かない
 
@@ -80,7 +80,7 @@ transactionの中で他の問い合わせを並行に投げない。`select ... 
 
 | 境界 | 表 | 書く口 |
 |---|---|---|
-| 作業場所と人 | `project`、`person`、`person_identity` | CLI（project、who）、GitHub同期 |
+| プロジェクトと人 | `project`、`person`、`person_identity` | CLI（project、who）、GitHub同期 |
 | 取り込み元の今の状態 | `connector`、`docs_exclude`、`source_item` | GitHub同期、文書同期、CLI（project exclude） |
 | 逐語の会話 | `conversation`、`message`、`message_file` | 自動記録（captureの3つのview）、GitHub同期 |
 | 検索する知識 | `knowledge`、`knowledge_file` | trace、文書同期 |
@@ -93,7 +93,7 @@ transactionの中で他の問い合わせを並行に投げない。`select ... 
 消えたと完全な一覧で確かめられた取り込み元の項目は行ごと消す。`deleted_at`や墓標を置かない。
 覆した決定は消さず、`status = 'superseded'`にして`superseded_by_id`で後継を指す（消すと再提案される）。
 
-## 語彙索引
+## 全文検索の索引
 
 検索は語の順位付き検索（FTS5のbm25）で、意味の近さは呼び出し側のAIが語を変えて引き直すことで補う（agentic search）。
 
@@ -114,7 +114,7 @@ transactionの中で他の問い合わせを並行に投げない。`select ... 
 `FILE_ACTIONS`にある。片方だけに足すと、DBだけなら検索の札が空になり、コードだけなら取り込みや
 自動記録がCHECKで落ちる。`scripts/check-pairs.mjs`が両者を突き合わせる。
 
-種類や状態を足したら、同じ変更で次の出口も扱う。
+種類や状態を足したら、同じ変更で次のインターフェースも扱う。
 
 - `server/src/search.ts`の絞り込みと、`stance`の式が新しい値をどちらへ振るか
 - `server/src/mcp.ts`の入力schemaと説明（`recall`の`kinds`）
@@ -127,7 +127,7 @@ transactionの中で他の問い合わせを並行に投げない。`select ... 
 同じOSユーザーのプロセスはDBファイルを直接書き換えられるので、OSの権限境界ではない。守るのは
 「gleaneryのコードが誤って・untrustedな文章に唆されて書く」経路である。
 
-| 役割 | 開き方 | authorizer | 使う出口 |
+| 役割 | 開き方 | authorizer | 使うインターフェース |
 |---|---|---|---|
 | owner | 書ける | 掛けない | `gleanery db *`（`admin.ts`） |
 | reader | `readOnly` | 読む・許した関数だけ。DDL・ATTACH・pragmaを拒む | MCP、端末の画面、`gleanery search` |
@@ -170,8 +170,8 @@ fast-forwardでなければ一度だけ取り直し、前に入れたcommit以�
 - 原文は`source_item`（`kind`が`requirements` / `design`、`body`に原文）、検索するのは`knowledge`の
   `document`の節である。節の連結から原文は戻らない
 - セッションとの関連は新しい表を作らず、自動記録の`message_file`（Edit・Writeは`edit`、要件定義・設計書を
-  Readしたものは`read`）と、同じ作業場所で同期された`source_item.path`の一致で作る。任意のpathや
-  別の作業場所の本文を取れる入口にしない
+  Readしたものは`read`）と、同じプロジェクトで同期された`source_item.path`の一致で作る。任意のpathや
+  別のプロジェクトの本文を取れる経路にしない
 
 ### GitHub
 
@@ -189,7 +189,7 @@ testは一時ディレクトリの本物のSQLite（`server/test/temp-db.ts`）�
     実行されていない箇所をfile:lineで挙げる
   - `sql:live`: CLIと自動記録のフックを子プロセスで一時HOMEのDBへ通す（`LIVE_FILES`の全call site）
 - `bun run codegen:check`: `db-types.ts`がschema.sqlと一致するか
-- migrationを足したら、空のDBへ`db init`した形と、前の版から`db migrate`した形で`sqlite_schema`が一致することを確かめる
+- migrationを足したら、空のDBへ`db init`した形と、前のバージョンから`db migrate`した形で`sqlite_schema`が一致することを確かめる
 
 ## 既存のDBへ当てる
 

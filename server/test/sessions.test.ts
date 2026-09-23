@@ -28,7 +28,7 @@ before(() => {
   insert(db, "message_file", { message_id: "m-a1", path: "server/src/db.ts", action: "edit" });
   insert(db, "message_file", { message_id: "m-a2", path: "server/src/db.ts", action: "edit" });
   message(db, p1, { id: "m-b1", session: "b", body: "認証の話", sent: "2026-09-12T00:00:00Z" });
-  message(db, p2, { id: "m-c1", session: "c", body: "別の作業場所の認証", sent: "2026-09-11T00:00:00Z" });
+  message(db, p2, { id: "m-c1", session: "c", body: "別のプロジェクトの認証", sent: "2026-09-11T00:00:00Z" });
   insert(db, "connector", {
     project_id: p1,
     provider: "github",
@@ -37,7 +37,7 @@ before(() => {
 });
 after(() => db.done());
 
-test("作業場所の一覧は名前順で、session と知識の数と取り込み元の状態を持つ", async () => {
+test("プロジェクトの一覧は名前順で、session と知識の数と取り込み元の状態を持つ", async () => {
   const got = await projects(db.reader);
   assert.deepEqual(
     got.map((x) => [x.name, x.sessions]),
@@ -68,7 +68,11 @@ test("セッションの一覧は最後の発言の新しい順で、題の囲�
     second.items.map((i) => i.sessionId),
     ["a"],
   );
-  assert.equal((await listSessions(db.reader, { page: 1, pageSize: 30 })).total, 3, "作業場所を省けば全部");
+  assert.equal(
+    (await listSessions(db.reader, { page: 1, pageSize: 30 })).total,
+    3,
+    "プロジェクトを省けば全部",
+  );
 });
 
 test("無い session は null", async () => {
@@ -126,7 +130,7 @@ test("session の詳細は発言・触ったファイル・知識・作業・読
   );
 });
 
-test("作業の一覧は終わった作業も含め、作業場所で絞れる", async () => {
+test("作業の一覧は終わった作業も含め、プロジェクトで絞れる", async () => {
   insert(db, "work_item", {
     project_id: p2,
     source_key: "done",
@@ -144,7 +148,7 @@ test("作業の一覧は終わった作業も含め、作業場所で絞れる",
   assert.ok((await listWork(db.reader, null)).length >= 2);
 });
 
-test("検索で当たった発言を session ごとに束ね、題の囲みの札を外す", async () => {
+test("検索で当たった発言を session ごとにまとめ、題の囲みの札を外す", async () => {
   assert.deepEqual(await searchSessions(db.reader, { q: "当たらない語", mode: "said" }), []);
   const found = await searchSessions(db.reader, { q: "SQLite", mode: "said", project: p1 });
   assert.equal(found.length, 1);

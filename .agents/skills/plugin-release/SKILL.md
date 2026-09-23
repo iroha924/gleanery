@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundle入口とその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleだけの変更には使わない。
+description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundleのエントリポイントとその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleだけの変更には使わない。
 ---
 
 # 配布物を届ける
@@ -23,15 +23,15 @@ description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録�
 Claude Codeはpackageをnpm clientで解決し、tarballをplugin cacheへ展開する。
 
 - **install scriptは走らず、依存もinstallされない。**tarballは自己完結している必要がある
-  （`bun build`で束ねた1 fileずつを同梱する）。DBは`node:sqlite`（Nodeの組み込み）なので、ネイティブ依存を持たない
-- CLIはInkを含むので`scripts/bundle-cli.ts`（`Bun.build`）で束ねる。Inkは`DEV=true`のときだけ`react-devtools-core`を
+  （`bun build`でバンドルした1 fileずつを同梱する）。DBは`node:sqlite`（Nodeの組み込み）なので、ネイティブ依存を持たない
+- CLIはInkを含むので`scripts/bundle-cli.ts`（`Bun.build`）でバンドルする。Inkは`DEV=true`のときだけ`react-devtools-core`を
   読みにいくので、`ink/build/devtools.js`を空のmoduleへ差し替える（差し替えないと、上の階層に`react-devtools-core`が
   ある環境で起動ごと落ちる）
 - 同梱の`db/schema.sql`（と、あれば`db/migrations`）を`gleanery db init` / `db migrate`が読む。CIは展開した
   tarballの CLI で一時HOMEに`db init`を打って確かめる
-- cacheは版が変わったときだけ更新される。`bun run bundle`やcommitだけでは届かず、publishまで届かない
+- cacheはバージョンが変わったときだけ更新される。`bun run bundle`やcommitだけでは届かず、publishまで届かない
 - CLIは実行した場所の`dist/cli.js`を読むため、CLIで動くことはMCPで動く証拠にならない
-- 自動記録のhookは`${CLAUDE_PLUGIN_ROOT}/dist/capture.js`を叩くので、これもcacheの版で動く
+- 自動記録のhookは`${CLAUDE_PLUGIN_ROOT}/dist/capture.js`を叩くので、これもcacheのバージョンで動く
 - **`plugin/dist`はgitで追跡しない。**buildはpublishのときに作る
 
 ### Skillからの起動経路
@@ -48,7 +48,7 @@ npm sourceでは置かれる保証も無い。
 
 ## 依存を足すとき
 
-`dist/`は依存のcodeをそのまま含むので、**束ねてnpmのdependenciesを0にしても同梱の義務は消えない**。
+`dist/`は依存のcodeをそのまま含むので、**バンドルしてnpmのdependenciesを0にしても同梱の義務は消えない**。
 MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写しと（あれば）NOTICEの内容を求める。
 
 - `server/`へ依存を足したら`bun run notices`を通す。SPDXが読めない package があれば落ちる
@@ -94,7 +94,7 @@ release commandが同じものを読む。
    変わっていないことを確かめる。差分があればtagと`latest`への昇格を止める
 7. `git tag v<version> <merge commit>`でmerge commitへtagを付け、remoteへpushする。tagのpushが
    失敗したら`latest`を動かさず再試行する
-8. `npm dist-tag add gleanery@<version> latest`で検査済みのversionを昇格する。merge前は旧安定版が
+8. `npm dist-tag add gleanery@<version> latest`で検査済みのversionを昇格する。merge前は旧安定バージョンが
    `latest`のままで、この操作が失敗してもmarketplaceは公開済みのexact versionを指す
 9. cleanな一時directoryで`npm pack gleanery@latest --silent`を実行し、展開して同じsmoke testを行う。
     `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことも確かめる
@@ -105,12 +105,12 @@ release commandが同じものを読む。
 
 ## 届いたことを確かめる
 
-`gleanery doctor`は「npm packageの版」と「plugin channelの版」を分けて出す。
+`gleanery doctor`は「npm packageのバージョン」と「plugin channelのバージョン」を分けて出す。
 
 1. Claude Code: marketplaceを更新してinstallし直し、開いているsessionで`/reload-plugins`。
-   対話端末の無いsessionはMCPが次のsessionまで旧版のまま
+   対話端末の無いsessionはMCPが次のsessionまで旧バージョンのまま
 2. Codex: 同じくmarketplaceを更新してから開き直す
-3. **`npm i -g gleanery@<版>`も叩く。**`npm i -g`で入れたCLIはplugin のcacheと別経路で、
+3. **`npm i -g gleanery@<バージョン>`も叩く。**`npm i -g`で入れたCLIはplugin のcacheと別経路で、
    ホストの更新では上がらない。**DBのrevisionを上げた回は、これを忘れると古いCLIだけが
    「revision N を期待している」で落ちる**（実測: revision 5へ上げた後、globalのCLIが0.32.0のまま残った）
 4. `gleanery doctor`で、npm packageはrepositoryとglobal CLI、plugin channelはrepositoryと両ホストのcacheが
