@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # bun の依存は入れない。Dependabot は bun.lock の lockfileVersion 1 までしか読めず、server/bun.lock は 2
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Tokyo"
+    # 公開された直後の版は誰も見ていない。乗っ取られた release が狙う期間を待ってから提案させる
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore(deps)"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]
