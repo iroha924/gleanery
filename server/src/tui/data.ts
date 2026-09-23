@@ -33,7 +33,8 @@ export type Data = {
   projects(): Promise<Project[]>;
   sessions(project: number | null, page: number, pageSize: number): Promise<SessionsPage>;
   session(id: string): Promise<SessionDetail | null>;
-  works(project: number | null): Promise<Work[]>;
+  /** more は上限で切れたとき true */
+  works(project: number | null): Promise<{ items: Work[]; more: boolean }>;
   work(ref: string, project: number | null): Promise<WorkDetail | null>;
   search(question: string, mode: Mode, project: number | null): Promise<Hit[]>;
   /** 参照の先が無ければ null */

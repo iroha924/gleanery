@@ -4,6 +4,7 @@
 import { styleText } from "node:util";
 import { Marked } from "marked";
 import { markedTerminal } from "marked-terminal";
+import { plain } from "../panel.ts";
 
 const byWidth = new Map<number, Marked>();
 
@@ -44,5 +45,32 @@ export function renderMarkdown(text: string, width: number): string {
     byWidth.set(w, m);
   }
   const out = m.parse(text, { async: false });
-  return out.replace(/\n+$/, "");
+  return colorsOnly(out).replace(/\n+$/, "");
+}
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 描画器が付けた色（SGR）の列だけを見分ける
+const SGR = /(\u001b\[[0-9;]*m)/;
+
+/** 文字を隠す・点滅させる指定（8 / 28 / 5 / 6）。色や太字と違い、見えない文を作れる */
+const HIDING = new Set(["5", "6", "8", "28"]);
+
+/**
+ * 描画器が付けた色だけを残し、ほかの制御文字を落とす。Markdown は文字参照（&#13; など）を戻すので、
+ * 入力を plain に通しても、描いた後に CR や ESC が生まれうる。
+ */
+function colorsOnly(s: string): string {
+  return s
+    .split(SGR)
+    .map((part, i) => {
+      if (i % 2 === 0) return plain(part).replace(/\t/g, "  ");
+      const params = part.slice(2, -1).split(";");
+      // 38 / 48 の後ろは色の番号や RGB の値なので、指定として読まない
+      for (let j = 0; j < params.length; j++) {
+        const x = params[j] ?? "";
+        if (x === "38" || x === "48") j += params[j + 1] === "5" ? 2 : 4;
+        else if (HIDING.has(x)) return "";
+      }
+      return part;
+    })
+    .join("");
 }

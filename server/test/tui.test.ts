@@ -185,18 +185,21 @@ function fake(over: Partial<Data> = {}): Data & { searched: string[] } {
     ],
     sessions: async () => ({ items: [session()], total: 1, page: 1, pageSize: 50, pages: 1 }),
     session: async () => detail,
-    works: async () => [
-      {
-        ref: "w:3",
-        project: "o/r",
-        title: "認証の作り直し",
-        goal: "期限切れで落ちない",
-        current: "サーバー側を直した",
-        next: ["端末側の表示"],
-        status: "active",
-        updatedAt: at,
-      },
-    ],
+    works: async () => ({
+      more: false,
+      items: [
+        {
+          ref: "w:3",
+          project: "o/r",
+          title: "認証の作り直し",
+          goal: "期限切れで落ちない",
+          current: "サーバー側を直した",
+          next: ["端末側の表示"],
+          status: "active",
+          updatedAt: at,
+        },
+      ],
+    }),
     work: async () => ({
       ref: "w:3",
       project: "o/r",
@@ -262,6 +265,18 @@ test("読み込み中・空・失敗をそれぞれ出す", async () => {
   await tick();
   assert.match(failed.lastFrame() ?? "", /セッションの一覧を読めなかった: 接続できない/);
   failed.unmount();
+});
+
+test("作業の一覧が上限で切れたら、切れたことを画面に出す", async () => {
+  const base = await fake().works(1);
+  const r = render(h(App, { data: fake({ works: async () => ({ ...base, more: true }) }) }));
+  await settle(r);
+  r.stdin.write(TAB);
+  await settle(r);
+  const frame = r.lastFrame() ?? "";
+  assert.match(frame, /認証の作り直し/);
+  assert.match(frame, /最新 1 件（古い作業は省いた）/);
+  r.unmount();
 });
 
 test("Tab で作業の画面へ移り、作業を開くと通ってはいけない道まで出る", async () => {
@@ -616,4 +631,150 @@ test("操作の案内は、どの幅でも行数と幅に収まり、組を割�
       for (const line of out)
         for (const pair of line.split("  ")) assert.ok(items.includes(pair), `${columns}: ${pair}`);
     }
+});
+
+// 記録された PR・issue の本文や会話は第三者が書ける。端末の制御列を落とさずに出すと、画面を書き換えられる。
+const HOSTILE = "\u001b[2J\u001b]0;pwn\u0007\r偽の行";
+const hostile = (s: string) => `${s}${HOSTILE}`;
+/** 注入した制御列が残っているか。画面の色（SGR）の ESC は Ink が付けるので、それ以外の列だけを見る */
+const controlled = (frame: string) =>
+  ["\u001b[2J", "\u001b]", "\u0007", "\r", "\u001b[8m"].some((c) => frame.includes(c));
+
+test("外から来た文字の制御列を、どの画面にも出さない", async () => {
+  const works = await fake().works(1);
+  const work = await fake().work("w:3", 1);
+  const data = fake({
+    projects: async () => [
+      { id: 1, key: "git:github.com/o/r", name: hostile("o/r"), sessions: 1, knowledge: 1, connectors: [] },
+    ],
+    sessions: async () => ({
+      items: [session({ title: hostile("題") })],
+      total: 1,
+      page: 1,
+      pageSize: 50,
+      pages: 1,
+    }),
+    session: async () => ({
+      ...detail,
+      title: hostile("題"),
+      project: hostile("o/r"),
+      branch: hostile("main"),
+      messages: detail.messages.map((m) => ({
+        ...m,
+        // Markdown は文字参照を戻すので、描いた後にも制御文字が生まれうる
+        body: `${hostile(m.body)} &#13;偽の行 &#27;[2J &#27;[8m隠した文字`,
+        files: m.files.map((f) => ({ ...f, path: hostile(f.path) })),
+      })),
+      knowledge: detail.knowledge.map((k) => ({ ...k, body: hostile(k.body) })),
+    }),
+    works: async () => ({
+      ...works,
+      items: works.items.map((w) => ({ ...w, title: hostile(w.title), current: hostile(w.current) })),
+    }),
+    work: async () =>
+      work && {
+        ...work,
+        title: hostile(work.title),
+        project: hostile(work.project),
+        goal: hostile(work.goal),
+        current: hostile(work.current),
+        next: work.next.map(hostile),
+        walls: work.walls.map((x) => ({ ...x, text: hostile(x.text) })),
+      },
+    search: async () => [
+      {
+        ...hit,
+        text: hostile(hit.text),
+        project: hostile("o/r"),
+        url: "https://example.invalid/\u0007\u001b[2J",
+      },
+    ],
+    read: async (ref) => hostile(`${ref} の全文`),
+  });
+  const r = render(h(App, { data }));
+  const frames: string[] = [];
+  const see = async () => {
+    await settle(r);
+    frames.push(r.lastFrame() ?? "");
+  };
+  await see();
+  r.stdin.write(ENTER);
+  await see();
+  r.stdin.write(ESC);
+  await see();
+  r.stdin.write(TAB);
+  await see();
+  r.stdin.write(ENTER);
+  await see();
+  r.stdin.write(ESC);
+  await see();
+  r.stdin.write("/");
+  await see();
+  r.stdin.write("期限");
+  await see();
+  r.stdin.write(ENTER);
+  await see();
+  r.stdin.write(ENTER);
+  await see();
+  r.unmount();
+  // 各画面が実際に開いたこと（開かなければ制御列が無いのは当然になる）
+  for (const [i, want] of [
+    [0, "題"],
+    [1, "src/auth.ts"],
+    [3, "認証の作り直し"],
+    [4, "目的"],
+    [8, "期限はサーバーで見る"],
+    [9, "k:9 の全文"],
+  ] as const)
+    assert.ok(frames[i]?.includes(want), `画面 ${i} に ${want} が無い:\n${frames[i]}`);
+  assert.ok(
+    frames.some((f) => f.includes("偽の行")),
+    "外から来た文字そのものは出る",
+  );
+  for (const [i, f] of frames.entries()) assert.ok(!controlled(f), `画面 ${i}`);
+});
+
+test("読み込みに失敗したときのエラー文の制御列も出さない", async () => {
+  const r = render(
+    h(App, { data: fake({ sessions: async () => Promise.reject(new Error(hostile("接続できない"))) }) }),
+  );
+  await settle(r);
+  assert.match(r.lastFrame() ?? "", /接続できない/);
+  assert.ok(!controlled(r.lastFrame() ?? ""));
+  r.unmount();
+});
+
+test("作業の一覧が切れた案内は 1 行に収め、狭い端末でも端へ動いた後の選んだ行が見える", async () => {
+  const many = fake({
+    works: async () => ({
+      more: true,
+      items: Array.from({ length: 100 }, (_, i) => ({
+        ref: `w:${i}`,
+        project: "o/r",
+        title: `作業 ${i}`,
+        goal: "目的",
+        current: "いま",
+        next: [],
+        status: "active",
+        updatedAt: at,
+      })),
+    }),
+  });
+  for (const [columns, rows] of [
+    [40, 10],
+    [50, 10],
+    [40, 6],
+  ] as const) {
+    const r = renderAt(columns, rows, many);
+    await settle(r);
+    r.write(TAB);
+    await settle(r);
+    r.write("G");
+    await settle(r);
+    const frame = r.frame();
+    assert.equal(frame.split("\n").length, rows, frame);
+    assert.match(frame, /❯ .*作業 99/, `${columns}×${rows} で選んだ行が見えない:\n${frame}`);
+    assert.match(frame, /古い作業/, `${columns}×${rows} で切れた案内が見えない:\n${frame}`);
+    r.unmount();
+  }
 });

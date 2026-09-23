@@ -8,6 +8,8 @@ const EXACT_PACKAGE_INPUTS = new Set([
   "scripts/bundle.mjs",
   "scripts/bundle-cli.ts",
   "scripts/third-party-notices.mjs",
+  // 取得元（npm の package 名など）を変えると、利用者が入れる物が変わる
+  ".claude-plugin/marketplace.json",
   // bundle が plugin/README.md へ写し、npm の package のページに出る
   "README.md",
 ]);

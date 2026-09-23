@@ -408,7 +408,7 @@ async function doctor(cwd: string): Promise<void> {
           .orderBy("cn.provider")
           .execute();
         if (rows.length) console.log(`\n${section("プロジェクト")}`);
-        const label = (x: (typeof rows)[number]) => `${x.name} ${x.provider ?? "未同期"}`;
+        const label = (x: (typeof rows)[number]) => `${inline(x.name)} ${x.provider ?? "未同期"}`;
         const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
         for (const x of rows) {
           // 取り込みは gleanery harvest を打ったときだけ走る。間が空くのは運用どおりなので、失敗だけを直すものに数える。
@@ -506,12 +506,12 @@ const excludeRoutes = buildRouteMap({
           console.log(
             document(
               "gleanery project exclude add",
-              place.name,
+              inline(place.name),
               [
                 {
                   kind: "fields",
                   rows: [
-                    ["path", rel],
+                    ["path", inline(rel)],
                     ["種類", kind === "file" ? "ファイル" : "ディレクトリ"],
                   ],
                 },
@@ -541,7 +541,7 @@ const excludeRoutes = buildRouteMap({
           console.log(
             document(
               "gleanery project exclude list",
-              place.name,
+              inline(place.name),
               rows.length
                 ? [
                     {
@@ -594,8 +594,8 @@ const excludeRoutes = buildRouteMap({
           console.log(
             document(
               "gleanery project exclude remove",
-              place.name,
-              [{ kind: "fields", rows: [["path", rel]] }],
+              inline(place.name),
+              [{ kind: "fields", rows: [["path", inline(rel)]] }],
               Number(gone.numDeletedRows)
                 ? `${mark("ok")} 次の同期から取り込みに戻る`
                 : `${mark("none")} 除外に入っていない`,
@@ -642,9 +642,9 @@ const projectRoutes = buildRouteMap({
                 {
                   kind: "fields",
                   rows: [
-                    ["プロジェクト", place.name],
-                    ["key", place.key],
-                    ["置き場所", place.root],
+                    ["プロジェクト", inline(place.name)],
+                    ["key", inline(place.key)],
+                    ["置き場所", inline(place.root)],
                   ],
                 },
               ],
@@ -678,10 +678,10 @@ const projectRoutes = buildRouteMap({
                 ? "置き場所が複数ある（同期しない）"
                 : "この PC に無い";
             return {
-              title: x.name,
-              body: where,
+              title: inline(x.name),
+              body: inline(where),
               meta: [
-                x.key,
+                inline(x.key),
                 x.last
                   ? `最後の同期 ${new Date(x.last).toLocaleString("sv-SE").slice(0, 16)}`
                   : "まだ同期していない",
@@ -742,8 +742,8 @@ const projectRoutes = buildRouteMap({
           const counts: Block = {
             kind: "fields",
             rows: [
-              ["プロジェクト", p.name],
-              ["key", p.key],
+              ["プロジェクト", inline(p.name)],
+              ["key", inline(p.key)],
               ["会話", `${x?.conversations} 件`],
               ["発言", `${x?.messages} 件`],
               ["知識", `${x?.knowledge} 件`],
@@ -785,7 +785,7 @@ const traceRoutes = buildRouteMap({
         },
       },
       func: async (flags: { host?: Host }) => {
-        console.log(framed(await traceContext(process.cwd(), flags.host)));
+        console.log(plain(framed(await traceContext(process.cwd(), flags.host))));
       },
     }),
     check: buildCommand({
@@ -979,7 +979,7 @@ const root = buildRouteMap({
               if (!root) {
                 console.log(
                   indent(
-                    `${mark("none")} ${p.name}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`,
+                    `${mark("none")} ${inline(p.name)}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`,
                   ),
                 );
                 continue;
@@ -987,17 +987,17 @@ const root = buildRouteMap({
               try {
                 const place = { key: p.key, root, name: p.name };
                 for (const line of await syncOne(db, p.id, place, resetDocs)) {
-                  console.log(indent(`${mark("ok")} ${p.name} / ${line}`));
+                  console.log(indent(`${mark("ok")} ${inline(p.name)} / ${inline(line)}`));
                 }
                 done++;
               } catch (e) {
                 // 1 つ落ちても残りは回す。失敗は終了コードへ出す（launchd の LastExitStatus で見える）。
-                failures.push(p.name);
+                failures.push(inline(p.name));
                 const lines = plain(reason(e)).split("\n");
                 console.error(
                   indent(
                     [
-                      `${mark("fail")} ${p.name}`,
+                      `${mark("fail")} ${inline(p.name)}`,
                       ...lines.map((l) => (l.trim() ? `  ${l.trim()}` : "")),
                     ].join("\n"),
                   ),
@@ -1084,7 +1084,7 @@ const root = buildRouteMap({
                 match,
                 limit: flags.limit,
               }).then((x) => [...x.records, ...x.documents]);
-          const where = place ? place.name : "すべてのプロジェクト";
+          const where = place ? inline(place.name) : "すべてのプロジェクト";
           const end = `${hits.length ? `${hits.length} 件` : "該当なし"} / ${where}`;
           // pipe はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
           // 端末では人が読むので、札を Badge にした項目で出す
@@ -1225,7 +1225,7 @@ const root = buildRouteMap({
                     `まだ取り込んでいないハンドル: ${missing.map(inline).join(" / ")}（同期の後にもう一度結ぶ）`,
                   ]
                 : [],
-              `名簿に入れた: ${inline(display)}${flags.me ? "（持ち主）" : ""} = ${linked.map((l) => l.handle).join(" / ") || "（結べたハンドルなし）"}`,
+              `名簿に入れた: ${inline(display)}${flags.me ? "（持ち主）" : ""} = ${linked.map((l) => inline(l.handle)).join(" / ") || "（結べたハンドルなし）"}`,
             ),
           );
         });

@@ -12,7 +12,17 @@ test("外から来た文字は、行頭の印を上書きできず、端末を�
   // 絵文字をつなぐ ZWJ は残す。
   assert.equal(
     rule(plain(`a${cr}╰─ 偽の締め${nel}b${esc}[31m${rlo}c👨${zwj}👩 x${zwsp}y LGTM${hidden}`)),
-    `│ a\n│ ╰─ 偽の締め\n│ b[31mc👨${zwj}👩 xy LGTM`,
+    `│ a\n│ ╰─ 偽の締め\n│ bc👨${zwj}👩 xy LGTM`,
+  );
+});
+
+test("端末の制御列は ESC だけでなく列ごと落とす（中身の文字を画面に残さない）", () => {
+  const [esc, bel] = [0x1b, 0x07].map((c) => String.fromCodePoint(c));
+  assert.equal(
+    plain(
+      `${esc}[31mnpm ERR!${esc}[0m ${esc}]0;題${bel}本文 ${esc}]8;;https://x${esc}\\リンク${esc}]8;;${esc}\\`,
+    ),
+    "npm ERR! 本文 リンク",
   );
 });
 

@@ -8,7 +8,7 @@ import Link from "ink-link";
 import { ScrollView, type ScrollViewRef } from "ink-scroll-view";
 import { createElement as h, type ReactNode, useEffect, useRef, useState } from "react";
 import { kindColor, PALETTE } from "../palette.ts";
-import { width } from "../panel.ts";
+import { inline, plain, width } from "../panel.ts";
 import type { Hit } from "../search.ts";
 import type { SessionDetail, SessionRow } from "../sessions.ts";
 import { ftsQuery, reason } from "../text.ts";
@@ -104,7 +104,11 @@ function Twinkle({ label }: { label: string }) {
 function Pending<T>({ load, what, render }: { load: Load<T>; what: string; render: (v: T) => ReactNode }) {
   if (load.status === "loading") return h(Twinkle, { label: `${what}を読んでいる…` });
   if (load.status === "error")
-    return h(Text, { color: PALETTE.failure }, `${ICONS.error} ${what}を読めなかった: ${load.error}`);
+    return h(
+      Text,
+      { color: PALETTE.failure },
+      `${ICONS.error} ${what}を読めなかった: ${oneLine(String(load.error))}`,
+    );
   return h(Box, { flexDirection: "column", flexGrow: 1 }, render(load.value));
 }
 
@@ -261,7 +265,10 @@ function SessionList(p: {
   });
 }
 
-const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+// 外から来た文字（記録された PR・issue の本文、会話、名前、path）は表示の直前にここを通す。制御列を落とさないと画面を書き換えられる
+const oneLine = (s: string) => inline(s).replace(/\s+/g, " ").trim();
+// タブは端末が 8 桁先まで進めるが、Ink は幅を 0 と数えて行がずれるので、空白にする
+const block = (s: string) => plain(s).replace(/\t/g, "  ");
 
 /** marked-terminal（cli-table3）が描く表の行。罫線で始まる行か、│ で始まって │ で終わる行だけ。地の文の │ は当てない */
 const TABLE_LINE = /^\s*(?:[┌├└]|│.*│\s*$)/u;
@@ -296,13 +303,14 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
       h(
         Text,
         { dimColor: true },
-        `${ICONS.project} ${s.project}  ${s.branch ? `${ICONS.branch} ${s.branch}  ` : ""}${when(s.startedAt)}  ${hostName(s.origin)}`,
+        `${ICONS.project} ${oneLine(s.project)}  ${s.branch ? `${ICONS.branch} ${oneLine(s.branch)}  ` : ""}${when(s.startedAt)}  ${hostName(s.origin)}`,
       ),
     ),
   ];
   for (const m of s.messages) {
     const files = m.files.map(
-      (f) => `${f.action === "edit" ? "編集" : f.action === "read" ? "読んだ" : "レビュー"} ${f.path}`,
+      (f) =>
+        `${f.action === "edit" ? "編集" : f.action === "read" ? "読んだ" : "レビュー"} ${oneLine(f.path)}`,
     );
     out.push(
       h(
@@ -315,7 +323,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
               m.speaker === "self" ? PALETTE.slate : m.speaker === "assistant" ? PALETTE.plum : PALETTE.sand,
             bold: true,
           },
-          `${speakerIcon[m.speaker] ?? ICONS.person} ${speakerName[m.speaker] ?? m.speaker}`,
+          `${speakerIcon[m.speaker] ?? ICONS.person} ${speakerName[m.speaker] ?? oneLine(m.speaker)}`,
           h(
             Text,
             { dimColor: true, bold: false },
@@ -326,7 +334,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
           Box,
           { paddingLeft: 2, flexDirection: "column" },
           ...(m.speaker === "assistant"
-            ? renderMarkdown(m.body, body)
+            ? renderMarkdown(block(m.body), body)
                 .split("\n")
                 .map((line, i) =>
                   // 表の罫線の行は折り返すと崩れるので切る。本文は Ink が端末の幅で折り返す
@@ -340,7 +348,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
                     line || " ",
                   ),
                 )
-            : [h(Text, { key: "b" }, m.body)]),
+            : [h(Text, { key: "b" }, block(m.body))]),
         ),
         files.length > 0 ? h(Text, { dimColor: true }, `  ${ICONS.file} ${files.join(" / ")}`) : null,
       ),
@@ -366,7 +374,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
       h(
         Text,
         { key: w.ref },
-        `${statusIcon(w.status)} 作業: ${w.title}（${statusName(w.status)}） いま: ${oneLine(w.current)}`,
+        `${statusIcon(w.status)} 作業: ${oneLine(w.title)}（${statusName(w.status)}） いま: ${oneLine(w.current)}`,
       ),
     );
   return out;
@@ -380,8 +388,11 @@ function WorkList(p: {
   open: (d: Detail) => void;
 }) {
   const load = useLoad(() => p.data.works(p.project), [p.project]);
-  const items = load.status === "ok" ? load.value : [];
-  const [selected] = useSelection(items.length, p.height, p.active);
+  const items = load.status === "ok" ? load.value.items : [];
+  // 切れたことの案内に 1 行使う。一覧が 1 行しか残らない高さでは案内を出さない
+  const more = load.status === "ok" && load.value.more && p.height >= 2;
+  const height = more ? p.height - 1 : p.height;
+  const [selected] = useSelection(items.length, height, p.active);
   useInput(
     (_input, key) => {
       const w = items[selected];
@@ -389,32 +400,54 @@ function WorkList(p: {
     },
     { isActive: p.active },
   );
-  return h(Pending<typeof items>, {
+  return h(Pending<{ items: typeof items; more: boolean }>, {
     load,
     what: "作業の一覧",
     render: (works) =>
-      h(List<(typeof items)[number]>, {
-        items: works,
-        selected,
-        height: p.height,
-        empty: "trace した作業はまだ無い。作業の現在地は trace で残す（/gleanery:trace）。",
-        row: (w, on) =>
-          h(
-            Box,
-            { flexGrow: 1 },
-            h(Box, { flexShrink: 0 }, h(Text, { color: statusColor(w.status) }, `${statusIcon(w.status)} `)),
+      h(
+        Box,
+        { flexDirection: "column" },
+        ...(more
+          ? [
+              h(
+                Text,
+                { key: "more", dimColor: true, wrap: "truncate-end" },
+                `最新 ${works.items.length} 件（古い作業は省いた）`,
+              ),
+            ]
+          : []),
+        h(List<(typeof items)[number]>, {
+          key: "list",
+          items: works.items,
+          selected,
+          height,
+          empty: "trace した作業はまだ無い。作業の現在地は trace で残す（/gleanery:trace）。",
+          row: (w, on) =>
             h(
               Box,
-              { flexGrow: 1, flexShrink: 1, minWidth: 8 },
-              h(Text, { wrap: "truncate-end", bold: on }, w.title),
+              { flexGrow: 1 },
+              h(
+                Box,
+                { flexShrink: 0 },
+                h(Text, { color: statusColor(w.status) }, `${statusIcon(w.status)} `),
+              ),
+              h(
+                Box,
+                { flexGrow: 1, flexShrink: 1, minWidth: 8 },
+                h(Text, { wrap: "truncate-end", bold: on }, oneLine(w.title)),
+              ),
+              h(
+                Box,
+                { flexShrink: 0 },
+                h(
+                  Text,
+                  { dimColor: true },
+                  `  ${statusName(w.status).padEnd(6, "　")}  ${when(w.updatedAt)}`,
+                ),
+              ),
             ),
-            h(
-              Box,
-              { flexShrink: 0 },
-              h(Text, { dimColor: true }, `  ${statusName(w.status).padEnd(6, "　")}  ${when(w.updatedAt)}`),
-            ),
-          ),
-      }),
+        }),
+      ),
   });
 }
 
@@ -432,12 +465,16 @@ function WorkView(p: { data: Data; ref: string; project: number | null; height: 
             h(
               Text,
               { key: "t", bold: true },
-              `${statusIcon(w.status)} ${w.title}（${statusName(w.status)}）`,
+              `${statusIcon(w.status)} ${oneLine(w.title)}（${statusName(w.status)}）`,
             ),
-            h(Text, { key: "p", dimColor: true }, `${ICONS.project} ${w.project}  ${when(w.updatedAt)}`),
-            h(Text, { key: "g" }, `${ICONS.goal} 目的: ${w.goal}`),
-            h(Text, { key: "c" }, `いま: ${w.current}`),
-            ...w.next.map((n, i) => h(Text, { key: `n${i}` }, `${ICONS.next} ${n}`)),
+            h(
+              Text,
+              { key: "p", dimColor: true },
+              `${ICONS.project} ${oneLine(w.project)}  ${when(w.updatedAt)}`,
+            ),
+            h(Text, { key: "g" }, `${ICONS.goal} 目的: ${block(w.goal)}`),
+            h(Text, { key: "c" }, `いま: ${block(w.current)}`),
+            ...w.next.map((n, i) => h(Text, { key: `n${i}` }, `${ICONS.next} ${block(n)}`)),
             ...hitLines("q", ICONS.question, "問い", w.questions),
             ...hitLines("a", ICONS.avoid, "通ってはいけない道", w.walls),
           ),
@@ -542,12 +579,15 @@ function SearchView(p: {
                   h(
                     Box,
                     { flexShrink: 0, width: 22, marginLeft: 2 },
-                    h(Text, { dimColor: true, wrap: "truncate-end" }, x.project),
+                    h(Text, { dimColor: true, wrap: "truncate-end" }, oneLine(x.project)),
                   ),
                   // PR・issue の発言は端末のリンクにする。対応しない端末では URL を後ろに添える
                   x.url
-                    ? // biome-ignore lint/correctness/noChildrenProp: ink-link の型が children を props の必須にしている
-                      h(Link, { url: x.url, children: h(Text, { color: PALETTE.slate }, ` ${ICONS.link}`) })
+                    ? h(Link, {
+                        url: oneLine(x.url),
+                        // biome-ignore lint/correctness/noChildrenProp: ink-link の型が children を props の必須にしている
+                        children: h(Text, { color: PALETTE.slate }, ` ${ICONS.link}`),
+                      })
                     : null,
                 ),
             }),
@@ -567,7 +607,9 @@ function ReadView(p: { data: Data; refId: string; project: number | null; height
         : h(
             Scroll,
             { height: p.height, active: p.active },
-            ...text.split("\n").map((line, i) => h(Text, { key: i }, line || " ")),
+            ...block(text)
+              .split("\n")
+              .map((line, i) => h(Text, { key: i }, line || " ")),
           ),
   });
 }
@@ -591,7 +633,7 @@ export function App({ data }: { data: Data }) {
   const projectLabel =
     projectsLoad.status === "error"
       ? `${ICONS.error} プロジェクトの一覧を読めなかった`
-      : `${ICONS.project} ${projectName}`;
+      : `${ICONS.project} ${oneLine(projectName)}`;
 
   useInput((input, key) => {
     if (key.tab) {

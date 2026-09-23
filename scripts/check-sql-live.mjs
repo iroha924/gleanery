@@ -168,6 +168,43 @@ await withTempDir(async (dir) => {
         failures.push(`doctor が ${label} を健全と言わない\n${doctor.out.slice(0, 800)}`);
     }
 
+    // ---- 外から来た文字の制御列を、端末へ出さない ----
+    // PR・issue の本文と題、ハンドル、会話、remote の綴りとディレクトリ名は第三者か外の都合で決まる。
+    // 注入した値が出力まで届いたこと（reach）を確かめてから、ESC・BEL・CR が無いことを見る（pipe では色を付けない）
+    const controlled = (out) => ["\u001b", "\u0007", "\r"].some((c) => out.includes(c));
+    const clean = (what, r, reach, { status = true } = {}) => {
+      if (status) note(what, r);
+      if (!r.out.includes(reach))
+        failures.push(
+          `${what} の出力に注入した値（${reach}）が届いていない。検査が空振りする\n${r.out.slice(0, 400)}`,
+        );
+      if (controlled(r.out))
+        failures.push(`${what} の出力に制御列が残っている\n${JSON.stringify(r.out.slice(0, 400))}`);
+    };
+    const esc = "\u001b[2J\u001b]0;pwn\u0007\r";
+    runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "hostile" });
+    clean("who（第三者のハンドル）", runCli(["who"], dir, covDir), "someone");
+    clean("who（結ぶ）", runCli(["who", "--me", "私", `someone${esc}`], dir, covDir), "someone");
+    hook({ hook_event_name: "UserPromptSubmit", prompt: `制御列${esc}を含む発言` });
+    hook({ hook_event_name: "Stop", last_assistant_message: `応答${esc}` });
+    note("capture flush（制御列）", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
+    clean("trace context", runCli(["trace", "context"], dir, covDir, asSession("live-1")), "を含む発言");
+    clean(
+      "search --said",
+      runCli(["search", "--said", "me", "--cwd", repo, "制御列"], dir, covDir),
+      "を含む発言",
+    );
+    const evil = makeRepo(dir, `https://github.com/example/ev${esc}il.git`, "evil\u001b[2Jdir");
+    clean(
+      "project add（remote とディレクトリ名）",
+      runCli(["project", "add", "--cwd", evil], dir, covDir),
+      "evil",
+    );
+    clean("project list", runCli(["project", "list"], dir, covDir), "example/ev");
+    clean("search（プロジェクト名）", runCli(["search", "--cwd", evil, "本文"], dir, covDir), "example/ev");
+    // doctor の終了コードは手元の plugin の状態で変わるので見ない（上と同じ理由）
+    clean("doctor", runCli(["doctor"], dir, covDir), "example/ev", { status: false });
+
     note(
       "project forget",
       runCli(["project", "forget", "git:github.com/example/live", "--yes"], dir, covDir),

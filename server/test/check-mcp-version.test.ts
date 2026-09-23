@@ -137,3 +137,74 @@ test("以前 npm だけで出していた server.ts でも、npm package のバ�
     r.done();
   }
 });
+
+test("marketplace の取得元だけを変えてバージョンを上げていない commit を落とす", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "1.0.0");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+    write(
+      r.dir,
+      ".claude-plugin/marketplace.json",
+      JSON.stringify({
+        plugins: [
+          { name: "gleanery", source: { source: "npm", package: "gleanery-fork", version: "1.0.0" } },
+        ],
+      }),
+    );
+    r.git("commit", "-qam", "取得元だけを変える");
+    const missed = check(r.dir, "--base", base);
+    assert.equal(missed.status, 1, missed.stderr);
+    assert.match(missed.stderr, /marketplace\.json/);
+  } finally {
+    r.done();
+  }
+});
+
+test("バージョンを下げる commit を、配布物が変わっていなくても落とす", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "1.2.0");
+    write(r.dir, "plugin/skills/a.md", "a");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+
+    bump(r.dir, "1.1.9");
+    r.git("commit", "-qam", "バージョンだけを下げる");
+    const down = check(r.dir, "--base", base);
+    assert.equal(down.status, 1, down.stderr);
+    assert.match(down.stderr, /下げ/);
+
+    write(r.dir, "plugin/skills/a.md", "b");
+    r.git("commit", "-qam", "配布物も変える");
+    const changed = check(r.dir, "--base", base);
+    assert.equal(changed.status, 1, changed.stderr);
+
+    // 数で比べる（文字列では 1.10.0 < 1.9.0 になる）
+    bump(r.dir, "1.10.0");
+    r.git("commit", "-qam", "上げる");
+    const up = check(r.dir, "--base", base);
+    assert.equal(up.status, 0, up.stderr);
+  } finally {
+    r.done();
+  }
+});
+
+test("4 箇所のバージョンだけを揃えて上げた commit は、配布物の変更に数えず通す", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "1.0.0");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+    bump(r.dir, "1.0.1");
+    r.git("commit", "-qam", "バージョンだけ");
+    const only = check(r.dir, "--base", base);
+    assert.equal(only.status, 0, only.stderr);
+  } finally {
+    r.done();
+  }
+});
