@@ -1,7 +1,7 @@
 // リポジトリの Markdown を、原文（source_item）と検索用の節（knowledge の document）にする。
 //
 // **コードは入れないが、文書は入れる。**設計文書と ADR は「なぜそうしたか」で、リポジトリが消えれば読む先も消える。
-// **見出しで切る。**1 本を丸ごと 1 件にすると、長い設計書が 1 つのベクトルに潰れて何にも当たらない。
+// **見出しで切る。**1 本を丸ごと 1 件にすると、長い設計書の語が 1 件に混ざり、どの節の話かが分からなくなる。
 // **原文は別に持つ。**節は見出しだけの節を落とすので、連結しても元の Markdown に戻らない。画面は原文を出す。
 //
 // **正は remote の既定 branch の commit で、作業ツリーは読まない。**作業ツリーを読むと、どの PC の・どの branch の・
@@ -10,13 +10,12 @@
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { type Kysely, type SqlBool, sql } from "kysely";
+import type { Kysely } from "kysely";
 import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underGleanery } from "./artifacts.ts";
-import { EMBED_MODEL, inTransaction } from "./db.ts";
+import { inTransaction, iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
-import { knowledgeText } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
-import { clean, sha256, tsvector } from "./text.ts";
+import { clean, sha256 } from "./text.ts";
 
 export type Section = {
   /** 作業場所の中で一意な key。`doc:<path>#<見出し>` */
@@ -316,7 +315,10 @@ const PROJECTION = 1;
 export const docHash = (d: Doc): Buffer =>
   sha256(JSON.stringify([PROJECTION, d.kind, d.path, d.title, d.body, d.at, d.artifact ?? null]));
 
+// 1 文で渡す変数の数を SQLite の上限（32,766）より十分下に保つ。
 const CHUNK = 500;
+const chunks = <T>(xs: T[]): T[][] =>
+  Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 
 /**
  * commit の tree から、入れる文書を組み立てる（DB に触らない）。`.gleanery` が不正なら、どれが承認済みかを
@@ -362,12 +364,10 @@ export function collectDocs(
 /** docs の connector に付いた除外。connector がまだ無ければ空（最初の同期でも読める）。 */
 export async function excludedOf(db: Kysely<DB>, projectId: number): Promise<Excluded> {
   const rows = await db
-    .selectFrom("gleanery.docs_exclude as x")
-    .innerJoin("gleanery.connector as c", (j) =>
-      j.onRef("c.id", "=", "x.connector_id").on("c.provider", "=", "docs"),
-    )
+    .selectFrom("docs_exclude as x")
+    .innerJoin("connector as c", (j) => j.onRef("c.id", "=", "x.connector_id").on("c.provider", "=", "docs"))
     .select(["x.kind", "x.path"])
-    .where("c.project_id", "=", String(projectId))
+    .where("c.project_id", "=", projectId)
     .execute();
   return {
     files: rows.flatMap((r) => (r.kind === "file" ? [r.path] : [])),
@@ -401,103 +401,118 @@ export async function syncDocs(
     const known = new Map(
       (
         await trx
-          .selectFrom("gleanery.source_item")
+          .selectFrom("source_item")
           .select(["external_id", "content_hash"])
           .where("connector_id", "=", connector.id)
           .execute()
       ).map((r) => [r.external_id, r.content_hash]),
     );
     const changed = docs.filter((d) => !known.get(d.path)?.equals(docHash(d)));
+    const now = iso(Date.now());
 
-    if (changed.length) {
-      // キーの綴りは下の `t(...)` と対。片方だけ変えると、その列は黙って null で入る。
-      const docRows: {
-        path: string;
-        kind: string;
-        title: string;
-        body: string;
-        at: string | null;
-        hash: string;
-        metadata: { change?: string; changeTitle?: string };
-      }[] = changed.map((d) => ({
-        path: d.path,
-        kind: d.kind,
-        title: d.title,
-        body: d.body,
-        at: d.at,
-        hash: docHash(d).toString("hex"),
-        metadata: d.artifact ? { change: d.artifact.change, changeTitle: d.artifact.changeTitle } : {},
-      }));
-      const items = await sql<{ id: string; external_id: string }>`
-        insert into gleanery.source_item (connector_id, external_id, kind, title, path, body, source_updated_at,
-                                          content_hash, metadata, synced_at)
-        select ${connector.id}, t.path, t.kind, t.title, t.path, t.body, t.at, decode(t.hash, 'hex'), t.metadata, now()
-          from jsonb_to_recordset(${JSON.stringify(docRows)}::jsonb)
-               as t(path text, kind text, title text, body text, at timestamptz, hash text, metadata jsonb)
-        on conflict (connector_id, external_id) do update set
-          kind = excluded.kind, title = excluded.title, body = excluded.body,
-          source_updated_at = excluded.source_updated_at, content_hash = excluded.content_hash,
-          metadata = excluded.metadata, synced_at = now()
-        returning id, external_id`.execute(trx);
-      const sourceOf = new Map(items.rows.map((r) => [r.external_id, r.id]));
-      const sections = changed.flatMap((d) =>
-        d.sections.map((s) => {
-          const row = { kind: "document", heading: s.trail, body: s.text, reason: null };
-          return {
-            s,
-            source: sourceOf.get(d.path),
-            at: d.at,
-            hash: sha256(knowledgeText(row)),
-            lex: tsvector(`${s.trail}\n${s.text}`),
-          };
-        }),
-      );
-      // 節が消えた・key が変わったものを先に消す。残すと撤回した記述が検索で返る。
+    const sourceOf = new Map<string, number>();
+    for (const part of chunks(changed))
+      for (const r of await trx
+        .insertInto("source_item")
+        .values(
+          part.map((d) => ({
+            connector_id: connector.id,
+            external_id: d.path,
+            kind: d.kind,
+            title: d.title,
+            path: d.path,
+            body: d.body,
+            source_updated_at: d.at === null ? null : iso(d.at),
+            content_hash: docHash(d),
+            metadata: JSON.stringify(
+              d.artifact ? { change: d.artifact.change, changeTitle: d.artifact.changeTitle } : {},
+            ),
+            synced_at: now,
+          })),
+        )
+        .onConflict((oc) =>
+          oc.columns(["connector_id", "external_id"]).doUpdateSet((eb) => ({
+            kind: eb.ref("excluded.kind"),
+            title: eb.ref("excluded.title"),
+            body: eb.ref("excluded.body"),
+            source_updated_at: eb.ref("excluded.source_updated_at"),
+            content_hash: eb.ref("excluded.content_hash"),
+            metadata: eb.ref("excluded.metadata"),
+            synced_at: eb.ref("excluded.synced_at"),
+          })),
+        )
+        .returning(["id", "external_id"])
+        .execute())
+        sourceOf.set(r.external_id, r.id);
+    const sections = changed.flatMap((d) =>
+      d.sections.map((s) => ({
+        s,
+        source: sourceOf.get(d.path),
+        at: d.at === null ? now : iso(d.at),
+        hash: sha256(JSON.stringify([s.trail, s.text])),
+      })),
+    );
+    // 節が消えた・key が変わったものを先に消す。残すと撤回した記述が検索で返る。
+    const keep = new Set(sections.map((x) => x.s.key));
+    const stale: number[] = [];
+    for (const part of chunks([...sourceOf.values()]))
+      for (const k of await trx
+        .selectFrom("knowledge")
+        .select(["id", "source_key"])
+        .where("source_item_id", "in", part)
+        .execute())
+        if (!keep.has(k.source_key)) stale.push(k.id);
+    for (const part of chunks(stale)) await trx.deleteFrom("knowledge").where("id", "in", part).execute();
+    for (const part of chunks(sections))
       await trx
-        .deleteFrom("gleanery.knowledge")
-        .where(sql<SqlBool>`source_item_id = any(${[...sourceOf.values()]})`)
-        .where(sql<SqlBool>`source_key <> all(${sections.map((x) => x.s.key)})`)
+        .insertInto("knowledge")
+        .values(
+          part.map((x) => {
+            if (x.source === undefined) throw new Error(`文書を書けなかった: ${x.s.key}`);
+            return {
+              project_id: projectId,
+              source_item_id: x.source,
+              source_key: x.s.key,
+              kind: "document",
+              heading: x.s.trail,
+              body: x.s.text,
+              occurred_at: x.at,
+              content_hash: x.hash,
+            };
+          }),
+        )
+        .onConflict((oc) =>
+          oc
+            .columns(["project_id", "source_key"])
+            .doUpdateSet((eb) => ({
+              source_item_id: eb.ref("excluded.source_item_id"),
+              heading: eb.ref("excluded.heading"),
+              body: eb.ref("excluded.body"),
+              occurred_at: eb.ref("excluded.occurred_at"),
+              content_hash: eb.ref("excluded.content_hash"),
+            }))
+            .where("knowledge.content_hash", "<>", (eb) => eb.ref("excluded.content_hash")),
+        )
         .execute();
-      for (let i = 0; i < sections.length; i += CHUNK) {
-        const part = sections.slice(i, i + CHUNK);
-        const written = await sql<{ id: string; content_hash: Buffer }>`
-          insert into gleanery.knowledge (project_id, source_item_id, source_key, kind, heading, body, occurred_at,
-                                          content_hash, lexemes)
-          select ${projectId}, t.source, t.key, 'document', t.heading, t.body, coalesce(t.at, now()), t.hash,
-                 t.lex::tsvector
-            from unnest(${part.map((x) => x.source)}::bigint[], ${part.map((x) => x.s.key)}::text[],
-                        ${part.map((x) => x.s.trail)}::text[], ${part.map((x) => x.s.text)}::text[],
-                        ${part.map((x) => x.at)}::timestamptz[], ${part.map((x) => x.hash)}::bytea[],
-                        ${part.map((x) => x.lex)}::text[])
-                 as t(source, key, heading, body, at, hash, lex)
-          on conflict (project_id, source_key) do update set
-            source_item_id = excluded.source_item_id, heading = excluded.heading, body = excluded.body,
-            occurred_at = excluded.occurred_at, content_hash = excluded.content_hash, lexemes = excluded.lexemes
-          where gleanery.knowledge.content_hash <> excluded.content_hash
-          returning id, content_hash`.execute(trx);
-        await sql`
-          insert into gleanery.knowledge_embedding (knowledge_id, model, source_hash, status)
-          select t.id, ${EMBED_MODEL}, t.hash, 'pending'
-            from unnest(${written.rows.map((r) => r.id)}::bigint[],
-                        ${written.rows.map((r) => r.content_hash)}::bytea[]) as t(id, hash)
-          on conflict (knowledge_id) do update set
-            source_hash = excluded.source_hash, status = 'pending', embedding = null, attempts = 0, last_error = null,
-            updated_at = now()
-          where gleanery.knowledge_embedding.source_hash <> excluded.source_hash`.execute(trx);
-      }
-    }
     // git の一覧は完全なので、一覧から消えた文書（承認を外した成果物を含む）は行ごと消す。
-    const removed = await trx
-      .deleteFrom("gleanery.source_item")
-      .where("connector_id", "=", connector.id)
-      .where(sql<SqlBool>`external_id <> all(${docs.map((d) => d.path)})`)
-      .executeTakeFirst();
+    const present = new Set(docs.map((d) => d.path));
+    let removed = 0;
+    for (const part of chunks([...known.keys()].filter((p) => !present.has(p))))
+      removed += Number(
+        (
+          await trx
+            .deleteFrom("source_item")
+            .where("connector_id", "=", connector.id)
+            .where("external_id", "in", part)
+            .executeTakeFirst()
+        ).numDeletedRows,
+      );
     await trx
-      .updateTable("gleanery.connector")
-      .set({ head_oid: commit, last_success_at: sql`now()`, last_error: null })
+      .updateTable("connector")
+      .set({ head_oid: commit, last_success_at: now, last_error: null })
       .where("id", "=", connector.id)
       .execute();
-    return { refused: null, changed: changed.length, removed: Number(removed.numDeletedRows) };
+    return { refused: null, changed: changed.length, removed };
   });
 
   if (done.refused) {

@@ -21,14 +21,15 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { type Kysely, type SqlBool, sql } from "kysely";
+import type { Kysely } from "kysely";
 import { ARTIFACT_PATH } from "./artifacts.ts";
-import { EMBED_MODEL, type Env, embed, inTransaction, KEY, loadEnv, open, vec } from "./db.ts";
+import { dbFile, inTransaction, iso, sqliteCode } from "./db.ts";
 import type { DB } from "./db-types.ts";
-import { conversationId, type FileAction, indexesMessage, messageText, type Origin } from "./knowledge.ts";
+import { openWriter } from "./db-write.ts";
+import { conversationId, type FileAction, indexesMessage, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
-import { bytes, clean, head, mask, reason, sha256, tail, tsvector, uuidFrom } from "./text.ts";
+import { bytes, clean, head, mask, reason, sha256, tail, uuidFrom } from "./text.ts";
 
 // 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の待ち行列を触らない）。
 export const spoolDir = (): string => path.join(os.homedir(), ".gleanery", "spool");
@@ -79,7 +80,7 @@ export type Spooled =
       at: string;
     };
 
-/** 1 発言の上限。超えたら冒頭と末尾だけを残す（間違って貼った巨大なログで DB と埋め込みを埋めない）。 */
+/** 1 発言の上限。超えたら冒頭と末尾だけを残す（間違って貼った巨大なログで DB と語彙索引を埋めない）。 */
 export const MAX_MESSAGE = 128 * 1024;
 const KEEP = 8 * 1024;
 
@@ -288,15 +289,11 @@ export function answersOf(input: HookInput): string | null {
 
 /**
  * 自動記録が止まっているなら、session の開始時に持ち主へ出す表示。**黙って待ち行列を積み続けない。**
- * 鍵が無い・送信が失敗し続けている・DB が受け付けなかった記録がある、のどれか。
+ * DB が無い・送信が失敗し続けている・DB が受け付けなかった記録がある、のどれか。
  */
-export function captureNotice(env: Env): string | null {
-  if (!env[KEY.capture])
-    return panel(
-      `gleanery: ${KEY.capture} が無いので、会話を自動記録できない`,
-      [],
-      "gleanery doctor で確かめる",
-    );
+export function captureNotice(file: string = dbFile()): string | null {
+  if (!fs.existsSync(file))
+    return panel("gleanery: DB が無いので、会話を自動記録できない", [file], "gleanery db init で作る");
   const s = readState();
   if (s.stuck)
     return panel(
@@ -325,7 +322,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     if (file && input.session_id && /^[A-Za-z0-9_-]+$/.test(input.session_id)) {
       fs.appendFileSync(file, `export GLEANERY_PARENT_SESSION=${input.session_id}\n`);
     }
-    return { flush: false, notice: captureNotice(loadEnv()) };
+    return { flush: false, notice: captureNotice() };
   }
   if (!owner()) return { flush: false };
   // Interrupt は最大 3 秒で打ち切られる。新しい記録は作らないので、git と作業場所を調べず待ち行列だけ送る。
@@ -479,21 +476,22 @@ function lock(): (() => void) | null {
 }
 
 const BATCH = 500;
+// 1 文で渡す変数の数を SQLite の上限（32,766）より十分下に保つ。発言は 1 行 11 列。
+const ROWS = 1000;
+const chunks = <T>(xs: T[], n = ROWS): T[][] =>
+  Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, (i + 1) * n));
 
 type Project = { id: number; name: string };
-type Vectors = Map<Spooled, { text: string; v: number[] | undefined }>;
 
 /**
- * 記録の束を 1 つの transaction で書く。**表ごとに 1 往復**（往復の回数は件数に比例して効いてくる）。
- * **衝突先の列を書かない（`on conflict do nothing`）。**列を書くと PostgreSQL はその列の SELECT 権限を求め、
- * 本文を読めない capture の鍵では拒否される。id は待ち行列に書くときに決まるので、送り直しがどの一意制約に当たっても
- * 「もう入っている」。
+ * 記録の束を 1 つの transaction で書く。**capture の接続は 3 つの view にだけ書ける**（db/schema.sql、db-write.ts）。
+ * view の trigger が `on conflict do nothing` で入れるので、id は待ち行列に書くときに決まり、送り直しは「もう入っている」。
+ * **件数を影響行数で数えない。**view への insert の影響行数は 0 になるので、送る前に在った id を引いて差で数える。
  */
 export async function write(
   db: Kysely<DB>,
   batch: Spooled[],
   projects: Map<string, Project>,
-  vectors: Vectors,
 ): Promise<number> {
   return inTransaction(db, async (trx) => {
     const conversations = new Map<
@@ -514,80 +512,86 @@ export async function write(
           at: r.at,
         });
     }
-    const c = [...conversations];
-    await sql`
-      insert into gleanery.conversation (id, project_id, origin, external_id, branch, started_at)
-      select * from unnest(${c.map(([id]) => id)}::uuid[], ${c.map(([, v]) => v.project)}::bigint[],
-                           ${c.map(([, v]) => v.host)}::text[], ${c.map(([, v]) => v.session)}::text[],
-                           ${c.map(([, v]) => v.branch)}::text[], ${c.map(([, v]) => v.at)}::timestamptz[])
-      on conflict do nothing`.execute(trx);
+    for (const part of chunks([...conversations]))
+      await trx
+        .insertInto("capture_conversation")
+        .values(
+          part.map(([id, v]) => ({
+            id,
+            project_id: v.project,
+            origin: v.host,
+            external_id: v.session,
+            branch: v.branch,
+            started_at: iso(v.at),
+          })),
+        )
+        .execute();
     const messages = batch.flatMap((m) => {
       const p = m.kind === "message" ? projects.get(m.project) : undefined;
       if (m.kind !== "message" || !p) return [];
       const conversation = conversationId(p.id, m.host, m.session);
-      return [
-        { m, conversation, id: uuidFrom(conversation, m.id), indexed: indexesMessage(m.host, m.speaker) },
-      ];
+      return [{ m, conversation, id: uuidFrom(conversation, m.id) }];
     });
-    const inserted = await sql`
-      insert into gleanery.message (id, conversation_id, external_id, turn_id, speaker_kind, body, truncated,
-                                    original_bytes, sent_at, content_hash, lexemes)
-      select t.id, t.conversation, t.external, t.turn, t.speaker, t.body, t.truncated, t.bytes, t.at, t.hash,
-             t.lex::tsvector
-        from unnest(${messages.map((x) => x.id)}::uuid[], ${messages.map((x) => x.conversation)}::uuid[],
-                    ${messages.map((x) => x.m.id)}::text[], ${messages.map((x) => x.m.turn)}::text[],
-                    ${messages.map((x) => x.m.speaker)}::text[], ${messages.map((x) => x.m.body)}::text[],
-                    ${messages.map((x) => x.m.truncated)}::boolean[],
-                    ${messages.map((x) => x.m.originalBytes)}::int[],
-                    ${messages.map((x) => x.m.at)}::timestamptz[],
-                    ${messages.map((x) => sha256(x.m.body))}::bytea[],
-                    ${messages.map((x) => (x.indexed ? tsvector(x.m.body) : null))}::text[])
-             as t(id, conversation, external, turn, speaker, body, truncated, bytes, at, hash, lex)
-      on conflict do nothing`.execute(trx);
-    // 埋め込みが取れなかった発言は pending で入れ、次の同期（ingest の鍵）が取り直す。
-    const embedded = messages.flatMap((x) => {
-      const e = vectors.get(x.m);
-      return e ? [{ id: x.id, text: e.text, v: e.v }] : [];
-    });
-    await sql`
-      insert into gleanery.message_embedding (message_id, model, source_hash, status, embedding)
-      select t.id, ${EMBED_MODEL}, t.hash, t.status, t.v::extensions.halfvec
-        from unnest(${embedded.map((x) => x.id)}::uuid[], ${embedded.map((x) => sha256(x.text))}::bytea[],
-                    ${embedded.map((x) => (x.v ? "ready" : "pending"))}::text[],
-                    ${embedded.map((x) => (x.v ? vec(x.v) : null))}::text[]) as t(id, hash, status, v)
-      on conflict do nothing`.execute(trx);
-    // 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの会話の DB に無ければ（途中で別の作業場所へ移った session など）
-    // 結ぶ先が無いので捨てる。
+    let before = 0;
+    for (const part of chunks(messages)) {
+      const ids = part.map((x) => x.id);
+      before += (await trx.selectFrom("message").select("id").where("id", "in", ids).execute()).length;
+      await trx
+        .insertInto("capture_message")
+        .values(
+          part.map((x) => ({
+            id: x.id,
+            conversation_id: x.conversation,
+            external_id: x.m.id,
+            turn_id: x.m.turn,
+            speaker_kind: x.m.speaker,
+            body: x.m.body,
+            truncated: x.m.truncated ? 1 : 0,
+            original_bytes: x.m.originalBytes,
+            sent_at: iso(x.m.at),
+            content_hash: sha256(x.m.body),
+            indexed: indexesMessage(x.m.host, x.m.speaker) ? 1 : 0,
+          })),
+        )
+        .execute();
+    }
+    let after = 0;
+    for (const part of chunks(messages))
+      after += (
+        await trx
+          .selectFrom("message")
+          .select("id")
+          .where(
+            "id",
+            "in",
+            part.map((x) => x.id),
+          )
+          .execute()
+      ).length;
+    // 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの DB に無ければ（途中で別の作業場所へ移った session など）
+    // view の trigger が捨てる。
     const files = batch.flatMap((r) => {
       const p = r.kind === "file" ? projects.get(r.project) : undefined;
       if (r.kind !== "file" || !p) return [];
       return [
         {
-          message: uuidFrom(conversationId(p.id, r.host, r.session), r.message),
+          message_id: uuidFrom(conversationId(p.id, r.host, r.session), r.message),
           path: r.path,
           action: r.action,
         },
       ];
     });
-    await sql`
-      insert into gleanery.message_file (message_id, path, action)
-      select t.message, t.path, t.action
-        from unnest(${files.map((f) => f.message)}::uuid[], ${files.map((f) => f.path)}::text[],
-                    ${files.map((f) => f.action)}::text[]) as t(message, path, action)
-       where exists (select 1 from gleanery.message m where m.id = t.message)
-      on conflict do nothing`.execute(trx);
-    return Number(inserted.numAffectedRows ?? 0);
+    for (const part of chunks(files)) await trx.insertInto("capture_message_file").values(part).execute();
+    return after - before;
   });
 }
 
 /**
- * その記録が原因の失敗か。DB が SQLSTATE を返したものは、接続・資源・停止（08 / 53 / 57 / 58）を除いて
- * 送り直しても同じ結果になる（値の域・制約・索引の上限など）。SQLSTATE の無い失敗（接続断）は束ごと送り直す。
+ * その記録が原因の失敗か。SQLite が制約・型・大きさで拒んだもの（CONSTRAINT / MISMATCH / TOOBIG / RANGE）は
+ * 送り直しても同じ結果になる。ロック・入出力・ファイルの失敗は束ごと送り直す。
  */
-const rejected = (e: unknown): boolean => {
-  const code = String((e as { code?: unknown }).code ?? "");
-  return /^[0-9A-Z]{5}$/.test(code) && !/^(08|53|57|58)/.test(code);
-};
+const REJECTED = new Set([18, 19, 20, 25]);
+const rejected = (e: unknown): boolean => REJECTED.has(sqliteCode(e) ?? -1);
 
 /**
  * 待ち行列を DB へ送る。**鍵は capture（追記だけ）。**同じものを 2 回送っても行は増えない。
@@ -598,7 +602,7 @@ const rejected = (e: unknown): boolean => {
  * sent は新しく入った発言の数（送り直した分は数えない）。busy は別の送信が走っていて何もしなかったとき。
  */
 export async function flush(
-  env: Env,
+  file: string = dbFile(),
 ): Promise<{ sent: number; deferred: number; rejected: number; busy?: boolean }> {
   const unlock = lock();
   if (!unlock) return { sent: 0, deferred: 0, rejected: 0, busy: true };
@@ -633,42 +637,20 @@ export async function flush(
         fs.rmSync(path.join(from, name), { force: true }); // 読めない残骸
       }
     }
-    // 版を確かめない。確かめると、DB を上げた PC 以外の記録が plugin の更新まで全部止まる。
-    const db = open(env, "capture", false);
+    // 版を確かめない（db-write.ts）。確かめると、DB を上げてから plugin を上げるまで記録が丸ごと止まる。
+    const db = openWriter("capture", file);
     client = db;
     const projects = new Map(
       (
         await db
-          .selectFrom("gleanery.project")
+          .selectFrom("project")
           .select(["id", "key", "name"])
-          .where(sql<SqlBool>`key = any(${[...new Set(records.map((x) => x.r.project))]})`)
+          .where("key", "in", [...new Set(records.map((x) => x.r.project))])
           .execute()
-      ).map((p) => [p.key, { id: Number(p.id), name: p.name }]),
+      ).map((p) => [p.key, { id: p.id, name: p.name }]),
     );
     const known = records.filter((x) => projects.has(x.r.project));
     const strayed = records.filter((x) => !projects.has(x.r.project));
-
-    // 埋め込みは transaction の前に取る。落ちたら pending で入れ、次の同期が取り直す。
-    const toEmbed = known.flatMap((x) =>
-      x.r.kind === "message" && indexesMessage(x.r.host, x.r.speaker) ? [x.r] : [],
-    );
-    const texts = toEmbed.map((m) =>
-      messageText({
-        body: m.body,
-        speakerKind: m.speaker,
-        handle: null,
-        project: projects.get(m.project)?.name ?? m.project,
-        source: null,
-        paths: [],
-      }),
-    );
-    let vectors: number[][] | null = null;
-    try {
-      vectors = texts.length ? await embed(env, texts, "document") : [];
-    } catch {
-      vectors = null;
-    }
-    const vectorOf: Vectors = new Map(toEmbed.map((m, n) => [m, { text: texts[n] ?? "", v: vectors?.[n] }]));
 
     let sent = 0;
     const bad: { name: string; from: string; r: Spooled }[] = [];
@@ -677,7 +659,6 @@ export async function flush(
         db,
         known.map((x) => x.r),
         projects,
-        vectorOf,
       );
     } catch (e) {
       if (!rejected(e)) throw e;
@@ -685,7 +666,7 @@ export async function flush(
       const ordered = [...known].sort((a, b) => Number(a.r.kind === "file") - Number(b.r.kind === "file"));
       for (const x of ordered) {
         try {
-          sent += await write(db, [x.r], projects, vectorOf);
+          sent += await write(db, [x.r], projects);
         } catch (e2) {
           if (!rejected(e2)) throw e2;
           bad.push(x);
@@ -746,7 +727,7 @@ export async function readInput(stream: NodeJS.ReadableStream): Promise<HookInpu
 
 async function main(): Promise<void> {
   if (process.argv[2] === "--flush") {
-    await flush(loadEnv());
+    await flush();
     return;
   }
   const input = await readInput(process.stdin);

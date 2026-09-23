@@ -14,7 +14,7 @@ function run(...args: string[]): { code: number; out: string } {
     const out = execFileSync(process.execPath, [CLI, ...args], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
-      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", GLEANERY_ENV_DIR: "/nonexistent" },
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent" },
       // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
       timeout: 30_000,
     });
@@ -34,12 +34,12 @@ test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落�
     const r = run("search", "認証", bad);
     assert.notEqual(r.code, 0);
     assert.match(r.out, new RegExp(`知らないフラグ: ${bad}`), `${bad}: ${r.out}`);
-    assert.doesNotMatch(r.out, /GLEANERY_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");
+    assert.doesNotMatch(r.out, /DB が無い/, "DB へ繋ぎにいっている");
   }
   const r = run("frobnicate");
   assert.notEqual(r.code, 0);
   assert.match(r.out, /知らないコマンド: frobnicate/);
-  assert.doesNotMatch(r.out, /GLEANERY_DB_URL_\w* が無い/, "DB へ繋ぎにいっている");
+  assert.doesNotMatch(r.out, /DB が無い/, "DB へ繋ぎにいっている");
 });
 
 // 全コマンド共通のフラグ表を持つと、そのコマンドが見もしないフラグが黙って通る。
@@ -54,11 +54,7 @@ test("そのコマンドが取らないフラグと、余分な位置引数は�
     const r = run(...args);
     assert.notEqual(r.code, 0, `gleanery ${args.join(" ")}: ${r.out}`);
     assert.match(r.out, want, r.out);
-    assert.doesNotMatch(
-      r.out,
-      /GLEANERY_DB_URL_\w* が無い/,
-      `gleanery ${args.join(" ")} が DB へ繋ぎにいった`,
-    );
+    assert.doesNotMatch(r.out, /DB が無い/, `gleanery ${args.join(" ")} が DB へ繋ぎにいった`);
   }
 });
 

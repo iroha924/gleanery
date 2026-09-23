@@ -17,7 +17,7 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 ## Does not trigger
 
 - MCP・他の CLI command・取り込みだけを変更する
-- DB schema や role を変更する。その場合は `knowledge-schema`
+- DB schema や接続の役割を変更する。その場合は `knowledge-schema`
 - 版を上げて届ける。その場合は `plugin-release`（TUI は CLI の一部なので release の種別は `plugin`）
 
 ## 依存について知っておくこと
@@ -56,7 +56,7 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
   同じ語で同じ順位が返る
 - 接続は reader だけ。`tui/` から ingest / capture / owner の接続や、書き込む module（`capture.ts`・`trace.ts` など）を
   import しない（`server/test/tui.test.ts` が見る）。**取り込み・trace を起動するキーを足さない**
-- 環境変数は reader の鍵と検索に要るものだけを `open` へ渡す（`data.ts`）
+- DB は読むだけの接続（`openReader`）だけを開く（`data.ts`）。書く接続（`db-write.ts`）を import しない（`bun run architecture` が止める）
 
 ## 画面の作法
 

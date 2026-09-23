@@ -3,92 +3,179 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { needsRoleKeys } from "../src/admin.ts";
-import { type Env, KEY } from "../src/db.ts";
+import { dbInit, inspect, migrate, reindex } from "../src/admin.ts";
+import { SCHEMA_REVISION } from "../src/db.ts";
+import { connectWriter } from "../src/db-write.ts";
+import { at, hash } from "./temp-db.ts";
 
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts");
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-admin-"));
 
-const KEYS: Env = {
-  [KEY.reader]: "postgres://gleanery_reader:old@127.0.0.1:5432/gleanery",
-  [KEY.ingest]: "postgres://gleanery_ingest:old@127.0.0.1:5432/gleanery",
-  [KEY.capture]: "postgres://gleanery_capture:old@127.0.0.1:5432/gleanery",
-};
-
-// `docker compose down -v` で作り直した DB のロールはパスワードを持たない（db/schema.sql の create role）。
-// 前の DB の鍵を env に残したままだと、db init は成功したまま 3 つの出口とも認証に落ちる。
-test("schema を当てた直後は、env に 3 鍵が揃っていてもロールの鍵を作り直す", () => {
-  assert.equal(needsRoleKeys(true, KEYS), true);
-  assert.equal(needsRoleKeys(false, KEYS), false);
-  for (const role of ["reader", "ingest", "capture"] as const) {
-    assert.equal(needsRoleKeys(false, { ...KEYS, [KEY[role]]: undefined }), true, role);
-    assert.equal(needsRoleKeys(true, { ...KEYS, [KEY[role]]: undefined }), true, role);
-  }
-});
-
-/**
- * owner の鍵だけを置いた temp HOME と、docker を騙る shim だけの PATH で CLI を走らせる。
- * shim は呼ばれた引数を書き出すので、docker まで届いたかどうかを実際に見分けられる。
- */
-function run(url: string, ...args: string[]): { code: number; out: string; docker: string } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-admin-"));
-  const log = path.join(dir, "docker.log");
+/** admin の出力（console.log）を黙らせて fn を流す。 */
+async function quiet<T>(fn: () => T | Promise<T>): Promise<T> {
+  const log = console.log;
+  console.log = () => {};
   try {
-    fs.mkdirSync(path.join(dir, ".gleanery"));
-    fs.writeFileSync(path.join(dir, ".gleanery", "env"), `${KEY.owner}=${url}\n`, { mode: 0o600 });
-    const bin = path.join(dir, "bin");
-    fs.mkdirSync(bin);
-    fs.writeFileSync(path.join(bin, "docker"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\n`, {
-      mode: 0o755,
-    });
-    let code = 0;
-    let out = "";
-    try {
-      out = execFileSync(process.execPath, [CLI, ...args], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { PATH: bin, HOME: dir, GLEANERY_ENV_DIR: "/nonexistent" },
-        // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
-        timeout: 30_000,
-      });
-    } catch (e) {
-      const err = e as { status?: number; stdout?: string; stderr?: string; code?: string };
-      if (err.code === "ETIMEDOUT") throw new Error(`gleanery ${args.join(" ")} が 30 秒で終わらなかった`);
-      code = err.status ?? -1;
-      out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
-    }
-    return { code, out, docker: fs.existsSync(log) ? fs.readFileSync(log, "utf8") : "" };
+    return await fn();
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    console.log = log;
   }
 }
 
-// compose はこの PC のコンテナを起動するが、その後の schema とロールのパスワードは URL の host へ当たる。
-// 綴りの違う host を loopback と認めると、手元の DB を初期化したつもりで外の DB を書き換える。
-test("owner の接続先が loopback でなければ、db init / up / down は docker を起動せずに止まる", () => {
-  for (const host of ["db.example.com", "127.0.0.2", "127.1", "0x7f.1", "localhost.example.com"]) {
-    for (const cmd of ["init", "up", "down"]) {
-      const r = run(`postgres://postgres:pw@${host}:5432/gleanery`, "db", cmd);
-      assert.notEqual(r.code, 0, `db ${cmd} ${host}: ${r.out}`);
-      assert.match(r.out, /この PC の DB でない/, `db ${cmd} ${host}: ${r.out}`);
-      assert.equal(r.docker, "", `db ${cmd} ${host} が docker を呼んだ: ${r.docker}`);
-    }
-  }
+test("db init は DB を WAL で作って版を付け、2 度目は触らない", async () => {
+  const file = path.join(tmp(), "nested", "gleanery.db");
+  await quiet(() => dbInit(file));
+  const raw = new DatabaseSync(file, { readOnly: true });
+  assert.equal((raw.prepare("pragma journal_mode").get() as { journal_mode: string }).journal_mode, "wal");
+  assert.equal(
+    (raw.prepare("pragma user_version").get() as { user_version: number }).user_version,
+    SCHEMA_REVISION,
+  );
+  raw.close();
+  const w = connectWriter("owner", file);
+  w.prepare("insert into project (key, name) values ('git:x/y', 'x/y')").run();
+  w.close();
+  await quiet(() => dbInit(file));
+  const again = new DatabaseSync(file, { readOnly: true });
+  assert.equal(
+    (again.prepare("select count(*) as n from project").get() as { n: number }).n,
+    1,
+    "作り直していない",
+  );
+  again.close();
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(file)).filter((f) => f.includes(".tmp")),
+    [],
+    "一時ファイルを残さない",
+  );
 });
 
-// 上の試験が、別の理由で止まっているだけにならないようにする。
-test("owner の接続先が loopback なら docker まで届く", () => {
-  const r = run("postgres://postgres:pw@127.0.0.1:55432/gleanery", "db", "down");
-  assert.equal(r.code, 0, r.out);
-  assert.match(r.docker, /^compose .*\bdown$/m, r.docker);
+// 2 つの db init が同時に「まだ無い」を見ても、後から置く側が先に置かれて記録の入った DB を空の DB で置き換えない。
+test("db init は置く直前に先に置かれた DB を置き換えない", async (t) => {
+  const file = path.join(tmp(), "gleanery.db");
+  await quiet(() => dbInit(file));
+  const w = connectWriter("owner", file);
+  w.prepare("insert into project (key, name) values ('git:x/y', 'x/y')").run();
+  w.close();
+  // 存在の確かめをすり抜けた側を再現する。
+  t.mock.method(fs, "existsSync", (f: fs.PathLike) =>
+    String(f) === file ? false : fs.statSync(f, { throwIfNoEntry: false }) !== undefined,
+  );
+  await assert.rejects(async () => quiet(() => dbInit(file)), /既に/);
+  t.mock.restoreAll();
+  const raw = new DatabaseSync(file, { readOnly: true });
+  assert.equal((raw.prepare("select count(*) as n from project").get() as { n: number }).n, 1);
+  raw.close();
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(file)).filter((f) => f.includes(".tmp")),
+    [],
+  );
 });
 
-// migrate は docker を触らない。他所の DB へ当てる用途がありうるので loopback に縛らない。
-// 接続先は、名前を引かずに即座に断られて、loopback の綴りでもないものにする。
-test("db migrate は loopback でない接続先でも接続まで進む", () => {
-  const r = run("postgres://postgres:pw@0.0.0.0:1/gleanery", "db", "migrate", "--yes");
-  assert.notEqual(r.code, 0, r.out);
-  assert.doesNotMatch(r.out, /この PC の DB でない/, r.out);
-  assert.equal(r.docker, "", `migrate が docker を呼んだ: ${r.docker}`);
+test("hard link を持たない FS では rename で置く", async (t) => {
+  const file = path.join(tmp(), "gleanery.db");
+  t.mock.method(fs, "linkSync", () => {
+    throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+  });
+  await quiet(() => dbInit(file));
+  const raw = new DatabaseSync(file, { readOnly: true });
+  assert.equal(
+    (raw.prepare("pragma user_version").get() as { user_version: number }).user_version,
+    SCHEMA_REVISION,
+  );
+  raw.close();
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(file)).filter((f) => f.includes(".tmp")),
+    [],
+  );
+});
+
+// 別のアプリの DB を同じ名前で置いていたとき、上から schema を当てて壊さない。
+test("db init は gleanery の DB でないファイルを上書きしない", async () => {
+  const file = path.join(tmp(), "gleanery.db");
+  const raw = new DatabaseSync(file);
+  raw.exec("create table mine (a)");
+  raw.close();
+  await assert.rejects(
+    quiet(() => dbInit(file)),
+    /gleanery の DB ではない/,
+  );
+});
+
+test("db reindex は語彙索引を作り直し、doctor の確かめが通る", async () => {
+  const file = path.join(tmp(), "gleanery.db");
+  await quiet(() => dbInit(file));
+  const w = connectWriter("owner", file);
+  w.exec("insert into project (key, name) values ('git:x/y', 'x/y')");
+  w.prepare(
+    "insert into conversation (id, project_id, origin, external_id, started_at) values ('c', 1, 'codex', 's', ?)",
+  ).run(at("2026-09-01T00:00:00Z"));
+  w.prepare(
+    "insert into knowledge (project_id, conversation_id, source_key, kind, body, occurred_at, content_hash) values (1, 'c', 'k', 'finding', '索引を作り直す', ?, ?)",
+  ).run(at("2026-09-01T00:00:00Z"), hash());
+  w.exec("insert into knowledge_fts (knowledge_fts) values ('delete-all')");
+  const count = () =>
+    (
+      w.prepare("select count(*) as n from knowledge_fts where knowledge_fts match '\"索引\"'").get() as {
+        n: number;
+      }
+    ).n;
+  assert.equal(count(), 0);
+  await quiet(() => reindex(file));
+  assert.equal(count(), 1);
+  w.close();
+  const x = inspect(file);
+  assert.equal(x.revision, SCHEMA_REVISION);
+  assert.deepEqual(x.fts, { knowledge: null, message: null });
+  assert.ok(x.bytes > 0);
+});
+
+test("当てる migration が無ければ db migrate は何もしない", async () => {
+  const file = path.join(tmp(), "gleanery.db");
+  await quiet(() => dbInit(file));
+  await quiet(() => migrate(true, file));
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+});
+
+// 配った CLI から打つ経路。HOME を一時ディレクトリへ向け、持ち主の ~/.gleanery を触らない。
+test("gleanery db init は HOME の .gleanery に DB を作る", () => {
+  const home = tmp();
+  execFileSync(process.execPath, [CLI, "db", "init"], {
+    env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home },
+    stdio: "ignore",
+    timeout: 30_000,
+  });
+  assert.equal(inspect(path.join(home, ".gleanery", "gleanery.db")).revision, SCHEMA_REVISION);
+});
+
+// 当てる途中で落ちたら、前半だけ確定して版が上がらないまま残らない（打ち直すと二重に当たる）。
+test("db migrate は新しい migration を 1 つの transaction で当てて版を上げ、落ちたら何も残さない", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "gleanery.db");
+  await quiet(() => dbInit(file));
+  const migrations = path.join(dir, "migrations");
+  fs.mkdirSync(migrations);
+  const next = SCHEMA_REVISION + 1;
+  const name = `${String(next).padStart(4, "0")}_add_note.sql`;
+  fs.writeFileSync(
+    path.join(migrations, name),
+    "create table note (a text) strict;\ncreate table broken (;\n",
+  );
+  await assert.rejects(
+    quiet(() => migrate(true, file, migrations)),
+    /syntax error/,
+  );
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+  const tables = () =>
+    new DatabaseSync(file, { readOnly: true })
+      .prepare("select name from sqlite_schema where name = 'note'")
+      .all().length;
+  assert.equal(tables(), 0, "前半の DDL も戻っている");
+  fs.writeFileSync(path.join(migrations, name), "create table note (a text) strict;\n");
+  await quiet(() => migrate(true, file, migrations));
+  assert.equal(inspect(file).revision, next);
+  assert.equal(tables(), 1);
 });

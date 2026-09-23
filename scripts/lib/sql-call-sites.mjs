@@ -6,11 +6,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-// kysely の実行と、pg の client へ生の SQL を渡す形の両方を数える。後者を落とすと、schema の適用と
-// migration が台帳にも EXPLAIN にも載らないまま「全部見ている」ように読める。
-const SITE = /\.(?:execute|executeTakeFirst|executeTakeFirstOrThrow)\s*\(|\.query\s*[(<]/;
-// transaction を張る `.execute(fn)` は SQL を組み立てない。中の問い合わせが別の call site になる。
-const NOT_A_QUERY = /\.transaction\(\)\s*\.execute\s*\(/;
+// kysely の実行と、node:sqlite へ生の SQL を渡す形の両方を数える。後者を落とすと、schema の適用・migration・
+// 接続の設定が台帳に載らないまま「全部見ている」ように読める。node:sqlite の接続を持つ変数は `raw` と呼ぶ
+// （`.exec(` だけで数えると RegExp#exec まで拾う）。
+const SITE = /\.(?:execute|executeTakeFirst|executeTakeFirstOrThrow)\s*\(|\braw\.(?:exec|prepare)\s*\(/;
+// transaction や接続を張る `.execute(fn)` は SQL を組み立てない。中の問い合わせが別の call site になる。
+const NOT_A_QUERY = /\.(?:transaction|connection)\(\)\s*\.execute\s*\(/;
+// kysely へ node:sqlite を渡すアダプタ。どの SQL もここを通るので、ここを数えると全部が 1 箇所に潰れる。
+const ADAPTER = "server/src/kysely-node-sqlite.ts";
 
 const walk = (dir) =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -23,6 +26,7 @@ export function callSites(root) {
   const out = [];
   for (const file of walk(path.join(root, "server/src")).sort()) {
     const rel = path.relative(root, file).split(path.sep).join("/");
+    if (rel === ADAPTER) continue;
     const lines = fs.readFileSync(file, "utf8").split("\n");
     lines.forEach((line, i) => {
       if (SITE.test(line) && !NOT_A_QUERY.test(line)) out.push(`${rel}:${i + 1}`);
@@ -32,31 +36,17 @@ export function callSites(root) {
 }
 
 /**
- * 実 DB のレーン（scripts/check-sql-live.mjs）が受け持つファイル。偽の db を差し込む継ぎ目が無く、
- * 配る entrypoint を子プロセスで起動するほうが、role と接続まで一緒に見える。
+ * 子プロセスのレーン（scripts/check-sql-live.mjs）が受け持つファイル。test から db を差し込む継ぎ目が無く、
+ * 配る entrypoint を子プロセスで起動するほうが、接続の役割と後始末まで一緒に見える。
  */
 export const LIVE_FILES = ["server/src/cli.ts", "server/src/github.ts", "server/src/capture.ts"];
 
-/** 実 DB でも踏めない call site と、その理由。1 行 1 箇所で書く。 */
+/** 子プロセスのレーンでも踏めない call site と、その理由。1 行 1 箇所で書く。 */
 export const ALLOWED_UNREACHED = [];
 
 /**
- * 偽の db で SQL を組み立てられない call site の数と、その理由。LIVE_FILES は実 DB のレーンが
- * 全部見るので、ここには出てこない。`sites` はそのファイルの call site の総数で、1 箇所を
- * 到達させて同時に 1 箇所足す取り替えを落とすために持つ。
+ * test から実行できない call site の数と、その理由。LIVE_FILES は子プロセスのレーンが全部見るので、
+ * ここには出てこない。`sites` はそのファイルの call site の総数で、1 箇所を到達させて同時に 1 箇所足す
+ * 取り替えを落とすために持つ。
  */
-export const ALLOWED_UNCOVERED = [
-  {
-    file: "server/src/admin.ts",
-    sites: 8,
-    uncovered: 8,
-    // schema の適用と migration。owner の鍵でしか動かず、kysely を持てないので pg の client へ
-    // 生の SQL を渡す（scripts/check-sql.mjs の RAW_QUERY_OK が名指しで許している 2 ファイルの 1 つ）。
-  },
-  {
-    file: "server/src/db.ts",
-    sites: 4,
-    uncovered: 4,
-    // 接続と schema の版の確認。kysely の instance を持つ前に走る。
-  },
-];
+export const ALLOWED_UNCOVERED = [];

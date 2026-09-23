@@ -1,19 +1,18 @@
 #!/usr/bin/env node
-// 配る entrypoint を実 PostgreSQL に対して走らせ、SQL とロールと接続をまとめて確かめる。
+// 配る entrypoint（CLI と自動記録のフック）を子プロセスで走らせ、一時 HOME の SQLite に対して SQL と
+// 接続の役割（authorizer）と後始末をまとめて確かめる。
 //
-// `sql:parse` は kysely が組み立てた SQL を EXPLAIN に通すだけで、db を引数で受ける関数しか届かない。
-// CLI は open(env, role) を自分で呼ぶので、偽の db を差し込む継ぎ目が無い。継ぎ目を作るより、実際に起動するほうが見えるものが多い ——
-// fake は書き込み SQL も受け付けるが、reader で繋いだ実 DB は権限で止める。
+// `sql:reach` は db を引数で受ける関数を test から通す。CLI は接続を自分で開くので、test から差し込む継ぎ目が無い。
+// 継ぎ目を作るより、実際に起動するほうが見えるものが多い（役割ごとの接続で、権限の外の SQL が止まる）。
 //
-// 例外の条件は .claude/rules/verification.md「実 DB へ繋ぐのは専用の検査レーンだけ」にある。
+// 子プロセスの HOME を一時ディレクトリへ向ける理由は .claude/rules/verification.md にある。
 
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { coveredSites } from "./lib/coverage.mjs";
-import { fakeGh, makeRepo, runCli, runHook, withTempDir, writeEnv } from "./lib/live-harness.mjs";
+import { fakeGh, makeRepo, root, runCli, runHook, withTempDir } from "./lib/live-harness.mjs";
 import { ALLOWED_UNREACHED, callSites, LIVE_FILES } from "./lib/sql-call-sites.mjs";
-import { roleUrls, root, withTempPostgres } from "./lib/temp-postgres.mjs";
 
 const failures = [];
 const note = (what, r) => {
@@ -28,8 +27,8 @@ await withTempDir(async (dir) => {
   const repo = makeRepo(dir);
   fakeGh(dir);
 
-  await withTempPostgres("sql-live", async ({ name, port: dbPort }) => {
-    writeEnv(dir, roleUrls(name, dbPort));
+  {
+    note("db init", runCli(["db", "init"], dir, covDir));
 
     // ---- CLI。作る → 取り込む → 引く → 消す、の順で通す ----
     // remote があるので --name は付けない（付けると CLI が止める）。key は git:github.com/example/live になる。
@@ -53,10 +52,14 @@ await withTempDir(async (dir) => {
         `harvest の文書側が、手元では届かないはずの remote を引けている\n${harvest.out.slice(0, 600)}`,
       );
     }
-    // 2 巡目。前より発言が減るので、消えた発言を消す枝がここで通る。
+    // 2 巡目。前より発言と issue が減るので、消えた発言と消えた issue を消す枝がここで通る。
     const again = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "2" });
     if (!/GitHub: /.test(again.out))
       failures.push(`2 巡目の harvest が GitHub を回していない\n${again.out.slice(0, 400)}`);
+    if (!/消えた 1 件/.test(again.out))
+      failures.push(`2 巡目の harvest が消えた issue を消していない\n${again.out.slice(0, 400)}`);
+    if (!/PR・issue 1 件（書き直した 1 件/.test(again.out) || !/発言 \d+ 件（書き直した 0 件/.test(again.out))
+      failures.push(`2 巡目の harvest が題だけ変わった PR の発言を書き直した\n${again.out.slice(0, 400)}`);
 
     note("who（名簿）", runCli(["who"], dir, covDir));
     note("who（結ぶ）", runCli(["who", "--me", "私", "someone"], dir, covDir));
@@ -153,27 +156,23 @@ await withTempDir(async (dir) => {
     const after = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
     if (after.length) failures.push(`送った後も退避が残っている: ${after.join(" / ")}`);
     if (fs.existsSync(stale)) failures.push(`30 日より古い退避が刈られていない: ${stale}`);
-    // doctor は外部サービスの鍵が無いと 1 で終わる。ここでは渡さないのが正しいので、終了コードでは
-    // なく中身を見る。3 つのロールが繋がって schema の版が合うことは、この行だけが確かめている。
+    // doctor の終了コードでは見ない —— plugin の版や導入の状態は手元の事情で変わり（npm へ入れた CLI と
+    // 作業ツリーの中身が違う等）、この検査と関係なく 1 になる。DB の行だけを中身で見る。
     const doctor = runCli(["doctor"], dir, covDir);
-    for (const key of ["GLEANERY_DB_URL_RO", "GLEANERY_DB_URL_INGEST", "GLEANERY_DB_URL_CAPTURE"]) {
-      if (!new RegExp(`✓ ${key}\\s+繋がる / schema は期待どおり`).test(doctor.out)) {
-        failures.push(`doctor が ${key} を健全と言わない\n${doctor.out.slice(0, 800)}`);
-      }
-    }
-    // 鍵を渡していないことは指摘されるはず。件数では数えない —— plugin の版や導入の状態は
-    // 手元の事情で変わり（npm へ入れた CLI と作業ツリーの中身が違う等）、この検査と関係なく増える。
-    if (!/VOYAGE_API_KEY/.test(doctor.out)) {
-      failures.push(
-        `doctor が VOYAGE_API_KEY の不在を指摘しない。鍵が漏れている\n${doctor.out.slice(0, 800)}`,
-      );
+    for (const [label, want] of [
+      ["schema の版", /✓ schema の版\s+revision \d+/],
+      ["語彙索引", /✓ 語彙索引\s+整っている/],
+      ["作業場所", /作業場所/],
+    ]) {
+      if (!want.test(doctor.out))
+        failures.push(`doctor が ${label} を健全と言わない\n${doctor.out.slice(0, 800)}`);
     }
 
     note(
       "project forget",
       runCli(["project", "forget", "git:github.com/example/live", "--yes"], dir, covDir),
     );
-  });
+  }
 
   // ---- 到達を数える ----
   const sites = callSites(root).filter((s) => LIVE_FILES.some((f) => s.startsWith(`${f}:`)));

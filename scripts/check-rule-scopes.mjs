@@ -33,7 +33,7 @@ const EXPECTED = {
       "server/src/tui/app.ts",
       "scripts/bundle.mjs",
       "lefthook.yml",
-      "db/compose.yaml",
+      "db/schema.sql",
     ],
     notMatch: ["README.md", "AGENTS.md", "package.json"],
   },

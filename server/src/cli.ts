@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gleanery の CLI。取り込み・trace・名簿の書き込みは ingest の鍵、検索は reader の鍵で繋ぐ。
+// gleanery の CLI。取り込み・trace・名簿の書き込みは ingest の接続、検索は reader の接続で繋ぐ（sqlite.ts・db-write.ts）。
 //
 // 引数の解釈は @stricli/core に任せる。**コマンドごとに受け付けるフラグと位置引数を宣言する**ので、
 // 別のコマンドのフラグ（`gleanery doctor --yes`）も余分な位置引数（`gleanery project list garbage`）も
@@ -22,13 +22,14 @@ import {
   version,
 } from "@stricli/core";
 import { type Kysely, sql } from "kysely";
-import { dbDown, dbInit, dbUp, migrate } from "./admin.ts";
+import { jsonArrayFrom } from "kysely/helpers/sqlite";
+import { dbInit, inspect, migrate, reindex } from "./admin.ts";
 import { check, init } from "./artifacts.ts";
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
-import { type Env, inTransaction, KEY, loadEnv, open, type Role } from "./db.ts";
+import { dbFile, inTransaction, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
 import type { DB } from "./db-types.ts";
+import { openWriter } from "./db-write.ts";
 import { syncDocs } from "./docs.ts";
-import { describeFill, fillKnowledge, fillMessages } from "./embeddings.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { kindColor } from "./palette.ts";
@@ -50,11 +51,12 @@ import {
   openWork,
   renderHits,
   renderWork,
-  searchKnowledge,
   searchMessages,
+  searchSplit,
   workDetail,
 } from "./search.ts";
-import { head, reason } from "./text.ts";
+import { requireRuntime } from "./sqlite.ts";
+import { ftsQuery, head, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 import { runTui } from "./tui/tui.ts";
 import {
@@ -124,8 +126,8 @@ const TEXT: ApplicationText = {
   commandErrorResult: (e) => failed(e.message),
 };
 
-async function withDb<T>(env: Env, role: Role, fn: (db: Kysely<DB>) => Promise<T>): Promise<T> {
-  const db = open(env, role);
+async function withDb<T>(role: Exclude<Role, "owner">, fn: (db: Kysely<DB>) => Promise<T>): Promise<T> {
+  const db = role === "reader" ? openReader() : openWriter(role);
   try {
     return await fn(db);
   } finally {
@@ -199,9 +201,9 @@ async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = fal
     } catch (e) {
       const message = reason(e);
       await db
-        .updateTable("gleanery.connector")
+        .updateTable("connector")
         .set({ last_error: message.slice(0, 500) })
-        .where("project_id", "=", String(id))
+        .where("project_id", "=", id)
         .where("provider", "=", provider)
         .execute()
         .catch(() => {});
@@ -209,7 +211,7 @@ async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = fal
     }
   };
   const repo = githubRepo(place.key);
-  if (repo) await one("github", "GitHub", () => syncGithub(db, id, place.name, repo));
+  if (repo) await one("github", "GitHub", () => syncGithub(db, id, repo));
   if (fs.existsSync(path.join(place.root, ".git")))
     await one("docs", "文書", () =>
       syncDocs(db, id, place.root, { remote: place.key.startsWith("git:"), reset: resetDocs }),
@@ -246,59 +248,69 @@ function hostSession(host?: Host): { host: Host; id: string } {
   );
 }
 
-async function traceContext(env: Env, cwd: string, host?: Host): Promise<string> {
+async function traceContext(cwd: string, host?: Host): Promise<string> {
   const session = hostSession(host);
   // 待ち行列に残っている分を先に送る。送れなくても続ける（会話は自分の文脈から書ける）。
-  await flush(env).catch(() => {});
+  await flush().catch(() => {});
   const place = placeOf(cwd);
-  return withDb(env, "reader", async (db) => {
+  return withDb("reader", async (db) => {
     const id = await registered(db, place);
     const conversation = conversationId(id, session.host, session.id);
     const messages = await db
-      .selectFrom("gleanery.message as m")
-      .select([
+      .selectFrom("message as m")
+      .select((eb) => [
         "m.speaker_kind",
         "m.body",
         "m.sent_at",
         "m.truncated",
-        sql<string[]>`array(select f.path from gleanery.message_file f
-          where f.message_id = m.id order by f.path)`.as("paths"),
+        jsonArrayFrom(
+          eb
+            .selectFrom("message_file as f")
+            .select("f.path")
+            .whereRef("f.message_id", "=", "m.id")
+            .orderBy("f.path"),
+        ).as("paths"),
       ])
       .where("m.conversation_id", "=", conversation)
       .orderBy("m.sent_at")
+      .orderBy("m.seq")
       .execute();
     const mine = await db
-      .selectFrom("gleanery.knowledge")
+      .selectFrom("knowledge")
       .select(["source_key", "kind", "status", "body"])
       .where("conversation_id", "=", conversation)
       .where("kind", "<>", "option")
       .orderBy("occurred_at")
+      .orderBy("id")
       .execute();
     const works = await openWork(db, [id], 5);
-    const detail = works.length === 1 && works[0] ? await workDetail(db, works[0].ref.slice(2)) : null;
+    const detail =
+      works.length === 1 && works[0] ? await workDetail(db, Number(works[0].ref.slice(2))) : null;
     const workKeys = await db
-      .selectFrom("gleanery.work_item")
+      .selectFrom("work_item")
       .select(["source_key", "title", "status"])
-      .where("project_id", "=", String(id))
+      .where("project_id", "=", id)
       .where("status", "in", ["active", "blocked", "paused"])
+      .orderBy("updated_at", "desc")
       .execute();
     const decisions = await db
-      .selectFrom("gleanery.knowledge as k")
-      .innerJoin("gleanery.work_item as w", "w.id", "k.work_item_id")
+      .selectFrom("knowledge as k")
+      .innerJoin("work_item as w", "w.id", "k.work_item_id")
       .select(["k.source_key", "k.status", "k.body"])
-      .where("k.project_id", "=", String(id))
+      .where("k.project_id", "=", id)
       .where("k.kind", "=", "decision")
       .where("w.status", "in", ["active", "blocked", "paused"])
       .orderBy("k.occurred_at", "desc")
+      .orderBy("k.id", "desc")
       .limit(30)
       .execute();
     // 持ち主の発言は長めに、AI の応答は要点だけ出す（決めたのは持ち主の発言で、AI の応答はその前後）。
     const said = messages.map(
       (m) =>
-        `## ${m.speaker_kind === "self" ? "持ち主" : "AI"}（${m.sent_at.toISOString()}）${m.truncated ? " ※一部だけ保存" : ""}\n` +
-        `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nこの発言の後に触ったファイル: ${m.paths.join(" / ")}` : ""}`,
+        `## ${m.speaker_kind === "self" ? "持ち主" : "AI"}（${m.sent_at}）${m.truncated ? " ※一部だけ保存" : ""}\n` +
+        `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nこの発言の後に触ったファイル: ${m.paths.map((p) => p.path).join(" / ")}` : ""}`,
     );
-    const edited = [...new Set(messages.flatMap((m) => m.paths))];
+    const edited = [...new Set(messages.flatMap((m) => m.paths.map((p) => p.path)))];
     return [
       `session: ${session.host} ${session.id}（作業場所 ${place.name}）`,
       messages.length
@@ -321,7 +333,7 @@ async function traceContext(env: Env, cwd: string, host?: Host): Promise<string>
   });
 }
 
-async function doctor(env: Env, cwd: string): Promise<void> {
+async function doctor(cwd: string): Promise<void> {
   const issues: string[] = [];
   const count = (m: Mark, label: string) => {
     if (m === "warn" || m === "fail") issues.push(label);
@@ -338,31 +350,43 @@ async function doctor(env: Env, cwd: string): Promise<void> {
   // 行頭から始まる行は節の見出し、字下げした行はその中身（plugin.ts の report が組む形）
   for (const line of plugin.lines) console.log(/^\S/.test(line) ? section(line) : indent(line));
   if (plugin.updates.length) console.log(steps("更新するには", plugin.updates, UPDATE_NOTE));
-  console.log(`\n${section("鍵と接続")}`);
-  // owner の鍵は schema の適用にしか使わないので、ここでは繋がない（DDL の鍵を使う場面を増やさない）。
-  for (const role of ["reader", "ingest", "capture"] as const) {
-    if (!env[KEY[role]]) {
-      say("fail", KEY[role], "無い");
-      continue;
-    }
+  console.log(`\n${section("DB")}`);
+  let runtime = true;
+  try {
+    requireRuntime();
+    say("ok", "Node", process.version);
+  } catch (e) {
+    runtime = false;
+    say("fail", "Node", plain(reason(e)));
+  }
+  const file = dbFile();
+  let usable = false;
+  if (!runtime) say("none", "DB", "Node を上げるまで確かめられない");
+  else if (!fs.existsSync(file)) say("fail", "DB", `無い（${file}）。gleanery db init で作る`);
+  else {
     try {
-      await withDb(env, role, async (db) => {
-        // 鍵ごとに、その鍵で読める表を 1 つだけ触る（capture は本文を読めない）。
-        await (role === "capture"
-          ? sql`select id from gleanery.project limit 1`
-          : sql`select 1 from gleanery.knowledge limit 1`
-        ).execute(db);
-      });
-      say("ok", KEY[role], "繋がる / schema は期待どおり");
+      const x = inspect(file);
+      usable = x.revision === SCHEMA_REVISION;
+      say("ok", "DB", `${file}（${(x.bytes / 1024 / 1024).toFixed(1)} MB）`);
+      say(
+        usable ? "ok" : "fail",
+        "schema の版",
+        usable
+          ? `revision ${x.revision}`
+          : `revision ${x.revision}、このコードは ${SCHEMA_REVISION}（${x.revision < SCHEMA_REVISION ? "gleanery db migrate で進める" : "gleanery を更新する"}）`,
+      );
+      const broken = Object.entries(x.fts).filter(([, v]) => v !== null);
+      say(
+        broken.length ? "fail" : "ok",
+        "語彙索引",
+        broken.length
+          ? `壊れている: ${broken.map(([k, v]) => `${k}（${plain(v ?? "")}）`).join(" / ")}。gleanery db reindex で作り直す`
+          : "整っている",
+      );
     } catch (e) {
-      say("fail", KEY[role], `繋がらない: ${plain(reason(e))}`);
+      say("fail", "DB", `読めない: ${plain(reason(e))}`);
     }
   }
-  say(
-    env.VOYAGE_API_KEY ? "ok" : "fail",
-    "VOYAGE_API_KEY",
-    env.VOYAGE_API_KEY ? "あり" : "無い（検索と取り込みの埋め込みが止まる）",
-  );
   const s = readState();
   say(
     s.stuck ? "fail" : s.rejected ? "warn" : "ok",
@@ -373,37 +397,13 @@ async function doctor(env: Env, cwd: string): Promise<void> {
       s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
     }`,
   );
-  if (env[KEY.reader]) {
+  if (usable) {
     try {
-      await withDb(env, "reader", async (db) => {
-        // 手元の DB に論理サイズの上限は無い。尽きるのはディスクなので、ここでは使用量だけを出す。
-        const cap = await sql<{ used: string }>`
-          select pg_size_pretty(pg_database_size(current_database())) as used`.execute(db);
-        const used = cap.rows[0]?.used;
-        if (used) say("ok", "DB の大きさ", used);
-        const emb = await sql<{ t: string; status: string; n: string }>`
-          select 'knowledge' as t, status, count(*) as n from gleanery.knowledge_embedding
-           where status <> 'ready' group by status
-          union all
-          select 'message', status, count(*) from gleanery.message_embedding
-           where status <> 'ready' group by status`.execute(db);
-        // pending は打つまで埋まらない（定期実行は無い）ので、意味検索に出てこない行が残り続ける。
-        // error は再試行の上限で止まった行で、harvest を打っても戻らない。
-        say(
-          emb.rows.length ? "none" : "ok",
-          "埋め込みの残り",
-          emb.rows.length
-            ? `${emb.rows.map((r) => `${r.t} ${r.status} ${r.n}`).join(" / ")}${
-                emb.rows.some((r) => r.status === "pending")
-                  ? " ← pending は gleanery harvest で取り直す"
-                  : ""
-              }`
-            : "無い",
-        );
+      await withDb("reader", async (db) => {
         const { found } = localRoots();
         const rows = await db
-          .selectFrom("gleanery.project as p")
-          .leftJoin("gleanery.connector as cn", "cn.project_id", "p.id")
+          .selectFrom("project as p")
+          .leftJoin("connector as cn", "cn.project_id", "p.id")
           .select(["p.key", "p.name", "cn.provider", "cn.last_success_at", "cn.last_error"])
           .orderBy("p.name")
           .orderBy("cn.provider")
@@ -420,7 +420,7 @@ async function doctor(env: Env, cwd: string): Promise<void> {
             indent(
               `  ${mark(m)} ${pad(label(x), column)}${
                 x.last_success_at
-                  ? `最後の取り込み ${x.last_success_at.toLocaleString("sv-SE")}`
+                  ? `最後の取り込み ${new Date(x.last_success_at).toLocaleString("sv-SE")}`
                   : "まだ取り込んでいない"
               }${x.last_error ? ` / 失敗: ${plain(x.last_error)}` : ""}${where}`,
             ),
@@ -457,7 +457,7 @@ const CWD = {
   optional: true,
 } as const;
 
-// MCP は 1〜10 に縛っている。CLI だけ穴を開けると、負の値が Voyage の top_k へそのまま流れる。
+// MCP は 1〜10 に縛っている。人が読む CLI は 20 まで。負の値や 0 を SQL の limit へ流さない。
 function limitOf(input: string): number {
   const n = Number(input);
   if (!Number.isInteger(n) || n < 1 || n > 20) throw new Error(`--limit は 1 から 20 の整数にする: ${input}`);
@@ -482,7 +482,7 @@ const excludeRoutes = buildRouteMap({
   docs: {
     brief: "文書の同期で取り込まない path",
     fullDescription:
-      "追跡された Markdown が全部「事実を述べた文書」とは限らない（監査の fixture、穴埋めのテンプレート）。外したものは次の同期で、節も埋め込みも一緒に消える。",
+      "追跡された Markdown が全部「事実を述べた文書」とは限らない（監査の fixture、穴埋めのテンプレート）。外したものは次の同期で、節も一緒に消える。",
   },
   routes: {
     add: buildCommand({
@@ -496,11 +496,11 @@ const excludeRoutes = buildRouteMap({
       },
       func: async (flags: { cwd?: string }, target: string) => {
         const { place, kind, rel } = excludeTarget(flags.cwd ?? process.cwd(), target);
-        await withDb(loadEnv(), "ingest", async (db) => {
+        await withDb("ingest", async (db) => {
           const id = await registered(db, place);
           const connector = await connectorOf(db, id, "docs");
           await db
-            .insertInto("gleanery.docs_exclude")
+            .insertInto("docs_exclude")
             .values({ connector_id: connector.id, kind, path: rel })
             .onConflict((oc) => oc.doNothing())
             .execute();
@@ -528,15 +528,15 @@ const excludeRoutes = buildRouteMap({
       parameters: { flags: { cwd: CWD } },
       func: async (flags: { cwd?: string }) => {
         const place = placeOf(flags.cwd ?? process.cwd());
-        await withDb(loadEnv(), "reader", async (db) => {
+        await withDb("reader", async (db) => {
           const id = await registered(db, place);
           const rows = await db
-            .selectFrom("gleanery.docs_exclude as x")
-            .innerJoin("gleanery.connector as c", (j) =>
+            .selectFrom("docs_exclude as x")
+            .innerJoin("connector as c", (j) =>
               j.onRef("c.id", "=", "x.connector_id").on("c.provider", "=", "docs"),
             )
             .select(["x.kind", "x.path"])
-            .where("c.project_id", "=", String(id))
+            .where("c.project_id", "=", id)
             .orderBy("x.path")
             .execute();
           console.log(
@@ -579,14 +579,17 @@ const excludeRoutes = buildRouteMap({
         // 消すときは作業ツリーを見ない。外した後にその path が消えても、設定だけは消せる。
         const rel = relativeTo(place.root, target, cwd);
         if (!rel) throw new Error(`${target} は ${place.name}（${place.root}）の中に無い`);
-        await withDb(loadEnv(), "ingest", async (db) => {
+        await withDb("ingest", async (db) => {
           const id = await registered(db, place);
           const gone = await db
-            .deleteFrom("gleanery.docs_exclude")
+            .deleteFrom("docs_exclude")
             .where("path", "=", rel)
-            .where(
-              sql<boolean>`connector_id in (
-                select id from gleanery.connector where project_id = ${id} and provider = 'docs')`,
+            .where("connector_id", "in", (eb) =>
+              eb
+                .selectFrom("connector")
+                .select("id")
+                .where("project_id", "=", id)
+                .where("provider", "=", "docs"),
             )
             .executeTakeFirst();
           console.log(
@@ -625,9 +628,9 @@ const projectRoutes = buildRouteMap({
       func: async (flags: { cwd?: string; name?: string }) => {
         const cwd = flags.cwd ?? process.cwd();
         const place = flags.name ? nameLocal(cwd, flags.name) : placeOf(cwd);
-        await withDb(loadEnv(), "ingest", async (db) => {
+        await withDb("ingest", async (db) => {
           const added = await db
-            .insertInto("gleanery.project")
+            .insertInto("project")
             .values({ key: place.key, name: place.name })
             .onConflict((oc) => oc.column("key").doNothing())
             .returning("id")
@@ -657,10 +660,10 @@ const projectRoutes = buildRouteMap({
       parameters: {},
       func: async () => {
         const { found, ambiguous } = localRoots();
-        await withDb(loadEnv(), "reader", async (db) => {
+        await withDb("reader", async (db) => {
           const listed = await db
-            .selectFrom("gleanery.project as p")
-            .leftJoin("gleanery.connector as cn", "cn.project_id", "p.id")
+            .selectFrom("project as p")
+            .leftJoin("connector as cn", "cn.project_id", "p.id")
             .select(["p.key", "p.name", (eb) => eb.fn.max("cn.last_success_at").as("last")])
             .groupBy("p.id")
             .orderBy("p.name")
@@ -680,7 +683,9 @@ const projectRoutes = buildRouteMap({
               body: where,
               meta: [
                 x.key,
-                x.last ? `最後の同期 ${x.last.toLocaleString("sv-SE").slice(0, 16)}` : "まだ同期していない",
+                x.last
+                  ? `最後の同期 ${new Date(x.last).toLocaleString("sv-SE").slice(0, 16)}`
+                  : "まだ同期していない",
               ],
             };
           });
@@ -714,32 +719,24 @@ const projectRoutes = buildRouteMap({
         },
       },
       func: async (flags: { yes?: boolean }, target: string) => {
-        await withDb(loadEnv(), "ingest", async (db) => {
+        await withDb("ingest", async (db) => {
           const hit = await db
-            .selectFrom("gleanery.project")
+            .selectFrom("project")
             .select(["id", "key", "name"])
             .where((eb) => eb.or([eb("key", "=", target), eb("name", "=", target)]))
             .execute();
-          if (hit.length !== 1)
+          const p = hit[0];
+          if (hit.length !== 1 || !p)
             throw new Error(`${target} に当たる作業場所が ${hit.length} 件ある。key で指定する`);
-          const p = hit[0] as { id: string; key: string; name: string };
           const x = await db
-            .selectFrom("gleanery.project")
+            .selectFrom("project")
             .select([
-              sql<string>`(select count(*) from gleanery.conversation where project_id = ${p.id})`.as(
-                "conversations",
-              ),
-              sql<string>`(select count(*) from gleanery.message m
-                join gleanery.conversation c on c.id = m.conversation_id where c.project_id = ${p.id})`.as(
-                "messages",
-              ),
-              sql<string>`(select count(*) from gleanery.knowledge where project_id = ${p.id})`.as(
-                "knowledge",
-              ),
-              sql<string>`(select count(*) from gleanery.source_item s
-                join gleanery.connector cn on cn.id = s.connector_id where cn.project_id = ${p.id})`.as(
-                "items",
-              ),
+              sql<number>`(select count(*) from conversation where project_id = ${p.id})`.as("conversations"),
+              sql<number>`(select count(*) from message m
+                join conversation c on c.id = m.conversation_id where c.project_id = ${p.id})`.as("messages"),
+              sql<number>`(select count(*) from knowledge where project_id = ${p.id})`.as("knowledge"),
+              sql<number>`(select count(*) from source_item s
+                join connector cn on cn.id = s.connector_id where cn.project_id = ${p.id})`.as("items"),
             ])
             .where("id", "=", p.id)
             .executeTakeFirst();
@@ -765,7 +762,7 @@ const projectRoutes = buildRouteMap({
             );
             return;
           }
-          await db.deleteFrom("gleanery.project").where("id", "=", p.id).execute();
+          await db.deleteFrom("project").where("id", "=", p.id).execute();
           console.log(document("gleanery project forget", undefined, [counts], `${mark("ok")} 消した`));
         });
       },
@@ -789,7 +786,7 @@ const traceRoutes = buildRouteMap({
         },
       },
       func: async (flags: { host?: Host }) => {
-        console.log(framed(await traceContext(loadEnv(), process.cwd(), flags.host)));
+        console.log(framed(await traceContext(process.cwd(), flags.host)));
       },
     }),
     check: buildCommand({
@@ -831,7 +828,6 @@ const traceRoutes = buildRouteMap({
         },
       },
       func: async (_flags: Record<never, never>, file: string) => {
-        const env = loadEnv();
         const r = checkTrace(readTrace(file));
         if (!r.trace) throw new Error(`記録の形が通らない:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
         const trace = r.trace;
@@ -842,19 +838,14 @@ const traceRoutes = buildRouteMap({
             `記録の session（${trace.session.id}）が、いまの ${now.host} の session（${now.id}）と違う。trace context が出した session を書く`,
           );
         const place = placeOf(process.cwd());
-        await withDb(env, "ingest", async (db) => {
+        await withDb("ingest", async (db) => {
           const id = await registered(db, place);
-          const saved = await saveTrace(db, env, id, trace);
+          const saved = await saveTrace(db, id, trace);
           console.log(
             panel(
               "gleanery trace save",
               [],
-              [
-                `入れた: 書き直した要素 ${saved.written} 件${saved.superseded ? ` / 覆した決定 ${saved.superseded} 件` : ""}`,
-                describeFill("埋め込み", saved.embedding),
-              ]
-                .filter(Boolean)
-                .join(" / "),
+              `入れた: 書き直した要素 ${saved.written} 件${saved.superseded ? ` / 覆した決定 ${saved.superseded} 件` : ""}`,
             ),
           );
         });
@@ -870,7 +861,7 @@ const captureRoutes = buildRouteMap({
       docs: { brief: "自動記録の待ち行列を DB へ送る" },
       parameters: {},
       func: async () => {
-        const r = await flush(loadEnv());
+        const r = await flush();
         if (r.busy) {
           console.log(
             panel(
@@ -918,33 +909,26 @@ async function boxed(head: string, fn: () => void | Promise<void>): Promise<void
 }
 
 const dbRoutes = buildRouteMap({
-  docs: { brief: "この PC の PostgreSQL（docker compose）と schema" },
+  docs: { brief: "この PC の DB（~/.gleanery/gleanery.db）と schema" },
   routes: {
     init: buildCommand({
-      docs: {
-        brief: "この PC の DB を用意する（鍵づくり・起動・schema・ロールの鍵。何度流してもよい）",
-      },
+      docs: { brief: "この PC の DB を作る（あれば触らない。何度流してもよい）" },
       parameters: {},
-      func: () => boxed("gleanery db init", dbInit),
-    }),
-    up: buildCommand({
-      docs: { brief: "DB を起動する" },
-      parameters: {},
-      func: () => boxed("gleanery db up", dbUp),
-    }),
-    down: buildCommand({
-      docs: { brief: "DB を止める（データは残る）" },
-      parameters: {},
-      func: () => boxed("gleanery db down", dbDown),
+      func: () => boxed("gleanery db init", () => dbInit()),
     }),
     migrate: buildCommand({
       docs: { brief: "DB のバージョンより新しい db/migrations を当てる" },
       parameters: {
         flags: {
-          yes: { kind: "boolean", brief: "接続先の確認を省く（端末でないときは必須）", optional: true },
+          yes: { kind: "boolean", brief: "当てる前の確認を省く（端末でないときは必須）", optional: true },
         },
       },
       func: (flags: { yes?: boolean }) => boxed("gleanery db migrate", () => migrate(flags.yes === true)),
+    }),
+    reindex: buildCommand({
+      docs: { brief: "語彙索引を作り直す（検索の語の切り方を変えた後に打つ）" },
+      parameters: {},
+      func: () => boxed("gleanery db reindex", () => reindex()),
     }),
   },
 });
@@ -952,7 +936,7 @@ const dbRoutes = buildRouteMap({
 const root = buildRouteMap({
   docs: {
     brief: "過去の判断・会話・文書を溜めて引く",
-    fullDescription: "資格情報: ~/.gleanery/env（GLEANERY_DB_URL_RO / _INGEST / _CAPTURE と VOYAGE_API_KEY）",
+    fullDescription: "DB: ~/.gleanery/gleanery.db（gleanery db init で作る）。鍵は要らない",
   },
   routes: {
     project: projectRoutes,
@@ -973,7 +957,6 @@ const root = buildRouteMap({
         },
       },
       func: async (flags: { cwd?: string; "reset-docs"?: boolean }) => {
-        const env = loadEnv();
         const resetDocs = flags["reset-docs"] === true;
         // 揃え直しは作業場所を 1 つ名指ししたときだけ（全件の同期で、比較不能な作業場所をまとめて上書きしない）。
         if (resetDocs && !flags.cwd)
@@ -981,18 +964,18 @@ const root = buildRouteMap({
         // ログは追記で残るので、いつ走ったかを見出しに必ず出す。
         const startedAt = new Date();
         console.log(title(`gleanery harvest ${startedAt.toLocaleString("sv-SE")}`));
-        await flush(env).catch((e: unknown) =>
+        await flush().catch((e: unknown) =>
           console.error(indent(`${mark("fail")} 自動記録の送信に失敗: ${plain(reason(e))}`)),
         );
         const failures: string[] = [];
         let done = 0;
         try {
-          await withDb(env, "ingest", async (db) => {
+          await withDb("ingest", async (db) => {
             const only = flags.cwd ? placeOf(flags.cwd) : null;
             if (only) await registered(db, only);
             const { found, ambiguous } = localRoots();
             const projects = await db
-              .selectFrom("gleanery.project")
+              .selectFrom("project")
               .select(["id", "key", "name"])
               .orderBy("name")
               .execute();
@@ -1009,7 +992,7 @@ const root = buildRouteMap({
               }
               try {
                 const place = { key: p.key, root, name: p.name };
-                for (const line of await syncOne(db, Number(p.id), place, resetDocs)) {
+                for (const line of await syncOne(db, p.id, place, resetDocs)) {
                   console.log(indent(`${mark("ok")} ${p.name} / ${line}`));
                 }
                 done++;
@@ -1027,12 +1010,6 @@ const root = buildRouteMap({
                 );
               }
             }
-            // 埋め込みは全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
-            for (const line of [
-              describeFill("知識の埋め込み", await fillKnowledge(db, env)),
-              describeFill("発言の埋め込み", await fillMessages(db, env)),
-            ])
-              if (line) console.log(indent(line));
           });
         } catch (e) {
           // 見出しを出した後で止まっても、枠を閉じてから終わる（ログは日をまたいで追記される）。
@@ -1064,6 +1041,11 @@ const root = buildRouteMap({
             optional: true,
           },
           all: { kind: "boolean", brief: "すべての作業場所から引く", optional: true },
+          exact: {
+            kind: "boolean",
+            brief: "部分一致で引く（語に切れない固有名・記号・版番号）",
+            optional: true,
+          },
           cwd: CWD,
           limit: {
             kind: "parsed",
@@ -1076,28 +1058,38 @@ const root = buildRouteMap({
         positional: { kind: "array", parameter: { parse: String, brief: "質問", placeholder: "質問" } },
       },
       func: async (
-        flags: { avoid?: boolean; said?: string; all?: boolean; cwd?: string; limit: number },
+        flags: {
+          avoid?: boolean;
+          said?: string;
+          all?: boolean;
+          exact?: boolean;
+          cwd?: string;
+          limit: number;
+        },
         ...words: string[]
       ) => {
-        const env = loadEnv();
         const question = words.join(" ");
         if (!question && !flags.said) throw new Error("質問を指定する（--said なら質問は要らない）");
         const place = flags.all ? null : placeOf(flags.cwd ?? process.cwd());
-        await withDb(env, "reader", async (db) => {
+        const match = flags.exact ? ("exact" as const) : undefined;
+        await withDb("reader", async (db) => {
           const projects = place ? [await registered(db, place)] : null;
+          // MCP の recall と同じ関数・同じ順位。種類を省いた検索は判断の記録の後に文書の節を並べる。
           const hits = flags.said
-            ? await searchMessages(db, env, {
+            ? await searchMessages(db, {
                 question: question || undefined,
                 projects,
                 who: flags.said,
+                match,
                 limit: flags.limit,
               })
-            : await searchKnowledge(db, env, {
+            : await searchSplit(db, {
                 question,
                 projects,
                 avoid: flags.avoid,
+                match,
                 limit: flags.limit,
-              });
+              }).then((x) => [...x.records, ...x.documents]);
           const where = place ? place.name : "すべての作業場所";
           const end = `${hits.length ? `${hits.length} 件` : "該当なし"} / ${where}`;
           // pipe はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
@@ -1125,7 +1117,11 @@ const root = buildRouteMap({
                     {
                       kind: "note",
                       tone: "info",
-                      text: "当たらなかった。語を変えるか、--all で全部の作業場所から引く",
+                      // 語に切れない問い（ひらがなだけ・記号だけ）は引かずに 0 件になる。「無かった」と分ける
+                      text:
+                        !flags.exact && question && ftsQuery(question) === null
+                          ? "引ける語が無い（ひらがなだけ・記号だけの問い）。漢字・カタカナ・英語の語で引くか、--exact で部分一致を引く"
+                          : `当たらなかった。語を変えるか${flags.exact ? "" : "、--exact で部分一致を引くか"}${place ? "、--all で全部の作業場所から引く" : "、別の語で引く"}`,
                     },
                   ],
               end,
@@ -1148,16 +1144,17 @@ const root = buildRouteMap({
         },
       },
       func: async (flags: { me?: boolean }, ...args: string[]) => {
-        await withDb(loadEnv(), args.length ? "ingest" : "reader", async (db) => {
+        await withDb(args.length ? "ingest" : "reader", async (db) => {
           if (args.length === 0) {
             const people = await directory(db);
             const unknown = await db
-              .selectFrom("gleanery.person_identity as i")
-              .leftJoin("gleanery.message as m", "m.identity_id", "i.id")
+              .selectFrom("person_identity as i")
+              .leftJoin("message as m", "m.identity_id", "i.id")
               .select(["i.handle", (eb) => eb.fn.count("m.id").as("n")])
               .where("i.person_id", "is", null)
               .groupBy("i.id")
               .orderBy((eb) => eb.fn.count("m.id"), "desc")
+              .orderBy("i.handle")
               .limit(20)
               .execute();
             console.log(
@@ -1200,27 +1197,25 @@ const root = buildRouteMap({
           // 持ち主の付け替えは 1 つの transaction で。途中で落ちると持ち主が 0 人になる。
           const linked = await inTransaction(db, async (trx) => {
             if (flags.me)
-              await trx
-                .updateTable("gleanery.person")
-                .set({ is_self: false })
-                .where("is_self", "=", true)
-                .execute();
+              await trx.updateTable("person").set({ is_self: 0 }).where("is_self", "=", 1).execute();
             const pe = await trx
-              .insertInto("gleanery.person")
-              .values({ display_name: display, is_self: flags.me === true })
+              .insertInto("person")
+              .values({ display_name: display, is_self: flags.me === true ? 1 : 0 })
               .onConflict((oc) =>
-                oc.column("display_name").doUpdateSet({
-                  is_self: sql<boolean>`gleanery.person.is_self or excluded.is_self`,
-                }),
+                oc
+                  .column("display_name")
+                  .doUpdateSet({ is_self: sql<number>`max(person.is_self, excluded.is_self)` }),
               )
               .returning("id")
               .executeTakeFirst();
             return await trx
-              .updateTable("gleanery.person_identity")
+              .updateTable("person_identity")
               .set({ person_id: pe?.id ?? null })
               .where("provider", "=", "github")
               .where(
-                sql<boolean>`lower(handle) = any(${handles.map((h) => h.replace(/^@/, "").toLowerCase())})`,
+                (eb) => eb.fn("lower", ["handle"]),
+                "in",
+                handles.map((h) => h.replace(/^@/, "").toLowerCase()),
               )
               .returning("handle")
               .execute();
@@ -1290,9 +1285,9 @@ const root = buildRouteMap({
       func: () => runTui(process.cwd()),
     }),
     doctor: buildCommand({
-      docs: { brief: "npm packageとpluginのバージョン、鍵と接続、schema、同期と自動記録の状態" },
+      docs: { brief: "npm packageとpluginのバージョン、Node、DB と schema、同期と自動記録の状態" },
       parameters: {},
-      func: () => doctor(loadEnv(), process.cwd()),
+      func: () => doctor(process.cwd()),
     }),
     advice: buildCommand({
       docs: { brief: "編集フックが制約を出した割合" },

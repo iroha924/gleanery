@@ -19,6 +19,7 @@ import {
   type Seen,
   versionAt,
 } from "../src/plugin.ts";
+import { tempDb } from "./temp-db.ts";
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 const REPO_PLUGIN = path.join(SRC, "..", "..", "plugin");
@@ -346,9 +347,8 @@ test("MCP の serverInfo は manifest の版を名乗る", async () => {
 });
 
 test("MCP の recall と read は、失敗の理由を空にせず isError で返す", async () => {
-  // localhost が ::1 と 127.0.0.1 の両方に解決される環境では、両方に拒まれた pg が、理由の文が空の AggregateError を投げる。
-  // 投げたままにすると SDK は error.message（空）だけを返す。1 つにしか解決されない環境では理由が空にならず、失敗の文が
-  // reason() を通すことをここでは確かめられない。all_projects で、走らせる場所の登録に左右されない。
+  // 投げたままにすると SDK は error.message だけを返す。失敗は理由の文つきで返す（CLI と同じ reason()）。
+  // all_projects で、走らせる場所の登録に左右されない。DB は無い場所を指す（持ち主の ~/.gleanery を触らない）。
   const client = new Client({ name: "test", version: "0" });
   await client.connect(
     new StdioClientTransport({
@@ -357,8 +357,7 @@ test("MCP の recall と read は、失敗の理由を空にせず isError で�
       env: {
         PATH: process.env.PATH ?? "",
         HOME: "/nonexistent",
-        GLEANERY_ENV_DIR: "/nonexistent",
-        GLEANERY_DB_URL_RO: "postgres://u:p@localhost:1/db",
+        GLEANERY_DB: "/nonexistent/gleanery.db",
       },
       stderr: "ignore",
     }),
@@ -370,7 +369,7 @@ test("MCP の recall と read は、失敗の理由を空にせず isError で�
     ] as const) {
       const r = await client.callTool({ name, arguments: args });
       assert.equal(r.isError, true, name);
-      assert.match(JSON.stringify(r.content), /gleanery: 失敗した（[^）]*ECONNREFUSED/, name);
+      assert.match(JSON.stringify(r.content), /gleanery: 失敗した（DB が無い/, name);
     }
   } finally {
     await client.close();
@@ -409,4 +408,66 @@ test("repository が無いとき、同じ版で中身が違えば入れ直しを
     }),
   ).lines.join("\n");
   assert.match(out, /同じバージョンなのに中身が違う.*入れ直して揃える/);
+});
+
+// Claude Code は server instructions と道具の説明を 2,048 文字で切る（2.1.280 の mcp.md）。切れると、探し方の案内が
+// 途中で消えたまま届き、誰も気付かない。
+test("MCP の server instructions と道具の説明は 2,048 文字に収まる", async () => {
+  const client = new Client({ name: "test", version: "0" });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(SRC, "mcp.ts")],
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", GLEANERY_DB: "/nonexistent/gleanery.db" },
+      stderr: "ignore",
+    }),
+  );
+  try {
+    const instructions = client.getInstructions() ?? "";
+    assert.ok(instructions.length > 0, "server instructions が無い");
+    assert.ok([...instructions].length <= 2048, `server instructions が ${[...instructions].length} 文字`);
+    const { tools } = await client.listTools();
+    assert.deepEqual(tools.map((t) => t.name).sort(), ["check_path", "read", "recall"]);
+    for (const t of tools) assert.ok([...(t.description ?? "")].length <= 2048, `${t.name} の説明が長すぎる`);
+  } finally {
+    await client.close();
+  }
+});
+
+// 枠を付けてから上限を見ないと、応答は枠の分だけ上限を越える。MCP の応答は必ず framedWithin を通す。
+test("MCP は枠を framedWithin でだけ付ける", () => {
+  const src = fs.readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/mcp.ts"),
+    "utf8",
+  );
+  assert.deepEqual(src.match(/(?<![\w.])framed\(/g) ?? [], []);
+  assert.ok(src.includes("framedWithin("), "framedWithin を呼んでいる");
+});
+
+// 未登録の作業場所の名前は remote の綴りから来る。長さを決めずに写すと、上限を越える。
+test("未登録の作業場所の名前が長くても、応答は上限に収まる", async () => {
+  const db = tempDb();
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-unreg-"));
+  execFileSync("git", ["init", "-q"], { cwd: repo });
+  execFileSync("git", ["remote", "add", "origin", `https://example.test/o/${"r".repeat(9000)}.git`], {
+    cwd: repo,
+  });
+  const client = new Client({ name: "test", version: "0" });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(SRC, "mcp.ts")],
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", GLEANERY_DB: db.file },
+      stderr: "ignore",
+    }),
+  );
+  try {
+    const r = await client.callTool({ name: "recall", arguments: { question: "x", cwd: repo } });
+    const t = (r.content as { text: string }[])[0]?.text ?? "";
+    assert.match(t, /登録されていない/);
+    assert.ok(Buffer.byteLength(t) <= 4096, `${Buffer.byteLength(t)} bytes`);
+  } finally {
+    await client.close();
+    await db.done();
+  }
 });

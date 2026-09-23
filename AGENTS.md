@@ -1,8 +1,8 @@
 # gleaneryで作業するとき
 
 過去の作業から「なぜそうしたか」を貯め、Claude CodeとCodexから引けるようにする道具。
-TypeScript / bun、PostgreSQL 18 + pgvector、Ink（端末の画面）を使う。埋め込みはVoyage。
-**手元だけで動く。**DBはDockerのlocal PostgreSQL、画面は端末に描く。PCごとにDBは独立で、共有しない。
+TypeScript / bun、SQLite（Node組み込みの`node:sqlite`）、Ink（端末の画面）を使う。外部APIは使わない。
+**手元だけで動く。**DBは`~/.gleanery/gleanery.db`の1ファイル、画面は端末に描く。PCごとにDBは独立で、共有しない。
 
 Claude Codeはrootの`CLAUDE.md`からこのfileをimportする。両AIに共通する常時規約はここだけを正本にし、
 gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`は同じSkillへのsymlinkである。
@@ -11,8 +11,9 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
 ## 実行境界
 
 - DBの正本は`db/schema.sql`の1本だけ。Prisma・Drizzleのschemaを別の正本として足さない
-- 鍵は操作ごとに分ける。MCPと端末の画面は`gleanery_reader`（読むだけ）、CLIの取り込み・traceは`gleanery_ingest`、
-  会話の自動記録は`gleanery_capture`（追記だけ）を使う。owner鍵はDBを管理するcommand（`gleanery db *`と`bun run db:*`）だけが使い、どの鍵もownerへfallbackしない
+- 接続の役割は操作ごとに分ける。MCPと端末の画面はreader（読むだけ。`server/src/sqlite.ts`）、CLIの取り込み・traceはingest、
+  会話の自動記録はcapture（3つのviewへの追記だけ）、ownerはDBを管理するcommand（`gleanery db *`）だけが使う。
+  書く接続は`server/src/db-write.ts`にだけ置き、読む出口から届かないことを`bun run architecture`が見る
 - untrustedな文章（PR・issueの本文、記録された会話）を読む出口に書き込みを持たせない。
   端末の画面はreaderだけを持ち、取り込みを起動する経路を持たない
 - **listenするserverを持たない。**画面は端末に描き、portを開かない
@@ -34,7 +35,7 @@ gleanery自身の開発手順は`.agents/skills/`へ置く。`.claude/skills/`�
 該当する作業では、実装前に次のSkillを最後まで読む。
 
 - 端末の画面（Ink）とCLIの出力: `tui`
-- DB schema、role・grant、知識の種類、取り込み: `knowledge-schema`
+- DB schema、接続の役割とauthorizer、語彙索引、知識の種類、取り込み: `knowledge-schema`
 - MCP、CLI、自動記録のhook、plugin Skillの配布: `plugin-release`
 - reviewの観点（`plugin/skills/review/reviewers/`）と立て方: `plugin-agent-authoring`
 
@@ -77,12 +78,12 @@ marketplace名やplugin名が重なって見えても、pathの一部を推測�
 ```bash
 bun run setup       # serverの依存とLefthookを固定lockfileから入れる
 bun run cli -- dashboard  # 作業ツリーの端末の画面。TTYが要るため前面でだけ実行する
-bun run verify      # lint、型、AI設定、配布物のbundle、test
+bun run verify      # lint、型、AI設定、境界、bundle、test（全SQLの到達）、CLIを子プロセスで
 bun run verify:ai   # AGENTS、repository開発Skill、plugin Skill・Agentの静的検査
 bun run bundle      # MCP、CLI、自動記録の配布物を更新する
 ```
 
-DBは`gleanery db init`で立てる（Dockerの`pgvector/pgvector:0.8.6-pg18`）。個別command、setup、運用は
+DBは`gleanery db init`で作る。個別command、setup、運用は
 READMEを読み、障害の切り分けは`gleanery doctor`から始める。pre-commitは変更対象の軽い検査、
 pre-pushとCIは`bun run verify`を実行する。
 
@@ -93,7 +94,7 @@ PRは`.github/pull_request_template.md`、issueは`.github/ISSUE_TEMPLATE/`を�
 
 ## 参照先
 
-- `README.md`: 全体像、鍵、setup、全command、新しいPC
+- `README.md`: 全体像、setup、全command、新しいPC
 - `plugin/skills/trace/SKILL.md`: 判断を記録する契約
 - `server/src/capture.ts`: 会話を自動記録する範囲（持ち主の判定、残すものと残さないもの）
 - `plugin/skills/review/SKILL.md`: reviewの実行と担当分け

@@ -1,8 +1,8 @@
-// 知識の種類と、それを読む側へ渡す札と、埋め込みへ渡す文。
+// 知識の種類と、それを読む側へ渡す札。
 //
 // 種類と状態の組、発言の主、会話の出どころ、ファイルとの関係は db/schema.sql の CHECK が正本で、ここはその写し
 // （scripts/check-pairs.mjs が突き合わせる）。コードはこの写しだけを参照する。
-// 札は再ランクと AI が意味を見分ける手がかりになる。素の本文だけを渡すと、棄却した案が
+// 札は AI が意味を見分ける手がかりになる。素の本文だけを渡すと、棄却した案が
 // 文字面の近さで 1 位に来る（「自動発火する？」に『自動発火もさせる』を返した実測がある）。
 
 import { uuidFrom } from "./text.ts";
@@ -44,20 +44,6 @@ export type Origin = (typeof ORIGINS)[number];
 // edit は編集、read は読んだ要件定義・設計書（承認は問わない）、review はレビューで指されたファイル。
 export const FILE_ACTIONS = ["edit", "read", "review"] as const;
 export type FileAction = (typeof FILE_ACTIONS)[number];
-
-/** 埋め込みの前置きに使う、種類の呼び名。 */
-export const KIND_WORD: Record<Kind, string> = {
-  decision: "決定",
-  option: "検討した案",
-  constraint: "制約",
-  non_goal: "やらないと決めたこと",
-  dead_end: "試して駄目だったこと",
-  finding: "分かったこと",
-  debt: "意図して残した負債",
-  verification: "検証",
-  question: "問い",
-  document: "文書",
-};
 
 // 状態を持つ種類は全部の状態に、持たない種類は 1 つの札を持つ（型が漏れを止める）。文書の札は置き場所で決める。
 type Labels = {
@@ -108,45 +94,6 @@ export function labelOf(k: {
   if (k.kind === "document") return documentLabel(k.source_kind, k.path);
   const l = (LABEL as Record<string, string | Record<string, string>>)[k.kind];
   return typeof l === "string" ? l : ((k.status && l?.[k.status]) ?? "");
-}
-
-/** 埋め込む文。**何の作業の、どの種類の話かを前置する。**断片だけでは文脈が失われる。 */
-export function knowledgeText(k: {
-  kind: string;
-  heading: string | null;
-  body: string;
-  reason: string | null;
-}): string {
-  const head = [k.heading, KIND_WORD[k.kind as Kind]].filter(Boolean).join(" / ");
-  return `${head}\n${k.body}${k.reason ? `\n${k.reason}` : ""}`;
-}
-
-/** 発言の埋め込み文の材料。取り込みと埋め込みの補充が同じ形から作るので、文がずれて取り直しが続くことがない。 */
-export type MessageEmbedInput = {
-  body: string;
-  speakerKind: string;
-  handle: string | null;
-  project: string;
-  /** GitHub の PR・issue なら、その番号と題。coding session なら null */
-  source: { kind: string; number: string; title: string } | null;
-  /** レビューで指されたファイル */
-  paths: string[];
-};
-
-/** 発言の埋め込み文。GitHub なら PR・issue の題とファイル、coding session なら作業場所を前置する。 */
-export function messageText(m: MessageEmbedInput): string {
-  const context = m.source
-    ? `${m.source.kind === "pull_request" ? "PR" : "issue"} #${m.source.number} ${m.source.title}`
-    : m.project;
-  const speaker =
-    m.speakerKind === "self"
-      ? "持ち主の発言"
-      : m.handle
-        ? `@${m.handle}`
-        : m.speakerKind === "assistant"
-          ? "AI"
-          : "";
-  return `${[context, ...m.paths, speaker].filter(Boolean).join(" / ")}\n${m.body}`;
 }
 
 /**

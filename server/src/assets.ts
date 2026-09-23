@@ -1,4 +1,4 @@
-// 実行時に読む同梱物（DB の schema と compose）の在り処。
+// 実行時に読む同梱物（DB の schema と migrations）の在り処。
 //
 // **cwd から探さない。**フックは編集中のプロジェクトを cwd として起動し、CLI はどこからでも叩かれる。
 // 基準は常に、いま動いているこのファイルの位置である。
@@ -23,7 +23,7 @@ function locate(marker: string, candidates: string[]): string | null {
 }
 
 /**
- * DB の同梱物（schema.sql、migrations、compose.yaml）。
+ * DB の同梱物（schema.sql と、あれば migrations）。
  * **見つからないなら投げる。**黙って既定へ倒すと、空の schema を当てたように見えてしまう。
  */
 export function dbDir(from = here()): string {
