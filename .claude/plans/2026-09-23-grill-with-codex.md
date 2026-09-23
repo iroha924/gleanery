@@ -33,6 +33,14 @@
 - 採った: 再開のたびに `-c sandbox_mode="read-only"` を付ける。棄却: 付けずに再開する（実測で workspace-write になり、書き込めた）
 - 採った: 共有した後に Go を待つ（持ち主の判断）。棄却: 共有してそのまま実装（Codex が不同意）
 
+## 手順
+
+1. `.claude/skills/grill-with-codex/SKILL.md` を書く（Triggers と Does not trigger、1〜7 の手順）
+2. この計画ファイルを `.claude/plans/` に置く
+3. CLAUDE.md に「実装の前」の節を足す
+4. `scripts/check-ai-config.mjs` で Claude 専用の Skill にも開発用 Skill と同じ検査を当てる
+5. `docs-audit` と Codex のレビューを受けて直す
+
 ## 検証
 
 - `resume` の権限: `-c sandbox_mode="read-only"` 無しでは `sandbox: workspace-write` で `touch` が通った。付けると `sandbox: read-only` で `Operation not permitted`（2026-09-23 の実測）
