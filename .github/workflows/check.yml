@@ -64,10 +64,6 @@ jobs:
       - name: lint・型・bundle・test・SQL の到達・子プロセスのレーン
         run: bun run verify
 
-      # メモリ上の SQLite に schema.sql を当てて型を作り、追跡している db-types.ts と比べる。
-      - name: DB の型が schema.sql と合っているか
-        run: bun run codegen:check
-
       # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
       # （ignore されたファイルは差分に現れない）。npm が実際に詰めるものを一覧し、リポジトリの
       # 外へ展開して起動する。ここが唯一「利用者が受け取る形」を見る場所である。
@@ -77,12 +73,8 @@ jobs:
           bun run bundle
           cd plugin
           tgz="$(npm pack --silent)"
-          tar tzf "$tgz" | sort > /tmp/contents.txt
-          for f in package/dist/cli.js package/dist/mcp.js package/dist/capture.js \
-                   package/db/schema.sql \
-                   package/LICENSE package/THIRD_PARTY_NOTICES.md; do
-            grep -qx "$f" /tmp/contents.txt || { echo "tarball に $f が無い"; exit 1; }
-          done
+          # 必須と禁止の一覧は release:prepare と共有する（scripts/lib/tarball.mjs）
+          node ../scripts/check-tarball.mjs "$tgz"
           # **リポジトリの外へ出す。**中で展開すると、同梱物を取り違えても親を辿って当たり、通ってしまう。
           out="$(mktemp -d)"
           tar xzf "$tgz" -C "$out"

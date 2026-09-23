@@ -1,0 +1,25 @@
+# PR ごとに merge の前に Codex のレビューを回したかを、PR 本文の「検証」の節で見る。
+# 本文は untrusted なので、環境変数で渡して読むだけにする（shell の式へ展開しない）。
+name: pr-body
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  codex-review:
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - name: 検証の節に Codex のレビューの結果があるか
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          # テンプレートのコメントにも「Codex」があるので、HTML コメントを落としてから節を取り出す
+          printf '%s\n' "$BODY" | tr -d '\r' | perl -0pe 's/<!--.*?-->//gs' | awk '/^## 検証/{f=1;next} /^## /{f=0} f' > verification.txt
+          grep -q "Codex" verification.txt || {
+            echo "PR 本文の「検証」の節に Codex のレビューの結果が無い（CLAUDE.md の review、codex-review Skill）"
+            exit 1
+          }

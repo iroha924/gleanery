@@ -806,6 +806,9 @@ export function renderWork(w: WorkDetail, budget: number): string {
   );
 }
 
+/** 参照の先が無い（消えたか、選んだプロジェクトの外）ときの 1 行。端末の画面はこれと比べて失敗の表示に替える */
+export const missing = (ref: string): string => `${ref}: 無い`;
+
 /**
  * 参照の形。k: / s: / w: は連番、m: は uuid。**形はここで確かめ、DB の例外を参照の誤りに読み替えない。**
  * 連番は 15 桁まで（JS の数が正確に持てるのは 2^53 まで。越えると丸められて別の行を読む）。
@@ -839,7 +842,7 @@ export async function read(
     else if (ref.startsWith("s:")) text = await readSource(db, Number(id), each, scope, opts.signal);
     else {
       const w = await workDetail(db, Number(id), scope, opts.signal);
-      text = w ? renderWork(w, each) : `${ref}: 無い`;
+      text = w ? renderWork(w, each) : missing(ref);
     }
     // 題や見出しは本文の配分の外で書くので、最後に上限で切る。
     out.push(clipped(text, each, head(ref, 40)));
@@ -888,7 +891,7 @@ async function readKnowledge(
     .where("k.id", "=", id);
   if (projects) q = q.where("k.project_id", "in", projects);
   const k = await q.executeTakeFirst(queryOptions(signal));
-  if (!k) return `k:${id}: 無い`;
+  if (!k) return missing(`k:${id}`);
   // 本体と同じ範囲で絞る。決定に属する行は id で辿れるので、絞りが片方だけだと、選んだプロジェクトの
   // 外の本文が案と検証として応答に混ざる（id は連番で推測できる）。
   let r = knowledgeBase(db).where(sql<SqlBool>`(k.decision_id = ${id} or k.id = ${k.decision_id})`);
@@ -926,7 +929,7 @@ async function readMessage(
     .where("m.id", "=", id);
   if (projects) q = q.where("c.project_id", "in", projects);
   const t = await q.executeTakeFirst(queryOptions(signal));
-  if (!t) return `m:${id}: 無い`;
+  if (!t) return missing(`m:${id}`);
   // 前後の turn も読む。AI の応答（索引していない）もここでは出す — 「それでいい」が何を指したかが分かる。
   // 並びは (sent_at, seq)。同じ時刻の発言が並んでも、対象の発言が前後の件数の上限で落ちない。
   const withPaths = messageBase(db)
@@ -994,7 +997,7 @@ async function readSource(
     .where("s.id", "=", id);
   if (projects) q = q.where("cn.project_id", "in", projects);
   const s = await q.executeTakeFirst(queryOptions(signal));
-  if (!s) return `s:${id}: 無い`;
+  if (!s) return missing(`s:${id}`);
   const updated = dateOf(s.source_updated_at === null ? null : new Date(s.source_updated_at));
   if (s.body !== null) {
     // metadata の中身は DB が形を保証しない（object であることだけ）。読む側で見る。

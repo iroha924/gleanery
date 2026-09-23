@@ -28,8 +28,8 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 | 依存 | 規約に効く事実 |
 |---|---|
 | ink | `useWindowSize`・`useInput(handler, { isActive })`・`render(..., { alternateScreen })`を使っている。開発時だけ `react-devtools-core` と `ws` を動的 import する（bundle で差し替える理由） |
-| @inkjs/ui | `TextInput`（`onSubmit`・`isDisabled`）と `Spinner` を使っている |
-| ink-scroll-view | `ScrollView` の ref の `scrollBy` / `scrollToTop` / `scrollToBottom` で動かす |
+| @inkjs/ui | `TextInput`（`onSubmit`・`isDisabled`）を使っている。読み込み中は自前の `Twinkle`（`icons.ts` の `TWINKLE`） |
+| ink-scroll-view | `ScrollView` の ref の `scrollTo`（`getBottomOffset` までに収める）/ `scrollToTop` / `scrollToBottom` で動かす。`scrollBy` は本文の終わりで止まらない |
 | ink-link | 型が `children` を props の必須にしている |
 | marked | **marked-terminal の peer（`<16`）の外のバージョンを、持ち主の決定で入れている** |
 | marked-terminal | 型を同梱しない。`@types/marked-terminal` は古い marked を引き込むので入れず、`marked-terminal.d.ts` で宣言する |

@@ -81,7 +81,7 @@ release commandが同じものを読む。
    staging directoryへtarballを1回だけ作って展開し、次を検査する
    - `npm pack --json`のfile一覧に、必要なものが全部あるか（`dist/`、`db/`、`skills/`、
      `hooks/`、MCP manifest、plugin manifest）
-   - source、env、secret、lockfile、`node_modules`が混ざっていないか
+   - source（`src/*.ts`）、`.env`、lockfile、`node_modules`が混ざっていないか（`scripts/lib/tarball.mjs`。ファイル名で見るだけで、中身の secret は見ない）
    - 展開した先で`node dist/cli.js --version`が動くか
 4. 検査したそのtarballをcandidateとしてpublishする（`npm publish <file>.tgz --tag next`）。
    publishのときに作り直さない。`prepublishOnly`は`npm pack`では走らないので、lifecycleに任せきらない。

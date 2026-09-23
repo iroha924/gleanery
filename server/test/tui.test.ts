@@ -5,9 +5,10 @@ import { stripVTControlCharacters } from "node:util";
 import { render as inkRender } from "ink";
 import { render } from "ink-testing-library";
 import { createElement as h } from "react";
+import { width } from "../src/panel.ts";
 import type { Hit } from "../src/search.ts";
 import type { SessionDetail, SessionRow } from "../src/sessions.ts";
-import { App } from "../src/tui/app.ts";
+import { App, helpLines } from "../src/tui/app.ts";
 import type { Data } from "../src/tui/data.ts";
 import { ICONS, TWINKLE } from "../src/tui/icons.ts";
 import { renderMarkdown } from "../src/tui/markdown.ts";
@@ -354,6 +355,19 @@ test("本文の終わりを越えて下へ進まない（画面が空になら�
   r.unmount();
 });
 
+// 消えた記録や選んだプロジェクトの外の記録は、本文としてではなく、セッション・作業の詳細と同じ「無い」の表示で見せる。
+test("全文の先が無ければ、無いと出す", async () => {
+  const r = renderAt(60, 16, fake({ read: async () => null }));
+  await settle(r);
+  for (const key of ["/", "期限", ENTER, ENTER]) {
+    r.write(key);
+    await settle(r);
+  }
+  const frame = r.frame();
+  assert.ok(frame.includes("この記録は無い（消されたか、選んだプロジェクトの外の記録）"), frame);
+  r.unmount();
+});
+
 test("打っている間の q は文字として入り、終わらない", async () => {
   const data = fake();
   const r = render(h(App, { data }));
@@ -441,7 +455,38 @@ test("狭い端末でも上の枠は 3 行で、画面が端末の高さを超�
     assert.equal(lines.length, 10, `${columns} 桁で ${lines.length} 行になった`);
     assert.match(lines[0] ?? "", /^╭/, `${columns} 桁で上の罫線が押し出された`);
     assert.match(lines[2] ?? "", /^╰/, `${columns} 桁で上の枠が 3 行に収まっていない`);
-    assert.match(lines[9] ?? "", /q 終わる/, `${columns} 桁で終わり方の案内が切れた`);
+    assert.match(lines.slice(8).join("\n"), /q 終わる/, `${columns} 桁で終わり方の案内が切れた`);
+  }
+  // 80 桁では案内が 2 行に分かれ、どのキーも切れない
+  const at80 = (await frameAt(80, 12, many)).split("\n");
+  assert.equal(at80.length, 12);
+  const help = at80.slice(10).join("\n");
+  for (const key of ["q 終わる", "/ 検索", "g G 端へ", "p プロジェクト"])
+    assert.ok(help.includes(key), `80 桁で ${key} が見えない\n${help}`);
+});
+
+// 案内を 2 行にすると一覧に 3 行が残らない高さでは、案内を 1 行に戻し、選んだ行を画面に残す。
+test("低い端末でも、端へ動いた後の選んだ行が見える", async () => {
+  const many = fake({
+    sessions: async () => ({
+      items: Array.from({ length: 30 }, (_, i) =>
+        session({ id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`, title: `題 ${i}` }),
+      ),
+      total: 30,
+      page: 1,
+      pageSize: 50,
+      pages: 1,
+    }),
+  });
+  for (const rows of [6, 7]) {
+    const r = renderAt(60, rows, many);
+    await settle(r);
+    r.write("G");
+    await settle(r);
+    const frame = r.frame();
+    assert.equal(frame.split("\n").length, rows, frame);
+    assert.match(frame, /❯/, `${rows} 行で選んだ行が見えない:\n${frame}`);
+    r.unmount();
   }
 });
 
@@ -551,4 +596,25 @@ test("引ける語の無い問いは、当たらなかったとは別の案内�
   await settle(r);
   assert.match(r.lastFrame() ?? "", /当たらなかった/);
   r.unmount();
+});
+
+// 狭い幅でも案内は行数と幅に収まり、キーと説明の組を割らない（入らない組は後ろから落とす）。
+test("操作の案内は、どの幅でも行数と幅に収まり、組を割らない", () => {
+  const items = [
+    "q 終わる",
+    "Enter 開く",
+    "↑↓ j k 選ぶ",
+    "PgUp PgDn めくる",
+    "Tab S-Tab 画面",
+    "/ 検索",
+    "g G 端へ",
+  ];
+  for (let columns = 1; columns <= 120; columns++)
+    for (const lines of [1, 2]) {
+      const out = helpLines(items, columns, lines);
+      assert.ok(out.length <= lines, `${columns}: ${out.length} 行`);
+      for (const line of out) assert.ok(width(line) <= columns, `${columns}: ${line}`);
+      for (const line of out)
+        for (const pair of line.split("  ")) assert.ok(items.includes(pair), `${columns}: ${pair}`);
+    }
 });

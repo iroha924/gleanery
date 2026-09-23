@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { tarballProblems, trackedDistribution } from "./lib/tarball.mjs";
 
 const root = path.resolve(import.meta.dirname, "..");
 const { base } = parseArgs({ options: { base: { type: "string" } } }).values;
@@ -36,43 +37,8 @@ const stage = fs.mkdtempSync(path.join(os.tmpdir(), `gleanery-${plan.versions.pa
 const packed = JSON.parse(
   run("npm", ["pack", "--json", "--pack-destination", stage], { cwd: path.join(root, "plugin") }),
 )[0];
-const paths = new Set(packed.files.map((file) => file.path));
-const trackedDistribution = git(
-  "ls-files",
-  "plugin/skills",
-  "plugin/hooks",
-  "plugin/mcp",
-  "plugin/.claude-plugin",
-  "plugin/.codex-plugin",
-  "plugin/LICENSE",
-  "db",
-)
-  .split("\n")
-  .filter(Boolean)
-  .map((file) => file.replace(/^plugin\//, ""));
-for (const required of [
-  "dist/cli.js",
-  "dist/mcp.js",
-  "dist/capture.js",
-  "db/schema.sql",
-  ".claude-plugin/plugin.json",
-  ".codex-plugin/plugin.json",
-  "package.json",
-  "THIRD_PARTY_NOTICES.md",
-  ...trackedDistribution,
-]) {
-  if (!paths.has(required)) throw new Error(`tarballに${required}が無い`);
-}
-for (const file of paths) {
-  if (
-    file.includes("node_modules/") ||
-    /(^|\/)\.env(?:\.|$)/.test(file) ||
-    file.endsWith("bun.lock") ||
-    /(^|\/)src\/.+\.(?:ts|tsx)$/.test(file)
-  ) {
-    throw new Error(`tarballへ入れてはいけないfileがある: ${file}`);
-  }
-}
+const problems = tarballProblems(new Set(packed.files.map((file) => file.path)), trackedDistribution(root));
+if (problems.length) throw new Error(problems.join("\n"));
 
 const tgz = path.join(stage, packed.filename);
 const unpacked = path.join(stage, "unpacked");

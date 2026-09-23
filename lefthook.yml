@@ -29,6 +29,12 @@ pre-commit:
     - name: architecture
       glob: "{server/src/**/*.ts,scripts/check-architecture.mjs}"
       run: bun run architecture
+    - name: codegen
+      glob: "{db/schema.sql,server/src/db-types.ts,server/src/kysely-node-sqlite.ts,server/package.json,server/bun.lock,scripts/codegen.mjs}"
+      run: bun run codegen:check
+    - name: rule-scopes
+      glob: "{.claude/rules/**,scripts/check-rule-scopes.mjs,server/**/*.ts,db/schema.sql,lefthook.yml,README.md,AGENTS.md,package.json}"
+      run: bun run rule-scopes
     - name: pairs
       glob: "{db/schema.sql,server/src/*.ts,README.md,plugin/skills/review/SKILL.md,plugin/skills/review/reviewers/*.md,scripts/check-pairs.mjs}"
       # git add をここに書かない。無条件に走ると README の別件の編集まで巻き込む。
