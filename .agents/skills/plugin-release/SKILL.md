@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundleのエントリポイントとその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleだけの変更には使わない。
+description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundleのエントリポイントとその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleの変更は先にknowledge-schemaを使い、配るところでこのSkillを使う。
 ---
 
 # 配布物を届ける

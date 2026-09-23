@@ -39,9 +39,7 @@ test("pre-commit の bundle の glob は、配布物の入力を全部拾う（�
   const covers = (file: string) =>
     glob.some((g) => g === file || (g.endsWith("/**") && file.startsWith(g.slice(0, -2))));
   for (const file of EXACT_PACKAGE_INPUTS) assert.ok(covers(file), `${file} が bundle の glob に無い`);
+  // 前方一致の入力は、その下の全部のファイルを拾う glob でなければならない（`*.ts` に絞ると JSON などを落とす）
   for (const prefix of PACKAGE_PREFIXES)
-    assert.ok(
-      glob.some((g) => g.startsWith(prefix)),
-      `${prefix} が bundle の glob に無い`,
-    );
+    assert.ok(glob.includes(`${prefix}**`), `${prefix}** が bundle の glob に無い`);
 });
