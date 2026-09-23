@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import type { KyselyPlugin } from "kysely";
-import type { Artifact } from "../src/artifacts.ts";
 import {
   collectDocs,
   commitOf,
@@ -145,45 +144,37 @@ test("除外した file と directory は取り込まない", async () => {
   });
 });
 
-// 作業ツリーを読むと、書きかけの本文や、承認を外している最中の成果物が DB に入る。
-test("作業ツリーの未 commit の編集は読まず、commit した承認だけを見る", async () => {
+// 作業ツリーを読むと、書きかけの本文が DB に入る。
+test("作業ツリーの未 commit の編集は読まず、commit した本文だけを見る", async () => {
   await withRepo((repo, git) => {
-    put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
-    put(
-      repo,
-      ".gleanery/changes/auth/change.json",
-      JSON.stringify({ schema: "gleanery/change/1", title: "認証", requirements: { status: "approved" } }),
-    );
-    put(repo, ".gleanery/changes/auth/requirements.md", "# 要件\n承認した本文\n");
     put(repo, "README.md", "# 読んで\n公開した本文\n");
     git("add", "-A");
     git("commit", "-qm", "x");
     const head = commitOf(repo, false);
-    // commit していない変更（draft へ戻して書き直し中、README の書きかけ）
-    put(
-      repo,
-      ".gleanery/changes/auth/change.json",
-      JSON.stringify({ schema: "gleanery/change/1", title: "認証", requirements: { status: "draft" } }),
-    );
-    put(repo, ".gleanery/changes/auth/requirements.md", "# 要件\n書きかけ\n");
     put(repo, "README.md", "# 読んで\n書きかけ\n");
     const { docs } = collectDocs(repo, head);
-    const body = Object.fromEntries(docs.map((d) => [d.path, d.body]));
-    assert.match(body["README.md"] ?? "", /公開した本文/);
-    assert.match(body[".gleanery/changes/auth/requirements.md"] ?? "", /承認した本文/);
-    assert.equal(docs.find((d) => d.path.endsWith("requirements.md"))?.kind, "requirements");
+    assert.match(docs.find((d) => d.path === "README.md")?.body ?? "", /公開した本文/);
   });
 });
 
-test("commit の中の manifest が不正なら何も返さずに止め、fast-forward かどうかを祖先で見る", async () => {
+// 以前の要件定義・設計書の置き場所に残った下書きを検索に出さない。壊れた manifest があっても同期は止めない。
+test(".gleanery/ は入れ子も中身も問わず取り込まず、祖先で fast-forward かを見る", async () => {
   await withRepo((repo, git) => {
     put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
     put(repo, ".gleanery/changes/a/change.json", "{");
-    put(repo, ".gleanery/changes/a/requirements.md", "# r\n");
+    put(repo, ".gleanery/changes/a/requirements.md", "# 要件\n下書き\n");
+    put(repo, "sub/.gleanery/changes/x/design.md", "# 入れ子\n下書き\n");
+    put(repo, "docs/gleanery.md", "# 名前が似ているだけ\n本文\n");
+    put(repo, "README.md", "# 読んで\n本文\n");
     git("add", "-A");
     git("commit", "-qm", "a");
     const first = commitOf(repo, false);
-    assert.throws(() => collectDocs(repo, first), /\.gleanery が不正/);
+    assert.deepEqual(
+      collectDocs(repo, first)
+        .docs.map((d) => d.path)
+        .sort(),
+      ["README.md", "docs/gleanery.md"],
+    );
     put(repo, "README.md", "# x\n");
     git("add", "-A");
     git("commit", "-qm", "b");
@@ -194,20 +185,13 @@ test("commit の中の manifest が不正なら何も返さずに止め、fast-f
   });
 });
 
-test("大文字の拡張子の文書にも最終更新日が付き、大きすぎる manifest は大きさだけで止める", async () => {
+test("大文字の拡張子の文書にも最終更新日が付く", async () => {
   await withRepo(async (repo, git) => {
     put(repo, "README.MD", "# 読んで\n本文\n");
     git("add", "-A");
     git("commit", "-qm", "a");
     const { docs } = collectDocs(repo, commitOf(repo, false));
     assert.ok(docs.find((d) => d.path === "README.MD")?.at, "README.MD に日付が無い");
-
-    put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
-    put(repo, ".gleanery/changes/a/change.json", `{"schema": "gleanery/change/1"${" ".repeat(70 * 1024)}}`);
-    put(repo, ".gleanery/changes/a/requirements.md", "# r\n");
-    git("add", "-A");
-    git("commit", "-qm", "b");
-    assert.throws(() => collectDocs(repo, commitOf(repo, false)), /change\.json: 大きすぎる/);
   });
 });
 
@@ -331,55 +315,27 @@ test("CRLF と BOM でも見出しで割れる", () => {
   );
 });
 
-// **承認済みの成果物だけを入れる。**draft を入れると、未承認の AI 生成物が次の生成の根拠として引かれる。
-test("成果物は承認済みだけを入れ、draft と .gleanery のそれ以外は入れない", () => {
-  const req = ".gleanery/changes/auth/requirements.md";
-  const artifact: Artifact = { kind: "requirements", change: "auth", changeTitle: "認証" };
-  const bodies = new Map([
-    ["README.md", "# 読んで\n\n本文\n"],
-    [req, "# 要件\n\n## 背景\n### 経緯\n\n本文\n"],
-    [".gleanery/changes/auth/design.md", "# 設計\n\n本文\n"],
-    [".gleanery/notes.md", "# メモ\n\n本文\n"],
-    // 承認の判定はルートの .gleanery にしか無いので、入れ子の .gleanery は通常の文書として入れない
-    ["sub/.gleanery/changes/x/requirements.md", "# 入れ子\n\n本文\n"],
-  ]);
-  const got = projectDocs(bodies, new Map([[req, artifact]]), new Map());
-  assert.deepEqual(
-    got.map((d) => [d.path, d.kind, d.title]),
-    [
-      ["README.md", "document", "読んで"],
-      [req, "requirements", "要件"],
-    ],
-  );
-  assert.equal(got[1]?.artifact, artifact);
-});
-
 // 節は見出しだけの節を落とすので、連結しても元に戻らない。画面が出す原文は読んだ本文をそのまま持つ。
 test("原文は見出しだけの節・コードフェンス・末尾の改行を含めて元の本文と一致する", () => {
-  const req = ".gleanery/changes/a/requirements.md";
   const body = "# 題\n\n## 見出しだけ\n### 子\n\n```sh\n# コメント\n```\n\n末尾\n\n";
-  const [doc] = projectDocs(
-    new Map([[req, body]]),
-    new Map([[req, { kind: "requirements", change: "a", changeTitle: "a" }]]),
-    new Map(),
-  );
+  const [doc] = projectDocs(new Map([["docs/a.md", body]]), new Map());
   assert.equal(doc?.body, body);
   assert.notEqual(doc?.sections.map((s) => s.text).join("\n"), body, "節の連結で戻るなら原文は要らない");
 });
 
 // **本文が同じ文書には書かない。**毎日の同期で全節を書き直すと、索引の書き換えが膨らむ（実測で 2 万回の書き換え）。
-test("文書の hash は本文と承認の状態で決まり、同じなら同じ値になる", () => {
+test("文書の hash は本文で決まり、同じなら同じ値になる", () => {
   const bodies = new Map([["a.md", "# a\n\n本文\n"]]);
-  const [x] = projectDocs(bodies, new Map(), new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
-  const [y] = projectDocs(bodies, new Map(), new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
-  const [z] = projectDocs(new Map([["a.md", "# a\n\n本文を変えた\n"]]), new Map(), new Map());
+  const [x] = projectDocs(bodies, new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
+  const [y] = projectDocs(bodies, new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
+  const [z] = projectDocs(new Map([["a.md", "# a\n\n本文を変えた\n"]]), new Map());
   assert.ok(x && y && z);
   assert.ok(docHash(x).equals(docHash(y)));
   assert.ok(!docHash(x).equals(docHash(z)));
 });
 
 test("中身の無い文書は入れない", () => {
-  assert.deepEqual(projectDocs(new Map([["empty.md", "  \n"]]), new Map(), new Map()), []);
+  assert.deepEqual(projectDocs(new Map([["empty.md", "  \n"]]), new Map()), []);
 });
 
 // 撤回した節が検索に残ると、古い記述が正解として返る。消えた文書の原文も残さない。

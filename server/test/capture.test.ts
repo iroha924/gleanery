@@ -291,7 +291,7 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
     tool_name: "Edit",
     tool_input: { file_path: path.join(repoDir, "db", "schema.sql") },
   });
-  // リポジトリの外と、要件定義・設計書でない読み込みは残さない（承認されているかは問わない）。
+  // リポジトリの外と、読んだだけのファイル（Read）は残さない。
   onHook("claude-code", {
     ...base,
     hook_event_name: "PostToolUse",
@@ -337,10 +337,8 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   );
   assert.deepEqual(
     files.map((f) => (f.kind === "file" ? [f.path, f.action, f.message] : [])),
-    [
-      ["db/schema.sql", "edit", said?.id],
-      [".gleanery/changes/auth/design.md", "read", said?.id],
-    ],
+    [["db/schema.sql", "edit", said?.id]],
+    "読んだファイル（Read）は記録しない",
   );
 });
 
@@ -545,7 +543,7 @@ test("DB が無ければ、session の開始時に同じ枠の形で知らせる
   const missing = path.join(home, "無い.db");
   assert.equal(
     captureNotice(missing),
-    `✦ gleanery: DB が無いので、会話を自動記録できない\n│ ${missing}\n╰─ gleanery db init で作る`,
+    `✦ gleanery: DB が無いので、会話を自動記録できない\n│ ${missing}\n╰─ gleanery init で作る`,
   );
 });
 

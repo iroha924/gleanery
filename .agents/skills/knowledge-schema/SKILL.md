@@ -23,17 +23,26 @@ description: gleaneryのDB schema（db/schema.sqlとdb/migrations、SQLite）、
 
 DBは`node:sqlite`の1ファイル（`~/.gleanery/gleanery.db`）。正本は`db/schema.sql`の1本で、今の形だけを表す。
 Prisma・Drizzleのschemaを別の正本として足さない（Drizzleは不採用。FTS5の仮想表とtriggerを表せない）。
-新しいDBは`gleanery db init`が一時ファイルへschema.sqlを当ててからrenameして作る（何度流してもよい）。
+新しいDBは`gleanery init`が一時ファイルへschema.sqlを当ててからrenameして作る（何度流してもよい）。
 
 バージョンは`pragma user_version`で持つ。schema.sqlの末尾の`pragma user_version = N`と`server/src/sqlite.ts`の
 `SCHEMA_REVISION`を同じ数にする。readerとingestの接続は開くときに照合し、食い違えば止まる。
 **自動記録（capture）だけは照合しない。**確かめると、DBを上げてからpluginを上げるまで記録が丸ごと止まる。
 旧バージョンのまま書き続け、DBが弾いた記録は`rejected/`へ回る。
 
-`db/migrations/NNNN_<名前>.sql`は既存のDBをrevision N-1からNへ進める手順で、正本ではない。schema.sqlが
-revision 1なので、最初の1本は`0002_`になる。`gleanery db migrate`（`server/src/admin.ts`、owner）は、DBのバージョンより
-新しいmigrationを1つのtransaction（`begin immediate`）で番号順に当て、同じtransactionで`user_version`を上げる。
-名前の形・重複・欠番は`pendingMigrations`が止める。`.`で始まる名前は読まない。
+`db/migrations/NNNN_<名前>.sql`は既存のDBをrevision N-1からNへ進める手順で、正本ではない。
+`gleanery db migrate`（`server/src/admin.ts`の`applyMigrations`、owner）は、DBのバージョンより新しいmigrationを番号順に当て、
+**transactionごとに**`user_version`を上げる。途中で落ちても前のtransactionの分は残り、打ち直すとその続きから当たる。
+
+- 宣言の無いmigrationは、続く分をまとめて1つのtransaction（`begin immediate`）で当てる
+- 表を消す・作り変える（`ALTER TABLE`。列の追加も含む）migrationは、1行目に`-- gleanery: foreign_keys=off`を書く。宣言の無いmigrationでは、runnerのauthorizerがdropとALTERを拒む。単独のtransactionで、その外で外部キーを切って当て、
+  commitの前に`pragma foreign_key_check`が空であることを確かめ、終わったら戻す。**宣言を忘れると、外部キーが効いたままのdropが
+  子の行をcascadeで消す。**知らない宣言と1行目以外の宣言は、当てる前に止まる
+- 行を消すのは宣言の無いmigrationで先に済ませる（外部キーが効いているので、cascadeとset nullが子孫を今の意味どおりに片付ける）。
+  作り直すmigrationは残った行を写すだけにする
+- autoincrementの表を作り直すときは、`sqlite_sequence`の値を控えて戻す（dropで消え、消したidが振り直される）
+- schema.sqlの作り直した表は`create table "表名"`の形で書く（renameの後の`sqlite_schema.sql`と文字列で揃える）
+- 名前の形・重複・欠番は`pendingMigrations`が止める。`.`で始まる名前は読まない
 
 ## schemaを変えるとき
 
@@ -150,7 +159,7 @@ transactionの中で他の問い合わせを並行に投げない。`select ... 
 
 新しい取り込み元は`gleanery harvest`にも繋ぐ。手動のcommandだけを足して完了にしない。
 
-### 文書と要件定義・設計書
+### 文書
 
 文書同期（`server/src/docs.ts`）は、remoteの既定branchの**commit tree**を読む。作業ツリーは読まない。
 `connector.head_oid`に入れたcommitを持ち、そこからfast-forwardできるcommitだけを自動で入れる。
@@ -159,19 +168,11 @@ fast-forwardでなければ一度だけ取り直し、前に入れたcommit以�
 案内する。巻き戻しを成功扱いにしない — 漏れた文書を巻き戻して消したときに、検索に黙って残る。
 投影の規則（節の割り方、前置する文脈）を変えたら`PROJECTION`の定数を上げる。次の同期で全文書が書き直される。
 
-`.gleanery/`配下からは、`change.json`がapprovedの`requirements.md`と`design.md`だけを入れる。承認の判定と
-検査は`server/src/artifacts.ts`にだけ置き、`gleanery check`（作業ツリー）と同期（commit tree）が同じ関数を通る。
-
-- 選別と検査を、文書のDB書き込みより前に済ませる。逆にすると、draftの節が一度検索に入る
 - 取り込まない`path`は`docs_exclude`（docsのconnectorに紐づく）に置き、blobを読む前に当てる。追跡された
   Markdownが全部「事実を述べた文書」とは限らない（監査のfixtureは、取り込むと架空の規約が本物より上位で返る）
-- 追跡済みの成果物を持つchangeのmanifestが不正なら、そのrepositoryの文書同期を丸ごと止める。エラーには
-  pathと理由だけを出し、ファイルの内容と未知のキー名は出さない
-- 原文は`source_item`（`kind`が`requirements` / `design`、`body`に原文）、検索するのは`knowledge`の
-  `document`の節である。節の連結から原文は戻らない
-- セッションとの関連は新しい表を作らず、自動記録の`message_file`（Edit・Writeは`edit`、要件定義・設計書を
-  Readしたものは`read`）と、同じプロジェクトで同期された`source_item.path`の一致で作る。任意のpathや
-  別のプロジェクトの本文を取れる経路にしない
+- `.gleanery/`（入れ子も含む）は取り込まない。以前の要件定義・設計書の置き場所で、承認していない下書きが残りうる
+- 原文は`source_item`（`kind`が`document`、`body`に原文）、検索するのは`knowledge`の`document`の節である。
+  節の連結から原文は戻らない
 
 ### GitHub
 
@@ -189,7 +190,7 @@ testは一時ディレクトリの本物のSQLite（`server/test/temp-db.ts`）�
     実行されていない箇所をfile:lineで挙げる
   - `sql:live`: CLIと自動記録のフックを子プロセスで一時HOMEのDBへ通す（`LIVE_FILES`の全call site）
 - `bun run codegen:check`: `db-types.ts`がschema.sqlと一致するか
-- migrationを足したら、空のDBへ`db init`した形と、前のバージョンから`db migrate`した形で`sqlite_schema`が一致することを確かめる
+- migrationを足したら、空のDBへ`gleanery init`した形と、前のバージョンから`db migrate`した形で`sqlite_schema`が一致することを確かめる（`server/test/migration-artifacts.test.ts`が前のschemaのfixtureから当てる形）
 
 ## 既存のDBへ当てる
 

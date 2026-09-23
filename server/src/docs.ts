@@ -11,7 +11,6 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import type { Kysely } from "kysely";
-import { type Artifact, MAX_MANIFEST, type Snapshot, selectArtifacts, underGleanery } from "./artifacts.ts";
 import { inTransaction, iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { connectorOf } from "./project.ts";
@@ -215,25 +214,6 @@ export function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
   return out;
 }
 
-/** commit の tree を、成果物の検査の読み先にする。 */
-function snapshotOf(tree: ReturnType<typeof treeOf>, blobs: Map<string, Buffer>): Snapshot {
-  return {
-    kind: (rel) => {
-      const e = tree.entries.get(rel);
-      if (e) return FILE_MODES.has(e.mode) ? "file" : "other";
-      return tree.dirs.has(rel) ? "dir" : null;
-    },
-    size: (rel) => tree.entries.get(rel)?.size ?? 0,
-    read: (rel) => {
-      const e = tree.entries.get(rel);
-      const b = e && blobs.get(e.oid);
-      if (!b) throw new Error(`${rel} を読んでいない`);
-      return b.toString("utf8");
-    },
-    tracked: new Set(tree.entries.keys()),
-  };
-}
-
 /**
  * 文書ごとの最終更新日（その commit から遡って最後に触ったコミット）。**1 回の git log で全部取る。**
  * 観測時点の無い文書は、10 年前の記述でも今の事実として読まれる。取れなければ投げる（日付の無い節を書かない）。
@@ -269,36 +249,29 @@ const EXCLUDE_NONE: Excluded = { files: [], directories: [] };
 const excluded = (rel: string, ex: Excluded): boolean =>
   ex.files.includes(rel) || ex.directories.some((d) => rel.startsWith(`${d}/`));
 
+/** 以前の要件定義・設計書の置き場所。承認していない下書きを検索に出さないよう、入れ子も含めて取り込まない。 */
+const underGleanery = (rel: string): boolean => /(^|\/)\.gleanery\//.test(rel);
+
 export type Doc = {
   path: string;
-  kind: "document" | "requirements" | "design";
   title: string;
   body: string;
   at: string | null;
-  artifact?: Artifact | undefined;
   sections: Section[];
 };
 
-/** 読んだ本文を文書の形へ投影する。**`.gleanery` 配下は承認済みの成果物だけを入れる。** */
-export function projectDocs(
-  bodies: Map<string, string>,
-  include: Map<string, Artifact>,
-  at: Map<string, string>,
-): Doc[] {
+/** 読んだ本文を文書の形へ投影する。 */
+export function projectDocs(bodies: Map<string, string>, at: Map<string, string>): Doc[] {
   const out: Doc[] = [];
   for (const [rel, raw] of bodies) {
-    const artifact = include.get(rel);
-    if (underGleanery(rel) && !artifact) continue;
     const body = clean(raw);
     if (!body.trim()) continue;
     const title = body.match(/^#\s+(\S.*)$/m)?.[1]?.trim() ?? path.basename(rel);
     out.push({
       path: rel,
-      kind: artifact?.kind ?? "document",
       title,
       body,
       at: at.get(rel) ?? null,
-      artifact,
       sections: sections(rel, body),
     });
   }
@@ -309,11 +282,11 @@ export function projectDocs(
  * 文書を行へ投影する形のバージョン。**節の割り方・札・metadata を変えたら上げる。**本文が同じでも hash が変わり、
  * 次の同期で全文書が書き直される（上げないと、古い形の節が残り続ける）。
  */
-const PROJECTION = 1;
+const PROJECTION = 2;
 
 /** 文書 1 本の hash。**これが同じなら、その文書の行には一切書かない。**毎日の同期で全節を書き直さない。 */
 export const docHash = (d: Doc): Buffer =>
-  sha256(JSON.stringify([PROJECTION, d.kind, d.path, d.title, d.body, d.at, d.artifact ?? null]));
+  sha256(JSON.stringify([PROJECTION, d.path, d.title, d.body, d.at]));
 
 // 1 文で渡す変数の数を SQLite の上限（32,766）より十分下に保つ。
 const CHUNK = 500;
@@ -321,8 +294,7 @@ const chunks = <T>(xs: T[]): T[][] =>
   Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 
 /**
- * commit の tree から、入れる文書を組み立てる（DB に触らない）。`.gleanery` が不正なら、どれが承認済みかを
- * 決められないので投げる（呼び出し側は何も書かず、前回の状態を保つ）。
+ * commit の tree から、入れる文書を組み立てる（DB に触らない）。
  */
 export function collectDocs(
   root: string,
@@ -331,34 +303,23 @@ export function collectDocs(
 ): { docs: Doc[]; skipped: number } {
   const tree = treeOf(root, commit);
   // **除外は blob を読む前に当てる。**読んでから捨てると、外したはずの本文が一度メモリへ載る。
-  const md = [...tree.entries].filter(([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex));
+  const md = [...tree.entries].filter(
+    ([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex) && !underGleanery(rel),
+  );
   const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
-  // 大きすぎる manifest は読まない（検査が大きさだけで「大きすぎる」と返す）。読み込んでから測ると、1 本で同期ごと落ちる。
-  const manifests = [...tree.entries].filter(
-    ([rel, e]) =>
-      rel.startsWith(".gleanery/") &&
-      rel.endsWith(".json") &&
-      FILE_MODES.has(e.mode) &&
-      e.size <= MAX_MANIFEST,
+  const blobs = blobsOf(
+    root,
+    readable.map(([, e]) => e.oid),
   );
-  const snap = snapshotOf(
-    tree,
-    blobsOf(
-      root,
-      [...readable, ...manifests].map(([, e]) => e.oid),
-    ),
+  const bodies = new Map(
+    readable.map(([rel, e]) => {
+      const b = blobs.get(e.oid);
+      if (!b) throw new Error(`${rel} を読んでいない`);
+      return [rel, b.toString("utf8")];
+    }),
   );
-  const bodies = new Map(readable.map(([rel]) => [rel, snap.read(rel)]));
-  const { include, problems } = selectArtifacts(snap, [...bodies.keys()]);
-  if (problems.length) {
-    throw new Error(
-      `.gleanery が不正なので、このプロジェクトの文書を同期しない（前回の状態を保つ）:\n${problems
-        .map((p) => `  ${p.path}: ${p.reason}`)
-        .join("\n")}`,
-    );
-  }
   const skipped = md.filter(([, e]) => !FILE_MODES.has(e.mode)).length;
-  return { docs: projectDocs(bodies, include, lastTouched(root, commit)), skipped };
+  return { docs: projectDocs(bodies, lastTouched(root, commit)), skipped };
 }
 
 /** docs の connector に付いた除外。connector がまだ無ければ空（最初の同期でも読める）。 */
@@ -418,15 +379,13 @@ export async function syncDocs(
           part.map((d) => ({
             connector_id: connector.id,
             external_id: d.path,
-            kind: d.kind,
+            kind: "document",
             title: d.title,
             path: d.path,
             body: d.body,
             source_updated_at: d.at === null ? null : iso(d.at),
             content_hash: docHash(d),
-            metadata: JSON.stringify(
-              d.artifact ? { change: d.artifact.change, changeTitle: d.artifact.changeTitle } : {},
-            ),
+            metadata: "{}",
             synced_at: now,
           })),
         )
@@ -494,7 +453,7 @@ export async function syncDocs(
             .where("knowledge.content_hash", "<>", (eb) => eb.ref("excluded.content_hash")),
         )
         .execute();
-    // git の一覧は完全なので、一覧から消えた文書（承認を外した成果物を含む）は行ごと消す。
+    // git の一覧は完全なので、一覧から消えた文書は行ごと消す。
     const present = new Set(docs.map((d) => d.path));
     let removed = 0;
     for (const part of chunks([...known.keys()].filter((p) => !present.has(p))))

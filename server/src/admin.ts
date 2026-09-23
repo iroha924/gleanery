@@ -1,13 +1,13 @@
 // この PC の DB（~/.gleanery/gleanery.db）の面倒を見る。持ち主が手元で叩く。owner の接続（authorizer を掛けない）で繋ぐ。
 //
-//   gleanery db init              DB を作り、db/schema.sql を当てる。何度流してもよい（あれば触らない）
+//   gleanery init                 DB を作り、db/schema.sql を当てる。何度流してもよい（あれば触らない）
 //   gleanery db migrate [--yes]   DB のバージョン（user_version）より新しい db/migrations を当てる
 //   gleanery db reindex           全文検索の索引（FTS）を作り直す。server/src/text.ts の terms() の規則を変えた後に打つ
 
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
-import type { DatabaseSync } from "node:sqlite";
+import { constants as C, type DatabaseSync } from "node:sqlite";
 import { dbDir } from "./assets.ts";
 import { dbFile, SCHEMA_REVISION } from "./db.ts";
 import { connectWriter } from "./db-write.ts";
@@ -86,7 +86,7 @@ export function dbInit(file: string = dbFile()): void {
       fs.linkSync(tmp, file);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "EEXIST" || fs.existsSync(file))
-        throw new Error(`${file} は既にある（別の db init が先に作った）。打ち直せば確かめる`);
+        throw new Error(`${file} は既にある（別の gleanery init が先に作った）。打ち直せば確かめる`);
       fs.renameSync(tmp, file);
     }
   } finally {
@@ -123,7 +123,79 @@ export function pendingMigrations(files: string[], current: number): { revision:
 }
 
 /**
- * DB のバージョンより新しい migration を 1 つの transaction で当て、同じ transaction で user_version を上げる。
+ * migration の 1 行目の宣言。`-- gleanery: foreign_keys=off` だけを認め、ほかの `-- gleanery:` は投げる。
+ * **読み損ねて外部キーが効いたまま当てると、表の作り直しが子の行を cascade で消す。**先頭の空白も宣言として読む。
+ * 宣言の無い migration が表を消すのは、applyMigrations の authorizer が止める（SQL の文字列からは判定しない）。
+ */
+function directiveOf(dir: string, m: { file: string }): "foreign_keys=off" | null {
+  const lines = fs.readFileSync(path.join(dir, m.file), "utf8").split(/\r?\n/);
+  let found: "foreign_keys=off" | null = null;
+  for (const [i, line] of lines.entries()) {
+    const d = /^\s*--\s*gleanery:\s*(.*?)\s*$/.exec(line)?.[1];
+    if (d === undefined) continue;
+    if (i !== 0 || d !== "foreign_keys=off")
+      throw new Error(`db/migrations/${m.file} の ${i + 1} 行目の宣言を読めない: ${d}`);
+    found = d;
+  }
+  return found;
+}
+
+/**
+ * DB のバージョンより新しい migration を当て、transaction ごとに user_version を上げる（途中で落ちても前の分は残り、打ち直せる）。
+ * 宣言の無い migration は続く分を 1 つの transaction で当てる。`-- gleanery: foreign_keys=off` を宣言した migration は単独で、
+ * transaction の外で外部キーを切って当て、commit の前に foreign_key_check を空と確かめ、終わったら戻す（transaction の中では切り替わらない）。
+ */
+export function applyMigrations(
+  raw: DatabaseSync,
+  files: string[],
+  dir: string,
+): { revision: number; file: string }[] {
+  // 当てる前に全部の宣言を読む。読めない 1 本があれば何も当てない。
+  const pending = pendingMigrations(files, versionOf(raw));
+  const off = new Set(pending.filter((m) => directiveOf(dir, m) !== null).map((m) => m.file));
+  const applied: { revision: number; file: string }[] = [];
+  for (;;) {
+    const next = pendingMigrations(files, versionOf(raw))[0];
+    if (!next) return applied;
+    const single = off.has(next.file);
+    if (single) {
+      raw.exec("pragma foreign_keys = off");
+      if ((raw.prepare("pragma foreign_keys").get() as { foreign_keys: number }).foreign_keys !== 0)
+        throw new Error("外部キーを切れなかった（transaction の中にいる）");
+    }
+    // 宣言の無い migration では表を消させず、作り変えさせない（列の追加も含め、ALTER は宣言した migration で行う）。
+    // 外部キーが効いたままの drop は子の行を cascade で消し、親の rename は子の外部キーを退避先へ書き換える。
+    // SQLite が解析した文で止めるので、コメントや改行を挟んだ書き方でも抜けない。
+    if (!single)
+      raw.setAuthorizer((action) =>
+        action === C.SQLITE_DROP_TABLE || action === C.SQLITE_ALTER_TABLE ? C.SQLITE_DENY : C.SQLITE_OK,
+      );
+    try {
+      const batch = immediate(raw, () => {
+        // ロックを取った後に読み直す。確かめている間に別の db migrate が進めていれば、その残りから当てる。
+        const now = pendingMigrations(files, versionOf(raw));
+        if (now[0]?.file !== next.file) return [];
+        const stop = now.findIndex((m) => off.has(m.file));
+        const take = single ? [next] : now.slice(0, stop === -1 ? now.length : stop);
+        for (const m of take) raw.exec(fs.readFileSync(path.join(dir, m.file), "utf8"));
+        if (single) {
+          const broken = raw.prepare("pragma foreign_key_check").all();
+          if (broken.length)
+            throw new Error(`${next.file} の後に外部キーの参照が ${broken.length} 件壊れている`);
+        }
+        raw.exec(`pragma user_version = ${(take.at(-1) as { revision: number }).revision}`);
+        return take;
+      });
+      applied.push(...batch);
+    } finally {
+      if (single) raw.exec("pragma foreign_keys = on");
+      else raw.setAuthorizer(null);
+    }
+  }
+}
+
+/**
+ * DB のバージョンより新しい migration を当てる。当て方は applyMigrations。
  * **当てる前に一覧を出して確かめる。**端末でないときは打たせられないので `--yes` を要る形にする。
  */
 export async function migrate(
@@ -157,16 +229,7 @@ export async function migrate(
       return;
     }
   }
-  const applied = withOwner(file, (raw) =>
-    immediate(raw, () => {
-      // 確かめている間に別の db migrate がバージョンを進めていれば、その残りだけを当てる。
-      const now = pendingMigrations(files, versionOf(raw));
-      for (const m of now) raw.exec(fs.readFileSync(path.join(dir, m.file), "utf8"));
-      const last = now.at(-1);
-      if (last) raw.exec(`pragma user_version = ${last.revision}`);
-      return now;
-    }),
-  );
+  const applied = withOwner(file, (raw) => applyMigrations(raw, files, dir));
   say(`当てた: ${applied.map((m) => m.file).join(" / ") || "無し"}`);
   say(`${file} は revision ${withOwner(file, versionOf)}`);
 }

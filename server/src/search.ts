@@ -161,7 +161,7 @@ const knowledgeHit = (r: KnowledgeRow): Hit => ({
   kind: r.kind,
   status: r.status,
   stance: r.stance,
-  label: labelOf({ kind: r.kind, status: r.status, source_kind: r.source_kind, path: r.path }),
+  label: labelOf({ kind: r.kind, status: r.status, path: r.path }),
   heading: r.heading,
   text: r.body,
   reason: r.reason,
@@ -1000,13 +1000,7 @@ async function readSource(
   if (!s) return missing(`s:${id}`);
   const updated = dateOf(s.source_updated_at === null ? null : new Date(s.source_updated_at));
   if (s.body !== null) {
-    // metadata の中身は DB が形を保証しない（object であることだけ）。読む側で見る。
-    const changeTitle = typeof s.metadata.changeTitle === "string" ? s.metadata.changeTitle : null;
-    const title =
-      s.kind === "document"
-        ? s.title
-        : `${changeTitle ?? s.title}（${s.kind === "requirements" ? "要件定義" : "設計書"}）`;
-    const head = `${labelOf({ kind: "document", status: null, source_kind: s.kind, path: s.path })}${title}\n  出自: ${s.project} / ${s.path} / ${updated}\n\n`;
+    const head = `${labelOf({ kind: "document", status: null, path: s.path })}${s.title}\n  出自: ${s.project} / ${s.path} / ${updated}\n\n`;
     return `${head}${clipped(s.body, Math.max(budget - bytes(head), 0), `s:${id}`)}`;
   }
   const first = s.conversation

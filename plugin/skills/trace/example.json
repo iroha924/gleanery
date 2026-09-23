@@ -21,7 +21,7 @@
         { "text": "node:sqlite の 1 ファイル", "chosen": true },
         { "text": "Docker の PostgreSQL", "chosen": false, "why": "利用者に Docker と DB の資格情報を用意させることになる" }
       ],
-      "confirmation": "gleanery db init が db/schema.sql を当て、doctor の DB の行が全部通った",
+      "confirmation": "gleanery init が db/schema.sql を当て、doctor の DB の行が全部通った",
       "downsides": ["Node 24.15 以上を要求する", "PC を移ると記録は引き継がれない"]
     },
     {

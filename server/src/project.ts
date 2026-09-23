@@ -104,7 +104,7 @@ export function nameLocal(dir: string, name: string): Place {
   const root = rootOf(dir);
   const m = localMap();
   m[root] = name;
-  // **置き場所を先に作る。**~/.gleanery/ は `gleanery db init` で出来るが、その前に名前を付ける利用者には
+  // **置き場所を先に作る。**~/.gleanery/ は `gleanery init` で出来るが、その前に名前を付ける利用者には
   // まだ無い。無いまま書くと ENOENT で落ちて、名前を付けられない。
   fs.mkdirSync(path.dirname(localFile()), { recursive: true, mode: 0o700 });
   fs.writeFileSync(localFile(), `${JSON.stringify(m, null, 2)}\n`);

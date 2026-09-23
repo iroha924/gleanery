@@ -110,7 +110,7 @@ function ingestAuthorizer(action: number, p1: string | null, p2: string | null):
 }
 
 /**
- * 書く接続を開く。`create` は owner の `db init` だけが渡す（無い DB を黙って作らない）。
+ * 書く接続を開く。`create` は owner の `gleanery init` だけが渡す（無い DB を黙って作らない）。
  * **語切りの関数を必ず登録する。**登録しない接続が knowledge / message に書くと、FTS の trigger が
  * no such function で失敗する（索引を黙って欠かさない。fail-closed）。
  */

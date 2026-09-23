@@ -5,7 +5,7 @@
 -- 検索する知識（knowledge）。作業の現在地（work_item）は更新される状態なので知識とは表を分ける。
 --
 -- バージョンは末尾の `pragma user_version`。MCP・CLI・端末の画面は開くときに server/src/db.ts の SCHEMA_REVISION と
--- 突き合わせ、食い違えば止まる。空の DB は `gleanery init` が作る（server/src/admin.ts）。
+-- 突き合わせ、食い違えば止まる。空の DB は `gleanery db init` が作る（server/src/admin.ts）。
 -- 全表 STRICT（型違いを拒む）。主キーは全部 not null を書く（SQLite は integer 以外の主キーに NULL を許す）。
 -- journal_mode・foreign_keys は接続ごとに server/src/sqlite.ts が設定する（ここには書かない）。
 --
@@ -75,11 +75,11 @@ create table docs_exclude (
 
 -- 取り込み元の今の状態。消えたと完全な一覧で確かめられた項目は行ごと消す（墓標を置かない）。
 -- 文書は原文を body に持つ。検索するのは knowledge の節で、節の連結から原文は戻さない。
-create table "source_item" (
+create table source_item (
   id integer primary key autoincrement not null,
   connector_id integer not null references connector (id) on delete cascade,
   external_id text not null,
-  kind text not null check (kind in ('pull_request', 'issue', 'document')),
+  kind text not null check (kind in ('pull_request', 'issue', 'document', 'requirements', 'design')),
   title text not null check (title <> ''),
   state text,
   url text,
@@ -98,13 +98,13 @@ create table "source_item" (
   unique (connector_id, external_id),
   check (
     case
-      when kind = 'document' then path is not null and body is not null and state is null
+      when kind in ('document', 'requirements', 'design') then path is not null and body is not null and state is null
         and closed_at is null
       else path is null and body is null and state in ('open', 'merged', 'closed') and (state = 'open') = (closed_at is null)
     end
   ),
   -- 上の CHECK は state が NULL だと式全体が NULL になって通る。closed_at との対もそのとき守られない。
-  constraint source_item_state_required check (kind = 'document' or state is not null)
+  constraint source_item_state_required check (kind in ('document', 'requirements', 'design') or state is not null)
 ) strict;
 create index source_item_listing on source_item (connector_id, kind, state, source_updated_at desc);
 
@@ -165,9 +165,9 @@ create trigger message_fts_au after update of body, indexed on message begin
   insert into message_fts (rowid, lexemes) select new.seq, gleanery_terms(new.body) where new.indexed = 1;
 end;
 
--- 発言に結んだファイル。自動記録は、編集したファイル（edit）を、触る前に持ち主が
+-- 発言に結んだファイル。自動記録は、編集したファイル（edit）と読んだ要件定義・設計書（read）を、触る前に持ち主が
 -- 最後にした発言へ結ぶ。GitHub の同期は、レビューで指されたファイル（review）をそのレビューの発言へ結ぶ。
--- read は以前に読んだ要件定義・設計書の記録で、新しくは書かない。path は project のルートからの相対。
+-- path は project のルートからの相対。
 create table message_file (
   message_id text not null references message (id) on delete cascade,
   path text not null check (path <> '' and path not glob '/*' and path not glob '*[/]..[/]*' and path not glob '..[/]*'
@@ -315,4 +315,4 @@ create trigger capture_message_file_insert instead of insert on capture_message_
   on conflict do nothing;
 end;
 
-pragma user_version = 3;
+pragma user_version = 1;

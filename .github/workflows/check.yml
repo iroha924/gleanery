@@ -85,7 +85,7 @@ jobs:
           test -f "$out/package/dist/../db/schema.sql"
           # バンドルした CLI が node:sqlite と同梱の schema で DB を作れるか。HOME は一時ディレクトリ。
           home="$(mktemp -d)"
-          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" db init > /dev/null
+          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" init > /dev/null
           test -f "$home/.gleanery/gleanery.db"
           # Web の画面の資産は配らない（端末の画面へ移した）。残っていれば bundle の消し忘れ
           test ! -e "$out/package/dist/dashboard"
@@ -129,7 +129,7 @@ jobs:
           node "$out/package/dist/cli.js" --help > /dev/null
           # os.homedir() は Windows では USERPROFILE を読む。
           home="$(mktemp -d)"
-          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" db init
+          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" init
           test -f "$home/.gleanery/gleanery.db"
           # doctor は plugin の導入の状態で 1 を返しうる（この runner に plugin は無い）。DB の行だけを見る。
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" doctor > doctor.out || true
