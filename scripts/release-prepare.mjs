@@ -54,7 +54,6 @@ for (const required of [
   "dist/cli.js",
   "dist/mcp.js",
   "dist/capture.js",
-  "dist/dashboard/index.html",
   "db/schema.sql",
   "db/compose.yaml",
   ".claude-plugin/plugin.json",
@@ -88,12 +87,11 @@ if (actual !== plan.versions.package) {
 run(process.execPath, [cli, "--help"], { cwd: stage });
 run(process.execPath, [cli, "db", "--help"], { cwd: stage });
 
-console.log(`release種別: ${plan.kind === "npm" ? "npm-only" : "plugin"}`);
+console.log(`release種別: ${plan.kind}`);
 console.log(`review対象commit: ${plan.commit}`);
 console.log(`検査済みtarball: ${tgz}`);
 console.log(`次: npm publish ${tgz} --tag next`);
 console.log(`registry確認: npm pack gleanery@${plan.versions.package} --silent`);
 console.log(`merge後: git tag v${plan.versions.package} <merge commit>`);
 console.log(`tag push後: npm dist-tag add gleanery@${plan.versions.package} latest`);
-if (plan.kind === "plugin") console.log("最後にClaude/Codexのplugin cacheを更新し、sessionを張り直す");
-else console.log("plugin manifest、marketplace、Claude/Codex cacheは更新しない");
+console.log("最後にClaude/Codexのplugin cacheを更新し、sessionを張り直す");

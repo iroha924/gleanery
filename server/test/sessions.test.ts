@@ -143,7 +143,13 @@ test("当たった発言を session ごとに束ね、GitHub の会話を外す"
   });
   const a = "00000000-0000-4000-8000-00000000000a";
   const b = "00000000-0000-4000-8000-00000000000b";
-  const owner = { id: "c1", sessionId: "s1", origin: "claude-code", project: "o/r", title: "題" };
+  const owner = {
+    id: "c1",
+    sessionId: "s1",
+    origin: "claude-code",
+    project: "o/r",
+    title: "<pasted_content>題</pasted_content>",
+  };
   const { db, calls } = fakeDb((_sql, _p, nth) =>
     nth === 0
       ? [hit(a), hit(b)]
@@ -154,10 +160,49 @@ test("当たった発言を session ごとに束ね、GitHub の会話を外す"
   );
   const found = await searchSessions(db, {}, { q: "認証", mode: "said", project: 1 });
   assert.equal(found.length, 1);
+  // 題は一覧と同じく囲みの札を外す
+  assert.equal(found[0]?.title, "題");
   assert.deepEqual(
     found[0]?.hits.map((h) => h.ref),
     [`m:${a}`, `m:${b}`],
   );
   assert.match(calls[1]?.sql ?? "", /c\.origin <> 'github'/);
   assert.match(calls[1]?.sql ?? "", /"gleanery"\."message"/);
+});
+
+// 貼り付けで始めた session は、最初の発言がホストの囲みの札で始まる。札が題の幅を食うと見分けられない。
+test("題の頭に付いた囲みの札を外し、一覧・詳細・検索で同じ題にする", async () => {
+  const raw = '<pasted_content id="90a1">\ngleanery を SQLite へ移す</pasted_content> 続きも';
+  const row = {
+    id: "00000000-0000-4000-8000-000000000001",
+    title: raw,
+    ref: "1",
+    sessionId: "s1",
+    origin: "claude-code",
+    project: "o/r",
+  };
+  const list = await listSessions(fakeDb((sql) => (sql.includes("count(*) as") ? [{ n: "1" }] : [row])).db, {
+    project: null,
+    page: 1,
+    pageSize: 30,
+  });
+  assert.equal(list.items[0]?.title, "gleanery を SQLite へ移す 続きも");
+  const detail = await sessionDetail(fakeDb((_sql, _p, n) => (n === 0 ? [row] : [])).db, row.id);
+  assert.equal(detail?.title, "gleanery を SQLite へ移す 続きも");
+  // 札の無い題と、札だけの題はそのまま
+  const plain = await listSessions(
+    fakeDb((sql) =>
+      sql.includes("count(*) as")
+        ? [{ n: "2" }]
+        : [
+            { ...row, title: "a < b > c" },
+            { ...row, title: "<x>" },
+          ],
+    ).db,
+    { project: null, page: 1, pageSize: 30 },
+  );
+  assert.deepEqual(
+    plain.items.map((i) => i.title),
+    ["a < b > c", "<x>"],
+  );
 });

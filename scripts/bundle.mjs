@@ -25,10 +25,6 @@ for (const entry of ["mcp", "capture"]) {
 // CLI は Ink を含み、その開発用の import を差し替える plugin が要るので、Bun.build の script で束ねる。
 run("bun", ["scripts/bundle-cli.ts"]);
 
-// 配る先は server/src/assets.ts が dashboardRoot() で探す位置。
-run("bun", ["run", "--cwd", "dashboard", "build"]);
-fs.cpSync(path.join(root, "dashboard", "dist"), path.join(dist, "dashboard"), { recursive: true });
-
 // plugin の cache には repository が無いので、schema と compose を持たせる。
 const db = path.join(root, "plugin", "db");
 fs.rmSync(db, { recursive: true, force: true });

@@ -1,56 +1,24 @@
-// npm package に入る変更を、plugin host へ届ける必要があるかで分ける。
+// npm package に入る変更かを判定する。入るなら npm と plugin channel の 3 つを同じバージョンへ上げる（種別 plugin）。
 // version gate、release plan、手動release準備はすべてこの判定を使う。
 
 const EXACT_PACKAGE_INPUTS = new Set([
   "server/package.json",
   "server/bun.lock",
   "server/tsconfig.json",
-  "dashboard/index.html",
-  "dashboard/package.json",
-  "dashboard/bun.lock",
-  "dashboard/tsconfig.app.json",
-  "dashboard/tsconfig.json",
-  "dashboard/tsconfig.node.json",
-  "dashboard/vite.config.ts",
   "scripts/bundle.mjs",
   "scripts/bundle-cli.ts",
   "scripts/third-party-notices.mjs",
 ]);
 
-const PACKAGE_PREFIXES = [
-  "plugin/",
-  "server/src/",
-  "dashboard/src/",
-  "dashboard/public/",
-  "db/",
-  "scripts/licenses/",
-];
-
-const NPM_ONLY_EXACT = new Set([
-  "server/src/server.ts",
-  "dashboard/index.html",
-  "dashboard/package.json",
-  "dashboard/bun.lock",
-  "dashboard/tsconfig.app.json",
-  "dashboard/tsconfig.json",
-  "dashboard/tsconfig.node.json",
-  "dashboard/vite.config.ts",
-]);
-
-const NPM_ONLY_PREFIXES = ["dashboard/src/", "dashboard/public/", "server/src/http/"];
+const PACKAGE_PREFIXES = ["plugin/", "server/src/", "db/", "scripts/licenses/"];
 
 export function isPackageInput(file) {
   return EXACT_PACKAGE_INPUTS.has(file) || PACKAGE_PREFIXES.some((prefix) => file.startsWith(prefix));
 }
 
-export function isNpmOnlyInput(file) {
-  return NPM_ONLY_EXACT.has(file) || NPM_ONLY_PREFIXES.some((prefix) => file.startsWith(prefix));
-}
-
 export function releaseKind(files) {
   const inputs = files.filter(isPackageInput);
-  if (inputs.length === 0) return "none";
-  return inputs.every(isNpmOnlyInput) ? "npm" : "plugin";
+  return inputs.length === 0 ? "none" : "plugin";
 }
 
 export function withoutReleaseVersion(text) {

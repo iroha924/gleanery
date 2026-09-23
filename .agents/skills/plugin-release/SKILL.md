@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: gleaneryのMCP、CLI、自動記録のhook、画面の配布物、plugin SkillまたはAgentを変更してnpmへ届ける。bundle入口とその依存module、versionの一致、Claude/Codex両方への到達確認が対象。HTTP APIやdashboardの実装だけの変更には使わない。
+description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundle入口とその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleだけの変更には使わない。
 ---
 
 # 配布物を届ける
@@ -15,7 +15,6 @@ description: gleaneryのMCP、CLI、自動記録のhook、画面の配布物、p
 
 ## Does not trigger
 
-- HTTP APIや画面の実装だけを変更する
 - DB schemaやroleを変更する。その場合は`knowledge-schema`を使う
 
 ## 配布経路
@@ -24,7 +23,7 @@ description: gleaneryのMCP、CLI、自動記録のhook、画面の配布物、p
 Claude Codeはpackageをnpm clientで解決し、tarballをplugin cacheへ展開する。
 
 - **install scriptは走らず、依存もinstallされない。**tarballは自己完結している必要がある
-  （`bun build`で束ねた1 fileずつと、画面のbuild成果物を同梱する）
+  （`bun build`で束ねた1 fileずつを同梱する）
 - cacheは版が変わったときだけ更新される。`bun run bundle`やcommitだけでは届かず、publishまで届かない
 - CLIは実行した場所の`dist/cli.js`を読むため、CLIで動くことはMCPで動く証拠にならない
 - 自動記録のhookは`${CLAUDE_PLUGIN_ROOT}/dist/capture.js`を叩くので、これもcacheの版で動く
@@ -59,14 +58,12 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
 | 種別 | 変更 | 動かすversion |
 |---|---|---|
 | `none` | 文書、repository開発用Skill、testだけ | 無し |
-| `npm-only` | dashboard、dashboard用Hono APIだけ | `plugin/package.json`だけ |
-| `plugin` | MCP、CLI、自動記録、hook、plugin Skill/Agent、共有module | npm packageとplugin channelの3箇所 |
+| `plugin` | MCP、CLI（端末の画面を含む）、自動記録、hook、plugin Skill/Agent、共有module | npm packageとplugin channelの3箇所 |
 
-dashboard/Honoだけのreleaseでは、Claude/Codexのmanifestとmarketplaceを動かさず、plugin cacheも更新しない。
-両方の変更が混じったら`plugin`として扱う。判定の正本は`scripts/lib/release-scope.mjs`で、version gateと
+判定の正本は`scripts/lib/release-scope.mjs`で、version gateと
 release commandが同じものを読む。
 
-1. release versionを決める。`npm-only`は`plugin/package.json`だけを上げる。`plugin`は次を全部そこへ揃える
+1. release versionを決める。`plugin`は次を全部そこへ揃える
    - npmの`package.json`
    - `plugin/.claude-plugin/plugin.json`
    - `plugin/.codex-plugin/plugin.json`
@@ -112,10 +109,9 @@ release commandが同じものを読む。
    ホストの更新では上がらない。**DBのrevisionを上げた回は、これを忘れると古いCLIだけが
    「revision N を期待している」で落ちる**（実測: revision 5へ上げた後、globalのCLIが0.32.0のまま残った）
 4. `gleanery doctor`で、npm packageはrepositoryとglobal CLI、plugin channelはrepositoryと両ホストのcacheが
-   それぞれ揃い、実行中のMCPに張り直しの指示が残っていないことを見る。dashboard/Honoだけのreleaseでは、
-   npm packageの版がplugin channelより新しいのが正常
+   それぞれ揃い、実行中のMCPに張り直しの指示が残っていないことを見る
 5. 反映後のsessionから`recall`を呼び、変更したMCP tool、Skill、Agentの中身を確かめる。自動記録を変えたなら、
-   そのsessionの発言がダッシュボードの`/sessions`に出ることと、`gleanery doctor`の「自動記録」行に待ちが
+   そのsessionの発言が`gleanery dashboard`のセッションに出ることと、`gleanery doctor`の「自動記録」行に待ちが
    残っていないことも見る
 
 `plugin/skills/review/reviewers/`もcache経由なので、保存やsession再起動だけでは新しい本文にならない。

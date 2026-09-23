@@ -1,6 +1,6 @@
 ---
 name: knowledge-schema
-description: gleaneryのDB schema（db/schema.sqlとdb/migrations）、role・grant、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。HTTP APIや画面だけの変更には使わない。
+description: gleaneryのDB schema（db/schema.sqlとdb/migrations）、role・grant、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。端末の画面だけの変更には使わない。
 ---
 
 # ナレッジschemaを変更する
@@ -14,7 +14,7 @@ description: gleaneryのDB schema（db/schema.sqlとdb/migrations）、role・gr
 
 ## Does not trigger
 
-- 既存schemaを読むだけのHTTP APIや画面を変更する
+- 既存schemaを読むだけの端末の画面を変更する
 - DBを立てるだけ、鍵を作り直すだけの作業を行う
 
 ## 正本と版
@@ -25,7 +25,7 @@ DBの正本は`db/schema.sql`の1本で、今の形だけを表す。Prisma・Dr
 `db/migrations/NNNN_<名前>.sql`は、既存のDBをrevision N-1からNへ進める手順で、正本ではない。NNNNは
 当てた後のrevision（4桁）。最初の1本はrevision 3で、本番に入っていた旧migrationの残りを消す。
 
-版はschemaのコメント（`gleanery schema revision N`）のrevisionだけで持つ。MCP・CLI・画面のAPIは最初のクエリで
+版はschemaのコメント（`gleanery schema revision N`）のrevisionだけで持つ。MCP・CLI・端末の画面は最初のクエリで
 DBのrevisionを`server/src/db.ts`の`SCHEMA_REVISION`と等値で照合し、食い違えば止まる。DBが古ければ
 `bun run db:migrate`を案内する。照合が一度通るとプロセスが終わるまでその結果を保つ（`open`）。
 **自動記録だけは照合しない**（`open(env, "capture", false)`）。確かめると、DBを上げたPC以外の記録が
@@ -132,7 +132,7 @@ builder に推論させるのは**select・join・別名・returning**で、そ�
 - `server/src/search.ts`の札と、`stance`の式が新しい値をどちらへ振るか
 - `server/src/mcp.ts`の入力schemaと説明（`recall`の`kinds`）
 - `plugin/skills/trace/SKILL.md`の記録の契約と、`server/src/trace.ts`の検査
-- dashboardの`/sessions`の表示と検索mode
+- `gleanery dashboard`（`server/src/tui/`）の表示と検索
 - 列挙できる対なら`scripts/check-pairs.mjs`へ足す
 
 量の多い種類を既定の検索へ入れる前後は、検索の結果を実データで比べる。
@@ -144,7 +144,7 @@ builder に推論させるのは**select・join・別名・returning**で、そ�
 | role | 変数 | できること |
 |---|---|---|
 | owner | `GLEANERY_DB_URL` | `server/src/admin.ts`（`bun run db:*`）だけ。schemaの適用とmigration、roleのパスワード |
-| `gleanery_reader` | `GLEANERY_DB_URL_RO` | 全表の読み取り。MCPと画面のAPI |
+| `gleanery_reader` | `GLEANERY_DB_URL_RO` | 全表の読み取り。MCPと端末の画面 |
 | `gleanery_ingest` | `GLEANERY_DB_URL_INGEST` | 全表の読み書き。CLIのharvest・trace・who・project |
 | `gleanery_capture` | `GLEANERY_DB_URL_CAPTURE` | 会話の4表へ、自動記録が埋める列の追記だけ |
 

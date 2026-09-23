@@ -2,31 +2,18 @@
 // 配る entrypoint を実 PostgreSQL に対して走らせ、SQL とロールと接続をまとめて確かめる。
 //
 // `sql:parse` は kysely が組み立てた SQL を EXPLAIN に通すだけで、db を引数で受ける関数しか届かない。
-// CLI は open(env, role) を自分で呼び、画面の route は http/runtime.ts の module 束縛の db を使うので、
-// 偽の db を差し込む継ぎ目が無い。継ぎ目を作るより、実際に起動するほうが見えるものが多い ——
+// CLI は open(env, role) を自分で呼ぶので、偽の db を差し込む継ぎ目が無い。継ぎ目を作るより、実際に起動するほうが見えるものが多い ——
 // fake は書き込み SQL も受け付けるが、reader で繋いだ実 DB は権限で止める。
 //
 // 例外の条件は .claude/rules/verification.md「実 DB へ繋ぐのは専用の検査レーンだけ」にある。
 
 import fs from "node:fs";
-import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { coveredSites } from "./lib/coverage.mjs";
-import { fakeGh, makeRepo, runCli, runHook, withServer, withTempDir, writeEnv } from "./lib/live-harness.mjs";
+import { fakeGh, makeRepo, runCli, runHook, withTempDir, writeEnv } from "./lib/live-harness.mjs";
 import { ALLOWED_UNREACHED, callSites, LIVE_FILES } from "./lib/sql-call-sites.mjs";
 import { roleUrls, root, withTempPostgres } from "./lib/temp-postgres.mjs";
-
-/** 空いている port を 1 つ取る。開発用の画面が 4924 を使っているので固定にできない。 */
-const freePort = () =>
-  new Promise((resolve, reject) => {
-    const s = net.createServer();
-    s.on("error", reject);
-    s.listen(0, "127.0.0.1", () => {
-      const { port } = s.address();
-      s.close(() => resolve(port));
-    });
-  });
 
 const failures = [];
 const note = (what, r) => {
@@ -182,50 +169,6 @@ await withTempDir(async (dir) => {
       );
     }
 
-    // ---- 画面の API。reader だけを持つ子プロセスで起動する ----
-    const httpPort = await freePort();
-    await withServer(dir, covDir, httpPort, async (base, log) => {
-      const host = `127.0.0.1:${httpPort}`;
-      const ids = { session: null, knowledge: null };
-      const get = async (route) => {
-        const res = await fetch(`${base}${route}`, { headers: { host } });
-        const body = await res.text();
-        if (!res.ok) failures.push(`GET ${route}: ${res.status}\n${body.slice(0, 400)}`);
-        return { status: res.status, body };
-      };
-      // 応答が JSON とは限らない。落ちた route は本文に Internal Server Error を返すので、
-      // そのまま JSON.parse すると検査自身が例外で落ちて、何が壊れたか出ないまま終わる。
-      const asJson = (route, body, fallback) => {
-        try {
-          return JSON.parse(body || "null") ?? fallback;
-        } catch {
-          failures.push(`GET ${route} が JSON を返さなかった: ${body.slice(0, 200)}`);
-          return fallback;
-        }
-      };
-      const projects = await get("/api/projects");
-      const projectId = asJson("/api/projects", projects.body, [])[0]?.id;
-      const sessions = await get(`/api/sessions?project=${projectId ?? 1}`);
-      ids.session = asJson("/api/sessions", sessions.body, {}).items?.[0]?.id ?? null;
-      await get(
-        `/api/sessions/search?q=${encodeURIComponent("実 DB")}&mode=knowledge&project=${projectId ?? 1}`,
-      );
-      await get(`/api/sessions/search?q=${encodeURIComponent("偽")}&mode=avoid&project=${projectId ?? 1}`);
-      await get(`/api/sessions/search?q=${encodeURIComponent("実")}&mode=said&project=${projectId ?? 1}`);
-      if (ids.session) await get(`/api/sessions/${ids.session}`);
-      else failures.push("session が 1 件も返らず、/api/sessions/:id へ到達できない");
-      await get(`/api/read?ref=k:1&projects=${projectId ?? 1}`);
-      // 書き込みの出口を持たないことを、権限の側からも見る。
-      const post = await fetch(`${base}/api/projects`, {
-        method: "POST",
-        headers: { host, origin: `http://${host}`, "content-type": "application/json" },
-        body: "{}",
-      });
-      if (post.status < 400)
-        failures.push(`POST /api/projects が ${post.status} を返した。読むだけの出口である`);
-      if (/error|Error/.test(log())) failures.push(`画面の API がエラーを出した:\n${log().slice(0, 600)}`);
-    });
-
     note(
       "project forget",
       runCli(["project", "forget", "git:github.com/example/live", "--yes"], dir, covDir),
@@ -256,7 +199,5 @@ await withTempDir(async (dir) => {
     for (const f of failures) console.error(`  ${f}\n`);
     process.exit(1);
   }
-  console.log(
-    `実 DB: CLI と画面の API を子プロセスで走らせ、${covered.size} / ${sites.length} 箇所の SQL を通した`,
-  );
+  console.log(`実 DB: CLI を子プロセスで走らせ、${covered.size} / ${sites.length} 箇所の SQL を通した`);
 });

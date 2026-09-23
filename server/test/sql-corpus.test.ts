@@ -13,7 +13,6 @@ import { syncDocs } from "../src/docs.ts";
 import { fillMessages } from "../src/embeddings.ts";
 import { projectId } from "../src/project.ts";
 import { directory, listItems, openWork, pathRules, read, workDetail } from "../src/search.ts";
-import { fillTitles } from "../src/titles.ts";
 import { checkTrace, saveTrace, type Trace } from "../src/trace.ts";
 import { type Call, fakeDb } from "./fake-db.ts";
 import { put, withRepo } from "./temp-repo.ts";
@@ -135,9 +134,8 @@ test("作業と取り込み元の一覧は、絞り込みの有無で SQL を組
 });
 
 // 鍵は「無ければ何もせず戻る」分岐を外すためだけに渡す。対象が 0 行なら外部サービスへは出ない。
-test("埋め込みと題の補充は、対象が無くても問い合わせを組み立てる", async () => {
+test("埋め込みの補充は、対象が無くても問い合わせを組み立てる", async () => {
   await builds("fillMessages", (db) => fillMessages(db, { VOYAGE_API_KEY: "使わない" }));
-  await builds("fillTitles", (db) => fillTitles(db, { OPENAI_API_KEY: "使わない" }));
 });
 
 // 検証器を通して作る。手で組むと zod の既定値（files / refs / downsides の空配列）が入らず、

@@ -55,7 +55,6 @@ import {
   workDetail,
 } from "./search.ts";
 import { head, reason } from "./text.ts";
-import { describeTitles, fillTitles } from "./titles.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 import { runTui } from "./tui/tui.ts";
 import {
@@ -1028,11 +1027,10 @@ const root = buildRouteMap({
                 );
               }
             }
-            // 埋め込みと題は全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
+            // 埋め込みは全部の作業場所を書き終えてから 1 回だけ埋める（自動記録と前回までの取り残しを含む）。
             for (const line of [
               describeFill("知識の埋め込み", await fillKnowledge(db, env)),
               describeFill("発言の埋め込み", await fillMessages(db, env)),
-              describeTitles(await fillTitles(db, env)),
             ])
               if (line) console.log(indent(line));
           });

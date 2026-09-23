@@ -1,4 +1,4 @@
-// 人が見る面（dashboard の API と TUI）が読むセッション・作業場所・作業の一覧。**読むだけ**で、reader の接続を渡す。
+// 端末の画面（gleanery dashboard）が読むセッション・作業場所・作業の一覧。**読むだけ**で、reader の接続を渡す。
 // 検索と参照は search.ts の関数を使い、ここには人向けの並べ方と束ね方だけを置く。
 
 import { type Kysely, type SqlBool, sql } from "kysely";
@@ -7,13 +7,27 @@ import type { DB } from "./db-types.ts";
 import { labelOf } from "./knowledge.ts";
 import { type Hit, type Scope, searchKnowledge, searchMessages, type Work } from "./search.ts";
 
-// session の題。harvest が付けた題（server/src/titles.ts）。まだ付いていなければ持ち主の最初の発言、
-// それも無ければ（trace だけで残した session）結んだ作業の題。
+// session の題。持ち主の最初の発言、それが無ければ（trace だけで残した session）結んだ作業の題。
+// 題を生成して保存することはしない（生成 API を持たない。conversation.title は読まない）。
 const TITLE = `coalesce(
-  c.title,
   (select left(m.body, 200) from gleanery.message m
    where m.conversation_id = c.id and m.speaker_kind = 'self' order by m.sent_at limit 1),
   (select w.title from gleanery.work_item w where w.conversation_id = c.id order by w.updated_at desc limit 1))`;
+
+const OPENING = /^\s*<([a-z][\w-]*)(?:\s[^>]*)?>\s*/i;
+
+/** 題の頭に付いたホストの囲みの札（`<pasted_content id="…">` など）と、その閉じ札を外す。札しか無ければそのまま。 */
+function bare<T extends string | null>(title: T): T {
+  if (title === null) return title;
+  let rest: string = title;
+  const names: string[] = [];
+  for (let m = rest.match(OPENING); m?.[1]; m = rest.match(OPENING)) {
+    names.push(m[1]);
+    rest = rest.slice(m[0].length);
+  }
+  for (const n of names) rest = rest.replaceAll(`</${n}>`, "");
+  return (rest.trim() || title) as T;
+}
 
 export type Project = {
   id: number;
@@ -110,7 +124,13 @@ export async function listSessions(
     .limit(q.pageSize)
     .offset((q.page - 1) * q.pageSize)
     .execute();
-  return { items, total, page: q.page, pageSize: q.pageSize, pages: Math.ceil(total / q.pageSize) };
+  return {
+    items: items.map((i) => ({ ...i, title: bare(i.title) })),
+    total,
+    page: q.page,
+    pageSize: q.pageSize,
+    pages: Math.ceil(total / q.pageSize),
+  };
 }
 
 export type FoundSession = {
@@ -165,7 +185,7 @@ export async function searchSessions(
       sessionId: o.sessionId,
       origin: o.origin,
       project: o.project,
-      title: o.title,
+      title: bare(o.title),
       hits: [],
     };
     s.hits.push({ ref: h.ref, label: h.label, stance: h.stance, text: h.text, reason: h.reason, at: h.at });
@@ -271,6 +291,7 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
     .execute();
   return {
     ...conversation,
+    title: bare(conversation.title),
     messages,
     knowledge: knowledge.map((k) => ({ ...k, label: labelOf(k) })),
     work,

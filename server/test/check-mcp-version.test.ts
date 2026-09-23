@@ -113,41 +113,23 @@ test("基準が無ければ、index に入った plugin の変更を HEAD の版
   }
 });
 
-test("dashboard だけなら npm package の版だけを上げ、plugin の版は動かさない", () => {
+test("以前 npm だけで出していた server.ts でも、npm package のバージョンだけを上げれば止め、plugin channel と揃えれば通す", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
-    write(r.dir, "dashboard/src/app.tsx", "a");
+    write(r.dir, "server/src/server.ts", "a");
     r.git("add", "-A");
     r.git("commit", "-qm", "base");
     const base = r.git("rev-parse", "HEAD");
 
-    write(r.dir, "dashboard/src/app.tsx", "b");
-    r.git("add", "-A");
-    const missed = check(r.dir, "--base", base);
-    assert.equal(missed.status, 1, missed.stderr);
-    assert.match(missed.stderr, /npm package/);
-
+    write(r.dir, "server/src/server.ts", "b");
     bumpPackage(r.dir, "1.0.1");
     r.git("add", "-A");
-    const bumped = check(r.dir, "--base", base);
-    assert.equal(bumped.status, 0, bumped.stderr);
-  } finally {
-    r.done();
-  }
-});
+    const packageOnly = check(r.dir, "--base", base);
+    assert.equal(packageOnly.status, 1, packageOnly.stderr);
+    assert.match(packageOnly.stderr, /揃って上がっていない/);
 
-test("Hono だけなら npm package の版だけを上げ、plugin の版は動かさない", () => {
-  const r = repo();
-  try {
-    bump(r.dir, "1.0.0");
-    write(r.dir, "server/src/http/routes/knowledge.ts", "a");
-    r.git("add", "-A");
-    r.git("commit", "-qm", "base");
-    const base = r.git("rev-parse", "HEAD");
-
-    write(r.dir, "server/src/http/routes/knowledge.ts", "b");
-    bumpPackage(r.dir, "1.0.1");
+    bump(r.dir, "1.0.1");
     r.git("add", "-A");
     const bumped = check(r.dir, "--base", base);
     assert.equal(bumped.status, 0, bumped.stderr);

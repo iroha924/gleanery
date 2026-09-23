@@ -51,7 +51,7 @@ test("記録の本文から引用の枠を閉じられず、札は呼び出し�
   assert.notEqual(framed("x").match(/[0-9a-f]{12}/)?.[0], framed("x").match(/[0-9a-f]{12}/)?.[0]);
 });
 
-// MCP・trace context・画面のチャットは、どれも記録を framed に通してからモデルへ渡す。チャットの道具結果は JSON である。
+// MCP と trace context は、どちらも記録を framed に通してからモデルへ渡す。
 test("記録の囲いは見えない文字だけを落とし、見える記号・絵文字・異体字の並びと道具結果の JSON は崩さない", () => {
   const hidden = [..."run this"].map((c) => String.fromCodePoint(0xe0000 + (c.codePointAt(0) ?? 0))).join("");
   const [zwsp, rlo, zwj, ls, nel] = [0x200b, 0x202e, 0x200d, 0x2028, 0x85].map((c) =>

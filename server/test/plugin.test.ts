@@ -75,48 +75,6 @@ test("実行中の CLI と同じ置き場所なら、npm i -g の行は出さな
   assert.equal(lines.filter((l) => l.includes("npm i -g の CLI")).length, 0, lines.join("\n"));
 });
 
-test("dashboardだけをreleaseした版ではnpm packageとplugin channelを別々に出す", () => {
-  const repository = plugin("dashboard-release/plugin", "0.33.29");
-  repository.packageVersion = "0.33.30";
-  fs.writeFileSync(
-    path.join(repository.root, "package.json"),
-    JSON.stringify({ name: "gleanery", version: "0.33.30" }),
-  );
-  fs.mkdirSync(path.join(repository.root, "dist", "dashboard"), { recursive: true });
-  fs.writeFileSync(path.join(repository.root, "dist", "dashboard", "index.html"), "new");
-  const out = stripVTControlCharacters(
-    report(
-      seen({
-        repository,
-        cli: repository,
-        claude: plugin("dashboard-release/claude", "0.33.29"),
-        codex: [plugin("dashboard-release/codex", "0.33.29")],
-      }),
-    ).lines.join("\n"),
-  );
-  assert.match(out, /npm package のバージョン[\s\S]*repository\s+0\.33\.30/);
-  assert.match(out, /plugin channel のバージョン[\s\S]*repository\s+0\.33\.29/);
-  assert.doesNotMatch(out, /Claude Code [^\n]*\n {20,}\S/);
-  assert.doesNotMatch(out, /Codex [^\n]*\n {20,}\S/);
-});
-
-test("npm packageの版差があってもplugin固有の中身の差は隠さない", () => {
-  const repository = plugin("dashboard-tampered/plugin", "0.33.29", "new-mcp");
-  repository.packageVersion = "0.33.30";
-  fs.writeFileSync(
-    path.join(repository.root, "package.json"),
-    JSON.stringify({ name: "gleanery", version: "0.33.30", type: "module" }),
-  );
-  const out = report(
-    seen({
-      repository,
-      cli: repository,
-      claude: plugin("dashboard-tampered/claude", "0.33.29", "old-mcp"),
-    }),
-  ).lines.join("\n");
-  assert.match(out, /Claude Code [^\n]*\n +同じバージョンなのに中身が違う（dist\/mcp\.js）/);
-});
-
 test("版は数値で比べる（0.10.9 < 0.10.18）", () => {
   assert.equal(compareVersions("0.10.9", "0.10.18"), -1);
   assert.equal(compareVersions("0.10.18", "0.10.18"), 0);

@@ -4,7 +4,7 @@
   "work": {
     "key": "local",
     "title": "手元だけで動く形へ移す",
-    "goal": "クラウドの依存を外し、gleanery dashboard で 127.0.0.1 に画面が立ち、手元の PostgreSQL を読む",
+    "goal": "クラウドの依存を外し、gleanery dashboard が端末に画面を描き、手元の PostgreSQL を読む",
     "current": "サーバー側と画面を書き終え、手元の DB で通した",
     "next": ["配布を npm へ移す", "人: 旧環境を消す前に確認する"],
     "status": "active"
@@ -25,18 +25,18 @@
       "downsides": ["利用者に Docker を要求する", "PC を移ると記録は引き継がれない"]
     },
     {
-      "key": "no-login",
+      "key": "no-server",
       "kind": "decision",
       "status": "accepted",
       "at": "2026-09-20T12:30:00+09:00",
-      "text": "画面にログイン機構を置かない。境界は 127.0.0.1 への bind と Host の完全一致と CSRF の 3 つにする",
-      "context": "localhost に閉じたので識別する相手がいない。ただし bind だけでは、ブラウザで開いた他所のページから叩ける",
+      "text": "画面は端末に描き、listen する server を持たない",
+      "context": "localhost の server は、ブラウザで開いた他所のページから叩ける。守る境界を持つより、port を開かないほうが小さい",
       "options": [
-        { "text": "bind + Host + CSRF", "chosen": true },
-        { "text": "起動ごとのトークン", "chosen": false, "why": "同じ OS ユーザーの別プロセスには効かず、設定項目だけ増える" }
+        { "text": "端末の画面", "chosen": true },
+        { "text": "127.0.0.1 の Web 画面", "chosen": false, "why": "Host の照合と CSRF の検査を持ち続けることになる" }
       ],
-      "confirmation": "Host が合わない要求が画面と API の両方で 403 になる",
-      "downsides": ["同じ OS ユーザーの別プロセスは API を呼べる"]
+      "confirmation": "端末でない所から起動すると、案内を出して 1 で終わる",
+      "downsides": ["画像や表の見た目は端末の表現力に縛られる"]
     },
     {
       "key": "capture-no-conflict-target",
@@ -55,13 +55,13 @@
       "text": "SQL の型付けに pgtyped を採るのはやめた。条件を実行時に組み立てる検索のクエリを扱えず、公式が query composition を非対応と明言している"
     },
     {
-      "key": "host-check",
+      "key": "tty-check",
       "kind": "verification",
       "status": "passed",
       "at": "2026-09-20T13:20:00+09:00",
-      "text": "Host を偽装した要求が、画面と API の両方で 403 になる",
-      "command": "node --test server/test/server.test.ts",
-      "verifies": "no-login"
+      "text": "pipe から dashboard を起動すると、案内を出して 1 で終わる",
+      "command": "gleanery dashboard | cat",
+      "verifies": "no-server"
     },
     {
       "key": "windows-untested",

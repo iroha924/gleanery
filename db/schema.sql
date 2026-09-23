@@ -4,7 +4,7 @@
 -- 境界は 3 つ。取り込み元の今の状態（connector / source_item）、逐語の会話（conversation / message）、
 -- 検索する知識（knowledge）。作業の現在地（work_item）は更新される状態なので知識とは表を分ける。
 --
--- 版は schema のコメントに置く。MCP・CLI・画面の API は最初に DB を使うときに server/src/db.ts の SCHEMA_REVISION と
+-- 版は schema のコメントに置く。MCP・CLI・端末の画面は最初に DB を使うときに server/src/db.ts の SCHEMA_REVISION と
 -- 突き合わせ、食い違えば止まる。空の DB は `bun run db:apply`、既存の DB は `bun run db:migrate` で進める（server/src/admin.ts）。
 -- 名前は常に schema を付けて書く。接続ごとの search_path に依存しない。
 
@@ -284,8 +284,8 @@ create table gleanery.knowledge_embedding (
   check ((status = 'ready') = (embedding is not null))
 );
 
--- ロールは操作ごと。PR コメントのような untrusted な文章を読む出口（MCP・画面）には書き込みを持たせない。
---   gleanery_reader  読むだけ。MCP・画面の API
+-- ロールは操作ごと。PR コメントのような untrusted な文章を読む出口（MCP・端末の画面）には書き込みを持たせない。
+--   gleanery_reader  読むだけ。MCP・端末の画面
 --   gleanery_ingest  取り込みと trace。CLI の harvest / trace / who / project
 --   gleanery_capture 会話の自動記録。追記だけで、既存の行を読めも書き換えもしない
 -- ここではパスワードを付けない。鍵は `bun run db:roles`（server/src/admin.ts）が作り、env ファイルへ直接書く。

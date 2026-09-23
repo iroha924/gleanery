@@ -105,28 +105,6 @@ for (const kind of new Set([...Object.keys(dbStatuses), ...Object.keys(codeStatu
   }
 }
 
-// ---- 成果物の種別が、同期と画面で揃っているか ----
-//
-// 同期（server/src/artifacts.ts）が承認を判定する path の種別と、画面が出す成果物の種別は同じ集合でなければならない。
-// 自動記録は同じ ARTIFACT_PATH を読み込むので、ここでは突き合わせない。
-const artifactPattern = grab(
-  "server/src/artifacts.ts",
-  /export const ARTIFACT_PATH = (\/.*\/);/,
-  "server の ARTIFACT_PATH",
-);
-const pathKinds = artifactPattern?.match(/\(([a-z|]+)\)\\\.md/)?.[1]?.split("|");
-if (artifactPattern && !pathKinds?.length) fail.push("ARTIFACT_PATH から成果物の種別を取り出せない");
-const screenKinds = grab(
-  "dashboard/src/features/_sessions/api/sessions.ts",
-  /kind: ((?:"[a-z]+"(?: \| )?)+);/,
-  "画面の SessionArtifact.kind",
-)?.match(/[a-z]+/g);
-if (pathKinds && screenKinds && !same(pathKinds, screenKinds)) {
-  fail.push(
-    `成果物の種別が揃っていない: path は ${pathKinds.join(" / ")}、画面の SessionArtifact.kind は ${screenKinds.join(" / ")}`,
-  );
-}
-
 // ---- 状態の印が、CLI と review の台帳で揃っているか ----
 //
 // 正本は server/src/panel.ts の MARKS。review Skill は台帳の 4 状態に同じ印を書く（Skill から panel.ts は読めない）。
