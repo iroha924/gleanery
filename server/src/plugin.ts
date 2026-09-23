@@ -78,7 +78,7 @@ const HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
  * **ディレクトリだけでなくファイルも挙げる** — 同梱の告知を入れ忘れて、正常な導入先が
  * 「同じバージョンなのに中身が違う」と出た（実測: 自己比較で THIRD_PARTY_NOTICES.md だけが差になった）。
  */
-const GENERATED = /^(dist|db)\/|^THIRD_PARTY_NOTICES\.md$/;
+const GENERATED = /^(dist|db)\/|^THIRD_PARTY_NOTICES\.md$|^README\.md$/;
 
 /** OS と editor が置く物。追跡もされず、npm にも詰められない。 */
 const JUNK = /^\.DS_Store$|\.sw[a-p]$|~$/;

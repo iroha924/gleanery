@@ -8,6 +8,8 @@ const EXACT_PACKAGE_INPUTS = new Set([
   "scripts/bundle.mjs",
   "scripts/bundle-cli.ts",
   "scripts/third-party-notices.mjs",
+  // bundle が plugin/README.md へ写し、npm の package のページに出る
+  "README.md",
 ]);
 
 const PACKAGE_PREFIXES = ["plugin/", "server/src/", "db/", "scripts/licenses/"];

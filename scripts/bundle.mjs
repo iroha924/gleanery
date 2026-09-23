@@ -33,6 +33,9 @@ fs.copyFileSync(path.join(root, "db", "schema.sql"), path.join(db, "schema.sql")
 if (fs.existsSync(path.join(root, "db", "migrations")))
   fs.cpSync(path.join(root, "db", "migrations"), path.join(db, "migrations"), { recursive: true });
 
+// npm の package のページに README を出す。正本はリポジトリのルートの README.md
+fs.copyFileSync(path.join(root, "README.md"), path.join(root, "plugin", "README.md"));
+
 // npm は Windows で shebang を読んで .cmd を作るので、実行権が要る。
 for (const entry of ["cli"]) fs.chmodSync(path.join(dist, `${entry}.js`), 0o755);
 

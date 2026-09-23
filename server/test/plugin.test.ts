@@ -125,6 +125,12 @@ test("repository 側は git が追跡しているファイルだけを配布物�
   fs.writeFileSync(path.join(repo.root, "dist", ".mcp.js.swp"), "");
   assert.deepEqual(differingFiles(repo.root, cache.root, { tracked: true }), []);
   assert.deepEqual(differingFiles(repo.root, cache.root), ["debug.log", "dist/.mcp.js.swp"]);
+  // bundle が作って npm が配るが、git が追跡しないファイルは両方にある
+  for (const generated of ["THIRD_PARTY_NOTICES.md", "README.md"]) {
+    fs.writeFileSync(path.join(repo.root, generated), generated);
+    fs.writeFileSync(path.join(cache.root, generated), generated);
+  }
+  assert.deepEqual(differingFiles(repo.root, cache.root, { tracked: true }), []);
 });
 
 test("ps の出力から node …/dist/mcp.js だけを拾う", () => {

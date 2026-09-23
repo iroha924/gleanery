@@ -3,7 +3,9 @@ import { test } from "node:test";
 import { releaseKind, withoutReleaseVersion } from "../../scripts/lib/release-scope.mjs";
 
 test("release対象外と plugin を分ける（Web の画面が無くなり、npm だけの release は無い）", () => {
-  assert.equal(releaseKind(["README.md", ".agents/skills/plugin-release/SKILL.md"]), "none");
+  assert.equal(releaseKind(["README.ja.md", ".agents/skills/plugin-release/SKILL.md"]), "none");
+  // README.md は bundle が tarball へ写し、npm の package のページに出る
+  assert.equal(releaseKind(["README.md"]), "plugin");
   assert.equal(releaseKind(["plugin/skills/trace/SKILL.md"]), "plugin");
   assert.equal(releaseKind(["server/src/mcp.ts"]), "plugin");
   assert.equal(releaseKind(["server/src/tui/app.ts"]), "plugin");
