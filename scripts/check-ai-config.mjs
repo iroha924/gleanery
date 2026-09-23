@@ -138,9 +138,16 @@ const claudeSkills = fs
   .filter((name) => !fs.lstatSync(path.join(root, ".claude/skills", name)).isSymbolicLink());
 for (const name of claudeSkills) {
   const relative = `.claude/skills/${name}/SKILL.md`;
-  const fields = frontmatter(relative, read(relative));
+  const source = read(relative);
+  const fields = frontmatter(relative, source);
   if (fields.name !== name) fail(`${relative}: nameがdirectory名と一致しない`);
   if (!fields.description) fail(`${relative}: descriptionが無い`);
+  if ((fields.description ?? "").length > 1024) fail(`${relative}: descriptionが1024文字を超えている`);
+  if (!source.includes("## Triggers") || !source.includes("## Does not trigger")) {
+    fail(`${relative}: TriggersとDoes not triggerの節が要る`);
+  }
+  if (/\b(TODO|TBD)\b/.test(source)) fail(`${relative}: TODO / TBD が残っている`);
+  checkLocalLinks(relative, source);
 }
 
 for (const name of developmentSkills) {

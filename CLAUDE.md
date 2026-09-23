@@ -50,6 +50,11 @@ bun run cli -- dashboard  # 端末の画面。TTY が要るので前面でだけ
 実行時の動作・データ・認証・secret・依存・build・CI・配布物のどれも変えず、1 commit の revert で戻せる変更だけを main へ直接入れる。
 それ以外と、影響範囲を即答できない変更は PR にする。
 
+## 実装の前
+
+挙動を変える変更は、実装の前に `grill-with-codex` Skill で Codex と計画を詰め、`.claude/plans/` の計画で持ち主の Go を取る。
+計画は合意した時点の実装計画の記録で、進捗ファイルではない（進捗は書き足さない）。
+
 ## review
 
 `bun run verify` が通ってから渡す。
