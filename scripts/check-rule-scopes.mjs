@@ -27,6 +27,10 @@ const EXPECTED = {
       "AGENTS.md",
     ],
   },
+  "evals.md": {
+    match: ["server/evals/agentic/run.ts", "server/evals/agentic/judge.ts"],
+    notMatch: ["server/src/search.ts", "server/test/search.test.ts", "AGENTS.md"],
+  },
   "comments.md": {
     match: [
       "server/src/db.ts",
@@ -42,7 +46,6 @@ const EXPECTED = {
 /** paths 無しの rule。常時載るので、数と理由を固定する。 */
 const ALWAYS = {
   "verification.md": "テストと配布物の検査はどのファイルを触っていても要る",
-  "codex.md": "Codex へのレビューの依頼は merge の前で、特定のファイルを読む契機が無い",
 };
 
 /** glob を正規表現へ。`**` は階層をまたぎ、`*` は 1 階層に閉じる。 */
