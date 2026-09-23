@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const developmentSkills = ["knowledge-schema", "ui-hono", "plugin-agent-authoring", "plugin-release"];
+const developmentSkills = ["knowledge-schema", "ui-hono", "tui", "plugin-agent-authoring", "plugin-release"];
 
 function fail(message) {
   failures.push(message);

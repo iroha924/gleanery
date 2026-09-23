@@ -177,7 +177,7 @@ const out = [
   "",
   "この文書は `node scripts/third-party-notices.mjs` が生成する。手で書き足さない。",
   "",
-  "| package | 版 | ライセンス |",
+  "| package | バージョン | ライセンス |",
   "|---|---|---|",
   ...entries.map((e) => `| ${e.name} | ${e.version} | ${e.spdx} |`),
   "",

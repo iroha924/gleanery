@@ -53,12 +53,12 @@ const distinct = [...new Set(versions.map(([, v]) => v))];
 if (distinct.length !== 1) {
   console.error(
     [
-      "plugin channel の版が揃っていない。",
+      "plugin channel のバージョンが揃っていない。",
       "",
       ...versions.map(([f, v]) => `  ${v}  ${f}`),
       "",
       "  配る先ごとにmanifestがある。片方だけ上げると、もう片方の利用者には",
-      "  古い中身が届き続ける。plugin channelの3つを同じ版にする。",
+      "  古い中身が届き続ける。plugin channelの3つを同じバージョンにする。",
     ].join("\n"),
   );
   process.exit(1);
@@ -103,7 +103,7 @@ if (kind === "npm") {
   }
   if (oldPackageVersion !== packageVersion) process.exit(0);
   console.error(
-    `npm packageの${changed.length}個が変わったのに版が${packageVersion}のままになっている（${changed[0]}など）。\n\n` +
+    `npm packageの${changed.length}個が変わったのにバージョンが${packageVersion}のままになっている（${changed[0]}など）。\n\n` +
       "  plugin manifestとmarketplaceは動かさず、plugin/package.jsonのversionだけを上げる。",
   );
   process.exit(1);
@@ -119,13 +119,13 @@ if (
 
 console.error(
   [
-    `plugin channelの${changed.length}個が変わったが、npm packageとpluginの版が揃って上がっていない（${changed[0]}など）。`,
+    `plugin channelの${changed.length}個が変わったが、npm packageとpluginのバージョンが揃って上がっていない（${changed[0]}など）。`,
     "",
-    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/gleanery/gleanery/<版>/ の複製から動く。",
-    "  複製は版が変わったときだけ起きるので、このままではsessionへ届かない。",
+    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/gleanery/gleanery/<バージョン>/ の複製から動く。",
+    "  複製はバージョンが変わったときだけ起きるので、このままではsessionへ届かない。",
     "",
     "  npm packageとplugin channelの3 manifestを同じ新しいversionへ上げる。",
-    "  marketplace の取得元へ入れた後、`gleanery doctor` の「plugin channel の版」が出す更新手順を叩き、セッションを張り直す。",
+    "  marketplace の取得元へ入れた後、`gleanery doctor` の「plugin channel のバージョン」が出す更新手順を叩き、セッションを張り直す。",
   ].join("\n"),
 );
 process.exit(1);

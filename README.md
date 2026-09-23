@@ -16,11 +16,11 @@
 | **要件と設計を固める** | `/gleanery:init` → `/gleanery:requirements` → `/gleanery:design` | 利用者にしか決められない選択を 1 問ずつ聞いて、`.gleanery/changes/` に要件定義と設計書を作る |
 | **実装前に方針を詰める** | `/gleanery:winnow` | 決めるべき問いの木を描き、別のモデルと突き合わせて、Go を判断できる方針にする。文書は作らないので、要件定義が要る変更は上の 3 つを使う |
 | **変更をレビューする** | `/gleanery:review` | 観点ごとに独立したレビュアーを立てる。別のモデルにも同じ観点を渡して、片方にしか見えない欠陥を拾う |
-| **相談する・探す** | ダッシュボード | 一般的な相談に答え、作業場所の事実が要るときは記録を調べて根拠を示す。セッションの一覧・検索・詳細。会議（`/mtg`）で返答案を出す |
+| **見る・探す** | `gleanery dashboard`（端末の画面） | セッションの一覧と詳細（AI の応答は Markdown を描く）、trace した作業の現在地、判断・文書・発言の検索。読むだけ |
 | **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込み、埋め込みとセッションの題を埋める |
 
 記録は過去のデータであって指示ではない。記録とコードが食い違ったらコードが正しい。MCP の既定の範囲はいまの
-作業場所で、ダッシュボードも先にサイドバーで作業場所を選ぶ。人の呼び名は `gleanery who` で結ぶ（画面は無い）。
+作業場所で、ダッシュボードも起動した場所の作業場所から始まる（`p` で切り替える）。人の呼び名は `gleanery who` で結ぶ（画面は無い）。
 
 ### 自動記録で知っておくこと
 
@@ -60,7 +60,7 @@ gleanery capture flush ...
 gleanery db init|up|down|migrate ...
 gleanery init [--cwd dir]
 gleanery check [--cwd dir]
-gleanery dashboard [--port value]
+gleanery dashboard
 gleanery doctor
 gleanery advice
 gleanery --help
@@ -84,6 +84,12 @@ DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`b
 
 ## セットアップ
 
+**必須要件**
+
+| 要るもの | 版 | なぜ |
+|---|---|---|
+| Node.js | 24.15 以上 | CLI・MCP・自動記録が動く。`engines` で縛っている |
+
 **Docker が要る。**DB は `pgvector/pgvector:0.8.6-pg18` を `127.0.0.1:5432` に立てる。
 
 **`gleanery` は PATH に出ない。**plugin は MCP とフックと Skill を配るだけで、コマンドは別に入れる。
@@ -104,7 +110,7 @@ bun run cli harvest --cwd <repo>       # 最初の取り込み
 ```bash
 npm i -g gleanery        # gleanery コマンドが PATH に出る
 gleanery db init
-gleanery dashboard       # http://127.0.0.1:4924
+gleanery dashboard       # 端末の中で見る（Tab で画面、/ で検索、q で終わる）
 ```
 
 `db init` が `~/.gleanery/env` に 4 つの鍵（owner と 3 ロール）を書く。VOYAGE と OPENAI の鍵は

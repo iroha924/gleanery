@@ -74,8 +74,11 @@ test("エラーの見出しは、振り分けが決めた道の名前だけで�
   const flagValue = run("trace", "--cwd", "/nonexistent", "check");
   assert.match(flagValue.out, /^✦ gleanery$/m, flagValue.out);
   assert.doesNotMatch(flagValue.out, /^✦.*nonexistent/m, "フラグの値を見出しにしない");
-  const forged = run("x\n╰─ ✓ 直すものは無い");
-  assert.doesNotMatch(forged.out, /^╰─ ✓ 直すものは無い$/m, forged.out);
+  // 締めの行と状態の行は行頭に置く。中身は字下げするので、仕込んだ改行から行頭の偽の行を作れない
+  for (const forged of [run("x\n✓ 直すものは無い"), run("x\n╰─ ✓ 直すものは無い")]) {
+    assert.doesNotMatch(forged.out, /^(?:╰─ )?✓ 直すものは無い$/m, forged.out);
+    assert.match(forged.out, /^✗ 止まった$/m, forged.out);
+  }
 });
 
 test("--limit は 1 から 20 の整数だけ", () => {
@@ -129,7 +132,7 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
   try {
     const first = run("init", "--cwd", dir);
     assert.equal(first.code, 0, first.out);
-    assert.equal(first.out, `✦ gleanery init\n╰─ .gleanery を作った: ${dir}\n`);
+    assert.equal(first.out, `✦ gleanery init\n.gleanery を作った: ${dir}\n`);
     assert.match(run("init", "--cwd", dir).out, /既に初期化済み/);
     assert.equal(run("check", "--cwd", dir).code, 0);
     for (const [bad, want] of [
@@ -144,7 +147,7 @@ test("init と check は資格情報の無い環境で動き、--cwd 以外の�
     fs.writeFileSync(path.join(dir, ".gleanery/changes/a/change.json"), "{");
     const broken = run("check", "--cwd", dir);
     assert.equal(broken.code, 1, broken.out);
-    assert.match(broken.out, /^│ ✗ .*change\.json: JSON として読めない$/m);
+    assert.match(broken.out, /^ {2}✗ .*change\.json: JSON として読めない$/m);
     // 端末でない出力先（launchd のログ、Skill が読む出力）には色の制御文字を混ぜない。
     assert.equal(broken.out.includes(String.fromCodePoint(0x1b)), false, broken.out);
   } finally {

@@ -55,16 +55,17 @@ const seen = (over: Partial<Seen>): Seen => ({
 
 test("npm i -g の CLI が古ければ、行と更新手順の両方に出る", () => {
   // plugin の cache とは別経路なので、ホストの更新では上がらない。
-  const { lines, issues } = report(
+  const { lines, issues, updates } = report(
     seen({ cli: plugin("cli", "0.33.12"), global: plugin("global", "0.32.0") }),
   );
   const row = lines.find((l) => l.includes("npm i -g の CLI"));
   assert.ok(row?.includes("0.32.0"), row);
   assert.ok(row?.includes("より古い"), row);
   assert.ok(issues.includes("npm i -g の CLI"));
-  assert.ok(
-    lines.some((l) => l.includes("npm の CLI: npm i -g gleanery@")),
-    lines.join("\n"),
+  // 上げる先のバージョンで埋め、そのまま打てる形にする
+  assert.deepEqual(
+    updates.find((u) => u.who === "npm の CLI"),
+    { who: "npm の CLI", command: "npm i -g gleanery@0.33.12", after: null },
   );
 });
 
@@ -93,10 +94,10 @@ test("dashboardだけをreleaseした版ではnpm packageとplugin channelを別
       }),
     ).lines.join("\n"),
   );
-  assert.match(out, /npm package の版[\s\S]*repository\s+0\.33\.30/);
-  assert.match(out, /plugin channel の版[\s\S]*repository\s+0\.33\.29/);
-  assert.doesNotMatch(out, /Claude Code .*←/);
-  assert.doesNotMatch(out, /Codex .*←/);
+  assert.match(out, /npm package のバージョン[\s\S]*repository\s+0\.33\.30/);
+  assert.match(out, /plugin channel のバージョン[\s\S]*repository\s+0\.33\.29/);
+  assert.doesNotMatch(out, /Claude Code [^\n]*\n {20,}\S/);
+  assert.doesNotMatch(out, /Codex [^\n]*\n {20,}\S/);
 });
 
 test("npm packageの版差があってもplugin固有の中身の差は隠さない", () => {
@@ -113,7 +114,7 @@ test("npm packageの版差があってもplugin固有の中身の差は隠さな
       claude: plugin("dashboard-tampered/claude", "0.33.29", "old-mcp"),
     }),
   ).lines.join("\n");
-  assert.match(out, /Claude Code .*同じ版なのに中身が違う（dist\/mcp\.js）/);
+  assert.match(out, /Claude Code [^\n]*\n +同じバージョンなのに中身が違う（dist\/mcp\.js）/);
 });
 
 test("版は数値で比べる（0.10.9 < 0.10.18）", () => {
@@ -199,19 +200,22 @@ test("repository より古い導入は両ホストとも更新手順を出す", 
   );
   // 端末の上で同じプロセスの中で走らせると印に色が付く。比べる前に外す。
   const out = stripVTControlCharacters(r.lines.join("\n"));
-  assert.match(out, /△ Claude Code .*← repository（0\.10\.19）より古い/);
-  assert.match(out, /△ Codex .*← repository（0\.10\.19）より古い/);
+  assert.match(out, /△ Claude Code [^\n]*\n +repository（0\.10\.19）より古い/);
+  assert.match(out, /△ Codex [^\n]*\n +repository（0\.10\.19）より古い/);
   assert.match(out, /✓ repository /);
   assert.deepEqual(r.issues, ["Claude Code", "Codex"], "直すものは食い違った導入だけ");
-  assert.match(
-    out,
-    /Claude Code: claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery/,
-  );
-  assert.match(out, /開いている session で \/reload-plugins/);
-  assert.match(
-    out,
-    /Codex: codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery の後、Codex を開き直す/,
-  );
+  assert.deepEqual(r.updates, [
+    {
+      who: "Claude Code",
+      command: "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery",
+      after: "開いている session で /reload-plugins",
+    },
+    {
+      who: "Codex",
+      command: "codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery",
+      after: "Codex を開き直す",
+    },
+  ]);
 });
 
 test("古い cache の CLI から実行しても、新しい導入を古いと言わない", () => {
@@ -224,37 +228,42 @@ test("古い cache の CLI から実行しても、新しい導入を古いと�
       claude: plugin("claude/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19"),
     }),
   );
-  assert.match(out.lines.find((l) => l.includes("この CLI")) ?? "", /← repository（0\.10\.19）より古い/);
-  assert.doesNotMatch(out.lines.find((l) => l.includes("Claude Code")) ?? "", /←/);
-  assert.ok(!out.lines.some((l) => l.includes("更新するには")));
+  assert.match(out.lines.find((l) => l.includes("この CLI")) ?? "", /\n +repository（0\.10\.19）より古い/);
+  // 理由は次の行に付くので、改行が無ければ理由も無い
+  assert.doesNotMatch(out.lines.find((l) => l.includes("Claude Code")) ?? "", /\n/);
+  assert.deepEqual(out.updates, []);
 });
 
 test("同じ版で中身が違えば、repository の CLI だけ新しい状態として出す", () => {
   const repository = plugin("r3/plugin", "0.10.18", "new");
-  const out = report(
+  const r = report(
     seen({
       repository,
       cli: repository,
       codex: [plugin("codex/plugins/cache/gleanery/gleanery/0.10.18c", "0.10.18", "old")],
     }),
-  ).lines.join("\n");
+  );
+  const out = r.lines.join("\n");
   assert.match(
     out,
-    /Codex .*同じ版なのに中身が違う（dist\/mcp\.js）。repository の変更は、版を上げて main へ入れるまで届かない/,
+    /Codex [^\n]*\n +同じバージョンなのに中身が違う（dist\/mcp\.js）。repository の変更は、バージョンを上げて main へ入れるまで届かない/,
   );
   // cache は版が変わったときだけ複製し直されるので、ホストを更新しても変わらない。
-  assert.doesNotMatch(out, /更新するには/);
+  assert.deepEqual(r.updates, []);
 });
 
 test("導入側のほうが新しければ、更新手順を出さず checkout が古いと言う", () => {
-  const out = report(
+  const r = report(
     seen({
       repository: plugin("r4/plugin", "0.10.18"),
       claude: plugin("claude4/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19"),
     }),
-  ).lines.join("\n");
-  assert.match(out, /Claude Code .*← repository（0\.10\.18）より新しい。repository の checkout が古い/);
-  assert.doesNotMatch(out, /更新するには/);
+  );
+  assert.match(
+    r.lines.join("\n"),
+    /Claude Code [^\n]*\n +repository（0\.10\.18）より新しい。repository の checkout が古い/,
+  );
+  assert.deepEqual(r.updates, []);
 });
 
 test("repository が見えず Claude の導入先が消えていても落ちない", () => {
@@ -264,7 +273,7 @@ test("repository が見えず Claude の導入先が消えていても落ちな�
       codex: [plugin("codex5/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18")],
     }),
   ).lines.join("\n");
-  assert.match(out, /Claude Code .*← 導入先が無い/);
+  assert.match(out, /Claude Code [^\n]*\n +導入先が無い/);
 });
 
 test("実行中の MCP は起動元の状態と導入済みの版で判定する", () => {
@@ -302,13 +311,13 @@ test("実行中の MCP は起動元の状態と導入済みの版で判定する
   );
   const line = (pid: number) => out.lines.find((l) => l.includes(`MCP pid ${pid} `)) ?? "";
   assert.doesNotMatch(line(1), /←/);
-  assert.match(line(2), /← 導入済みの 0\.10\.19 より古い。\/reload-plugins か session の張り直しで直す/);
-  assert.match(line(3), /← Claude Code が更新で置き換えた版/);
-  assert.match(line(4), /← 起動元が消えている。Skill のパスも無効なので、Codex の開き直しで直す/);
-  assert.match(line(5), /← 配布された cache ではなく、この場所を直接読んでいる/);
+  assert.match(line(2), /\n +導入済みの 0\.10\.19 より古い。\/reload-plugins か session の張り直しで直す/);
+  assert.match(line(3), /\n +Claude Code が更新で置き換えたバージョン/);
+  assert.match(line(4), /\n +起動元が消えている。Skill のパスも無効なので、Codex の開き直しで直す/);
+  assert.match(line(5), /\n +配布された cache ではなく、この場所を直接読んでいる/);
   assert.match(
     line(6),
-    /← 起動元が同じ場所に作り直され、消えた旧版の中身で動いている。Codex の開き直しで直す/,
+    /\n +起動元が同じ場所に作り直され、消えた古いバージョンの中身で動いている。Codex の開き直しで直す/,
   );
 });
 
@@ -333,11 +342,12 @@ test("実行中の MCP を起動元から特定し、同じ場所に作り直さ
 });
 
 test("導入先が消えていれば repository が見えなくても出す", () => {
-  const out = report(
-    seen({ claude: { version: "0.10.18", root: path.join(tmp, "claude3", "missing") } }),
-  ).lines.join("\n");
-  assert.match(out, /Claude Code .*← 導入先が無い。Skill のパスも無効/);
-  assert.match(out, /Claude Code: claude plugin marketplace update gleanery/);
+  const r = report(seen({ claude: { version: "0.10.18", root: path.join(tmp, "claude3", "missing") } }));
+  assert.match(r.lines.join("\n"), /Claude Code [^\n]*\n +導入先が無い。Skill のパスも無効/);
+  assert.ok(
+    r.updates.some((u) => u.who === "Claude Code"),
+    JSON.stringify(r.updates),
+  );
 });
 
 test("観測できないものは無いと言わず不明と出す", () => {
@@ -419,8 +429,8 @@ test("repository が無くても、CLI と plugin の版ずれを出す", () => 
       codex: [plugin("npm-codex-old/plugins/cache/gleanery/gleanery/0.14.0", "0.14.0")],
     }),
   ).lines.join("\n");
-  assert.match(older, /Claude Code .*← この CLI（0\.15\.0）より古い/);
-  assert.match(older, /Codex .*← この CLI（0\.15\.0）より古い/);
+  assert.match(older, /Claude Code [^\n]*\n +この CLI（0\.15\.0）より古い/);
+  assert.match(older, /Codex [^\n]*\n +この CLI（0\.15\.0）より古い/);
 
   // 逆向き（plugin のほうが新しい）では、CLI を上げる手順を出す。
   const newer = report(
@@ -440,5 +450,5 @@ test("repository が無いとき、同じ版で中身が違えば入れ直しを
       claude: plugin("same-claude/gleanery/0.15.0", "0.15.0", "old"),
     }),
   ).lines.join("\n");
-  assert.match(out, /同じ版なのに中身が違う.*入れ直して揃える/);
+  assert.match(out, /同じバージョンなのに中身が違う.*入れ直して揃える/);
 });

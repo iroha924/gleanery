@@ -9,7 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Mark, mark, pad } from "./panel.ts";
+import { caution, faint, type Mark, mark, pad, width } from "./panel.ts";
 
 const MANIFEST = path.join(".claude-plugin", "plugin.json");
 const PACKAGE = "package.json";
@@ -322,13 +322,26 @@ function safeDirs(dir: string): string[] {
 // `plugin update` は marketplace を取り直すと公式に書かれていないので、先に取り直す。
 // 更新後も動いている MCP は旧版のパスのまま。Claude Code は対話端末の session なら
 // /reload-plugins で新しいパスへ移る（公式 plugins-reference）。Codex は開き直す。
+/** 古い導入の直し方。打つ command と、打った後にすること（after） */
 const UPDATE = {
-  global: "npm i -g gleanery@<版>",
-  claude:
-    "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery の後、開いている session で /reload-plugins",
-  codex:
-    "codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery の後、Codex を開き直す",
-};
+  global: { who: "npm の CLI", command: "npm i -g gleanery@<バージョン>", after: null },
+  claude: {
+    who: "Claude Code",
+    command: "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery",
+    after: "開いている session で /reload-plugins",
+  },
+  codex: {
+    who: "Codex",
+    command: "codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery",
+    after: "Codex を開き直す",
+  },
+} as const;
+
+export type Update = { who: string; command: string; after: string | null };
+
+/** 更新の手順の最後に添える注意。届く中身が何で決まるか */
+export const UPDATE_NOTE =
+  "届く中身は各ホストの marketplace の取得元で決まる。GitHub から取る設定なら、push していない変更は届かない";
 const RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "Codex の開き直し" };
 
 /**
@@ -336,7 +349,7 @@ const RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "
  * 実行中の CLI は基準にしない。古い session の PATH にある cache の CLI を基準にすると、
  * 新しいほうを「古い」と言う逆転が起きる。
  */
-export function report(s: Seen, now = new Date()): { lines: string[]; issues: string[] } {
+export function report(s: Seen, now = new Date()): { lines: string[]; issues: string[]; updates: Update[] } {
   const lines: string[] = [];
   const issues: string[] = [];
   const todo = new Set<keyof typeof UPDATE>();
@@ -346,12 +359,22 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     if (m === "warn" || m === "fail") issues.push(label);
     lines.push(`  ${mark(m)} ${pad(label, 19)}${text}`);
   };
-  const row = (label: string, i: Install | null, note?: string, aside = "", m: Mark = note ? "warn" : "ok") =>
+  // 理由はパスの後ろに続けず、次の行でパスの列に揃える（パスが長いと、続けた理由が端末の右で折れて読めない）
+  const row = (
+    label: string,
+    i: Install | null,
+    note?: string,
+    aside = "",
+    m: Mark = note ? "warn" : "ok",
+  ) => {
+    const version = pad(i?.version ?? "不明", 9);
+    const indent = " ".repeat(2 + 2 + width(pad(label, 19)) + width(version));
     say(
       m,
       label,
-      `${pad(i?.version ?? "不明", 9)}${i ? short(i.root) : ""}${aside}${note ? ` ← ${note}` : ""}`,
+      `${version}${i ? faint(short(i.root)) : ""}${faint(aside)}${note ? `\n${indent}${caution(note)}` : ""}`,
     );
+  };
   const packageInstall = (i: Install): Install => ({ version: i.packageVersion ?? null, root: i.root });
   const packageBase = packageInstall(s.repository ?? s.cli);
   const packageAgainst = (i: Install): { note?: string; update?: boolean } => {
@@ -365,7 +388,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     return {};
   };
 
-  lines.push("npm package の版");
+  lines.push("npm package のバージョン");
   if (s.repository) row("repository", packageInstall(s.repository));
   row("実行中の CLI", packageInstall(s.cli), packageAgainst(s.cli).note);
   if (s.global && path.resolve(s.global.root) !== path.resolve(s.cli.root)) {
@@ -420,14 +443,14 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
     return {
       note: s.repository
-        ? `同じ版なのに中身が違う（${files}）。repository の変更は、版を上げて main へ入れるまで届かない`
-        : `同じ版なのに中身が違う（${files}）。入れ直して揃える`,
+        ? `同じバージョンなのに中身が違う（${files}）。repository の変更は、バージョンを上げて main へ入れるまで届かない`
+        : `同じバージョンなのに中身が違う（${files}）。入れ直して揃える`,
     };
   };
 
-  lines.push("plugin channel の版");
+  lines.push("plugin channel のバージョン");
   if (s.repository) row("repository", s.repository);
-  else say("none", "repository", "見えない。この CLI の版を基準に比べる");
+  else say("none", "repository", "見えない。この CLI のバージョンを基準に比べる");
 
   row("この CLI 内 plugin", s.cli, against(s.cli).note);
 
@@ -454,7 +477,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
   const x = s.codex.length === 1 ? s.codex[0] : undefined;
   if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
     if (fs.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
-      say("warn", "Claude Code と Codex", "同じ版なのに中身が違う");
+      say("warn", "Claude Code と Codex", "同じバージョンなのに中身が違う");
     }
   }
 
@@ -476,11 +499,12 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     const state = rootState(r.root);
     let note: string | undefined;
     if (state === "gone") note = `起動元が消えている。Skill のパスも無効なので、${again}で直す`;
-    else if (r.replaced) note = `起動元が同じ場所に作り直され、消えた旧版の中身で動いている。${again}で直す`;
+    else if (r.replaced)
+      note = `起動元が同じ場所に作り直され、消えた古いバージョンの中身で動いている。${again}で直す`;
     else if (!CACHED.test(r.root)) {
       note =
         "配布された cache ではなく、この場所を直接読んでいる（directory 型 marketplace か --plugin-dir）";
-    } else if (state === "orphaned") note = `Claude Code が更新で置き換えた版。${again}で直す`;
+    } else if (state === "orphaned") note = `Claude Code が更新で置き換えたバージョン。${again}で直す`;
     else if (installed && installed !== "unknown" && installed.version && r.version) {
       if (compareVersions(r.version, installed.version) < 0)
         note = `導入済みの ${installed.version} より古い。${again}で直す`;
@@ -488,13 +512,12 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     row(label, { version: r.version, root: r.root }, note, aside);
   }
 
-  if (todo.size) {
-    lines.push("  更新するには:");
-    const NAME = { global: "npm の CLI", claude: "Claude Code", codex: "Codex" } as const;
-    for (const k of todo) lines.push(`    ${NAME[k]}: ${UPDATE[k]}`);
-    lines.push(
-      "    届く中身は各ホストの marketplace の取得元で決まる。GitHub から取る設定なら、push していない変更は届かない",
-    );
-  }
-  return { lines, issues };
+  // npm の CLI は上げる先のバージョンが分かっているので埋める（そのまま打てる形にする）
+  const updates = [...todo].map((k): Update => {
+    const u = UPDATE[k];
+    return k === "global" && packageBase.version
+      ? { ...u, command: `npm i -g gleanery@${packageBase.version}` }
+      : { ...u };
+  });
+  return { lines, issues, updates };
 }
