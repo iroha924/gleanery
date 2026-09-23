@@ -90,7 +90,8 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 ## Markdown
 
 `renderMarkdown(text, width)` は幅ごとに `Marked` の instance を 1 つ持つ。marked-terminal の癖（見出しの `##` が残る、
-箇条書きの中のインラインコードが描かれない）は未解決。**marked を上げたら test の Markdown の検査を必ず通す**（peer の範囲外で
+箇条書きの中の inline の記法が描かれない）は、見出しの設定と text の renderer で描いている。描いた後は色（SGR）だけを残し、
+ほかの制御文字と文字を隠す指定を落とす（Markdown は文字参照を戻す）。**marked を上げたら test の Markdown の検査を必ず通す**（peer の範囲外で
 入れているので、壊れても install では気付けない）。
 
 ## bundle

@@ -11,7 +11,7 @@
 
 - 一時ディレクトリの本物の SQLite（`server/test/temp-db.ts`）で SQL を実行し、結果を見る。組み立てた SQL の文字列を照合しない（実行されない SQL が緑のまま通る） <!-- invariant: real-sqlite-tests -->
 - `~/.gleanery` を触らない。DB の path は引数か `GLEANERY_DB` で渡す
-- `sql:reach` は `server/src` の全 SQL の call site が test で実行されたかを数える。台帳は `scripts/lib/sql-call-sites.mjs`
+- `sql:reach` は `server/src` の SQL の call site（`LIVE_FILES` を除く。そちらは `sql:live`）が test で実行されたかを数える。台帳は `scripts/lib/sql-call-sites.mjs`
 - CLI と自動記録の hook は `sql:live` が子プロセスで通す。子の `HOME` は一時ディレクトリにし、親の `GLEANERY_DB` を渡さない（持ち主の `~/.gleanery` を読み書きする） <!-- invariant: temp-home -->
 - 前提が無いときに skip しない。落とす（CI で常に飛んで緑になる） <!-- invariant: no-silent-skip -->
 - 外部 API に繋がない。資格情報なしで通す。GitHub は偽の `gh` を PATH の先頭に置く（`scripts/lib/live-harness.mjs`） <!-- invariant: no-external-api -->

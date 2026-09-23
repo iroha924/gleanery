@@ -52,7 +52,7 @@ bun run cli -- dashboard  # 端末の画面。TTY が要るので前面でだけ
 
 ## 実装の前
 
-挙動を変える変更は、実装の前に `grill-with-codex` Skill で Codex と計画を詰め、`.claude/plans/` の計画で持ち主の Go を取る。
+挙動を変える変更は、実装の前に `grill-codex` Skill で Codex と計画を詰め、`.claude/plans/` の計画で持ち主の Go を取る。
 計画は合意した時点の実装計画の記録で、進捗ファイルではない（進捗は書き足さない）。
 
 ## review

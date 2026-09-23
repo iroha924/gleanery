@@ -186,7 +186,7 @@ GitHub同期（`server/src/github.ts`）は`gh api`で毎回全件を取る。�
 testは一時ディレクトリの本物のSQLite（`server/test/temp-db.ts`）でSQLを実行して結果を見る。`~/.gleanery`を触らない。
 
 - `bun run verify`に次が入っている
-  - `sql:reach`: `server/src`の全部のSQLのcall siteが、testの中で本物のSQLiteに実行されたかをV8のカバレッジで数える。
+  - `sql:reach`: `server/src`のSQLのcall site（`LIVE_FILES`を除く）が、testの中で本物のSQLiteに実行されたかをV8のカバレッジで数える。
     実行されていない箇所をfile:lineで挙げる
   - `sql:live`: CLIと自動記録のフックを子プロセスで一時HOMEのDBへ通す（`LIVE_FILES`の全call site）
 - `bun run codegen:check`: `db-types.ts`がschema.sqlと一致するか
