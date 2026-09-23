@@ -33,7 +33,9 @@ const refs = run("git", ["ls-remote", "origin", `refs/tags/${tag}`, `refs/tags/$
   .split("\n")
   .filter(Boolean)
   .map((line) => line.split("\t"));
-const tagCommit = (refs.find(([, ref]) => ref.endsWith("^{}")) ?? refs[0])?.[0] ?? null;
+// ls-remote は ref の末尾でも当たる（`x/refs/tags/v1` も返る）ので、名前の完全一致で選ぶ
+const exact = (name) => refs.find(([, ref]) => ref === name)?.[0];
+const tagCommit = exact(`refs/tags/${tag}^{}`) ?? exact(`refs/tags/${tag}`) ?? null;
 
 const { problems, pull } = gateProblems({
   tag,
