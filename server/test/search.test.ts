@@ -534,6 +534,30 @@ test("編集フックへの出力は escape で伸びても上限に収まり、
     .hookSpecificOutput.additionalContext;
   assert.match(context, /server\/src\/x\.ts: 制約 制約本文開始/);
   assert.ok(Buffer.byteLength(found) > 2048 - 64, `${Buffer.byteLength(found)} bytes`);
+  // 全文が入るなら全文を返す（切った形のほうが書き添えの分だけ長くなることがある）
+  const fits = hookContext(
+    `server/src/x.ts: 制約 ${"\n".repeat(431)}${"x".repeat(802)}MUST_KEEP_CONSTRAINT`,
+    2048,
+  );
+  assert.ok(Buffer.byteLength(fits) <= 2048, `${Buffer.byteLength(fits)} bytes`);
+  assert.match(fits, /MUST_KEEP_CONSTRAINT/);
+});
+
+// 改行の数と本文の長さを振っても、上限を越えず、JSON として読め、全文が入る大きさなら末尾まで残る。
+test("編集フックへの出力は、全文が入るなら末尾まで残す", () => {
+  // 全文が入るかどうかの境目は狭いので、本文の長さは 1 ずつ振る。
+  for (const lines of [0, 200, 431, 800])
+    for (let xs = 0; xs < 1800; xs++) {
+      const body = `f.ts: 制約 ${"\n".repeat(lines)}${"x".repeat(xs)}END`;
+      const out = hookContext(body, 2048);
+      assert.ok(Buffer.byteLength(out) <= 2048, `${lines}/${xs}: ${Buffer.byteLength(out)} bytes`);
+      const context = (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } })
+        .hookSpecificOutput.additionalContext;
+      const whole = JSON.stringify({
+        hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: framed(body) },
+      });
+      if (Buffer.byteLength(whole) <= 2048) assert.match(context, /END/, `${lines}/${xs}`);
+    }
 });
 
 // 「先週マージした PR」を作成日で絞ると、先週より前に作って先週マージしたものが落ちる。

@@ -669,7 +669,11 @@ export function hookContext(body: string, budget: number): string {
     JSON.stringify({
       hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: framedWithin(body, b) },
     });
-  // 改行や引用符の escape で伸びる量は本文による。収まる最大の本文の上限を二分探索で探す（伸びた分を一度に引くと切りすぎる）。
+  // 全文が入るならそのまま返す。切った形は書き添えの分だけ長く、上限に対して単調に伸びない唯一の点がここにある。
+  const full = wrap(budget);
+  if (bytes(full) <= budget) return full;
+  // 改行や引用符の escape で伸びる量は本文による。切った形は上限に対して単調に伸びるので、収まる最大を二分探索で探す
+  // （伸びた分を一度に引くと切りすぎる）。
   let lo = 0;
   let hi = budget;
   while (lo < hi) {
