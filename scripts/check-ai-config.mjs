@@ -94,7 +94,9 @@ if (bytes > CODEX_LIMIT - USER_RESERVE) {
 // **CLAUDE.md は Claude Code 専用、AGENTS.md は Codex 専用。**Claude Code は CLAUDE.md があると AGENTS.md を読まず、
 // Codex は CLAUDE.md を読まない（どちらも 2026-09-23 に実験で確かめた）。互いを import すると、両方が両方を読む。
 const claudeMd = read("CLAUDE.md");
-if (/^@\S*AGENTS\.md\s*$/m.test(claudeMd)) fail("CLAUDE.md: AGENTS.mdをimportしている。両者は別々に読ませる");
+// import は文の中でも効く（`詳しくは @AGENTS.md`）。コードの中は import されないので、囲みを外してから見る。
+if (/(?:^|\s)@\S*AGENTS\.md\b/m.test(claudeMd.replace(/```[\s\S]*?```|`[^`\n]*`/g, "")))
+  fail("CLAUDE.md: AGENTS.mdをimportしている。両者は別々に読ませる");
 const claudeLines = claudeMd.trimEnd().split("\n").length;
 // 公式の目安は 200 行未満。常時ロードは paths の無い rule と合わせて効くので、CLAUDE.md 単体はその半分に抑える。
 if (claudeLines >= 100)
@@ -128,6 +130,17 @@ for (const required of [
   if (!claudeVerification.includes(required)) {
     fail(`.claude/rules/verification.md: Claudeのrelease規約に \`${required}\` が無い`);
   }
+}
+
+// Claude Code 専用の Skill（.agents/skills に置かず、Codex から見えない）。symlink でない directory がそれに当たる。
+const claudeSkills = fs
+  .readdirSync(path.join(root, ".claude/skills"))
+  .filter((name) => !fs.lstatSync(path.join(root, ".claude/skills", name)).isSymbolicLink());
+for (const name of claudeSkills) {
+  const relative = `.claude/skills/${name}/SKILL.md`;
+  const fields = frontmatter(relative, read(relative));
+  if (fields.name !== name) fail(`${relative}: nameがdirectory名と一致しない`);
+  if (!fields.description) fail(`${relative}: descriptionが無い`);
 }
 
 for (const name of developmentSkills) {
@@ -334,6 +347,7 @@ const docs = [
   "CLAUDE.md",
   ...fs.readdirSync(path.join(root, ".claude/rules")).map((f) => `.claude/rules/${f}`),
   ...developmentSkills.map((name) => `.agents/skills/${name}/SKILL.md`),
+  ...claudeSkills.map((name) => `.claude/skills/${name}/SKILL.md`),
   ...pluginSkills.map((name) => `plugin/skills/${name}/SKILL.md`),
   ...pluginSkills.flatMap((name) => {
     const dir = path.join(root, "plugin/skills", name, "references");
