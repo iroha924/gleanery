@@ -18,6 +18,16 @@ import { renderMarkdown } from "../src/tui/markdown.ts";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const at = new Date("2026-09-20T01:00:00Z");
 const tick = () => new Promise((r) => setTimeout(r, 40));
+
+/**
+ * 読み込み中の表示が消えるまで待つ（上限 5 秒）。決め打ちの待ち時間だと、最初の描画が遅い CI で読み込みが間に合わない
+ * （実測: GitHub Actions で最初の test だけ「読んでいる…」のまま落ちた）
+ */
+async function settle(r: { lastFrame?: () => string | undefined; frame?: () => string }): Promise<void> {
+  const frame = () => r.lastFrame?.() ?? r.frame?.() ?? "";
+  await tick();
+  for (let i = 0; i < 125 && /読んでいる/.test(frame()); i++) await tick();
+}
 const ESC = "\u001b";
 const TAB = "\t";
 const ENTER = "\r";
@@ -223,11 +233,11 @@ function fake(over: Partial<Data> = {}): Data & { searched: string[] } {
 
 test("セッションの一覧を出し、Enter で詳細、Esc で戻る", async () => {
   const r = render(h(App, { data: fake() }));
-  await tick();
+  await settle(r);
   assert.match(r.lastFrame() ?? "", /認証を直すセッション/);
   assert.match(r.lastFrame() ?? "", /1 件/);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   const frame = r.lastFrame() ?? "";
   assert.match(frame, /認証を直して/);
   assert.match(frame, /トークン/);
@@ -235,7 +245,7 @@ test("セッションの一覧を出し、Enter で詳細、Esc で戻る", asyn
   assert.match(frame, /src\/auth\.ts/);
   assert.match(frame, /【採用した決定】 期限はサーバーで見る/);
   r.stdin.write(ESC);
-  await tick();
+  await settle(r);
   assert.match(r.lastFrame() ?? "", /1 件/);
   r.unmount();
 });
@@ -260,12 +270,12 @@ test("読み込み中・空・失敗をそれぞれ出す", async () => {
 
 test("Tab で作業の画面へ移り、作業を開くと通ってはいけない道まで出る", async () => {
   const r = render(h(App, { data: fake() }));
-  await tick();
+  await settle(r);
   r.stdin.write(TAB);
-  await tick();
+  await settle(r);
   assert.match(r.lastFrame() ?? "", /認証の作り直し/);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   const frame = r.lastFrame() ?? "";
   assert.match(frame, /目的: 期限切れで落ちない/);
   assert.match(frame, /端末側の表示/);
@@ -276,17 +286,17 @@ test("Tab で作業の画面へ移り、作業を開くと通ってはいけな�
 test("/ で検索へ移って打ち、Enter で引き、結果を開くと全文を読む", async () => {
   const data = fake();
   const r = render(h(App, { data }));
-  await tick();
+  await settle(r);
   r.stdin.write("/");
-  await tick();
+  await settle(r);
   r.stdin.write("期限");
-  await tick();
+  await settle(r);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   assert.deepEqual(data.searched, ["期限"]);
   assert.match(r.lastFrame() ?? "", /【採用した決定】 期限はサーバーで見る/);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   assert.match(r.lastFrame() ?? "", /k:9 の全文/);
   r.unmount();
 });
@@ -305,25 +315,25 @@ test("詳細から Esc で戻っても、検索の語と結果、一覧で選ん
     }),
   });
   const r = render(h(App, { data }));
-  await tick();
+  await settle(r);
   r.stdin.write("j");
-  await tick();
+  await settle(r);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   r.stdin.write(ESC);
-  await tick();
+  await settle(r);
   assert.match(r.lastFrame() ?? "", /❯ 二つ目のセッション/);
 
   r.stdin.write("/");
-  await tick();
+  await settle(r);
   r.stdin.write("期限");
-  await tick();
+  await settle(r);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   r.stdin.write(ESC);
-  await tick();
+  await settle(r);
   assert.match(r.lastFrame() ?? "", /「期限」/);
   assert.match(r.lastFrame() ?? "", /期限はサーバーで見る/);
   assert.deepEqual(data.searched, ["期限"], "戻っただけで引き直している");
@@ -333,14 +343,14 @@ test("詳細から Esc で戻っても、検索の語と結果、一覧で選ん
 test("本文の終わりを越えて下へ進まない（画面が空にならない）", async () => {
   const long = Array.from({ length: 80 }, (_, i) => `行 ${i}`).join("\n");
   const r = renderAt(60, 16, fake({ read: async () => long }));
-  await tick();
+  await settle(r);
   for (const key of ["/", "期限", ENTER, ENTER, "G"]) {
     r.write(key);
-    await tick();
+    await settle(r);
   }
   for (let i = 0; i < 10; i++) {
     r.write("j");
-    await tick();
+    await settle(r);
   }
   const frame = r.frame();
   assert.match(frame, /行 79/, frame);
@@ -351,13 +361,13 @@ test("本文の終わりを越えて下へ進まない（画面が空になら�
 test("打っている間の q は文字として入り、終わらない", async () => {
   const data = fake();
   const r = render(h(App, { data }));
-  await tick();
+  await settle(r);
   r.stdin.write("/");
-  await tick();
+  await settle(r);
   r.stdin.write("q");
-  await tick();
+  await settle(r);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   assert.deepEqual(data.searched, ["q"]);
   r.unmount();
 });
@@ -410,7 +420,7 @@ function renderAt(columns: number, rows: number, data: Data) {
 
 async function frameAt(columns: number, rows: number, data: Data): Promise<string> {
   const r = renderAt(columns, rows, data);
-  await tick();
+  await settle(r);
   const frame = r.frame();
   r.unmount();
   return frame;
@@ -462,14 +472,14 @@ test("作業場所を切り替えると、セッションの一覧は 1 ペー�
     },
   });
   const r = render(h(App, { data }));
-  await tick();
+  await settle(r);
   r.stdin.write("l");
-  await tick();
+  await settle(r);
   r.stdin.write("l");
-  await tick();
+  await settle(r);
   assert.match(r.lastFrame() ?? "", /3 \/ 3 ページ/);
   r.stdin.write("p");
-  await tick();
+  await settle(r);
   assert.deepEqual(pages.at(-1), [1, 1]);
   assert.match(r.lastFrame() ?? "", /題 1 0/);
   assert.doesNotMatch(r.lastFrame() ?? "", /まだ無い/);
@@ -485,9 +495,9 @@ test("AI の応答の地の文に罫線の文字があっても、段落を 1 �
     }),
   });
   const r = render(h(App, { data }));
-  await tick();
+  await settle(r);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   const frame = r.lastFrame() ?? "";
   // 6 回繰り返した最後の文まで出ていれば、段落は折り返されている
   assert.equal(frame.split("中身は字下げする").length - 1, 6, frame);
@@ -504,9 +514,9 @@ test("AI の応答の表は、端末より広くても折らずに行ごとに�
     }),
   });
   const r = render(h(App, { data }));
-  await tick();
+  await settle(r);
   r.stdin.write(ENTER);
-  await tick();
+  await settle(r);
   const lines = stripVTControlCharacters(r.lastFrame() ?? "")
     .split("\n")
     .filter((l) => /[┌├└│]/.test(l) && !/^[│╭╰]/.test(l));
