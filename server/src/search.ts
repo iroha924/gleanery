@@ -661,7 +661,7 @@ export function framed(body: string): string {
 /** 本文を、枠を付けても budget に収まる長さへ切ってから枠を付ける。本文を作る側は inFrame(budget) で配分する。 */
 export const inFrame = (budget: number): number => budget - bytes(framed(""));
 export const framedWithin = (body: string, budget: number): string =>
-  framed(clipped(body, inFrame(budget), "この応答"));
+  framed(clipped(visible(body), inFrame(budget), "この応答"));
 
 /** 編集フックの出力（PreToolUse の additionalContext）。 */
 export function hookContext(body: string, budget: number): string {
