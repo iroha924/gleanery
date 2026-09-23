@@ -8,10 +8,9 @@
 `bun run release:plan -- --base <前回のrelease commit>`を実行する。表示された種別を変えて扱わない。
 
 - `none`: releaseしない
-- `npm-only`: dashboard・Honoだけ。`plugin/package.json`だけを上げ、plugin manifest・marketplace・cacheは動かさない
-- `plugin`: MCP・CLI・hook・plugin Skill/Agent・共有moduleを含む。npmと3つのplugin versionを同じ値へ上げる
+- `plugin`: 配布物に入る変更（MCP・CLI・端末の画面・hook・plugin Skill/Agent・共有module）。npmと3つのplugin versionを同じ値へ上げる
 
-両方が混じれば`plugin`である。不可逆な操作は自動化せず、cleanなreview済みcommitで
+不可逆な操作は自動化せず、cleanなreview済みcommitで
 `bun run release:prepare -- --base <前回のrelease commit>`が残したtarballだけをpublishする。
 
 ## 実 DB へ繋ぐのは専用の検査レーンだけ
@@ -20,7 +19,7 @@
 次を全部満たす形でのみ繋いでよい。
 
 - 固定 digest の使い捨て PostgreSQL を検査自身が立て、資格情報をその場で作る
-- 画面と CLI は子プロセスで起動し、親が期限と終了を持つ
+- CLI は子プロセスで起動し、親が期限と終了を持つ
 - 子プロセスの `HOME` を一時ディレクトリへ向ける
 - 外部 API の鍵を渡さず、外部 API へ出る経路は実行しない
 - Docker が無ければ skip せず落ちる
@@ -50,7 +49,7 @@
 前提が無いとき `continue` で飛ばすと、CI では常に飛んで緑になる。前提が無いなら落とす。
 
 実測: 画面のビルド成果物が無ければ飛ばすキャッシュの検査を書いたが、`verify` は `build` より先に
-`test` を走らせていたので、一度も動かないまま通っていた。`verify` の順序を `check && bundle && test` に変え（`bundle` が画面も建てる）、
+`test` を走らせていたので、一度も動かないまま通っていた。`verify` の順序を `check && bundle && test` に変え（`bundle` が配布物を建てる）、
 飛ばす代わりに落とすようにして直した。
 
 ## テストから本物の DB と外部 API に繋がない

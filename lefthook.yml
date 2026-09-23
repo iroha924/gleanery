@@ -9,20 +9,13 @@ pre-commit:
       root: server/
       glob: "*.ts"
       run: bun run typecheck
-    - name: typecheck-dashboard
-      root: dashboard/
-      glob: "*.{ts,tsx}"
-      run: bun run typecheck
-    - name: dashboard-architecture
-      glob: "{dashboard/src/**/*.ts,dashboard/src/**/*.tsx,server/src/server.ts,scripts/check-dashboard-boundaries.mjs,package.json}"
-      run: bun run architecture
     - name: ai-config
-      glob: "{AGENTS.md,CLAUDE.md,dashboard/AGENTS.md,dashboard/CLAUDE.md,.agents/skills/**,.claude/skills/**,.claude-plugin/**,plugin/skills/review/reviewers/**,plugin/skills/**,scripts/check-ai-config.mjs,package.json}"
+      glob: "{AGENTS.md,CLAUDE.md,.agents/skills/**,.claude/skills/**,.claude-plugin/**,plugin/skills/review/reviewers/**,plugin/skills/**,scripts/check-ai-config.mjs,package.json}"
       run: bun run verify:ai
     # 版の判定は bundle の後でなければ意味が無い。別ジョブにすると parallel なので、
     # 作り直す前のバンドルを読んで素通りする（実測: 4/4 で通った）。
     - name: bundle
-      glob: "{server/src/**/*.ts,dashboard/src/**,dashboard/index.html,db/**,scripts/bundle.mjs,plugin/**,.claude-plugin/**}"
+      glob: "{server/src/**/*.ts,db/**,scripts/bundle.mjs,scripts/bundle-cli.ts,plugin/**,.claude-plugin/**}"
       # set -e が無いと、bundle が落ちても後ろの検査の 0 が打ち消す。
       run: |
         set -e
@@ -34,7 +27,7 @@ pre-commit:
       glob: "{server/src/**/*.ts,server/test/**/*.ts,scripts/check-sql.mjs}"
       run: bun run sql
     - name: pairs
-      glob: "{db/schema.sql,server/src/*.ts,dashboard/src/features/_sessions/api/sessions.ts,README.md,plugin/skills/review/SKILL.md,plugin/skills/review/reviewers/*.md,scripts/check-pairs.mjs}"
+      glob: "{db/schema.sql,server/src/*.ts,README.md,plugin/skills/review/SKILL.md,plugin/skills/review/reviewers/*.md,scripts/check-pairs.mjs}"
       # git add をここに書かない。無条件に走ると README の別件の編集まで巻き込む。
       # 書き換えたときだけ check-pairs.mjs 自身が staged へ戻す。
       run: node scripts/check-pairs.mjs

@@ -66,7 +66,7 @@ const actions =
         `npm dist-tag add gleanery@${packageVersion} latest`,
         "npm pack gleanery@latest --silent",
         "bun run release:status",
-        ...(kind === "plugin" ? ["Claude/Codexのplugin cacheを更新してsessionを張り直す"] : []),
+        "Claude/Codexのplugin cacheを更新してsessionを張り直す",
       ];
 const plan = {
   base: ref,
@@ -85,7 +85,7 @@ const plan = {
 if (json) {
   process.stdout.write(`${JSON.stringify(plan)}\n`);
 } else {
-  const label = { none: "releaseなし", npm: "npm-only", plugin: "plugin" }[kind];
+  const label = { none: "releaseなし", plugin: "plugin" }[kind];
   console.log(`release種別: ${label}`);
   console.log(`比較: ${ref}..${plan.commit}`);
   console.log(

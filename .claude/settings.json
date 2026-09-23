@@ -1,5 +1,0 @@
-{
-  "permissions": {
-    "deny": ["Edit(dashboard/src/routeTree.gen.ts)"]
-  }
-}

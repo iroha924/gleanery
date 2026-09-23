@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const developmentSkills = ["knowledge-schema", "ui-hono", "tui", "plugin-agent-authoring", "plugin-release"];
+const developmentSkills = ["knowledge-schema", "tui", "plugin-agent-authoring", "plugin-release"];
 
 function fail(message) {
   failures.push(message);
@@ -82,27 +82,20 @@ if (!agents.includes("`Skill roots`にある`rN`の値と残りをそのまま�
 // （持ち主の ~/.codex/AGENTS.md はマシンごとに違うので、その分の余白を引いて判定する）。
 const CODEX_LIMIT = 32 * 1024;
 // 持ち主の ~/.codex/AGENTS.md に見込む分。実測 18,638 bytes（2026-09-20）へ 1 KiB の伸びを足した。
-// **これを増やすとリポジトリ側の余白が減る。**足りなくなったら、まず nested を Skill へ移す。
+// **これを増やすとリポジトリ側の余白が減る。**足りなくなったら、長い手順を Skill へ移す。
+// 入れ子の AGENTS.md は無い（Web の画面と一緒に dashboard/AGENTS.md を消した）。足すなら、その分もここで足す。
 const USER_RESERVE = 19 * 1024;
-const nested = ["dashboard/AGENTS.md"];
-const nestedBytes = nested.map((f) => Buffer.byteLength(read(f)));
-const repoTotal = bytes + nestedBytes.reduce((a, b) => a + b, 0);
-if (repoTotal > CODEX_LIMIT - USER_RESERVE) {
+if (bytes > CODEX_LIMIT - USER_RESERVE) {
   fail(
-    `AGENTS.mdの合計が${repoTotal} bytes（root ${bytes} + nested ${nestedBytes.join(" + ")}）。` +
-      `Codexの32 KiBからglobal分${USER_RESERVE}を引いた${CODEX_LIMIT - USER_RESERVE}以内にする。` +
+    `AGENTS.mdが${bytes} bytes。Codexの32 KiBからglobal分${USER_RESERVE}を引いた${CODEX_LIMIT - USER_RESERVE}以内にする。` +
       "長い手順は.agents/skills/へ移す",
   );
 }
 if (read("CLAUDE.md").trim() !== "@AGENTS.md") fail("CLAUDE.md: @AGENTS.mdだけを正本として読む形ではない");
-if (read("dashboard/CLAUDE.md").trim() !== "@AGENTS.md") {
-  fail("dashboard/CLAUDE.md: dashboard/AGENTS.mdをimportしていない");
-}
 const claudeVerification = read(".claude/rules/verification.md");
 for (const required of [
   "bun run release:plan -- --base <前回のrelease commit>",
-  "`npm-only`: dashboard・Honoだけ",
-  "plugin manifest・marketplace・cacheは動かさない",
+  "`plugin`: 配布物に入る変更",
   "bun run release:prepare -- --base <前回のrelease commit>",
 ]) {
   if (!claudeVerification.includes(required)) {

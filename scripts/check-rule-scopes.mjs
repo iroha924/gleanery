@@ -18,15 +18,10 @@ const rulesDirectory = path.join(root, ".claude", "rules");
 /** 各 rule が載るべき実ファイルと、載ってはいけない実ファイル。**実在するパスだけを書く。** */
 const EXPECTED = {
   "ui.md": {
-    match: [
-      "dashboard/src/features/_chat/ui/chat-page.tsx",
-      "dashboard/src/lib/api.ts",
-      "dashboard/src/styles.css",
-      "dashboard/vite.config.ts",
-    ],
+    match: ["server/src/tui/app.ts", "server/src/tui/view.ts", "server/src/palette.ts"],
     notMatch: [
       "server/src/cli.ts",
-      "server/src/http/routes/knowledge.ts",
+      "server/src/search.ts",
       "scripts/bundle.mjs",
       "db/schema.sql",
       "AGENTS.md",
@@ -35,7 +30,7 @@ const EXPECTED = {
   "comments.md": {
     match: [
       "server/src/db.ts",
-      "dashboard/src/lib/api.ts",
+      "server/src/tui/app.ts",
       "scripts/bundle.mjs",
       "lefthook.yml",
       "db/compose.yaml",

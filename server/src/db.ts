@@ -48,7 +48,7 @@ export function loadEnv(): Env {
 /**
  * どの鍵で繋ぐか。
  *   owner   schema の適用と migration だけ（server/src/admin.ts）
- *   reader  MCP・画面の API（読むだけ）
+ *   reader  MCP・端末の画面（読むだけ）
  *   ingest  取り込み・trace・名簿（CLI）
  *   capture 会話の自動記録（追記だけ）
  */

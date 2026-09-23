@@ -3,7 +3,7 @@
 // 親が期限と終了を持つ。`.claude/rules/verification.md` が禁じている「テストが DB へ繋ぐ」は、
 // pool を掴んだまま返らない形が原因だった。子プロセスなら、その責務を親が外から果たせる。
 
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -74,7 +74,7 @@ if (args.includes("pulls/comments")) {
   return bin;
 }
 
-/** 資格情報を置く。CLI と画面は GLEANERY_ENV_DIR/.env から読む（db.ts の loadEnv）。 */
+/** 資格情報を置く。CLI は GLEANERY_ENV_DIR/.env から読む（db.ts の loadEnv）。 */
 export function writeEnv(dir, urls) {
   fs.writeFileSync(
     path.join(dir, ".env"),
@@ -95,12 +95,12 @@ export function writeEnv(dir, urls) {
 export function childEnv(dir, covDir, extra = {}) {
   const env = { ...process.env, ...extra };
   // **home を付け替える。**付け替えないと、子プロセスは持ち主の ~/.gleanery を使う。
-  // `loadEnv` が ~/.gleanery/env から VOYAGE_API_KEY と OPENAI_API_KEY を拾って実際に外部 API を叩き、
+  // `loadEnv` が ~/.gleanery/env から VOYAGE_API_KEY を拾って実際に外部 API を叩き、
   // `capture flush` は ~/.gleanery/spool の待ち行列を読んで、送り終えた分を消す（実測: 持ち主の
   // 未送信 4 件を使い捨ての DB へ送り、spool から消した）。env を消すだけでは塞がらない。
   env.HOME = dir;
   env.USERPROFILE = dir;
-  for (const k of ["VOYAGE_API_KEY", "OPENAI_API_KEY", "GLEANERY_DB_URL", "GITHUB_TOKEN"]) delete env[k];
+  for (const k of ["VOYAGE_API_KEY", "GLEANERY_DB_URL", "GITHUB_TOKEN"]) delete env[k];
   // ホストの session は親から漏れ込む。両方あると CLI が「どちらのホストか決められない」で止まるので、
   // 検査が渡したものだけを残す。
   for (const k of ["CODEX_THREAD_ID", "CODEX_SESSION_ID"]) delete env[k];
@@ -143,56 +143,6 @@ export function runHook(input, dir, covDir, extra = {}) {
     stdio: ["pipe", "pipe", "pipe"],
   });
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
-}
-
-/**
- * 画面の API を子プロセスで立て、`fn` へ base URL を渡す。戻り方によらず必ず殺す。
- * server.ts の start() は server を返さないので、止める手立ては親のプロセス管理しかない。
- */
-export async function withServer(dir, covDir, port, fn) {
-  const child = spawn("node", [path.join(root, "scripts/lib/live-server-entry.mjs")], {
-    cwd: root,
-    env: childEnv(dir, covDir, { GLEANERY_DASHBOARD_PORT: String(port) }),
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let log = "";
-  child.stdout.on("data", (b) => {
-    log += b;
-  });
-  child.stderr.on("data", (b) => {
-    log += b;
-  });
-  const kill = () => {
-    if (child.exitCode === null) child.kill("SIGTERM");
-  };
-  const timer = setTimeout(kill, TIMEOUT_MS);
-  try {
-    const base = `http://127.0.0.1:${port}`;
-    const until = Date.now() + 30_000;
-    for (;;) {
-      if (child.exitCode !== null) throw new Error(`画面の API が立ち上がらずに終了した:\n${log}`);
-      try {
-        await fetch(`${base}/api/projects`, { headers: { host: `127.0.0.1:${port}` } });
-        break;
-      } catch {
-        if (Date.now() > until) throw new Error(`画面の API が 30 秒で立ち上がらなかった:\n${log}`);
-        await new Promise((r) => setTimeout(r, 300));
-      }
-    }
-    return await fn(base, () => log);
-  } finally {
-    clearTimeout(timer);
-    kill();
-    // 終わるまで待つ。待たないと、カバレッジの書き出しが途中のまま読まれる。
-    await new Promise((resolve) => {
-      if (child.exitCode !== null) return resolve();
-      child.once("exit", resolve);
-      setTimeout(() => {
-        child.kill("SIGKILL");
-        resolve();
-      }, 10_000);
-    });
-  }
 }
 
 /** 一時ディレクトリを作り、終わったら消す。 */

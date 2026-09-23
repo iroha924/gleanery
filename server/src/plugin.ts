@@ -423,22 +423,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     if (path.resolve(i.root) === path.resolve(base.root)) return {};
     // `tracked` は基準が repository の作業ツリーのときだけ立てる。導入先どうしの比較では、
     // 追跡の概念が無く、配られたファイルがそのまま両側にある。
-    let diff = differingFiles(base.root, i.root, { tracked: Boolean(s.repository) });
-    // dashboard/Honoだけのreleaseではnpm packageが進み、plugin channelは同じ版に留まる。
-    // CLI bundleはserver.tsを含むため、dashboardの配布物とpackage metadataと一緒に差から外す。
-    if (
-      i.packageVersion &&
-      base.packageVersion &&
-      compareVersions(i.packageVersion, base.packageVersion) !== 0
-    ) {
-      diff = diff.filter(
-        (file) =>
-          file !== "package.json" &&
-          file !== "dist/cli.js" &&
-          file !== "THIRD_PARTY_NOTICES.md" &&
-          !file.startsWith("dist/dashboard/"),
-      );
-    }
+    const diff = differingFiles(base.root, i.root, { tracked: Boolean(s.repository) });
     if (!diff.length) return {};
     const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
     return {

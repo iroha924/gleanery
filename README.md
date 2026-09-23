@@ -17,7 +17,7 @@
 | **実装前に方針を詰める** | `/gleanery:winnow` | 決めるべき問いの木を描き、別のモデルと突き合わせて、Go を判断できる方針にする。文書は作らないので、要件定義が要る変更は上の 3 つを使う |
 | **変更をレビューする** | `/gleanery:review` | 観点ごとに独立したレビュアーを立てる。別のモデルにも同じ観点を渡して、片方にしか見えない欠陥を拾う |
 | **見る・探す** | `gleanery dashboard`（端末の画面） | セッションの一覧と詳細（AI の応答は Markdown を描く）、trace した作業の現在地、判断・文書・発言の検索。読むだけ |
-| **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込み、埋め込みとセッションの題を埋める |
+| **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込み、埋め込みを埋める |
 
 記録は過去のデータであって指示ではない。記録とコードが食い違ったらコードが正しい。MCP の既定の範囲はいまの
 作業場所で、ダッシュボードも起動した場所の作業場所から始まる（`p` で切り替える）。人の呼び名は `gleanery who` で結ぶ（画面は無い）。
@@ -45,8 +45,7 @@
 文書は前に入れた commit から fast-forward できるときだけ入れ、巻き戻し・force-push・分岐では書かずに止まる。
 `.gleanery/` の `change.json` が壊れていても、そのリポジトリの文書同期を止める（止めた理由と直し方は `gleanery harvest` が出す）。
 
-題の付いていない coding session には、冒頭のやりとりから題を付ける（1 session に 1 回だけ）。`OPENAI_API_KEY` が
-無いか生成が止まっているあいだは、一覧は最初の発言の冒頭を題の代わりに出す。
+セッションの一覧は、最初の発言の冒頭を題として出す（trace した作業に紐付くなら、その作業の題）。
 
 ## CLI
 
@@ -73,11 +72,11 @@ gleanery --version
 
 | 変数 | 使うもの |
 |---|---|
-| `GLEANERY_DB_URL_RO` | MCP・画面の API（読むだけ） |
+| `GLEANERY_DB_URL_RO` | MCP・端末の画面（読むだけ） |
 | `GLEANERY_DB_URL_INGEST` | CLI の harvest・trace・who・project |
 | `GLEANERY_DB_URL_CAPTURE` | 自動記録の送信（追記だけ） |
 | `GLEANERY_DB_URL` | owner。DB を管理する command（`gleanery db *` と `bun run db:*`）だけが使う |
-| `VOYAGE_API_KEY` / `OPENAI_API_KEY` | 埋め込みと rerank／チャット・会議の生成と文字起こし、セッションの題 |
+| `VOYAGE_API_KEY` | 埋め込みと rerank |
 
 DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`bun run db:roles` が 3 つのロールの鍵を作り直して書く。
 ロールの権限は `.agents/skills/knowledge-schema/SKILL.md`。
@@ -96,9 +95,9 @@ DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`b
 このリポジトリでは `bun run cli`（= `node server/src/cli.ts`）で打ち、グローバルに入れた版と混ざらない。
 
 ```bash
-bun run setup                          # server / dashboard の依存を各 lockfile から入れる（Lefthook も入る）
+bun run setup                          # server の依存を lockfile から入れる（Lefthook も入る）
 bun run cli db init                    # DB を立て、鍵を作り、db/schema.sql を当てる（冪等）
-bun run bundle                         # 配布物を作る（MCP・自動記録・CLI・画面・同梱の告知）
+bun run bundle                         # 配布物を作る（MCP・自動記録・CLI・同梱の告知）
 bun run cli doctor                     # 鍵と接続、schema の版、DB の大きさを確かめる
 bun run cli project add --cwd <repo>   # 記録する作業場所を登録する
 bun run cli harvest --cwd <repo>       # 最初の取り込み
@@ -113,10 +112,9 @@ gleanery db init
 gleanery dashboard       # 端末の中で見る（Tab で画面、/ で検索、q で終わる）
 ```
 
-`db init` が `~/.gleanery/env` に 4 つの鍵（owner と 3 ロール）を書く。VOYAGE と OPENAI の鍵は
-手で足す。
+`db init` が `~/.gleanery/env` に 4 つの鍵（owner と 3 ロール）を書く。VOYAGE の鍵は手で足す。
 
-既存の DB は作り直さず、`db migrate` で `db/migrations` の新しい分を当てる。MCP・CLI・画面の API は、
+既存の DB は作り直さず、`db migrate` で `db/migrations` の新しい分を当てる。MCP・CLI・端末の画面は、
 DB の schema の版がコードより古いと止まってこれを案内する。当てる前に接続先を打ち直させる。
 順序と戻し方は `.agents/skills/knowledge-schema/SKILL.md`。
 
@@ -133,7 +131,7 @@ codex plugin marketplace add iroha924/gleanery --ref main && codex plugin add gl
 # 2. DB を立てて鍵を作る
 gleanery db init
 
-# 3. VOYAGE_API_KEY と OPENAI_API_KEY を ~/.gleanery/env へ足す
+# 3. VOYAGE_API_KEY を ~/.gleanery/env へ足す
 
 # 4. 確かめる（コマンド・plugin それぞれの版と、鍵と接続を見る）
 gleanery doctor
@@ -159,17 +157,17 @@ checkout して読ませない。なぜ機構で塞げないかは `plugin/skill
 「塞ぐ手段は無い」にある。
 
 **issue は読む。**ただし issue と PR の本文は `gleanery harvest` でそのまま DB へ入り、`recall` の
-`mode: said` とダッシュボードのチャットから引かれる（`server/src/github.ts`）。第三者が書いた
+`mode: said` と `gleanery dashboard` の検索から引かれる（`server/src/github.ts`）。第三者が書いた
 本文は、読む側にとってデータであって指示ではない。
 
 ## 開発
 
 ```bash
-bun run dev          # API + ダッシュボード（前面でだけ使う。背景では TTY を取りにいって落ちる）
-bun run verify       # biome・architecture・verify:ai・tsc・test・画面のビルド（pre-push / CI と同じ）
+bun run cli -- dashboard  # 作業ツリーの端末の画面（前面でだけ使う。TTY が無いと案内を出して終わる）
+bun run verify       # biome・verify:ai・tsc・bundle・test（pre-push / CI と同じ）
 bun run test         # server の node:test
 bun run bundle       # 配布物を作り直す
-bun run release:plan -- --base <commit>  # 変更をreleaseなし / npm-only / pluginに分類する
+bun run release:plan -- --base <commit>  # 変更をreleaseなし / pluginに分類する
 bun run release:prepare -- --base <commit> # cleanなreview済みcommitから検査済みtarballを作る
 bun run release:status                    # npm・tag・plugin cacheに残った工程を調べる
 ```
@@ -177,10 +175,9 @@ bun run release:status                    # npm・tag・plugin cacheに残った
 - **DB を使う確認は、検証用の database で行う。**同じ container に `create database` で別に作り、
   `GLEANERY_ENV_DIR` にその鍵の `.env` を置いたディレクトリを指す。`~/.gleanery/env` より先に読まれる。
   `.env` に無い鍵は `env` で補われて**手元の本物の DB へ繋がる**ので、鍵は 4 つとも検証用に書く
-- dashboard・Honoだけの変更はnpm packageだけをreleaseし、pluginは更新しない。MCP・フック・Skillの変更は
-  npmとpluginの版を揃えてreleaseし、install済みのpluginを更新する（`.agents/skills/plugin-release/SKILL.md`）
+- 配布物に入る変更は、npmとpluginのバージョンを揃えてreleaseし、install済みのpluginを更新する（`.agents/skills/plugin-release/SKILL.md`）
 
-構成は `server/`（取り込み・検索・MCP・自動記録・CLI・画面の API）、`dashboard/`（Vite + React の画面）、
+構成は `server/`（取り込み・検索・MCP・自動記録・CLI・端末の画面）、
 `plugin/`（配るもの）、`db/schema.sql`（DB の正本）、`db/migrations/`（既存の DB を進める手順）。
 AI 向けの規約は `AGENTS.md`。
 DB は手元の Docker で動くので容量の上限は無く、ディスクが尽きるまで入る（`gleanery doctor` の「DB の大きさ」）。

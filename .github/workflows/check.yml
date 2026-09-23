@@ -8,10 +8,6 @@
 # 資格情報なしでもテスト自体は通り、外部サービスを使う検査だけが自分で skip する。
 name: check
 
-env:
-  # 画面は完全に static な SPA で、build に外部サービスの設定は要らない。
-  CI: "true"
-
 on:
   push:
     branches: [main]
@@ -59,9 +55,8 @@ jobs:
       - name: 依存を入れる
         run: bun run setup
 
-      # ローカルの pre-push と同じ正本を使う。Biome、両アプリの型、サーバーのテスト、
-      # 画面の本番ビルドをまとめて検査する。
-      - name: 画面と Hono を検証
+      # ローカルの pre-push と同じ正本を使う。Biome、型、テスト、配布物の bundle をまとめて検査する。
+      - name: lint・型・test・bundle を検証
         run: bun run verify
 
       # 一時 PostgreSQL を立てる。理由と生成元は scripts/lib/temp-postgres.mjs の冒頭にある。
@@ -74,9 +69,9 @@ jobs:
       - name: 組み立てた SQL を実 PostgreSQL が受け付けるか
         run: bun run sql:parse
 
-      # 偽の db を差し込む継ぎ目が無い CLI と画面の route は、配る entrypoint を子プロセスで起動して
+      # 偽の db を差し込む継ぎ目が無い CLI は、配る entrypoint を子プロセスで起動して
       # 実 DB へ通す。SQL だけでなく、鍵とロールの権限と接続の後始末もここが見る。
-      - name: CLI と画面の API を実 PostgreSQL に通す
+      - name: CLI を実 PostgreSQL に通す
         run: bun run sql:live
 
       # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
@@ -90,7 +85,7 @@ jobs:
           tgz="$(npm pack --silent)"
           tar tzf "$tgz" | sort > /tmp/contents.txt
           for f in package/dist/cli.js package/dist/mcp.js package/dist/capture.js \
-                   package/dist/dashboard/index.html package/db/schema.sql package/db/compose.yaml \
+                   package/db/schema.sql package/db/compose.yaml \
                    package/LICENSE package/THIRD_PARTY_NOTICES.md; do
             grep -qx "$f" /tmp/contents.txt || { echo "tarball に $f が無い"; exit 1; }
           done
@@ -102,7 +97,8 @@ jobs:
           # 同梱物を配った配置のまま引けるか。dist と db の相対関係は
           # server/test/assets.test.ts が候補の計算ごと検査している。
           test -f "$out/package/dist/../db/schema.sql"
-          test -f "$out/package/dist/dashboard/index.html"
+          # Web の画面の資産は配らない（端末の画面へ移した）。残っていれば bundle の消し忘れ
+          test ! -e "$out/package/dist/dashboard"
 
       # 同じ知識が複数の出口に写されている場所の突き合わせ。README の CLI 一覧がずれていると、
       # check-pairs.mjs は書き直して staged へ戻し、0 で終わる。index ではなく HEAD と比べて落とす。

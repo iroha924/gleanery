@@ -5,8 +5,7 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 
 # 端末の画面を変更する
 
-`gleanery dashboard` は Ink で描く端末の画面で、**読むだけ**である（Web の画面から移した。Web の `dashboard/` を
-触るなら `ui-hono`）。
+`gleanery dashboard` は Ink で描く端末の画面で、**読むだけ**である。
 
 ## Triggers
 
@@ -45,7 +44,7 @@ description: gleaneryの端末の画面（`gleanery dashboard`、server/src/tui/
 | `tui/data.ts` | 画面が呼ぶ読み出しの型（`Data`）と本物の実装。test は偽の `Data` を渡す |
 | `tui/icons.ts` | 記号と読み込み中の回転（`TWINKLE`）を名前付きで持つ唯一の場所 |
 | `tui/markdown.ts` | AI の応答を ANSI にする |
-| `sessions.ts` | セッション・作業場所・作業の一覧の query（画面の API と共有） |
+| `sessions.ts` | セッション・作業場所・作業の一覧の query |
 
 ## 書き方
 

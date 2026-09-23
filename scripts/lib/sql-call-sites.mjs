@@ -10,8 +10,7 @@ import path from "node:path";
 // migration が台帳にも EXPLAIN にも載らないまま「全部見ている」ように読める。
 const SITE = /\.(?:execute|executeTakeFirst|executeTakeFirstOrThrow)\s*\(|\.query\s*[(<]/;
 // transaction を張る `.execute(fn)` は SQL を組み立てない。中の問い合わせが別の call site になる。
-// Hono の `c.req.query(...)` は SQL ではない（scripts/check-sql.mjs が同じ除外を持つ）。
-const NOT_A_QUERY = /\.transaction\(\)\s*\.execute\s*\(|\breq\.query\s*\(/;
+const NOT_A_QUERY = /\.transaction\(\)\s*\.execute\s*\(/;
 
 const walk = (dir) =>
   fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -36,12 +35,7 @@ export function callSites(root) {
  * 実 DB のレーン（scripts/check-sql-live.mjs）が受け持つファイル。偽の db を差し込む継ぎ目が無く、
  * 配る entrypoint を子プロセスで起動するほうが、role と接続まで一緒に見える。
  */
-export const LIVE_FILES = [
-  "server/src/cli.ts",
-  "server/src/github.ts",
-  "server/src/http/routes/knowledge.ts",
-  "server/src/capture.ts",
-];
+export const LIVE_FILES = ["server/src/cli.ts", "server/src/github.ts", "server/src/capture.ts"];
 
 /** 実 DB でも踏めない call site と、その理由。1 行 1 箇所で書く。 */
 export const ALLOWED_UNREACHED = [];
@@ -52,12 +46,6 @@ export const ALLOWED_UNREACHED = [];
  * 到達させて同時に 1 箇所足す取り替えを落とすために持つ。
  */
 export const ALLOWED_UNCOVERED = [
-  {
-    file: "server/src/titles.ts",
-    sites: 2,
-    uncovered: 1,
-    // 題を書き戻す更新は OpenAI の応答の後にある。対象 0 件で止めると、この 1 文だけ出ない。
-  },
   {
     file: "server/src/admin.ts",
     sites: 8,

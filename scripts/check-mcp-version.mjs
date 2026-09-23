@@ -8,7 +8,7 @@
 
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
-import { isPackageInput, releaseKind, withoutReleaseVersion } from "./lib/release-scope.mjs";
+import { isPackageInput, withoutReleaseVersion } from "./lib/release-scope.mjs";
 
 const { base } = parseArgs({ options: { base: { type: "string" } } }).values;
 
@@ -32,8 +32,7 @@ try {
 // 実測（2026-09-09）: Claude 側が 13 回上がるあいだ、**Codex 側は作られたときの 0.1.0 のまま
 // 一度も上がっていなかった。**このゲート自身が Claude 側しか見ていなかったため、
 // 「版を上げ忘れたら止まる」という約束が片側にしか効いていなかった。
-// npm package はdashboard/Honoだけのreleaseでも進む。plugin channelの3つは互いに揃えるが、
-// npm packageより古い状態を許す。
+// npm package と plugin channel の 3 つは、配布物を変えるたびに同じバージョンへ揃えて上げる。
 const PACKAGE = "plugin/package.json";
 const PLUGIN_MANIFESTS = {
   // **版は source の中にある。**entry 直下にも置くと、Claude Code は警告なく plugin.json を使い、
@@ -90,24 +89,8 @@ const changed = git("diff", "--cached", "--name-only", ref)
   );
 if (changed.length === 0) process.exit(0);
 
-const kind = releaseKind(changed);
 const oldPackageVersion = JSON.parse(at(ref, PACKAGE) ?? "{}").version;
 const oldPluginVersion = JSON.parse(at(ref, "plugin/.claude-plugin/plugin.json") ?? "{}").version;
-
-if (kind === "npm") {
-  if (oldPluginVersion !== pluginVersion) {
-    console.error(
-      `dashboard/Honoだけの変更ではplugin channelを更新しない（${oldPluginVersion} → ${pluginVersion}）。`,
-    );
-    process.exit(1);
-  }
-  if (oldPackageVersion !== packageVersion) process.exit(0);
-  console.error(
-    `npm packageの${changed.length}個が変わったのにバージョンが${packageVersion}のままになっている（${changed[0]}など）。\n\n` +
-      "  plugin manifestとmarketplaceは動かさず、plugin/package.jsonのversionだけを上げる。",
-  );
-  process.exit(1);
-}
 
 if (
   oldPackageVersion !== packageVersion &&

@@ -2,12 +2,9 @@
 // 束ねた依存の著作権表示とライセンス文を集める。
 //
 // **bundle して 1 ファイルにしても、同梱の義務は消えない。**MIT は著作権表示と許諾文の同梱を求め、
-// Apache-2.0 は 4 条で License の写しと（あれば）NOTICE の内容を、OFL はフォントの再配布に
-// 著作権表示とライセンスを求める。配る物には次が入るので、どれも対象になる。
+// Apache-2.0 は 4 条で License の写しと（あれば）NOTICE の内容を求める。配る物には次が入るので対象になる。
 //
-//   dist/{cli,mcp,capture}.js  server の依存を束ねたもの（pg の optional な pg-cloudflare も入る）
-//   dist/dashboard/*.js        React・TanStack・Radix などを束ねたもの
-//   dist/dashboard/*.woff2     @fontsource-variable/m-plus-1 が配るフォントの実体（OFL）
+//   dist/{cli,mcp,capture}.js  server の依存を束ねたもの（pg の optional な pg-cloudflare、Ink と React も入る）
 //
 // **optional を外さない。**「取り込まれない」と決めつけると、実際に束ねられたものを落とす
 // （実測: pg-cloudflare が dist/cli.js に入っていた）。多く挙げる方へ倒す — 足りない側の誤りだけが
@@ -19,8 +16,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-/** 束ねる入力を持つ 2 つのワークスペース。どちらの node_modules も見る。 */
-const WORKSPACES = ["server", "dashboard"];
+/** 束ねる入力を持つワークスペース。 */
+const WORKSPACES = ["server"];
 
 const read = (p) => {
   try {
@@ -32,8 +29,7 @@ const read = (p) => {
 
 /**
  * name を from から辿って解決する。node の解決と同じく、近い node_modules から上へ探す。
- * 同じ名前で版が違う実体が並ぶので（実測: server に react 19.2.8、dashboard に 19.3.0）、
- * どのワークスペースから来た依存かで解決先を変えないと、配る物と違う版を載せる。
+ * 同じ名前で版が違う実体が並ぶので（入れ子の chalk 4 と 5 など）、解決先の実体で数えないと、配る物と違う版を載せる。
  */
 const resolveFrom = (from, name) => {
   for (let dir = from; ; dir = path.dirname(dir)) {
