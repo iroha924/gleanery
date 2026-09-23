@@ -2,17 +2,17 @@
 // 検索と参照は search.ts の関数を使い、ここには人向けの並べ方と束ね方だけを置く。
 
 import { type Kysely, type SqlBool, sql } from "kysely";
-import type { Env } from "./db.ts";
+import { jsonArrayFrom } from "kysely/helpers/sqlite";
 import type { DB } from "./db-types.ts";
 import { labelOf } from "./knowledge.ts";
-import { type Hit, type Scope, searchKnowledge, searchMessages, type Work } from "./search.ts";
+import { type Hit, type Scope, searchMessages, searchSplit, toWork, type Work, workBase } from "./search.ts";
 
 // session の題。持ち主の最初の発言、それが無ければ（trace だけで残した session）結んだ作業の題。
-// 題を生成して保存することはしない（生成 API を持たない。conversation.title は読まない）。
-const TITLE = `coalesce(
-  (select left(m.body, 200) from gleanery.message m
-   where m.conversation_id = c.id and m.speaker_kind = 'self' order by m.sent_at limit 1),
-  (select w.title from gleanery.work_item w where w.conversation_id = c.id order by w.updated_at desc limit 1))`;
+// 題を生成して保存することはしない（生成 API を持たない）。
+const TITLE = sql<string | null>`coalesce(
+  (select substr(m.body, 1, 200) from message m
+   where m.conversation_id = c.id and m.speaker_kind = 'self' order by m.sent_at, m.seq limit 1),
+  (select w.title from work_item w where w.conversation_id = c.id order by w.updated_at desc, w.id desc limit 1))`;
 
 const OPENING = /^\s*<([a-z][\w-]*)(?:\s[^>]*)?>\s*/i;
 
@@ -39,25 +39,36 @@ export type Project = {
 };
 
 export async function projects(db: Kysely<DB>): Promise<Project[]> {
-  return db
-    .selectFrom("gleanery.project as p")
-    .leftJoin("gleanery.connector as cn", "cn.project_id", "p.id")
-    .select([
-      sql<number>`p.id::int`.as("id"),
+  const rows = await db
+    .selectFrom("project as p")
+    .select((eb) => [
+      "p.id",
       "p.key",
       "p.name",
-      sql<number>`(select count(*) from gleanery.conversation c
-        where c.project_id = p.id and c.origin <> 'github')::int`.as("sessions"),
-      sql<number>`(select count(*) from gleanery.knowledge k
-        where k.project_id = p.id and k.kind <> 'document')::int`.as("knowledge"),
-      sql<Project["connectors"]>`
-        coalesce(json_agg(json_build_object('provider', cn.provider, 'lastSuccessAt', cn.last_success_at,
-                                            'lastError', cn.last_error) order by cn.provider)
-                 filter (where cn.id is not null), '[]')`.as("connectors"),
+      sql<number>`(select count(*) from conversation c where c.project_id = p.id and c.origin <> 'github')`.as(
+        "sessions",
+      ),
+      sql<number>`(select count(*) from knowledge k where k.project_id = p.id and k.kind <> 'document')`.as(
+        "knowledge",
+      ),
+      jsonArrayFrom(
+        eb
+          .selectFrom("connector as cn")
+          .select(["cn.provider", "cn.last_success_at", "cn.last_error"])
+          .whereRef("cn.project_id", "=", "p.id")
+          .orderBy("cn.provider"),
+      ).as("connectors"),
     ])
-    .groupBy("p.id")
     .orderBy("p.name")
     .execute();
+  return rows.map((r) => ({
+    ...r,
+    connectors: r.connectors.map((c) => ({
+      provider: c.provider,
+      lastSuccessAt: c.last_success_at === null ? null : new Date(c.last_success_at),
+      lastError: c.last_error,
+    })),
+  }));
 }
 
 export type SessionRow = {
@@ -91,14 +102,13 @@ export async function listSessions(
   q: { project?: number | null; page: number; pageSize: number },
 ): Promise<SessionsPage> {
   const project = q.project ?? null;
-  const scoped = db
-    .selectFrom("gleanery.conversation as c")
-    .where("c.origin", "<>", "github")
-    .where(sql<SqlBool>`(${project}::bigint is null or c.project_id = ${project})`);
-  const counted = await scoped.select((eb) => eb.fn.countAll().as("n")).executeTakeFirst();
-  const total = Number(counted?.n ?? 0);
+  let scoped = db.selectFrom("conversation as c").where("c.origin", "<>", "github");
+  if (project !== null) scoped = scoped.where("c.project_id", "=", project);
+  const counted = await scoped.select((eb) => eb.fn.countAll<number>().as("n")).executeTakeFirst();
+  const total = counted?.n ?? 0;
+  const lastAt = sql<string | null>`(select max(m.sent_at) from message m where m.conversation_id = c.id)`;
   const items = await scoped
-    .innerJoin("gleanery.project as p", "p.id", "c.project_id")
+    .innerJoin("project as p", "p.id", "c.project_id")
     .select([
       "c.id",
       "c.origin",
@@ -106,26 +116,31 @@ export async function listSessions(
       "c.branch",
       "c.started_at as startedAt",
       "p.name as project",
-      sql<Date | null>`(select max(m.sent_at) from gleanery.message m where m.conversation_id = c.id)`.as(
-        "lastAt",
+      lastAt.as("lastAt"),
+      TITLE.as("title"),
+      sql<number>`(select count(*) from message m where m.conversation_id = c.id and m.speaker_kind = 'self')`.as(
+        "said",
       ),
-      sql<string>`${sql.raw(TITLE)}`.as("title"),
-      sql<number>`(select count(*) from gleanery.message m
-        where m.conversation_id = c.id and m.speaker_kind = 'self')::int`.as("said"),
-      sql<number>`(select count(*) from gleanery.knowledge k
-        where k.conversation_id = c.id and k.kind <> 'option')::int`.as("traced"),
-      sql<number>`(select count(distinct f.path) from gleanery.message_file f
-        join gleanery.message m on m.id = f.message_id where m.conversation_id = c.id)::int`.as("files"),
+      sql<number>`(select count(*) from knowledge k where k.conversation_id = c.id and k.kind <> 'option')`.as(
+        "traced",
+      ),
+      sql<number>`(select count(distinct f.path) from message_file f
+        join message m on m.id = f.message_id where m.conversation_id = c.id)`.as("files"),
     ])
-    .orderBy(
-      sql`coalesce((select max(m.sent_at) from gleanery.message m where m.conversation_id = c.id), c.started_at)`,
-      "desc",
-    )
+    .orderBy(sql`coalesce(${lastAt}, c.started_at)`, "desc")
+    .orderBy("c.id")
     .limit(q.pageSize)
     .offset((q.page - 1) * q.pageSize)
     .execute();
   return {
-    items: items.map((i) => ({ ...i, title: bare(i.title) })),
+    items: items.map((i) => ({
+      ...i,
+      startedAt: new Date(i.startedAt),
+      lastAt: i.lastAt === null ? null : new Date(i.lastAt),
+      // 発言も作業も持たない session は無い（自動記録は発言と一緒に会話を作り、trace は作業を作る）。
+      // 発言も作業も持たない session（trace だけで作業を結ばなかった）は題が無い。空欄にせず session を名指す
+      title: bare(i.title ?? "") || `（題なし）${i.sessionId}`,
+    })),
     total,
     page: q.page,
     pageSize: q.pageSize,
@@ -148,34 +163,36 @@ export type FoundSession = {
  */
 export async function searchSessions(
   db: Kysely<DB>,
-  env: Env,
   q: { q: string; mode: "knowledge" | "avoid" | "said"; project?: number | null },
 ): Promise<FoundSession[]> {
   const projects = q.project ? [q.project] : null;
   const hits: Hit[] =
     q.mode === "said"
-      ? await searchMessages(db, env, { question: q.q, projects, who: "me", sessionsOnly: true, limit: 20 })
-      : await searchKnowledge(db, env, { question: q.q, projects, avoid: q.mode === "avoid", limit: 20 });
+      ? await searchMessages(db, { question: q.q, projects, who: "me", sessionsOnly: true, limit: 20 })
+      : (await searchSplit(db, { question: q.q, projects, avoid: q.mode === "avoid", limit: 20 })).records;
   if (hits.length === 0) return [];
-  const [table, id] = q.mode === "said" ? ["gleanery.message", "uuid"] : ["gleanery.knowledge", "bigint"];
-  // 引いた先の表が mode で変わる（発言か知識か）。表と id の型が実行時に決まるので、ここだけ組み立てる。
-  const owners = await sql<{
-    ref: string;
-    id: string;
-    sessionId: string;
-    origin: string;
-    project: string;
-    title: string | null;
-  }>`
-    select x.id::text as ref, c.id, c.external_id as "sessionId", c.origin, p.name as project,
-           ${sql.raw(TITLE)} as title
-    from ${sql.table(table)} x
-    join gleanery.conversation c on c.id = x.conversation_id
-    join gleanery.project p on p.id = c.project_id
-    where x.id = any(${hits.map((h) => h.ref.slice(2))}::${sql.raw(id)}[]) and c.origin <> 'github'`.execute(
-    db,
-  );
-  const ownerOf = new Map(owners.rows.map((o) => [o.ref, o]));
+  // 引いた先の表が mode で変わる（発言か知識か）。
+  const ids = hits.map((h) => h.ref.slice(2));
+  const owners = await db
+    .selectFrom("conversation as c")
+    .innerJoin("project as p", "p.id", "c.project_id")
+    .$if(q.mode === "said", (b) =>
+      b.innerJoin("message as x", "x.conversation_id", "c.id").where("x.id", "in", ids),
+    )
+    .$if(q.mode !== "said", (b) =>
+      b.innerJoin("knowledge as x", "x.conversation_id", "c.id").where("x.id", "in", ids.map(Number)),
+    )
+    .select([
+      sql<string>`cast(x.id as text)`.as("ref"),
+      "c.id",
+      "c.external_id as sessionId",
+      "c.origin",
+      "p.name as project",
+      TITLE.as("title"),
+    ])
+    .where("c.origin", "<>", "github")
+    .execute();
+  const ownerOf = new Map(owners.map((o) => [o.ref, o]));
   const sessions = new Map<string, FoundSession>();
   for (const h of hits) {
     const o = ownerOf.get(h.ref.slice(2));
@@ -199,131 +216,102 @@ export type SessionDetail = NonNullable<Awaited<ReturnType<typeof sessionDetail>
 /** session 1 件の発言・触ったファイル・trace した知識と作業・読んだ承認済みの要件定義と設計書。無ければ null。 */
 export async function sessionDetail(db: Kysely<DB>, id: string) {
   const conversation = await db
-    .selectFrom("gleanery.conversation as c")
-    .innerJoin("gleanery.project as p", "p.id", "c.project_id")
+    .selectFrom("conversation as c")
+    .innerJoin("project as p", "p.id", "c.project_id")
     .select([
       "c.id",
       "c.origin",
       "c.external_id as sessionId",
       "c.branch",
       "c.started_at as startedAt",
-      sql<number>`p.id::int`.as("projectId"),
+      "p.id as projectId",
       "p.name as project",
       // 本文の #123 を issue へ繋ぐのに、表示名ではなく key が要る（ホストが入っている）。
       "p.key as projectKey",
-      sql<string>`${sql.raw(TITLE)}`.as("title"),
+      TITLE.as("title"),
     ])
     .where("c.id", "=", id)
     .where("c.origin", "<>", "github")
     .executeTakeFirst();
   if (!conversation) return null;
   const messages = await db
-    .selectFrom("gleanery.message as m")
-    .leftJoin("gleanery.message_file as f", "f.message_id", "m.id")
-    .select([
+    .selectFrom("message as m")
+    .select((eb) => [
       "m.id",
       "m.speaker_kind as speaker",
       "m.body",
       "m.sent_at as sentAt",
       "m.truncated",
       "m.original_bytes as originalBytes",
-      sql<{ path: string; action: string }[]>`
-        coalesce(json_agg(json_build_object('path', f.path, 'action', f.action) order by f.path)
-                 filter (where f.path is not null), '[]')`.as("files"),
+      jsonArrayFrom(
+        eb
+          .selectFrom("message_file as f")
+          .select(["f.path", "f.action"])
+          .whereRef("f.message_id", "=", "m.id")
+          .orderBy("f.path")
+          .orderBy("f.action"),
+      ).as("files"),
     ])
     .where("m.conversation_id", "=", id)
-    .groupBy("m.id")
     .orderBy("m.sent_at")
+    .orderBy("m.seq")
     .execute();
   const knowledge = await db
-    .selectFrom("gleanery.knowledge as k")
+    .selectFrom("knowledge as k")
     .select([
-      sql<number>`k.id::int`.as("id"),
+      "k.id",
       "k.kind",
       "k.status",
-      "k.stance",
+      // 生成列（型の生成が拾わない）。
+      sql<Hit["stance"]>`k.stance`.as("stance"),
       "k.body",
       "k.reason",
       "k.confirmation",
       "k.downsides",
       "k.occurred_at as at",
-      sql<number | null>`k.decision_id::int`.as("decisionId"),
+      "k.decision_id as decisionId",
     ])
     .where("k.conversation_id", "=", id)
     .orderBy("k.occurred_at")
     .orderBy("k.id")
     .execute();
-  const work = await db
-    .selectFrom("gleanery.work_item as w")
-    .select([
-      sql<number>`w.id::int`.as("id"),
-      "w.title",
-      "w.goal",
-      "w.current",
-      "w.next",
-      "w.status",
-      "w.updated_at as updatedAt",
-    ])
-    .where("w.conversation_id", "=", id)
-    .execute();
+  const work = await workBase(db).where("w.conversation_id", "=", id).orderBy("w.id").execute();
   // この session が触った承認済みの要件定義・設計書。同じ作業場所で同期された原文だけを返す
   // （任意の path を指定して別の作業場所の本文を取れる入口にしない）。
   const artifacts = await db
-    .selectFrom("gleanery.message_file as f")
-    .innerJoin("gleanery.message as m", "m.id", "f.message_id")
-    .innerJoin("gleanery.source_item as s", (j) =>
-      j.onRef("s.path", "=", "f.path").on("s.kind", "in", ["requirements", "design"]),
-    )
-    .innerJoin("gleanery.connector as cn", (j) =>
-      j.onRef("cn.id", "=", "s.connector_id").on("cn.project_id", "=", String(conversation.projectId)),
-    )
-    .distinctOn("s.id")
+    .selectFrom("source_item as s")
+    .innerJoin("connector as cn", "cn.id", "s.connector_id")
     .select([
       "s.kind",
-      sql<string | null>`s.metadata->>'change'`.as("change"),
-      sql<string | null>`s.metadata->>'changeTitle'`.as("title"),
+      sql<string | null>`json_extract(s.metadata, '$.change')`.as("change"),
+      sql<string | null>`json_extract(s.metadata, '$.changeTitle')`.as("title"),
       "s.path",
       "s.body as content",
       "s.synced_at as syncedAt",
     ])
-    .where("m.conversation_id", "=", id)
+    .where("s.kind", "in", ["requirements", "design"])
+    .where("cn.project_id", "=", conversation.projectId)
+    .where(
+      sql<SqlBool>`exists (select 1 from message_file f join message m on m.id = f.message_id
+        where f.path = s.path and m.conversation_id = ${id})`,
+    )
     .orderBy("s.id")
     .execute();
   return {
     ...conversation,
-    title: bare(conversation.title),
-    messages,
-    knowledge: knowledge.map((k) => ({ ...k, label: labelOf(k) })),
-    work,
-    artifacts,
+    startedAt: new Date(conversation.startedAt),
+    title: bare(conversation.title ?? "") || `（題なし）${conversation.sessionId}`,
+    messages: messages.map((m) => ({ ...m, sentAt: new Date(m.sentAt), truncated: m.truncated === 1 })),
+    knowledge: knowledge.map((k) => ({ ...k, at: new Date(k.at), label: labelOf(k) })),
+    work: work.map(toWork),
+    artifacts: artifacts.map((a) => ({ ...a, syncedAt: new Date(a.syncedAt) })),
   };
 }
 
 /** trace した作業を、終わったものも含めて新しい順に。再開に要る詳しい中身は search.ts の workDetail で読む。 */
 export async function listWork(db: Kysely<DB>, projects: Scope, limit = 100): Promise<Work[]> {
-  let q = db
-    .selectFrom("gleanery.work_item as w")
-    .innerJoin("gleanery.project as p", "p.id", "w.project_id")
-    .select([
-      sql<string>`w.id::text`.as("id"),
-      "p.name as project",
-      "w.title",
-      "w.goal",
-      "w.current",
-      "w.next",
-      "w.status",
-      "w.updated_at",
-    ]);
-  if (projects) q = q.where(sql<SqlBool>`w.project_id = any(${projects})`);
+  let q = workBase(db);
+  if (projects) q = q.where("w.project_id", "in", projects);
   const rows = await q.orderBy("w.updated_at", "desc").orderBy("w.id", "desc").limit(limit).execute();
-  return rows.map((w) => ({
-    ref: `w:${w.id}`,
-    project: w.project,
-    title: w.title,
-    goal: w.goal,
-    current: w.current,
-    next: w.next,
-    status: w.status,
-    updatedAt: w.updated_at,
-  }));
+  return rows.map(toWork);
 }

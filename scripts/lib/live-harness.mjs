@@ -7,7 +7,9 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { root } from "./temp-postgres.mjs";
+import url from "node:url";
+
+export const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..", "..");
 
 /** 子プロセスの上限。超えたら殺して、その事実を検査の失敗として扱う。 */
 const TIMEOUT_MS = 120_000;
@@ -46,7 +48,7 @@ export function fakeGh(dir) {
 const args = process.argv.slice(2).join(" ");
 const out = (v) => process.stdout.write(JSON.stringify([v]));
 const person = { id: 1, login: "someone" };
-// 2 巡目は発言を減らす。消えた発言を消す枝は、前より減ったときにしか通らない。
+// 2 巡目は発言と issue を減らす。消えた発言・消えた issue を消す枝は、前より減ったときにしか通らない。
 const round2 = process.env.GLEANERY_FAKE_GH_ROUND === "2";
 if (args.includes("pulls/comments")) {
   if (round2) { out([]); process.exit(0); }
@@ -54,6 +56,7 @@ if (args.includes("pulls/comments")) {
          body: "ここは実 DB で確かめたい", created_at: "2026-09-02T00:00:00Z",
          html_url: "https://example.invalid/1#r11", path: "docs/design.md", line: 3 }]);
 } else if (args.includes("issues/comments")) {
+  if (round2) { out([]); process.exit(0); }
   out([{ id: 12, issue_url: "https://api.github.com/repos/example/live/issues/2", user: person,
          body: "偽の db では権限が見えない", created_at: "2026-09-03T00:00:00Z",
          html_url: "https://example.invalid/2#c12" }]);
@@ -62,6 +65,7 @@ if (args.includes("pulls/comments")) {
          created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-02T00:00:00Z",
          html_url: "https://example.invalid/1", merged_at: null, closed_at: null }]);
 } else if (args.includes("issues?")) {
+  if (round2) { out([]); process.exit(0); }
   out([{ number: 2, title: "はじめの issue", body: "本文", state: "closed", user: person,
          created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-03T00:00:00Z",
          html_url: "https://example.invalid/2", closed_at: "2026-09-03T00:00:00Z" }]);
@@ -74,33 +78,19 @@ if (args.includes("pulls/comments")) {
   return bin;
 }
 
-/** 資格情報を置く。CLI は GLEANERY_ENV_DIR/.env から読む（db.ts の loadEnv）。 */
-export function writeEnv(dir, urls) {
-  fs.writeFileSync(
-    path.join(dir, ".env"),
-    [
-      `GLEANERY_DB_URL_RO=${urls.reader}`,
-      `GLEANERY_DB_URL_INGEST=${urls.ingest}`,
-      `GLEANERY_DB_URL_CAPTURE=${urls.capture}`,
-      "",
-    ].join("\n"),
-    { mode: 0o600 },
-  );
-}
-
 /**
- * 子プロセスの環境。外部サービスの鍵を渡さない。渡さないことが、外部 API へ出る経路を
- * 実行しない唯一の保証になる（親の環境に鍵があっても、ここで落とす）。
+ * 子プロセスの環境。DB は一時 HOME の ~/.gleanery/gleanery.db（`gleanery db init` で作る）。
+ * GitHub の鍵を渡さない（偽の gh だけを使う）。
  */
 export function childEnv(dir, covDir, extra = {}) {
   const env = { ...process.env, ...extra };
   // **home を付け替える。**付け替えないと、子プロセスは持ち主の ~/.gleanery を使う。
-  // `loadEnv` が ~/.gleanery/env から VOYAGE_API_KEY を拾って実際に外部 API を叩き、
   // `capture flush` は ~/.gleanery/spool の待ち行列を読んで、送り終えた分を消す（実測: 持ち主の
-  // 未送信 4 件を使い捨ての DB へ送り、spool から消した）。env を消すだけでは塞がらない。
+  // 未送信 4 件を使い捨ての DB へ送り、spool から消した）。DB の path を変えるだけでは塞がらない。
   env.HOME = dir;
   env.USERPROFILE = dir;
-  for (const k of ["VOYAGE_API_KEY", "GLEANERY_DB_URL", "GITHUB_TOKEN"]) delete env[k];
+  // 親の GLEANERY_DB が残ると、子は一時 HOME ではなくそちらの DB を開く。
+  for (const k of ["GLEANERY_DB", "GITHUB_TOKEN"]) delete env[k];
   // ホストの session は親から漏れ込む。両方あると CLI が「どちらのホストか決められない」で止まるので、
   // 検査が渡したものだけを残す。
   for (const k of ["CODEX_THREAD_ID", "CODEX_SESSION_ID"]) delete env[k];
@@ -111,7 +101,6 @@ export function childEnv(dir, covDir, extra = {}) {
   delete env.CLAUDE_CODE_ENTRYPOINT;
   return {
     ...env,
-    GLEANERY_ENV_DIR: dir,
     NODE_V8_COVERAGE: covDir,
     PATH: `${path.join(dir, "bin")}${path.delimiter}${process.env.PATH}`,
   };

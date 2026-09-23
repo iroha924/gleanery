@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// 過去の判断・会話・文書を Claude Code と Codex から引く MCP サーバー。**DB は読むだけ**（reader の鍵）。
+// 過去の判断・会話・文書を Claude Code と Codex から引く MCP サーバー。**DB は読むだけ**（読む接続。sqlite.ts）。
 // 手元に書くのは、check_path がフックの効き目を測る ~/.gleanery/advice.jsonl だけ。
 //
-// 汎用の Postgres MCP では意味検索ができない（質問を埋め込むのに Voyage を呼ぶ必要がある）ので自前で持つ。
+// 検索は呼び出し側の AI が語を変えて繰り返す（agentic search）。ここは語の順位付き検索と部分一致だけを返す。
 // tool は 3 つ。recall（探す）、read（参照を読む）、check_path（編集の前に、そのファイルにかかる制約を引く）。
+// **応答は text content だけで返す。**structuredContent を付けると両ホストとも text をモデルへ渡さず、
+// outputSchema を宣言すると SDK が structuredContent の欠落を例外にする（plan 2 章）。
 
 import fs from "node:fs";
 import os from "node:os";
@@ -11,7 +13,7 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { loadEnv, open } from "./db.ts";
+import { openReader } from "./db.ts";
 import { KINDS } from "./knowledge.ts";
 import { ROOT, versionAt } from "./plugin.ts";
 import { identify, type Place, patchPaths, projectId, relativeTo } from "./project.ts";
@@ -26,15 +28,21 @@ import {
   renderWork,
   searchKnowledge,
   searchMessages,
+  searchSplit,
+  splitJson,
   workDetail,
 } from "./search.ts";
-import { head, reason } from "./text.ts";
+import { requireRuntime } from "./sqlite.ts";
+import { ftsQuery, head, reason } from "./text.ts";
 
-const env = loadEnv();
-const db = open(env, "reader");
+requireRuntime();
+const db = openReader();
 const VERSION = versionAt(ROOT);
 
-/** recall の応答の上限。検索結果は候補であり、全文は read で読む。 */
+/**
+ * 応答の上限（バイト）。**Codex は 1 回の応答が約 10,000 tokens を超えるとその場で切り詰め、JSON は壊れて届く。**
+ * 日本語は 1 字 3 バイトでほぼ 1 token なので、8 KiB でも 3,000 tokens 前後に収まる。検索結果は候補で、全文は read で読む。
+ */
 const RECALL_BYTES = 4 * 1024;
 const READ_BYTES = 8 * 1024;
 const PATH_BYTES = 2 * 1024;
@@ -77,6 +85,8 @@ const server = new McpServer(
     instructions: [
       "過去の判断・会話・文書を引く（DB は読むだけ）。",
       "方針を決める前や実装に入る前は recall。棄却済みか確かめるなら mode: avoid。",
+      "検索は語の一致で引く。語を変えて何度でも引いてよい（日本語と英語の両方、同義語、短い語）。1 回で当たらなくても 0 件を「無い」と読まない。",
+      "候補は冒頭だけなので、判断に使う前に read で全文を確かめる。種類で絞るとき（決定・棄却案・行き止まり）は kinds を使う。",
       "「私は／◯◯さんはなんて言った？」は mode: said、「続きをやる」は mode: resume。",
       "詳しくは結果の参照（k: / m: / s: / w:）を read に渡す。",
       "どれも cwd にリポジトリの根を渡す。省くと別の作業場所を引き、その 0 件を「無い」と読み違える。",
@@ -105,7 +115,9 @@ server.registerTool(
     description:
       "過去の決定・棄却した案・制約・行き止まり・検証・問い・文書（mode: knowledge）、" +
       "通ってはいけない道だけ（mode: avoid）、持ち主や他の人の発言（mode: said）、進行中の作業（mode: resume）を引く。" +
-      "既定はいまの作業場所だけ。結果は候補で、全文は read で読む。",
+      "既定はいまの作業場所だけ。結果は候補で、全文は read で読む。" +
+      "語の一致で引くので、当たらなければ語を変えて（日本語と英語、同義語、短い語）何度でも引く。0 件を「無い」と読まない。" +
+      "kinds を省いた knowledge は、判断の記録（records）と文書の節（documents）を別の欄にした JSON で返す。",
     inputSchema: {
       question: z
         .string()
@@ -121,7 +133,13 @@ server.registerTool(
       kinds: z
         .array(z.enum(KINDS))
         .optional()
-        .describe("種類で絞る。document（リポジトリの文書）は指定したときだけ出る"),
+        .describe("種類で絞る（決定・棄却した案・行き止まりなど）。省くと記録と文書を別の欄で返す"),
+      match: z
+        .enum(["words", "exact"])
+        .optional()
+        .describe(
+          "words（既定）は語の一致で順位を付ける。exact は部分一致で、語に切れない固有名・記号・版番号に使う",
+        ),
       path: z
         .string()
         .optional()
@@ -147,7 +165,8 @@ server.registerTool(
       if (mode === "resume") {
         const works = await openWork(db, projects, 10);
         if (works.length === 0) return text("進行中の作業は無い。");
-        const only = works.length === 1 && works[0] ? await workDetail(db, works[0].ref.slice(2)) : null;
+        const only =
+          works.length === 1 && works[0] ? await workDetail(db, Number(works[0].ref.slice(2))) : null;
         if (only) return text(framed(renderWork(only, RECALL_BYTES)));
         return text(
           framed(
@@ -161,10 +180,11 @@ server.registerTool(
         );
       }
       if (mode === "said") {
-        const hits = await searchMessages(db, env, {
+        const hits = await searchMessages(db, {
           question: a.question,
           projects,
           who: a.who ?? "me",
+          match: a.match,
           path: file,
           since: a.since,
           until: a.until,
@@ -173,17 +193,28 @@ server.registerTool(
         return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当する発言は無い。");
       }
       if (!a.question?.trim()) return text("question が要る（mode: knowledge / avoid）。");
-      const hits = await searchKnowledge(db, env, {
+      const q = {
         question: a.question,
         projects,
-        kinds: a.kinds,
         avoid: mode === "avoid",
+        match: a.match,
         path: file,
         since: a.since,
         until: a.until,
         limit,
-      });
-      return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当なし。");
+      };
+      if (!a.kinds?.length) {
+        const split = await searchSplit(db, q);
+        if (!split.records.length && !split.documents.length)
+          return text(
+            a.match !== "exact" && ftsQuery(a.question) === null
+              ? "問いに引ける語が無い（ひらがなだけ・記号だけ）。漢字・カタカナ・英語の語に変えるか、match: exact で引く。"
+              : "該当なし。語を変えて（同義語・英語・短い語、match: exact）引き直す。",
+          );
+        return text(framed(splitJson(split, RECALL_BYTES)));
+      }
+      const hits = await searchKnowledge(db, { ...q, kinds: a.kinds });
+      return text(hits.length ? framed(renderHits(hits, RECALL_BYTES)) : "該当なし。語を変えて引き直す。");
     } catch (e) {
       return failed(e);
     }

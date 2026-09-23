@@ -21,11 +21,14 @@ pre-commit:
         set -e
         bun run bundle
         bun run scripts/check-mcp-version.mjs
-    # 見るのは SQL の書き方だけ。組み立てた SQL を実 PostgreSQL へ通す `sql:parse` は Docker が
-    # 要るのでここでは走らせない。構文エラー・消えた列・一意 index の無い on conflict は CI だけが見る。
+    # 見るのは SQL の書き方だけ。SQL が本物の SQLite で実行されたか（sql:reach）と子プロセスのレーン（sql:live）は
+    # test を流し直すので、pre-push の verify と CI が見る。
     - name: sql
       glob: "{server/src/**/*.ts,server/test/**/*.ts,scripts/check-sql.mjs}"
       run: bun run sql
+    - name: architecture
+      glob: "{server/src/**/*.ts,scripts/check-architecture.mjs}"
+      run: bun run architecture
     - name: pairs
       glob: "{db/schema.sql,server/src/*.ts,README.md,plugin/skills/review/SKILL.md,plugin/skills/review/reviewers/*.md,scripts/check-pairs.mjs}"
       # git add をここに書かない。無条件に走ると README の別件の編集まで巻き込む。

@@ -22,7 +22,7 @@ export async function runTui(cwd: string): Promise<void> {
   try {
     live = await liveData(cwd);
   } catch (e) {
-    throw new Error(`DB に繋げなかった（${reason(e)}）。\`gleanery doctor\` で鍵と接続を確かめる`);
+    throw new Error(`DB に繋げなかった（${reason(e)}）。\`gleanery doctor\` の DB の節で確かめる`);
   }
   const { data, close } = live;
   try {

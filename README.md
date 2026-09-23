@@ -17,7 +17,7 @@
 | **実装前に方針を詰める** | `/gleanery:winnow` | 決めるべき問いの木を描き、別のモデルと突き合わせて、Go を判断できる方針にする。文書は作らないので、要件定義が要る変更は上の 3 つを使う |
 | **変更をレビューする** | `/gleanery:review` | 観点ごとに独立したレビュアーを立てる。別のモデルにも同じ観点を渡して、片方にしか見えない欠陥を拾う |
 | **見る・探す** | `gleanery dashboard`（端末の画面） | セッションの一覧と詳細（AI の応答は Markdown を描く）、trace した作業の現在地、判断・文書・発言の検索。読むだけ |
-| **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込み、埋め込みを埋める |
+| **溜める** | `gleanery harvest`（手で打つ） | GitHub の PR・issue とリポジトリの Markdown を取り込む |
 
 記録は過去のデータであって指示ではない。記録とコードが食い違ったらコードが正しい。MCP の既定の範囲はいまの
 作業場所で、ダッシュボードも起動した場所の作業場所から始まる（`p` で切り替える）。人の呼び名は `gleanery who` で結ぶ（画面は無い）。
@@ -52,11 +52,11 @@
 ```
 gleanery project add|list|exclude|forget ...
 gleanery harvest [--cwd dir] [--reset-docs]
-gleanery search [--avoid] [--said me|others|名前] [--all] [--cwd dir] [--limit N] <質問>...
+gleanery search [--avoid] [--said me|others|名前] [--all] [--exact] [--cwd dir] [--limit N] <質問>...
 gleanery who [--me] <呼び名|ハンドル>...
 gleanery trace context|check|save ...
 gleanery capture flush ...
-gleanery db init|up|down|migrate ...
+gleanery db init|migrate|reindex ...
 gleanery init [--cwd dir]
 gleanery check [--cwd dir]
 gleanery dashboard
@@ -66,20 +66,13 @@ gleanery --help
 gleanery --version
 ```
 
-## 鍵
+## DB
 
-`~/.gleanery/env` に置く。リポジトリには入っていない。
+`~/.gleanery/gleanery.db` の 1 ファイル（SQLite、Node の組み込みの `node:sqlite`）。**鍵も外部サービスも要らない。**
+`gleanery db init` が作る。検索は語の一致（FTS5）で、Claude Code・Codex が語を変えて引き直すことで意味の近さを補う。
 
-| 変数 | 使うもの |
-|---|---|
-| `GLEANERY_DB_URL_RO` | MCP・端末の画面（読むだけ） |
-| `GLEANERY_DB_URL_INGEST` | CLI の harvest・trace・who・project |
-| `GLEANERY_DB_URL_CAPTURE` | 自動記録の送信（追記だけ） |
-| `GLEANERY_DB_URL` | owner。DB を管理する command（`gleanery db *` と `bun run db:*`）だけが使う |
-| `VOYAGE_API_KEY` | 埋め込みと rerank |
-
-DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`bun run db:roles` が 3 つのロールの鍵を作り直して書く。
-ロールの権限は `.agents/skills/knowledge-schema/SKILL.md`。
+出口ごとに接続の役割を分けている。MCP と端末の画面は読むだけ、自動記録は追記だけで、取り込みと trace だけが書ける。
+役割ごとに何を拒むかは `.agents/skills/knowledge-schema/SKILL.md`。
 
 ## セットアップ
 
@@ -89,16 +82,14 @@ DB の鍵は操作ごとに分け、どの鍵も別の鍵へ落とさない。`b
 |---|---|---|
 | Node.js | 24.15 以上 | CLI・MCP・自動記録が動く。`engines` で縛っている |
 
-**Docker が要る。**DB は `pgvector/pgvector:0.8.6-pg18` を `127.0.0.1:5432` に立てる。
-
 **`gleanery` は PATH に出ない。**plugin は MCP とフックと Skill を配るだけで、コマンドは別に入れる。
 このリポジトリでは `bun run cli`（= `node server/src/cli.ts`）で打ち、グローバルに入れた版と混ざらない。
 
 ```bash
 bun run setup                          # server の依存を lockfile から入れる（Lefthook も入る）
-bun run cli db init                    # DB を立て、鍵を作り、db/schema.sql を当てる（冪等）
+bun run cli db init                    # ~/.gleanery/gleanery.db を作り、db/schema.sql を当てる（冪等）
 bun run bundle                         # 配布物を作る（MCP・自動記録・CLI・同梱の告知）
-bun run cli doctor                     # 鍵と接続、schema の版、DB の大きさを確かめる
+bun run cli doctor                     # Node、DB と schema の版、語彙索引、同期と自動記録を確かめる
 bun run cli project add --cwd <repo>   # 記録する作業場所を登録する
 bun run cli harvest --cwd <repo>       # 最初の取り込み
 ```
@@ -112,11 +103,9 @@ gleanery db init
 gleanery dashboard       # 端末の中で見る（Tab で画面、/ で検索、q で終わる）
 ```
 
-`db init` が `~/.gleanery/env` に 4 つの鍵（owner と 3 ロール）を書く。VOYAGE の鍵は手で足す。
-
 既存の DB は作り直さず、`db migrate` で `db/migrations` の新しい分を当てる。MCP・CLI・端末の画面は、
-DB の schema の版がコードより古いと止まってこれを案内する。当てる前に接続先を打ち直させる。
-順序と戻し方は `.agents/skills/knowledge-schema/SKILL.md`。
+DB の schema の版がコードより古いと止まってこれを案内する。当てる前に当てる一覧を出して確かめる。
+控えの取り方と戻し方は `.agents/skills/knowledge-schema/SKILL.md`。
 
 ### 新しい PC で使い始める
 
@@ -128,12 +117,10 @@ npm i -g gleanery
 claude plugin marketplace add iroha924/gleanery && claude plugin install gleanery@gleanery
 codex plugin marketplace add iroha924/gleanery --ref main && codex plugin add gleanery@gleanery
 
-# 2. DB を立てて鍵を作る
+# 2. DB を作る
 gleanery db init
 
-# 3. VOYAGE_API_KEY を ~/.gleanery/env へ足す
-
-# 4. 確かめる（コマンド・plugin それぞれの版と、鍵と接続を見る）
+# 3. 確かめる（コマンド・plugin それぞれの版と、DB を見る）
 gleanery doctor
 ```
 
@@ -164,7 +151,7 @@ checkout して読ませない。なぜ機構で塞げないかは `plugin/skill
 
 ```bash
 bun run cli -- dashboard  # 作業ツリーの端末の画面（前面でだけ使う。TTY が無いと案内を出して終わる）
-bun run verify       # biome・verify:ai・tsc・bundle・test（pre-push / CI と同じ）
+bun run verify       # biome・verify:ai・境界・tsc・bundle・test（全 SQL の到達）・CLI の子プロセス（pre-push / CI と同じ）
 bun run test         # server の node:test
 bun run bundle       # 配布物を作り直す
 bun run release:plan -- --base <commit>  # 変更をreleaseなし / pluginに分類する
@@ -172,16 +159,14 @@ bun run release:prepare -- --base <commit> # cleanなreview済みcommitから検
 bun run release:status                    # npm・tag・plugin cacheに残った工程を調べる
 ```
 
-- **DB を使う確認は、検証用の database で行う。**同じ container に `create database` で別に作り、
-  `GLEANERY_ENV_DIR` にその鍵の `.env` を置いたディレクトリを指す。`~/.gleanery/env` より先に読まれる。
-  `.env` に無い鍵は `env` で補われて**手元の本物の DB へ繋がる**ので、鍵は 4 つとも検証用に書く
+- **DB を使う確認は test の一時 DB で行う**（`server/test/temp-db.ts`）。手元の `~/.gleanery/gleanery.db` を検証に使わない
 - 配布物に入る変更は、npmとpluginのバージョンを揃えてreleaseし、install済みのpluginを更新する（`.agents/skills/plugin-release/SKILL.md`）
 
 構成は `server/`（取り込み・検索・MCP・自動記録・CLI・端末の画面）、
 `plugin/`（配るもの）、`db/schema.sql`（DB の正本）、`db/migrations/`（既存の DB を進める手順）。
 AI 向けの規約は `AGENTS.md`。
-DB は手元の Docker で動くので容量の上限は無く、ディスクが尽きるまで入る（`gleanery doctor` の「DB の大きさ」）。
-埋め込みの行が 5 万に近づいたら HNSW を足す（実測は `.agents/skills/knowledge-schema/SKILL.md`）。
+DB はディスクが尽きるまで入る（`gleanery doctor` の DB の行に大きさが出る）。知識と発言が 5 万件ずつで 174 MB、
+知識の検索は p95 48 ms だった（2026-09-23 の実測）。
 
 ## ライセンス
 

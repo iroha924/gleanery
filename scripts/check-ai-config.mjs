@@ -291,6 +291,34 @@ for (const relative of agentEntries) {
   }
 }
 
+// 作り替えで消した前提（PostgreSQL・Docker・埋め込み・鍵）が、AI の読む文書へ戻っていないか。戻ると、AI は無い
+// command や鍵を案内する。文書の説明で旧構成に触れるときは「旧構成」と書き、この一覧の綴りを避ける。
+const GONE = [
+  /pgvector/i,
+  /VOYAGE_API_KEY/,
+  /GLEANERY_DB_URL/,
+  /docker compose/i,
+  /halfvec/i,
+  /tsvector/i,
+  /db:roles/,
+];
+const docs = [
+  "AGENTS.md",
+  ".claude/rules/verification.md",
+  ...developmentSkills.map((name) => `.agents/skills/${name}/SKILL.md`),
+  ...pluginSkills.map((name) => `plugin/skills/${name}/SKILL.md`),
+  ...agentFiles,
+  // 配る manifest の keywords と説明も、利用者に旧構成を見せる
+  "plugin/package.json",
+  "plugin/.claude-plugin/plugin.json",
+  "plugin/.codex-plugin/plugin.json",
+];
+for (const relative of docs) {
+  const source = read(relative);
+  for (const word of GONE)
+    if (word.test(source)) fail(`${relative}: 消した前提の語（${word.source}）が戻っている`);
+}
+
 if (failures.length > 0) {
   console.error(failures.map((message) => `- ${message}`).join("\n"));
   process.exit(1);

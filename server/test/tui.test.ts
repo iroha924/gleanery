@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import fs from "node:fs";
-import path from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { render as inkRender } from "ink";
 import { render } from "ink-testing-library";
@@ -15,7 +12,6 @@ import type { Data } from "../src/tui/data.ts";
 import { ICONS, TWINKLE } from "../src/tui/icons.ts";
 import { renderMarkdown } from "../src/tui/markdown.ts";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 const at = new Date("2026-09-20T01:00:00Z");
 const tick = () => new Promise((r) => setTimeout(r, 40));
 
@@ -174,9 +170,9 @@ const hit: Hit = {
   speaker: null,
   context: null,
   url: null,
+  path: null,
   truncated: false,
   originalBytes: null,
-  relevance: null,
 };
 
 function fake(over: Partial<Data> = {}): Data & { searched: string[] } {
@@ -533,15 +529,26 @@ test("作業場所の一覧を読めないとき、狭い端末でも「読め�
   }
 });
 
-test("TUI の module は reader 以外の接続も、書き込む module も import しない", () => {
-  const dir = path.join(HERE, "../src/tui");
-  for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".ts"))) {
-    const body = fs.readFileSync(path.join(dir, f), "utf8");
-    assert.doesNotMatch(body, /open\([^)]*"(?:owner|ingest|capture)"/, `${f} が書き込みの鍵で繋いでいる`);
-    assert.doesNotMatch(
-      body,
-      /from "\.\.\/(?:capture|trace|github|docs|admin|titles|embeddings)\.ts"/,
-      `${f} が書き込む module を import している`,
-    );
-  }
+// 語に切れない問い（ひらがなだけ）は引かずに 0 件になる。「当たらなかった」と出すと、無いと読み違える。
+test("引ける語の無い問いは、当たらなかったとは別の案内を出す", async () => {
+  const data = fake({ search: async () => [] });
+  const r = render(h(App, { data }));
+  await settle(r);
+  r.stdin.write("/");
+  await settle(r);
+  r.stdin.write("やめた");
+  await settle(r);
+  r.stdin.write(ENTER);
+  await settle(r);
+  assert.match(r.lastFrame() ?? "", /引ける語が無い/);
+  r.stdin.write(ESC);
+  await settle(r);
+  r.stdin.write("/");
+  await settle(r);
+  r.stdin.write("期限");
+  await settle(r);
+  r.stdin.write(ENTER);
+  await settle(r);
+  assert.match(r.lastFrame() ?? "", /当たらなかった/);
+  r.unmount();
 });

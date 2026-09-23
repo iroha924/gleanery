@@ -12,7 +12,7 @@ import { dbDir } from "../src/assets.ts";
 function packaged(): { pkg: string; dist: string } {
   const pkg = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-assets-"));
   fs.mkdirSync(path.join(pkg, "dist"), { recursive: true });
-  fs.mkdirSync(path.join(pkg, "db", "migrations"), { recursive: true });
+  fs.mkdirSync(path.join(pkg, "db"), { recursive: true });
   fs.writeFileSync(path.join(pkg, "db", "schema.sql"), "-- schema");
   return { pkg, dist: path.join(pkg, "dist") };
 }
@@ -32,5 +32,4 @@ test("配布物に db が無ければ、既定へ倒さず投げる", () => {
 test("作業ツリーでは、リポジトリ直下の db を引く", () => {
   const dir = dbDir();
   assert.ok(fs.existsSync(path.join(dir, "schema.sql")), `${dir} に schema.sql が無い`);
-  assert.ok(fs.existsSync(path.join(dir, "compose.yaml")), `${dir} に compose.yaml が無い`);
 });

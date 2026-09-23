@@ -40,7 +40,7 @@ const same = (a, b) => [...a].sort().join() === [...b].sort().join();
 // （Read した成果物を action 'read' で送り、CHECK が edit / review しか許さずに自動記録が止まった実例がある）。
 const schema = read("db/schema.sql");
 const knowledgeTable = schema.slice(
-  schema.indexOf("create table gleanery.knowledge ("),
+  schema.indexOf("create table knowledge ("),
   schema.indexOf("create index knowledge_listing"),
 );
 const PAIRS = [

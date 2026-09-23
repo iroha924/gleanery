@@ -10,7 +10,7 @@ import { createElement as h, type ReactNode, useEffect, useRef, useState } from 
 import { kindColor, PALETTE } from "../palette.ts";
 import type { Hit } from "../search.ts";
 import type { SessionDetail, SessionRow } from "../sessions.ts";
-import { reason } from "../text.ts";
+import { ftsQuery, reason } from "../text.ts";
 import type { Data, Mode } from "./data.ts";
 import { ICONS, statusIcon, TWINKLE } from "./icons.ts";
 import { renderMarkdown } from "./markdown.ts";
@@ -349,7 +349,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
     out.push(
       h(
         Text,
-        { key: `w${w.id}` },
+        { key: w.ref },
         `${statusIcon(w.status)} 作業: ${w.title}（${statusName(w.status)}） いま: ${oneLine(w.current)}`,
       ),
     );
@@ -503,7 +503,11 @@ function SearchView(p: {
               items: hits,
               selected,
               height: p.height - 3,
-              empty: "当たらなかった。語を変えるか、m で発言を引く。",
+              // 語に切れない問い（ひらがなだけ・記号だけ）は引かずに 0 件になる。「無かった」と分ける
+              empty:
+                ftsQuery(question) === null
+                  ? "引ける語が無い（ひらがなだけ・記号だけの問い）。漢字・カタカナ・英語の語で引く。"
+                  : "当たらなかった。語を変えるか、m で発言を引く。",
               row: (x, on) =>
                 h(
                   Box,

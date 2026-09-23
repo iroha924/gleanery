@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { loadEnv, open } from "../../src/db.ts";
+import { openReader } from "../../src/db.ts";
 import { CASES_SHA, CLAUDE_ENV, cases, OUT, type Result, type summarize } from "./run.ts";
 
 type Grade = "direct" | "partial" | "no";
@@ -47,9 +47,9 @@ if (positionals.length === 0)
   throw new Error("run の結果の dir（os.tmpdir()/gleanery-evals/<name>/<split>）か baseline.json を渡す");
 fs.mkdirSync(CACHE, { recursive: true });
 
-const db = open(loadEnv(), "reader");
+const db = openReader();
 const rows = await db
-  .selectFrom("gleanery.knowledge")
+  .selectFrom("knowledge")
   .select(["source_key", "kind", "status", "heading", "body", "reason"])
   .execute();
 const counted = rows.length;
@@ -154,6 +154,9 @@ async function judge(i: number) {
   console.error(`q${i} 判定 ${keys.length} 件`);
 }
 
+/** この回に判定したモデルの ID（`--model` は別名で、指す先は版で変わる）。cache から引いた判定は数えない */
+const judgedBy = new Set<string>();
+
 function claude(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -186,7 +189,9 @@ function claude(prompt: string): Promise<string> {
     child.on("close", () => {
       clearTimeout(timer);
       try {
-        resolve(String(JSON.parse(out).result ?? ""));
+        const j = JSON.parse(out) as { result?: unknown; modelUsage?: Record<string, unknown> };
+        for (const m of Object.keys(j.modelUsage ?? {})) judgedBy.add(m);
+        resolve(String(j.result ?? ""));
       } catch {
         resolve("");
       }
@@ -201,6 +206,10 @@ await Promise.all(
   }),
 );
 
+if (judgedBy.size > 1) console.log(`⚠ この回の判定に複数のモデルが混ざった: ${[...judgedBy].join("・")}`);
+console.log(
+  `判定のモデル: ${judgedBy.size ? [...judgedBy].join("・") : "新しく判定していない（全部 cache から）"}`,
+);
 const pct = (a: number, b: number) => Math.round((a / Math.max(b, 1)) * 1000) / 10;
 const answers = questions.flatMap((i) => {
   const key = cases[i]?.expect[0];
@@ -260,6 +269,20 @@ console.table(
   ),
 );
 
+// **比べる条件が揃っているか。**別名（sonnet / opus）の指す先と Claude Code の既定の effort は版で変わる。揃っていなければ、
+// 差は道具の差ではなくモデルか effort の差かもしれない（2026-09-23 に Opus 5.5 が既定になり、既定の effort が変わった）。
+const conditionOf = (s: System) => {
+  const x = s.summary as Partial<ReturnType<typeof summarize>>;
+  return `モデル ${(x.resolved_models ?? ["記録なし"]).join("・")} / Claude Code ${(x.claude_code ?? ["記録なし"]).join("・")} / effort ${x.effort ?? "記録なし"}`;
+};
+for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`)) {
+  const seen = [...new Set(ss.map(conditionOf))];
+  if (seen.length > 1)
+    console.log(
+      `⚠ ${key} の run で比べる条件が揃っていない（差がモデルか effort の差かもしれない）:\n  ${seen.join("\n  ")}`,
+    );
+}
+
 if (values.out) {
   const version = JSON.parse(
     fs.readFileSync(path.join(HERE, "../../../plugin/package.json"), "utf8"),
@@ -274,6 +297,7 @@ if (values.out) {
     prompt_version: PROMPT_VERSION,
     knowledge: counted,
     judge_model: values.model,
+    judge_resolved: [...judgedBy],
     means: means.filter((m) => m.name.startsWith("今回")).map(({ name: _, ...m }) => m),
     runs: fresh,
     answers,

@@ -20,7 +20,7 @@ import {
 } from "../src/capture.ts";
 import { conversationId } from "../src/knowledge.ts";
 import { bytes, mask, sha256, uuidFrom } from "../src/text.ts";
-import { fakeDb } from "./fake-db.ts";
+import { project, tempDb } from "./temp-db.ts";
 
 // HOME を差し替えて本物の待ち行列を守っている。bun の os.homedir() は差し替えに追従せず、本物の待ち行列を消す。
 if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
@@ -433,7 +433,8 @@ test("閉じタグの後ろに文が付く通知も外し、区切りの無い�
 });
 
 test("DB へ書くとき、ファイルは turn ではなく待ち行列に書いた持ち主の発言の id へ結ぶ", async () => {
-  const { db, calls } = fakeDb();
+  const db = tempDb();
+  const id = project(db);
   const said = "t1:self:0123456789abcdef";
   const base = {
     v: 1 as const,
@@ -457,14 +458,22 @@ test("DB へ書くとき、ファイルは turn ではなく待ち行列に書�
     // 完了通知から始まった turn（t2）で触ったファイル。
     { ...base, kind: "file", turn: "t2", message: said, path: "a.ts", action: "edit" },
   ];
-  await write(db, batch, new Map([["git:github.com/o/r", { id: 7, name: "r" }]]), new Map());
-  const anchor = uuidFrom(conversationId(7, "claude-code", "s1"), said);
-  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message ("))?.parameters[0], [
-    anchor,
-  ]);
-  assert.deepEqual(calls.find((c) => c.sql.includes("insert into gleanery.message_file"))?.parameters[0], [
-    anchor,
-  ]);
+  const projects = new Map([["git:github.com/o/r", { id, name: "r" }]]);
+  try {
+    assert.equal(await write(db.capture, batch, projects), 1, "新しく入った発言の数");
+    // 送り直しは「もう入っている」。view への insert の影響行数は 0 なので、在った id との差で数える。
+    assert.equal(await write(db.capture, batch, projects), 0);
+    const anchor = uuidFrom(conversationId(id, "claude-code", "s1"), said);
+    assert.deepEqual(
+      db.owner
+        .prepare("select message_id, path from message_file")
+        .all()
+        .map((r) => ({ ...r })),
+      [{ message_id: anchor, path: "a.ts" }],
+    );
+  } finally {
+    await db.done();
+  }
 });
 
 test("エージェントが起動した子と、作業場所の外の session は何も書かない", () => {
@@ -532,10 +541,11 @@ test("記録のフックを起動すると、標準入力の持ち主の発言�
   }
 });
 
-test("自動記録が止まっていれば、session の開始時に同じ枠の形で知らせる", () => {
+test("DB が無ければ、session の開始時に同じ枠の形で知らせる", () => {
+  const missing = path.join(home, "無い.db");
   assert.equal(
-    captureNotice({}),
-    "✦ gleanery: GLEANERY_DB_URL_CAPTURE が無いので、会話を自動記録できない\n╰─ gleanery doctor で確かめる",
+    captureNotice(missing),
+    `✦ gleanery: DB が無いので、会話を自動記録できない\n│ ${missing}\n╰─ gleanery db init で作る`,
   );
 });
 
@@ -543,7 +553,8 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
   reset();
   const file = path.join(home, ".gleanery", "capture.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const capture = { GLEANERY_DB_URL_CAPTURE: "x" };
+  const capture = path.join(home, "gleanery.db");
+  fs.writeFileSync(capture, "");
   fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
   assert.equal(readState().stuck, null, "待ちが空なら、失敗は過去のもの");
   // 以降は待ちが 1 件ある状態で見る（待ちが無ければ、壊れた状態でも判定は null になって何も確かめない）。

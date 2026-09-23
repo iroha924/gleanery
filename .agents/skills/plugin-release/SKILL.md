@@ -23,7 +23,12 @@ description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録�
 Claude Codeはpackageをnpm clientで解決し、tarballをplugin cacheへ展開する。
 
 - **install scriptは走らず、依存もinstallされない。**tarballは自己完結している必要がある
-  （`bun build`で束ねた1 fileずつを同梱する）
+  （`bun build`で束ねた1 fileずつを同梱する）。DBは`node:sqlite`（Nodeの組み込み）なので、ネイティブ依存を持たない
+- CLIはInkを含むので`scripts/bundle-cli.ts`（`Bun.build`）で束ねる。Inkは`DEV=true`のときだけ`react-devtools-core`を
+  読みにいくので、`ink/build/devtools.js`を空のmoduleへ差し替える（差し替えないと、上の階層に`react-devtools-core`が
+  ある環境で起動ごと落ちる）
+- 同梱の`db/schema.sql`（と、あれば`db/migrations`）を`gleanery db init` / `db migrate`が読む。CIは展開した
+  tarballの CLI で一時HOMEに`db init`を打って確かめる
 - cacheは版が変わったときだけ更新される。`bun run bundle`やcommitだけでは届かず、publishまで届かない
 - CLIは実行した場所の`dist/cli.js`を読むため、CLIで動くことはMCPで動く証拠にならない
 - 自動記録のhookは`${CLAUDE_PLUGIN_ROOT}/dist/capture.js`を叩くので、これもcacheの版で動く

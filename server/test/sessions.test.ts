@@ -1,208 +1,184 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { after, before, test } from "node:test";
 import { listSessions, listWork, projects, searchSessions, sessionDetail } from "../src/sessions.ts";
-import { fakeDb } from "./fake-db.ts";
+import { at, hash, insert, knowledge, message, project, type TempDb, tempDb } from "./temp-db.ts";
 
-const at = new Date("2026-09-20T01:00:00Z");
+let db: TempDb;
+let p1: number;
+let p2: number;
+before(() => {
+  db = tempDb();
+  p1 = project(db);
+  p2 = project(db, "git:github.com/o/other", "o/other");
+  // 貼り付けで始めた session。最初の発言がホストの囲みの札で始まる。
+  message(db, p1, {
+    id: "m-a1",
+    session: "a",
+    body: '<pasted_content id="90a1">\ngleanery を SQLite へ移す</pasted_content> 続きも',
+    sent: "2026-09-10T00:00:00Z",
+  });
+  message(db, p1, {
+    id: "m-a2",
+    session: "a",
+    body: "AI の応答",
+    speaker: "assistant",
+    indexed: 0,
+    sent: "2026-09-10T00:01:00Z",
+  });
+  insert(db, "message_file", { message_id: "m-a1", path: "server/src/db.ts", action: "edit" });
+  insert(db, "message_file", { message_id: "m-a2", path: "server/src/db.ts", action: "edit" });
+  message(db, p1, { id: "m-b1", session: "b", body: "認証の話", sent: "2026-09-12T00:00:00Z" });
+  message(db, p2, { id: "m-c1", session: "c", body: "別の作業場所の認証", sent: "2026-09-11T00:00:00Z" });
+  insert(db, "connector", {
+    project_id: p1,
+    provider: "github",
+    last_success_at: at("2026-09-13T00:00:00Z"),
+  });
+});
+after(() => db.done());
 
-test("作業場所の一覧は名前順で、行をそのまま返す", async () => {
-  const row = { id: 1, key: "git:github.com/o/r", name: "o/r", sessions: 2, knowledge: 3, connectors: [] };
-  const { db, calls } = fakeDb(() => [row]);
-  assert.deepEqual(await projects(db), [row]);
-  assert.match(calls[0]?.sql ?? "", /order by "p"\."name"/);
-  assert.match(calls[0]?.sql ?? "", /c\.origin <> 'github'/);
+test("作業場所の一覧は名前順で、session と知識の数と取り込み元の状態を持つ", async () => {
+  const got = await projects(db.reader);
+  assert.deepEqual(
+    got.map((x) => [x.name, x.sessions]),
+    [
+      ["o/other", 1],
+      ["o/r", 2],
+    ],
+  );
+  assert.deepEqual(got[1]?.connectors, [
+    { provider: "github", lastSuccessAt: new Date("2026-09-13T00:00:00Z"), lastError: null },
+  ]);
 });
 
-test("セッションの一覧は GitHub の会話を外し、件数とページを返す", async () => {
-  const item = {
-    id: "00000000-0000-4000-8000-000000000001",
-    origin: "claude-code",
-    sessionId: "s1",
-    branch: "main",
-    startedAt: at,
-    project: "o/r",
-    lastAt: at,
-    title: "題",
-    said: 3,
-    traced: 1,
-    files: 2,
-  };
-  const { db, calls } = fakeDb((sql) => (sql.includes("count(*) as") ? [{ n: "31" }] : [item]));
-  const page = await listSessions(db, { project: 7, page: 2, pageSize: 30 });
-  assert.deepEqual(page, { items: [item], total: 31, page: 2, pageSize: 30, pages: 2 });
-  for (const c of calls) assert.match(c.sql, /"c"\."origin" <> \$1/);
-  // 2 ページ目は 30 件を飛ばす
-  assert.deepEqual(calls[1]?.parameters.slice(-2), [30, 30]);
-  assert.match(calls[1]?.sql ?? "", /count\(distinct f\.path\)/);
+test("セッションの一覧は最後の発言の新しい順で、題の囲みの札を外し、触ったファイルを重ねずに数える", async () => {
+  const page = await listSessions(db.reader, { project: p1, page: 1, pageSize: 30 });
+  assert.equal(page.total, 2);
+  assert.deepEqual(
+    page.items.map((i) => i.sessionId),
+    ["b", "a"],
+  );
+  const a = page.items[1];
+  assert.equal(a?.title, "gleanery を SQLite へ移す 続きも");
+  assert.equal(a?.said, 1);
+  assert.equal(a?.files, 1);
+  assert.equal(a?.lastAt?.toISOString(), "2026-09-10T00:01:00.000Z");
+  const second = await listSessions(db.reader, { project: p1, page: 2, pageSize: 1 });
+  assert.deepEqual(
+    second.items.map((i) => i.sessionId),
+    ["a"],
+  );
+  assert.equal((await listSessions(db.reader, { page: 1, pageSize: 30 })).total, 3, "作業場所を省けば全部");
 });
 
-test("作業場所を指定しなければ全部の作業場所を数える", async () => {
-  const { db, calls } = fakeDb((sql) => (sql.includes("count(*) as") ? [{ n: "0" }] : []));
-  const page = await listSessions(db, { page: 1, pageSize: 30 });
-  assert.equal(page.total, 0);
-  assert.equal(page.pages, 0);
-  assert.ok(calls[0]?.parameters.includes(null));
+test("無い session は null", async () => {
+  assert.equal(await sessionDetail(db.reader, "無い"), null);
 });
 
-test("無い session は null で、後続の問い合わせを投げない", async () => {
-  const { db, calls } = fakeDb(() => []);
-  assert.equal(await sessionDetail(db, "00000000-0000-4000-8000-000000000001"), null);
-  assert.equal(calls.length, 1);
-});
-
-test("session の詳細は発言・知識・作業・読んだ成果物をまとめ、知識に札を付ける", async () => {
-  const conversation = {
-    id: "00000000-0000-4000-8000-000000000001",
-    origin: "codex",
-    sessionId: "s1",
-    branch: null,
-    startedAt: at,
-    projectId: 1,
-    project: "o/r",
-    projectKey: "git:github.com/o/r",
-    title: "題",
-  };
-  const message = {
-    id: "m1",
-    speaker: "self",
-    body: "直して",
-    sentAt: at,
-    truncated: false,
-    originalBytes: 9,
-    files: [],
-  };
-  const knowledge = {
-    id: 5,
+test("session の詳細は発言・触ったファイル・知識・作業・読んだ成果物をまとめ、知識に札を付ける", async () => {
+  const conversation = `c-${p1}-a`;
+  insert(db, "knowledge", {
+    project_id: p1,
+    conversation_id: conversation,
+    source_key: "a#d",
     kind: "decision",
     status: "accepted",
-    stance: "do",
     body: "こうする",
-    reason: "理由",
-    confirmation: null,
-    downsides: [],
-    at,
-    decisionId: null,
-  };
-  const { db, calls } = fakeDb(
-    (_sql, _p, nth) => [[conversation], [message], [knowledge], [], []][nth] ?? [],
-  );
-  const found = await sessionDetail(db, conversation.id);
-  assert.equal(found?.title, "題");
-  assert.deepEqual(found?.messages, [message]);
-  assert.equal(found?.knowledge[0]?.label, "【採用した決定】");
-  assert.equal(calls.length, 5);
-  // 成果物は同じ作業場所で同期された要件定義と設計書だけ
-  assert.match(calls[4]?.sql ?? "", /"cn"\."project_id" = \$/);
-});
-
-test("作業の一覧は終わった作業も含め、作業場所で絞れる", async () => {
-  const row = {
-    id: "3",
-    project: "o/r",
+    occurred_at: at("2026-09-10T00:02:00Z"),
+    content_hash: hash(),
+  });
+  insert(db, "work_item", {
+    project_id: p1,
+    source_key: "w",
     title: "作業",
     goal: "目的",
     current: "いま",
-    next: ["次"],
+    next: '["次"]',
+    status: "active",
+    conversation_id: conversation,
+    updated_at: at("2026-09-10T00:03:00Z"),
+  });
+  const docs = insert(db, "connector", { project_id: p1, provider: "docs" });
+  insert(db, "source_item", {
+    connector_id: docs,
+    external_id: "server/src/db.ts",
+    kind: "design",
+    title: "設計",
+    path: "server/src/db.ts",
+    body: "設計の本文",
+    metadata: '{"change":"c1","changeTitle":"作り替え"}',
+    content_hash: hash(),
+  });
+  const found = await sessionDetail(db.reader, conversation);
+  assert.equal(found?.title, "gleanery を SQLite へ移す 続きも");
+  assert.deepEqual(
+    found?.messages.map((m) => [m.speaker, m.files.map((f) => f.path)]),
+    [
+      ["self", ["server/src/db.ts"]],
+      ["assistant", ["server/src/db.ts"]],
+    ],
+  );
+  assert.equal(found?.knowledge[0]?.label, "【採用した決定】");
+  assert.deepEqual(found?.work[0]?.next, ["次"]);
+  assert.deepEqual(
+    found?.artifacts.map((a) => [a.kind, a.title, a.content]),
+    [["design", "作り替え", "設計の本文"]],
+  );
+});
+
+test("作業の一覧は終わった作業も含め、作業場所で絞れる", async () => {
+  insert(db, "work_item", {
+    project_id: p2,
+    source_key: "done",
+    title: "終わった作業",
+    goal: "目的",
+    current: "済んだ",
     status: "done",
-    updated_at: at,
-  };
-  const { db, calls } = fakeDb(() => [row]);
-  const works = await listWork(db, [1, 2]);
-  assert.equal(works[0]?.ref, "w:3");
-  assert.equal(works[0]?.status, "done");
-  assert.doesNotMatch(calls[0]?.sql ?? "", /"w"\."status" in/);
-  assert.match(calls[0]?.sql ?? "", /w\.project_id = any/);
-  const all = fakeDb(() => []);
-  await listWork(all.db, null);
-  assert.doesNotMatch(all.calls[0]?.sql ?? "", /any/);
-});
-
-test("検索で当たらなければ session を引きに行かない", async () => {
-  const { db, calls } = fakeDb(() => []);
-  assert.deepEqual(await searchSessions(db, {}, { q: "認証", mode: "said" }), []);
-  assert.equal(calls.length, 1);
-});
-
-test("当たった発言を session ごとに束ね、GitHub の会話を外す", async () => {
-  const hit = (id: string) => ({
-    id,
-    body: `本文 ${id}`,
-    speaker_kind: "self",
-    sent_at: at,
-    url: null,
-    truncated: false,
-    original_bytes: 10,
-    origin: "claude-code",
-    project: "o/r",
-    title: null,
-    source_kind: null,
-    number: null,
-    handle: null,
-    display_name: null,
-    is_self: null,
+    updated_at: at("2026-09-09T00:00:00Z"),
   });
-  const a = "00000000-0000-4000-8000-00000000000a";
-  const b = "00000000-0000-4000-8000-00000000000b";
-  const owner = {
-    id: "c1",
-    sessionId: "s1",
-    origin: "claude-code",
-    project: "o/r",
-    title: "<pasted_content>題</pasted_content>",
-  };
-  const { db, calls } = fakeDb((_sql, _p, nth) =>
-    nth === 0
-      ? [hit(a), hit(b)]
-      : [
-          { ...owner, ref: a },
-          { ...owner, ref: b },
-        ],
+  const only = await listWork(db.reader, [p2]);
+  assert.deepEqual(
+    only.map((w) => [w.title, w.status]),
+    [["終わった作業", "done"]],
   );
-  const found = await searchSessions(db, {}, { q: "認証", mode: "said", project: 1 });
+  assert.ok((await listWork(db.reader, null)).length >= 2);
+});
+
+test("検索で当たった発言を session ごとに束ね、題の囲みの札を外す", async () => {
+  assert.deepEqual(await searchSessions(db.reader, { q: "当たらない語", mode: "said" }), []);
+  const found = await searchSessions(db.reader, { q: "SQLite", mode: "said", project: p1 });
   assert.equal(found.length, 1);
-  // 題は一覧と同じく囲みの札を外す
-  assert.equal(found[0]?.title, "題");
-  assert.deepEqual(
-    found[0]?.hits.map((h) => h.ref),
-    [`m:${a}`, `m:${b}`],
-  );
-  assert.match(calls[1]?.sql ?? "", /c\.origin <> 'github'/);
-  assert.match(calls[1]?.sql ?? "", /"gleanery"\."message"/);
+  assert.equal(found[0]?.sessionId, "a");
+  assert.equal(found[0]?.title, "gleanery を SQLite へ移す 続きも");
+  const all = await searchSessions(db.reader, { q: "認証", mode: "said" });
+  assert.deepEqual(new Set(all.map((s) => s.sessionId)), new Set(["b", "c"]));
+  knowledge(db, p1, { source_key: "k#auth", body: "認証は OAuth" });
+  const byKnowledge = await searchSessions(db.reader, { q: "OAuth", mode: "knowledge", project: p1 });
+  assert.equal(byKnowledge[0]?.hits[0]?.text, "認証は OAuth");
 });
 
-// 貼り付けで始めた session は、最初の発言がホストの囲みの札で始まる。札が題の幅を食うと見分けられない。
-test("題の頭に付いた囲みの札を外し、一覧・詳細・検索で同じ題にする", async () => {
-  const raw = '<pasted_content id="90a1">\ngleanery を SQLite へ移す</pasted_content> 続きも';
-  const row = {
-    id: "00000000-0000-4000-8000-000000000001",
-    title: raw,
-    ref: "1",
-    sessionId: "s1",
-    origin: "claude-code",
-    project: "o/r",
-  };
-  const list = await listSessions(fakeDb((sql) => (sql.includes("count(*) as") ? [{ n: "1" }] : [row])).db, {
-    project: null,
-    page: 1,
-    pageSize: 30,
-  });
-  assert.equal(list.items[0]?.title, "gleanery を SQLite へ移す 続きも");
-  const detail = await sessionDetail(fakeDb((_sql, _p, n) => (n === 0 ? [row] : [])).db, row.id);
-  assert.equal(detail?.title, "gleanery を SQLite へ移す 続きも");
-  // 札の無い題と、札だけの題はそのまま
-  const plain = await listSessions(
-    fakeDb((sql) =>
-      sql.includes("count(*) as")
-        ? [{ n: "2" }]
-        : [
-            { ...row, title: "a < b > c" },
-            { ...row, title: "<x>" },
-          ],
-    ).db,
-    { project: null, page: 1, pageSize: 30 },
-  );
+test("札の無い題と札だけの題はそのまま出す", async () => {
+  const p3 = project(db, "git:github.com/o/third", "o/third");
+  message(db, p3, { id: "m-x", session: "x", body: "a < b > c" });
+  message(db, p3, { id: "m-y", session: "y", body: "<x>", sent: "2026-09-09T00:00:00Z" });
+  const page = await listSessions(db.reader, { project: p3, page: 1, pageSize: 30 });
   assert.deepEqual(
-    plain.items.map((i) => i.title),
+    page.items.map((i) => i.title),
     ["a < b > c", "<x>"],
   );
+});
+
+// trace だけで作業を結ばなかった session は、持ち主の発言も作業の題も持たない。空欄だとどの session か分からない。
+test("題の無い session は session id を名指す", async () => {
+  const p4 = project(db, "git:github.com/o/fourth", "o/fourth");
+  insert(db, "conversation", {
+    id: "c-none",
+    project_id: p4,
+    origin: "codex",
+    external_id: "only-trace",
+    started_at: at("2026-09-08T00:00:00Z"),
+  });
+  const page = await listSessions(db.reader, { project: p4, page: 1, pageSize: 30 });
+  assert.equal(page.items[0]?.title, "（題なし）only-trace");
+  assert.equal((await sessionDetail(db.reader, "c-none"))?.title, "（題なし）only-trace");
 });

@@ -25,14 +25,13 @@ for (const entry of ["mcp", "capture"]) {
 // CLI は Ink を含み、その開発用の import を差し替える plugin が要るので、Bun.build の script で束ねる。
 run("bun", ["scripts/bundle-cli.ts"]);
 
-// plugin の cache には repository が無いので、schema と compose を持たせる。
+// plugin の cache には repository が無いので、schema（と、あれば migrations）を持たせる。
 const db = path.join(root, "plugin", "db");
 fs.rmSync(db, { recursive: true, force: true });
 fs.mkdirSync(db, { recursive: true });
-for (const name of ["compose.yaml", "schema.sql"]) {
-  fs.copyFileSync(path.join(root, "db", name), path.join(db, name));
-}
-fs.cpSync(path.join(root, "db", "migrations"), path.join(db, "migrations"), { recursive: true });
+fs.copyFileSync(path.join(root, "db", "schema.sql"), path.join(db, "schema.sql"));
+if (fs.existsSync(path.join(root, "db", "migrations")))
+  fs.cpSync(path.join(root, "db", "migrations"), path.join(db, "migrations"), { recursive: true });
 
 // npm は Windows で shebang を読んで .cmd を作るので、実行権が要る。
 for (const entry of ["cli"]) fs.chmodSync(path.join(dist, `${entry}.js`), 0o755);

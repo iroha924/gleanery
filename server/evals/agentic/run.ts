@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { loadEnv, open } from "../../src/db.ts";
+import { openReader } from "../../src/db.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -43,6 +43,8 @@ export type Result = {
   turns: number;
   cost: number;
   ms: number;
+  /** 実際に使われたモデルの ID と Claude Code の版（trace の init から）。別名（sonnet / opus）の指す先は変わる */
+  resolved: { model: string | null; claude: string | null };
   error?: string;
 };
 
@@ -57,6 +59,8 @@ async function main() {
       name: { type: "string", default: "base" },
       split: { type: "string", default: "dev" },
       model: { type: "string", default: "sonnet" },
+      // 渡さなければ Claude Code の既定の effort で測る（基準もそうして取った）。既定は版で変わるので、版と一緒に記録する
+      effort: { type: "string" },
       par: { type: "string", default: "4" },
     },
   });
@@ -76,7 +80,7 @@ async function main() {
   await Promise.all(
     Array.from({ length: Number(values.par) }, async () => {
       for (let x = todo.shift(); x; x = todo.shift()) {
-        const r = await solve(x.c, x.i, { run, mcp, model: values.model, keyOf });
+        const r = await solve(x.c, x.i, { run, mcp, model: values.model, effort: values.effort, keyOf });
         results.push(r);
         console.error(
           `q${r.i} ${r.rank === 0 ? "✓" : r.rank < 0 ? "✗" : `${r.rank + 1} 位`}${r.error ? ` ${r.error}` : ""}`,
@@ -89,6 +93,11 @@ async function main() {
     name: values.name,
     split,
     model: values.model,
+    // --effort が無ければ、環境変数、それも無ければモデルの既定（2.1.280 では Sonnet 5 は high、Opus 5.5 は medium）で決まる。
+    // 作業場所は一時ディレクトリなので、repository の設定の effortLevel は読まれない
+    effort:
+      values.effort ??
+      (process.env.CLAUDE_CODE_EFFORT_LEVEL ? `環境変数 ${process.env.CLAUDE_CODE_EFFORT_LEVEL}` : "既定"),
     cases: CASES_SHA,
     ms: Date.now() - t0,
   });
@@ -104,9 +113,9 @@ async function main() {
 
 /** ref から正解と同じ鍵へ。id では突き合わせない（入れ直しで変わる）。発言は id がそのまま鍵。 */
 async function keys(): Promise<(ref: string) => string | null> {
-  const db = open(loadEnv(), "reader");
+  const db = openReader();
   try {
-    const rows = await db.selectFrom("gleanery.knowledge").select(["id", "source_key"]).execute();
+    const rows = await db.selectFrom("knowledge").select(["id", "source_key"]).execute();
     const byRef = new Map(rows.map((r) => [`k:${r.id}`, r.source_key]));
     return (ref) => (ref.startsWith("m:") ? ref.slice(2) : (byRef.get(ref) ?? null));
   } finally {
@@ -117,7 +126,13 @@ async function keys(): Promise<(ref: string) => string | null> {
 async function solve(
   c: Case,
   i: number,
-  o: { run: string; mcp: string; model: string; keyOf: (ref: string) => string | null },
+  o: {
+    run: string;
+    mcp: string;
+    model: string;
+    effort: string | undefined;
+    keyOf: (ref: string) => string | null;
+  },
 ): Promise<Result> {
   const dir = path.join(o.run, `q${i}`);
   fs.mkdirSync(dir);
@@ -125,7 +140,12 @@ async function solve(
   // 読ませると、測るのが出荷の道具ではなく持ち主の設定になる（hook は自動記録まで走らせる）。
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
   const config = path.join(dir, "mcp.json");
-  fs.writeFileSync(config, JSON.stringify({ mcpServers: { gleanery: { command: "node", args: [o.mcp] } } }));
+  // 評価用に写した DB を測るときは GLEANERY_DB で指す。MCP へ明示して渡す（親の環境が届くかに頼らない）。
+  const env = process.env.GLEANERY_DB ? { GLEANERY_DB: process.env.GLEANERY_DB } : undefined;
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ mcpServers: { gleanery: { command: "node", args: [o.mcp], env } } }),
+  );
   const t0 = Date.now();
   try {
     const events = await claude(
@@ -134,6 +154,7 @@ async function solve(
         `${c.q}\n\n${ANSWER}`,
         "--model",
         o.model,
+        ...(o.effort ? ["--effort", o.effort] : []),
         "--setting-sources",
         "project",
         "--strict-mcp-config",
@@ -154,6 +175,7 @@ async function solve(
     );
     fs.writeFileSync(path.join(dir, "trace.jsonl"), events.map((e) => JSON.stringify(e)).join("\n"));
     const last = events.findLast((e) => e.type === "result");
+    const init = events.find((e) => e.type === "system" && e.subtype === "init");
     const refs = refsOf(String(last?.result ?? ""));
     const keys = (refs ?? []).map(o.keyOf);
     const res: Result = {
@@ -166,6 +188,10 @@ async function solve(
       turns: Number(last?.num_turns ?? 0),
       cost: Number(last?.total_cost_usd ?? 0),
       ms: Date.now() - t0,
+      resolved: {
+        model: typeof init?.model === "string" ? init.model : null,
+        claude: typeof init?.claude_code_version === "string" ? init.claude_code_version : null,
+      },
       ...(last === undefined || last.is_error
         ? { error: String(last?.result ?? "応答が無い").slice(0, 200) }
         : refs === null
@@ -233,9 +259,10 @@ export function refsOf(text: string): string[] | null {
 
 export function summarize(
   results: Result[],
-  meta: { name: string; split: string; model: string; cases: string; ms: number },
+  meta: { name: string; split: string; model: string; effort: string; cases: string; ms: number },
 ) {
   const n = results.length;
+  const distinct = (xs: (string | null)[]) => [...new Set(xs.map((x) => x ?? "不明"))].sort();
   const pct = (k: number) => Math.round((k / Math.max(n, 1)) * 1000) / 10;
   return {
     ...meta,
@@ -250,6 +277,8 @@ export function summarize(
     cost_usd_list: Math.round(results.reduce((s, r) => s + r.cost, 0) * 100) / 100,
     minutes: Math.round(meta.ms / 6000) / 10,
     errors: results.filter((r) => r.error).length,
+    resolved_models: distinct(results.map((r) => r.resolved?.model ?? null)),
+    claude_code: distinct(results.map((r) => r.resolved?.claude ?? null)),
   };
 }
 

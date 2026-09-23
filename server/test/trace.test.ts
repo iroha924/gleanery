@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { test } from "node:test";
-import { checkTrace, rows, type Trace } from "../src/trace.ts";
+import { checkTrace, rows, saveTrace, type Trace } from "../src/trace.ts";
+import { project, tempDb } from "./temp-db.ts";
 
 const at = "2026-09-13T10:00:00+09:00";
 const base = (items: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -180,4 +182,158 @@ test("知らない欄と、形の違う日時・パスを弾く", () => {
     /相対パス/,
   );
   assert.match(problems(base([decision(), decision()])), /重複/);
+});
+
+// ---- 本物の SQLite へ入れる ----
+
+const valid = (raw: unknown): Trace => {
+  const r = checkTrace(raw);
+  assert.deepEqual(r.problems, []);
+  return r.trace as Trace;
+};
+
+test("記録を入れると決定・案・作業・ファイルが入り、同じ内容の再保存は書き直さない", async () => {
+  const db = tempDb();
+  try {
+    const p = project(db);
+    const t = valid(
+      base([{ ...decision(), files: [{ path: "db/schema.sql", role: "applies_to" }] }], {
+        work: {
+          key: "rebuild",
+          title: "作り直し",
+          goal: "13 表",
+          current: "実装中",
+          next: ["型"],
+          status: "active",
+        },
+      }),
+    );
+    assert.deepEqual(await saveTrace(db.ingest, p, t), { written: 3, superseded: 0 });
+    assert.deepEqual(
+      await saveTrace(db.ingest, p, t),
+      { written: 0, superseded: 0 },
+      "同じ内容は書き直さない",
+    );
+    const rows = db.owner
+      .prepare("select kind, status, heading, work_item_id is not null as w from knowledge order by id")
+      .all()
+      .map((r) => ({ ...r }));
+    assert.deepEqual(rows, [
+      { kind: "decision", status: "accepted", heading: "作り直し", w: 1 },
+      { kind: "option", status: "chosen", heading: "作り直し", w: 1 },
+      { kind: "option", status: "rejected", heading: "作り直し", w: 1 },
+    ]);
+    assert.deepEqual(
+      { ...db.owner.prepare("select next, status from work_item").get() },
+      { next: '["型"]', status: "active" },
+    );
+    assert.deepEqual(
+      db.owner
+        .prepare("select path, role from knowledge_file")
+        .all()
+        .map((r) => ({ ...r })),
+      [{ path: "db/schema.sql", role: "applies_to" }],
+    );
+    // 案を減らして書き直すと、古い案を棄却として残さない
+    const three = [
+      { text: "halfvec", chosen: true },
+      { text: "vector", chosen: false, why: "容量が倍" },
+      { text: "bit", chosen: false, why: "精度が落ちる" },
+    ];
+    const options = () =>
+      (
+        db.owner
+          .prepare(
+            "select count(*) as n from knowledge where kind = 'option' and source_key like '%d-three%'",
+          )
+          .get() as { n: number }
+      ).n;
+    await saveTrace(db.ingest, p, valid(base([decision({ key: "d-three", options: three })])));
+    assert.equal(options(), 3);
+    await saveTrace(
+      db.ingest,
+      p,
+      valid(base([decision({ key: "d-three", options: three.slice(0, 2), text: "書き直し" })])),
+    );
+    assert.equal(options(), 2);
+  } finally {
+    await db.done();
+  }
+});
+
+// 覆した決定は消さない（消すと、なぜ変えたかが失われて再提案される）。後継を指して superseded にする。
+test("別の session の決定を覆すと、古い決定は後継を指して superseded になり、その採った案は当時の案になる", async () => {
+  const db = tempDb();
+  try {
+    const p = project(db);
+    await saveTrace(db.ingest, p, valid(base([decision()])));
+    const newer = valid({
+      schema: "trace/1",
+      session: { host: "claude-code", id: "s2" },
+      items: [
+        decision({ key: "d-float", text: "埋め込みは float で持つ", supersedes: "claude-code:s1#d-halfvec" }),
+      ],
+    });
+    assert.equal((await saveTrace(db.ingest, p, newer)).superseded, 1);
+    const old = db.owner
+      .prepare(
+        "select status, superseded_by_id is not null as later from knowledge where source_key = 'claude-code:s1#d-halfvec'",
+      )
+      .get();
+    assert.deepEqual({ ...old }, { status: "superseded", later: 1 });
+    assert.equal(
+      (
+        db.owner
+          .prepare("select status from knowledge where source_key = 'claude-code:s1#d-halfvec:o1'")
+          .get() as { status: string }
+      ).status,
+      "was_chosen",
+    );
+    // 古い session を再 trace しても、DB 側の覆しを「採用」に戻さない
+    await saveTrace(db.ingest, p, valid(base([decision({ text: "halfvec で持つ（再 trace）" })])));
+    assert.equal(
+      (
+        db.owner
+          .prepare("select status from knowledge where source_key = 'claude-code:s1#d-halfvec'")
+          .get() as { status: string }
+      ).status,
+      "superseded",
+    );
+    // 逆向きに覆し返すと輪になるので止める
+    const loop = valid(base([decision({ key: "d-loop", supersedes: "claude-code:s2#d-float" })]));
+    await saveTrace(db.ingest, p, loop);
+    await assert.rejects(
+      saveTrace(
+        db.ingest,
+        p,
+        valid({
+          schema: "trace/1",
+          session: { host: "claude-code", id: "s2" },
+          items: [decision({ key: "d-float", text: "float", supersedes: "claude-code:s1#d-loop" })],
+        }),
+      ),
+      /互いに覆し合う/,
+    );
+  } finally {
+    await db.done();
+  }
+});
+
+// 壊れた参照を黙って落とさない。途中まで書いた状態も残さない（1 つの transaction）。
+test("この作業場所に無い決定を指す記録は、何も書かずに止まる", async () => {
+  const db = tempDb();
+  try {
+    const p = project(db);
+    const t = valid(base([decision({ supersedes: "claude-code:other#d-none" })]));
+    await assert.rejects(saveTrace(db.ingest, p, t), /この作業場所に無い決定/);
+    assert.equal((db.owner.prepare("select count(*) as n from conversation").get() as { n: number }).n, 0);
+  } finally {
+    await db.done();
+  }
+});
+
+// 配る Skill が「形はこれ」と指す見本。契約から外れると、AI は通らない形を真似て書く。
+test("trace Skill の見本は記録の検査を通る", () => {
+  const example = new URL("../../plugin/skills/trace/example.json", import.meta.url);
+  assert.deepEqual(checkTrace(JSON.parse(fs.readFileSync(example, "utf8"))).problems, []);
 });

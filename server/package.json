@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "gleanery の MCP・CLI・自動記録・端末の画面（手元の PostgreSQL と Voyage）",
+  "description": "gleanery の MCP・CLI・自動記録・端末の画面（手元の SQLite）",
   "scripts": {
     "check": "biome check .",
     "fix": "biome check --write .",
@@ -22,7 +22,6 @@
     "kysely": "0.29.6",
     "marked": "18.0.14",
     "marked-terminal": "7.3.0",
-    "pg": "^8.23.0",
     "react": "19.3.0",
     "zod": "^4.6.5"
   },
@@ -34,6 +33,7 @@
     "ink-testing-library": "4.0.0",
     "kysely-codegen": "0.20.0",
     "lefthook": "^2.1.14",
+    "pg": "^8.23.0",
     "typescript": "^7.0.2"
   },
   "engines": {

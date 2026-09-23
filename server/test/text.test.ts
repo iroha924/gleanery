@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bytes, clean, head, reason, tail, terms, tsquery, tsvector, uuidFrom } from "../src/text.ts";
+import { bytes, clean, ftsQuery, head, reason, tail, terms, uuidFrom } from "../src/text.ts";
 
 // ひらがなだけの語（助詞・助動詞・「こと」）はどの行にも当たり、語彙側の順位を薄める。
 test("語は日本語を語に割り、ひらがなだけの語を落とす", () => {
@@ -23,22 +23,16 @@ test("全角と大文字は揃える", () => {
   assert.deepEqual(terms("ＡＢＣ"), terms("abc"));
 });
 
-// 語に ' が入ると、組み立てたリテラルが壊れるか、別の語として解釈される。
-test("tsvector と tsquery のリテラルは引用符を守る", () => {
-  assert.match(tsvector("it's a test"), /'it''s'/);
-  assert.match(tsquery("it's") ?? "", /^'it''s'/);
+// 括らないと AND・NEAR・:・- が FTS5 の演算子として読まれ、利用者の文字列が問いの構文を変える。
+test("FTS5 の問いは語を括り、中の引用符を二重にする", () => {
+  assert.equal(ftsQuery("sql:live"), '"sql:live" OR "sql" OR "live"');
+  for (const q of ['AND NEAR NOT x" -y *z', 'say "hi"', "col:1 (a) {b}"])
+    for (const w of ftsQuery(q)?.split(" OR ") ?? []) assert.match(w, /^"(?:[^"]|"")+"$/, `${q}: ${w}`);
 });
 
-test("tsvector は位置を持ち、同じ語の位置は 256 個で止める", () => {
-  const v = tsvector(Array.from({ length: 400 }, () => "設計").join(" "));
-  const positions = v.match(/'設計':([\d,]+)/)?.[1]?.split(",") ?? [];
-  assert.equal(positions.length, 256);
-  assert.ok(Number(positions[0]) >= 1);
-});
-
-test("語の無い問いは語彙側を引かない", () => {
-  assert.equal(tsquery("のはを"), null);
-  assert.equal(tsquery("   "), null);
+test("語の無い問いは引かない", () => {
+  assert.equal(ftsQuery("のはを"), null);
+  assert.equal(ftsQuery("   "), null);
 });
 
 // 同じ会話・同じ発言を 2 回送っても同じ行になることが、自動記録の送り直しの前提。
@@ -59,7 +53,7 @@ test("バイトで切り、文字の途中で切らない", () => {
   assert.equal(head("abc", 10), "abc");
 });
 
-test("NUL を落とす（PostgreSQL の text は持てない）", () => {
+test("NUL を落とす（SQLite の length・substr は NUL の後ろを読まない）", () => {
   assert.equal(clean(`a${String.fromCharCode(0)}b`), "ab");
 });
 

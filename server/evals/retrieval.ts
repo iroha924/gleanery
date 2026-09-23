@@ -4,7 +4,8 @@
 // **出荷している関数そのものを測る。**eval が組み立てた経路は原因の切り分けにしか使わない。
 // 測るのは recall@k（正解が上位 k に入った割合）と MRR（正解の順位の逆数の平均）と top1。
 //
-// **実 DB と外部 API へ繋ぐので `bun run verify` に入れない。**手で叩く（`bun run evals:retrieval`）。
+// **持ち主の記録を読むので `bun run verify` に入れない。**手で叩く（`bun run evals:retrieval`）。
+// DB は `GLEANERY_DB` で指せる（評価用に写した SQLite を測るとき）。
 // 比較したいときは、変更の前後で同じ retrieval.json を使う。問いを作り直すと比較にならない。
 //
 // これは agent を通らない一発の検索を測る。agent に道具として使わせた精度は agentic/run.ts が測り、そこでは
@@ -13,17 +14,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sql } from "kysely";
-import { loadEnv, open } from "../src/db.ts";
-import { fuse, type Hit, searchKnowledge, searchMessages } from "../src/search.ts";
+import { openReader } from "../src/db.ts";
+import { type Hit, searchKnowledge, searchMessages, searchSplit } from "../src/search.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 type Case = { q: string; expect: string[]; kind: string; source: string };
 const { cases } = JSON.parse(fs.readFileSync(path.join(HERE, "retrieval.json"), "utf8")) as { cases: Case[] };
 
 const K = 5;
-const env = loadEnv();
-const db = open(env, "reader");
+const db = openReader();
 
 // ref（k:12 / m:uuid）から、正解と突き合わせる鍵へ直す。
 // **id では突き合わせない。**入れ直しで変わるので、前後の比較が壊れる。
@@ -32,8 +31,8 @@ const keyOf = new Map<string, string>();
 // top1 や recall と一緒に毎回出す（手元の一回限りの測定にすると、次に誰も再現できない）。
 const originOf = new Map<string, string>();
 for (const r of await db
-  .selectFrom("gleanery.knowledge as k")
-  .leftJoin("gleanery.source_item as s", "s.id", "k.source_item_id")
+  .selectFrom("knowledge as k")
+  .leftJoin("source_item as s", "s.id", "k.source_item_id")
   .select(["k.id", "k.source_key", "k.work_item_id", "s.path"])
   .execute()) {
   keyOf.set(`k:${r.id}`, r.source_key);
@@ -43,7 +42,7 @@ for (const r of await db
       (r.work_item_id !== null ? `work:${r.work_item_id}` : (r.source_key.split("#")[0] ?? `k:${r.id}`)),
   );
 }
-for (const r of await db.selectFrom("gleanery.message").select("id").execute()) keyOf.set(`m:${r.id}`, r.id);
+for (const r of await db.selectFrom("message").select("id").execute()) keyOf.set(`m:${r.id}`, r.id);
 
 const rank = (hits: Hit[], expect: string[]): number =>
   hits.findIndex((h) => {
@@ -52,88 +51,21 @@ const rank = (hits: Hit[], expect: string[]): number =>
   });
 
 type Strategy = (c: Case) => Promise<Hit[]>;
-const ship = (q: string, kinds?: string[]) =>
-  searchKnowledge(db, env, { question: q, projects: null, limit: K, ...(kinds ? { kinds } : {}) });
 
+// `gleanery search` と端末の画面と同じ関数・同じ並び（種類を省けば判断の記録の後に文書の節）。
 const strategies: Record<string, Strategy> = {
-  "出荷: recall（知識）": (c) =>
+  "出荷: 一発の検索（知識）": async (c) => {
+    if (c.source === "message") return [];
+    if (c.kind === "document")
+      return searchKnowledge(db, { question: c.q, projects: null, kinds: ["document"], limit: K });
+    const { records, documents } = await searchSplit(db, { question: c.q, projects: null, limit: K });
+    return [...records, ...documents];
+  },
+  "出荷: 一発の検索（発言）": (c) =>
     c.source === "message"
-      ? Promise.resolve([])
-      : ship(c.q, c.kind === "document" ? ["document"] : undefined),
-  "出荷: recall（発言）": (c) =>
-    c.source === "message"
-      ? searchMessages(db, env, { question: c.q, projects: null, limit: K })
+      ? searchMessages(db, { question: c.q, projects: null, limit: K })
       : Promise.resolve([]),
-  // 原因の切り分け用。出荷の経路ではないが、前後で同じコードなので比較には使える。
-  "参考: 語彙のみ": async (c) => (c.source === "message" ? [] : await lexicalOnly(c.q)),
-  "参考: 意味のみ": async (c) => (c.source === "message" ? [] : await denseOnly(c.q)),
-  "参考: 融合（rerank 無し）": async (c) =>
-    c.source === "message" ? [] : fuse([await denseOnly(c.q), await lexicalOnly(c.q)]).slice(0, K),
 };
-
-async function lexicalOnly(q: string): Promise<Hit[]> {
-  const { tsquery } = await import("../src/text.ts");
-  const words = tsquery(q);
-  if (!words) return [];
-  const rows = await db
-    .selectFrom("gleanery.knowledge as k")
-    .select(["k.id", "k.kind", "k.status", "k.stance", "k.heading", "k.body", "k.reason", "k.occurred_at"])
-    .where(sql<boolean>`k.lexemes @@ ${words}::tsquery`)
-    .orderBy(sql`ts_rank_cd(k.lexemes, ${words}::tsquery)`, "desc")
-    .limit(K)
-    .execute();
-  return rows.map(bare);
-}
-
-async function denseOnly(q: string): Promise<Hit[]> {
-  const { embed, vec } = await import("../src/db.ts");
-  const qv = (await embed(env, [q], "query"))[0];
-  if (!qv) return [];
-  const rows = await db
-    .selectFrom("gleanery.knowledge as k")
-    .innerJoin("gleanery.knowledge_embedding as e", (j) =>
-      j.onRef("e.knowledge_id", "=", "k.id").on("e.status", "=", "ready"),
-    )
-    .select(["k.id", "k.kind", "k.status", "k.stance", "k.heading", "k.body", "k.reason", "k.occurred_at"])
-    .orderBy(sql`e.embedding operator(extensions.<#>) ${vec(qv)}::extensions.halfvec`)
-    .limit(K)
-    .execute();
-  return rows.map(bare);
-}
-
-/** 参考の系列は順位しか見ないので、Hit の形だけ整える。 */
-function bare(r: {
-  id: string | number;
-  kind: string;
-  status: string | null;
-  stance: string;
-  heading: string | null;
-  body: string;
-  reason: string | null;
-  occurred_at: Date;
-}): Hit {
-  return {
-    ref: `k:${r.id}`,
-    kind: r.kind,
-    status: r.status,
-    stance: r.stance as Hit["stance"],
-    label: "",
-    heading: r.heading,
-    text: r.body,
-    reason: r.reason,
-    confirmation: null,
-    downsides: [],
-    successor: null,
-    project: "",
-    at: r.occurred_at,
-    speaker: null,
-    context: null,
-    url: null,
-    truncated: false,
-    originalBytes: null,
-    relevance: null,
-  };
-}
 
 const table: Record<string, Record<string, string | number>> = {};
 const perCase: Record<string, Record<string, number | "—">> = {};
@@ -197,14 +129,14 @@ for (const [name, fn] of Object.entries(strategies)) {
   };
 }
 
-const total = await db.selectFrom("gleanery.knowledge").select(db.fn.countAll().as("n")).executeTakeFirst();
+const total = await db.selectFrom("knowledge").select(db.fn.countAll().as("n")).executeTakeFirst();
 console.log(`問い ${cases.length} 件 / knowledge ${total?.n ?? 0} 件\n`);
 console.table(table);
 
 console.log("\n=== 種別ごとの recall@5（出荷の経路） ===");
 const byKind: Record<string, { hit: number; n: number }> = {};
 for (const c of cases) {
-  const name = c.source === "message" ? "出荷: recall（発言）" : "出荷: recall（知識）";
+  const name = c.source === "message" ? "出荷: 一発の検索（発言）" : "出荷: 一発の検索（知識）";
   const b = byKind[c.kind] ?? { hit: 0, n: 0 };
   byKind[c.kind] = b;
   b.n++;
@@ -220,7 +152,7 @@ console.table(
 );
 
 const missed = cases.filter((c) => {
-  const name = c.source === "message" ? "出荷: recall（発言）" : "出荷: recall（知識）";
+  const name = c.source === "message" ? "出荷: 一発の検索（発言）" : "出荷: 一発の検索（知識）";
   return perCase[c.q]?.[name] === "—";
 });
 if (missed.length) {

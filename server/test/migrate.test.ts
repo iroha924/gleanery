@@ -66,10 +66,10 @@ test("DB の次の版から最後までに欠番があれば、欠けた revisio
   assert.throws(() => pendingMigrations(["0004_b.sql"], 2), /(?<!\d)0*3(?!\d)/);
 });
 
-// 本番の DB は revision 2 から、ここの migration を順に当てて schema.sql の形へ進む。
-test("db/migrations は revision 3 から欠番も重複も無く続き、最後の版がコードと schema.sql の版に一致する", () => {
-  const revisions = fs
-    .readdirSync(new URL("../../db/migrations/", import.meta.url))
+// SQLite の DB は schema.sql（revision 1）から始まり、ここの migration を順に当てて今の形へ進む。
+test("db/migrations は revision 2 から欠番も重複も無く続き、最後の版がコードと schema.sql の版に一致する", () => {
+  const dir = new URL("../../db/migrations/", import.meta.url);
+  const revisions = (fs.existsSync(dir) ? fs.readdirSync(dir) : [])
     .filter((f) => !f.startsWith("."))
     .sort()
     .map((f) => {
@@ -79,12 +79,9 @@ test("db/migrations は revision 3 から欠番も重複も無く続き、最後
     });
   assert.deepEqual(
     revisions,
-    revisions.map((_, i) => i + 3),
+    revisions.map((_, i) => i + 2),
   );
   const sql = fs.readFileSync(new URL("../../db/schema.sql", import.meta.url), "utf8");
-  assert.equal(revisions.at(-1), SCHEMA_REVISION);
-  assert.equal(
-    revisions.at(-1),
-    Number(sql.match(/comment on schema gleanery is 'gleanery schema revision (\d+)'/)?.[1]),
-  );
+  assert.equal(revisions.at(-1) ?? 1, SCHEMA_REVISION);
+  assert.equal(SCHEMA_REVISION, Number(sql.match(/pragma user_version = (\d+);/)?.[1]));
 });

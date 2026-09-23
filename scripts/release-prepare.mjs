@@ -55,7 +55,6 @@ for (const required of [
   "dist/mcp.js",
   "dist/capture.js",
   "db/schema.sql",
-  "db/compose.yaml",
   ".claude-plugin/plugin.json",
   ".codex-plugin/plugin.json",
   "package.json",

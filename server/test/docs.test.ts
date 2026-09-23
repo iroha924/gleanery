@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import type { KyselyPlugin } from "kysely";
 import type { Artifact } from "../src/artifacts.ts";
 import {
   collectDocs,
@@ -13,8 +14,7 @@ import {
   sections,
   syncDocs,
 } from "../src/docs.ts";
-import { knowledgeText } from "../src/knowledge.ts";
-import { fakeDb } from "./fake-db.ts";
+import { insert, project, type TempDb, tempDb } from "./temp-db.ts";
 import { put, withRepo } from "./temp-repo.ts";
 
 // **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
@@ -82,15 +82,13 @@ test("長い節は切り捨てずに続きへ回す", () => {
   assert.ok(joined.includes("段落59"), "末尾が落ちた");
 });
 
-// 埋め込みには構造から文脈を付ける。どの文書のどの節かが前置されないと、節だけでは何の話か分からない。
-test("埋め込む文にはどの文書のどの節かが前置される", () => {
+// 節だけでは何の話か分からない。見出し（語彙索引で 3 倍に重い列）に、どの文書のどの節かを前置する。
+test("節の見出しにはどの文書のどの節かが前置される", () => {
   const out = sections("docs/adr/0001-x.md", ["# 決定", "## Context", "背景の説明"].join("\n"));
   const s = out.find((x) => x.title === "Context");
   assert.ok(s);
-  assert.equal(
-    knowledgeText({ kind: "document", heading: s.trail, body: s.text, reason: null }),
-    "docs/adr/0001-x.md > 決定 > Context / 文書\n## Context\n背景の説明",
-  );
+  assert.equal(s.trail, "docs/adr/0001-x.md > 決定 > Context");
+  assert.equal(s.text, "## Context\n背景の説明");
 });
 
 // 見出しの無い文書（README の冒頭だけ、CLAUDE.md の `@AGENTS.md` など）も落とさない。
@@ -215,39 +213,55 @@ test("大文字の拡張子の文書にも最終更新日が付き、大きす�
 
 // 除外は docs の connector に付く。同期は transaction の外でこれを読み、blob を読む前に当てる。
 test("除外は docs の connector から読み、kind で file と directory に分かれる", async () => {
-  const { db, calls } = fakeDb(() => [
-    { kind: "file", path: "assets/skeleton.md" },
-    { kind: "directory", path: "evals/fixtures" },
-  ]);
-  assert.deepEqual(await excludedOf(db, 7), {
-    files: ["assets/skeleton.md"],
-    directories: ["evals/fixtures"],
-  });
-  assert.match(calls[0]?.sql ?? "", /"gleanery"\."docs_exclude"/);
-  assert.deepEqual(calls[0]?.parameters, ["docs", "7"]);
+  const db = tempDb();
+  try {
+    const p = project(db);
+    assert.deepEqual(
+      await excludedOf(db.reader, p),
+      { files: [], directories: [] },
+      "connector がまだ無くても読める",
+    );
+    const docs = insert(db, "connector", { project_id: p, provider: "docs" });
+    insert(db, "docs_exclude", { connector_id: docs, kind: "file", path: "assets/skeleton.md" });
+    insert(db, "docs_exclude", { connector_id: docs, kind: "directory", path: "evals/fixtures" });
+    const other = project(db, "git:github.com/o/other", "o/other");
+    const theirs = insert(db, "connector", { project_id: other, provider: "docs" });
+    insert(db, "docs_exclude", { connector_id: theirs, kind: "file", path: "theirs.md" });
+    assert.deepEqual(await excludedOf(db.reader, p), {
+      files: ["assets/skeleton.md"],
+      directories: ["evals/fixtures"],
+    });
+  } finally {
+    await db.done();
+  }
 });
 
 /**
- * 文書の connector に head だけを持つ偽の DB。書き込みの SQL が来たら失敗させる（この経路は何も書かない）。
- * onRead は connector を読んだ瞬間に走る（その間に別の同期が新しい commit を入れた、を再現する）。
+ * 文書の connector に head だけを持つ DB。onRead は connector を読んだ瞬間に 1 度だけ走る
+ * （その間に別の同期が新しい commit を入れた、を再現する）。
  */
-function headOnly(head: string, onRead: () => void = () => {}) {
-  const { db, calls } = fakeDb((text) => {
-    if (text.includes('"gleanery"."docs_exclude"')) return [];
-    if (text.includes('insert into "gleanery"."connector"')) return [];
-    if (text.includes('"head_oid"')) {
-      onRead();
-      return [{ id: "1", head_oid: head, snapshot_at: null }];
-    }
-    return new Error(`書かないはずの SQL: ${text}`);
-  });
-  return {
-    get sql() {
-      return calls.map((c) => c.sql);
+function headOnly(db: TempDb, p: number, head: string, onRead: () => void = () => {}) {
+  db.owner
+    .prepare(
+      "insert into connector (project_id, provider, head_oid) values (?, 'docs', ?) on conflict do update set head_oid = excluded.head_oid",
+    )
+    .run(p, head);
+  let fired = false;
+  const hook: KyselyPlugin = {
+    transformQuery: (args) => args.node,
+    transformResult: async (args) => {
+      if (!fired && args.result.rows.some((r) => "head_oid" in r)) {
+        fired = true;
+        onRead();
+      }
+      return args.result;
     },
-    client: db,
   };
+  return db.ingest.withPlugin(hook);
 }
+
+const written = (db: TempDb) =>
+  (db.owner.prepare("select count(*) as n from source_item").get() as { n: number }).n;
 
 // 同じ朝に 2 本の同期が走り、新しい commit を先に入れられた側が失敗を報告しない。巻き戻しと分岐は止めて、画面に出す。
 test("取り直して前に入れた commit まで進んでいれば何も書かずに終え、巻き戻しと分岐は止める", async () => {
@@ -261,22 +275,42 @@ test("取り直して前に入れた commit まで進んでいれば何も書か
     git("commit", "-qm", "b");
     const newer = commitOf(repo, false);
 
-    git("checkout", "-q", older);
-    const raced = headOnly(newer, () => git("checkout", "-q", newer));
-    assert.match(
-      await syncDocs(raced.client, 1, repo, { remote: false }),
-      /新しい commit（.{8}）を先に入れていた/,
-    );
-    assert.ok(raced.sql.includes("commit"));
+    const db = tempDb();
+    try {
+      const p = project(db);
+      git("checkout", "-q", older);
+      const raced = headOnly(db, p, newer, () => git("checkout", "-q", newer));
+      assert.match(
+        await syncDocs(raced, p, repo, { remote: false }),
+        /新しい commit（.{8}）を先に入れていた/,
+      );
 
-    git("checkout", "-q", older);
-    await assert.rejects(syncDocs(headOnly(newer).client, 1, repo, { remote: false }), /fast-forward でない/);
+      git("checkout", "-q", older);
+      await assert.rejects(
+        syncDocs(headOnly(db, p, newer), p, repo, { remote: false }),
+        /fast-forward でない/,
+      );
 
-    git("checkout", "-q", "-b", "other");
-    put(repo, "README.md", "# c\n");
-    git("add", "-A");
-    git("commit", "-qm", "c");
-    await assert.rejects(syncDocs(headOnly(newer).client, 1, repo, { remote: false }), /fast-forward でない/);
+      git("checkout", "-q", "-b", "other");
+      put(repo, "README.md", "# c\n");
+      git("add", "-A");
+      git("commit", "-qm", "c");
+      await assert.rejects(
+        syncDocs(headOnly(db, p, newer), p, repo, { remote: false }),
+        /fast-forward でない/,
+      );
+      assert.equal(written(db), 0, "どの経路も文書を書いていない");
+      assert.equal(
+        (
+          db.owner.prepare("select head_oid from connector where project_id = ?").get(p) as {
+            head_oid: string;
+          }
+        ).head_oid,
+        newer,
+      );
+    } finally {
+      await db.done();
+    }
   });
 });
 
@@ -333,7 +367,7 @@ test("原文は見出しだけの節・コードフェンス・末尾の改行�
   assert.notEqual(doc?.sections.map((s) => s.text).join("\n"), body, "節の連結で戻るなら原文は要らない");
 });
 
-// **本文が同じ文書には書かない。**毎日の同期で全節を書き直すと、索引と埋め込みの行が膨らむ（実測で 2 万回の書き換え）。
+// **本文が同じ文書には書かない。**毎日の同期で全節を書き直すと、索引の書き換えが膨らむ（実測で 2 万回の書き換え）。
 test("文書の hash は本文と承認の状態で決まり、同じなら同じ値になる", () => {
   const bodies = new Map([["a.md", "# a\n\n本文\n"]]);
   const [x] = projectDocs(bodies, new Map(), new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
@@ -346,4 +380,47 @@ test("文書の hash は本文と承認の状態で決まり、同じなら同�
 
 test("中身の無い文書は入れない", () => {
   assert.deepEqual(projectDocs(new Map([["empty.md", "  \n"]]), new Map(), new Map()), []);
+});
+
+// 撤回した節が検索に残ると、古い記述が正解として返る。消えた文書の原文も残さない。
+test("同期は節を知識へ入れて索引し、消えた節と文書を消す", async () => {
+  await withRepo(async (repo, git) => {
+    const db = tempDb();
+    try {
+      const p = project(db);
+      put(repo, "docs/a.md", "# 設計\n\n## 背景\n柑橘の背景\n\n## 決定\n柑橘で決めた\n");
+      put(repo, "docs/b.md", "# 別\n消える文書\n");
+      git("add", "-A");
+      git("commit", "-qm", "a");
+      await syncDocs(db.ingest, p, repo, { remote: false });
+      const hit = (q: string) =>
+        (
+          db.owner
+            .prepare(
+              "select k.heading from knowledge_fts f join knowledge k on k.id = f.rowid where knowledge_fts match ?",
+            )
+            .all(q) as { heading: string }[]
+        ).map((r) => r.heading);
+      assert.deepEqual(
+        new Set(hit('"柑橘"')),
+        new Set(["docs/a.md > 設計 > 背景", "docs/a.md > 設計 > 決定"]),
+      );
+      put(repo, "docs/a.md", "# 設計\n\n## 背景\n柑橘の背景\n");
+      fs.rmSync(path.join(repo, "docs/b.md"));
+      git("add", "-A");
+      git("commit", "-qm", "b");
+      await syncDocs(db.ingest, p, repo, { remote: false });
+      assert.deepEqual(hit('"柑橘"'), ["docs/a.md > 設計 > 背景"]);
+      assert.deepEqual(
+        (db.owner.prepare("select external_id from source_item").all() as { external_id: string }[]).map(
+          (r) => r.external_id,
+        ),
+        ["docs/a.md"],
+      );
+      // 変わっていない文書は書き直さない（2 度目の同期で 0 件）
+      assert.match(await syncDocs(db.ingest, p, repo, { remote: false }), /書き直した 0 本/);
+    } finally {
+      await db.done();
+    }
+  });
 });

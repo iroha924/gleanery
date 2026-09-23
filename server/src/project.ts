@@ -104,8 +104,8 @@ export function nameLocal(dir: string, name: string): Place {
   const root = rootOf(dir);
   const m = localMap();
   m[root] = name;
-  // **置き場所を先に作る。**~/.gleanery/ は鍵を入れたときに出来るが、環境変数で渡している
-  // 利用者にはまだ無い。無いまま書くと ENOENT で落ちて、名前を付けられない。
+  // **置き場所を先に作る。**~/.gleanery/ は `gleanery db init` で出来るが、その前に名前を付ける利用者には
+  // まだ無い。無いまま書くと ENOENT で落ちて、名前を付けられない。
   fs.mkdirSync(path.dirname(localFile()), { recursive: true, mode: 0o700 });
   fs.writeFileSync(localFile(), `${JSON.stringify(m, null, 2)}\n`);
   return { key: `local:${name}`, root, name };
@@ -113,8 +113,8 @@ export function nameLocal(dir: string, name: string): Place {
 
 /** その作業場所の project id。無ければ null（作るのは `gleanery project add` だけ）。 */
 export async function projectId(db: Kysely<DB>, key: string): Promise<number | null> {
-  const r = await db.selectFrom("gleanery.project").select("id").where("key", "=", key).executeTakeFirst();
-  return r ? Number(r.id) : null;
+  const r = await db.selectFrom("project").select("id").where("key", "=", key).executeTakeFirst();
+  return r?.id ?? null;
 }
 
 /**
@@ -160,10 +160,11 @@ export function relativeTo(root: string, file: string, cwd = root): string | nul
   return rel.split(path.sep).join("/");
 }
 
-export type Connector = { id: string; headOid: string | null; snapshotAt: Date | null };
+export type Connector = { id: number; headOid: string | null; snapshotAt: string | null };
 
 /**
- * 取り込み元の行。無ければ作る。**transaction の中で呼び、行を掴む**（同じ取り込み元の同期の commit を 1 本ずつにする）。
+ * 取り込み元の行。無ければ作る。**transaction（inTransaction。書き込みのロックを先に取る）の中で呼ぶ**
+ * （同じ取り込み元の同期の commit を 1 本ずつにする）。
  * 同期の成否と、最後に入れた snapshot はここへ書く（`gleanery doctor` と画面が最後の同期を出す）。
  */
 export async function connectorOf(
@@ -172,16 +173,15 @@ export async function connectorOf(
   provider: "github" | "docs",
 ): Promise<Connector> {
   await db
-    .insertInto("gleanery.connector")
-    .values({ project_id: String(projectId), provider })
+    .insertInto("connector")
+    .values({ project_id: projectId, provider })
     .onConflict((oc) => oc.columns(["project_id", "provider"]).doNothing())
     .execute();
   const row = await db
-    .selectFrom("gleanery.connector")
+    .selectFrom("connector")
     .select(["id", "head_oid", "snapshot_at"])
-    .where("project_id", "=", String(projectId))
+    .where("project_id", "=", projectId)
     .where("provider", "=", provider)
-    .forUpdate()
     .executeTakeFirst();
   if (!row) throw new Error(`取り込み元を作れなかった: ${provider}`);
   return { id: row.id, headOid: row.head_oid, snapshotAt: row.snapshot_at };

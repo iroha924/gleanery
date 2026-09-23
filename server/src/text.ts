@@ -1,7 +1,7 @@
-// 文字列の下ごしらえ。語の切り出し、全文索引のリテラル、ハッシュ、決定的な id、バイトでの切り詰め。
+// 文字列の下ごしらえ。語の切り出し、全文索引の問い、ハッシュ、決定的な id、バイトでの切り詰め。
 //
-// **語は DB に切らせない。**PostgreSQL の text search は日本語を語に割れないので、
-// 取り込み側と問い合わせ側の両方で同じ関数（terms）を通し、tsvector と tsquery をこちらで組む。
+// **語は SQLite に切らせない。**FTS5 の既定の tokenizer は日本語を語に割れないので、索引側（DB の trigger が呼ぶ
+// gleanery_terms。server/src/db-write.ts が登録する）と問い合わせ側の両方で同じ関数（terms）を通す。
 // 両側が同じ切り方なら、辞書の差で片側だけ語がずれることが起きない。
 
 import crypto from "node:crypto";
@@ -13,10 +13,13 @@ const HIRAGANA_ONLY = /^[\p{Script=Hiragana}ー]+$/u;
 const STOP = new Set(["the", "a", "an", "of", "to", "in", "is", "and", "or", "for", "on", "it", "be"]);
 // Segmenter が割ってしまう識別子（ファイル名、snake_case、OT-123、#27）は丸ごとも語にする。
 const IDENT = /#\d+|[a-z0-9][a-z0-9_./#-]*[a-z0-9]/g;
-// tsvector の語は 2 KB 未満。長すぎる塊は語ではない（base64 やハッシュ）。
+// 長すぎる塊は語ではない（base64 やハッシュ）。
 const MAX_TERM = 100;
 
-/** 検索に使う語を出現順に返す（重複を含む）。取り込みと問い合わせで同じものを使う。 */
+/**
+ * 検索に使う語を出現順に返す（重複を含む）。取り込みと問い合わせで同じものを使う。
+ * **規則を変えたら、既存の索引は古いまま残る。**変える PR は release の手順に `gleanery db reindex` を書く。
+ */
 export function terms(text: string): string[] {
   const norm = text.normalize("NFKC").toLowerCase();
   const out: string[] = [];
@@ -29,27 +32,14 @@ export function terms(text: string): string[] {
   return out.filter(Boolean);
 }
 
-// tsvector と tsquery の入力では、語を ' で囲み、中の ' は二重に、\ は \\ にする。
-const quote = (w: string): string => `'${w.replace(/\\/g, "\\\\").replace(/'/g, "''")}'`;
-
 /**
- * tsvector のリテラル。位置を持たせる（ts_rank_cd は位置が無いと 0 を返す）。
- * PostgreSQL は 1 語あたり位置 256 個まで、位置の値 16,383 までしか持てないので、そこで止める。
+ * 問いの語のどれかに当たる FTS5 の問い。語が無ければ null（引かない）。
+ * **語を必ず `"..."` で括り、中の `"` を二重にする。**括らないと `AND`・`NEAR`・`*`・`:`・`-` が FTS5 の演算子として
+ * 読まれ、利用者の文字列が問いの構文を変える（`sql:live` は列の指定になる）。
  */
-export function tsvector(text: string): string {
-  const pos = new Map<string, number[]>();
-  terms(text).forEach((w, i) => {
-    const p = pos.get(w) ?? [];
-    if (p.length < 256) p.push(Math.min(i + 1, 16_383));
-    pos.set(w, p);
-  });
-  return [...pos].map(([w, p]) => `${quote(w)}:${[...new Set(p)].join(",")}`).join(" ");
-}
-
-/** 問いの語のどれかに当たる tsquery。語が無ければ null（語彙側を引かない）。 */
-export function tsquery(question: string): string | null {
-  const ws = [...new Set(terms(question))].slice(0, 16);
-  return ws.length ? ws.map(quote).join(" | ") : null;
+export function ftsQuery(question: string): string | null {
+  const ws = [...new Set(terms(question))].slice(0, 24);
+  return ws.length ? ws.map((w) => `"${w.replaceAll('"', '""')}"`).join(" OR ") : null;
 }
 
 export const sha256 = (s: string): Buffer => crypto.createHash("sha256").update(s).digest();
@@ -97,7 +87,7 @@ export function tail(s: string, n: number): string {
   return chars.slice(i).join("");
 }
 
-/** PostgreSQL の text は NUL を持てない。外から来た文字列は入れる前にここを通す。 */
+/** SQLite の length・substr は NUL の後ろを読まない（題が切れる）。外から来た文字列は入れる前にここを通す。 */
 export const clean = (s: string): string => s.replaceAll("\u0000", "");
 
 /**
@@ -109,7 +99,7 @@ export const clean = (s: string): string => s.replaceAll("\u0000", "");
 export const visible = (s: string): string =>
   s.replace(/(?!\p{Join_Control}|\p{Variation_Selector})\p{Default_Ignorable_Code_Point}/gu, "");
 
-// 貼ってしまった鍵を DB・待ち行列・埋め込みの API へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
+// 貼ってしまった鍵を DB・待ち行列へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
 // 形は 5 つ: 接頭辞の決まった鍵、鍵の名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報、認証ヘッダの値、
 // `mysql -p` のパスワード。載っていない形式の鍵は伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
 // **どれも入力の長さに対して線形で終わる形に保つ。**フックは 128 KiB までの発言を、trace は上限の無い本文を通す。

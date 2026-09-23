@@ -9,122 +9,111 @@ export type Generated<T> = T extends ColumnType<infer S, infer I, infer U>
   ? ColumnType<S, I | undefined, U>
   : ColumnType<T, T | undefined, T>;
 
-export type Int8 = ColumnType<string, bigint | number | string, bigint | number | string>;
-
-export type Json = JsonValue;
-
-export type JsonArray = JsonValue[];
-
-export type JsonObject = {
-  [x: string]: JsonValue | undefined;
-};
-
-export type JsonPrimitive = boolean | number | string | null;
-
-export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
-
-export type Timestamp = ColumnType<Date, Date | string, Date | string>;
-
-export interface GleaneryConnector {
-  head_oid: string | null;
-  id: Generated<Int8>;
-  last_error: string | null;
-  last_success_at: Timestamp | null;
-  project_id: Int8;
-  provider: string;
-  snapshot_at: Timestamp | null;
+export interface CaptureConversation {
+  branch: string | null;
+  external_id: string | null;
+  id: string | null;
+  origin: string | null;
+  project_id: number | null;
+  started_at: string | null;
 }
 
-export interface GleaneryConversation {
+export interface CaptureMessage {
+  body: string | null;
+  content_hash: Buffer | null;
+  conversation_id: string | null;
+  external_id: string | null;
+  id: string | null;
+  indexed: number | null;
+  original_bytes: number | null;
+  sent_at: string | null;
+  speaker_kind: string | null;
+  truncated: number | null;
+  turn_id: string | null;
+}
+
+export interface CaptureMessageFile {
+  action: string | null;
+  message_id: string | null;
+  path: string | null;
+}
+
+export interface Connector {
+  head_oid: string | null;
+  id: Generated<number>;
+  last_error: string | null;
+  last_success_at: string | null;
+  project_id: number;
+  provider: string;
+  snapshot_at: string | null;
+}
+
+export interface Conversation {
   branch: string | null;
   external_id: string;
   id: string;
   origin: string;
-  project_id: Int8;
-  source_item_id: Int8 | null;
-  started_at: Timestamp;
-  title: string | null;
+  project_id: number;
+  source_item_id: number | null;
+  started_at: string;
 }
 
-export interface GleaneryDocsExclude {
-  connector_id: Int8;
+export interface DocsExclude {
+  connector_id: number;
   kind: string;
   path: string;
 }
 
-export interface GleaneryKnowledge {
+export interface Knowledge {
   body: string;
   command: string | null;
   confidence: string | null;
   confirmation: string | null;
   content_hash: Buffer;
   conversation_id: string | null;
-  decision_id: Int8 | null;
-  downsides: Generated<string[]>;
+  decision_id: number | null;
+  downsides: ColumnType<string[], string | undefined, string>;
   heading: string | null;
-  id: Generated<Int8>;
+  id: Generated<number>;
   kind: string;
-  lexemes: string;
-  occurred_at: Timestamp;
-  project_id: Int8;
+  occurred_at: string;
+  project_id: number;
   reason: string | null;
-  refs: Generated<string[]>;
-  source_item_id: Int8 | null;
+  refs: ColumnType<string[], string | undefined, string>;
+  source_item_id: number | null;
   source_key: string;
-  stance: Generated<string>;
   status: string | null;
-  superseded_by_id: Int8 | null;
-  work_item_id: Int8 | null;
+  superseded_by_id: number | null;
+  work_item_id: number | null;
 }
 
-export interface GleaneryKnowledgeEmbedding {
-  attempts: Generated<number>;
-  embedding: string | null;
-  knowledge_id: Int8;
-  last_error: string | null;
-  model: string;
-  source_hash: Buffer;
-  status: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface GleaneryKnowledgeFile {
-  knowledge_id: Int8;
+export interface KnowledgeFile {
+  knowledge_id: number;
   line_end: number | null;
   line_start: number | null;
   path: string;
   role: string;
 }
 
-export interface GleaneryMessage {
+export interface Message {
   body: string;
   content_hash: Buffer;
   conversation_id: string;
   external_id: string;
   id: string;
-  identity_id: Int8 | null;
-  lexemes: string | null;
+  identity_id: number | null;
+  indexed: number;
   original_bytes: number;
   reply_to_id: string | null;
-  sent_at: Timestamp;
+  sent_at: string;
+  seq: Generated<number>;
   speaker_kind: string;
-  truncated: Generated<boolean>;
+  truncated: Generated<number>;
   turn_id: string | null;
   url: string | null;
 }
 
-export interface GleaneryMessageEmbedding {
-  attempts: Generated<number>;
-  embedding: string | null;
-  last_error: string | null;
-  message_id: string;
-  model: string;
-  source_hash: Buffer;
-  status: string;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface GleaneryMessageFile {
+export interface MessageFile {
   action: string;
   line_end: number | null;
   line_start: number | null;
@@ -132,72 +121,73 @@ export interface GleaneryMessageFile {
   path: string;
 }
 
-export interface GleaneryPerson {
+export interface Person {
   display_name: string;
-  id: Generated<Int8>;
-  is_self: Generated<boolean>;
+  id: Generated<number>;
+  is_self: Generated<number>;
 }
 
-export interface GleaneryPersonIdentity {
+export interface PersonIdentity {
   external_id: string;
   handle: string;
-  id: Generated<Int8>;
-  person_id: Int8 | null;
+  id: Generated<number>;
+  person_id: number | null;
   provider: string;
 }
 
-export interface GleaneryProject {
-  created_at: Generated<Timestamp>;
-  id: Generated<Int8>;
+export interface Project {
+  created_at: Generated<string>;
+  id: Generated<number>;
   key: string;
   name: string;
 }
 
-export interface GleanerySourceItem {
-  author_identity_id: Int8 | null;
+export interface SourceItem {
+  author_identity_id: number | null;
   body: string | null;
-  closed_at: Timestamp | null;
-  connector_id: Int8;
+  closed_at: string | null;
+  connector_id: number;
   content_hash: Buffer;
   external_id: string;
-  id: Generated<Int8>;
+  id: Generated<number>;
   kind: string;
-  metadata: Generated<Json>;
+  metadata: ColumnType<Record<string, unknown>, string | undefined, string>;
   path: string | null;
-  source_created_at: Timestamp | null;
-  source_updated_at: Timestamp | null;
+  source_created_at: string | null;
+  source_updated_at: string | null;
   state: string | null;
-  synced_at: Generated<Timestamp>;
+  synced_at: Generated<string>;
   title: string;
   url: string | null;
 }
 
-export interface GleaneryWorkItem {
+export interface WorkItem {
   conversation_id: string | null;
   current: string;
   goal: string;
-  id: Generated<Int8>;
-  next: Generated<string[]>;
-  project_id: Int8;
+  id: Generated<number>;
+  next: ColumnType<string[], string | undefined, string>;
+  project_id: number;
   source_key: string;
   status: string;
   title: string;
-  updated_at: Timestamp;
+  updated_at: string;
 }
 
 export interface DB {
-  "gleanery.connector": GleaneryConnector;
-  "gleanery.conversation": GleaneryConversation;
-  "gleanery.docs_exclude": GleaneryDocsExclude;
-  "gleanery.knowledge": GleaneryKnowledge;
-  "gleanery.knowledge_embedding": GleaneryKnowledgeEmbedding;
-  "gleanery.knowledge_file": GleaneryKnowledgeFile;
-  "gleanery.message": GleaneryMessage;
-  "gleanery.message_embedding": GleaneryMessageEmbedding;
-  "gleanery.message_file": GleaneryMessageFile;
-  "gleanery.person": GleaneryPerson;
-  "gleanery.person_identity": GleaneryPersonIdentity;
-  "gleanery.project": GleaneryProject;
-  "gleanery.source_item": GleanerySourceItem;
-  "gleanery.work_item": GleaneryWorkItem;
+  capture_conversation: CaptureConversation;
+  capture_message: CaptureMessage;
+  capture_message_file: CaptureMessageFile;
+  connector: Connector;
+  conversation: Conversation;
+  docs_exclude: DocsExclude;
+  knowledge: Knowledge;
+  knowledge_file: KnowledgeFile;
+  message: Message;
+  message_file: MessageFile;
+  person: Person;
+  person_identity: PersonIdentity;
+  project: Project;
+  source_item: SourceItem;
+  work_item: WorkItem;
 }

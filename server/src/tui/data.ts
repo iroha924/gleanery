@@ -1,13 +1,14 @@
 // TUI が読むものの口。**SQL をここにも画面にも書かない** — MCP・CLI と同じ関数（sessions.ts・search.ts）を呼ぶ。
-// 接続は reader だけ。取り込み・trace・書き込みの鍵をこのプロセスへ持ち込まない（AGENTS.md の実行境界）。
+// 接続は reader だけで、この module から書く接続（db-write.ts）へ import を辿らせない（`bun run architecture`）。
+// プロセスの分離ではない — dashboard は CLI と同じプロセスで動き、束ねた cli.js には書く接続も入っている。
 
-import { KEY, loadEnv, open } from "../db.ts";
+import { openReader } from "../db.ts";
 import { identify, projectId } from "../project.ts";
 import {
   type Hit,
   read,
-  searchKnowledge,
   searchMessages,
+  searchSplit,
   type Work,
   type WorkDetail,
   workDetail,
@@ -43,10 +44,7 @@ const READ_BYTES = 64 * 1024;
 const scope = (project: number | null) => (project === null ? null : [project]);
 
 export async function liveData(cwd: string): Promise<{ data: Data; close: () => Promise<void> }> {
-  const all = loadEnv();
-  // 検索が質問を埋め込むのに VOYAGE_API_KEY が要る（無ければ語彙だけで引く）。それ以外は渡さない。
-  const env = { [KEY.reader]: all[KEY.reader], VOYAGE_API_KEY: all.VOYAGE_API_KEY };
-  const db = open(env, "reader");
+  const db = openReader();
   const place = identify(cwd);
   const project = place ? await projectId(db, place.key) : null;
   const data: Data = {
@@ -55,11 +53,13 @@ export async function liveData(cwd: string): Promise<{ data: Data; close: () => 
     sessions: (p, page, pageSize) => listSessions(db, { project: p, page, pageSize }),
     session: (id) => sessionDetail(db, id),
     works: (p) => listWork(db, scope(p)),
-    work: (ref, p) => workDetail(db, ref.replace(/^w:/, ""), scope(p)),
-    search: (question, mode, p) =>
-      mode === "said"
-        ? searchMessages(db, env, { question, projects: scope(p), who: "me", limit: 20 })
-        : searchKnowledge(db, env, { question, projects: scope(p), limit: 20 }),
+    work: (ref, p) => workDetail(db, Number(ref.replace(/^w:/, "")), scope(p)),
+    // MCP の recall と同じ関数・同じ順位。判断の記録の後に文書の節を並べる。
+    search: async (question, mode, p) => {
+      if (mode === "said") return searchMessages(db, { question, projects: scope(p), who: "me", limit: 20 });
+      const { records, documents } = await searchSplit(db, { question, projects: scope(p), limit: 20 });
+      return [...records, ...documents];
+    },
     read: (ref, p) => read(db, [ref], READ_BYTES, { projects: scope(p) }),
   };
   return { data, close: () => db.destroy() };

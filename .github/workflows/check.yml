@@ -1,11 +1,10 @@
 # pre-commit が見ていないものを見る。
 #
-# **いちばんの価値は `bun run test`** — pre-commit は走らせず、pre-pushとCIで実行する。
+# **いちばんの価値は `bun run verify` の test と SQL の到達** — pre-commit は走らせず、pre-pushとCIで実行する。
 # 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。ただし plugin の版は
 # commit ごとではなく、merge 先か push 前の commit から HEAD までをまとめて見る。
 #
-# **シークレットを置かない。**テストは資格情報なしで通る（DB が要る 2 件は自分で skip する）。
-# 資格情報なしでもテスト自体は通り、外部サービスを使う検査だけが自分で skip する。
+# **シークレットを置かない。**DB は一時ディレクトリの SQLite で、テストは資格情報なしで通る。
 name: check
 
 on:
@@ -25,6 +24,11 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # engines の下限（24.15）と、次の系列（26）の両方で通ることを見る。片方が落ちても、もう片方の結果は残す。
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["24.15", "26"]
     steps:
       # third-party action は full commit SHA で pin する（タグは後から中身を差し替えられる）。
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,10 +42,10 @@ jobs:
         with:
           bun-version: 1.4.0
 
-      # テストは node の test runner で走る。engines の下限（>=24.15）そのもので通ることを見る。
+      # テストは node の test runner で走り、DB は Node 組み込みの node:sqlite を使う。
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.15"
+          node-version: ${{ matrix.node }}
 
       # 依存の導入と verify より前に置く。手前で落ちた main への push は、その範囲を二度と見ない。
       - name: plugin の版が上がっているか
@@ -55,24 +59,14 @@ jobs:
       - name: 依存を入れる
         run: bun run setup
 
-      # ローカルの pre-push と同じ正本を使う。Biome、型、テスト、配布物の bundle をまとめて検査する。
-      - name: lint・型・test・bundle を検証
+      # ローカルの pre-push と同じ正本を使う。Biome、型、配布物の bundle、test（全部の SQL が本物の SQLite で
+      # 実行されたかを数える sql:reach）、CLI と自動記録を子プロセスで一時 HOME の DB へ通す sql:live。
+      - name: lint・型・bundle・test・SQL の到達・子プロセスのレーン
         run: bun run verify
 
-      # 一時 PostgreSQL を立てる。理由と生成元は scripts/lib/temp-postgres.mjs の冒頭にある。
+      # メモリ上の SQLite に schema.sql を当てて型を作り、追跡している db-types.ts と比べる。
       - name: DB の型が schema.sql と合っているか
         run: bun run codegen:check
-
-      # 型もテストも、必ず実行時に落ちる SQL を素通りさせる（#85 で 2 種類・6 箇所）。
-      # テスト中に組み立てた SQL を集め、同じ一時 PostgreSQL へ EXPLAIN で通す。
-      # verify に入れない（Docker が要る）ので、pre-push ではなくここだけが見る。
-      - name: 組み立てた SQL を実 PostgreSQL が受け付けるか
-        run: bun run sql:parse
-
-      # 偽の db を差し込む継ぎ目が無い CLI は、配る entrypoint を子プロセスで起動して
-      # 実 DB へ通す。SQL だけでなく、鍵とロールの権限と接続の後始末もここが見る。
-      - name: CLI を実 PostgreSQL に通す
-        run: bun run sql:live
 
       # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない
       # （ignore されたファイルは差分に現れない）。npm が実際に詰めるものを一覧し、リポジトリの
@@ -85,7 +79,7 @@ jobs:
           tgz="$(npm pack --silent)"
           tar tzf "$tgz" | sort > /tmp/contents.txt
           for f in package/dist/cli.js package/dist/mcp.js package/dist/capture.js \
-                   package/db/schema.sql package/db/compose.yaml \
+                   package/db/schema.sql \
                    package/LICENSE package/THIRD_PARTY_NOTICES.md; do
             grep -qx "$f" /tmp/contents.txt || { echo "tarball に $f が無い"; exit 1; }
           done
@@ -97,6 +91,10 @@ jobs:
           # 同梱物を配った配置のまま引けるか。dist と db の相対関係は
           # server/test/assets.test.ts が候補の計算ごと検査している。
           test -f "$out/package/dist/../db/schema.sql"
+          # 束ねた CLI が node:sqlite と同梱の schema で DB を作れるか。HOME は一時ディレクトリ。
+          home="$(mktemp -d)"
+          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" db init > /dev/null
+          test -f "$home/.gleanery/gleanery.db"
           # Web の画面の資産は配らない（端末の画面へ移した）。残っていれば bundle の消し忘れ
           test ! -e "$out/package/dist/dashboard"
 
@@ -107,3 +105,49 @@ jobs:
           set -e
           node scripts/check-pairs.mjs
           git diff --exit-code HEAD -- README.md
+
+  # **配る物は Windows でも動かす**（AGENTS.md）。この repository の開発は macOS / Linux が前提なので verify は回さず、
+  # 束ねた tarball が node_modules 無しで起動し、node:sqlite で DB を作れるかだけを見る。端末の画面のキー入力と罫線は
+  # 実機でしか見えない（CI では確かめられない）。
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.15"
+      - name: 依存を入れて束ねる
+        run: |
+          set -e
+          bun run setup
+          bun run bundle
+      - name: 配る tarball が Windows で起動するか
+        run: |
+          set -e
+          cd plugin
+          tgz="$(npm pack --silent)"
+          out="$(mktemp -d)"
+          tar xzf "$tgz" -C "$out"
+          node "$out/package/dist/cli.js" --help > /dev/null
+          # os.homedir() は Windows では USERPROFILE を読む。
+          home="$(mktemp -d)"
+          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" db init
+          test -f "$home/.gleanery/gleanery.db"
+          # doctor は plugin の導入の状態で 1 を返しうる（この runner に plugin は無い）。DB の行だけを見る。
+          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" doctor > doctor.out || true
+          grep -E "✓ schema の版" doctor.out
+          grep -E "✓ 語彙索引" doctor.out
+          # MCP が立ち上がり、道具の一覧を返すか。
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | HOME="$home" USERPROFILE="$home" timeout 30 node "$out/package/dist/mcp.js" > mcp.out || true
+          # pipefail の下で grep -q が先に閉じると前段が SIGPIPE で落ちるので、書き出してから見る。
+          grep -q '"recall"' mcp.out
