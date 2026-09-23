@@ -51,7 +51,7 @@ await withTempDir(async (dir) => {
     // 文書の除外。add は connector を作り、list は join で引き、remove は副問い合わせで絞る。
     note("exclude add", runCli(["project", "exclude", "add", "--cwd", repo, "docs"], dir, covDir));
     const excluded = note("exclude list", runCli(["project", "exclude", "list", "--cwd", repo], dir, covDir));
-    if (!/docs（directory）/.test(excluded.out))
+    if (!/^\s+docs\s+ディレクトリ$/m.test(excluded.out))
       failures.push(`exclude list が足した path を出していない\n${excluded.out.slice(0, 400)}`);
     note("exclude remove", runCli(["project", "exclude", "remove", "--cwd", repo, "docs"], dir, covDir));
     // **harvest はここでは半分だけ通る。**作業場所の key は remote の綴りから決まるので、
@@ -160,7 +160,7 @@ await withTempDir(async (dir) => {
     // 作業場所を登録したら、退避した分がそのまま入る。ここが繋がらないと退避の意味が無い。
     note("project add（退避先）", runCli(["project", "add", "--cwd", stranger], dir, covDir));
     const retried = runCli(["capture", "flush"], dir, covDir, strangerAs);
-    if (!/新しく入った発言 [1-9]/.test(retried.out)) {
+    if (!/新しく入った発言\s+[1-9]/.test(retried.out)) {
       failures.push(`登録した後も、退避した記録が入っていない\n${retried.out.slice(0, 400)}`);
     }
     const after = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
