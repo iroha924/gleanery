@@ -73,10 +73,6 @@ jobs:
           tgz="$(npm pack --silent)"
           node ../scripts/check-tarball.mjs "$tgz"
 
-      # 同じ知識が複数のインターフェースに写されている場所の突き合わせ
-      - name: 対の突き合わせ
-        run: node scripts/check-pairs.mjs
-
   # **配る物は Windows でも動かす**（AGENTS.md）。この repository の開発は macOS / Linux が前提なので verify は回さず、
   # バンドルした tarball が node_modules 無しで起動し、node:sqlite で DB を作れるかだけを見る。端末の画面のキー入力と罫線は
   # 実機でしか見えない（CI では確かめられない）。

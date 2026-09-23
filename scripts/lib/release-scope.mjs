@@ -1,7 +1,7 @@
 // npm package に入る変更かを判定する。入るなら npm と plugin channel の 3 つを同じバージョンへ上げる（種別 plugin）。
 // version gate、release plan、手動release準備はすべてこの判定を使う。
 
-const EXACT_PACKAGE_INPUTS = new Set([
+export const EXACT_PACKAGE_INPUTS = new Set([
   "server/package.json",
   "server/bun.lock",
   "server/tsconfig.json",
@@ -14,7 +14,7 @@ const EXACT_PACKAGE_INPUTS = new Set([
   "README.md",
 ]);
 
-const PACKAGE_PREFIXES = ["plugin/", "server/src/", "db/", "scripts/licenses/"];
+export const PACKAGE_PREFIXES = ["plugin/", "server/src/", "db/", "scripts/licenses/"];
 
 export function isPackageInput(file) {
   return EXACT_PACKAGE_INPUTS.has(file) || PACKAGE_PREFIXES.some((prefix) => file.startsWith(prefix));

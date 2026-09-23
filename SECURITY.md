@@ -31,7 +31,7 @@ Out of scope. Please report these to their own projects:
 
 ## What gleanery trusts
 
-gleanery stores everything in one local SQLite file (`~/.gleanery/gleanery.db`) and does not run a network server.
+gleanery keeps its records in a local SQLite file (`~/.gleanery/gleanery.db`), with recordings that are not yet written and a few helper files elsewhere under `~/.gleanery/`. It does not run a network server.
 Pull request and issue text imported by `gleanery harvest`, as well as recorded conversations, may have been written by someone else.
 gleanery treats that text as data. The MCP server and the terminal dashboard open the database read-only.
 A way to make gleanery write through those read-only paths, or to make recorded text act as instructions, is in scope.

@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundleのエントリポイントとその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleだけの変更には使わない。
+description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundleのエントリポイントとその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleの変更は先にknowledge-schemaを使い、配るところでこのSkillを使う。
 ---
 
 # 配布物を届ける
@@ -15,7 +15,7 @@ description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録�
 
 ## Does not trigger
 
-- DB schemaやroleを変更する。その場合は`knowledge-schema`を使う
+- DB schemaやroleを変更する。その場合は`knowledge-schema`を先に使う（schema は配布物に入るので、release はこの Skill で行う）
 
 ## 配布経路
 
@@ -62,7 +62,7 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
 
 | 種別 | 変更 | 動かすversion |
 |---|---|---|
-| `none` | 文書、repository開発用Skill、testだけ | 無し |
+| `none` | 配らない開発文書、repository開発用Skill、testだけ（ルートの`README.md`は npm に入るので`plugin`） | 無し |
 | `plugin` | MCP、CLI（端末の画面を含む）、自動記録、hook、plugin Skill/Agent、共有module | npm packageとplugin channelの3箇所 |
 
 判定の正本は`scripts/lib/release-scope.mjs`で、version gateと
