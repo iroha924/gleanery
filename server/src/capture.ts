@@ -28,7 +28,7 @@ import { openWriter } from "./db-write.ts";
 import { conversationId, type FileAction, indexesMessage, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
-import { bytes, clean, head, mask, reason, sha256, tail, uuidFrom } from "./text.ts";
+import { bytes, clean, head, mask, plural, reason, sha256, tail, uuidFrom } from "./text.ts";
 
 // Resolve the location on every call (so tests that replace HOME never touch the real queue).
 export const spoolDir = (): string => path.join(os.homedir(), ".gleanery", "spool");
@@ -292,19 +292,24 @@ export function answersOf(input: HookInput): string | null {
  */
 export function captureNotice(file: string = dbFile()): string | null {
   if (!fs.existsSync(file))
-    return panel("gleanery: DB が無いので、会話を自動記録できない", [file], "gleanery init で作る");
+    return panel(
+      "gleanery: no database, so conversations are not recorded",
+      [file],
+      "Create it with gleanery init",
+    );
   const s = readState();
   if (s.stuck)
     return panel(
-      "gleanery: 自動記録を送れていない",
-      [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.stuck.slice(0, 120))}`],
-      "gleanery doctor で確かめる",
+      "gleanery: cannot send recordings",
+      [`${s.pending} pending / failed: ${plain(s.stuck.slice(0, 120))}`],
+      "Check with gleanery doctor",
     );
   if (s.rejected > 0)
     return panel(
-      `gleanery: DB が受け付けなかった記録が ${s.rejected} 件ある`,
-      [rejectedDir()],
-      "直して待ち行列へ戻せば送り直す。gleanery doctor で確かめる",
+      `gleanery: the database rejected ${plural(s.rejected, "record")}`,
+      // Paths go in the box lines: a newline in HOME must not forge a line outside the box.
+      [rejectedDir(), `Move them back to ${spoolDir()} to resend`],
+      "Fix them first, then check with gleanery doctor",
     );
   return null;
 }

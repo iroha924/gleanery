@@ -212,8 +212,14 @@ await withTempDir(async (dir) => {
     // english-exempt: Japanese record fixture sent through the real CLI and hook
     hook({ hook_event_name: "Stop", last_assistant_message: `応答${esc}` });
     note("capture flush (control sequences)", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
+    const context = runCli(["trace", "context"], dir, covDir, asSession("live-1"));
     // english-exempt: Japanese record fixture sent through the real CLI and hook
-    clean("trace context", runCli(["trace", "context"], dir, covDir, asSession("live-1")), "を含む発言");
+    clean("trace context", context, "を含む発言");
+    // The agent reads trace context, so the owner's messages are headed "Owner", never "You" (which would read as the agent).
+    if (!/^## Owner \(/m.test(context.out))
+      failures.push(
+        `trace context does not head the owner's messages with "## Owner"\n${context.out.slice(0, 400)}`,
+      );
     clean(
       "search --said",
       // english-exempt: Japanese record fixture sent through the real CLI and hook

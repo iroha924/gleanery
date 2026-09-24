@@ -387,7 +387,7 @@ test("MCP recall and read return failures with isError and a non-empty reason", 
     ] as const) {
       const r = await client.callTool({ name, arguments: args });
       assert.equal(r.isError, true, name);
-      assert.match(JSON.stringify(r.content), /gleanery: 失敗した（No database at/, name);
+      assert.match(JSON.stringify(r.content), /gleanery: failed \(No database at/, name);
     }
   } finally {
     await client.close();
@@ -430,7 +430,7 @@ test("without a repository, same version with different content suggests reinsta
 
 // Claude Code cuts server instructions and tool descriptions at 2,048 characters (mcp.md in 2.1.280). A cut would
 // deliver the search guidance half missing, and nobody would notice.
-test("MCP server instructions and tool descriptions fit in 2,048 characters", async () => {
+test("MCP server instructions and tool descriptions fit in 2,048 characters and name the owner and Japanese search", async () => {
   const client = new Client({ name: "test", version: "0" });
   await client.connect(
     new StdioClientTransport({
@@ -449,6 +449,14 @@ test("MCP server instructions and tool descriptions fit in 2,048 characters", as
     );
     const { tools } = await client.listTools();
     assert.deepEqual(tools.map((t) => t.name).sort(), ["check_path", "read", "recall"]);
+    // The agent reads these, so "me" must name the owner, not the agent ("you").
+    const recall = tools.find((t) => t.name === "recall");
+    const who =
+      (recall?.inputSchema.properties?.who as { description?: string } | undefined)?.description ?? "";
+    assert.match(who, /me \(default\) is the owner/);
+    assert.match(recall?.description ?? "", /messages from the owner/);
+    // Saved records are often Japanese, so the guidance must keep asking for Japanese search terms too.
+    assert.match(instructions, /often in Japanese/);
     for (const t of tools)
       assert.ok([...(t.description ?? "")].length <= 2048, `${t.name} description is too long`);
   } finally {
@@ -486,7 +494,7 @@ test("the response fits the limit even with a long unregistered project name", a
   try {
     const r = await client.callTool({ name: "recall", arguments: { question: "x", cwd: repo } });
     const t = (r.content as { text: string }[])[0]?.text ?? "";
-    assert.match(t, /登録されていない/);
+    assert.match(t, /is not registered with gleanery/);
     assert.ok(Buffer.byteLength(t) <= 4096, `${Buffer.byteLength(t)} bytes`);
   } finally {
     await client.close();

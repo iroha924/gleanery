@@ -500,6 +500,28 @@ if (TRAILER !== null) {
   }
 }
 
+// ---- MCP replies quoted in the review Skill match what mcp.ts returns ----
+//
+// The review Skill and the precedent reviewer tell "unregistered", "no project", and "no results" apart by quoting MCP replies.
+// If mcp.ts changes a reply, the quote stops matching and every case reads as a failed search.
+{
+  const mcp = read("server/src/mcp.ts");
+  for (const file of [REVIEW_SKILL, `${AGENT_DIR}/precedent.md`]) {
+    const rows = read(file)
+      .split("\n")
+      // english-exempt: matches the Japanese table rows in the review Skill and reviewers until #140 translates them
+      .filter((l) => l.startsWith("|") && /(と|が)返る/.test(l));
+    // english-exempt: quotes use Japanese corner brackets in the review Skill and reviewers until #140
+    const quotes = rows.flatMap((l) => [...l.matchAll(/「([\x20-\x7e]+)」/g)].map((m) => m[1]));
+    if (quotes.length === 0) fail.push(`${file}: no quoted MCP replies found. Check the table format`);
+    // Match whole words, so a quote that is a prefix of the real reply ("message" in "messages") still fails.
+    const said = (q) =>
+      new RegExp(`(?<![A-Za-z])${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z])`).test(mcp);
+    for (const q of quotes)
+      if (!said(q)) fail.push(`${file} quotes "${q}", which server/src/mcp.ts does not return`);
+  }
+}
+
 // ---- Tool versions copied between mise.toml, package.json, and the workflows ----
 //
 // mise.toml pins the local toolchain. Bumping one copy and not the others leaves local runs and CI on different tools.

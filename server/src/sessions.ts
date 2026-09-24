@@ -281,7 +281,7 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
     startedAt: new Date(conversation.startedAt),
     title: bare(conversation.title ?? "") || `(untitled) ${conversation.sessionId}`,
     messages: messages.map((m) => ({ ...m, sentAt: new Date(m.sentAt), truncated: m.truncated === 1 })),
-    knowledge: knowledge.map((k) => ({ ...k, at: new Date(k.at), label: labelOf(k, "en") })),
+    knowledge: knowledge.map((k) => ({ ...k, at: new Date(k.at), label: labelOf(k) })),
     work: work.map(toWork),
   };
 }

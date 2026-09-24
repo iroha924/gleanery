@@ -286,9 +286,7 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
       .execute();
     const works = await openWork(db, [id], 5);
     const detail =
-      works.length === 1 && works[0]
-        ? await workDetail(db, Number(works[0].ref.slice(2)), null, undefined, "en")
-        : null;
+      works.length === 1 && works[0] ? await workDetail(db, Number(works[0].ref.slice(2)), null) : null;
     const workKeys = await db
       .selectFrom("work_item")
       .select(["source_key", "title", "status"])
@@ -307,10 +305,11 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
       .orderBy("k.id", "desc")
       .limit(30)
       .execute();
-    // Your messages are shown longer and AI responses only in brief (you decided in your messages; AI responses surround them).
+    // The owner's messages are shown longer and AI responses only in brief (decisions are in the owner's messages; AI responses surround them).
+    // The agent reads this, so the owner is "Owner", never "You".
     const said = messages.map(
       (m) =>
-        `## ${m.speaker_kind === "self" ? "You" : "AI"} (${m.sent_at})${m.truncated ? " (partly saved)" : ""}\n` +
+        `## ${m.speaker_kind === "self" ? "Owner" : "AI"} (${m.sent_at})${m.truncated ? " (partly saved)" : ""}\n` +
         `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nFiles touched after this message: ${m.paths.map((p) => p.path).join(" / ")}` : ""}`,
     );
     const edited = [...new Set(messages.flatMap((m) => m.paths.map((p) => p.path)))];
@@ -326,7 +325,7 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
       workKeys.length
         ? `\n# Work in progress (the same key in work.key updates it)\n\n${workKeys.map((w) => `- ${w.source_key}: ${w.title} (${w.status})`).join("\n")}`
         : "\n# Work in progress\n\nNone.",
-      detail ? `\n${renderWork(detail, 6000, "en")}` : null,
+      detail ? `\n${renderWork(detail, 6000)}` : null,
       decisions.length
         ? `\n# Decisions of work in progress (to supersede one, put its key in supersedes)\n\n${decisions.map((d) => `- ${d.source_key} (${d.status}) ${head(d.body, 200)}`).join("\n")}`
         : null,
@@ -795,7 +794,7 @@ const traceRoutes = buildRouteMap({
         },
       },
       func: async (flags: { host?: Host }) => {
-        console.log(plain(framed(await traceContext(process.cwd(), flags.host), "en")));
+        console.log(plain(framed(await traceContext(process.cwd(), flags.host))));
       },
     }),
     check: buildCommand({
@@ -1099,7 +1098,6 @@ const root = buildRouteMap({
                 who: flags.said,
                 match,
                 limit: flags.limit,
-                lang: "en",
               })
             : await searchSplit(db, {
                 question,
@@ -1107,7 +1105,6 @@ const root = buildRouteMap({
                 avoid: flags.avoid,
                 match,
                 limit: flags.limit,
-                lang: "en",
               }).then((x) => [...x.records, ...x.documents]);
           const where = place ? inline(place.name) : "all projects";
           const end = `${hits.length ? plural(hits.length, "result") : "no results"} / ${where}`;
@@ -1115,11 +1112,7 @@ const root = buildRouteMap({
           // Terminals are read by people, so results are items with the label as a Badge
           if (!process.stdout.isTTY) {
             console.log(
-              panel(
-                "gleanery search",
-                hits.length ? [plain(framed(renderHits(hits, 16 * 1024, "en"), "en"))] : [],
-                end,
-              ),
+              panel("gleanery search", hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [], end),
             );
             return;
           }

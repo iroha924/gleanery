@@ -14,6 +14,7 @@ import {
   onHook,
   readInput,
   readState,
+  rejectedDir,
   type Spooled,
   spoolDir,
   write,
@@ -551,7 +552,7 @@ test("without a database, session start reports it in the same box format", () =
   const missing = path.join(home, "無い.db");
   assert.equal(
     captureNotice(missing),
-    `✦ gleanery: DB が無いので、会話を自動記録できない\n│ ${missing}\n╰─ gleanery init で作る`,
+    `✦ gleanery: no database, so conversations are not recorded\n│ ${missing}\n╰─ Create it with gleanery init`,
   );
 });
 
@@ -581,9 +582,46 @@ test("stuck is reported only with queued items and a recorded failure, and a bro
   // A failure with an empty reason is still stuck.
   fs.writeFileSync(file, JSON.stringify({ error: "" }));
   assert.equal(readState().stuck, "unknown failure");
-  assert.match(captureNotice(capture) ?? "", /送れていない/);
+  assert.match(
+    captureNotice(capture) ?? "",
+    /cannot send recordings\n│ 1 pending \/ failed: unknown failure/,
+  );
   reset();
   fs.rmSync(file);
+});
+
+test("the notice for rejected records counts them in words that match doctor, and shows where to move them", () => {
+  reset();
+  fs.rmSync(path.join(home, ".gleanery", "capture.json"), { force: true });
+  const capture = path.join(home, "gleanery.db");
+  fs.writeFileSync(capture, "");
+  fs.mkdirSync(rejectedDir(), { recursive: true });
+  fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
+  const one = captureNotice(capture) ?? "";
+  assert.match(one, /the database rejected 1 record\n/);
+  assert.ok(one.includes(`│ Move them back to ${spoolDir()} to resend`), "a box line names the queue folder");
+  fs.writeFileSync(path.join(rejectedDir(), "2.json"), "{}");
+  assert.match(captureNotice(capture) ?? "", /the database rejected 2 records\n/);
+  reset();
+});
+
+test("a newline in the home path cannot forge a line outside the notice box", () => {
+  const saved = process.env.HOME;
+  const forged = path.join(home, "x\n✦ forged");
+  process.env.HOME = forged;
+  try {
+    const capture = path.join(home, "gleanery.db");
+    fs.writeFileSync(capture, "");
+    fs.mkdirSync(rejectedDir(), { recursive: true });
+    fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
+    const out = captureNotice(capture) ?? "";
+    assert.ok(out.includes("rejected 1 record"), out);
+    // Only the title starts with ✦. Every other line is inside the box (│) or is the closing line (╰─).
+    for (const line of out.split("\n").slice(1)) assert.match(line, /^(│|╰─ )/, out);
+  } finally {
+    process.env.HOME = saved;
+    fs.rmSync(forged, { recursive: true, force: true });
+  }
 });
 
 test("SessionStart passes this session id down to children", () => {

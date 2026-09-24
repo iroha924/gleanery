@@ -19,57 +19,28 @@ const filesUnder = (dir, re) =>
     .filter((f) => re.test(f))
     .sort();
 
-/** Package inputs under scripts/ that #139 translates, because changing them needs a release. */
-const SCRIPTS_LATER = new Set([
-  "scripts/bundle.mjs",
-  "scripts/bundle-cli.ts",
-  "scripts/third-party-notices.mjs",
-]);
-
 /** Strings, templates, and comments must be English. Grows with each translation stage. */
 const ENGLISH = [
-  "server/src/cli.ts",
-  "server/src/tui/app.ts",
-  "server/src/tui/data.ts",
-  "server/src/tui/icons.ts",
-  "server/src/tui/markdown.ts",
-  "server/src/tui/marked-terminal.d.ts",
-  "server/src/tui/theme.ts",
-  "server/src/tui/tui.ts",
-  "server/src/tui/view.ts",
-  "server/src/admin.ts",
-  "server/src/plugin.ts",
-  "server/src/sqlite.ts",
-  "server/src/project.ts",
-  "server/src/assets.ts",
-  "server/src/trace.ts",
-  "server/src/sessions.ts",
-  "server/src/db.ts",
-  "server/src/db-write.ts",
-  "server/src/text.ts",
-  "server/src/docs.ts",
-  ...filesUnder("scripts", /\.(c?js|mjs|m?ts|tsx)$/).filter((f) => !SCRIPTS_LATER.has(f)),
+  ...filesUnder("server/src", /\.tsx?$/),
+  ...filesUnder("scripts", /\.(c?js|mjs|m?ts|tsx)$/),
   "server/evals/cases.ts",
   "server/evals/retrieval.ts",
   "server/test/assets.test.ts",
   "server/test/check-mcp-version.test.ts",
   "server/test/evals-run.test.ts",
   "server/test/migrate.test.ts",
+  "server/test/plugin.test.ts",
   "server/test/project.test.ts",
   "server/test/release-gate.test.ts",
   "server/test/release-scope.test.ts",
+  "server/test/sbom.test.ts",
   "server/test/tarball.test.ts",
   "server/test/temp-db.ts",
   "server/test/temp-repo.ts",
 ];
 
-/** Comments must be English. Strings still hold Japanese that MCP or the database relies on. */
+/** Comments must be English. Tests keep Japanese fixtures, and evals keep their measured prompts. */
 const COMMENTS = [
-  "server/src/knowledge.ts",
-  "server/src/search.ts",
-  "server/src/github.ts",
-  "server/src/capture.ts",
-  // Tests keep Japanese fixtures, and evals keep their measured prompts.
   ...[...filesUnder("server/test", /\.ts$/), ...filesUnder("server/evals", /\.ts$/)].filter(
     (f) => !ENGLISH.includes(f),
   ),

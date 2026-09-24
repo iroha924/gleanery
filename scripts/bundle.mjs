@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// 配る物を plugin/ の下へ組み立てる。**plugin/ そのものが npm package の root** になり、
-// Claude Code は marketplace の npm source から、Codex は同じ tarball から展開する。
+// Assembles the shipped files under plugin/. **plugin/ itself is the npm package root**:
+// Claude Code installs it from the marketplace npm source, and Codex from the same tarball.
 //
-// **生成物は git で追跡しない。**publish のときに作るので、commit との差は検査しない
-// （以前は plugin/dist をコミットして `git diff --exit-code` で見ていた）。
+// **Generated files are not tracked by git.** They are built at publish time, so they are not compared with commits
+// (plugin/dist used to be committed and checked with `git diff --exit-code`).
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -15,17 +15,17 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dist = path.join(root, "plugin", "dist");
 const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: "inherit" });
 
-// **--minify を足さない。**stricli の日本語のエラー文は例外クラスの constructor.name で振り分けるので、
-// クラス名が潰れると英語へ戻る。
+// **Do not add --minify.** The CLI's own argument error messages are chosen by the exception class's constructor.name,
+// so mangled class names fall back to stricli's default text.
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
 for (const entry of ["mcp", "capture"]) {
   run("bun", ["build", `server/src/${entry}.ts`, "--target=node", "--outfile", `plugin/dist/${entry}.js`]);
 }
-// CLI は Ink を含み、その開発用の import を差し替える plugin が要るので、Bun.build の script でバンドルする。
+// The CLI includes Ink and needs a plugin that replaces its development imports, so it is bundled by a Bun.build script.
 run("bun", ["scripts/bundle-cli.ts"]);
 
-// plugin の cache には repository が無いので、schema（と、あれば migrations）を持たせる。
+// The plugin cache has no repository, so ship the schema (and migrations, if any).
 const db = path.join(root, "plugin", "db");
 fs.rmSync(db, { recursive: true, force: true });
 fs.mkdirSync(db, { recursive: true });
@@ -33,17 +33,17 @@ fs.copyFileSync(path.join(root, "db", "schema.sql"), path.join(db, "schema.sql")
 if (fs.existsSync(path.join(root, "db", "migrations")))
   fs.cpSync(path.join(root, "db", "migrations"), path.join(db, "migrations"), { recursive: true });
 
-// npm の package のページに README を出す。正本はリポジトリのルートの README.md
+// Shows the README on the npm package page. The source of truth is README.md at the repository root
 fs.copyFileSync(path.join(root, "README.md"), path.join(root, "plugin", "README.md"));
 
-// npm は Windows で shebang を読んで .cmd を作るので、実行権が要る。
+// On Windows, npm reads the shebang to create a .cmd, so the file must be executable.
 for (const entry of ["cli"]) fs.chmodSync(path.join(dist, `${entry}.js`), 0o755);
 
-// **バンドルしても同梱の義務は消えない。**配るたびに、そのときの node_modules から作り直す。
+// **Bundling does not remove the obligation to include notices.** They are rebuilt from the current node_modules for every package.
 run("node", ["scripts/third-party-notices.mjs"]);
 
 const count = (dir) =>
   fs.readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).length;
 console.log(
-  `配布物: dist ${count(dist)} ファイル / db ${count(db)} ファイル（${path.relative(process.cwd(), path.join(root, "plugin"))} が package の root）`,
+  `package: dist ${count(dist)} files / db ${count(db)} files (${path.relative(process.cwd(), path.join(root, "plugin"))} is the package root)`,
 );

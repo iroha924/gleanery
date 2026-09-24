@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sbomProblems } from "../../scripts/lib/sbom.mjs";
 
-const notices = `# 同梱した第三者のソフトウェア
+// The same header as the table scripts/third-party-notices.mjs writes.
+const notices = `# Third-party software included
 
-| package | バージョン | ライセンス |
+| package | version | license |
 |---|---|---|
 | @inkjs/ui | 2.0.0 | MIT |
 | ajv | 8.20.0 | MIT |
