@@ -1,27 +1,27 @@
 ---
-name: 見送ったレビュー指摘
-about: レビューを打ち切ったとき、直さなかった指摘を残す
+name: Deferred review finding
+about: Keeps a finding that was not fixed when a review was stopped
 title: ''
 ---
 
 <!--
-埋めたらコメントは消す。**本文はそのまま DB に入る**（server/src/github.ts）。
-issue 1 件が 1 つの会話になり、発言の検索から引かれるので、
-定型が残るとそのぶん結果が薄まる。
+Delete this comment once filled in. **The body goes into the database as is** (server/src/github.ts).
+Each issue becomes one conversation found by message search,
+so leftover boilerplate dilutes the results.
 -->
 
-## 指摘の全文
+## The full finding
 
-<!-- レビュアーが書いた内容をそのまま。要約すると、再評価するときに元の主張が復元できない。 -->
+<!-- What the reviewer wrote, as is. A summary cannot restore the original claim when it is reevaluated. -->
 
-## どこ
+## Where
 
-<!-- file:line と、対象の PR / コミット。 -->
+<!-- file:line, and the PR or commit it applies to. -->
 
-## 直さなかった理由
+## Why it was not fixed
 
-<!-- 正しさ・セキュリティ・データ損失のどれにも効かないと判断した根拠。 -->
+<!-- The grounds for judging that it affects none of correctness, security, or data loss. -->
 
-## 何が起きたら再評価するか
+## When to reevaluate
 
-<!-- 「いつか見る」と書かない。観測できる条件を書く。 -->
+<!-- Do not write "someday". Write an observable condition. -->

@@ -45,8 +45,8 @@ const GH_TEXT = {
   prTitle: "はじめの PR",
   // english-exempt: Japanese record fixture sent through the real CLI
   body: "本文",
-  // english-exempt: decisions.ts reads this Japanese PR section until #144 translates the PR template
-  decisions: "\n\n## 採った案と棄却した案\n\n- 採った: 実 DB。棄却: 偽の db（権限が見えない）",
+  // english-exempt: a Japanese decision under the English template headings, as owners often write them
+  decisions: "\n\n## Decisions\n\n- Chosen: 実 DB。Rejected: 偽の db（権限が見えない）",
   // english-exempt: Japanese record fixture sent through the real CLI
   issueTitle: "はじめの issue",
 };

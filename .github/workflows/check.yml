@@ -1,10 +1,10 @@
-# pre-commit が見ていないものを見る。
+# Checks what pre-commit does not.
 #
-# **いちばんの価値は `bun run verify` の test と SQL の到達** — pre-commit は走らせず、pre-pushとCIで実行する。
-# 残りは重複だが、`--no-verify` とフック未導入の経路をここで塞ぐ。ただし plugin のバージョンは
-# commit ごとではなく、merge 先か push 前の commit から HEAD までをまとめて見る。
+# **The main value is the tests and SQL reach in `bun run verify`**: pre-commit does not run them; pre-push and CI do.
+# The rest duplicates pre-commit, but closes the `--no-verify` and no-hooks paths here. The plugin version, though,
+# is checked not per commit but across the whole range from the merge target or the pre-push commit to HEAD.
 #
-# **シークレットを置かない。**DB は一時ディレクトリの SQLite で、テストは資格情報なしで通る。
+# **No secrets.** The database is SQLite in a temp directory, and the tests pass without credentials.
 name: check
 
 on:
@@ -12,51 +12,51 @@ on:
     branches: [main]
   pull_request:
 
-# 推論も外部への書き込みもしないので、読み取りだけ渡す。
+# It neither reasons nor writes anywhere, so it gets read access only.
 permissions:
   contents: read
 
 concurrency:
-  # main への push の run は取り消さない。取り消すと、バージョンの検査がその push の範囲を二度と見ない。
+  # Runs for pushes to main are not cancelled. Cancelling one means the version check never sees that push's range.
   group: check-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    # engines の下限（24.15）と、次の系列（26）の両方で通ることを見る。片方が落ちても、もう片方の結果は残す。
+    # Checks that it passes on both the engines floor (24.15) and the next line (26). If one fails, the other's result is kept.
     strategy:
       fail-fast: false
       matrix:
         node: ["24.15", "26"]
     steps:
-      # third-party action は full commit SHA で pin する（タグは後から中身を差し替えられる）。
+      # Third-party actions are pinned to a full commit SHA (a tag's contents can be swapped later).
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # バージョンの検査が比べる基準（merge 先と push 前の commit）を手元に置く。
+          # Fetches the bases the version check compares against (the merge target and the pre-push commit).
           fetch-depth: 0
           persist-credentials: false
 
-      # **bun のバージョンを固定する。**浮かせると lockfile を読めないバージョンが選ばれる
-      # （Vercel で実際に踏んだ: 1.3.14 が lockfileVersion 2 を読めず落ちた）。
+      # **Pin the bun version.** Letting it float picks versions that cannot read the lockfile
+      # (actually hit on Vercel: 1.3.14 could not read lockfileVersion 2 and failed).
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.0
 
-      # テストは node の test runner で走り、DB は Node 組み込みの node:sqlite を使う。
+      # Tests run on node's test runner, and the database uses Node's built-in node:sqlite.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ matrix.node }}
 
-      # 依存の導入と verify より前に置く。手前で落ちた main への push は、その範囲を二度と見ない。
-      - name: plugin のバージョンが上がっているか
+      # Placed before installing dependencies and verify. If a push to main fails earlier, its range is never checked.
+      - name: Is the plugin version bumped
         env:
-          # PR では checkout した merge commit の 1 つ目の親が merge 先、main への push では push 前の commit。
-          # 利用者に届くかは前の main とバージョンが違うかで決まるので、この範囲をまとめて比べる。
-          # pre-commit は作業ブランチでは main から分かれた点と比べる（scripts/check-mcp-version.mjs）。
+          # For a PR, the first parent of the checked-out merge commit is the merge target; for a push to main, the pre-push commit.
+          # Whether a change reaches users depends on whether the version differs from the previous main, so the whole range is compared.
+          # On a work branch, pre-commit compares against the fork point from main (scripts/check-mcp-version.mjs).
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: node scripts/check-mcp-version.mjs --base "$BASE"
 
@@ -66,26 +66,26 @@ jobs:
           RANGE: ${{ github.event_name == 'pull_request' && 'HEAD^1..HEAD^2' || format('{0}..HEAD', github.event.before) }}
         run: node scripts/check-commit-msg.mjs --range "$RANGE"
 
-      - name: 依存を入れる
+      - name: Install dependencies
         run: bun run setup
 
-      # ローカルの pre-push と同じ正本を使う。Biome、型、配布物の bundle、test（全部の SQL が本物の SQLite で
-      # 実行されたかを数える sql:reach）、CLI と自動記録を子プロセスで一時 HOME の DB へ通す sql:live。
-      - name: lint・型・bundle・test・SQL の到達・子プロセスのレーン
+      # Uses the same source of truth as the local pre-push: Biome, types, the package bundle, tests (with sql:reach counting whether every SQL
+      # ran against a real SQLite database), and sql:live, which runs the CLI and capture as child processes against a database in a temp HOME.
+      - name: Lint, types, bundle, tests, SQL reach, and the child process lane
         run: bun run verify
 
-      # **配る物は tarball で確かめる。**dist と db は追跡しないので、`git diff` では何も出ない。
-      # 一覧の検査・リポジトリの外での起動・DB の作成は release と同じ script が見る。
-      - name: 配る tarball が自己完結しているか
+      # **Check what ships as a tarball.** dist and db are untracked, so `git diff` shows nothing.
+      # The same script as release checks the file list, starting outside the repository, and creating a database.
+      - name: Is the shipped tarball self-contained
         run: |
           set -e
           cd plugin
           tgz="$(npm pack --silent)"
           node ../scripts/check-tarball.mjs "$tgz"
 
-  # **配る物は Windows でも動かす**（AGENTS.md）。この repository の開発は macOS / Linux が前提なので verify は回さず、
-  # バンドルした tarball が node_modules 無しで起動し、node:sqlite で DB を作れるかだけを見る。端末の画面のキー入力と罫線は
-  # 実機でしか見えない（CI では確かめられない）。
+  # **What ships must run on Windows too** (AGENTS.md). Development of this repository assumes macOS / Linux, so verify does not run here;
+  # it checks only that the bundled tarball starts without node_modules and can create a database with node:sqlite. Key input and box lines on the terminal screen
+  # show only on a real machine (CI cannot check them).
   windows:
     runs-on: windows-latest
     defaults:
@@ -104,12 +104,12 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.15"
-      - name: 依存を入れてバンドルする
+      - name: Install dependencies and bundle
         run: |
           set -e
           bun run setup
           bun run bundle
-      - name: 配る tarball が Windows で起動するか
+      - name: Does the shipped tarball start on Windows
         run: |
           set -e
           cd plugin
@@ -117,19 +117,19 @@ jobs:
           out="$(mktemp -d)"
           tar xzf "$tgz" -C "$out"
           node "$out/package/dist/cli.js" --help > /dev/null
-          # os.homedir() は Windows では USERPROFILE を読む。
+          # On Windows, os.homedir() reads USERPROFILE.
           home="$(mktemp -d)"
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" init
           test -f "$home/.gleanery/gleanery.db"
-          # doctor は plugin の導入の状態で 1 を返しうる（この runner に plugin は無い）。DB の行だけを見る。
+          # doctor can return 1 depending on plugin install state (this runner has no plugin). Check only the DB rows.
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" doctor > doctor.out || true
           grep -E "✓ Schema version" doctor.out
           grep -E "✓ Full-text index" doctor.out
-          # MCP が立ち上がり、ツールの一覧を返すか。
+          # Does MCP start and return the tool list?
           printf '%s\n' \
             '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
             '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
             '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
             | HOME="$home" USERPROFILE="$home" timeout 30 node "$out/package/dist/mcp.js" > mcp.out || true
-          # pipefail の下で grep -q が先に閉じると前段が SIGPIPE で落ちるので、書き出してから見る。
+          # Under pipefail, grep -q closing early makes the previous stage die of SIGPIPE, so write the output first and then check it.
           grep -q '"recall"' mcp.out

@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { englishProblems } from "./lib/english.mjs";
+import { englishProblems, JAPANESE } from "./lib/english.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -46,7 +46,49 @@ const COMMENTS = [
   ),
 ];
 
+/** Markdown, YAML, SQL, JSON, and config files gleanery writes. Checked line by line, since they are not JavaScript. */
+const TEXT = [
+  ...filesUnder("plugin/skills", /\.(md|json|ya?ml)$/),
+  ".github/pull_request_template.md",
+  ...filesUnder(".github/ISSUE_TEMPLATE", /\.(md|ya?ml)$/),
+  ...filesUnder(".github/workflows", /\.ya?ml$/),
+  ".github/dependabot.yml",
+  ".gitignore",
+  "lefthook.yml",
+  "renovate.json",
+  "server/bunfig.toml",
+  "db/schema.sql",
+  ...filesUnder("db/migrations", /\.sql$/),
+];
+
+/** A comment line (`#`, `--`, `//`, or `<!-- -->`) that allows Japanese on the next line. The reason is required. */
+const TEXT_EXEMPT = /^\s*(?:#|--|\/\/|<!--)\s*english-exempt:\s*\S/;
+
+/** Japanese outside exempted lines, plus markers with no Japanese on the next line. */
+function textProblems(source) {
+  const lines = source.split(/\r?\n/);
+  const problems = [];
+  lines.forEach((line, i) => {
+    const marked = TEXT_EXEMPT.test(lines[i - 1] ?? "");
+    if (TEXT_EXEMPT.test(line) && !JAPANESE.test(lines[i + 1] ?? ""))
+      problems.push({
+        line: i + 1,
+        text: "english-exempt",
+        reason: "exemption with no Japanese on the next line",
+      });
+    if (JAPANESE.test(line) && !marked && !TEXT_EXEMPT.test(line))
+      problems.push({ line: i + 1, text: line.trim().slice(0, 80), reason: "Japanese text" });
+  });
+  return problems;
+}
+
 let count = 0;
+for (const file of TEXT) {
+  for (const p of textProblems(fs.readFileSync(path.join(root, file), "utf8"))) {
+    console.error(`${file}:${p.line}: ${p.reason}: ${p.text}`);
+    count++;
+  }
+}
 for (const [files, mode] of [
   [ENGLISH, "all"],
   [COMMENTS, "comments"],
@@ -65,4 +107,6 @@ if (count) {
   );
   process.exit(1);
 }
-console.log(`english: ${ENGLISH.length} English-only files, ${COMMENTS.length} files with English comments`);
+console.log(
+  `english: ${ENGLISH.length} English-only files, ${COMMENTS.length} files with English comments, ${TEXT.length} text files`,
+);

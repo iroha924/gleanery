@@ -1,6 +1,6 @@
 name: scorecard
 
-# scorecard-action は top-level の env・defaults と、job の env・defaults を持つ workflow の結果を拒むので、check.yml と分ける
+# scorecard-action rejects results from workflows with top-level or job-level env and defaults, so it is separate from check.yml
 # https://github.com/ossf/scorecard-action#workflow-restrictions
 
 on:

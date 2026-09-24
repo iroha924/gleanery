@@ -13,7 +13,7 @@
     {
       "matchManagers": ["bun"],
       "matchUpdateTypes": ["major", "minor", "patch", "pin", "digest", "bump"],
-      "groupName": "bun の依存"
+      "groupName": "bun dependencies"
     }
   ],
   "lockFileMaintenance": {
