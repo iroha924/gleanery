@@ -149,6 +149,28 @@ test("--pre-push checks the stored messages of the pushed refs, not HEAD and not
       String(forged.stderr),
     );
 
+    // A message cannot shift the record fields: \x01 in the body stays in the body.
+    git("switch", "-q", "-c", "framed", "main");
+    git("commit", "-q", "--allow-empty", "-m", "feat: valid subject\n\n\x01\x1b[2JFORGED");
+    const framed = check(`refs/heads/framed ${git("rev-parse", "HEAD")} refs/heads/framed ${zero}\n`);
+    assert.equal(framed.status, 1);
+    assert.match(String(framed.stderr), /use a one-line subject with no body/);
+    assert.ok(!String(framed.stderr).includes("\x1b"), String(framed.stderr));
+
+    // A commit reachable only from a pushed tag is checked; a release tag on pushed commits adds nothing.
+    git("switch", "-q", "-c", "tagged", "main");
+    git("commit", "-q", "--allow-empty", "-m", "タグだけのコミット");
+    git("tag", "-a", "-m", "hidden", "hidden");
+    git("switch", "-q", "main");
+    git("branch", "-D", "-q", "tagged");
+    const tagged = check(`refs/tags/hidden ${git("rev-parse", "hidden")} refs/tags/hidden ${zero}\n`);
+    assert.equal(tagged.status, 1);
+    assert.match(String(tagged.stderr), /write the message in English/);
+    git("tag", "release", clean);
+    git("update-ref", "refs/remotes/origin/clean", clean);
+    assert.match(String(check(`refs/tags/release ${clean} refs/tags/release ${zero}\n`).stdout), /0 checked/);
+    git("update-ref", "-d", "refs/remotes/origin/clean");
+
     // With no remote-tracking refs there is no base: skip rather than reject the old message in the history.
     git("update-ref", "-d", "refs/remotes/origin/main");
     git("update-ref", "-d", "refs/remotes/origin/feature");

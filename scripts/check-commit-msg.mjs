@@ -12,17 +12,24 @@ const args = process.argv.slice(2);
 
 /** Stored messages of the commits `git log <revs>` lists. */
 function stored(revs) {
-  // Read the objects a push sends, not a `git replace` view of them.
-  return execFileSync("git", ["--no-replace-objects", "log", "--format=%H%x00%P%x00%B%x01", ...revs], {
+  // Read the objects a push sends, not a `git replace` view of them. Fields and commits are NUL-separated:
+  // a message cannot contain NUL, so its text cannot shift the fields. No buffer cap: long branches are valid pushes.
+  const out = execFileSync("git", ["--no-replace-objects", "log", "-z", "--format=%H%x00%P%x00%B", ...revs], {
     encoding: "utf8",
-  })
-    .split("\x01")
-    .map((r) => r.replace(/^\n/, ""))
-    .filter(Boolean)
-    .map((r) => {
-      const [sha = "", parents = "", body = ""] = r.split("\0");
-      return { sha, name: sha.slice(0, 7), body, merge: parents.split(" ").length > 1 };
+    maxBuffer: Number.POSITIVE_INFINITY,
+  }).split("\0");
+  const commits = [];
+  for (let i = 0; i + 2 < out.length; i += 3) {
+    const sha = (out[i] ?? "").replace(/^\n/, "");
+    const parents = out[i + 1] ?? "";
+    commits.push({
+      sha,
+      name: sha.slice(0, 7),
+      body: out[i + 2] ?? "",
+      merge: parents.split(" ").length > 1,
     });
+  }
+  return commits;
 }
 
 /** Whether any remote-tracking ref exists to tell new commits from ones already pushed. */
@@ -38,7 +45,7 @@ function pushed(stdin) {
   for (const line of stdin.split("\n")) {
     const [, local, ref, remote] = line.trim().split(/\s+/);
     // A deletion pushes no commits, and notes and other metadata refs hold commits Git writes itself.
-    if (!local || /^0+$/.test(local) || !ref?.startsWith("refs/heads/")) continue;
+    if (!local || /^0+$/.test(local) || !/^refs\/(heads|tags)\//.test(ref ?? "")) continue;
     let known = remote !== undefined && !/^0+$/.test(remote);
     if (known) {
       try {
