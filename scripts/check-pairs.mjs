@@ -461,6 +461,38 @@ if (TRAILER !== null) {
   }
 }
 
+// ---- Tool versions copied between mise.toml, package.json, and the workflows ----
+//
+// mise.toml pins the local toolchain. Bumping one copy and not the others leaves local runs and CI on different tools.
+{
+  const mise = read("mise.toml");
+  const tool = (name) => grab("mise.toml", new RegExp(`^${name} = "([^"]+)"$`, "m"), `mise.toml ${name}`);
+  const node = tool("node");
+  const bun = tool("bun");
+  const actionlint = tool("actionlint");
+  if (mise && node && bun && actionlint) {
+    const packageManager = grab("package.json", /"packageManager": "bun@([^"]+)"/, "packageManager");
+    if (packageManager !== bun)
+      fail.push(`mise.toml bun ${bun} differs from package.json packageManager bun@${packageManager}`);
+    const engines = grab("server/package.json", /"node": ">=([^"]+)"/, "engines.node");
+    if (engines && !node.startsWith(`${engines}.`))
+      fail.push(`mise.toml node ${node} is not on the engines floor ${engines}`);
+    // Workflows that install Bun must keep pinning it, so a deleted pin fails too.
+    for (const file of [".github/workflows/check.yml", ".github/workflows/release.yml"]) {
+      const pins = [...read(file).matchAll(/bun-version: (\S+)/g)].map((m) => m[1]);
+      if (pins.length === 0) fail.push(`${file}: no bun-version pin`);
+      for (const pin of pins)
+        if (pin !== bun) fail.push(`${file}: bun-version ${pin} differs from mise.toml bun ${bun}`);
+    }
+    const ci = grab(".github/workflows/check.yml", /node: \["([^"]+)"/, "check.yml node matrix");
+    if (ci && !node.startsWith(`${ci}.`))
+      fail.push(`mise.toml node ${node} is not the check.yml node floor ${ci}`);
+    const pinned = grab(".github/workflows/zizmor.yml", /ACTIONLINT: "([^"]+)"/, "zizmor.yml ACTIONLINT");
+    if (pinned !== actionlint)
+      fail.push(`mise.toml actionlint ${actionlint} differs from zizmor.yml ACTIONLINT ${pinned}`);
+  }
+}
+
 if (fail.length) {
   console.error(`\n${fail.map((f) => `  ${f}`).join("\n\n")}\n`);
   process.exit(1);

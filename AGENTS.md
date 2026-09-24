@@ -16,6 +16,7 @@
 ## command
 
 ```bash
+mise trust && mise install  # mise.toml を信頼し、Node・Bun・actionlint をその版で入れる
 bun run verify      # lint・型・AI 設定・境界・bundle・test・SQL の到達・CLI の子プロセス
 bun run verify:ai   # CLAUDE.md・AGENTS.md・Skill・Agent の静的検査
 bun run bundle      # MCP・CLI・自動記録の配布物を作る

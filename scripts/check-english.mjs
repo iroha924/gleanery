@@ -34,6 +34,9 @@ const ENGLISH = [
   "server/src/text.ts",
   "server/src/docs.ts",
   "scripts/check-english.mjs",
+  "scripts/check-commit-msg.mjs",
+  "scripts/lib/commit-msg.mjs",
+  "scripts/lib/japanese.mjs",
   "scripts/lib/english.mjs",
 ];
 

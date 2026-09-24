@@ -60,6 +60,12 @@ jobs:
           BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
         run: node scripts/check-mcp-version.mjs --base "$BASE"
 
+      # Hooks can be skipped, so check what was actually committed: the PR's own commits, or the commits pushed to main.
+      - name: commit message
+        env:
+          RANGE: ${{ github.event_name == 'pull_request' && 'HEAD^1..HEAD^2' || format('{0}..HEAD', github.event.before) }}
+        run: node scripts/check-commit-msg.mjs --range "$RANGE"
+
       - name: 依存を入れる
         run: bun run setup
 
