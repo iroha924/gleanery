@@ -176,6 +176,28 @@ test("in the English format, bullets that do not fit are skipped and counted, an
   assert.equal(got.skipped, 4);
 });
 
+test("the English format accepts Japanese punctuation, since bodies under English headings are often written in Japanese", () => {
+  const got = extractDecisions(
+    en(
+      "- Chosen: 実 DB。Rejected: 偽の db（権限が見えない）、文字列の照合（実行されない SQL が通る）\n- Chosen: 単独の案。",
+    ),
+  );
+  assert.equal(got.skipped, 0);
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.rejected]),
+    [
+      [
+        "実 DB",
+        [
+          { text: "偽の db", reason: "権限が見えない" },
+          { text: "文字列の照合", reason: "実行されない SQL が通る" },
+        ],
+      ],
+      ["単独の案", []],
+    ],
+  );
+});
+
 test("the English section ends at the next H2, and a body may use either format", () => {
   assert.deepEqual(
     extractDecisions("## What changed\n\n- Chosen: outside. Rejected: example (example)\n").decisions,

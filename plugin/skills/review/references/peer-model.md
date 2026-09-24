@@ -1,31 +1,31 @@
-# 相手モデルのレーンを立てる
+# Starting the other model's lanes
 
-`/gleanery:review` の一部である。**相手モデルを使うと決めたときだけ読む。**
-**読まずに推測で組み立てない** —— ここにあるのは綴りだけでなく、落とすと権限が広がるフラグと、
-失敗が成功に見える経路である。読めなかったなら、そのレーンは `不能` にして立てない。
+Part of `/gleanery:review`. **Read this only when you decided to use the other model.**
+**Do not assemble it by guesswork without reading**: this holds not just spellings but the flags whose removal widens permissions,
+and the paths where failure looks like success. If you could not read it, mark those lanes `unable` and do not start them.
 
-観点の本文の場所（`$R`）と、観点ごとに渡すツールは SKILL.md の Step 3 が決める。ここで数え直さない。
+Where the aspect bodies live (`$R`) and which tools each aspect gets are decided in SKILL.md Step 3. Do not recount them here.
 
-## 立てる
+## Starting
 
-| 自分が | 相手を呼ぶ |
+| You are | Call the other with |
 |---|---|
 | **Claude** | `codex exec --ephemeral -s read-only --output-schema <schema> -o <out> -` |
-| **Codex** | `claude -p --agents '<JSON>' --agent <名> --no-session-persistence --output-format json` |
+| **Codex** | `claude -p --agents '<JSON>' --agent <name> --no-session-persistence --output-format json` |
 
-**Codex から Claude を呼ぶときは、観点の本文を `--agents` の JSON へ入れる。**配る側にエージェントの定義が無いので、
-ここで組み立てる。`{"<名>":{"description":"...","prompt":"<観点の本文>","tools":["Read","Grep","Glob"]}}` の形で、
-`--agent <名>` で選ぶ。
+**When calling Claude from Codex, put the aspect body into the `--agents` JSON.** The package ships no agent definitions,
+so assemble it here, in the form `{"<name>":{"description":"...","prompt":"<aspect body>","tools":["Read","Grep","Glob"]}}`,
+and select it with `--agent <name>`.
 
-**`tools` は SKILL.md の表が決めたものをそのまま入れる。**実行が要る 3 つ（正しさ・セキュリティ・裁定役）には
-`Bash` が入り、残りには入らない。**`Bash` を入れた相手の書き込みは止まらない**（実測: `Read` と `Bash` だけの
-レビュアーが `probe.txt` を作った）。`Read` / `Grep` / `Glob` だけなら書き込む手段が無い（同じ実測で作られなかった）。
+**Put in `tools` exactly what the SKILL.md table decides.** The 3 that need to run things (correctness, security, the validator)
+get `Bash`; the rest do not. **Writes by a reviewer given `Bash` cannot be stopped** (measured: a reviewer with only `Read` and `Bash`
+created `probe.txt`). With only `Read` / `Grep` / `Glob` there is no way to write (in the same measurement, nothing was created).
 
-**どちらの場合も差分はファイルで渡す。**`Bash` を渡さない観点は `git` を実行できず、渡す観点でも
-範囲を決めるのは PR を出した側なので、コマンドを組み立てさせない。
+**Either way, pass the diff as a file.** Aspects without `Bash` cannot run `git`, and even for those with it,
+the PR author decides the range, so do not have them assemble commands.
 
-**どちらもプロンプトのファイルを stdin へ渡す。**ホストのシェルに合う形で書く ——
-**`< ファイル` は PowerShell では構文エラーになり、そのホストではレーンが 1 本も立たない。**
+**Both pass the prompt file on stdin.** Write it in the form your host's shell accepts:
+**`< file` is a syntax error in PowerShell, and on that host not a single lane starts.**
 
 ```bash
 # POSIX
@@ -38,91 +38,91 @@ Get-Content -Raw -Encoding utf8 -LiteralPath $promptFile |
   & claude -p --agents $agentsJson --agent $name --no-session-persistence --output-format json
 ```
 
-**例からフラグを落とさない。**写されるのは説明ではなく例のほうで、`--no-session-persistence` が
-落ちた例を写すと、下で塞いだはずの権限の拡大がそこだけ開く。
+**Do not drop flags from the examples.** What gets copied is the example, not the explanation, and copying an example without
+`--no-session-persistence` reopens, just there, the permission widening closed below.
 
-**`codex exec review` を使わない。**あちらは `--base` と `--uncommitted` で範囲を指定できるが、
-**`--base` とカスタムプロンプトは併用できない**（実測 2026-09-09: `error: the argument
-'--base <BRANCH>' cannot be used with '[PROMPT]'`）。定義の本文を渡した時点で範囲指定が弾かれるので、
-**レビュアーの定義を使うなら `review` の付かない `codex exec` を呼ぶ。**
+**Do not use `codex exec review`.** It can set the range with `--base` and `--uncommitted`, but
+**`--base` cannot be combined with a custom prompt** (measured 2026-09-09: `error: the argument
+'--base <BRANCH>' cannot be used with '[PROMPT]'`). Passing a definition body rejects the range option,
+so **to use a reviewer definition, call `codex exec` without `review`.**
 
-**そのため範囲はプロンプトへ書く。**SKILL.md の Step 3 にある「渡す形」の表と同じものを本文の末尾に足す。
+**So write the range into the prompt.** Append the same "how to pass it" table as SKILL.md Step 3 to the end of the body.
 
-**失敗が exit 0 で返る。**引数エラーでも背景ジョブは 0 で完了するので、
-**出力ファイルが実在するかを必ず見る。**見ないと「Codex 側は指摘 0 件だった」と読める
-（実測: この形で 2 レーンが黙って落ちた）。
+**Failure returns exit 0.** Even on an argument error the background job finishes with 0, so
+**always check that the output file exists.** Otherwise it reads as "the Codex side had 0 findings"
+(measured: 2 lanes silently failed this way).
 
-`--ephemeral` はセッションを残さない。`-s read-only` は書き込みを止める。
-`--output-schema` は出力を固定する。**深さは指定しない** —— 利用者が選んでいるものに従う。
+`--ephemeral` keeps no session. `-s read-only` stops writes.
+`--output-schema` fixes the output shape. **Do not set the depth**: follow what the user chose.
 
-**`--agents` の JSON は毎回組み立てる。**配る側にエージェントの定義が無いので、観点の本文と、
-SKILL.md の表が決めたツールをここで詰める。
+**Assemble the `--agents` JSON every time.** The package ships no agent definitions, so pack the aspect body and
+the tools the SKILL.md table decides here.
 
-**渡すものは引数ではなく stdin へ置く。**範囲にはブランチ名とファイル名が入り、**それを決めるのは PR を出した側**である。
-引数は `ps` に出るうえ、長さにも上限がある。
+**Put what you pass on stdin, not in arguments.** The range contains branch and file names, and **the PR author decides them**.
+Arguments show up in `ps` and have a length limit too.
 
-| 渡すもの | なぜ |
+| What to pass | Why |
 |---|---|
-| `--agents '<JSON>'` と `--agent <名>` | 観点の本文と `tools` をその場で渡す。存在しない名前は stderr へ出して **exit 1** で落ちる |
-| `--no-session-persistence` | セッションをディスクへ残さない。**後から `--resume` できなくなるのが要点である**（下） |
+| `--agents '<JSON>'` and `--agent <name>` | Passes the aspect body and `tools` on the spot. A name that does not exist goes to stderr and fails with **exit 1** |
+| `--no-session-persistence` | Keeps no session on disk. **The point is that `--resume` becomes impossible afterwards** (below) |
 
-**`--model` と `--effort` を渡さない。**利用者が選んでいるものに従う。
+**Do not pass `--model` or `--effort`.** Follow what the user chose.
 
-**`--settings` の `deny` を書き込みを止める手段として使わない。**名前で挙げたものしか消えず、
-**MCP 経由の書き込みが残る**（実測: `Edit` / `Write` / `Bash` を deny したレビュアーが、
-Serena 経由で `probe.txt` を作った）。止めるのは上の `tools` のほうである。
+**Do not use `deny` in `--settings` as a way to stop writes.** Only what is named is removed, and
+**writes through MCP remain** (measured: a reviewer with `Edit` / `Write` / `Bash` denied
+created `probe.txt` through Serena). What stops them is `tools` above.
 
-**`--max-turns` は 2.1.278 に無い**（`--help` に 0 件）。打ち切りの検出は Step 4 の `completion` の行に頼る。
+**`--max-turns` does not exist in 2.1.278** (0 hits in `--help`). Detecting cutoffs relies on the `completion` line in Step 4.
 
-**この経路では `--resume` を使わない。**1 回の呼び出しで、一覧を先頭に全件出し、続けて全 finding の全文を番号順に出させる。
-**プロンプトの末尾にそう書く** —— レビュアーの既定は「全文は要求されたものだけ返す」なので、
-書かなければ一覧だけが返り、**続きを求める経路はもう無い。**
+**Do not use `--resume` on this path.** In one call, have it give the full list first, then the full text of every finding in number order.
+**Write that at the end of the prompt**: the reviewers' default is "return full text only for what is requested", so
+without it only the list comes back, and **there is no longer a way to ask for the rest.**
 
-> この呼び出しは 1 回だけで、続きを求める経路が無い。一覧を全件出したあと、同じ応答で全 finding の全文を番号順に続けよ。
+> This is the only call, and there is no way to ask for more. After giving the full list, continue in the same response with the full text of every finding in number order.
 
-避けているのは全文の切り詰めではなく**権限の拡大**である。**`--resume` に `--agent` を書き落とすと、
-レビュアーは `Edit` と `Write` を持ったまま走る**（実測: tools が 2 個から 51 個になった。
-**エラーにならず、文脈も保たれるので出力から気付けない**）。untrusted な diff を読み終えた後の 2 回目の
-呼び出しで起きるうえ、配布物からは permission で塞げない。だから書き落としを注意で防ぐのではなく、
-`--no-session-persistence` で**resume できる状態を作らない**
-（実測: このフラグを付けた呼び出しが返した `session_id` へ `--resume` すると
-`No conversation found with session ID` で exit 1 になる）。
+What this avoids is not truncated full text but **permission widening.** **If `--agent` is left out of a `--resume`,
+the reviewer runs with `Edit` and `Write`** (measured: tools went from 2 to 51.
+**There is no error and the context is kept, so the output gives no hint**). It happens on the second call, after the untrusted diff
+has been read, and the package cannot close it with permissions. So instead of preventing the omission by care,
+`--no-session-persistence` **never creates a resumable state**
+(measured: `--resume` on the `session_id` returned by a call with this flag
+fails with `No conversation found with session ID` and exit 1).
 
-切れたレーンは回収せず `打ち切り` として台帳へ出す。
+Lanes that were cut off are not collected; they go into the ledger as `cut short`.
 
-**これは Codex がホストのときだけの形である。**Claude がホストなら、Step 4 のとおり番号を指定して分割で受け取る。
+**This form is only for when Codex is the host.** When Claude is the host, take the results in parts by number, as in Step 4.
 
-**`codex exec` を直に、レーンごとに使い捨てで起動する。**レビューは会話ではなく、独立・使い捨て・並列が要件である。
-1 本のログや session を共有する仕組みを通すと、並列のレーンがそれを取り合う。
+**Start `codex exec` directly, disposable, one per lane.** A review is not a conversation; it needs independent, disposable, parallel runs.
+Going through a mechanism that shares one log or session makes parallel lanes fight over it.
 
-**選ばれた相手モデルのレーンは毎ラウンド回す。**両方のモデルに同じ観点・同じ範囲を渡す。
-Codex の 5 レーンは 1 ラウンドに 104〜172 万トークンを使う（実測 2026-09-13）。
-途中で利用上限に当たったら、SKILL.md の「独立確認が無いラウンド」に従う。
+**Run the chosen other model's lanes every round.** Give both models the same aspects and the same range.
+5 Codex lanes use 1.04 to 1.72 million tokens per round (measured 2026-09-13).
+If a usage limit hits midway, follow "Rounds without independent confirmation" in SKILL.md.
 
-**Codex のサンドボックスがネットワークを持たないと、`claude` は起動できても API へ届かない。**
-実測（2026-09-21）: `curl` が `api.anthropic.com` を名前解決できず（exit 6）、`claude -p` は
-`Failed to authenticate: OAuth session expired and could not be refreshed` を返した。
-**資格情報の問題に見えるがネットワークの遮断である。**このときレーンを黙って減らさず、次の段に従う。
+**If Codex's sandbox has no network, `claude` can start but cannot reach the API.**
+Measured (2026-09-21): `curl` could not resolve `api.anthropic.com` (exit 6), and `claude -p` returned
+`Failed to authenticate: OAuth session expired and could not be refreshed`.
+**It looks like a credentials problem but is a network block.** In that case do not silently drop lanes; follow the next section.
 
-### Codex のレーンは 15 分前後かかる。途中で殺さない
+### Codex lanes take about 15 minutes. Do not kill them midway
 
-**実測（2026-09-09）: 完走したレーンは 15.5 分。**深い観点ほど長い。
+**Measured (2026-09-09): a lane that completed took 15.5 minutes.** Deeper aspects take longer.
 
-**`collab: Wait` を停止の合図と読まない。**同じ日の 3 レーンで、**`collab: Wait` が最多（14 回）だった
-レーンが完走し**、1 回しか出ていないレーンを進行中に殺した。相関が無い。
+**Do not read `collab: Wait` as a sign it stopped.** Across 3 lanes on the same day, **the lane with the most `collab: Wait` (14)
+completed**, and a lane with only 1 was killed while still running. There is no correlation.
 
-**MCP の認証エラーも停止の合図ではない。**`AuthRequired` / `Transport channel closed` は完走した
-レーンにも出る（実測では context7）。`-c mcp_servers='{}'` では消えないが、消さなくても完走する。
+**MCP authentication errors are not a sign it stopped either.** `AuthRequired` / `Transport channel closed` also appear in lanes that
+completed (context7 in the measurement). `-c mcp_servers='{}'` does not remove them, but they do not need removing to complete.
 
-**完了を通知させる。**レーンを 1 本ずつ background へ投げると、**返ってくるのはレーンの完了ではなく起動の完了**である。
-以後は完了を知る手段がポーリングだけになり、**「まだ走っている」と「終わって出力を書いた」が区別できなくなる。**
-全部を 1 つの background の仕事にまとめ、**全レーンの完了まで返らせる**（POSIX なら `wait`、PowerShell なら
-`Wait-Job`）。
+**Have completion notified.** If you send lanes to the background one at a time, **what comes back is not a lane finishing but a lane starting.**
+From then on the only way to know about completion is polling, and **"still running" and "finished and wrote the output" become indistinguishable.**
+Put all lanes into one background job, and **have it return only when every lane completes** (`wait` on POSIX,
+`Wait-Job` in PowerShell).
 
-実測（2026-09-21）: 起動だけを待つ形にしたため、5 レーンが完走して出力を書き終えた後も
-**3 レーンを「走行中」と報告していた。**行の伸びと `pgrep` を数えても、完了した瞬間は分からない。
+Measured (2026-09-21): because only the start was awaited, **3 lanes were reported "running"**
+even after all 5 lanes had completed and written their output. Counting line growth and `pgrep` does not tell the moment of completion.
 
-進んでいるかは**ログの行数が増えているか**で見る。止まっているなら行数も止まる。
+Judge progress by **whether the log's line count is growing.** If it stopped, the line count stops too.
 
-**プロンプトへ「ファイルへの書き込みをしない」と明記する。**`-s read-only` で走らせるので、
-書こうとすると `patch rejected` を繰り返して時間を捨てる（実測: 明記なしで 3 回、明記して 0 回）。
+**State in the prompt "do not write to files".** It runs with `-s read-only`, so
+attempts to write repeat `patch rejected` and waste time (measured: 3 times without the statement, 0 with it).

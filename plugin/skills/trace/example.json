@@ -1,12 +1,19 @@
 {
   "schema": "trace/1",
-  "session": { "host": "claude-code", "id": "4f2bfe2e-6941-4310-8110-1af8c2245429", "branch": "feat/local" },
+  "session": {
+    "host": "claude-code",
+    "id": "4f2bfe2e-6941-4310-8110-1af8c2245429",
+    "branch": "feat/local"
+  },
   "work": {
     "key": "local",
-    "title": "手元だけで動く形へ移す",
-    "goal": "クラウドの依存を外し、gleanery dashboard が端末に画面を描き、手元の SQLite を読む",
-    "current": "サーバー側と画面を書き終え、手元の DB で通した",
-    "next": ["配布を npm へ移す", "人: 旧環境を消す前に確認する"],
+    "title": "Move to a setup that runs entirely on the local machine",
+    "goal": "Drop the cloud dependencies, have gleanery dashboard draw its screen in the terminal, and read a local SQLite file",
+    "current": "Finished the server side and the screen, and ran them against a local database",
+    "next": [
+      "Move distribution to npm",
+      "Human: confirm before deleting the old environment"
+    ],
     "status": "active"
   },
   "items": [
@@ -15,51 +22,77 @@
       "kind": "decision",
       "status": "accepted",
       "at": "2026-09-20T11:00:00+09:00",
-      "text": "DB は Node 組み込みの node:sqlite の 1 ファイルにする。PC ごとに独立させ、PC 間で共有しない",
-      "context": "PC をまたいで同じ記録を引く必要が無くなった。仕事用の PC には仕事の記録だけが溜まればよい",
+      "text": "Use a single file with Node's built-in node:sqlite. Each machine is independent, with nothing shared between machines",
+      "context": "Looking up the same records across machines is no longer needed. A work machine only needs to hold work records",
       "options": [
-        { "text": "node:sqlite の 1 ファイル", "chosen": true },
-        { "text": "Docker の PostgreSQL", "chosen": false, "why": "利用者に Docker と DB の資格情報を用意させることになる" }
+        {
+          "text": "one node:sqlite file",
+          "chosen": true
+        },
+        {
+          "text": "PostgreSQL in Docker",
+          "chosen": false,
+          "why": "users would have to set up Docker and database credentials"
+        }
       ],
-      "confirmation": "gleanery init が db/schema.sql を当て、doctor の DB の行が全部通った",
-      "downsides": ["Node 24.15 以上を要求する", "PC を移ると記録は引き継がれない"]
+      "confirmation": "gleanery init applied db/schema.sql, and every DB row in doctor passed",
+      "downsides": [
+        "requires Node 24.15 or later",
+        "records do not carry over to a new machine"
+      ]
     },
     {
       "key": "no-server",
       "kind": "decision",
       "status": "accepted",
       "at": "2026-09-20T12:30:00+09:00",
-      "text": "画面は端末に描き、listen する server を持たない",
-      "context": "localhost の server は、ブラウザで開いた他所のページから叩ける。守る境界を持つより、port を開かないほうが小さい",
+      "text": "Draw the screen in the terminal, with no listening server",
+      "context": "A localhost server can be hit from other pages open in a browser. Opening no port is smaller than keeping a boundary to defend",
       "options": [
-        { "text": "端末の画面", "chosen": true },
-        { "text": "127.0.0.1 の Web 画面", "chosen": false, "why": "Host の照合と CSRF の検査を持ち続けることになる" }
+        {
+          "text": "a terminal screen",
+          "chosen": true
+        },
+        {
+          "text": "a web UI on 127.0.0.1",
+          "chosen": false,
+          "why": "it would mean keeping Host checks and CSRF checks forever"
+        }
       ],
-      "confirmation": "端末でない所から起動すると、案内を出して 1 で終わる",
-      "downsides": ["画像や表の見た目は端末の表現力に縛られる"]
+      "confirmation": "started from outside a terminal, it prints a notice and exits with 1",
+      "downsides": [
+        "images and tables are limited by what the terminal can render"
+      ]
     },
     {
       "key": "capture-no-conflict-target",
       "kind": "constraint",
       "status": "active",
       "at": "2026-09-20T12:35:00+09:00",
-      "text": "自動記録は capture の view にだけ書く（base table へ直に書くと authorizer が拒否する）",
-      "files": [{ "path": "server/src/capture.ts", "role": "applies_to" }],
+      "text": "Capture writes only to the capture views (the authorizer rejects direct writes to base tables)",
+      "files": [
+        {
+          "path": "server/src/capture.ts",
+          "role": "applies_to"
+        }
+      ],
       "confidence": "fact",
-      "refs": ["file:server/src/db-write.ts"]
+      "refs": [
+        "file:server/src/db-write.ts"
+      ]
     },
     {
       "key": "pgtyped",
       "kind": "dead_end",
       "at": "2026-09-20T13:00:00+09:00",
-      "text": "SQL の型付けに pgtyped を採るのはやめた。条件を実行時に組み立てる検索のクエリを扱えず、公式が query composition を非対応と明言している"
+      "text": "Dropped pgtyped for typing SQL. It cannot handle search queries whose conditions are built at run time, and its docs state query composition is unsupported"
     },
     {
       "key": "tty-check",
       "kind": "verification",
       "status": "passed",
       "at": "2026-09-20T13:20:00+09:00",
-      "text": "pipe から dashboard を起動すると、案内を出して 1 で終わる",
+      "text": "started from a pipe, dashboard prints a notice and exits with 1",
       "command": "gleanery dashboard | cat",
       "verifies": "no-server"
     },
@@ -68,7 +101,7 @@
       "kind": "question",
       "status": "blocking",
       "at": "2026-09-20T13:30:00+09:00",
-      "text": "Windows で端末の画面のキー入力と罫線が崩れないか（実機が無く、CI では描いた文字列までしか確かめられない）"
+      "text": "Do key input and box lines on the terminal screen hold up on Windows? (No real machine; CI can only check the drawn strings)"
     }
   ]
 }

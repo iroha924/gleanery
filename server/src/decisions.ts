@@ -19,25 +19,30 @@ type Dialect = {
   section: string;
   item: RegExp;
   chosen: RegExp;
-  /** The full stop that must come right before the rejection marker */
-  stop: string;
+  /** Full stops that may come right before the rejection marker */
+  stops: string;
   rejected: RegExp;
   bare: RegExp;
-  /** Separates rejected options, outside parentheses and code */
-  comma: string;
+  /** Characters that separate rejected options, outside parentheses and code */
+  commas: string;
   trailing: RegExp;
 };
 
 const DIALECTS: Dialect[] = [
   {
+    // Bodies under the English headings are often written in Japanese, so Japanese punctuation is accepted too
     section: "Decisions",
     item: /^- Chosen:/,
     chosen: /^Chosen:\s*(.*)$/,
-    stop: ".",
-    rejected: /^\.\s+Rejected:\s*/,
+    // english-exempt: accepts the Japanese full stop in bodies written in Japanese
+    stops: ".。",
+    // english-exempt: accepts the Japanese full stop in bodies written in Japanese
+    rejected: /^[.。]\s*Rejected:\s*/,
     bare: /\bRejected:/,
-    comma: ",",
-    trailing: /\.$/,
+    // english-exempt: accepts the Japanese comma in bodies written in Japanese
+    commas: ",、",
+    // english-exempt: accepts the Japanese full stop in bodies written in Japanese
+    trailing: /[.。]$/,
   },
   {
     // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
@@ -47,13 +52,13 @@ const DIALECTS: Dialect[] = [
     // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
     chosen: /^採った[:：]\s*(.*)$/,
     // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
-    stop: "。",
+    stops: "。",
     // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
     rejected: /^。\s*棄却[:：]\s*/,
     // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
     bare: /棄却[:：]/,
     // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
-    comma: "、",
+    commas: "、",
     // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
     trailing: /。$/,
   },
@@ -193,7 +198,7 @@ function parse(line: string, d: Dialect): Extracted | null {
   const rest = content.slice(from);
   const m = all.slice(from);
   // Split only at the first rejection marker that follows a full stop, outside parentheses and code
-  const cut = outside(m, (i) => m[i] === d.stop && d.rejected.test(m.slice(i)));
+  const cut = outside(m, (i) => d.stops.includes(m[i] ?? "") && d.rejected.test(m.slice(i)));
   if (!cut) return null;
   const at = cut[0];
   if (at === undefined) {
@@ -204,7 +209,7 @@ function parse(line: string, d: Dialect): Extracted | null {
   const skip = d.rejected.exec(m.slice(at))?.[0].length ?? 0;
   const tail = rest.slice(at + skip);
   const tm = m.slice(at + skip);
-  const commas = outside(tm, (i) => tm[i] === d.comma);
+  const commas = outside(tm, (i) => d.commas.includes(tm[i] ?? ""));
   if (!chosen || !commas) return null;
   const bounds = [-1, ...commas, tail.length];
   const rejected = bounds.slice(1).map((end, i) => {
