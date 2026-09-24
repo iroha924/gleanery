@@ -1,6 +1,6 @@
-# 依存の既知の脆弱性を OSV で見て、code scanning へ上げる。GitHub の依存のグラフは server/bun.lock を読まないので、
-# 推移的な依存はここでしか見えない。既知の脆弱性では落とさず（fail-on-vuln: false）、走査そのものの失敗だけを落とす。
-# PR の新規の比較（osv-scanner-reusable-pr.yml）は使わない（google/osv-scanner-action#136）。PR ではこの workflow を変えたときだけ走らせる。
+# Checks dependencies for known vulnerabilities with OSV and uploads to code scanning. GitHub's dependency graph does not read server/bun.lock,
+# so transitive dependencies are visible only here. Known vulnerabilities do not fail it (fail-on-vuln: false); only a failure of the scan itself does.
+# The new-in-PR comparison (osv-scanner-reusable-pr.yml) is not used (google/osv-scanner-action#136). On PRs it runs only when this workflow changes.
 name: osv-scanner
 
 on:

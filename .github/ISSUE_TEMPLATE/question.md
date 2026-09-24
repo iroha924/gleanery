@@ -1,18 +1,18 @@
 ---
-name: 判断が要る論点
-about: 実装の前に決めることがある
+name: Question to decide
+about: Something must be decided before implementation
 title: ''
 ---
 
 <!--
-埋めたらコメントは消す。**本文はそのまま DB に入る**（server/src/github.ts）。
-定型が残るとそのぶん発言の検索の結果が薄まる。
+Delete this comment once filled in. **The body goes into the database as is** (server/src/github.ts).
+Leftover boilerplate dilutes message search results.
 -->
 
-## 決めること
+## What to decide
 
-## 選択肢と根拠
+## Options and grounds
 
-<!-- 選択肢ごとに、採る理由と不利を 1 行ずつ。確かめた事実と推測を分ける。 -->
+<!-- For each option, one line on why to take it and its downsides. Separate confirmed facts from guesses. -->
 
-## 決めないと何が起きるか
+## What happens if it is not decided

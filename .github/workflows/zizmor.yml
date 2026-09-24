@@ -1,5 +1,5 @@
-# workflow の書き方の穴（資格情報の残り、キャッシュ汚染、権限の広さなど）を zizmor で見て、code scanning へ上げる。
-# 指摘では job を落とさない（SARIF で見る）。fork の PR には security-events の書き込みが無いので走らせない。
+# Checks workflows for holes (leftover credentials, cache poisoning, broad permissions, and so on) with zizmor and uploads to code scanning.
+# Findings do not fail the job (they are read as SARIF). It does not run for fork PRs, which have no security-events write access.
 name: zizmor
 
 on:

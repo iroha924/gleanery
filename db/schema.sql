@@ -1,22 +1,22 @@
--- gleanery の DB の正本（SQLite、`node:sqlite`）。持ち主 1 人が、その PC での判断と会話を引くためにある。
--- **PC ごとに独立していて、記録を共有しない。**1 ファイル（~/.gleanery/gleanery.db）が 1 つの DB で、schema 修飾は持たない。
+-- The source of truth for gleanery's database (SQLite, `node:sqlite`). It lets one owner look up decisions and conversations on that machine.
+-- **Each machine is independent and shares no records.** One file (~/.gleanery/gleanery.db) is one database, with no schema qualifiers.
 --
--- 境界は 3 つ。取り込み元の今の状態（connector / source_item）、逐語の会話（conversation / message）、
--- 検索する知識（knowledge）。作業の現在地（work_item）は更新される状態なので知識とは表を分ける。
+-- Three boundaries: the current state of sources (connector / source_item), verbatim conversations (conversation / message),
+-- and searchable knowledge (knowledge). Work status (work_item) is state that gets updated, so it has its own table.
 --
--- バージョンは末尾の `pragma user_version`。MCP・CLI・端末の画面は開くときに server/src/db.ts の SCHEMA_REVISION と
--- 突き合わせ、食い違えば止まる。空の DB は `gleanery init` が作る（server/src/admin.ts）。
--- 全表 STRICT（型違いを拒む）。主キーは全部 not null を書く（SQLite は integer 以外の主キーに NULL を許す）。
--- journal_mode・foreign_keys は接続ごとに server/src/sqlite.ts が設定する（ここには書かない）。
+-- The version is `pragma user_version` at the end. MCP, the CLI, and the terminal screen compare it with SCHEMA_REVISION in server/src/db.ts
+-- when opening, and stop on a mismatch. `gleanery init` creates an empty database (server/src/admin.ts).
+-- Every table is STRICT (rejects type mismatches). Every primary key says not null (SQLite allows NULL in non-integer primary keys).
+-- server/src/sqlite.ts sets journal_mode and foreign_keys per connection (not here).
 --
--- 時刻は ISO 8601 の UTC（`Date#toISOString()` の形）の文字列で持ち、辞書順が時系列順になる。
--- `strftime(...) is 列` は正規形でない値（ミリ秒の無い `...:00Z`、時差付き、暦に無い日）を拒む。
--- 混ざると同じ秒の中で並びが狂い、日付の絞り込みが境界で外れる。
+-- Times are ISO 8601 UTC strings (the `Date#toISOString()` form), so lexical order is chronological order.
+-- `strftime(...) is column` rejects values not in normal form (`...:00Z` without milliseconds, offsets, dates not on the calendar).
+-- Mixed forms break ordering within a second and make date filters miss at the boundaries.
 
 create table project (
   id integer primary key autoincrement not null,
-  -- git remote を正規化した key（`git:github.com/owner/repo`）か、remote の無いプロジェクトに各 PC の設定で付けた key。
-  -- ローカルのパスは置かない。置き場所は PC ごとに違う。
+  -- A key from the normalized git remote (`git:github.com/owner/repo`), or a key set per machine for a project without a remote.
+  -- Local paths are not stored. Locations differ per machine.
   key text not null unique check (
     (key glob 'git:*' and key not glob '*[ ' || char(9) || '-' || char(13) || ']*' and length(key) > 4)
     or (key glob 'local:[a-z0-9]*' and substr(key, 7) not glob '*[^a-z0-9._-]*')),
@@ -30,10 +30,10 @@ create table person (
   display_name text not null unique check (display_name <> ''),
   is_self integer not null default 0 check (is_self in (0, 1))
 ) strict;
--- 質問者本人は 1 人だけ。「私はなんて言った？」の「私」をここで決める。
+-- Exactly one person is the owner who asks. This decides who "I" is in "what did I say?".
 create unique index person_one_self on person (is_self) where is_self = 1;
 
--- 取り込み元での識別子。GitHub の user id は login を変えても同じなので external_id に置く。
+-- Identifiers at a source. A GitHub user id stays the same when the login changes, so it goes in external_id.
 create table person_identity (
   id integer primary key autoincrement not null,
   person_id integer references person (id) on delete set null,
@@ -44,9 +44,9 @@ create table person_identity (
 ) strict;
 create index person_identity_handle on person_identity (provider, lower(handle));
 
--- 取り込み元ごとの、最後に入れたバージョンと直近の成否。secret は置かない（同期する PC の環境にある）。
--- 文書は入れた commit（head_oid）。次の同期は、それから fast-forward できる commit だけを自動で入れる。
--- GitHub は取得を始めた時刻（snapshot_at）。それより前に始めた取得は、遅れて commit しても書かない。
+-- Per source, the last imported version and the latest result. No secrets (they live in the syncing machine's environment).
+-- For documents, the imported commit (head_oid). The next sync imports automatically only commits that fast-forward from it.
+-- For GitHub, the time the fetch started (snapshot_at). A fetch that started earlier is not written, even if it commits later.
 create table connector (
   id integer primary key autoincrement not null,
   project_id integer not null references project (id) on delete cascade,
@@ -60,9 +60,9 @@ create table connector (
   unique (project_id, provider)
 ) strict;
 
--- docs の同期で取り込まない path。追跡された Markdown が全部「事実を述べた文書」とは限らない（監査の fixture）。
--- **取り込む側の設定である。**読み取り専用のプロジェクトにも効かせたいので、リポジトリ側の manifest には置かない。
--- file は path と完全一致、directory は `<path>/` で始まる path に当たる。docs の connector にだけ作る。
+-- Paths the docs sync does not import. Not every tracked Markdown file states facts (such as audit fixtures).
+-- **This is importer-side configuration.** It must work for read-only projects too, so it is not a manifest in the repository.
+-- file matches the path exactly, and directory matches paths starting with `<path>/`. Only created for the docs connector.
 create table docs_exclude (
   connector_id integer not null references connector (id) on delete cascade,
   kind text not null check (kind in ('file', 'directory')),
@@ -73,8 +73,8 @@ create table docs_exclude (
   primary key (connector_id, kind, path)
 ) strict;
 
--- 取り込み元の今の状態。消えたと完全な一覧で確かめられた項目は行ごと消す（墓標を置かない）。
--- 文書は原文を body に持つ。検索するのは knowledge の節で、節の連結から原文は戻さない。
+-- The current state of a source. Items confirmed gone by a complete listing are deleted with their rows (no tombstones).
+-- Documents keep their original text in body. Search uses the knowledge sections, and joining sections never restores the original.
 create table "source_item" (
   id integer primary key autoincrement not null,
   connector_id integer not null references connector (id) on delete cascade,
@@ -89,7 +89,7 @@ create table "source_item" (
   author_identity_id integer references person_identity (id) on delete set null,
   source_created_at text check (strftime('%Y-%m-%dT%H:%M:%fZ', source_created_at) is source_created_at),
   source_updated_at text check (strftime('%Y-%m-%dT%H:%M:%fZ', source_updated_at) is source_updated_at),
-  -- PR はマージした時刻（マージせず閉じたなら閉じた時刻）、issue は閉じた時刻。開いているものと文書は null。
+  -- For a PR, the merge time (or the close time if closed without merging); for an issue, the close time. null for open items and documents.
   closed_at text check (strftime('%Y-%m-%dT%H:%M:%fZ', closed_at) is closed_at),
   content_hash blob not null check (length(content_hash) = 32),
   metadata text not null default '{}' check (json_valid(metadata) and json_type(metadata) = 'object'),
@@ -103,13 +103,13 @@ create table "source_item" (
       else path is null and body is null and state in ('open', 'merged', 'closed') and (state = 'open') = (closed_at is null)
     end
   ),
-  -- 上の CHECK は state が NULL だと式全体が NULL になって通る。closed_at との対もそのとき守られない。
+  -- With a NULL state the CHECK above evaluates to NULL and passes, and the pairing with closed_at is not enforced either.
   constraint source_item_state_required check (kind = 'document' or state is not null)
 ) strict;
 create index source_item_listing on source_item (connector_id, kind, state, source_updated_at desc);
 
--- coding session、または GitHub の PR / issue 1 件ぶんの会話。
--- id は (project, origin, external_id) から決定的に作る uuid。同じ session を 2 回送っても行が増えない。
+-- A conversation: one coding session, or one GitHub PR or issue.
+-- The id is a uuid derived deterministically from (project, origin, external_id). Sending the same session twice adds no rows.
 create table conversation (
   id text primary key not null,
   project_id integer not null references project (id) on delete cascade,
@@ -123,10 +123,10 @@ create table conversation (
 ) strict;
 create index conversation_recent on conversation (project_id, started_at desc);
 
--- 1 発言 1 行。self は持ち主が打った発言、assistant は AI の最後の応答か AI レビュアー、bot は自動通知。
--- 大きすぎる発言は冒頭と末尾だけを残し、truncated と元の大きさ（UTF-8 のバイト数）を持つ。
+-- One row per message. self is what the owner typed, assistant is the AI's last reply or an AI reviewer, and bot is an automated notice.
+-- Oversized messages keep only their start and end, with truncated and the original size (UTF-8 bytes).
 create table message (
-  -- seq は FTS5 の rowid。VACUUM で番号が変わらないよう、暗黙の rowid ではなく明示の integer primary key にする
+  -- seq is the FTS5 rowid. It is an explicit integer primary key rather than the implicit rowid, so VACUUM does not renumber it
   seq integer primary key not null,
   id text not null unique,
   conversation_id text not null references conversation (id) on delete cascade,
@@ -141,7 +141,7 @@ create table message (
   url text,
   sent_at text not null check (strftime('%Y-%m-%dT%H:%M:%fZ', sent_at) is sent_at),
   content_hash blob not null check (length(content_hash) = 32),
-  -- 全文検索の索引に入れるか。coding session の AI の応答と自動通知は 0（判定は capture.ts / github.ts の indexesMessage）
+  -- Whether it goes into the full-text index. 0 for AI replies in coding sessions and automated notices (decided by indexesMessage in capture.ts / github.ts)
   indexed integer not null check (indexed in (0, 1)),
   unique (conversation_id, external_id),
   check (truncated = 1 or original_bytes = length(cast(body as blob))),
@@ -151,8 +151,8 @@ create index message_order on message (conversation_id, sent_at);
 create index message_by_identity on message (identity_id, sent_at desc) where identity_id is not null;
 create index message_self on message (sent_at desc) where speaker_kind = 'self';
 
--- 全文検索の索引。rowid = message.seq。語は gleanery_terms()（server/src/text.ts の terms() を接続ごとに登録）で切る。
--- 関数を登録していない接続からの書き込みは no such function で失敗する（索引を黙って欠かさない）。
+-- The full-text index. rowid = message.seq. Terms are split by gleanery_terms() (terms() in server/src/text.ts, registered per connection).
+-- Writes from a connection without the function fail with no such function (the index never silently misses rows).
 create virtual table message_fts using fts5(lexemes, content='', contentless_delete=1);
 create trigger message_fts_ai after insert on message when new.indexed = 1 begin
   insert into message_fts (rowid, lexemes) values (new.seq, gleanery_terms(new.body));
@@ -165,9 +165,9 @@ create trigger message_fts_au after update of body, indexed on message begin
   insert into message_fts (rowid, lexemes) select new.seq, gleanery_terms(new.body) where new.indexed = 1;
 end;
 
--- 発言に結んだファイル。自動記録は、編集したファイル（edit）を、触る前に持ち主が
--- 最後にした発言へ結ぶ。GitHub の同期は、レビューで指されたファイル（review）をそのレビューの発言へ結ぶ。
--- read は以前に読んだ要件定義・設計書の記録で、新しくは書かない。path は project のルートからの相対。
+-- Files linked to messages. Capture links an edited file (edit) to the owner's last message before the edit.
+-- The GitHub sync links a file pointed to in a review (review) to that review message.
+-- read records requirements and design documents read in the past, and is no longer written. path is relative to the project root.
 create table message_file (
   message_id text not null references message (id) on delete cascade,
   path text not null check (path <> '' and path not glob '/*' and path not glob '*[/]..[/]*' and path not glob '..[/]*'
@@ -179,7 +179,7 @@ create table message_file (
 ) strict;
 create index message_file_path on message_file (path);
 
--- 作業の現在地。trace が更新する。active / blocked / paused が「続きをやる」の候補。
+-- Work status, updated by trace. active / blocked / paused are candidates for continuing work.
 create table work_item (
   id integer primary key autoincrement not null,
   project_id integer not null references project (id) on delete cascade,
@@ -195,9 +195,9 @@ create table work_item (
 ) strict;
 create index work_item_open on work_item (project_id, updated_at desc) where status in ('active', 'blocked', 'paused');
 
--- 検索する知識の単位。trace が会話から選んだ判断と、文書の節。
--- 覆した決定は消さない（消すと再提案される）。superseded にして後継を指す。
--- stance は種類と状態から決まる。「通ってはいけない道」だけを引くときの絞り込みに使う。
+-- A unit of searchable knowledge: decisions trace picked from conversations, and document sections.
+-- Overturned decisions are not deleted (deleting them gets them proposed again). They become superseded and point to the successor.
+-- stance follows from kind and status, and filters searches for paths not to take.
 create table knowledge (
   id integer primary key autoincrement not null,
   project_id integer not null references project (id) on delete cascade,
@@ -256,8 +256,8 @@ create table knowledge (
 create index knowledge_listing on knowledge (project_id, kind, status, occurred_at desc);
 create index knowledge_work on knowledge (work_item_id) where work_item_id is not null;
 
--- 全文検索の索引。rowid = knowledge.id。列は見出し（h）と本文 + 理由（b）。検索は bm25(knowledge_fts, 3, 1)。
--- trace の見出しには作業の題が、文書の節の見出しには path と見出しの段が入る。
+-- The full-text index. rowid = knowledge.id. Columns are the heading (h) and body plus reason (b). Search uses bm25(knowledge_fts, 3, 1).
+-- Trace headings hold the work title, and document section headings hold the path and heading levels.
 create virtual table knowledge_fts using fts5(h, b, content='', contentless_delete=1);
 create trigger knowledge_fts_ai after insert on knowledge begin
   insert into knowledge_fts (rowid, h, b)
@@ -272,7 +272,7 @@ create trigger knowledge_fts_au after update of heading, body, reason on knowled
   values (new.id, gleanery_terms(coalesce(new.heading, '')), gleanery_terms(new.body || char(10) || coalesce(new.reason, '')));
 end;
 
--- 判断とファイルの直接の関係。applies_to は編集の前に出す制約、evidence は根拠として挙げたファイル。
+-- Direct links between decisions and files. applies_to is a constraint shown before editing, and evidence is a file cited as grounds.
 create table knowledge_file (
   knowledge_id integer not null references knowledge (id) on delete cascade,
   path text not null check (path <> '' and path not glob '/*' and path not glob '*[/]..[/]*' and path not glob '..[/]*'
@@ -284,10 +284,10 @@ create table knowledge_file (
 ) strict;
 create index knowledge_file_path on knowledge_file (path, role);
 
--- 自動記録（capture の接続）が書ける 3 つの view。server/src/sqlite.ts の authorizer が、capture にはこの view への
--- insert と、下の trigger の中の書き込みだけを許す。source_item_id・identity_id・reply_to_id・url は view に無いので、
--- GitHub の会話を作ることも、他人の身元を名乗ることもできない。会話の id は決定的に計算できるので、既存の会話へ
--- 発言を足すことは止めない（自動記録の経路が悪用された場合に残る面）。
+-- The 3 views capture (the capture connection) can write. The authorizer in server/src/sqlite.ts allows capture only inserts into these views
+-- and the writes inside the triggers below. source_item_id, identity_id, reply_to_id, and url are not in the views, so capture
+-- can neither create GitHub conversations nor claim someone else's identity. Conversation ids can be computed deterministically, so adding messages
+-- to an existing conversation is not blocked (the remaining surface if the capture path is abused).
 create view capture_conversation as
   select id, project_id, origin, external_id, branch, started_at from conversation;
 create trigger capture_conversation_insert instead of insert on capture_conversation begin
@@ -307,7 +307,7 @@ create trigger capture_message_insert instead of insert on capture_message begin
   on conflict do nothing;
 end;
 
--- 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの DB に無ければ（途中で別のプロジェクトへ移った session など）捨てる。
+-- Link to the owner's last message before the edit. If that message is not in this database (such as a session that moved to another project midway), drop it.
 create view capture_message_file as select message_id, path, action from message_file;
 create trigger capture_message_file_insert instead of insert on capture_message_file begin
   insert into message_file (message_id, path, action)

@@ -92,7 +92,7 @@ transactionの中で他の問い合わせを並行に投げない。`select ... 
 | プロジェクトと人 | `project`、`person`、`person_identity` | CLI（project、who）、GitHub同期 |
 | 取り込み元の今の状態 | `connector`、`docs_exclude`、`source_item` | GitHub同期、文書同期、CLI（project exclude） |
 | 逐語の会話 | `conversation`、`message`、`message_file` | 自動記録（captureの3つのview）、GitHub同期 |
-| 検索する知識 | `knowledge`、`knowledge_file` | trace、文書同期、GitHub同期（merge した持ち主の PR の「採った案と棄却した案」の行。`server/src/decisions.ts`） |
+| 検索する知識 | `knowledge`、`knowledge_file` | trace、文書同期、GitHub同期（merge した持ち主の PR の「Decisions」の節の行。旧い「採った案と棄却した案」の節も読む。`server/src/decisions.ts`） |
 | 作業の現在地 | `work_item` | trace |
 
 用途ごとに表を増やさない。知識は`knowledge`一表で、種類は`kind`、「通ってはいけない道」かは

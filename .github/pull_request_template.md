@@ -1,47 +1,47 @@
 <!--
-節ごと消してよい。埋まらない見出しとこのコメントは消す。
-**本文はそのまま DB に入る**（server/src/github.ts。差分は入らない）。PR 1 件が 1 つの会話になり、
-発言の検索（recall の mode: said）と gleanery dashboard の検索から引かれる。
-そのとき出てくる唯一の説明がこれなので、定型で薄めない。
+Delete any section you do not fill, and delete this comment.
+**The body goes into the database as is** (server/src/github.ts; the diff does not). Each PR becomes one conversation,
+found by message search (recall mode: said) and gleanery dashboard search.
+This is the only explanation that shows up there, so do not water it down with boilerplate.
 
-この PR で片付く issue があるなら、本文の先頭に `Closes #12` と 1 行で書く（merge で閉じる）。
-片付かない関連は `Refs #12` にする。issue を 1 本の PR で閉じ切らないことがあるので、
-Closes と Refs を取り違えない。複数あるなら 1 行に 1 つ並べる。見出しは作らない。
+If this PR resolves an issue, put `Closes #12` on one line at the top of the body (merging closes it).
+Use `Refs #12` for related issues it does not resolve. One PR does not always finish an issue,
+so do not mix up Closes and Refs. List several on separate lines. Do not add a heading for them.
 -->
 
-## 何を変えたか
+## What changed
 
-<!-- 1〜2 行。何が動くようになったか。差分の言い換えは書かない。 -->
+<!-- 1 or 2 lines: what works now. Do not restate the diff. -->
 
-## 採った案と棄却した案
+## Decisions
 
 <!--
-1 行ずつ。**棄却理由まで書く。**書かないなら決めていないのと同じで、
-半年後に同じ案を同じ理由で捨て直すことになる。
-`- 採った: <案>。棄却: <案>（<理由>）、<案>（<理由>）` の形の行は、merge の後に gleanery の判断の記録として取り込まれる
-（server/src/decisions.ts）。形に合わない行は発言としてだけ残る。
+One line each. **Include the reason for each rejected option.** Without it, nothing was really decided,
+and half a year later the same option gets rejected again for the same reason.
+Lines in the form `- Chosen: <option>. Rejected: <option> (<reason>); <option> (<reason>)` are imported as gleanery
+decision records after the merge (server/src/decisions.ts). Lines in any other form stay only as messages.
 -->
 
-## 検証
+## Verification
 
 <!--
-実行したコマンドと出力。**「通るはず」ではなく通った出力を貼る。**
-修正なら、直す前のコードで red になることを確かめた事実も書く。
-実行しなかった検証は、理由とともに「未検証」と書く。
-Codex のレビューの結果（指摘の数と扱い）を必ず書く。無いと CI（pr-body）が落ちる。
+The commands you ran and their output. **Paste output that passed, not "should pass".**
+For a fix, also state that you confirmed the code failed (red) before the fix.
+Mark checks you did not run as "not verified", with the reason.
+Always include the Codex review result (how many findings and how each was handled). Without it, CI (pr-body) fails.
 -->
 
 ## Release notes
 
 <!--
-配布物に入る PR（release:plan が plugin）だけに書く。それ以外はこの節ごと消す。
-利用者から見た変更と、更新で打つ手順を英語で書く。内部の実装の名前は出さない。
-latest へ上げた後、この節がそのまま GitHub Release の本文になる（改めて聞かない）。
+Only for PRs that ship (release:plan says plugin). Otherwise delete this section.
+Describe the change as users see it and the commands to update. Do not name internal implementation details.
+After promotion to latest, this section becomes the GitHub Release body as is (no further review).
 -->
 
-## 見送った指摘
+## Declined findings
 
 <!--
-レビューで直さなかったものと、その根拠。起票したなら番号。
-無ければこの節ごと消す。
+Review findings you did not fix, and why. Include the issue number if you filed one.
+Delete this section if there are none.
 -->

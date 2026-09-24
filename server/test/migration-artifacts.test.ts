@@ -162,19 +162,83 @@ test("only requirements and design rows and their descendants go, the rest stays
     /CHECK constraint failed/,
   );
 
-  // The schema text equals that of a new database
+  // The schema equals that of a new database, apart from SQL comments (SQLite stores comments inside CREATE statements,
+  // and databases created from the r1 schema keep its Japanese comments)
   const fresh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-fresh-")), "gleanery.db");
   dbInit(fresh);
   const schemaOf = (db: DatabaseSync) =>
-    db
-      .prepare(
-        "select type, name, tbl_name, sql from sqlite_schema where name not like 'sqlite_%' order by type, name",
-      )
-      .all();
+    (
+      db
+        .prepare(
+          "select type, name, tbl_name, sql from sqlite_schema where name not like 'sqlite_%' order by type, name",
+        )
+        .all() as { type: string; name: string; tbl_name: string; sql: string | null }[]
+    ).map((r) => ({ ...r, sql: r.sql === null ? null : sqlShape(r.sql) }));
   const freshRaw = connectWriter("owner", fresh);
   assert.deepEqual(schemaOf(raw), schemaOf(freshRaw));
   freshRaw.close();
   raw.close();
+});
+
+/**
+ * SQL without comments and with whitespace collapsed, for comparing schema text. Quoted spans ('…', "…", `…`, […]) stay byte for byte,
+ * so comments and whitespace inside a value still count as a difference.
+ */
+function sqlShape(sql: string): string {
+  let out = "";
+  let space = false;
+  const closers: Record<string, string> = { "'": "'", '"': '"', "`": "`", "[": "]" };
+  for (let i = 0; i < sql.length; i++) {
+    const c = sql[i] ?? "";
+    const close = closers[c];
+    if (close) {
+      let j = i + 1;
+      for (; j < sql.length; j++) {
+        if (sql[j] !== close) continue;
+        if (close !== "]" && sql[j + 1] === close) j++;
+        else break;
+      }
+      if (space && out) out += " ";
+      space = false;
+      out += sql.slice(i, j + 1);
+      i = j;
+    } else if (c === "-" && sql[i + 1] === "-") {
+      const end = sql.indexOf("\n", i);
+      i = end < 0 ? sql.length : end - 1;
+      space = true;
+    } else if (c === "/" && sql[i + 1] === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      i = end < 0 ? sql.length : end + 1;
+      space = true;
+    } else if (/\s/.test(c)) space = true;
+    else {
+      if (space && out) out += " ";
+      space = false;
+      out += c;
+    }
+  }
+  return out;
+}
+
+test("the schema comparison ignores comments and layout but not changes to SQL or to quoted values", () => {
+  const base = "create table t (\n  -- a comment\n  k text not null check (k in ('a', 'b'))\n) strict";
+  assert.equal(
+    sqlShape(base),
+    sqlShape("create table t ( /* other */ k text not null\n check (k in ('a', 'b')) ) strict"),
+  );
+  assert.notEqual(sqlShape(base), sqlShape(base.replace("'b'", "'c'")), "a changed CHECK list");
+  assert.notEqual(sqlShape(base), sqlShape(base.replace("'a'", "'a  '")), "whitespace inside a quoted value");
+  assert.notEqual(sqlShape(base), sqlShape(base.replace("'a'", "'a -- x'")), "-- inside a quoted value");
+  assert.notEqual(
+    sqlShape(base),
+    sqlShape(base.replace("'a'", "'a /* x */'")),
+    "/* */ inside a quoted value",
+  );
+  assert.notEqual(
+    sqlShape("select 'it''s'"),
+    sqlShape("select 'its'"),
+    "doubled quotes stay inside the value",
+  );
 });
 
 test("deleted ids are not reused even when no source_item remains", () => {

@@ -14,8 +14,7 @@ const ALLOWED = [
   {
     // A record of a problem actually hit in the past, not a description of the current setup.
     file: ".github/workflows/check.yml",
-    // english-exempt: matches the Japanese comment in .github/workflows/check.yml until #144 translates it
-    pattern: /Vercel で実際に踏んだ/,
+    pattern: /actually hit on Vercel/,
   },
   {
     // A record of why the rule's basis changed. Removing it loses why the rule exists.

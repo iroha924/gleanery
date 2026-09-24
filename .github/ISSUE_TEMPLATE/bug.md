@@ -1,20 +1,20 @@
 ---
-name: 不具合
-about: gleanery が期待どおりに動かない
+name: Bug
+about: gleanery does not work as expected
 title: ''
 ---
 
 <!--
-埋めたらコメントは消す。**本文はそのまま DB に入る**（server/src/github.ts）。
-定型が残るとそのぶん発言の検索の結果が薄まる。
+Delete this comment once filled in. **The body goes into the database as is** (server/src/github.ts).
+Leftover boilerplate dilutes message search results.
 -->
 
-## 起きたこと
+## What happened
 
-<!-- 打った command と、出た表示をそのまま。資格情報や秘密の情報は伏せる。 -->
+<!-- The command you ran and the output, as is. Hide credentials and secrets. -->
 
-## 期待したこと
+## What you expected
 
-## 環境
+## Environment
 
-<!-- `gleanery --version`、`gleanery doctor` の食い違いの行、OS、Claude Code か Codex か。 -->
+<!-- `gleanery --version`, the mismatched lines from `gleanery doctor`, the OS, and whether it was Claude Code or Codex. -->

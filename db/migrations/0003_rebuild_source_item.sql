@@ -1,7 +1,7 @@
 -- gleanery: foreign_keys=off
--- source_item の kind の CHECK から requirements / design を外す。SQLite は CHECK を変えられないので表を作り直す。
--- 外部キーが効いたまま drop すると、子（conversation・knowledge）の行が cascade で消えるので、runner が切って当てる。
--- autoincrement の最大値は drop で消えるので、控えて戻す（消した id を振り直さない）。
+-- Removes requirements / design from source_item's kind CHECK. SQLite cannot alter a CHECK, so the table is rebuilt.
+-- Dropping with foreign keys on would delete child rows (conversation, knowledge) by cascade, so the runner turns them off.
+-- drop loses the autoincrement maximum, so it is saved and restored (deleted ids are never reused).
 create temp table source_item_seq as select seq from sqlite_sequence where name = 'source_item';
 create table "source_item_new" (
   id integer primary key autoincrement not null,
@@ -17,7 +17,7 @@ create table "source_item_new" (
   author_identity_id integer references person_identity (id) on delete set null,
   source_created_at text check (strftime('%Y-%m-%dT%H:%M:%fZ', source_created_at) is source_created_at),
   source_updated_at text check (strftime('%Y-%m-%dT%H:%M:%fZ', source_updated_at) is source_updated_at),
-  -- PR はマージした時刻（マージせず閉じたなら閉じた時刻）、issue は閉じた時刻。開いているものと文書は null。
+  -- For a PR, the merge time (or the close time if closed without merging); for an issue, the close time. null for open items and documents.
   closed_at text check (strftime('%Y-%m-%dT%H:%M:%fZ', closed_at) is closed_at),
   content_hash blob not null check (length(content_hash) = 32),
   metadata text not null default '{}' check (json_valid(metadata) and json_type(metadata) = 'object'),
@@ -31,7 +31,7 @@ create table "source_item_new" (
       else path is null and body is null and state in ('open', 'merged', 'closed') and (state = 'open') = (closed_at is null)
     end
   ),
-  -- 上の CHECK は state が NULL だと式全体が NULL になって通る。closed_at との対もそのとき守られない。
+  -- With a NULL state the CHECK above evaluates to NULL and passes, and the pairing with closed_at is not enforced either.
   constraint source_item_state_required check (kind = 'document' or state is not null)
 ) strict;
 insert into "source_item_new" select * from source_item;
