@@ -121,8 +121,37 @@ test("--pre-push checks the stored messages of the pushed refs, not HEAD and not
     const twoRefs = `refs/heads/clean ${clean} refs/heads/clean ${zero}\nrefs/heads/c2 ${clean} refs/heads/c2 ${zero}\n`;
     assert.match(String(check(twoRefs).stdout), /1 checked/);
 
+    // Notes and other metadata refs are not branches: Git writes their commit messages.
+    assert.match(
+      String(check(`refs/notes/commits ${bodied} refs/notes/commits ${zero}\n`).stdout),
+      /0 checked/,
+    );
+
+    // A branch already on the remote that merges in main: main's old message is already pushed.
+    git("switch", "-q", "-c", "feature", "clean");
+    git("update-ref", "refs/remotes/origin/feature", "HEAD");
+    git("switch", "-q", "main");
+    git("commit", "-q", "--allow-empty", "-m", "もう一つの古いコミット"); // reached main after feature forked
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    git("switch", "-q", "feature");
+    git("merge", "-q", "--no-ff", "-m", "Merge branch 'main' into feature", "main");
+    const merged = git("rev-parse", "HEAD");
+    const withMain = check(`refs/heads/feature ${merged} refs/heads/feature ${clean}\n`);
+    assert.equal(withMain.status, 0, String(withMain.stderr));
+
+    // Control characters in a stored subject do not reach the terminal.
+    git("switch", "-q", "-c", "forged", "main");
+    git("commit", "-q", "--allow-empty", "-m", "bad: visible\rFORGED\x1b[2J");
+    const forged = check(`refs/heads/forged ${git("rev-parse", "HEAD")} refs/heads/forged ${zero}\n`);
+    assert.equal(forged.status, 1);
+    assert.ok(
+      !String(forged.stderr).includes("\r") && !String(forged.stderr).includes("\x1b"),
+      String(forged.stderr),
+    );
+
     // With no remote-tracking refs there is no base: skip rather than reject the old message in the history.
     git("update-ref", "-d", "refs/remotes/origin/main");
+    git("update-ref", "-d", "refs/remotes/origin/feature");
     const noBase = check(`refs/heads/clean ${clean} refs/heads/clean ${zero}\n`);
     assert.equal(noBase.status, 0, String(noBase.stderr));
     assert.match(String(noBase.stdout), /skipped/);

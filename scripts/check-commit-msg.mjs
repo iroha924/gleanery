@@ -12,7 +12,10 @@ const args = process.argv.slice(2);
 
 /** Stored messages of the commits `git log <revs>` lists. */
 function stored(revs) {
-  return execFileSync("git", ["log", "--format=%H%x00%P%x00%B%x01", ...revs], { encoding: "utf8" })
+  // Read the objects a push sends, not a `git replace` view of them.
+  return execFileSync("git", ["--no-replace-objects", "log", "--format=%H%x00%P%x00%B%x01", ...revs], {
+    encoding: "utf8",
+  })
     .split("\x01")
     .map((r) => r.replace(/^\n/, ""))
     .filter(Boolean)
@@ -29,12 +32,13 @@ function hasRemoteRefs() {
   );
 }
 
-/** Commits each pushed ref adds: from the remote's old tip, or, for a new ref, those on no remote-tracking ref. */
+/** Commits each pushed branch adds: those on neither the remote's old tip nor any remote-tracking ref. */
 function pushed(stdin) {
   const seen = new Map();
   for (const line of stdin.split("\n")) {
-    const [, local, , remote] = line.trim().split(/\s+/);
-    if (!local || /^0+$/.test(local)) continue; // a deletion pushes no commits
+    const [, local, ref, remote] = line.trim().split(/\s+/);
+    // A deletion pushes no commits, and notes and other metadata refs hold commits Git writes itself.
+    if (!local || /^0+$/.test(local) || !ref?.startsWith("refs/heads/")) continue;
     let known = remote !== undefined && !/^0+$/.test(remote);
     if (known) {
       try {
@@ -48,7 +52,8 @@ function pushed(stdin) {
       console.log(`commit messages: ${local.slice(0, 7)} skipped (no remote-tracking refs to compare with)`);
       continue;
     }
-    for (const m of stored(known ? [`${remote}..${local}`] : [local, "--not", "--remotes"]))
+    // Commits merged in from another remote branch (main with messages from before the rule) are already pushed.
+    for (const m of stored([local, ...(known ? [`^${remote}`] : []), "--not", "--remotes"]))
       seen.set(m.sha, m);
   }
   return [...seen.values()];
@@ -107,7 +112,14 @@ for (const m of messages) {
   });
   if (!problems.length) continue;
   failed++;
-  console.error(`${m.name}: ${m.body.split("\n")[0]}`);
+  // A fetched commit's subject is outside text: control characters must not rewrite the terminal.
+  const subject = [...(m.body.split("\n")[0] ?? "")]
+    .map((ch) => {
+      const n = ch.codePointAt(0) ?? 0;
+      return n < 0x20 || (n >= 0x7f && n <= 0x9f) ? "?" : ch;
+    })
+    .join("");
+  console.error(`${m.name}: ${subject}`);
   for (const p of problems) console.error(`  - ${p}`);
 }
 if (failed) process.exit(1);
