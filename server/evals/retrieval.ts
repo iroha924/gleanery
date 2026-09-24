@@ -7,7 +7,8 @@
 //
 // **It reads the owner's records, so it is not part of `bun run verify`.** Run it by hand (`bun run evals:retrieval`).
 // Point `GLEANERY_DB` at a database (for measuring a SQLite copy made for evaluation).
-// To compare, use the same retrieval.json before and after a change. Rebuilt questions are not comparable.
+// To compare, use the same retrieval.json and the same DB copy before and after a change. Rebuilt questions are not comparable,
+// and a different DB scores a different set (questions whose answer is missing are listed, not scored).
 //
 // This measures one-shot search without an agent. agentic/run.ts measures accuracy when an agent uses the tools, and
 // splits knowledge questions into even indexes (development) and odd indexes (validation, run only at the gate).
@@ -17,11 +18,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { openReader } from "../src/db.ts";
 import { type Hit, searchKnowledge, searchMessages, searchSplit } from "../src/search.ts";
-import { retired } from "./cases.ts";
+import { retired, splitStale } from "./cases.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 type Case = { q: string; expect: string[]; kind: string; source: string };
-const cases = (
+const allCases = (
   JSON.parse(fs.readFileSync(path.join(HERE, "retrieval.json"), "utf8")) as { cases: Case[] }
 ).cases.filter((c) => !retired(c));
 
@@ -47,6 +48,7 @@ for (const r of await db
   );
 }
 for (const r of await db.selectFrom("message").select("id").execute()) keyOf.set(`m:${r.id}`, r.id);
+const { live: cases, stale } = splitStale(allCases, new Set(keyOf.values()));
 
 const rank = (hits: Hit[], expect: string[]): number =>
   hits.findIndex((h) => {
@@ -135,6 +137,11 @@ for (const [name, fn] of Object.entries(strategies)) {
 
 const total = await db.selectFrom("knowledge").select(db.fn.countAll().as("n")).executeTakeFirst();
 console.log(`${cases.length} questions / ${total?.n ?? 0} knowledge records\n`);
+if (stale.length) {
+  console.log(`${stale.length} questions not scored: their answer is not in this DB`);
+  for (const c of stale) console.log(`  [${c.kind}] ${c.q}  → expected ${c.expect[0]}`);
+  console.log("");
+}
 console.table(table);
 
 console.log("\n=== recall@5 by kind (shipped path) ===");
