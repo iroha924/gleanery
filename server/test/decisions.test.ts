@@ -26,7 +26,7 @@ test("採った案と、括弧の外の「、」で分けた棄却した案と�
   assert.deepEqual(got.skipped, 0);
   assert.deepEqual(got.decisions, [
     {
-      line: "採った: `node:sqlite` の 1 ファイル。棄却: PostgreSQL を続ける（利用者に Docker と 4 つの鍵を用意させる）、libSQL（自動記録の列単位の境界が作れない）、DuckDB（cascade と FTS の即時反映が無い）",
+      line: "- 採った: `node:sqlite` の 1 ファイル。棄却: PostgreSQL を続ける（利用者に Docker と 4 つの鍵を用意させる）、libSQL（自動記録の列単位の境界が作れない）、DuckDB（cascade と FTS の即時反映が無い）",
       chosen: "`node:sqlite` の 1 ファイル",
       rejected: [
         { text: "PostgreSQL を続ける", reason: "利用者に Docker と 4 つの鍵を用意させる" },
@@ -383,4 +383,53 @@ test("CommonMark の境界: 4 個の空白で始まる囲みは閉じず、イ�
     ["`parse(` を使う"],
   );
   assert.equal(got.skipped, 1);
+});
+
+test("受け付けるのは節の直下の「- 採った:」の箇条書きだけ。タスク・番号付き・他の記号・入れ子は飛ばして数える", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "- [ ] 採った: 未チェック。棄却: B（理由）",
+        "1. 採った: 番号。棄却: B（理由）",
+        "",
+        "+ 採った: 他の記号。棄却: B（理由）",
+        "",
+        "- 親",
+        "  - 採った: 入れ子。棄却: B（理由）",
+        "- 採った: 受け付ける。棄却: B（理由）",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["受け付ける"],
+  );
+  assert.equal(got.skipped, 5);
+});
+
+test("節の中の ### では節を終えず、H2 で終える", () => {
+  const got = extractDecisions(
+    "## 採った案と棄却した案\n\n- 採った: A。棄却: B（理由）\n\n### 注記\n\n- 採った: C。棄却: D（理由）\n\n## 検証\n\n- 採った: 外。棄却: E（理由）\n",
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["A", "C"],
+  );
+});
+
+test("項目の中の HTML は行ごと飛ばし、エスケープと長さの違うバッククォートは marked の判定どおりに読む", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "- 採った: A <!-- 。棄却: 偽（理由） -->。棄却: B（理由）",
+        "- 採った: \\`A（\\`。棄却: B（理由）",
+        "- 採った: ``a（`` を使う。棄却: B（理由）",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["``a（`` を使う"],
+  );
+  assert.equal(got.skipped, 2);
 });
