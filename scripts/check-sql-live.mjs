@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// 配る entrypoint（CLI と自動記録のフック）を子プロセスで走らせ、一時 HOME の SQLite に対して SQL と
-// 接続の役割（authorizer）と後始末をまとめて確かめる。
+// Runs the shipped entry points (the CLI and the capture hook) as child processes against SQLite in a temp HOME, checking
+// SQL, connection roles (the authorizer), and cleanup together.
 //
-// `sql:reach` は db を引数で受ける関数を test から通す。CLI は接続を自分で開くので、test から差し込む継ぎ目が無い。
-// 継ぎ目を作るより、実際に起動するほうが見えるものが多い（役割ごとの接続で、権限の外の SQL が止まる）。
+// `sql:reach` runs functions that take a db as an argument from tests. The CLI opens its own connections, so tests have no seam to inject one.
+// Starting it for real shows more than a seam would (role connections stop SQL outside their permissions).
 //
-// 子プロセスの HOME を一時ディレクトリへ向ける理由は .claude/rules/verification.md にある。
+// .claude/rules/verification.md explains why the child HOME points to a temp directory.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +16,7 @@ import { ALLOWED_UNREACHED, callSites, LIVE_FILES } from "./lib/sql-call-sites.m
 
 const failures = [];
 const note = (what, r) => {
-  if (r.timedOut) failures.push(`${what}: 時間切れで殺した`);
+  if (r.timedOut) failures.push(`${what}: killed after timing out`);
   else if (r.status !== 0) failures.push(`${what}: exit ${r.status}\n${r.out.trim().slice(0, 600)}`);
   return r;
 };
@@ -30,41 +30,44 @@ await withTempDir(async (dir) => {
   {
     note("init", runCli(["init"], dir, covDir));
 
-    // ---- CLI。作る → 取り込む → 引く → 消す、の順で通す ----
-    // remote があるので --name は付けない（付けると CLI が止める）。key は git:github.com/example/live になる。
+    // ---- CLI: create, import, search, then delete, in that order ----
+    // The repo has a remote, so no --name (the CLI would refuse it). The key becomes git:github.com/example/live.
     note("project add", runCli(["project", "add", "--cwd", repo], dir, covDir));
     note("project list", runCli(["project", "list"], dir, covDir));
-    // 文書の除外。add は connector を作り、list は join で引き、remove は副問い合わせで絞る。
+    // Document exclusions. add creates the connector, list reads with a join, and remove filters with a subquery.
     note("exclude add", runCli(["project", "exclude", "add", "--cwd", repo, "docs"], dir, covDir));
     const excluded = note("exclude list", runCli(["project", "exclude", "list", "--cwd", repo], dir, covDir));
     if (!/^\s+docs\s+directory$/m.test(excluded.out))
-      failures.push(`exclude list が足した path を出していない\n${excluded.out.slice(0, 400)}`);
+      failures.push(`exclude list does not show the added path\n${excluded.out.slice(0, 400)}`);
     note("exclude remove", runCli(["project", "exclude", "remove", "--cwd", repo, "docs"], dir, covDir));
-    // **harvest はここでは半分だけ通る。**プロジェクトの key は remote の綴りから決まるので、
-    // github の URL を持たせると文書の同期が本物の remote を引きに行き、手元では届かない
-    // （insteadOf で手元へ読み替えると `git remote get-url` もそちらを返し、key が github でなくなる）。
-    // 無視せず、GitHub 側が通って文書側だけが落ちることを綴りで確かめる。
+    // **harvest only half succeeds here.** The project key comes from the remote spelling, so
+    // a GitHub URL makes the document sync fetch the real remote, which is unreachable locally
+    // (rewriting it locally with insteadOf also changes what `git remote get-url` returns, so the key stops being github).
+    // Rather than ignoring this, check by the output text that the GitHub side succeeds and only the document side fails.
     const harvest = runCli(["harvest", "--cwd", repo], dir, covDir);
     if (!/GitHub: /.test(harvest.out))
-      failures.push(`harvest の GitHub 側が動いていない\n${harvest.out.slice(0, 600)}`);
+      failures.push(`the GitHub side of harvest did not run\n${harvest.out.slice(0, 600)}`);
     if (!/Could not fetch the remote's default branch/.test(harvest.out)) {
       failures.push(
-        `harvest の文書側が、手元では届かないはずの remote を引けている\n${harvest.out.slice(0, 600)}`,
+        `the document side of harvest fetched a remote that should be unreachable locally\n${harvest.out.slice(0, 600)}`,
       );
     }
-    // 2 巡目。前より発言と issue が減るので、消えた発言と消えた issue を消す枝がここで通る。
+    // Second round. There are fewer messages and issues than before, so the branches that delete removed messages and issues run here.
     const again = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "2" });
     if (!/GitHub: /.test(again.out))
-      failures.push(`2 巡目の harvest が GitHub を回していない\n${again.out.slice(0, 400)}`);
+      failures.push(`the second harvest did not go through GitHub\n${again.out.slice(0, 400)}`);
     if (!/(?:PRs and issues|PR or issue) \([^)]*(?<!\d)1 removed\)/.test(again.out))
-      failures.push(`2 巡目の harvest が消えた issue を消していない\n${again.out.slice(0, 400)}`);
+      failures.push(`the second harvest did not delete the removed issue\n${again.out.slice(0, 400)}`);
     if (!/1 PR or issue \(1 rewritten/.test(again.out) || !/\d+ messages? \(0 rewritten/.test(again.out))
-      failures.push(`2 巡目の harvest が題だけ変わった PR の発言を書き直した\n${again.out.slice(0, 400)}`);
+      failures.push(
+        `the second harvest rewrote messages of a PR whose title alone changed\n${again.out.slice(0, 400)}`,
+      );
 
-    note("who（名簿）", runCli(["who"], dir, covDir));
-    note("who（結ぶ）", runCli(["who", "--me", "私", "someone"], dir, covDir));
+    note("who (list)", runCli(["who"], dir, covDir));
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
+    note("who (link)", runCli(["who", "--me", "私", "someone"], dir, covDir));
 
-    // trace の command は cwd のプロジェクトへ書き、記録の session がいまのホストの session と一致することを要る。
+    // trace commands write to the cwd project and require the record's session to match the current host session.
     const asSession = (id) => ({ cwd: repo, CLAUDE_CODE_SESSION_ID: id });
     const trace = path.join(dir, "trace.json");
     fs.writeFileSync(
@@ -72,6 +75,7 @@ await withTempDir(async (dir) => {
       JSON.stringify({
         schema: "trace/1",
         session: { host: "claude-code", id: "live-1" },
+        // english-exempt: Japanese record fixture sent through the real CLI and hook
         work: { key: "w-1", title: "検査", goal: "SQL を通す", current: "通している", status: "active" },
         items: [
           {
@@ -79,56 +83,68 @@ await withTempDir(async (dir) => {
             kind: "decision",
             status: "accepted",
             at: "2026-09-13T10:00:00+09:00",
+            // english-exempt: Japanese record fixture sent through the real CLI and hook
             text: "実 DB で通す",
+            // english-exempt: Japanese record fixture sent through the real CLI and hook
             context: "偽の db では権限が見えない",
             options: [
+              // english-exempt: Japanese record fixture sent through the real CLI and hook
               { text: "実 DB", chosen: true },
+              // english-exempt: Japanese record fixture sent through the real CLI and hook
               { text: "偽の db", chosen: false, why: "書き込みも受け付ける" },
             ],
+            // english-exempt: Japanese record fixture sent through the real CLI and hook
             confirmation: "この検査が緑であること",
           },
         ],
       }),
     );
     note("trace check", runCli(["trace", "check", trace], dir, covDir, { cwd: repo }));
-    // context は記録を書く前に、その session の発言と既存の判断を読む。読む側の SQL はここだけが通る。
+    // context reads the session's messages and existing decisions before a record is written. This is the only place its read SQL runs.
     note("trace context", runCli(["trace", "context"], dir, covDir, asSession("live-1")));
     note("trace save", runCli(["trace", "save", trace], dir, covDir, asSession("live-1")));
-    // 集合を受ける枝は空でも通す。空配列を in へ渡して `in ()` になった欠陥がこの形だった。
+    // Run the set-taking branches with an empty set too. A bug once passed an empty array to in and produced `in ()`.
     const empty = path.join(dir, "empty.json");
     fs.writeFileSync(
       empty,
       JSON.stringify({ schema: "trace/1", session: { host: "claude-code", id: "live-2" }, items: [] }),
     );
-    note("trace save（items が空）", runCli(["trace", "save", empty], dir, covDir, asSession("live-2")));
+    note("trace save (empty items)", runCli(["trace", "save", empty], dir, covDir, asSession("live-2")));
 
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     note("search", runCli(["search", "--cwd", repo, "実", "DB"], dir, covDir));
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     note("search --avoid", runCli(["search", "--avoid", "--cwd", repo, "偽"], dir, covDir));
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     note("search --said", runCli(["search", "--said", "me", "--cwd", repo, "実"], dir, covDir));
-    // 自動記録。フックで待ち行列へ積んでから送る。積まずに送ると 0 件で戻り、書き込みの SQL が出ない。
+    // Capture. Queue through the hook, then flush. Flushing an empty queue returns 0 and never runs the write SQL.
     const turn = { session_id: "live-1", prompt_id: "p1", cwd: repo };
     const hook = (extra) => runHook({ ...turn, ...extra }, dir, covDir, asSession("live-1"));
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     hook({ hook_event_name: "UserPromptSubmit", prompt: "実 DB で SQL を通す" });
     hook({
       hook_event_name: "PostToolUse",
       tool_name: "Edit",
       tool_input: { file_path: `${repo}/docs/design.md` },
     });
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     hook({ hook_event_name: "Stop", last_assistant_message: "通した。" });
     note("capture flush", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
 
-    // 登録していないプロジェクトの記録は、捨てずに退避する（#104）。持ち主が PC を変えて project add を
-    // する前に働くと、その間の発言がここへ来る。消すと二度と戻らない。
+    // Records from an unregistered project are set aside, not dropped (#104). If the owner works on a new machine before
+    // running project add, those messages land here. Deleting them would lose them for good.
     const stranger = makeRepo(dir, "https://github.com/example/stranger.git", "stranger");
     const strangerTurn = { session_id: "live-3", prompt_id: "p9", cwd: stranger };
     const strangerAs = { cwd: stranger, CLAUDE_CODE_SESSION_ID: "live-3" };
     runHook(
+      // english-exempt: Japanese record fixture sent through the real CLI and hook
       { ...strangerTurn, hook_event_name: "UserPromptSubmit", prompt: "未登録のプロジェクトでの発言" },
       dir,
       covDir,
       strangerAs,
     );
     runHook(
+      // english-exempt: Japanese record fixture sent through the real CLI and hook
       { ...strangerTurn, hook_event_name: "Stop", last_assistant_message: "返した。" },
       dir,
       covDir,
@@ -139,25 +155,25 @@ await withTempDir(async (dir) => {
     const left = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
     if (left.length === 0) {
       failures.push(
-        `未登録のプロジェクトの記録が ${kept} に残っていない。捨てられた可能性がある\n${strayed.out.slice(0, 400)}`,
+        `records from the unregistered project are not in ${kept}. They may have been dropped\n${strayed.out.slice(0, 400)}`,
       );
     }
 
-    // 30 日より古い退避は刈る。上限が効かないと、登録しないまま使い続けたときに手元が埋まる。
+    // Set-aside records older than 30 days are pruned. Without the limit, using an unregistered project for long would fill the disk.
     const stale = path.join(kept, `${Date.now() - 40 * 24 * 60 * 60 * 1000}-0-stale.json`);
     fs.writeFileSync(stale, JSON.stringify({ v: 1, kind: "message", project: "git:example/none" }));
 
-    // プロジェクトを登録したら、退避した分がそのまま入る。ここが繋がらないと退避の意味が無い。
-    note("project add（退避先）", runCli(["project", "add", "--cwd", stranger], dir, covDir));
+    // Registering the project brings the set-aside records in. Without this link, setting them aside would be pointless.
+    note("project add (set-aside project)", runCli(["project", "add", "--cwd", stranger], dir, covDir));
     const retried = runCli(["capture", "flush"], dir, covDir, strangerAs);
     if (!/new messages\s+[1-9]/.test(retried.out)) {
-      failures.push(`登録した後も、退避した記録が入っていない\n${retried.out.slice(0, 400)}`);
+      failures.push(`set-aside records were not stored after registering\n${retried.out.slice(0, 400)}`);
     }
     const after = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
-    if (after.length) failures.push(`送った後も退避が残っている: ${after.join(" / ")}`);
-    if (fs.existsSync(stale)) failures.push(`30 日より古い退避が刈られていない: ${stale}`);
-    // doctor の終了コードでは見ない —— plugin のバージョンや導入の状態は手元の事情で変わり（npm へ入れた CLI と
-    // 作業ツリーの中身が違う等）、この検査と関係なく 1 になる。DB の行だけを中身で見る。
+    if (after.length) failures.push(`set-aside records remain after sending: ${after.join(" / ")}`);
+    if (fs.existsSync(stale)) failures.push(`a set-aside record older than 30 days was not pruned: ${stale}`);
+    // Do not rely on the doctor exit code. Plugin versions and install state depend on the local machine (such as an npm CLI that
+    // differs from the working tree), so it can be 1 for reasons unrelated to this check. Check only the database rows by content.
     const doctor = runCli(["doctor"], dir, covDir);
     for (const [label, want] of [
       ["Schema version", /✓ Schema version\s+revision \d+/],
@@ -165,47 +181,56 @@ await withTempDir(async (dir) => {
       ["Projects", /Projects/],
     ]) {
       if (!want.test(doctor.out))
-        failures.push(`doctor が ${label} を健全と言わない\n${doctor.out.slice(0, 800)}`);
+        failures.push(`doctor does not report ${label} as healthy\n${doctor.out.slice(0, 800)}`);
     }
 
-    // ---- 外から来た文字の制御列を、端末へ出さない ----
-    // PR・issue の本文と題、ハンドル、会話、remote の綴りとディレクトリ名は第三者か外の都合で決まる。
-    // 注入した値が出力まで届いたこと（reach）を確かめてから、ESC・BEL・CR が無いことを見る（pipe では色を付けない）
+    // ---- Control sequences from external text never reach the terminal ----
+    // PR and issue bodies and titles, handles, conversations, remote spellings, and directory names are decided by third parties or outside factors.
+    // First confirm that the injected value reached the output (reach), then check for no ESC, BEL, or CR (no color on a pipe)
     const controlled = (out) => ["\u001b", "\u0007", "\r"].some((c) => out.includes(c));
     const clean = (what, r, reach, { status = true } = {}) => {
       if (status) note(what, r);
       if (!r.out.includes(reach))
         failures.push(
-          `${what} の出力に注入した値（${reach}）が届いていない。検査が空振りする\n${r.out.slice(0, 400)}`,
+          `the injected value (${reach}) did not reach the ${what} output, so the check would pass vacuously\n${r.out.slice(0, 400)}`,
         );
       if (controlled(r.out))
-        failures.push(`${what} の出力に制御列が残っている\n${JSON.stringify(r.out.slice(0, 400))}`);
+        failures.push(
+          `control sequences remain in the ${what} output\n${JSON.stringify(r.out.slice(0, 400))}`,
+        );
     };
     const esc = "\u001b[2J\u001b]0;pwn\u0007\r";
-    // who --me で結んだ後は、merge した持ち主の PR の本文から判断を書く（偽の gh は hostile の回だけ PR を merge 済みにする）
+    // After linking with who --me, decisions are written from the owner's merged PR bodies (the fake gh marks the PR merged only in the hostile round)
     const decided = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "hostile" });
     if (!/PR decisions: [1-9]/.test(decided.out))
-      failures.push(`harvest が PR の判断の結果を出していない\n${decided.out.slice(0, 600)}`);
-    clean("who（第三者のハンドル）", runCli(["who"], dir, covDir), "someone");
-    clean("who（結ぶ）", runCli(["who", "--me", "私", `someone${esc}`], dir, covDir), "someone");
+      failures.push(`harvest does not report PR decisions\n${decided.out.slice(0, 600)}`);
+    clean("who (third-party handle)", runCli(["who"], dir, covDir), "someone");
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
+    clean("who (link)", runCli(["who", "--me", "私", `someone${esc}`], dir, covDir), "someone");
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     hook({ hook_event_name: "UserPromptSubmit", prompt: `制御列${esc}を含む発言` });
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     hook({ hook_event_name: "Stop", last_assistant_message: `応答${esc}` });
-    note("capture flush（制御列）", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
+    note("capture flush (control sequences)", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
     clean("trace context", runCli(["trace", "context"], dir, covDir, asSession("live-1")), "を含む発言");
     clean(
       "search --said",
+      // english-exempt: Japanese record fixture sent through the real CLI and hook
       runCli(["search", "--said", "me", "--cwd", repo, "制御列"], dir, covDir),
+      // english-exempt: Japanese record fixture sent through the real CLI and hook
       "を含む発言",
     );
     const evil = makeRepo(dir, `https://github.com/example/ev${esc}il.git`, "evil\u001b[2Jdir");
     clean(
-      "project add（remote とディレクトリ名）",
+      "project add (remote and directory name)",
       runCli(["project", "add", "--cwd", evil], dir, covDir),
       "evil",
     );
     clean("project list", runCli(["project", "list"], dir, covDir), "example/ev");
-    clean("search（プロジェクト名）", runCli(["search", "--cwd", evil, "本文"], dir, covDir), "example/ev");
-    // doctor の終了コードは手元の plugin の状態で変わるので見ない（上と同じ理由）
+    // english-exempt: Japanese record fixture sent through the real CLI and hook
+    clean("search (project name)", runCli(["search", "--cwd", evil, "本文"], dir, covDir), "example/ev");
+    // The doctor exit code depends on the local plugin state, so it is not checked (same reason as above)
     clean("doctor", runCli(["doctor"], dir, covDir), "example/ev", { status: false });
 
     note(
@@ -214,7 +239,7 @@ await withTempDir(async (dir) => {
     );
   }
 
-  // ---- 到達を数える ----
+  // ---- Count reach ----
   const sites = callSites(root).filter((s) => LIVE_FILES.some((f) => s.startsWith(`${f}:`)));
   const covered = coveredSites(covDir, root, sites);
   const missed = sites.filter((s) => !covered.has(s));
@@ -224,19 +249,21 @@ await withTempDir(async (dir) => {
     const unexpected = missed.filter((s) => !allowed.has(s));
     if (unexpected.length) {
       failures.push(
-        `実 DB でも踏んでいない SQL がある。\n    ${unexpected.join("\n    ")}\n` +
-          "  到達させられないなら scripts/lib/sql-call-sites.mjs の ALLOWED_UNREACHED へ理由付きで足す。",
+        `some SQL does not run even against the real database.\n    ${unexpected.join("\n    ")}\n` +
+          "  If it cannot be reached, add it with a reason to ALLOWED_UNREACHED in scripts/lib/sql-call-sites.mjs.",
       );
     }
   }
   for (const a of ALLOWED_UNREACHED) {
-    if (covered.has(a.site)) failures.push(`${a.site}: 踏むようになった。ALLOWED_UNREACHED から外す`);
+    if (covered.has(a.site)) failures.push(`${a.site}: now reached. Remove it from ALLOWED_UNREACHED`);
   }
 
   if (failures.length) {
-    console.error(`実 DB のレーンで ${failures.length} 件落ちた。\n`);
+    console.error(`${failures.length} failures in the real database lane.\n`);
     for (const f of failures) console.error(`  ${f}\n`);
     process.exit(1);
   }
-  console.log(`実 DB: CLI を子プロセスで走らせ、${covered.size} / ${sites.length} 箇所の SQL を通した`);
+  console.log(
+    `real database: ran the CLI as a child process and ran ${covered.size} / ${sites.length} SQL sites`,
+  );
 });

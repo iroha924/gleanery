@@ -124,5 +124,5 @@ test("rejects when the remote tag no longer points to the commit", () => {
 });
 
 test("rejects a tag version already on npm (stopping before stage fails after the owner approves)", () => {
-  assert.match(gateProblems({ ...ok, published: true }).problems.join("\n"), /npm に既にある/);
+  assert.match(gateProblems({ ...ok, published: true }).problems.join("\n"), /already on npm/);
 });

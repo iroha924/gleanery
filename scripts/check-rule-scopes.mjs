@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// `.claude/rules/*.md` の `paths` が、載るべきファイルに載り、載ってはいけないファイルに載らないかを見る。
+// Checks that the `paths` of `.claude/rules/*.md` load a rule for the files it should and not for files it should not.
 //
-// **rule のフロントマターへ期待を書かない。**公式が定義しているキーは `paths` だけで、独自キーが
-// 無視されるか警告されるかは記載が無い。期待はここに表として持つ。
+// **Do not put expectations in rule frontmatter.** The only documented key is `paths`, and the docs do not say whether
+// custom keys are ignored or warned about. The expectations live here as a table.
 //
-// paths 付きは「一致するファイルを Claude が読んだとき」に載る（公式 memory の記述）。
-// つまり広すぎる paths は、関係ない作業でも文脈を食う。狭すぎると必要な場面で載らない。
+// A rule with paths loads when Claude reads a matching file (per the official memory docs).
+// Paths that are too broad eat context during unrelated work; too narrow and the rule does not load when needed.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rulesDirectory = path.join(root, ".claude", "rules");
 
-/** 各 rule が載るべき実ファイルと、載ってはいけない実ファイル。**実在するパスだけを書く。** */
+/** Real files each rule must load for, and real files it must not. **List only paths that exist.** */
 const EXPECTED = {
   "ui.md": {
     match: ["server/src/tui/app.ts", "server/src/tui/view.ts", "server/src/palette.ts"],
@@ -43,17 +43,19 @@ const EXPECTED = {
   },
 };
 
-/** paths 無しの rule。常時載るので、数と理由を固定する。 */
+/** Rules without paths. They always load, so their number and reasons are pinned. */
 const ALWAYS = {
-  "verification.md": "テストと配布物の検査はどのファイルを触っていても要る",
+  "verification.md": "tests and package checks are needed whatever file is touched",
 };
 
-/** glob を正規表現へ。`**` は階層をまたぎ、`*` は 1 階層に閉じる。 */
+/** Converts a glob to a regex. `**` crosses directories, and `*` stays within one. */
 function toRegExp(glob) {
-  // **未対応の構文を黙って通さない。**`[]` のブラケット式は Claude 側では有効だが、
-  // ここでは実装していないので、判定を誤るより落ちるほうを選ぶ。
+  // **Unsupported syntax never passes silently.** Bracket expressions `[]` work in Claude,
+  // but they are not implemented here, so failing beats misjudging.
   if (/[[\]]/.test(glob)) {
-    failures.push(`paths の ${glob} はブラケット式を含む。この検査が未対応なので使わない`);
+    failures.push(
+      `paths entry ${glob} contains a bracket expression. This check does not support it, so do not use it`,
+    );
     return /$^/;
   }
   let out = "";
@@ -61,7 +63,7 @@ function toRegExp(glob) {
     const c = glob[i];
     if (c === "*") {
       if (glob[i + 1] === "*") {
-        // `**/` は 0 階層以上、末尾の `**` は何にでも当たる
+        // `**/` matches zero or more directories, and a trailing `**` matches anything
         if (glob[i + 2] === "/") {
           out += "(?:[^/]+/)*";
           i += 2;
@@ -95,7 +97,7 @@ function frontmatterPaths(source, file) {
   if (!source.startsWith("---\n")) return null;
   const end = source.indexOf("\n---\n", 4);
   if (end === -1) {
-    failures.push(`${file}: フロントマターが閉じていない`);
+    failures.push(`${file}: frontmatter is not closed`);
     return null;
   }
   const lines = source.slice(4, end).split("\n");
@@ -121,7 +123,7 @@ function frontmatterPaths(source, file) {
 
 const failures = [];
 
-/** `.claude/rules/` は再帰的に探索される（公式）。サブディレクトリの rule も同じ規則で見る。 */
+/** `.claude/rules/` is searched recursively (per the docs). Rules in subdirectories follow the same checks. */
 function walk(directory, prefix = "") {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const next = path.join(directory, entry.name);
@@ -132,11 +134,13 @@ function walk(directory, prefix = "") {
 }
 const files = walk(rulesDirectory);
 
-// **期待と実在を完全一致させる。**片方だけ見ると、rule を消しても期待が残って通る。
+// **Expectations and real files must match exactly.** Checking only one side lets a deleted rule pass with a stale expectation.
 const declared = new Set([...Object.keys(EXPECTED), ...Object.keys(ALWAYS)]);
 for (const name of declared) {
   if (!files.includes(name)) {
-    failures.push(`${name}: 期待に書いてあるが .claude/rules/ に無い。消したなら期待からも消す`);
+    failures.push(
+      `${name}: listed in the expectations but missing from .claude/rules/. If you deleted it, remove the expectation too`,
+    );
   }
 }
 const scoped = [];
@@ -150,21 +154,21 @@ for (const file of files) {
     always.push(file);
     if (!ALWAYS[file]) {
       failures.push(
-        `${file}: paths が無いので常時ロードされる。全ファイルで要るなら scripts/check-rule-scopes.mjs の ` +
-          "ALWAYS へ理由付きで足す。要らないなら paths を付ける",
+        `${file}: has no paths, so it always loads. If every file needs it, add it with a reason to ALWAYS in ` +
+          "scripts/check-rule-scopes.mjs. Otherwise give it paths",
       );
     }
     continue;
   }
   scoped.push(file);
   if (globs.length === 0) {
-    failures.push(`${file}: paths が空`);
+    failures.push(`${file}: paths is empty`);
     continue;
   }
 
   const expected = EXPECTED[file];
   if (!expected) {
-    failures.push(`${file}: 期待を scripts/check-rule-scopes.mjs の EXPECTED へ書く`);
+    failures.push(`${file}: add its expectations to EXPECTED in scripts/check-rule-scopes.mjs`);
     continue;
   }
   const patterns = globs.map(toRegExp);
@@ -172,17 +176,17 @@ for (const file of files) {
 
   for (const target of expected.match) {
     if (!fs.existsSync(path.join(root, target))) {
-      failures.push(`${file}: 期待に書いた ${target} が実在しない`);
+      failures.push(`${file}: expected file ${target} does not exist`);
       continue;
     }
-    if (!hits(target)) failures.push(`${file}: ${target} で載るべきなのに paths が当たらない`);
+    if (!hits(target)) failures.push(`${file}: should load for ${target}, but paths does not match it`);
   }
   for (const target of expected.notMatch) {
     if (!fs.existsSync(path.join(root, target))) {
-      failures.push(`${file}: 期待に書いた ${target} が実在しない`);
+      failures.push(`${file}: expected file ${target} does not exist`);
       continue;
     }
-    if (hits(target)) failures.push(`${file}: ${target} で載ってはいけないのに paths が当たる`);
+    if (hits(target)) failures.push(`${file}: must not load for ${target}, but paths matches it`);
   }
 }
 
@@ -191,4 +195,4 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-console.log(`ruleの範囲: paths付き ${scoped.length} 本 / 常時 ${always.length} 本`);
+console.log(`rule scopes: ${scoped.length} with paths / ${always.length} always loaded`);

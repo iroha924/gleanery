@@ -52,7 +52,7 @@ try {
 } catch {
   tags = null;
 }
-// stage の一覧は npm へのログインが要る。読めなければ「不明」にする
+// Listing stages needs an npm login. If it cannot be read, report unknown
 const stagedText = attempt("npm", ["stage", "list", "gleanery", "--json"]);
 let staged = null;
 try {
@@ -99,15 +99,15 @@ for (const market of markets ?? []) {
 
 console.log("npm package");
 console.log(`  repository: ${packageVersion}`);
-console.log(`  registry latest: ${tags?.latest ?? "不明"}`);
-console.log(`  registry next: ${tags?.next ?? "不明"}`);
+console.log(`  registry latest: ${tags?.latest ?? "unknown"}`);
+console.log(`  registry next: ${tags?.next ?? "unknown"}`);
 console.log(
   `  staged: ${
     Array.isArray(staged)
       ? staged.length
-        ? staged.map((item) => `${item.version}（${item.id}）`).join(", ")
-        : "無し"
-      : "不明"
+        ? staged.map((item) => `${item.version} (${item.id})`).join(", ")
+        : "none"
+      : "unknown"
   }`,
 );
 console.log(
@@ -115,74 +115,74 @@ console.log(
     globalPackage.status === "ok"
       ? globalPackage.version
       : globalPackage.status === "missing"
-        ? "見つからない"
-        : "不明"
+        ? "not found"
+        : "unknown"
   }`,
 );
 console.log(
   `  remote tag v${tags?.latest ?? packageVersion}: ${
     remoteTags === null
-      ? "不明"
+      ? "unknown"
       : remoteTags.includes(`refs/tags/v${tags?.latest ?? packageVersion}`)
-        ? "あり"
-        : "無し"
+        ? "present"
+        : "none"
   }`,
 );
 console.log("plugin channel");
-console.log(`  marketplace: ${marketplace ?? "不明"}`);
+console.log(`  marketplace: ${marketplace ?? "unknown"}`);
 console.log(`  Claude manifest: ${claudeManifest}`);
 console.log(`  Codex manifest: ${codexManifest}`);
-console.log(`  Claude cache: ${claudeObserved ? (claudeCache ?? "見つからない") : "不明"}`);
+console.log(`  Claude cache: ${claudeObserved ? (claudeCache ?? "not found") : "unknown"}`);
 console.log(
   `  Codex cache: ${
     codexObserved
       ? codexCaches.length
         ? codexCaches.join(", ")
         : codexInvalid
-          ? "manifestが無い"
-          : "見つからない"
-      : "不明"
+          ? "no manifest"
+          : "not found"
+      : "unknown"
   }`,
 );
 
 const issues = [];
 const unknowns = [];
-if (tags && tags.latest !== packageVersion) issues.push("repositoryとnpm latestが一致しない");
-if (tags && tags.next !== tags.latest) issues.push("npm nextとlatestが一致しない");
+if (tags && tags.latest !== packageVersion) issues.push("repository and npm latest differ");
+if (tags && tags.next !== tags.latest) issues.push("npm next and latest differ");
 if (tags?.latest && globalPackage.status !== "unknown" && globalPackage.version !== tags.latest) {
-  issues.push("npm i -gのCLIがnpm latestと一致しない");
+  issues.push("the npm i -g CLI differs from npm latest");
 }
 if (remoteTags !== null && !remoteTags.includes(`refs/tags/v${tags?.latest ?? packageVersion}`)) {
-  issues.push("npm latestに対応するremote tagが無い");
+  issues.push("no remote tag for npm latest");
 }
 if (claudeManifest !== codexManifest || claudeManifest !== marketplace) {
-  issues.push("plugin channelのmanifestとmarketplaceが一致しない");
+  issues.push("plugin channel manifests and marketplace differ");
 }
 if (marketplace && claudeObserved && claudeCache !== marketplace) {
-  issues.push("Claude cacheがmarketplaceと一致しない");
+  issues.push("Claude cache differs from marketplace");
 }
 if (marketplace && codexObserved && (codexCaches.length !== 1 || codexCaches[0] !== marketplace)) {
-  issues.push("Codex cacheがmarketplaceと一致しない");
+  issues.push("Codex cache differs from marketplace");
 }
 if (marketplace && tags?.latest && marketplace.localeCompare(tags.latest, undefined, { numeric: true }) > 0) {
-  issues.push("plugin channelがnpm latestより先へ進んでいる");
+  issues.push("plugin channel is ahead of npm latest");
 }
-if (Array.isArray(staged) && staged.length) issues.push("承認も拒否もしていないstageが残っている");
-if (tags === null) unknowns.push("npmのdist-tagを観測できない");
-if (!Array.isArray(staged)) unknowns.push("npmのstageを観測できない（npm loginが要る）");
-if (remoteTags === null) unknowns.push("remote tagを観測できない");
-if (globalPackage.status === "unknown") unknowns.push("npm i -gのCLIを観測できない");
-if (!claudeObserved) unknowns.push("Claude cacheを観測できない");
-if (!codexObserved) unknowns.push("Codex cacheを観測できない");
+if (Array.isArray(staged) && staged.length) issues.push("a stage is still waiting for approval or rejection");
+if (tags === null) unknowns.push("cannot observe npm dist-tags");
+if (!Array.isArray(staged)) unknowns.push("cannot observe npm stages (needs npm login)");
+if (remoteTags === null) unknowns.push("cannot observe remote tags");
+if (globalPackage.status === "unknown") unknowns.push("cannot observe the npm i -g CLI");
+if (!claudeObserved) unknowns.push("cannot observe the Claude cache");
+if (!codexObserved) unknowns.push("cannot observe the Codex cache");
 if (issues.length) {
-  console.log("残っていること");
+  console.log("remaining");
   for (const issue of issues) console.log(`  ${issue}`);
 }
 if (unknowns.length) {
-  console.log("確認できないこと");
+  console.log("cannot confirm");
   for (const unknown of unknowns) console.log(`  ${unknown}`);
 }
 if (!issues.length && !unknowns.length) {
-  console.log("release台帳に食い違いは無い");
+  console.log("release ledger is consistent");
 }
 if (issues.length || unknowns.length) process.exitCode = 1;

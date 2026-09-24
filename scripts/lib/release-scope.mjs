@@ -1,5 +1,5 @@
-// npm package に入る変更かを判定する。入るなら npm と plugin channel の 3 つを同じバージョンへ上げる（種別 plugin）。
-// version gate、release plan、手動release準備はすべてこの判定を使う。
+// Decides whether a change goes into the npm package. If it does, npm and the 3 plugin channel manifests move to the same version (kind plugin).
+// The version gate, the release plan, and manual release preparation all use this decision.
 
 export const EXACT_PACKAGE_INPUTS = new Set([
   "server/package.json",
@@ -8,9 +8,9 @@ export const EXACT_PACKAGE_INPUTS = new Set([
   "scripts/bundle.mjs",
   "scripts/bundle-cli.ts",
   "scripts/third-party-notices.mjs",
-  // 取得元（npm の package 名など）を変えると、利用者が入れる物が変わる
+  // Changing the source (such as the npm package name) changes what users install
   ".claude-plugin/marketplace.json",
-  // bundle が plugin/README.md へ写し、npm の package のページに出る
+  // bundle copies it to plugin/README.md, and it shows on the npm package page
   "README.md",
 ]);
 

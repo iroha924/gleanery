@@ -127,7 +127,7 @@ test("even for server.ts, once shipped only via npm, bumping only the npm packag
     r.git("add", "-A");
     const packageOnly = check(r.dir, "--base", base);
     assert.equal(packageOnly.status, 1, packageOnly.stderr);
-    assert.match(packageOnly.stderr, /揃って上がっていない/);
+    assert.match(packageOnly.stderr, /were not bumped together/);
 
     bump(r.dir, "1.0.1");
     r.git("add", "-A");
@@ -176,7 +176,7 @@ test("fails a commit that lowers the version, even without shipped changes", () 
     r.git("commit", "-qam", "lower only the version");
     const down = check(r.dir, "--base", base);
     assert.equal(down.status, 1, down.stderr);
-    assert.match(down.stderr, /下げ/);
+    assert.match(down.stderr, /version goes down/);
 
     write(r.dir, "plugin/skills/a.md", "b");
     r.git("commit", "-qam", "change shipped files too");

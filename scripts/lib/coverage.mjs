@@ -1,14 +1,14 @@
-// 子プロセスが実際に踏んだ行を V8 のカバレッジから読む。
+// Reads the lines a child process actually ran from V8 coverage.
 //
-// 子プロセスの中で走った SQL は、親から数えられない。かわりに
-// `NODE_V8_COVERAGE` を読む。Node は型注釈を消すだけで位置をずらさないので、`.ts` のまま
-// 行番号が一致する（実測: 4 行目の関数が 4-6 行として count=0 で出た）。
+// SQL that runs inside a child process cannot be counted from the parent, so read
+// `NODE_V8_COVERAGE` instead. Node strips type annotations without shifting positions, so line numbers
+// match the `.ts` source (measured: a function on line 4 showed up as lines 4-6 with count=0).
 
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
 
-/** その行の、空白でない最初の文字のバイト位置。範囲の内側判定にこれを使う。 */
+/** Byte offset of the first non-space character on the line, used to test whether it is inside a range. */
 function offsetOfLine(text, line) {
   let at = 0;
   for (let i = 1; i < line; i++) {
@@ -23,10 +23,10 @@ function offsetOfLine(text, line) {
 }
 
 /**
- * `covDir` 以下のカバレッジを読み、`sites`（`server/src/foo.ts:12`）のうち実際に踏んだものを返す。
+ * Reads coverage under `covDir` and returns the `sites` (`server/src/foo.ts:12`) that actually ran.
  *
- * 範囲は入れ子になる。**いちばん内側の範囲で数える** —— 外側の関数が 1 回呼ばれていても、
- * 中の分岐が 0 回なら踏んでいない。広い方を採ると、通っていない行を通ったと数える。
+ * Ranges nest. **Count by the innermost range.** Even if the outer function ran once,
+ * a branch inside with count 0 did not run. Using the wider range counts unrun lines as run.
  */
 export function coveredSites(covDir, root, sites) {
   const byFile = new Map();
@@ -45,8 +45,8 @@ export function coveredSites(covDir, root, sites) {
     for (const line of lines) offsets.set(`${file}:${line}`, offsetOfLine(text, line));
   }
 
-  // site ごとに、いちばん内側の範囲の count を集める。同じファイルが複数のプロセスで実行されるので、
-  // どれか 1 つでも count > 0 なら踏んだものとする。
+  // Collect the innermost range count for each site. The same file runs in several processes,
+  // so a site counts as run if any of them has count > 0.
   const best = new Map();
   if (!fs.existsSync(covDir)) return new Set();
   for (const name of fs.readdirSync(covDir)) {
@@ -55,7 +55,7 @@ export function coveredSites(covDir, root, sites) {
     try {
       doc = JSON.parse(fs.readFileSync(path.join(covDir, name), "utf8"));
     } catch {
-      continue; // 書き出し途中のファイル
+      continue; // a file still being written
     }
     for (const entry of doc.result ?? []) {
       if (!entry.url?.startsWith("file://")) continue;

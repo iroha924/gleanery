@@ -1,25 +1,25 @@
 #!/usr/bin/env node
-// untrusted な文章を読むインターフェース（MCP・端末の画面）が、書く接続（server/src/db-write.ts）を持たないことを見る。
+// Checks that interfaces reading untrusted text (MCP, the terminal screen) have no write connection (server/src/db-write.ts).
 //
-// **接続の役割は import の向きで分ける。**読むインターフェースの entry から import を辿って db-write.ts に届けば、読んだ文章に
-// 唆されて書く経路ができる（CLAUDE.md・AGENTS.md の実行境界）。型でも authorizer でも止まらない — 書く接続を開いてしまえば、
-// authorizer はその役割の書き込みを許す。
+// **Connection roles are separated by import direction.** If imports from a reader entry reach db-write.ts, text it reads
+// could steer it into writing (the execution boundary in CLAUDE.md and AGENTS.md). Neither types nor the authorizer stop this: once a write
+// connection is open, the authorizer allows that role's writes.
 
 import fs from "node:fs";
 import path from "node:path";
 import url from "node:url";
 
 const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
-/** 読むだけのインターフェース。ここから辿れる module は書く接続を import してはいけない。 */
+/** Read-only interfaces. No module reachable from these may import the write connection. */
 const READERS = ["server/src/mcp.ts", "server/src/tui/tui.ts"];
 const WRITER = "server/src/db-write.ts";
 
-// `import x from`・`export ... from`・副作用だけの `import "..."`・`import(...)` の 4 つの形。
+// Four forms: `import x from`, `export ... from`, side-effect-only `import "..."`, and `import(...)`.
 const IMPORT =
   /(?:import|export)\s[^;]*?from\s+["'](\.[^"']+)["']|import\s+["'](\.[^"']+)["']|import\(\s*["'](\.[^"']+)["']\s*\)/g;
 const rel = (abs) => path.relative(root, abs).split(path.sep).join("/");
 
-/** entry から辿れる module と、それぞれを最初に import した module。 */
+/** Modules reachable from an entry, each with the module that first imported it. */
 function reach(entry) {
   const via = new Map([[entry, null]]);
   const queue = [entry];
@@ -40,25 +40,25 @@ function reach(entry) {
 const fail = [];
 for (const entry of READERS) {
   if (!fs.existsSync(path.join(root, entry))) {
-    fail.push(`${entry} が無い。check-architecture.mjs の READERS を直す`);
+    fail.push(`${entry} does not exist. Fix READERS in check-architecture.mjs`);
     continue;
   }
   const via = reach(entry);
   if (!via.has(WRITER)) continue;
   const chain = [];
   for (let at = WRITER; at; at = via.get(at)) chain.unshift(at);
-  fail.push(`${entry} から書く接続へ届く: ${chain.join(" → ")}`);
+  fail.push(`${entry} reaches the write connection: ${chain.join(" → ")}`);
 }
-// 辿る正規表現が壊れて 1 つも拾わなくなると、何も見ないまま通る。entry が src の module を import していることを見る。
+// If the import regex broke and matched nothing, the check would pass while looking at nothing. Confirm each entry imports a src module.
 for (const entry of READERS)
   if (fs.existsSync(path.join(root, entry)) && reach(entry).size < 3)
-    fail.push(`${entry} の import を辿れていない`);
+    fail.push(`cannot follow the imports of ${entry}`);
 
 if (fail.length) {
-  console.error(`読むインターフェースの境界:\n${fail.map((f) => `  ${f}`).join("\n")}`);
+  console.error(`reader boundary:\n${fail.map((f) => `  ${f}`).join("\n")}`);
   process.exit(1);
 }
 const count = new Set(READERS.flatMap((e) => [...reach(e).keys()])).size;
 console.log(
-  `読むインターフェースの境界: ${READERS.join(" / ")} から辿れる ${count} module は書く接続を import していない`,
+  `reader boundary: none of the ${count} modules reachable from ${READERS.join(" / ")} import the write connection`,
 );

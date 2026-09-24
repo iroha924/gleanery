@@ -1,7 +1,7 @@
-// 実 DB に対して、配る entrypoint を子プロセスで走らせるための足回り。
+// Plumbing for running the shipped entry points as child processes against a real database.
 //
-// 親が期限と終了を持つ。`.claude/rules/verification.md` が禁じている「テストが DB へ繋ぐ」は、
-// pool を掴んだまま返らない形が原因だった。子プロセスなら、その責務を親が外から果たせる。
+// The parent owns the timeout and termination. Tests connecting to a database, which `.claude/rules/verification.md` forbids,
+// came from pools held open that never returned. With a child process, the parent can take that responsibility from outside.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -11,10 +11,10 @@ import url from "node:url";
 
 export const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..", "..");
 
-/** 子プロセスの上限。超えたら殺して、その事実を検査の失敗として扱う。 */
+/** Time limit for a child process. Past it, the child is killed and that counts as a check failure. */
 const TIMEOUT_MS = 120_000;
 
-/** 使い捨てのプロジェクト。git の remote を持たせて、プロジェクトの key を安定させる。 */
+/** A throwaway project. It gets a git remote so the project key is stable. */
 export function makeRepo(dir, remote = "https://github.com/example/live.git", name = "repo") {
   const repo = path.join(dir, name);
   fs.mkdirSync(repo, { recursive: true });
@@ -24,16 +24,36 @@ export function makeRepo(dir, remote = "https://github.com/example/live.git", na
   git("config", "user.name", "t");
   git("remote", "add", "origin", remote);
   fs.mkdirSync(path.join(repo, "docs"), { recursive: true });
+  // english-exempt: Japanese document fixture committed to the temp repository
   fs.writeFileSync(path.join(repo, "docs/design.md"), "# 設計\n\n判断の理由をここに書く。\n");
+  // english-exempt: Japanese document fixture committed to the temp repository
   fs.writeFileSync(path.join(repo, "README.md"), "# live\n\n検査のためのプロジェクト。\n");
   git("add", "-A");
   git("commit", "-qm", "docs");
   return repo;
 }
 
+/** Japanese text the fake gh returns, kept outside its source so each exemption covers one value. */
+const GH_TEXT = {
+  // english-exempt: Japanese record fixture sent through the real CLI
+  reviewComment: "ここは実 DB で確かめたい",
+  // english-exempt: Japanese record fixture sent through the real CLI
+  issueComment: "偽の db では権限が見えない",
+  // english-exempt: Japanese record fixture sent through the real CLI
+  renamedTitle: "題を変えた PR",
+  // english-exempt: Japanese record fixture sent through the real CLI
+  prTitle: "はじめの PR",
+  // english-exempt: Japanese record fixture sent through the real CLI
+  body: "本文",
+  // english-exempt: decisions.ts reads this Japanese PR section until #144 translates the PR template
+  decisions: "\n\n## 採った案と棄却した案\n\n- 採った: 実 DB。棄却: 偽の db（権限が見えない）",
+  // english-exempt: Japanese record fixture sent through the real CLI
+  issueTitle: "はじめの issue",
+};
+
 /**
- * `gh` の偽物を置く。`syncGithub` は内部で gh を起動するので、これが無いと 14 箇所へ届かない。
- * 外の GitHub へは出ない。返すのは検査のために作った固定の JSON である。
+ * Installs a fake `gh`. `syncGithub` starts gh internally, so without it 14 sites are unreachable.
+ * It never reaches the real GitHub. It returns fixed JSON made for the checks.
  */
 export function fakeGh(dir) {
   const bin = path.join(dir, "bin");
@@ -42,34 +62,35 @@ export function fakeGh(dir) {
   fs.writeFileSync(
     gh,
     `#!/usr/bin/env node
-// 検査のための偽物。外へは出ない。gh は --slurp を付けるのでページの配列で返す。
-// comments を先に見る。\`pulls/comments\` は \`/pulls\` にも当たるので、順を逆にすると
-// レビューのコメントの代わりに PR that が返り、pull_request_url が無くて落ちる。
+// A fake for the checks. It never goes out. gh gets --slurp, so return an array of pages.
+// Check comments first. \`pulls/comments\` also matches \`/pulls\`, so in the other order a PR would come back
+// instead of review comments, and it would fail without pull_request_url.
+const T = ${JSON.stringify(GH_TEXT)};
 const args = process.argv.slice(2).join(" ");
 const out = (v) => process.stdout.write(JSON.stringify([v]));
-// 2 巡目は発言と issue を減らす。消えた発言・消えた issue を消す枝は、前より減ったときにしか通らない。
+// The second round returns fewer messages and issues. The branches that delete removed ones only run when counts drop.
 const round2 = process.env.GLEANERY_FAKE_GH_ROUND === "2";
-// 第三者が書ける欄に端末の制御列を混ぜる（出す側が落とすかを見る）
+// Mix terminal control sequences into fields third parties can write (to check that output drops them)
 const evil = process.env.GLEANERY_FAKE_GH_ROUND === "hostile" ? "\\u001b[2J\\u001b]0;pwn\\u0007\\r" : "";
 const person = { id: 1, login: \`someone\${evil}\` };
 if (args.includes("pulls/comments")) {
   if (round2) { out([]); process.exit(0); }
   out([{ id: 11, pull_request_url: "https://api.github.com/repos/example/live/pulls/1", user: person,
-         body: "ここは実 DB で確かめたい", created_at: "2026-09-02T00:00:00Z",
+         body: T.reviewComment, created_at: "2026-09-02T00:00:00Z",
          html_url: "https://example.invalid/1#r11", path: "docs/design.md", line: 3 }]);
 } else if (args.includes("issues/comments")) {
   if (round2) { out([]); process.exit(0); }
   out([{ id: 12, issue_url: "https://api.github.com/repos/example/live/issues/2", user: person,
-         body: "偽の db では権限が見えない", created_at: "2026-09-03T00:00:00Z",
+         body: T.issueComment, created_at: "2026-09-03T00:00:00Z",
          html_url: "https://example.invalid/2#c12" }]);
 } else if (args.includes("pulls?")) {
-  // 2 巡目は題だけを変える。題は発言の中身ではないので、発言を書き直さない。
-  out([{ number: 1, title: round2 ? "題を変えた PR" : \`はじめの PR\${evil}\`, body: \`本文\${evil}\\n\\n## 採った案と棄却した案\\n\\n- 採った: 実 DB。棄却: 偽の db（権限が見えない）\`, state: evil ? "closed" : "open", user: person,
+  // The second round changes only the title. A title is not message content, so messages are not rewritten.
+  out([{ number: 1, title: round2 ? T.renamedTitle : \`\${T.prTitle}\${evil}\`, body: \`\${T.body}\${evil}\${T.decisions}\`, state: evil ? "closed" : "open", user: person,
          created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-02T00:00:00Z",
          html_url: "https://example.invalid/1", merged_at: evil ? "2026-09-02T01:00:00Z" : null, closed_at: evil ? "2026-09-02T01:00:00Z" : null }]);
 } else if (args.includes("issues?")) {
   if (round2) { out([]); process.exit(0); }
-  out([{ number: 2, title: "はじめの issue", body: "本文", state: "closed", user: person,
+  out([{ number: 2, title: T.issueTitle, body: T.body, state: "closed", user: person,
          created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-03T00:00:00Z",
          html_url: "https://example.invalid/2", closed_at: "2026-09-03T00:00:00Z" }]);
 } else {
@@ -82,24 +103,24 @@ if (args.includes("pulls/comments")) {
 }
 
 /**
- * 子プロセスの環境。DB は一時 HOME の ~/.gleanery/gleanery.db（`gleanery init` で作る）。
- * GitHub のキーを渡さない（偽の gh だけを使う）。
+ * The child process environment. The database is ~/.gleanery/gleanery.db in the temp HOME (created by `gleanery init`).
+ * No GitHub key is passed (only the fake gh is used).
  */
 function childEnv(dir, covDir, extra = {}) {
   const env = { ...process.env, ...extra };
-  // **home を付け替える。**付け替えないと、子プロセスは持ち主の ~/.gleanery を使う。
-  // `capture flush` は ~/.gleanery/spool の待ち行列を読んで、送り終えた分を消す（実測: 持ち主の
-  // 未送信 4 件を使い捨ての DB へ送り、spool から消した）。DB の path を変えるだけでは塞がらない。
+  // **Swap home.** Otherwise the child uses the owner's ~/.gleanery.
+  // `capture flush` reads the queue in ~/.gleanery/spool and deletes what it sent (measured: it sent the owner's
+  // 4 unsent items to the throwaway database and removed them from the spool). Changing only the database path does not close this.
   env.HOME = dir;
   env.USERPROFILE = dir;
-  // 親の GLEANERY_DB が残ると、子は一時 HOME ではなくそちらの DB を開く。
+  // If the parent's GLEANERY_DB remained, the child would open that database instead of the temp HOME one.
   for (const k of ["GLEANERY_DB", "GITHUB_TOKEN"]) delete env[k];
-  // ホストの session は親から漏れ込む。両方あると CLI が「どちらのホストか決められない」で止まるので、
-  // 検査が渡したものだけを残す。
+  // Host sessions leak in from the parent. With both present the CLI stops because it cannot tell which host it is,
+  // so keep only what the check passes.
   for (const k of ["CODEX_THREAD_ID", "CODEX_SESSION_ID"]) delete env[k];
   if (!("CLAUDE_CODE_SESSION_ID" in extra)) delete env.CLAUDE_CODE_SESSION_ID;
-  // 自動記録は「持ち主の turn か」を親の session で決める。親のものが残っていると、検査が渡した
-  // session と食い違って 1 件も積まれない（実測: フックは exit 0 のまま spool が空だった）。
+  // Capture decides whether a turn is the owner's from the parent session. A leftover parent value would conflict with the
+  // session the check passes, and nothing would be queued (measured: the hook exited 0 with an empty spool).
   if (!("GLEANERY_PARENT_SESSION" in extra)) delete env.GLEANERY_PARENT_SESSION;
   delete env.CLAUDE_CODE_ENTRYPOINT;
   return {
@@ -109,7 +130,7 @@ function childEnv(dir, covDir, extra = {}) {
   };
 }
 
-/** CLI を 1 回走らせる。落ちても止めない（到達させることが目的で、成否は呼び出し側が見る）。 */
+/** Runs the CLI once. Failures do not stop it (the goal is reach, and callers judge success). */
 export function runCli(args, dir, covDir, { cwd = root, ...extra } = {}) {
   const r = spawnSync("node", [path.join(root, "server/src/cli.ts"), ...args], {
     cwd,
@@ -122,8 +143,8 @@ export function runCli(args, dir, covDir, { cwd = root, ...extra } = {}) {
 }
 
 /**
- * 自動記録のフックを 1 回起動する。spool は home の下にあるので、childEnv が home を
- * 付け替えていることが前提になる（持ち主の待ち行列を読ませない）。
+ * Runs the capture hook once. The spool lives under home, so this relies on childEnv
+ * swapping home (so the owner's queue is never read).
  */
 export function runHook(input, dir, covDir, extra = {}) {
   const r = spawnSync("node", [path.join(root, "server/src/capture.ts")], {
@@ -137,7 +158,7 @@ export function runHook(input, dir, covDir, extra = {}) {
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
-/** 一時ディレクトリを作り、終わったら消す。 */
+/** Creates a temp directory and deletes it afterwards. */
 export async function withTempDir(fn) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-live-")));
   try {
