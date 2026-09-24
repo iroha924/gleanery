@@ -51,6 +51,9 @@ test("lets through only the exact shapes Git writes for merges and reverts", () 
   });
   ok("Merge branches 'one' and 'two'", { merge: true });
   ok(`Revert "feat: add a check"\n\nThis reverts commit ${SHA}.`);
+  ok(
+    `Revert "Merge pull request #1 from x/y"\n\nThis reverts commit ${SHA}, reversing\nchanges made to ${SHA}.`,
+  );
   bad("Merge pull request #145 from iroha924/biome-config\n\nmore", /one-line subject/);
   bad('Revert "not generated"\n\nAn arbitrary body', /one-line subject/);
   bad("Merge pull request #1 from x/y\n\n検査を足す", /English/, { merge: true });

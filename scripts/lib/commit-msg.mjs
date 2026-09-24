@@ -8,17 +8,12 @@ const TYPES = "feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert";
 const CONVENTIONAL = new RegExp(`^(?:${TYPES})(?:\\([a-z0-9-]+\\))?!?: \\S`);
 const MAX = 100;
 const MERGE = /^Merge (?:branches|branch|remote-tracking branch|tag|commit|pull request) \S/;
-/** The whole message `git revert` writes. */
-const REVERT = /^Revert ".+"\n\nThis reverts commit [0-9a-f]{40}\.$/;
+/** The whole message `git revert` writes, including the merge form (`git revert -m`). */
+const REVERT =
+  /^Revert ".+"\n\nThis reverts commit [0-9a-f]{40}(?:\.|, reversing\nchanges made to [0-9a-f]{40}\.)$/;
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/**
- * @param {string} text the message file as the hook receives it, or a stored message
- * @param {{ merge?: boolean, hook?: boolean, commentChar?: string }} [opts]
- *   merge: the commit is a merge (MERGE_HEAD exists, or it has two or more parents).
- *   hook: the text is the hook input, before Git's cleanup. commentChar: Git's core.commentChar (default `#`)
- * @returns {string[]} problems, empty when the message is fine
- */
+/** Problems in a message, empty when fine. `hook`: the hook input before Git's cleanup; `merge`: MERGE_HEAD or 2+ parents. */
 export function commitMessageProblems(text, opts = {}) {
   let kept = text.replace(/\r\n/g, "\n");
   if (opts.hook) {

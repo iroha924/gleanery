@@ -477,9 +477,12 @@ if (TRAILER !== null) {
     const engines = grab("server/package.json", /"node": ">=([^"]+)"/, "engines.node");
     if (engines && !node.startsWith(`${engines}.`))
       fail.push(`mise.toml node ${node} is not on the engines floor ${engines}`);
-    for (const file of fs.readdirSync(".github/workflows").map((f) => `.github/workflows/${f}`)) {
-      for (const m of read(file).matchAll(/bun-version: (\S+)/g))
-        if (m[1] !== bun) fail.push(`${file}: bun-version ${m[1]} differs from mise.toml bun ${bun}`);
+    // Workflows that install Bun must keep pinning it, so a deleted pin fails too.
+    for (const file of [".github/workflows/check.yml", ".github/workflows/release.yml"]) {
+      const pins = [...read(file).matchAll(/bun-version: (\S+)/g)].map((m) => m[1]);
+      if (pins.length === 0) fail.push(`${file}: no bun-version pin`);
+      for (const pin of pins)
+        if (pin !== bun) fail.push(`${file}: bun-version ${pin} differs from mise.toml bun ${bun}`);
     }
     const ci = grab(".github/workflows/check.yml", /node: \["([^"]+)"/, "check.yml node matrix");
     if (ci && !node.startsWith(`${ci}.`))
