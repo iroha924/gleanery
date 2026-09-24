@@ -94,6 +94,102 @@ test("extracts nothing from a body without the section", () => {
   });
 });
 
+// ---- The English PR format (the template since #144). Old Japanese bodies keep working above ----
+
+const en = (lines: string) => `## What changed
+
+Body.
+
+## Decisions
+
+${lines}
+
+## Verification
+
+- Chosen: outside the section, so this is not read
+`;
+
+test("reads the English format: chosen option, then rejected options with reasons split at commas outside parentheses", () => {
+  const got = extractDecisions(
+    en(
+      "- Chosen: one `node:sqlite` file. Rejected: keep PostgreSQL (users would need Docker, and 4 keys), libSQL (no column-level boundary for capture), DuckDB (no cascade)",
+    ),
+  );
+  assert.equal(got.skipped, 0);
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.rejected]),
+    [
+      [
+        "one `node:sqlite` file",
+        [
+          { text: "keep PostgreSQL", reason: "users would need Docker, and 4 keys" },
+          { text: "libSQL", reason: "no column-level boundary for capture" },
+          { text: "DuckDB", reason: "no cascade" },
+        ],
+      ],
+    ],
+  );
+});
+
+test("in the English format, periods inside the chosen option do not split, a trailing period is dropped, and a missing reason is null", () => {
+  const got = extractDecisions(
+    en(
+      [
+        "- Chosen: require Node v24.15.0 or later.",
+        "- Chosen: A. Rejected: B",
+        "- Chosen: pin v1.2 (see e.g. the docs). Rejected: C (too slow)",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.rejected]),
+    [
+      ["require Node v24.15.0 or later", []],
+      ["A", [{ text: "B", reason: null }]],
+      ["pin v1.2 (see e.g. the docs)", [{ text: "C", reason: "too slow" }]],
+    ],
+  );
+});
+
+test("in the English format, bullets that do not fit are skipped and counted, and code blocks and comments are ignored", () => {
+  const got = extractDecisions(
+    en(
+      [
+        "<!--",
+        "- Chosen: the template example. Rejected: example (example)",
+        "-->",
+        "- Moved scope resolution to the launcher. Rejected: add it to 3 reviewers (the cause stays)",
+        "```",
+        "- Chosen: inside code. Rejected: example (example)",
+        "```",
+        "- Chosen: the kept option. Rejected: the dropped option (reason)",
+        "- Chosen: . Rejected: empty chosen option (reason)",
+        "- Chosen: A Rejected: B (no full stop before the marker)",
+        "- Chosen: A. Rejected: B (unclosed",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["the kept option"],
+  );
+  assert.equal(got.skipped, 4);
+});
+
+test("the English section ends at the next H2, and a body may use either format", () => {
+  assert.deepEqual(
+    extractDecisions("## What changed\n\n- Chosen: outside. Rejected: example (example)\n").decisions,
+    [],
+  );
+  const old = extractDecisions(
+    "## 採った案と棄却した案\n\n- 採った: 旧い書式。棄却: 新しい書式（まだ無い）\n",
+  );
+  assert.deepEqual(
+    old.decisions.map((d) => d.chosen),
+    ["旧い書式"],
+  );
+});
+
 // ---- Write to the database (bodies of merged PRs by the owner only) ----
 
 const SECTION = (lines: string) => `本文\n\n## 採った案と棄却した案\n\n${lines}\n`;
@@ -202,6 +298,36 @@ test("stores decisions and options only from bodies of merged PRs by the owner",
     // Lines in a body with no decisions (free text in old PRs) are not counted (so the same count is not reported every time)
     const free = await syncDecisions(db.ingest, p, "o/r", input(SECTION("- 自由な文\n- もう 1 つ")));
     assert.equal(free.skipped, 0);
+  } finally {
+    await db.done();
+  }
+});
+
+test("stores decisions from the English format, and an old Japanese body keeps the same rows and status across a resync", async () => {
+  const { db, p, rows, input, self } = setup();
+  try {
+    self();
+    await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    const before = rows();
+    // A resync of the unchanged Japanese body keeps the same ids and statuses (keys hash the raw line)
+    await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    assert.deepEqual(rows(), before);
+    await syncDecisions(
+      db.ingest,
+      p,
+      "o/r",
+      input(
+        `Body\n\n## Decisions\n\n- Chosen: a real database. Rejected: a fake db (cannot see permissions)\n`,
+      ),
+    );
+    assert.deepEqual(
+      rows().map((x) => [x.kind, x.status, x.body, x.reason]),
+      [
+        ["decision", "accepted", "a real database", null],
+        ["option", "chosen", "a real database", null],
+        ["option", "rejected", "a fake db", "cannot see permissions"],
+      ],
+    );
   } finally {
     await db.done();
   }

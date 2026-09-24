@@ -11,18 +11,54 @@ import { sha256 } from "./text.ts";
 type Rejected = { text: string; reason: string | null };
 export type Extracted = { line: string; chosen: string; rejected: Rejected[] };
 
-// english-exempt: reads the Japanese PR template section until #144 translates it
-const SECTION = "採った案と棄却した案";
-// Only top-level chosen-option bullets directly under the section are accepted (no tasks, numbered items, other markers, or nesting)
-// english-exempt: reads the Japanese PR template section until #144 translates it
-const ITEM = /^- 採った[:：]/;
-// english-exempt: reads the Japanese PR template section until #144 translates it
-const CHOSEN = /^採った[:：]\s*(.*)$/;
-// english-exempt: reads the Japanese PR template section until #144 translates it
-const REJECTED = /^。\s*棄却[:：]\s*/;
-// english-exempt: reads the Japanese PR template section until #144 translates it
-const BARE_REJECTED = /棄却[:：]/;
-// english-exempt: PR bodies written in Japanese use full-width parentheses for reasons (#144)
+/**
+ * One PR body format. The English one is the template since #144; the Japanese one is still read so older PRs keep their decisions.
+ * Only top-level chosen-option bullets directly under the section are accepted (no tasks, numbered items, other markers, or nesting).
+ */
+type Dialect = {
+  section: string;
+  item: RegExp;
+  chosen: RegExp;
+  /** The full stop that must come right before the rejection marker */
+  stop: string;
+  rejected: RegExp;
+  bare: RegExp;
+  /** Separates rejected options, outside parentheses and code */
+  comma: string;
+  trailing: RegExp;
+};
+
+const DIALECTS: Dialect[] = [
+  {
+    section: "Decisions",
+    item: /^- Chosen:/,
+    chosen: /^Chosen:\s*(.*)$/,
+    stop: ".",
+    rejected: /^\.\s+Rejected:\s*/,
+    bare: /\bRejected:/,
+    comma: ",",
+    trailing: /\.$/,
+  },
+  {
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    section: "採った案と棄却した案",
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    item: /^- 採った[:：]/,
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    chosen: /^採った[:：]\s*(.*)$/,
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    stop: "。",
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    rejected: /^。\s*棄却[:：]\s*/,
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    bare: /棄却[:：]/,
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    comma: "、",
+    // english-exempt: reads the Japanese PR format so older PR bodies keep their decisions
+    trailing: /。$/,
+  },
+];
+// english-exempt: PR bodies written in Japanese use full-width parentheses for reasons
 const PAIRS: Record<string, string> = { "（": "）", "(": ")" };
 const CLOSERS = new Set(Object.values(PAIRS));
 /** Inline tokens that cannot appear inside. Lines with HTML are skipped whole (no splitting at separators inside comments) */
@@ -79,10 +115,9 @@ function outside(m: string, at: (i: number) => boolean): number[] | null {
 }
 
 /** Splits a trailing parenthesis (full-width or half-width) off as the reason. s is the original, m the masked copy. An empty option is null. */
-function withReason(s: string, m: string): Rejected | null {
+function withReason(s: string, m: string, d: Dialect): Rejected | null {
   const lead = s.length - s.trimStart().length;
-  // english-exempt: strips the Japanese full stop the PR format ends items with (#144)
-  const text0 = s.trim().replace(/。$/, "");
+  const text0 = s.trim().replace(d.trailing, "");
   const mask = m.slice(lead, lead + text0.length);
   if (!text0) return null;
   const close = mask.at(-1) ?? "";
@@ -107,14 +142,16 @@ const nestedItems = (tokens: Token[]): number =>
 const count = (t: Tokens.List): number => t.items.reduce((n, item) => n + 1 + nestedItems(item.tokens), 0);
 
 /** The first lines of chosen-option items directly under the section, and the number of rejected bullets. marked (CommonMark) interprets headings, code, HTML, and lists. */
-function sectionItems(body: string): { lines: string[]; refused: number } {
+function sectionItems(body: string): { lines: string[]; refused: number; dialect: Dialect } {
   const lines: string[] = [];
   let refused = 0;
-  let inside = false;
+  let inside: Dialect | null = null;
+  let found: Dialect = DIALECTS[0] as Dialect;
   for (const t of Lexer.lex(body)) {
     if (t.type === "heading" && t.depth <= 2) {
       if (inside) break;
-      inside = t.depth === 2 && t.text.trim() === SECTION;
+      inside = t.depth === 2 ? (DIALECTS.find((d) => d.section === t.text.trim()) ?? null) : null;
+      if (inside) found = inside;
       continue;
     }
     if (!inside || t.type !== "list") continue;
@@ -126,19 +163,19 @@ function sectionItems(body: string): { lines: string[]; refused: number } {
     for (const item of list.items) {
       refused += nestedItems(item.tokens);
       const first = (item.raw.split("\n")[0] ?? "").trimEnd();
-      if (item.task || !ITEM.test(first)) refused++;
+      if (item.task || !inside.item.test(first)) refused++;
       else lines.push(first);
     }
   }
-  return { lines, refused };
+  return { lines, refused, dialect: found };
 }
 
 export function extractDecisions(body: string): { decisions: Extracted[]; skipped: number } {
   const decisions: Extracted[] = [];
-  const { lines, refused } = sectionItems(body);
+  const { lines, refused, dialect } = sectionItems(body);
   let skipped = refused;
   for (const line of lines) {
-    const parsed = parse(line);
+    const parsed = parse(line, dialect);
     if (parsed) decisions.push(parsed);
     else skipped++;
   }
@@ -146,43 +183,40 @@ export function extractDecisions(body: string): { decisions: Extracted[]; skippe
 }
 
 /** One decision line in the PR format. null if it does not fit. */
-function parse(line: string): Extracted | null {
+function parse(line: string, d: Dialect): Extracted | null {
   const content = line.slice(2);
   const all = masked(content);
   if (all === null) return null;
-  const head = CHOSEN.exec(content);
+  const head = d.chosen.exec(content);
   if (!head) return null;
   const from = content.length - (head[1] ?? "").length;
   const rest = content.slice(from);
   const m = all.slice(from);
   // Split only at the first rejection marker that follows a full stop, outside parentheses and code
-  // english-exempt: reads the Japanese PR template section until #144 translates it
-  const cut = outside(m, (i) => m[i] === "。" && REJECTED.test(m.slice(i)));
+  const cut = outside(m, (i) => m[i] === d.stop && d.rejected.test(m.slice(i)));
   if (!cut) return null;
   const at = cut[0];
   if (at === undefined) {
-    // english-exempt: strips the Japanese full stop the PR format ends items with (#144)
-    const chosen = rest.trim().replace(/。$/, "");
-    return BARE_REJECTED.test(m) || !chosen ? null : { line, chosen, rejected: [] };
+    const chosen = rest.trim().replace(d.trailing, "");
+    return d.bare.test(m) || !chosen ? null : { line, chosen, rejected: [] };
   }
   const chosen = rest.slice(0, at).trim();
-  const skip = REJECTED.exec(m.slice(at))?.[0].length ?? 0;
+  const skip = d.rejected.exec(m.slice(at))?.[0].length ?? 0;
   const tail = rest.slice(at + skip);
   const tm = m.slice(at + skip);
-  // english-exempt: the PR format separates rejected options with the Japanese comma (#144)
-  const commas = outside(tm, (i) => tm[i] === "、");
+  const commas = outside(tm, (i) => tm[i] === d.comma);
   if (!chosen || !commas) return null;
   const bounds = [-1, ...commas, tail.length];
   const rejected = bounds.slice(1).map((end, i) => {
     const start = (bounds[i] ?? -1) + 1;
-    return withReason(tail.slice(start, end), tm.slice(start, end));
+    return withReason(tail.slice(start, end), tm.slice(start, end), d);
   });
   if (rejected.some((r) => r === null)) return null;
   return { line, chosen, rejected: rejected as Rejected[] };
 }
 
 /** Version of the extraction rules. Bump it when the format or line shape changes (the next sync rewrites every row's content and keeps statuses). */
-const RULE = 1;
+const RULE = 2;
 
 /** Candidate PRs for extraction. The body is the message with external_id "body", and the author is the GitHub user id. */
 export type PrForDecisions = {
