@@ -182,7 +182,10 @@ await withTempDir(async (dir) => {
         failures.push(`${what} の出力に制御列が残っている\n${JSON.stringify(r.out.slice(0, 400))}`);
     };
     const esc = "\u001b[2J\u001b]0;pwn\u0007\r";
-    runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "hostile" });
+    // who --me で結んだ後は、merge した持ち主の PR の本文から判断を書く（偽の gh は hostile の回だけ PR を merge 済みにする）
+    const decided = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "hostile" });
+    if (!/PR の判断 書き直した [1-9]/.test(decided.out))
+      failures.push(`harvest が PR の判断の結果を出していない\n${decided.out.slice(0, 600)}`);
     clean("who（第三者のハンドル）", runCli(["who"], dir, covDir), "someone");
     clean("who（結ぶ）", runCli(["who", "--me", "私", `someone${esc}`], dir, covDir), "someone");
     hook({ hook_event_name: "UserPromptSubmit", prompt: `制御列${esc}を含む発言` });

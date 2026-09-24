@@ -64,9 +64,9 @@ if (args.includes("pulls/comments")) {
          html_url: "https://example.invalid/2#c12" }]);
 } else if (args.includes("pulls?")) {
   // 2 巡目は題だけを変える。題は発言の中身ではないので、発言を書き直さない。
-  out([{ number: 1, title: round2 ? "題を変えた PR" : \`はじめの PR\${evil}\`, body: \`本文\${evil}\`, state: "open", user: person,
+  out([{ number: 1, title: round2 ? "題を変えた PR" : \`はじめの PR\${evil}\`, body: \`本文\${evil}\\n\\n## 採った案と棄却した案\\n\\n- 採った: 実 DB。棄却: 偽の db（権限が見えない）\`, state: evil ? "closed" : "open", user: person,
          created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-02T00:00:00Z",
-         html_url: "https://example.invalid/1", merged_at: null, closed_at: null }]);
+         html_url: "https://example.invalid/1", merged_at: evil ? "2026-09-02T01:00:00Z" : null, closed_at: evil ? "2026-09-02T01:00:00Z" : null }]);
 } else if (args.includes("issues?")) {
   if (round2) { out([]); process.exit(0); }
   out([{ number: 2, title: "はじめの issue", body: "本文", state: "closed", user: person,

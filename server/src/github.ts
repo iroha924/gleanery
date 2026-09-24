@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import type { Kysely } from "kysely";
 import { inTransaction, iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
+import { syncDecisions } from "./decisions.ts";
 import { conversationId, indexesMessage, type SpeakerKind } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
 import { bytes, clean, sha256, uuidFrom } from "./text.ts";
@@ -453,6 +454,29 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
       messagesRemoved += Number(
         (await trx.deleteFrom("message").where("id", "in", part).executeTakeFirst()).numDeletedRows,
       );
+    // merge した持ち主の PR の本文から、判断を取り出して knowledge に揃える（本文が変わっていなくても毎回判定し直す）
+    const decisions = await syncDecisions(
+      trx,
+      projectId,
+      repo,
+      items.flatMap((i) => {
+        const source = sourceId.get(String(i.number));
+        if (i.kind !== "pull_request" || !source) return [];
+        const body = (said.get(i.number) ?? []).find((s) => s.externalId === "body");
+        return [
+          {
+            number: i.number,
+            merged: i.state === "merged",
+            mergedAt: i.closedAt,
+            url: i.url,
+            sourceItemId: source,
+            conversationId: conversationId(projectId, "github", `${repo}#${i.number}`),
+            body: body?.body ?? null,
+            authorId: body?.author?.id ?? null,
+          },
+        ];
+      }),
+    );
     // 一覧から消えた PR・issue（削除された、別のリポジトリへ移された）は行ごと消す。
     const present = new Set(items.map((i) => String(i.number)));
     const vanished = [...known.keys()].filter((n) => !present.has(n));
@@ -477,6 +501,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
       messagesWritten: messages.length,
       messagesRemoved,
       itemsRemoved,
+      decisions,
     };
   });
 
@@ -485,5 +510,8 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
   return [
     `PR・issue ${items.length} 件（書き直した ${counts.itemsWritten} 件${counts.itemsRemoved ? ` / 消えた ${counts.itemsRemoved} 件` : ""}）`,
     `発言 ${total} 件（書き直した ${counts.messagesWritten} 件${counts.messagesRemoved ? ` / 消えた ${counts.messagesRemoved} 件` : ""}）`,
+    counts.decisions.unlinked
+      ? "PR の判断は取り込んでいない（持ち主の GitHub のハンドルを結んでいない。gleanery who --me <呼び名> <ハンドル> の後にもう一度 harvest）"
+      : `PR の判断 書き直した ${counts.decisions.written} 件${counts.decisions.skipped ? `（書式に合わず飛ばした行 ${counts.decisions.skipped}）` : ""}`,
   ].join(" / ");
 }

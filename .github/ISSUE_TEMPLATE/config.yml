@@ -1,0 +1,6 @@
+# 構想などテンプレートに当てはまらない issue は blank で書く
+blank_issues_enabled: true
+contact_links:
+  - name: 脆弱性の報告
+    url: https://github.com/iroha924/gleanery/security/advisories/new
+    about: 脆弱性は公開の issue に書かず、非公開で報告する（SECURITY.md）
