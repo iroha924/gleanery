@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// SQL の書き方が、移行で決めた形から戻っていないかを見る。
+// Checks that SQL is still written in the form chosen during the migration.
 //
-// **どちらも型では止まらない。**手書きの結果型は SQL と突き合わされず、kysely の deprecated な
-// 呼び出しは実行時に警告を出すだけで、コンパイルは通る。放っておくと次に書くコードが元の形に戻る。
+// **Types stop neither.** Handwritten result types are never checked against the SQL, and deprecated kysely
+// calls only warn at run time and still compile. Left alone, the next code written drifts back to the old form.
 //
-// 生成した型と schema.sql のずれは scripts/codegen.mjs が見る。
+// scripts/codegen.mjs checks drift between the generated types and schema.sql.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -14,9 +14,9 @@ const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
 const fail = [];
 
 /**
- * node:sqlite を直に扱ってよいファイル。接続の設定（sqlite.ts・db-write.ts）、kysely の組み立て（db.ts）、
- * schema の適用と migration（admin.ts）、kysely へ渡すアダプタ。ほかのアプリのコードは kysely で書く
- * （結果の型が schema から推論される）。
+ * Files allowed to use node:sqlite directly: connection setup (sqlite.ts, db-write.ts), kysely construction (db.ts),
+ * schema application and migrations (admin.ts), and the adapter passed to kysely. Other app code uses kysely
+ * (so result types are inferred from the schema).
  */
 const RAW_SQL_OK = new Set([
   "server/src/sqlite.ts",
@@ -32,14 +32,17 @@ const walk = (dir) =>
     return e.isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : [];
   });
 
-// 改行を跨いで見る。整形が引数を折り返すと、行ごとの正規表現は同じ書き方を取りこぼす。
-// 生の接続を手に入れる経路は 2 つ（node:sqlite を import する、接続の関数を呼ぶ）。両方を止めれば、
-// 呼び方（exec・prepare）を 1 つずつ数えなくてよい。test は fixture を入れるのに生の接続を使ってよい。
+// Match across newlines. When the formatter wraps arguments, a per-line regex misses the same code.
+// There are two ways to get a raw connection (importing node:sqlite, calling the connection functions). Blocking both
+// means the call forms (exec, prepare) need not be counted one by one. Tests may use raw connections to insert fixtures.
 const RAW = /from\s+["']node:sqlite["']|\bconnect(?:Reader|Writer)\s*\(/g;
 const RULES = [
-  [RAW, "node:sqlite の接続を直に扱っている。kysely（openReader / openWriter）で書く"],
-  [/\.orderBy\(\s*\[/g, "orderBy(配列) は deprecated。orderBy(expr, 'asc') を重ねて書く"],
-  [/\.orderBy\(\s*([`'"])[^`'"]*\s+(?:asc|desc)\1/g, "方向を文字列へ埋めない。orderBy(expr, 'desc') と書く"],
+  [RAW, "uses a node:sqlite connection directly. Use kysely (openReader / openWriter)"],
+  [/\.orderBy\(\s*\[/g, "orderBy(array) is deprecated. Chain orderBy(expr, 'asc') calls"],
+  [
+    /\.orderBy\(\s*([`'"])[^`'"]*\s+(?:asc|desc)\1/g,
+    "do not embed the direction in the string. Write orderBy(expr, 'desc')",
+  ],
 ];
 
 const files = [...walk(path.join(root, "server/src")), ...walk(path.join(root, "server/test"))];
@@ -55,7 +58,7 @@ for (const file of files) {
 }
 
 if (fail.length) {
-  console.error(`SQL の書き方:\n${fail.map((f) => `  ${f}`).join("\n")}`);
+  console.error(`SQL style:\n${fail.map((f) => `  ${f}`).join("\n")}`);
   process.exit(1);
 }
-console.log(`SQL の書き方: 生の SQL は ${RAW_SQL_OK.size} ファイルの例外だけ、deprecated な orderBy は無い`);
+console.log(`SQL style: raw SQL only in the ${RAW_SQL_OK.size} allowed files, no deprecated orderBy`);

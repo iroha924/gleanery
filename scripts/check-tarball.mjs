@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// npm pack した tarball を利用者が受け取る形で確かめる（CI の check と release が通る）。使い方: node scripts/check-tarball.mjs <tgz>
-// 中身の一覧（scripts/lib/tarball.mjs）、version がリポジトリと同じこと、リポジトリの外で CLI が起動し一時 HOME に DB を作れること
+// Checks an npm pack tarball the way users receive it (run by CI check and release). Usage: node scripts/check-tarball.mjs <tgz>
+// It checks the file list (scripts/lib/tarball.mjs), that the version matches the repository, and that the CLI starts outside the repository and creates a database in a temp HOME
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,7 +9,7 @@ import path from "node:path";
 import { tarballProblems, trackedDistribution } from "./lib/tarball.mjs";
 
 const tgz = process.argv[2] && path.resolve(process.argv[2]);
-if (!tgz) throw new Error("tarball の path を渡す");
+if (!tgz) throw new Error("pass the tarball path");
 const root = path.resolve(import.meta.dirname, "..");
 const paths = new Set(
   execFileSync("tar", ["tzf", tgz], { encoding: "utf8" })
@@ -23,10 +23,10 @@ if (problems.length) {
   process.exit(1);
 }
 
-// **リポジトリの外へ出す。**中で展開すると、同梱物を取り違えても親を辿って当たり、通ってしまう。
+// **Extract outside the repository.** Inside it, a wrong bundle would still resolve by walking up and pass.
 const out = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-tarball-"));
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-home-"));
-// 持ち主の DB を指す GLEANERY_DB は子へ渡さない（一時 HOME の DB だけを作る）
+// Do not pass GLEANERY_DB, which points to the owner's database, to the child (only the temp HOME database is created)
 const parentEnv = { ...process.env };
 delete parentEnv.GLEANERY_DB;
 try {
@@ -41,19 +41,21 @@ try {
   const version = JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8")).version;
   const expected = JSON.parse(fs.readFileSync(path.join(root, "plugin", "package.json"), "utf8")).version;
   if (version !== expected)
-    throw new Error(`tarball は ${version}。リポジトリの version は ${expected}（古い tarball）`);
+    throw new Error(`tarball is ${version}, but the repository version is ${expected} (stale tarball)`);
   const named = cli("--version").trim().split(/\s+/)[0];
   if (named !== version)
-    throw new Error(`tarball の CLI は ${named} を名乗った。package の version は ${version}`);
+    throw new Error(`the tarball CLI reported ${named}, but the package version is ${version}`);
   cli("--help");
   cli("db", "--help");
   cli("init");
   if (!fs.existsSync(path.join(home, ".gleanery", "gleanery.db")))
-    throw new Error("init が DB を作らなかった");
-  // Web の画面の資産は配らない（端末の画面へ移した）。残っていれば bundle の消し忘れ
+    throw new Error("init did not create a database");
+  // Web UI assets no longer ship (the UI moved to the terminal). If they remain, bundle forgot to remove them
   if (fs.existsSync(path.join(pkg, "dist", "dashboard")))
-    throw new Error("tarball に dist/dashboard が残っている");
-  console.log(`tarball: ${paths.size} ファイル、配布物の一覧と一致。CLI ${version} が起動し、DB を作れた`);
+    throw new Error("tarball still contains dist/dashboard");
+  console.log(
+    `tarball: ${paths.size} files matching the shipped list. CLI ${version} started and created a database`,
+  );
 } finally {
   fs.rmSync(out, { recursive: true, force: true });
   fs.rmSync(home, { recursive: true, force: true });

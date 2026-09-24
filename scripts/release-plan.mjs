@@ -58,16 +58,16 @@ const actions =
   kind === "none"
     ? []
     : [
-        "PRのCI（check・pr-body）とCodexのレビューを通し、branchにmainを取り込む",
+        "pass PR CI (check, pr-body) and the Codex review, and merge main into the branch",
         `git tag v${packageVersion} <PR head> && git push origin v${packageVersion}`,
-        "release.ymlのprepareを見て、environment npm-releaseを承認する",
-        "npm stage download <stage-id> のSHA-512をjob summaryと照合し、provenanceを見て2FAで承認",
+        "check prepare in release.yml and approve the npm-release environment",
+        "compare the SHA-512 of npm stage download <stage-id> with the job summary, check provenance, and approve with 2FA",
         "gh pr merge <PR> --merge --match-head-commit <PR head>",
         "git diff --exit-code <PR head> <merge commit>",
-        `npm pack gleanery@${packageVersion} --silent のSHA-512を照合`,
+        `compare the SHA-512 of npm pack gleanery@${packageVersion} --silent`,
         `npm dist-tag add gleanery@${packageVersion} latest`,
         "bun run release:status",
-        "Claude/Codexのplugin cacheを更新してsessionを張り直す",
+        "update the Claude and Codex plugin caches and restart sessions",
       ];
 const plan = {
   base: ref,
@@ -86,12 +86,12 @@ const plan = {
 if (json) {
   process.stdout.write(`${JSON.stringify(plan)}\n`);
 } else {
-  const label = { none: "releaseなし", plugin: "plugin" }[kind];
-  console.log(`release種別: ${label}`);
-  console.log(`比較: ${ref}..${plan.commit}`);
+  const label = { none: "none (no release)", plugin: "plugin" }[kind];
+  console.log(`release kind: ${label}`);
+  console.log(`compared: ${ref}..${plan.commit}`);
   console.log(
     `version: npm ${packageVersion} / plugin ${claudeVersion} / marketplace ${marketplaceVersion} / Codex ${codexVersion}`,
   );
-  if (files.length) console.log(`入力: ${files.join(", ")}`);
+  if (files.length) console.log(`inputs: ${files.join(", ")}`);
   for (const action of actions) console.log(`  ${action}`);
 }

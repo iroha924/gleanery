@@ -23,19 +23,19 @@ function read(relative) {
 
 function frontmatter(relative, source) {
   if (!source.startsWith("---\n")) {
-    fail(`${relative}: YAML frontmatterが無い`);
+    fail(`${relative}: no YAML frontmatter`);
     return {};
   }
   const end = source.indexOf("\n---\n", 4);
   if (end === -1) {
-    fail(`${relative}: YAML frontmatterが閉じていない`);
+    fail(`${relative}: YAML frontmatter is not closed`);
     return {};
   }
   const fields = {};
   let listKey = null;
   for (const line of source.slice(4, end).split("\n")) {
     if (line.trim() === "" || line.trim().startsWith("#")) continue;
-    // ブロックシーケンス（`skills:` の次行以降の `- 値`）を配列として拾う。
+    // Read a block sequence (`- value` lines after `skills:`) as an array.
     const item = /^\s+-\s*(.+)$/.exec(line);
     if (item && listKey) {
       fields[listKey].push(item[1].replace(/^['"]|['"]$/g, ""));
@@ -43,7 +43,7 @@ function frontmatter(relative, source) {
     }
     const match = /^([A-Za-z][A-Za-z0-9-]*):\s*(.*)$/.exec(line);
     if (!match) {
-      fail(`${relative}: frontmatterの行を解釈できない: ${line}`);
+      fail(`${relative}: cannot parse frontmatter line: ${line}`);
       continue;
     }
     if (match[2] === "") {
@@ -62,51 +62,58 @@ function checkLocalLinks(relative, source) {
     const target = match[1].split("#", 1)[0];
     if (!target || /^(https?:|mailto:)/.test(target)) continue;
     const resolved = path.resolve(root, path.dirname(relative), target);
-    if (!fs.existsSync(resolved)) fail(`${relative}: 参照先が無い: ${target}`);
+    if (!fs.existsSync(resolved)) fail(`${relative}: link target does not exist: ${target}`);
   }
 }
 
 const agents = read("AGENTS.md");
 const lines = agents.trimEnd().split("\n").length;
 const bytes = Buffer.byteLength(agents);
-if (lines >= 200) fail(`AGENTS.md: ${lines}行。200行未満にする`);
+if (lines >= 200) fail(`AGENTS.md: ${lines} lines. Keep it under 200`);
+// english-exempt: matches the Japanese text in AGENTS.md until #141 translates it
 if (!agents.includes("`plugin/skills/review/SKILL.md`を読む")) {
-  fail("AGENTS.md: Codexがreview Skillのcheckoutを正本として読む規約が無い");
+  fail(
+    "AGENTS.md: missing the rule that Codex reads the review Skill from the checkout as the source of truth",
+  );
 }
+// english-exempt: matches the Japanese text in AGENTS.md until #141 translates it
 if (!agents.includes("`Skill roots`にある`rN`の値と残りをそのまま結合する")) {
-  fail("AGENTS.md: Codexの短縮Skill pathを逐語的に解決する規約が無い");
+  fail("AGENTS.md: missing the rule that Codex resolves shortened Skill paths literally");
 }
 
-// **Codexはglobal → repo root → CWDまでのAGENTS.mdを連結し、32 KiBで打ち切る。**
-// rootだけを見ると、nestedを足したぶんが黙って切り捨てられる。ここではリポジトリ側の合計を見る
-// （持ち主の ~/.codex/AGENTS.md はマシンごとに違うので、その分の余白を引いて判定する）。
+// **Codex concatenates AGENTS.md files from global through repo root to CWD and cuts off at 32 KiB.**
+// Checking only the root would let nested files be cut silently. This checks the repository's total
+// (the owner's ~/.codex/AGENTS.md differs per machine, so a margin for it is subtracted).
 const CODEX_LIMIT = 32 * 1024;
-// 持ち主の ~/.codex/AGENTS.md に見込む分。実測 18,638 bytes（2026-09-20）へ 1 KiB の伸びを足した。
-// **これを増やすとリポジトリ側の余白が減る。**足りなくなったら、長い手順を Skill へ移す。
-// 入れ子の AGENTS.md は無い（Web の画面と一緒に dashboard/AGENTS.md を消した）。足すなら、その分もここで足す。
+// The allowance for the owner's ~/.codex/AGENTS.md: measured 18,638 bytes (2026-09-20) plus 1 KiB of growth.
+// **Raising it shrinks the repository's margin.** When space runs out, move long procedures into Skills.
+// There is no nested AGENTS.md (dashboard/AGENTS.md went with the web UI). If one is added, add it here too.
 const USER_RESERVE = 19 * 1024;
 if (bytes > CODEX_LIMIT - USER_RESERVE) {
   fail(
-    `AGENTS.mdが${bytes} bytes。Codexの32 KiBからglobal分${USER_RESERVE}を引いた${CODEX_LIMIT - USER_RESERVE}以内にする。` +
-      "長い手順は.agents/skills/へ移す",
+    `AGENTS.md is ${bytes} bytes. Keep it within ${CODEX_LIMIT - USER_RESERVE}, Codex's 32 KiB minus the global allowance of ${USER_RESERVE}. ` +
+      "Move long procedures into .agents/skills/",
   );
 }
-// **CLAUDE.md は Claude Code 専用、AGENTS.md は Codex 専用。**Claude Code は CLAUDE.md があると AGENTS.md を読まず、
-// Codex は CLAUDE.md を読まない（どちらも 2026-09-23 に実験で確かめた）。互いを import すると、両方が両方を読む。
+// **CLAUDE.md is for Claude Code only, and AGENTS.md for Codex only.** Claude Code skips AGENTS.md when CLAUDE.md exists,
+// and Codex does not read CLAUDE.md (both confirmed by experiment on 2026-09-23). Importing one into the other makes both read both.
 const claudeMd = read("CLAUDE.md");
-// import は文の中でも効く（`詳しくは @AGENTS.md`）。コードの中は import されないので、囲みを外してから見る。
+// An import works mid-sentence too (`see @AGENTS.md`). Code spans are not imported, so strip them before checking.
 if (/(?:^|\s)@\S*AGENTS\.md\b/m.test(claudeMd.replace(/```[\s\S]*?```|`[^`\n]*`/g, "")))
-  fail("CLAUDE.md: AGENTS.mdをimportしている。両者は別々に読ませる");
+  fail("CLAUDE.md: imports AGENTS.md. Keep the two separate");
 const claudeLines = claudeMd.trimEnd().split("\n").length;
-// 公式の目安は 200 行未満。常時ロードは paths の無い rule と合わせて効くので、CLAUDE.md 単体はその半分に抑える。
+// The official guideline is under 200 lines. Always-loaded rules without paths add to it, so CLAUDE.md alone stays at half.
 if (claudeLines >= 100)
-  fail(`CLAUDE.md: ${claudeLines}行。100行未満にし、手順はSkill、fileに紐付く規約はpaths付きのruleへ移す`);
-// Codex は Claude Code の仕組み（rule・reviewer・Claude 専用 Skill）を使えない。書くと、無い物を探すか、代わりに別の AI を立てようとする。
+  fail(
+    `CLAUDE.md: ${claudeLines} lines. Keep it under 100 by moving procedures to Skills and file-specific rules to rules with paths`,
+  );
+// Codex cannot use Claude Code features (rules, reviewers, Claude-only Skills). Mentioning them makes it look for things that do not exist or start another AI instead.
 for (const word of [".claude/rules", ".claude/agents", "review-shipping", "review-ui", "docs-author"])
-  if (agents.includes(word)) fail(`AGENTS.md: Claude Code側の仕組み（${word}）を書いている。Codexは使えない`);
+  if (agents.includes(word))
+    fail(`AGENTS.md: mentions a Claude Code feature (${word}) that Codex cannot use`);
 
-// 両方に写した規約が片側だけで消えないよう、`<!-- invariant: 名前 -->` の集合を突き合わせる。
-// 実例: 設定 repository で分けたとき、書き直しで 1 句が片側から消えて気付かれなかった。
+// Compare the sets of `<!-- invariant: name -->` markers so a rule copied to both sides cannot vanish from one.
+// Real case: when the config repository was split, a rewrite dropped one clause from one side unnoticed.
 const invariants = (source) =>
   new Set([...source.matchAll(/<!-- invariant: ([a-z0-9-]+) -->/g)].map((m) => m[1]));
 const claudeSide = new Set(
@@ -116,23 +123,27 @@ const claudeSide = new Set(
 );
 const codexSide = invariants(agents);
 if (codexSide.size < 20)
-  fail(`AGENTS.md: invariantが${codexSide.size}個しか読めない。印の形が崩れていないか`);
+  fail(`AGENTS.md: only ${codexSide.size} invariants found. Check whether the marker format broke`);
 for (const id of claudeSide)
-  if (!codexSide.has(id)) fail(`AGENTS.md: invariant ${id} がCLAUDE.md側にだけある`);
+  if (!codexSide.has(id)) fail(`AGENTS.md: invariant ${id} exists only on the CLAUDE.md side`);
 for (const id of codexSide)
-  if (!claudeSide.has(id)) fail(`CLAUDE.md・.claude/rules: invariant ${id} がAGENTS.md側にだけある`);
+  if (!claudeSide.has(id))
+    fail(`CLAUDE.md, .claude/rules: invariant ${id} exists only on the AGENTS.md side`);
 const claudeVerification = read(".claude/rules/verification.md");
 for (const required of [
+  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
   "bun run release:plan -- --base <前回のrelease commit>",
+  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
   "`plugin`: 配布物に入る変更",
+  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
   "`.github/workflows/release.yml` が stage した tarball だけ",
 ]) {
   if (!claudeVerification.includes(required)) {
-    fail(`.claude/rules/verification.md: Claudeのrelease規約に \`${required}\` が無い`);
+    fail(`.claude/rules/verification.md: Claude's release rules are missing \`${required}\``);
   }
 }
 
-// Claude Code 専用の Skill（.agents/skills に置かず、Codex から見えない）。symlink でない directory がそれに当たる。
+// Claude Code-only Skills (not in .agents/skills, invisible to Codex): the directories that are not symlinks.
 const claudeSkills = fs
   .readdirSync(path.join(root, ".claude/skills"))
   .filter((name) => !fs.lstatSync(path.join(root, ".claude/skills", name)).isSymbolicLink());
@@ -140,13 +151,13 @@ for (const name of claudeSkills) {
   const relative = `.claude/skills/${name}/SKILL.md`;
   const source = read(relative);
   const fields = frontmatter(relative, source);
-  if (fields.name !== name) fail(`${relative}: nameがdirectory名と一致しない`);
-  if (!fields.description) fail(`${relative}: descriptionが無い`);
-  if ((fields.description ?? "").length > 1024) fail(`${relative}: descriptionが1024文字を超えている`);
+  if (fields.name !== name) fail(`${relative}: name does not match the directory name`);
+  if (!fields.description) fail(`${relative}: no description`);
+  if ((fields.description ?? "").length > 1024) fail(`${relative}: description exceeds 1024 characters`);
   if (!source.includes("## Triggers") || !source.includes("## Does not trigger")) {
-    fail(`${relative}: TriggersとDoes not triggerの節が要る`);
+    fail(`${relative}: needs Triggers and Does not trigger sections`);
   }
-  if (/\b(TODO|TBD)\b/.test(source)) fail(`${relative}: TODO / TBD が残っている`);
+  if (/\b(TODO|TBD)\b/.test(source)) fail(`${relative}: TODO / TBD remains`);
   checkLocalLinks(relative, source);
 }
 
@@ -154,20 +165,20 @@ for (const name of developmentSkills) {
   const relative = `.agents/skills/${name}/SKILL.md`;
   const source = read(relative);
   const fields = frontmatter(relative, source);
-  if (fields.name !== name) fail(`${relative}: nameがdirectory名と一致しない`);
-  if (!fields.description) fail(`${relative}: descriptionが無い`);
-  if ((fields.description ?? "").length > 1024) fail(`${relative}: descriptionが1024文字を超えている`);
+  if (fields.name !== name) fail(`${relative}: name does not match the directory name`);
+  if (!fields.description) fail(`${relative}: no description`);
+  if ((fields.description ?? "").length > 1024) fail(`${relative}: description exceeds 1024 characters`);
   if (!source.includes("## Triggers") || !source.includes("## Does not trigger")) {
-    fail(`${relative}: trigger / non-triggerの例が揃っていない`);
+    fail(`${relative}: trigger and non-trigger examples are incomplete`);
   }
-  if (/\b(TODO|TBD)\b/.test(source)) fail(`${relative}: 未完成のplaceholderがある`);
+  if (/\b(TODO|TBD)\b/.test(source)) fail(`${relative}: an unfinished placeholder remains`);
   checkLocalLinks(relative, source);
 
   const claudePath = path.join(root, `.claude/skills/${name}`);
   try {
-    if (!fs.lstatSync(claudePath).isSymbolicLink()) fail(`.claude/skills/${name}: symlinkではない`);
+    if (!fs.lstatSync(claudePath).isSymbolicLink()) fail(`.claude/skills/${name}: not a symlink`);
     if (fs.realpathSync(claudePath) !== fs.realpathSync(path.join(root, `.agents/skills/${name}`))) {
-      fail(`.claude/skills/${name}: Codex側の正本と同じdirectoryを指していない`);
+      fail(`.claude/skills/${name}: does not point to the same directory as the Codex source of truth`);
     }
   } catch (error) {
     fail(`.claude/skills/${name}: ${error instanceof Error ? error.message : String(error)}`);
@@ -175,7 +186,9 @@ for (const name of developmentSkills) {
 }
 
 const releaseGuide = read(".agents/skills/plugin-release/SKILL.md");
+// english-exempt: matches the Japanese heading in .agents/skills/plugin-release/SKILL.md until #141 translates it
 const releaseStart = releaseGuide.indexOf("## 届けるまで");
+// english-exempt: matches the Japanese heading in .agents/skills/plugin-release/SKILL.md until #141 translates it
 const releaseEnd = releaseGuide.indexOf("## 届いたことを確かめる");
 const releaseSteps =
   releaseStart === -1 || releaseEnd === -1 ? "" : releaseGuide.slice(releaseStart, releaseEnd);
@@ -192,26 +205,28 @@ let releaseCursor = -1;
 for (const step of releaseOrder) {
   const position = releaseSteps.indexOf(step);
   if (position === -1) {
-    fail(`.agents/skills/plugin-release/SKILL.md: release手順に \`${step}\` が無い`);
+    fail(`.agents/skills/plugin-release/SKILL.md: release steps are missing \`${step}\``);
   } else if (position <= releaseCursor) {
-    fail(`.agents/skills/plugin-release/SKILL.md: release手順の \`${step}\` の順序が逆転している`);
+    fail(`.agents/skills/plugin-release/SKILL.md: release step \`${step}\` is out of order`);
   } else {
     releaseCursor = position;
   }
 }
 for (const [publish] of releaseSteps.matchAll(/npm publish[^\n`]*/g)) {
   if (!publish.includes("--tag next")) {
-    fail(".agents/skills/plugin-release/SKILL.md: merge前のnpm publishは--tag nextでlatestを動かさない");
+    fail(
+      ".agents/skills/plugin-release/SKILL.md: npm publish before merge must use --tag next and leave latest alone",
+    );
   }
 }
 
 try {
   const pluginManifest = JSON.parse(read("plugin/.codex-plugin/plugin.json"));
   if (pluginManifest.skills !== "./skills/") {
-    fail("plugin/.codex-plugin/plugin.json: 利用者向けSkillの置き場所は./skills/に限る");
+    fail("plugin/.codex-plugin/plugin.json: user-facing Skills must live in ./skills/");
   }
   if (pluginManifest.hooks !== "./hooks/codex.json") {
-    fail("plugin/.codex-plugin/plugin.json: Codexのhookは./hooks/codex.jsonを読む");
+    fail("plugin/.codex-plugin/plugin.json: Codex hooks must read ./hooks/codex.json");
   }
   const codexHooks = JSON.parse(read("plugin/hooks/codex.json")).hooks;
   const codexCapture = ["$", '{PLUGIN_ROOT}/dist/capture.js" codex'].join("");
@@ -220,27 +235,27 @@ try {
   for (const event of ["SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "Interrupt"]) {
     const commands = codexHooks?.[event]?.flatMap((group) => group.hooks ?? []) ?? [];
     if (!commands.some((hook) => hook.command?.includes(codexCapture))) {
-      fail(`plugin/hooks/codex.json: ${event}がCodexの自動記録へ繋がっていない`);
+      fail(`plugin/hooks/codex.json: ${event} is not wired to Codex capture`);
     }
     if (!commands.some((hook) => hook.commandWindows === codexCaptureWindows)) {
-      fail(`plugin/hooks/codex.json: ${event}のWindows用自動記録がない`);
+      fail(`plugin/hooks/codex.json: ${event} has no Windows capture command`);
     }
     if (commands.some((hook) => hook.async)) {
-      fail(`plugin/hooks/codex.json: ${event}を非同期にすると会話の順序を保てない`);
+      fail(`plugin/hooks/codex.json: making ${event} async would break conversation order`);
     }
   }
   const marketplace = JSON.parse(read(".claude-plugin/marketplace.json"));
   const entry = marketplace.plugins?.[0];
   const src = entry?.source;
   if (src?.source !== "npm" || src?.package !== "gleanery") {
-    fail(".claude-plugin/marketplace.json: 配布sourceはnpmのgleaneryに限る");
+    fail(".claude-plugin/marketplace.json: the source must be the gleanery npm package");
   } else if (!/^\d+\.\d+\.\d+$/.test(src.version ?? "")) {
-    // 範囲やlatestを書くと、同じcommitが時期によって別のtarballを解決する。
-    fail(`.claude-plugin/marketplace.json: versionはexactにする（受け取った値: ${src.version}）`);
+    // A range or latest would make the same commit resolve to different tarballs over time.
+    fail(`.claude-plugin/marketplace.json: version must be exact (got: ${src.version})`);
   }
   if (entry?.version !== undefined) {
-    // 両方に置くとClaude Codeは警告なくplugin.jsonを使い、marketplaceの値が黙って無視される。
-    fail(".claude-plugin/marketplace.json: versionはsourceの中だけに置く");
+    // With both set, Claude Code uses plugin.json without warning and silently ignores the marketplace value.
+    fail(".claude-plugin/marketplace.json: version belongs only inside source");
   }
 } catch (error) {
   fail(`plugin manifest: ${error instanceof Error ? error.message : String(error)}`);
@@ -255,20 +270,20 @@ for (const name of pluginSkills) {
   const relative = `plugin/skills/${name}/SKILL.md`;
   const source = read(relative);
   const fields = frontmatter(relative, source);
-  if (fields.name !== name) fail(`${relative}: nameがdirectory名と一致しない`);
-  if (!fields.description) fail(`${relative}: descriptionが無い`);
-  if ((fields.description ?? "").length > 1024) fail(`${relative}: descriptionが1024文字を超えている`);
-  // reviewのSKILLは呼ぶたび全文がcontextへ載る。**追記で膨らませない**ための回帰の上限で、
-  // 品質を測る数字ではない。相手モデルを使うときだけ読む手順はreferences/へ出してある。
-  // 超えたら上限を上げる前に、同じ概念の重複を消す。
+  if (fields.name !== name) fail(`${relative}: name does not match the directory name`);
+  if (!fields.description) fail(`${relative}: no description`);
+  if ((fields.description ?? "").length > 1024) fail(`${relative}: description exceeds 1024 characters`);
+  // The whole review SKILL enters context on every call. This limit guards against **growth by appending**;
+  // it does not measure quality. Steps read only when using the other model live in references/.
+  // If it is exceeded, remove duplicated concepts before raising the limit.
   if (name === "review" && source.split("\n").length > 497) {
     fail(
-      `${relative}: ${source.split("\n").length}行。497行以下にする（節を足したなら同じ概念の重複を消す）`,
+      `${relative}: ${source.split("\n").length} lines. Keep it at 497 or fewer (if you added a section, remove duplicated concepts)`,
     );
   }
   checkLocalLinks(relative, source);
 
-  // Codexはdisable-model-invocationを解釈しないので、明示起動だけにするにはopenai.yamlも要る。
+  // Codex ignores disable-model-invocation, so explicit-only invocation also needs openai.yaml.
   const policy = path.join(skillDirectory, name, "agents/openai.yaml");
   const codexExplicitOnly =
     fs.existsSync(policy) &&
@@ -277,29 +292,29 @@ for (const name of pluginSkills) {
     );
   if ((fields["disable-model-invocation"] === "true") !== codexExplicitOnly) {
     fail(
-      `${relative}: disable-model-invocation: trueとagents/openai.yamlのallow_implicit_invocation: falseが揃っていない`,
+      `${relative}: disable-model-invocation: true and allow_implicit_invocation: false in agents/openai.yaml do not match`,
     );
   }
 
-  // CodexのPATHにgleaneryは無い（exit 127を観測）。**shell scriptを挟まずpackage内のJSを直接起動する** —
-  // npmの`bin`はplugin内のPATHへ公開される契約が無く、POSIX shellはWindowsで動かない。
+  // gleanery is not on Codex's PATH (exit 127 observed). **Start the JS in the package directly, without a shell script.**
+  // npm `bin` has no contract to be on PATH inside a plugin, and POSIX shells do not run on Windows.
   if (/\}\/bin\/gleanery|\.\.\/\.\.\/bin\/gleanery/m.test(source)) {
-    fail(`${relative}: bin/gleaneryは使わない。node "\${CLAUDE_PLUGIN_ROOT}/dist/cli.js" の形で呼ぶ`);
+    fail(`${relative}: do not use bin/gleanery. Call it as node "\${CLAUDE_PLUGIN_ROOT}/dist/cli.js"`);
   }
   if (/Bash\(gleanery |^gleanery /m.test(source)) {
-    fail(`${relative}: 素のgleaneryはCodexのPATHに無い。package内のdist/cli.jsを直接起動する`);
+    fail(`${relative}: bare gleanery is not on Codex's PATH. Start dist/cli.js in the package directly`);
   }
   if (/dist\/cli\.js/.test(source) && !source.includes("../../dist/cli.js")) {
-    fail(`${relative}: gleaneryのCLIを呼ぶのに、Codex用の../../dist/cli.jsが無い`);
+    fail(`${relative}: calls the gleanery CLI but has no ../../dist/cli.js for Codex`);
   }
 }
 
-// claude --help の choices。渡した値が外れると Warning だけ出てセッション既定へ落ちる。
+// The choices from claude --help. An invalid value only warns and falls back to the session default.
 const EFFORT_LEVELS = new Set(["low", "medium", "high", "xhigh", "max"]);
 
-// repository 専用の reviewer（.claude/agents）を見る。配る reviewer は Agent 定義ではなく
-// plugin/skills/review/reviewers/ の本文になったので、frontmatter を持たない
-// （そちらの検査は check-pairs.mjs が持つ）。
+// Checks the repository-only reviewers (.claude/agents). Shipped reviewers are no longer Agent definitions but
+// the bodies in plugin/skills/review/reviewers/, which have no frontmatter
+// (check-pairs.mjs checks those).
 const agentDirectories = [".claude/agents"];
 const agentEntries = agentDirectories.flatMap((directory) => {
   const absolute = path.join(root, directory);
@@ -315,31 +330,31 @@ for (const relative of agentEntries) {
   const source = read(relative);
   const fields = frontmatter(relative, source);
   for (const required of ["name", "description", "tools", "model", "effort", "maxTurns"]) {
-    if (!fields[required]) fail(`${relative}: ${required}が無い`);
+    if (!fields[required]) fail(`${relative}: no ${required}`);
   }
-  if (fields.name !== path.basename(file, ".md")) fail(`${relative}: nameがfile名と一致しない`);
-  if (fields.model === "inherit") fail(`${relative}: modelをsessionから継承しない`);
+  if (fields.name !== path.basename(file, ".md")) fail(`${relative}: name does not match the file name`);
+  if (fields.model === "inherit") fail(`${relative}: model must not inherit from the session`);
   if (!EFFORT_LEVELS.has(fields.effort)) {
-    fail(`${relative}: effortは${[...EFFORT_LEVELS].join(" / ")}のどれかにする（${fields.effort}）`);
+    fail(`${relative}: effort must be one of ${[...EFFORT_LEVELS].join(" / ")} (${fields.effort})`);
   }
-  // 本文でも effort を名指しして理由を書いている定義がある。片方だけ直すと、読む人と CLI が違う値を見る。
+  // Some definitions also name the effort in the body with a reason. Fixing only one makes readers and the CLI see different values.
   const named = /`effort: ([a-z]+)`/.exec(source.replace(/^---\n[\s\S]*?\n---\n/, ""));
   if (named && named[1] !== fields.effort) {
-    fail(`${relative}: frontmatterのeffortは${fields.effort}だが本文は${named[1]}と書いている`);
+    fail(`${relative}: frontmatter effort is ${fields.effort}, but the body says ${named[1]}`);
   }
-  // プリロードするSkillが無ければ、その名前は解決されず本文の前提が崩れる。
+  // If a preloaded Skill does not exist, the name does not resolve and the body's premise breaks.
   for (const name of Array.isArray(fields.skills) ? fields.skills : []) {
     const repoSkill = fs.existsSync(path.join(root, ".agents/skills", name, "SKILL.md"));
     const pluginSkill = fs.existsSync(path.join(root, "plugin/skills", name, "SKILL.md"));
-    if (!repoSkill && !pluginSkill) fail(`${relative}: skills の ${name} が実在しない`);
+    if (!repoSkill && !pluginSkill) fail(`${relative}: skill ${name} does not exist`);
   }
   if (!Number.isInteger(Number(fields.maxTurns)) || Number(fields.maxTurns) <= 0) {
-    fail(`${relative}: maxTurnsは正の整数にする`);
+    fail(`${relative}: maxTurns must be a positive integer`);
   }
 }
 
-// 作り替えで消した前提（PostgreSQL・Docker・埋め込み・キー）が、AI の読む文書へ戻っていないか。戻ると、AI は無い
-// command やキーを案内する。文書の説明で旧構成に触れるときは「旧構成」と書き、この一覧の綴りを避ける。
+// Checks that premises removed in the rebuild (PostgreSQL, Docker, embeddings, keys) have not returned to documents AIs read. If they return, AIs
+// point to commands and keys that no longer exist. Documents that mention the old setup should call it the old setup and avoid these spellings.
 const GONE = [
   /pgvector/i,
   /VOYAGE_API_KEY/,
@@ -366,7 +381,7 @@ const docs = [
       : [];
   }),
   ...agentFiles,
-  // 配る manifest の keywords と説明も、利用者に旧構成を見せる
+  // Shipped manifest keywords and descriptions also show the old setup to users
   "plugin/package.json",
   "plugin/.claude-plugin/plugin.json",
   "plugin/.codex-plugin/plugin.json",
@@ -374,7 +389,7 @@ const docs = [
 for (const relative of docs) {
   const source = read(relative);
   for (const word of GONE)
-    if (word.test(source)) fail(`${relative}: 消した前提の語（${word.source}）が戻っている`);
+    if (word.test(source)) fail(`${relative}: a removed premise (${word.source}) has returned`);
 }
 
 if (failures.length > 0) {
@@ -383,5 +398,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `AI設定: CLAUDE ${claudeLines}行、AGENTS ${lines}行 / ${bytes} bytes、invariant ${codexSide.size}件、開発Skill ${developmentSkills.length}件、plugin Skill ${pluginSkills.length}件、Agent ${agentFiles.length}件`,
+  `AI config: CLAUDE ${claudeLines} lines, AGENTS ${lines} lines / ${bytes} bytes, ${codexSide.size} invariants, ${developmentSkills.length} development Skills, ${pluginSkills.length} plugin Skills, ${agentFiles.length} Agents`,
 );

@@ -32,11 +32,11 @@ test("passes when everything shipped is present, and finds missing tracked manif
       `${must} is shipped`,
     );
     const missing = new Set([...complete].filter((f) => f !== must));
-    assert.ok(tarballProblems(missing, tracked).includes(`tarballに${must}が無い`), must);
+    assert.ok(tarballProblems(missing, tracked).includes(`tarball is missing ${must}`), must);
   }
 });
 
 test("finds files that must not be shipped", () => {
   for (const bad of ["node_modules/x/index.js", ".env", "server/bun.lock", "src/cli.ts"])
-    assert.match(tarballProblems(new Set([...complete, bad]), tracked).join("\n"), /入れてはいけない/, bad);
+    assert.match(tarballProblems(new Set([...complete, bad]), tracked).join("\n"), /must not ship/, bad);
 });

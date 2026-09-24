@@ -1,8 +1,8 @@
-// 配る tarball の中身の一覧の検査。scripts/check-tarball.mjs を通して CI の check と release が同じ一覧で見る。
+// Checks the file list of the shipped tarball. Through scripts/check-tarball.mjs, CI check and release use the same list.
 
 import { execFileSync } from "node:child_process";
 
-/** repository が追跡する配布物。tarball に全部入っていなければならない。 */
+/** Shipped files the repository tracks. All of them must be in the tarball. */
 export function trackedDistribution(root) {
   return execFileSync(
     "git",
@@ -23,7 +23,7 @@ export function trackedDistribution(root) {
     .map((file) => file.replace(/^plugin\//, ""));
 }
 
-/** tarball の中の path（`package/` を外したもの）の問題。空なら通る。 */
+/** Problems with the paths in the tarball (without `package/`). Empty means it passes. */
 export function tarballProblems(paths, tracked) {
   const problems = [];
   for (const required of new Set([
@@ -38,7 +38,7 @@ export function tarballProblems(paths, tracked) {
     "README.md",
     ...tracked,
   ]))
-    if (!paths.has(required)) problems.push(`tarballに${required}が無い`);
+    if (!paths.has(required)) problems.push(`tarball is missing ${required}`);
   for (const file of paths)
     if (
       file.includes("node_modules/") ||
@@ -46,6 +46,6 @@ export function tarballProblems(paths, tracked) {
       file.endsWith("bun.lock") ||
       /(^|\/)src\/.+\.(?:ts|tsx)$/.test(file)
     )
-      problems.push(`tarballへ入れてはいけないfileがある: ${file}`);
+      problems.push(`tarball contains a file that must not ship: ${file}`);
   return problems;
 }

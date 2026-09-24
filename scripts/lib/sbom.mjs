@@ -1,7 +1,7 @@
-// SBOM（CycloneDX）が、バンドルして配る依存を全部載せているかの照合。配る依存の正本は THIRD_PARTY_NOTICES.md の表
-// （scripts/third-party-notices.mjs が node_modules から作る）。足りなくても多すぎても、SBOM が配る物の中身を偽る。
+// Checks that the SBOM (CycloneDX) lists every bundled dependency. The source of truth is the table in THIRD_PARTY_NOTICES.md
+// (built from node_modules by scripts/third-party-notices.mjs). Missing or extra entries both misstate what ships.
 
-/** THIRD_PARTY_NOTICES.md の表の package とバージョンと、形の崩れた行。崩れた行を黙って外さない。 */
+/** Packages and versions from the THIRD_PARTY_NOTICES.md table, plus malformed rows. Malformed rows are never silently skipped. */
 function noticed(text) {
   const out = new Set();
   const broken = [];
@@ -14,20 +14,19 @@ function noticed(text) {
   return { out, broken };
 }
 
-/** 照合の問題。空なら通る。 */
+/** Problems found by the comparison. Empty means it passes. */
 export function sbomProblems(noticesText, bom) {
-  if (bom?.bomFormat !== "CycloneDX" || !Array.isArray(bom.components))
-    return ["SBOM が CycloneDX の JSON ではない"];
+  if (bom?.bomFormat !== "CycloneDX" || !Array.isArray(bom.components)) return ["SBOM is not CycloneDX JSON"];
   const { out: want, broken } = noticed(noticesText);
-  if (broken.length) return broken.map((l) => `THIRD_PARTY_NOTICES.md の表の行を読めない: ${l}`);
-  if (want.size === 0) return ["THIRD_PARTY_NOTICES.md から package を読めない"];
+  if (broken.length) return broken.map((l) => `cannot read a THIRD_PARTY_NOTICES.md table row: ${l}`);
+  if (want.size === 0) return ["cannot read any packages from THIRD_PARTY_NOTICES.md"];
   const have = new Set(
     bom.components
       .filter((c) => c.type === "library")
       .map((c) => `${c.group ? `${c.group}/${c.name}` : c.name} ${c.version}`),
   );
   return [
-    ...[...want].filter((p) => !have.has(p)).map((p) => `SBOM に ${p} が無い`),
-    ...[...have].filter((p) => !want.has(p)).map((p) => `SBOM に同梱していない ${p} がある`),
+    ...[...want].filter((p) => !have.has(p)).map((p) => `SBOM is missing ${p}`),
+    ...[...have].filter((p) => !want.has(p)).map((p) => `SBOM lists ${p}, which is not bundled`),
   ];
 }

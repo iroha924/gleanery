@@ -40,15 +40,15 @@ test("fails when a bundled package is missing from the SBOM or has a different v
     ]),
   );
   assert.deepEqual(got, [
-    "SBOM に @inkjs/ui 2.0.0 が無い",
-    "SBOM に zod 4.6.5 が無い",
-    "SBOM に同梱していない zod 4.6.4 がある",
+    "SBOM is missing @inkjs/ui 2.0.0",
+    "SBOM is missing zod 4.6.5",
+    "SBOM lists zod 4.6.4, which is not bundled",
   ]);
 });
 
 test("fails on an unreadable SBOM and an empty list (so the comparison never passes vacuously)", () => {
   assert.match(sbomProblems(notices, { bomFormat: "SPDX" }).join("\n"), /CycloneDX/);
-  assert.match(sbomProblems("表の無い文書", bom([])).join("\n"), /package を読めない/);
+  assert.match(sbomProblems("a document without a table", bom([])).join("\n"), /cannot read any packages/);
 });
 
 test("fails when the SBOM lists a package that is not bundled (a mismatched scope would be false)", () => {
@@ -61,7 +61,7 @@ test("fails when the SBOM lists a package that is not bundled (a mismatched scop
       { name: "typescript", version: "7.0.2" },
     ]),
   );
-  assert.deepEqual(got, ["SBOM に同梱していない typescript 7.0.2 がある"]);
+  assert.deepEqual(got, ["SBOM lists typescript 7.0.2, which is not bundled"]);
 });
 
 test("fails on a malformed row in the notices table instead of leaving it out of the comparison", () => {
@@ -75,7 +75,7 @@ test("fails on a malformed row in the notices table instead of leaving it out of
     ]),
   );
   assert.deepEqual(got, [
-    "THIRD_PARTY_NOTICES.md の表の行を読めない: | react | 19.3.0 (patched) | MIT |",
-    "THIRD_PARTY_NOTICES.md の表の行を読めない: | ink | | MIT |",
+    "cannot read a THIRD_PARTY_NOTICES.md table row: | react | 19.3.0 (patched) | MIT |",
+    "cannot read a THIRD_PARTY_NOTICES.md table row: | ink | | MIT |",
   ]);
 });

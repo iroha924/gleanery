@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// plugin の配布物が変わったのにバージョンが上がっていないものを落とす。pre-commit はこれから作る commit を
-// 含めた作業ブランチ全体を（main の上では直前の commit と）、CI は `--base` で渡した commit から HEAD までをまとめて見る。
+// Fails when shipped plugin files changed without a version bump. pre-commit checks the whole work branch including the commit
+// being made (on main, against the previous commit), and CI checks everything from the `--base` commit to HEAD.
 //
-// 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
-// 見るのはソースではなくバンドルそのもの — `mcp.js` には search.ts も db.ts も
-// 畳み込まれるので、`mcp.ts` を触ったかだけで判定すると穴が開く（実際に開いた）。
+// .agents/skills/plugin-release/SKILL.md is the source of truth for delivery paths and failure modes.
+// It looks at the bundle inputs, not just the entry: `mcp.js` folds in search.ts and db.ts,
+// so judging only by whether `mcp.ts` changed leaves a hole (one did open).
 
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
@@ -24,27 +24,26 @@ const at = (ref, file) => {
 try {
   git("rev-parse", "HEAD");
 } catch {
-  // 最初のコミット。比べる先が無い。
+  // The first commit. There is nothing to compare with.
   process.exit(0);
 }
 
-// plugin channel のバージョンは 3 箇所にある。片方だけ上げても届かないので、全部を見る。
-// 実測（2026-09-09）: Claude 側が 13 回上がるあいだ、**Codex 側は作られたときの 0.1.0 のまま
-// 一度も上がっていなかった。**このゲート自身が Claude 側しか見ていなかったため、
-// 「バージョンを上げ忘れたら止まる」という約束が片側にしか効いていなかった。
-// npm package と plugin channel の 3 つは、配布物を変えるたびに同じバージョンへ揃えて上げる。
+// The plugin channel version lives in 3 places. Bumping only some of them does not deliver, so check all of them.
+// Measured (2026-09-09): while the Claude side was bumped 13 times, **the Codex side stayed at its initial 0.1.0
+// and was never bumped.** This gate only checked the Claude side, so the promise to stop a forgotten bump
+// held for one side only. The npm package and the 3 plugin channel manifests move to the same version whenever shipped files change.
 const PACKAGE = "plugin/package.json";
 const PLUGIN_MANIFESTS = {
-  // **バージョンは source の中にある。**entry 直下にも置くと、Claude Code は警告なく plugin.json を使い、
-  // marketplace の値が黙って無視される（公式の plugin-marketplaces）。置き場所は 1 つに保つ。
+  // **The version lives in source.** Putting it directly in the entry too makes Claude Code use plugin.json without warning
+  // and silently ignore the marketplace value (official plugin-marketplaces docs). Keep it in one place.
   ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.source?.version,
   "plugin/.claude-plugin/plugin.json": (j) => j.version,
   "plugin/.codex-plugin/plugin.json": (j) => j.version,
 };
 
-// バージョンも index から読む。作業ツリーで上げただけのバージョンは commit に入らない。
+// Read versions from the index too. A version bumped only in the working tree does not go into the commit.
 const read = (f) => JSON.parse(git("show", `:${f}`));
-/** index（commit に入る内容）での姿。ref を空にすると `git show :path` になる。 */
+/** The file as staged in the index (what the commit will contain). An empty ref gives `git show :path`. */
 const staged = (f) => at("", f);
 const packageVersion = read(PACKAGE).version;
 const versions = Object.entries(PLUGIN_MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
@@ -52,28 +51,30 @@ const distinct = [...new Set(versions.map(([, v]) => v))];
 if (distinct.length !== 1) {
   console.error(
     [
-      "plugin channel のバージョンが揃っていない。",
+      "plugin channel versions do not match.",
       "",
       ...versions.map(([f, v]) => `  ${v}  ${f}`),
       "",
-      "  配る先ごとにmanifestがある。片方だけ上げると、もう片方の利用者には",
-      "  古い中身が届き続ける。plugin channelの3つを同じバージョンにする。",
+      "  Each destination has its own manifest. Bumping only some keeps delivering",
+      "  old content to users of the others. Set all 3 plugin channel manifests to the same version.",
     ].join("\n"),
   );
   process.exit(1);
 }
 const pluginVersion = distinct[0];
 if (pluginVersion.localeCompare(packageVersion, undefined, { numeric: true }) > 0) {
-  console.error(`plugin channel（${pluginVersion}）をnpm package（${packageVersion}）より先へ進められない。`);
+  console.error(
+    `the plugin channel (${pluginVersion}) cannot be ahead of the npm package (${packageVersion}).`,
+  );
   process.exit(1);
 }
 
-// **変わったファイルも index（commit に入る内容）で見る。**作業ツリーを読むと、bundle が
-// 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
-// `--base` へ変えるだけで同じ比べ方になる。
-// manifest はバージョンを落とした姿（release-scope.mjs の withoutReleaseVersion）で比べる。
-// 基準を渡されなければ、作業ブランチでは main から分かれた点と比べる（ブランチの中で 1 回上げれば後の commit を積める）。
-// main の上と、分かれた点を取れないときは HEAD と比べる。CI は `--base` で PR の範囲全体を見る。
+// **Changed files are also read from the index (what the commit will contain).** Reading the working tree could read before bundle
+// finishes writing and pass. In CI the index equals HEAD right after checkout, so switching the base to
+// `--base` gives the same comparison.
+// Manifests are compared without their version (withoutReleaseVersion in release-scope.mjs).
+// Without a base, a work branch compares against its fork point from main (one bump in the branch covers later commits).
+// On main, or when the fork point is unavailable, compare with HEAD. CI checks the whole PR range with `--base`.
 function defaultBase() {
   try {
     if (git("symbolic-ref", "--quiet", "--short", "HEAD").trim() === "main") return "HEAD";
@@ -92,14 +93,14 @@ const changed = git("diff", "--cached", "--name-only", ref)
       (f !== PACKAGE && !(f in PLUGIN_MANIFESTS)) ||
       withoutReleaseVersion(at(ref, f)) !== withoutReleaseVersion(staged(f)),
   );
-/** major.minor.patch を数で比べる（文字列では 1.10.0 が 1.9.0 より小さくなる）。 */
+/** Compares major.minor.patch numerically (as strings, 1.10.0 would be less than 1.9.0). */
 const compare = (a, b) => {
   const [x, y] = [a, b].map((v) => String(v).split(".").map(Number));
   for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
   return 0;
 };
-// 基準を渡されないときは、分かれた点の後に main が出したバージョンも超える必要がある（CI は PR を今の main と比べる）。
-// origin/main が手元の main より古いこともあるので、両方を見て一番新しいものを取る
+// Without a base, the version must also exceed any version main shipped after the fork point (CI compares the PR with the current main).
+// origin/main can be older than the local main, so check both and take the newest
 const versionRefs = base ? [ref] : [ref, "refs/heads/main", "refs/remotes/origin/main"];
 const newest = (file) =>
   versionRefs
@@ -111,14 +112,14 @@ const newest = (file) =>
 const oldPackageVersion = newest(PACKAGE);
 const oldPluginVersion = newest("plugin/.claude-plugin/plugin.json");
 
-// **下げは配布物が変わっていなくても落とす。**利用者の cache は新しいバージョンにしか入れ替わらない。
-// 基準（分かれた点）に加えて直前の commit とも比べる（ブランチの中で上げた後の下げを見逃さない）。
+// **Lowering the version fails even without shipped changes.** User caches only move to newer versions.
+// Compare with the previous commit as well as the base (fork point), so a drop after a bump in the branch is caught.
 const versionAt = (r, file) => {
   const text = at(r, file);
   return text ? JSON.parse(text).version : undefined;
 };
 const headVersion = (file) => versionAt("HEAD", file);
-// main の新しいバージョンとは比べない（配布物を変えない commit まで止める）。それは配布物が変わったときだけ見る
+// Do not compare with main's newer version here (that would block commits that do not change shipped files). That is checked only when shipped files change
 for (const [was, now] of [
   [versionAt(ref, PACKAGE), packageVersion],
   [versionAt(ref, "plugin/.claude-plugin/plugin.json"), pluginVersion],
@@ -126,7 +127,7 @@ for (const [was, now] of [
   [headVersion("plugin/.claude-plugin/plugin.json"), pluginVersion],
 ]) {
   if (was && compare(now, was) < 0) {
-    console.error(`バージョンを ${was} から ${now} へ下げている。公開済みのバージョンより大きい値にする。`);
+    console.error(`the version goes down from ${was} to ${now}. Use a value above the published version.`);
     process.exit(1);
   }
 }
@@ -142,13 +143,13 @@ if (
 
 console.error(
   [
-    `plugin channelの${changed.length}個が変わったが、npm packageとpluginのバージョンが揃って上がっていない（${changed[0]}など）。`,
+    `${changed.length} plugin channel inputs changed, but the npm package and plugin versions were not bumped together (for example ${changed[0]}).`,
     "",
-    "  marketplace（GitHub）から入れた plugin は、Claude Code も Codex も <cache>/gleanery/gleanery/<バージョン>/ の複製から動く。",
-    "  複製はバージョンが変わったときだけ起きるので、このままではsessionへ届かない。",
+    "  A plugin installed from the marketplace (GitHub) runs from a copy at <cache>/gleanery/gleanery/<version>/ in both Claude Code and Codex.",
+    "  The copy is made only when the version changes, so as is, the change never reaches sessions.",
     "",
-    "  npm packageとplugin channelの3 manifestを同じ新しいversionへ上げる。",
-    "  marketplace の取得元へ入れた後、`gleanery doctor` の「plugin channel のバージョン」が出す更新手順を叩き、セッションを張り直す。",
+    "  Bump the npm package and the 3 plugin channel manifests to the same new version.",
+    '  After it reaches the marketplace source, run the update steps under "Plugin channel versions" in `gleanery doctor` and restart sessions.',
   ].join("\n"),
 );
 process.exit(1);

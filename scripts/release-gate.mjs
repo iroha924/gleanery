@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// tag から npm へ stage してよいかを確かめる。release.yml が stage の前後で 2 回呼ぶ。
-// 使い方: node scripts/release-gate.mjs --tag v1.2.3 --commit <sha>（GH_TOKEN と GITHUB_REPOSITORY が要る）
+// Checks whether a tag may be staged to npm. release.yml calls it twice, before and after staging.
+// Usage: node scripts/release-gate.mjs --tag v1.2.3 --commit <sha> (needs GH_TOKEN and GITHUB_REPOSITORY)
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -14,7 +14,7 @@ const { tag, commit } = parseArgs({
 }).values;
 const repo = process.env.GITHUB_REPOSITORY;
 if (!tag || !commit || !/^[0-9a-f]{40}$/.test(commit) || !repo) {
-  throw new Error("--tag・--commit（40 桁の sha）と GITHUB_REPOSITORY を渡す");
+  throw new Error("pass --tag, --commit (a 40-character sha), and GITHUB_REPOSITORY");
 }
 const run = (command, args) => execFileSync(command, args, { cwd: root, encoding: "utf8" }).trim();
 const api = (endpoint) => JSON.parse(run("gh", ["api", endpoint]));
@@ -28,16 +28,16 @@ try {
   mainIsAncestor = false;
 }
 
-// 注釈付きの tag は `^{}` の行が指す commit を取る
+// For an annotated tag, take the commit on the `^{}` line
 const refs = run("git", ["ls-remote", "origin", `refs/tags/${tag}`, `refs/tags/${tag}^{}`])
   .split("\n")
   .filter(Boolean)
   .map((line) => line.split("\t"));
-// ls-remote は ref の末尾でも当たる（`x/refs/tags/v1` も返る）ので、名前の完全一致で選ぶ
+// ls-remote also matches on the end of a ref (it returns `x/refs/tags/v1` too), so select by exact name
 const exact = (name) => refs.find(([, ref]) => ref === name)?.[0];
 const tagCommit = exact(`refs/tags/${tag}^{}`) ?? exact(`refs/tags/${tag}`) ?? null;
 
-// npm に同じバージョンがあるか。無ければ npm view は E404 で落ちる（それ以外の失敗は投げて止める）
+// Whether npm already has this version. If not, npm view fails with E404 (any other failure throws and stops)
 let published = false;
 try {
   published = run("npm", ["view", `gleanery@${tag.replace(/^v/, "")}`, "version"]) !== "";
@@ -66,4 +66,4 @@ if (problems.length) {
   console.error(problems.join("\n"));
   process.exit(1);
 }
-console.log(`${tag}: PR #${pull} の head ${commit} を stage してよい`);
+console.log(`${tag}: head ${commit} of PR #${pull} may be staged`);

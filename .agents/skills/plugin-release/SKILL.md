@@ -110,7 +110,7 @@ release commandが同じものを読む。
 10. `npm dist-tag add gleanery@<version> latest`で昇格する（OIDCはdist-tagに使えないので手元の認証で打つ）。
     `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
 11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
-    一覧し、残った工程が無いことを確かめる。観測に失敗した項目は「無い」ではなく「不明」と出る
+    一覧し、残った工程が無いことを確かめる。観測に失敗した項目は`none`や`not found`ではなく`unknown`と出る
 12. PR の本文の「Release notes」の節をそのまま使い、
     `gh release create v<version> --verify-tag --title v<version> --notes-file <file>`で GitHub Release を作る。
     節は持ち主が PR の最終レビューで確かめているので、作る前に改めて聞かない。節が無い・空なら作らずに持ち主へ戻す。

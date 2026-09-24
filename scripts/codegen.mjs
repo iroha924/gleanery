@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// db/schema.sql から kysely の型を作り、server/src/db-types.ts へ書く。
+// Builds kysely types from db/schema.sql and writes them to server/src/db-types.ts.
 //
-// 生成元はメモリ上の SQLite に db/schema.sql だけを当てたもので、手元の DB ではない。
-// kysely-codegen の CLI は better-sqlite3 を要求するので、programmatic API に node:sqlite のアダプタを渡す。
-// --check は生成した文字列と db-types.ts を比べる。schema.sql を変えたのに型を作り直し忘れた commit を止める。
+// The source is an in-memory SQLite database with only db/schema.sql applied, not a local database.
+// The kysely-codegen CLI requires better-sqlite3, so pass a node:sqlite adapter to the programmatic API instead.
+// --check compares the generated text with db-types.ts, stopping commits that change schema.sql without regenerating the types.
 
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -12,19 +12,19 @@ import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// kysely と kysely-codegen は server の依存にある。ここから解決して、検査のために root へ依存を足さない。
+// kysely and kysely-codegen are server dependencies. Resolve them from there instead of adding root dependencies for a check.
 const require = createRequire(path.join(root, "server/package.json"));
-// biome-ignore lint/correctness/noUndeclaredDependencies: server/package.json の依存を解決する
+// biome-ignore lint/correctness/noUndeclaredDependencies: resolved from server/package.json dependencies
 const { Kysely, SqliteDialect } = require("kysely");
-// biome-ignore lint/correctness/noUndeclaredDependencies: server/package.json の devDependencies を解決する
+// biome-ignore lint/correctness/noUndeclaredDependencies: resolved from server/package.json devDependencies
 const { generate, RawExpressionNode, SqliteDialect: GenSqlite } = require("kysely-codegen");
 const { adapt } = await import(path.join(root, "server/src/kysely-node-sqlite.ts"));
 
 const OUT = path.join(root, "server/src/db-types.ts");
 const check = process.argv.includes("--check");
 
-// JSON の文字列で持つ列。読むときは db.ts の JSON_COLUMNS が値へ戻し、書くときは JSON.stringify して渡す。
-// 文字列のまま渡すと kysely-codegen が TypeScript の parser で読もうとして落ちる（typescript 7 に旧 API が無い）。
+// Columns stored as JSON strings. On read, JSON_COLUMNS in db.ts turns them back into values; on write, callers pass JSON.stringify output.
+// Passing them as plain strings makes kysely-codegen try to parse them with the TypeScript parser and fail (typescript 7 lacks the old API).
 const type = (t) => new RawExpressionNode(t);
 const array = () => type("ColumnType<string[], string | undefined, string>");
 const overrides = {
@@ -37,7 +37,7 @@ const overrides = {
 };
 
 const raw = new DatabaseSync(":memory:");
-// trigger が参照するので登録だけ要る（型の生成では呼ばれない）。
+// Triggers reference it, so it must be registered (type generation never calls it).
 raw.function("gleanery_terms", () => "");
 raw.exec(fs.readFileSync(path.join(root, "db/schema.sql"), "utf8"));
 const db = new Kysely({ dialect: new SqliteDialect({ database: adapt(raw) }) });
@@ -45,7 +45,7 @@ const text = await generate({
   db,
   dialect: new GenSqlite(),
   outFile: null,
-  // FTS5 の仮想表と shadow table は kysely から触らない（検索は sql テンプレートで書く）。
+  // FTS5 virtual tables and shadow tables are not touched from kysely (search uses sql templates).
   excludePattern: "*_fts*",
   overrides,
   logger: { info() {}, warn() {}, error: console.error, debug() {}, success() {}, log() {} },
@@ -56,11 +56,11 @@ const rel = path.relative(root, OUT);
 if (check) {
   const now = fs.existsSync(OUT) ? fs.readFileSync(OUT, "utf8") : "";
   if (now !== text) {
-    console.error(`${rel} が db/schema.sql と合っていない。\`bun run codegen\` で作り直す`);
+    console.error(`${rel} does not match db/schema.sql. Regenerate it with \`bun run codegen\``);
     process.exit(1);
   }
-  console.log(`${rel} は db/schema.sql と一致している`);
+  console.log(`${rel} matches db/schema.sql`);
 } else {
   fs.writeFileSync(OUT, text);
-  console.log(`${rel} を db/schema.sql から作り直した`);
+  console.log(`regenerated ${rel} from db/schema.sql`);
 }

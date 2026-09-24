@@ -1,9 +1,9 @@
-// tag から npm へ stage してよいかの判定。release.yml の prepare と stage が同じ判定を通る。
-// 入力は git と GitHub API から集めたもので、ここでは判定だけをする（test で全部の分岐を通す）。
+// Decides whether a tag may be staged to npm. prepare and stage in release.yml go through the same decision.
+// The inputs are gathered from git and the GitHub API; this module only decides (tests cover every branch).
 
 const REQUIRED_WORKFLOWS = ["check", "pr-body"];
 
-/** 判定の失敗の一覧と、tag の commit を head に持つ PR の番号。problems が空なら stage してよい。 */
+/** The failed conditions and the number of the PR whose head is the tag commit. Empty problems means it may be staged. */
 export function gateProblems({
   tag,
   commit,
@@ -17,21 +17,21 @@ export function gateProblems({
 }) {
   const problems = [];
   const match = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(tag);
-  if (!match) problems.push(`tag ${tag} は v<version> の形ではない`);
+  if (!match) problems.push(`tag ${tag} is not in the form v<version>`);
   else
     for (const [key, version] of Object.entries(versions))
-      if (version !== match[1]) problems.push(`tag ${tag} と ${key} の version ${version} が一致しない`);
+      if (version !== match[1]) problems.push(`tag ${tag} does not match ${key} version ${version}`);
 
-  // 同じバージョンは npm が stage を拒むが、それは持ち主の承認の後になる。npm に既にあるバージョンをここで止める
-  if (published) problems.push(`tag ${tag} のバージョンは npm に既にある。バージョンを上げて tag を打ち直す`);
+  // npm rejects staging an existing version, but only after the owner approves. Stop an already published version here
+  if (published) problems.push(`the version of tag ${tag} is already on npm. Bump the version and tag again`);
 
-  // main が tag の commit の祖先なら、PR の CI が検査した仮の merge commit の tree は tag の commit の tree と同じになる
+  // If main is an ancestor of the tag commit, the tree of the trial merge commit PR CI checked equals the tag commit's tree
   if (!mainIsAncestor)
-    problems.push("tag の commit が今の main を取り込んでいない。PR の branch に main を merge し直す");
+    problems.push("the tag commit does not include the current main. Merge main into the PR branch again");
 
-  // prepare の後に tag が消されたり打ち直されたりしていれば、その artifact を出さない
+  // If the tag was deleted or moved after prepare, do not ship that artifact
   if (tagCommit !== commit)
-    problems.push(`remote の tag ${tag} が ${commit} を指していない（${tagCommit ?? "無い"}）`);
+    problems.push(`remote tag ${tag} does not point to ${commit} (${tagCommit ?? "missing"})`);
 
   const heads = pulls.filter(
     (pull) =>
@@ -42,7 +42,7 @@ export function gateProblems({
   );
   if (heads.length !== 1)
     problems.push(
-      `tag の commit を head に持つ、main へ向かう open な同じリポジトリの PR が 1 本ではない（${heads.length} 本）`,
+      `not exactly one open same-repository PR into main has the tag commit as head (${heads.length} found)`,
     );
 
   const number = heads.length === 1 ? heads[0].number : null;
@@ -56,9 +56,9 @@ export function gateProblems({
           (run.pull_requests ?? []).some((pr) => pr.number === number && pr.base?.ref === "main"),
       )
       .sort((a, b) => b.id - a.id)[0];
-    if (!latest) problems.push(`${name} がこの commit の PR で走っていない`);
+    if (!latest) problems.push(`${name} has not run on the PR for this commit`);
     else if (latest.status !== "completed" || latest.conclusion !== "success")
-      problems.push(`${name} の最後の実行が成功していない（${latest.status} / ${latest.conclusion}）`);
+      problems.push(`the latest ${name} run did not succeed (${latest.status} / ${latest.conclusion})`);
   }
   return { problems, pull: number };
 }
