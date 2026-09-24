@@ -65,7 +65,7 @@ bun run cli -- dashboard  # 端末の画面。TTY が要るので前面でだけ
 - Codex: PR ごとに merge の前。`codex-review` Skill の手順で頼む
 - GitHub の Codex（ChatGPT connector）: PR を作ると自動でレビューする。**結果が出る前に merge しない。**結果は、最後の push より後に付いた
   PR 本文への 👍（`gh api repos/<repo>/issues/<PR>/reactions` の `created_at`）か、head の commit に付いたレビュー（`commit_id`）。
-  古い push に付いた 👍 は結果に数えない。指摘を直して push したら、PR に `@codex review` とコメントして再レビューを頼む（持ち主に聞かずに投稿してよい）
+  レビューの最中は 👀 が付く。古い push に付いた 👍 は結果に数えない。指摘を直して push したら、PR に `@codex review` とコメントして再レビューを頼む（持ち主に聞かずに投稿してよい）
 
 ## 外へ出す文章
 
