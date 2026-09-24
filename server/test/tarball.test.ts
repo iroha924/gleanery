@@ -32,10 +32,7 @@ test("配る物が揃っていれば通り、追跡している manifest・Skill
       `${must} は配布物`,
     );
     const missing = new Set([...complete].filter((f) => f !== must));
-    assert.match(
-      tarballProblems(missing, tracked).join("\n"),
-      new RegExp(`${must.replace(/\./g, "\\.")}が無い`),
-    );
+    assert.ok(tarballProblems(missing, tracked).includes(`tarballに${must}が無い`), must);
   }
 });
 
