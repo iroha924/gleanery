@@ -1,208 +1,208 @@
 ---
 name: knowledge-schema
-description: gleaneryのDB schema（db/schema.sqlとdb/migrations、SQLite）、接続の役割とauthorizer、全文検索の索引（FTS5）、知識の種類と状態、取り込み元の書き方を変更する。table、列、CHECK、view、trigger、権限、新しいimport経路を触るときと、既存のDBへmigrationを当てるときに使う。端末の画面だけの変更には使わない。
+description: Changes gleanery's DB schema (db/schema.sql and db/migrations, SQLite), connection roles and authorizers, the full-text search index (FTS5), knowledge kinds and statuses, and how ingestion sources write. Use when touching tables, columns, CHECKs, views, triggers, permissions, or a new import path, and when applying a migration to an existing DB. Not for changes only to the terminal screen.
 ---
 
-# ナレッジschemaを変更する
+# Change the knowledge schema
 
 ## Triggers
 
-- `db/schema.sql`のtable、列、CHECK、index、view、triggerを変更する
-- `db/migrations`へ手順を足す、または`gleanery db migrate`を既存のDBへ当てる
-- 接続の役割（`server/src/sqlite.ts`・`server/src/db-write.ts`のauthorizer）を変える
-- 全文検索の索引（FTS5、`gleanery_terms`、`server/src/text.ts`の`terms()`）を変える
-- `knowledge`の種類・状態・stance、`message`の話者、`conversation`の出自、`message_file`の操作を変更する
-- 取り込み元を足す、またはGitHub同期・文書同期・自動記録・traceの書き方を変える
+- Changing tables, columns, CHECKs, indexes, views, or triggers in `db/schema.sql`
+- Adding a step to `db/migrations`, or applying `gleanery db migrate` to an existing DB
+- Changing connection roles (the authorizers in `server/src/sqlite.ts` and `server/src/db-write.ts`)
+- Changing the full-text search index (FTS5, `gleanery_terms`, `terms()` in `server/src/text.ts`)
+- Changing `knowledge` kinds, statuses, or stance, `message` speakers, `conversation` origins, or `message_file` actions
+- Adding an ingestion source, or changing how GitHub sync, docs sync, capture, or trace write
 
 ## Does not trigger
 
-- 既存schemaを読むだけの端末の画面を変更する
-- DBを作るだけの作業を行う
+- Changing the terminal screen, which only reads the existing schema
+- Work that only creates a DB
 
-## 正本とバージョン
+## Source of truth and versions
 
-DBは`node:sqlite`の1ファイル（`~/.gleanery/gleanery.db`）。正本は`db/schema.sql`の1本で、今の形だけを表す。
-Prisma・Drizzleのschemaを別の正本として足さない（Drizzleは不採用。FTS5の仮想表とtriggerを表せない）。
-新しいDBは`gleanery init`が一時ファイルへschema.sqlを当ててからrenameして作る（何度流してもよい）。
+The DB is a single `node:sqlite` file (`~/.gleanery/gleanery.db`). The only source of truth is `db/schema.sql`, which describes only the current shape.
+Do not add a Prisma or Drizzle schema as a second source (Drizzle was rejected: it cannot express FTS5 virtual tables and triggers).
+`gleanery init` creates a new DB by applying schema.sql to a temporary file and renaming it (safe to run any number of times).
 
-バージョンは`pragma user_version`で持つ。schema.sqlの末尾の`pragma user_version = N`と`server/src/sqlite.ts`の
-`SCHEMA_REVISION`を同じ数にする。readerとingestの接続は開くときに照合し、食い違えば止まる。
-**自動記録（capture）だけは照合しない。**確かめると、DBを上げてからpluginを上げるまで記録が丸ごと止まる。
-旧バージョンのまま書き続け、DBが弾いた記録は`rejected/`へ回る。
+The version is kept in `pragma user_version`. Keep `pragma user_version = N` at the end of schema.sql and `SCHEMA_REVISION` in `server/src/sqlite.ts`
+at the same number. The reader and ingest connections compare them on open and stop if they differ.
+**Only capture does not compare.** If it did, recording would stop entirely between upgrading the DB and upgrading the plugin.
+It keeps writing at the old version, and records the DB rejects go to `rejected/`.
 
-`db/migrations/NNNN_<名前>.sql`は既存のDBをrevision N-1からNへ進める手順で、正本ではない。
-`gleanery db migrate`（`server/src/admin.ts`の`applyMigrations`、owner）は、DBのバージョンより新しいmigrationを番号順に当て、
-**transactionごとに**`user_version`を上げる。途中で落ちても前のtransactionの分は残り、打ち直すとその続きから当たる。
+`db/migrations/NNNN_<name>.sql` is the step that moves an existing DB from revision N-1 to N; it is not a source of truth.
+`gleanery db migrate` (`applyMigrations` in `server/src/admin.ts`, owner) applies migrations newer than the DB's version in number order and
+raises `user_version` **per transaction**. If it fails midway, the earlier transactions stay, and running it again continues from there.
 
-- 宣言の無いmigrationは、続く分をまとめて1つのtransaction（`begin immediate`）で当てる
-- 表を消す・作り変える（`ALTER TABLE`。列の追加も含む）migrationは、1行目に`-- gleanery: foreign_keys=off`を書く。宣言の無いmigrationでは、runnerのauthorizerがdropとALTERを拒む。単独のtransactionで、その外で外部キーを切って当て、
-  commitの前に`pragma foreign_key_check`が空であることを確かめ、終わったら戻す。**宣言を忘れると、外部キーが効いたままのdropが
-  子の行をcascadeで消す。**知らない宣言と1行目以外の宣言は、当てる前に止まる
-- 行を消すのは宣言の無いmigrationで先に済ませる（外部キーが効いているので、cascadeとset nullが子孫を今の意味どおりに片付ける）。
-  作り直すmigrationは残った行を写すだけにする
-- autoincrementの表を作り直すときは、`sqlite_sequence`の値を控えて戻す（dropで消え、消したidが振り直される）
-- schema.sqlの作り直した表は`create table "表名"`の形で書く（renameの後の`sqlite_schema.sql`と文字列で揃える）
-- 名前の形・重複・欠番は`pendingMigrations`が止める。`.`で始まる名前は読まない
+- Migrations without a declaration are applied together, as one transaction (`begin immediate`) for each run of them
+- A migration that drops or rebuilds a table (`ALTER TABLE`, including adding a column) declares `-- gleanery: foreign_keys=off` on line 1. In a migration without it, the runner's authorizer rejects drops and ALTER. It runs in its own transaction, with foreign keys turned off outside it,
+  checks that `pragma foreign_key_check` is empty before commit, and turns them back on afterwards. **Forget the declaration, and a drop with foreign keys on
+  deletes child rows by cascade.** An unknown declaration, or a declaration anywhere but line 1, stops before anything is applied
+- Delete rows first, in a migration without the declaration (with foreign keys on, cascade and set null clean up descendants according to their current meaning).
+  The rebuilding migration only copies the remaining rows
+- When rebuilding an autoincrement table, save the `sqlite_sequence` value and restore it (a drop erases it, and deleted ids get reused)
+- Write rebuilt tables in schema.sql as `create table "table_name"` (to match the text of `sqlite_schema.sql` after a rename)
+- `pendingMigrations` stops on bad name shapes, duplicates, and gaps. Names starting with `.` are not read
 
-## schemaを変えるとき
+## When changing the schema
 
-1. 同じcommitで、schema.sql（今の形）と`db/migrations/NNNN_<名前>.sql`（既存のDBを運ぶ手順）を両方変え、
-   `user_version`と`SCHEMA_REVISION`をNNNNへ上げる。`server/test/migrate.test.ts`が「`db/migrations`は2から連続し、
-   最大が`SCHEMA_REVISION`とschema.sqlのバージョンに一致する」を検査する
-2. `bun run codegen`で`server/src/db-types.ts`を作り直す（メモリ上のSQLiteにschema.sqlを当てて生成する）。
-   **手で直さない。**CIの`codegen:check`がずれを落とす。JSONを文字列で持つ列（`refs`・`downsides`・`next`・
-   `metadata`）の型は`scripts/codegen.mjs`の`overrides`が付ける。生成列（`knowledge.stance`）は型に出ないので、
-   読む側は`sql<…>`で型を付ける
-3. 全表`strict`、主キーは全部`not null`を書く（SQLiteはinteger以外の主キーにNULLを許す）
-4. 時刻の列は`check (strftime('%Y-%m-%dT%H:%M:%fZ', 列) is 列)`を付ける。`=`で書くと不正な文字列でstrftimeが
-   NULLを返しCHECKを通る。書く側は`server/src/db.ts`の`iso()`を通す
-5. migrationに`BEGIN` / `COMMIT` / `ROLLBACK`を書かない。runnerがtransactionで包む。SQLiteのCHECKは行ごとに
-   すぐ評価される（deferredが無い）ので、既存の行に当たる制約を足す前に、違反する行が0件であることを確かめる
-6. 旧バージョンの自動記録は`db migrate`の後も新しいschemaへ書き続ける。captureの3つのviewの列を消す・改名する変更は、
-   全PCのpluginが上がった後の別のmigrationにする
-7. downは書かない
+1. In the same commit, change both schema.sql (the current shape) and `db/migrations/NNNN_<name>.sql` (the step that moves existing DBs), and
+   raise `user_version` and `SCHEMA_REVISION` to NNNN. `server/test/migrate.test.ts` checks that `db/migrations` runs consecutively from 2
+   and that the highest matches `SCHEMA_REVISION` and schema.sql's version
+2. Regenerate `server/src/db-types.ts` with `bun run codegen` (it applies schema.sql to an in-memory SQLite and generates from that).
+   **Do not edit it by hand.** CI's `codegen:check` fails on drift. For columns holding JSON as strings (`refs`, `downsides`, `next`,
+   `metadata`), `overrides` in `scripts/codegen.mjs` adds the types. Generated columns (`knowledge.stance`) do not appear in the types, so
+   readers type them with `sql<…>`
+3. Make every table `strict`, and write `not null` on every primary key (SQLite allows NULL in non-integer primary keys)
+4. Give time columns `check (strftime('%Y-%m-%dT%H:%M:%fZ', column) is column)`. Written with `=`, strftime returns NULL for an invalid string
+   and the CHECK passes. Writers go through `iso()` in `server/src/db.ts`
+5. Do not write `BEGIN` / `COMMIT` / `ROLLBACK` in migrations. The runner wraps them in a transaction. SQLite evaluates CHECKs immediately per row
+   (there is no deferred), so before adding a constraint that applies to existing rows, confirm 0 rows violate it
+6. Capture at the old version keeps writing to the new schema after `db migrate`. A change that drops or renames columns of capture's 3 views
+   goes in a separate migration, after the plugin is upgraded on every PC
+7. Do not write down migrations
 
-## SQL の書き方
+## How to write SQL
 
-applicationのクエリはkyselyで書き、結果型は推論させる。node:sqliteを直に扱ってよいのは`sqlite.ts`・`db-write.ts`・
-`db.ts`・`admin.ts`・アダプタ（`kysely-node-sqlite.ts`）だけで、`bun run sql`が他のファイルの`node:sqlite`の
-importと接続の関数の呼び出しを落とす。node:sqliteの接続を持つ変数は`raw`と呼ぶ（SQLの台帳が`raw.exec(` /
-`raw.prepare(`を数える）。
+Write application queries with kysely and let it infer result types. Only `sqlite.ts`, `db-write.ts`,
+`db.ts`, `admin.ts`, and the adapter (`kysely-node-sqlite.ts`) may use node:sqlite directly; `bun run sql` fails on `node:sqlite`
+imports and connection function calls in other files. Name variables holding a node:sqlite connection `raw` (the SQL ledger counts `raw.exec(` /
+`raw.prepare(`).
 
-| 形 | 書き方 |
+| Shape | How to write it |
 |---|---|
-| 1行に子の一覧を入れ子で持たせる | `kysely/helpers/sqlite`の`jsonArrayFrom` / `jsonObjectFrom`。列名は`db.ts`の`JSON_COLUMNS`へ足す（足さないと文字列のまま返る） |
-| JSONの列の値 | 読むと`ParseJSONResultsPlugin`が`JSON_COLUMNS`の列だけを値へ戻す。**名前で絞る**（既定の判定は`[`や`{`で始まる本文まで配列に化けさせる）。書くときは`JSON.stringify`して渡す |
-| 語彙検索 | `sql`テンプレートでFTS5の表を副問い合わせにしてjoinする（`search.ts`の`knowledgeFts`）。問いは`text.ts`の`ftsQuery`で組む |
-| 時刻 | 文字列（ISO 8601、UTC、ミリ秒まで）。辞書順が時系列順。画面とMCPへ渡す境界で`new Date()`にする |
-| 真偽値 | `integer`の0/1。node:sqliteはbooleanを束縛できない |
-| BLOB | 読むとBufferで返る（アダプタがUint8Arrayから直す）。`content_hash`は`.equals`で比べる |
-| 配列との照合 | kyselyの`in`でよい（SQLiteは空の`in ()`を受ける） |
-| 多件の書き込み | `insertInto().values([...])`を束（数百行）に分けて流す。1文の変数は32,766まで |
-| 上書き | `onConflict(...).doUpdateSet(...)`。変わった行だけを書くなら`.where("表.content_hash", "<>", eb.ref("excluded.content_hash"))` |
+| Nesting a list of children in one row | `jsonArrayFrom` / `jsonObjectFrom` from `kysely/helpers/sqlite`. Add the column names to `JSON_COLUMNS` in `db.ts` (otherwise they come back as strings) |
+| JSON column values | On read, `ParseJSONResultsPlugin` turns only the `JSON_COLUMNS` columns back into values. **Narrow it by name** (the default check turns even body text starting with `[` or `{` into arrays). On write, pass `JSON.stringify` output |
+| Word search | Join the FTS5 table as a subquery in a `sql` template (`knowledgeFts` in `search.ts`). Build the query with `ftsQuery` in `text.ts` |
+| Times | Strings (ISO 8601, UTC, to the millisecond). Lexical order is time order. Convert with `new Date()` at the boundary to the screen and MCP |
+| Booleans | `integer` 0/1. node:sqlite cannot bind booleans |
+| BLOBs | Come back as Buffer on read (the adapter converts from Uint8Array). Compare `content_hash` with `.equals` |
+| Matching against an array | kysely's `in` is fine (SQLite accepts an empty `in ()`) |
+| Writing many rows | Run `insertInto().values([...])` in batches (hundreds of rows). One statement allows up to 32,766 variables |
+| Upserts | `onConflict(...).doUpdateSet(...)`. To write only changed rows, `.where("table.content_hash", "<>", eb.ref("excluded.content_hash"))` |
 
-書くtransactionは`db.ts`の`inTransaction`（`begin immediate`）で張る。既定の`begin`は読みから始まり、書きへ上がる
-ときに別の書き手と当たると`busy_timeout`を待たずに`SQLITE_BUSY`で落ちる。kyselyのSQLiteの接続は1本なので、
-transactionの中で他の問い合わせを並行に投げない。`select ... for update`は無い（`begin immediate`が同じ役をする）。
+Open write transactions with `inTransaction` in `db.ts` (`begin immediate`). The default `begin` starts as a read, and when it upgrades to a write
+and meets another writer, it fails with `SQLITE_BUSY` without waiting for `busy_timeout`. kysely's SQLite connection is a single one, so
+do not run other queries in parallel inside a transaction. There is no `select ... for update` (`begin immediate` does the same job).
 
-## 表の境界
+## Table boundaries
 
-| 境界 | 表 | 書く口 |
+| Boundary | Tables | Writers |
 |---|---|---|
-| プロジェクトと人 | `project`、`person`、`person_identity` | CLI（project、who）、GitHub同期 |
-| 取り込み元の今の状態 | `connector`、`docs_exclude`、`source_item` | GitHub同期、文書同期、CLI（project exclude） |
-| 逐語の会話 | `conversation`、`message`、`message_file` | 自動記録（captureの3つのview）、GitHub同期 |
-| 検索する知識 | `knowledge`、`knowledge_file` | trace、文書同期、GitHub同期（merge した持ち主の PR の「Decisions」の節の行。旧い「採った案と棄却した案」の節も読む。`server/src/decisions.ts`） |
-| 作業の現在地 | `work_item` | trace |
+| Projects and people | `project`, `person`, `person_identity` | CLI (project, who), GitHub sync |
+| Current state of ingestion sources | `connector`, `docs_exclude`, `source_item` | GitHub sync, docs sync, CLI (project exclude) |
+| Verbatim conversations | `conversation`, `message`, `message_file` | Capture (capture's 3 views), GitHub sync |
+| Searchable knowledge | `knowledge`, `knowledge_file` | trace, docs sync, GitHub sync (lines of the "Decisions" section in the owner's merged PRs; it also reads the old Japanese heading of that section. `server/src/decisions.ts`) |
+| Where work stands | `work_item` | trace |
 
-用途ごとに表を増やさない。知識は`knowledge`一表で、種類は`kind`、「通ってはいけない道」かは
-生成列の`stance`（`do` / `dont` / `neutral`）で持つ。stanceをLLMに推測させない。
-会話は判断の検索（knowledge / avoid）に混ぜない。混ぜると作業ログが判断を押し出す。
+Do not add tables per use. Knowledge is the single `knowledge` table: its kind is `kind`, and whether it is a path not to take is
+the generated column `stance` (`do` / `dont` / `neutral`). Do not let an LLM guess the stance.
+Do not mix conversations into decision search (knowledge / avoid). Mixed in, work logs push decisions out.
 
-消えたと完全な一覧で確かめられた取り込み元の項目は行ごと消す。`deleted_at`や墓標を置かない。
-覆した決定は消さず、`status = 'superseded'`にして`superseded_by_id`で後継を指す（消すと再提案される）。
+Delete the rows of ingestion-source items confirmed gone by a complete listing. Do not keep `deleted_at` or tombstones.
+Do not delete overturned decisions: set `status = 'superseded'` and point to the successor with `superseded_by_id` (deleted ones get proposed again).
 
-## 全文検索の索引
+## Full-text search index
 
-検索は語の順位付き検索（FTS5のbm25）で、意味の近さは呼び出し側のAIが語を変えて引き直すことで補う（agentic search）。
+Search is ranked word search (FTS5's bm25). The calling AI makes up for semantic closeness by searching again with different words (agentic search).
 
-- `knowledge_fts`（rowid = `knowledge.id`、列は見出し`h`と本文 + 理由`b`、`bm25(knowledge_fts, 3, 1)`）と
-  `message_fts`（rowid = `message.seq`、`indexed = 1`の発言だけ）。どちらもcontentless（`contentless_delete=1`）
-- 語は`server/src/text.ts`の`terms()`が切る。**DBのtriggerが書くときに呼ぶ`gleanery_terms`と、問いを組む`ftsQuery`が
-  同じ関数を通る。**`gleanery_terms`は`db-write.ts`が書く接続ごとに登録する。登録していない接続（`sqlite3`のCLIなど）
-  からknowledge / messageへ書くと`no such function`で落ちる（索引を黙って欠かさない）
-- **`terms()`の規則を変えると、既存の索引は古いまま残る。**変えるPRはreleaseの手順に`gleanery db reindex`を書く
-- `message.seq`は明示の`integer primary key`（暗黙のrowidはVACUUMで振り直されうる）
-- 問いの語は必ず`"…"`で括り、中の`"`を二重にする（`ftsQuery`）。括らないと`AND`・`NEAR`・`:`・`-`が演算子になる
+- `knowledge_fts` (rowid = `knowledge.id`; columns are the heading `h` and body plus reason `b`; `bm25(knowledge_fts, 3, 1)`) and
+  `message_fts` (rowid = `message.seq`; only messages with `indexed = 1`). Both are contentless (`contentless_delete=1`)
+- `terms()` in `server/src/text.ts` splits words. **`gleanery_terms`, which the DB triggers call on write, and `ftsQuery`, which builds queries,
+  go through the same function.** `db-write.ts` registers `gleanery_terms` on each write connection. Writing to knowledge / message from a connection
+  without it (such as the `sqlite3` CLI) fails with `no such function` (so the index is never silently incomplete)
+- **Change the rules of `terms()`, and the existing index stays old.** A PR that changes them writes `gleanery db reindex` into the release steps
+- `message.seq` is an explicit `integer primary key` (an implicit rowid can be renumbered by VACUUM)
+- Always wrap query words in `"…"` and double any `"` inside (`ftsQuery`). Unwrapped, `AND`, `NEAR`, `:`, and `-` become operators
 
-測定は`server/evals/`（一発の検索は`evals:retrieval`、agentに使わせた精度は`evals:agentic`）。
+Measurements live in `server/evals/` (`evals:retrieval` for one-shot search, `evals:agentic` for accuracy when an agent uses it).
 
-## 値の域を変えるとき
+## When changing the set of values
 
-正本はschemaのCHECKで、写しは`server/src/knowledge.ts`の`KINDS`・`STATUSES`・`SPEAKERS`・`ORIGINS`・
-`FILE_ACTIONS`にある。片方だけに足すと、DBだけなら検索の札が空になり、コードだけなら取り込みや
-自動記録がCHECKで落ちる。`scripts/check-pairs.mjs`が両者を突き合わせる。
+The source of truth is the schema's CHECKs; the copies are `KINDS`, `STATUSES`, `SPEAKERS`, `ORIGINS`, and
+`FILE_ACTIONS` in `server/src/knowledge.ts`. Add to only one side, and if only the DB has it, search badges come out empty; if only the code has it, ingestion
+and capture fail the CHECK. `scripts/check-pairs.mjs` compares the two.
 
-種類や状態を足したら、同じ変更で次のインターフェースも扱う。
+After adding a kind or status, handle these interfaces in the same change.
 
-- `server/src/search.ts`の絞り込みと、`stance`の式が新しい値をどちらへ振るか
-- `server/src/mcp.ts`の入力schemaと説明（`recall`の`kinds`）
-- `plugin/skills/trace/SKILL.md`の記録の契約と、`server/src/trace.ts`の検査
-- `gleanery dashboard`（`server/src/tui/`）の表示と検索
-- 列挙できる対なら`scripts/check-pairs.mjs`へ足す
+- The filters in `server/src/search.ts`, and which way the `stance` expression sorts the new value
+- The input schema and descriptions in `server/src/mcp.ts` (`kinds` of `recall`)
+- The record contract in `plugin/skills/trace/SKILL.md`, and the checks in `server/src/trace.ts`
+- The display and search of `gleanery dashboard` (`server/src/tui/`)
+- If the pair can be listed, add it to `scripts/check-pairs.mjs`
 
-## 接続の役割
+## Connection roles
 
-同じOSユーザーのプロセスはDBファイルを直接書き換えられるので、OSの権限境界ではない。守るのは
-「gleaneryのコードが誤って・untrustedな文章に唆されて書く」経路である。
+Processes of the same OS user can rewrite the DB file directly, so this is not an OS permission boundary. What it guards is
+the path where gleanery's code writes by mistake, or because untrusted text talked it into it.
 
-| 役割 | 開き方 | authorizer | 使うインターフェース |
+| Role | How it opens | Authorizer | Interfaces using it |
 |---|---|---|---|
-| owner | 書ける | 掛けない | `gleanery db *`（`admin.ts`） |
-| reader | `readOnly` | 読む・許した関数だけ。DDL・ATTACH・pragmaを拒む | MCP、端末の画面、`gleanery search` |
-| ingest | 書ける | DDL・ATTACH・仮想表の作成・書き換えるpragmaを拒む | `harvest`・`trace save`・`who`・`project` |
-| capture | 書ける | 3つのview（`capture_*`）へのinsertとそのtriggerの中の書き込みだけ。読めるのは`project`のid・key・nameと`message`のid | 自動記録（`capture.ts`） |
+| owner | Writable | None | `gleanery db *` (`admin.ts`) |
+| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the terminal screen, `gleanery search` |
+| ingest | Writable | Rejects DDL, ATTACH, creating virtual tables, and pragmas that write | `harvest`, `trace save`, `who`, `project` |
+| capture | Writable | Only inserts into the 3 views (`capture_*`) and the writes in their triggers. It can read only `project`'s id, key, and name, and `message`'s id | Capture (`capture.ts`) |
 
-- 書く接続は`server/src/db-write.ts`にだけ置く。MCPと端末の画面のentryから辿って届かないことを`bun run architecture`が見る
-- `enableDefensive(true)`を全部の接続で有効にする（FTS5のshadow tableへの直接の書き込みを止める）。node:sqliteの
-  既定でも有効だが、既定が変わっても外れないよう明示する
-- authorizerのactionは`constants`の名前で参照し、数値を書かない（`SQLITE_UPDATE`と`SQLITE_DETACH`を取り違えた記録がある）
-- 初期化の順は固定: 開く → defensiveとpragma → `gleanery_terms` → authorizer。authorizerの後だとpragmaが弾かれる
-- captureのviewに無い列（`source_item_id`・`identity_id`・`reply_to_id`・`url`）は名乗れない。GitHubの会話を作ることも、
-  他人の身元を名乗ることもできない。**件数を影響行数で数えない**（viewへのinsertは0になる。送る前に在ったidとの差で数える）
-- readerの関数の許可リスト（`sqlite.ts`の`READER_FUNCTIONS`）に足すのは、testが`not authorized`で落ちたときだけ
-- 権限はコードを読むだけで判定しない。`server/test/db.test.ts`が役割ごとの禁止操作を実際の接続で確かめる
+- Write connections live only in `server/src/db-write.ts`. `bun run architecture` checks they cannot be reached from the MCP and terminal screen entries
+- Enable `enableDefensive(true)` on every connection (it stops direct writes to FTS5's shadow tables). node:sqlite's
+  default enables it too, but it is explicit so that a change in the default does not turn it off
+- Refer to authorizer actions by their names in `constants`, not by number (there is a record of mixing up `SQLITE_UPDATE` and `SQLITE_DETACH`)
+- The initialization order is fixed: open → defensive and pragmas → `gleanery_terms` → authorizer. After the authorizer, pragmas get rejected
+- Columns not in capture's views (`source_item_id`, `identity_id`, `reply_to_id`, `url`) cannot be claimed. It can neither create GitHub conversations
+  nor claim someone else's identity. **Do not count rows by affected rows** (an insert into a view reports 0; count by the difference from the ids present before sending)
+- Add to the reader's function allowlist (`READER_FUNCTIONS` in `sqlite.ts`) only when a test fails with `not authorized`
+- Do not judge permissions by reading code alone. `server/test/db.test.ts` checks each role's forbidden operations on real connections
 
-## 書き込み
+## Writes
 
-`content_hash`が一致する行は書き直さない（毎日の同期で全行を書き直さない）。
+Do not rewrite rows whose `content_hash` matches (a daily sync does not rewrite every row).
 
-新しい取り込み元は`gleanery harvest`にも繋ぐ。手動のcommandだけを足して完了にしない。
+Connect a new ingestion source to `gleanery harvest` too. Adding only a manual command does not finish the job.
 
-### 文書
+### Documents
 
-文書同期（`server/src/docs.ts`）は、remoteの既定branchの**commit tree**を読む。作業ツリーは読まない。
-`connector.head_oid`に入れたcommitを持ち、そこからfast-forwardできるcommitだけを自動で入れる。
-fast-forwardでなければ一度だけ取り直し、前に入れたcommit以降まで進んでいれば（同時に走った別の同期が先に入れた）
-何も書かずに終える。進んでいなければ巻き戻し・force-pushとして書かずに止め、`gleanery harvest --cwd <dir> --reset-docs`を
-案内する。巻き戻しを成功扱いにしない — 漏れた文書を巻き戻して消したときに、検索に黙って残る。
-投影の規則（節の割り方、前置する文脈）を変えたら`PROJECTION`の定数を上げる。次の同期で全文書が書き直される。
+Docs sync (`server/src/docs.ts`) reads the **commit tree** of the remote's default branch. It does not read the working tree.
+It keeps the commit it took in `connector.head_oid`, and takes only commits that fast-forward from it automatically.
+If it is not a fast-forward, it fetches once more; if the branch has moved past the previously taken commit (another sync running at the same time took it first),
+it ends without writing. If not, it treats it as a rewind or force-push, stops without writing, and points to `gleanery harvest --cwd <dir> --reset-docs`.
+Do not treat a rewind as success: when a leaked document is removed by rewinding, it would silently stay in search.
+When changing the projection rules (how sections are split, what context is prepended), raise the `PROJECTION` constant. The next sync rewrites every document.
 
-- 取り込まない`path`は`docs_exclude`（docsのconnectorに紐づく）に置き、blobを読む前に当てる。追跡された
-  Markdownが全部「事実を述べた文書」とは限らない（監査のfixtureは、取り込むと架空の規約が本物より上位で返る）
-- `.gleanery/`（入れ子も含む）は取り込まない。以前の要件定義・設計書の置き場所で、承認していない下書きが残りうる
-- 原文は`source_item`（`kind`が`document`、`body`に原文）、検索するのは`knowledge`の`document`の節である。
-  節の連結から原文は戻らない
+- Put `path`s not to ingest in `docs_exclude` (tied to the docs connector), applied before blobs are read. Not all tracked
+  Markdown is a document stating facts (audit fixtures, if ingested, would return made-up conventions above the real ones)
+- Do not ingest `.gleanery/` (nested ones included). It used to hold requirements and design docs, and unapproved drafts may remain
+- The original text is in `source_item` (`kind` is `document`, the text in `body`); what gets searched is the `document` sections in `knowledge`.
+  Joining the sections does not give back the original
 
 ### GitHub
 
-GitHub同期（`server/src/github.ts`）は`gh api`で毎回全件を取る。取得を始めた時刻を`connector.snapshot_at`に持ち、
-それより前に始めた取得は遅れてcommitしても書かない。
-`source_item.closed_at`はPRならmergeした時刻（mergeせず閉じたなら閉じた時刻）、issueなら閉じた時刻で、
-`state = 'open'`と`closed_at is null`が一致することをCHECKが強制する。
+GitHub sync (`server/src/github.ts`) fetches everything each time with `gh api`. It keeps the time it started fetching in `connector.snapshot_at`,
+and a fetch started before that does not write even if it commits late.
+`source_item.closed_at` is the merge time for a PR (the close time if it closed without merging) and the close time for an issue;
+a CHECK enforces that `state = 'open'` matches `closed_at is null`.
 
-## 検証
+## Verification
 
-testは一時ディレクトリの本物のSQLite（`server/test/temp-db.ts`）でSQLを実行して結果を見る。`~/.gleanery`を触らない。
+Tests run SQL on a real SQLite database in a temporary directory (`server/test/temp-db.ts`) and look at the results. Do not touch `~/.gleanery`.
 
-- `bun run verify`に次が入っている
-  - `sql:reach`: `server/src`のSQLのcall site（`LIVE_FILES`を除く）が、testの中で本物のSQLiteに実行されたかをV8のカバレッジで数える。
-    実行されていない箇所をfile:lineで挙げる
-  - `sql:live`: CLIと自動記録のフックを子プロセスで一時HOMEのDBへ通す（`LIVE_FILES`の全call site）
-- `bun run codegen:check`: `db-types.ts`がschema.sqlと一致するか
-- migrationを足したら、空のDBへ`gleanery init`した形と、前のバージョンから`db migrate`した形で`sqlite_schema`が一致することを確かめる（`server/test/migration-artifacts.test.ts`が前のschemaのfixtureから当てる形）
+- `bun run verify` includes:
+  - `sql:reach`: counts with V8 coverage whether each SQL call site in `server/src` (except `LIVE_FILES`) ran against a real SQLite inside tests.
+    It lists the sites that did not run, by file:line
+  - `sql:live`: runs the CLI and the capture hooks as child processes against a DB in a temporary HOME (every call site in `LIVE_FILES`)
+- `bun run codegen:check`: whether `db-types.ts` matches schema.sql
+- After adding a migration, confirm that `sqlite_schema` matches between a `gleanery init` on an empty DB and a `db migrate` from the previous version (`server/test/migration-artifacts.test.ts` applies it from a fixture of the previous schema)
 
-## 既存のDBへ当てる
+## Applying to an existing DB
 
-DBはPCごとに独立している。**当てるのは自分のPCのDBだけで、他のPCへは届かない。**各PCでそれぞれ当てる。
+Each PC has its own DB. **You apply to your own PC's DB only; it does not reach other PCs.** Apply on each PC.
 
-DBが古いときにMCPの応答が`db migrate`を案内しても、AIがそれを読んでそのまま当てない。持ち主が端末で打つ。
+When the DB is old and an MCP reply points to `db migrate`, the AI does not read that and apply it. The owner runs it in a terminal.
 
-1. mergeする
-2. 控えを取る。MCPと自動記録を止めてから`~/.gleanery/gleanery.db`（と`-wal`・`-shm`）を複写する。当てて問題が出たときに
-   戻せるのはこれだけで、**取らずに当てると戻せない**
-3. 持ち主が端末で`gleanery db migrate`を叩き、当てる一覧を確かめてyesを打つ
-4. pluginを更新する（`plugin-release`）
-5. `gleanery doctor`で確かめる
+1. Merge
+2. Take a backup. Stop MCP and capture, then copy `~/.gleanery/gleanery.db` (and `-wal` and `-shm`). If applying causes a problem,
+   this is the only way back; **apply without it, and there is no way back**
+3. The owner runs `gleanery db migrate` in a terminal, checks the list to apply, and answers yes
+4. Update the plugin (`plugin-release`)
+5. Check with `gleanery doctor`
 
-戻すなら2の控えで置き換える。控えを取った後に入った自動記録とtraceは消える。コード側も同じcommitまで戻す。
+To roll back, replace the DB with the backup from step 2. Capture and trace written after the backup are lost. Roll the code back to the same commit too.

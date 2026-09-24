@@ -1,31 +1,31 @@
-# 検証
+# Verification
 
-## release
+## Release
 
-- 配布物に入る変更は、バージョンを編集する前に `bun run release:plan -- --base <前回のrelease commit>` を流し、出た種別で扱う <!-- invariant: release-plan -->
-  - `none`: release しない
-  - `plugin`: 配布物に入る変更（MCP・CLI・端末の画面・hook・plugin Skill/Agent・共有 module）。npm と 3 つの plugin manifest を同じバージョンへ上げる
-- npm へ出すのは、PR の head に打った `v<version>` の tag から `.github/workflows/release.yml` が stage した tarball だけ。手元から `npm publish` しない。stage の承認・merge・latest への昇格は `plugin-release` Skill の手順で手で打つ
-- release の各段の前に `plugin-release` Skill を開き直し、書かれたコマンドをそのまま打つ。environment `npm-release` の承認、npm の Staged Packages の承認、`npm dist-tag add` は持ち主がする。Claude は代わりに押さない・打たない <!-- invariant: release-owner-steps -->
+- For a change that goes into the package, run `bun run release:plan -- --base <previous release commit>` before editing the version, and handle it by the kind it reports <!-- invariant: release-plan -->
+  - `none`: no release
+  - `plugin`: a change that goes into the package (MCP, CLI, terminal screen, hooks, plugin Skills and Agents, shared modules). Bump npm and the 3 plugin manifests to the same version
+- The only thing published to npm is the tarball `.github/workflows/release.yml` stages from the `v<version>` tag on the PR head. Do not run `npm publish` locally. Stage approval, the merge, and promotion to latest follow the `plugin-release` Skill's steps, run by hand
+- Before each release step, reopen the `plugin-release` Skill and run its commands exactly as written. The owner approves the `npm-release` environment, approves npm Staged Packages, and runs `npm dist-tag add`. Claude does not click or run these in the owner's place <!-- invariant: release-owner-steps -->
 
-## test
+## Tests
 
-- 一時ディレクトリの本物の SQLite（`server/test/temp-db.ts`）で SQL を実行し、結果を見る。組み立てた SQL の文字列を照合しない（実行されない SQL が緑のまま通る） <!-- invariant: real-sqlite-tests -->
-- `~/.gleanery` を触らない。DB の path は引数か `GLEANERY_DB` で渡す
-- `sql:reach` は `server/src` の SQL の call site（`LIVE_FILES` を除く。そちらは `sql:live`）が test で実行されたかを数える。台帳は `scripts/lib/sql-call-sites.mjs`
-- CLI と自動記録の hook は `sql:live` が子プロセスで通す。子の `HOME` は一時ディレクトリにし、親の `GLEANERY_DB` を渡さない（持ち主の `~/.gleanery` を読み書きする） <!-- invariant: temp-home -->
-- 前提が無いときに skip しない。落とす（CI で常に飛んで緑になる） <!-- invariant: no-silent-skip -->
-- 外部 API に繋がない。資格情報なしで通す。GitHub は偽の `gh` を PATH の先頭に置く（`scripts/lib/live-harness.mjs`） <!-- invariant: no-external-api -->
-- 接続は `TempDb.done()` で閉じる（掴んだままだと `verify` が終わらない）。期限の正本は `server/package.json` の `--test-timeout`
+- Run SQL on a real SQLite database in a temporary directory (`server/test/temp-db.ts`) and look at the results. Do not match built SQL strings (SQL that never runs stays green) <!-- invariant: real-sqlite-tests -->
+- Do not touch `~/.gleanery`. Pass the DB path as an argument or through `GLEANERY_DB`
+- `sql:reach` counts whether tests ran each SQL call site in `server/src` (except `LIVE_FILES`, which `sql:live` covers). The ledger is `scripts/lib/sql-call-sites.mjs`
+- `sql:live` runs the CLI and the capture hooks as child processes. Set the child's `HOME` to a temporary directory and do not pass the parent's `GLEANERY_DB` (otherwise it reads and writes the owner's `~/.gleanery`) <!-- invariant: temp-home -->
+- Do not skip when a precondition is missing. Fail (otherwise it always skips in CI and stays green) <!-- invariant: no-silent-skip -->
+- Do not connect to external APIs. Pass without credentials. For GitHub, put a fake `gh` first on PATH (`scripts/lib/live-harness.mjs`) <!-- invariant: no-external-api -->
+- Close connections with `TempDb.done()` (a held connection keeps `verify` from finishing). The source of truth for the time limit is `--test-timeout` in `server/package.json`
 
-## SQLite の返り値
+## SQLite return values
 
-- BLOB は Uint8Array で返る。`server/src/kysely-node-sqlite.ts` が Buffer に揃える <!-- invariant: sqlite-values -->
-- 行は prototype を持たない object で返る（`assert.deepStrictEqual` は prototype まで比べる）
-- STRICT の表は変換できる値（`"1"` → 1）を受ける。拒むことを確かめる値は変換できないものにする
-- `integer primary key` の表の `returning rowid` は主キーの名前で返る。`returning rowid as rowid` と書く
-- node:sqlite は defensive が既定で有効。外して落ちることを確かめるときは `enableDefensive(false)`
+- BLOBs come back as Uint8Array. `server/src/kysely-node-sqlite.ts` converts them to Buffer <!-- invariant: sqlite-values -->
+- Rows come back as objects without a prototype (`assert.deepStrictEqual` compares prototypes too)
+- STRICT tables accept values they can convert (`"1"` → 1). To check a rejection, use a value that cannot be converted
+- In a table with an `integer primary key`, `returning rowid` comes back under the primary key's name. Write `returning rowid as rowid`
+- node:sqlite enables defensive mode by default. To check that something fails without it, use `enableDefensive(false)`
 
-## 配布物
+## Package
 
-- `plugin/dist` と `plugin/db` は追跡しないので `git diff` に出ない。`npm pack` して repository の外へ展開し、中身を数えて起動する <!-- invariant: pack-and-inspect -->
+- `plugin/dist` and `plugin/db` are untracked, so they do not show in `git diff`. Run `npm pack`, unpack it outside the repository, count its contents, and start it <!-- invariant: pack-and-inspect -->

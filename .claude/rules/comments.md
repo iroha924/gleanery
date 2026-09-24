@@ -10,9 +10,9 @@ paths:
   - "**/.gitignore"
 ---
 
-# コメント
+# Comments
 
-- 1〜3 行。それを越える説明は Skill か設計文書へ置いてパスで指す <!-- invariant: comment-length -->
-- 太字は 1 ファイルに 1 つまで
-- 設定ファイルでは、その設定自体が言っていることを書かない。ファイルから読めない外側の事情（生成元、グローバル設定に頼らない理由）だけを書く
-- 触ったファイルの古いコメントは、その変更の中で消す
+- 1 to 3 lines. Put longer explanations in a Skill or design doc and point to its path <!-- invariant: comment-length -->
+- At most one bold phrase per file
+- In config files, do not write what the setting itself says. Write only the outside context the file cannot show (where it is generated from, why it does not rely on a global setting)
+- Delete stale comments in a file you touch, in the same change

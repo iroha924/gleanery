@@ -1,169 +1,169 @@
 ---
 name: plugin-release
-description: gleaneryのMCP、CLI（端末の画面を含む）、自動記録のhook、plugin SkillまたはAgentを変更してnpmへ届ける。bundleのエントリポイントとその依存module、versionの一致、Claude/Codex両方への到達確認が対象。DB schemaやroleの変更は先にknowledge-schemaを使い、配るところでこのSkillを使う。
+description: Ships changes to gleanery's MCP, CLI (including the terminal screen), capture hooks, or plugin Skills and Agents to npm. Covers bundle entry points and the modules they depend on, matching versions, and confirming delivery to both Claude and Codex. For DB schema or role changes, use knowledge-schema first, then this Skill to ship.
 ---
 
-# 配布物を届ける
+# Ship the package
 
 ## Triggers
 
-- `server/src/mcp.ts`、`server/src/cli.ts`、`server/src/capture.ts`、またはそれらがimportするmoduleを変更する
-- `plugin/hooks/hooks.json`を変更する
-- `plugin/skills/`を変更する
-- 配布するversionを上げる、npmへpublishする
-- ローカル変更がClaude CodeやCodexに届かない原因を調べる
+- Changing `server/src/mcp.ts`, `server/src/cli.ts`, `server/src/capture.ts`, or modules they import
+- Changing `plugin/hooks/hooks.json`
+- Changing `plugin/skills/`
+- Bumping the shipped version, or publishing to npm
+- Investigating why local changes do not reach Claude Code or Codex
 
 ## Does not trigger
 
-- DB schemaやroleを変更する。その場合は`knowledge-schema`を先に使う（schema は配布物に入るので、release はこの Skill で行う）
+- Changing the DB schema or roles. Use `knowledge-schema` first for that (the schema ships in the package, so the release uses this Skill)
 
-## 配布経路
+## Distribution path
 
-**正本はnpmのpackage 1つ**で、Claude CodeとCodexのpluginはmarketplaceの`npm` sourceでそれを指す。
-Claude Codeはpackageをnpm clientで解決し、tarballをplugin cacheへ展開する。
+**The source of truth is a single npm package**, and the Claude Code and Codex plugins point to it through the marketplace's `npm` source.
+Claude Code resolves the package with the npm client and unpacks the tarball into the plugin cache.
 
-- **install scriptは走らず、依存もinstallされない。**tarballは自己完結している必要がある
-  （`bun build`でバンドルした1 fileずつを同梱する）。DBは`node:sqlite`（Nodeの組み込み）なので、ネイティブ依存を持たない
-- CLIはInkを含むので`scripts/bundle-cli.ts`（`Bun.build`）でバンドルする。Inkは`DEV=true`のときだけ`react-devtools-core`を
-  読みにいくので、`ink/build/devtools.js`を空のmoduleへ差し替える（差し替えないと、上の階層に`react-devtools-core`が
-  ある環境で起動ごと落ちる）
-- 同梱の`db/schema.sql`（と、あれば`db/migrations`）を`gleanery init` / `gleanery db migrate`が読む。CIは展開した
-  tarballの CLI で一時HOMEに`init`を打って確かめる
-- cacheはバージョンが変わったときだけ更新される。`bun run bundle`やcommitだけでは届かず、publishまで届かない
-- CLIは実行した場所の`dist/cli.js`を読むため、CLIで動くことはMCPで動く証拠にならない
-- 自動記録のhookは`${CLAUDE_PLUGIN_ROOT}/dist/capture.js`を叩くので、これもcacheのバージョンで動く
-- **`plugin/dist`はgitで追跡しない。**buildはpublishのときに作る
+- **No install scripts run, and no dependencies are installed.** The tarball must be self-contained
+  (it ships one file each, bundled with `bun build`). The DB is `node:sqlite` (built into Node), so there are no native dependencies
+- The CLI includes Ink, so it is bundled with `scripts/bundle-cli.ts` (`Bun.build`). Ink loads `react-devtools-core` only when `DEV=true`,
+  so `ink/build/devtools.js` is replaced with an empty module (without that, it fails at startup in environments with `react-devtools-core`
+  in a parent directory)
+- `gleanery init` / `gleanery db migrate` read the bundled `db/schema.sql` (and `db/migrations`, if any). CI checks it by running `init`
+  in a temporary HOME with the CLI from the unpacked tarball
+- The cache updates only when the version changes. `bun run bundle` or a commit alone does not deliver anything; nothing arrives until publish
+- The CLI reads `dist/cli.js` where it is run, so working in the CLI is no proof that it works in MCP
+- The capture hooks call `${CLAUDE_PLUGIN_ROOT}/dist/capture.js`, so they too run at the cache's version
+- **`plugin/dist` is not tracked by git.** The build is made at publish time
 
-### Skillからの起動経路
+### How Skills start the CLI
 
-Skillが CLI を呼ぶときは、**package内のJSを直接起動する**。
+When a Skill calls the CLI, it **starts the JS inside the package directly**.
 
 ```text
-node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" <サブコマンド>
+node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" <subcommand>
 ```
 
-npmの`bin`は、利用者が`npm i -g`したときの`gleanery`コマンド用であって、**plugin内のPATHへ公開される契約は
-無い**。`${CLAUDE_PLUGIN_ROOT}/bin/gleanery`のようなshell scriptに依存すると、Windowsで動かないうえ、
-npm sourceでは置かれる保証も無い。
+npm's `bin` is for the `gleanery` command users get from `npm i -g`; **there is no contract that exposes it on the PATH
+inside the plugin**. Depending on a shell script like `${CLAUDE_PLUGIN_ROOT}/bin/gleanery` does not work on Windows, and
+the npm source does not even guarantee it is placed.
 
-## 依存を足すとき
+## Adding dependencies
 
-`dist/`は依存のcodeをそのまま含むので、**バンドルしてnpmのdependenciesを0にしても同梱の義務は消えない**。
-MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写しと（あれば）NOTICEの内容を求める。
+`dist/` contains dependency code as is, so **bundling to 0 npm dependencies does not remove the duty to include notices**.
+MIT requires the copyright notice and license text; Apache-2.0 section 4 requires a copy of the License and the contents of NOTICE (if any).
 
-- `server/`へ依存を足したら`bun run notices`を通す。SPDXが読めない package があれば落ちる
-- `plugin/THIRD_PARTY_NOTICES.md`は`bun run bundle`が`node_modules`から作り直す。追跡せず、publishする物に入る
-- ライセンス文を同梱しない package は`scripts/licenses/<SPDX>.txt`の写しで補う。写しが無いものは出典を載せる
-- **GPL / AGPL / SSPLの依存を足さない。**MITで配れなくなる
+- After adding a dependency to `server/`, pass `bun run notices`. It fails if a package's SPDX cannot be read
+- `bun run bundle` rebuilds `plugin/THIRD_PARTY_NOTICES.md` from `node_modules`. It is untracked and ships in what is published
+- For packages that do not include their license text, supply a copy in `scripts/licenses/<SPDX>.txt`. Where there is no copy, cite the source
+- **Do not add GPL / AGPL / SSPL dependencies.** They would stop us from shipping under MIT
 
-## 届けるまで
+## Shipping
 
-最初に`bun run release:plan -- --base <前回のrelease commit>`で変更を分類する。
+First, classify the change with `bun run release:plan -- --base <previous release commit>`.
 
-**持ち主がするのは次の3つだけで、Claudeは代わりに押さない・打たない。**それ以外のコマンドはClaudeが下の手順の文面のまま打つ。
-各段の前に、持ち主へ何を承認するか（runのURL、stage ID、version）を渡して待つ。
+**The owner does only these 3, and Claude does not click or run them in the owner's place.** Claude runs every other command exactly as written in the steps below.
+Before each of them, hand the owner what to approve (the run URL, the stage ID, the version) and wait.
 
-| 段 | 持ち主がすること | 理由 |
+| Step | What the owner does | Why |
 |---|---|---|
-| 6 | GitHub Actionsのrunの画面でenvironment `npm-release`を承認する | reviewerは持ち主だけ |
-| 7 | npmjs.comのStaged Packagesでprovenanceを見て、2FAで承認する（却下も同じ画面） | 2FAは持ち主の端末にある |
-| 10 | 自分の端末で`npm dist-tag add`を打つ（Claude Codeの入力欄から打つときだけ先頭に`!`を付ける。shellで`!`を付けると終了コードが反転する） | OTPを求めるnpmのコマンドは、TTYの無いClaudeのshellでは認証のURLが`***`に伏せられ、EOTPで落ちる |
+| 6 | Approve the `npm-release` environment on the GitHub Actions run page | The owner is the only reviewer |
+| 7 | Look at provenance in npmjs.com's Staged Packages and approve with 2FA (rejecting uses the same page) | 2FA is on the owner's device |
+| 10 | Run `npm dist-tag add` in their own terminal (add `!` in front only when typing it into Claude Code's input; in a shell, `!` inverts the exit code) | npm commands that ask for an OTP fail with EOTP in Claude's shell, which has no TTY, because the auth URL is masked as `***` |
 
-`npm stage`は手元のnpm（miseのNode 24.15.0に同梱の11.12.1）に無いので、release jobのNode 24.21.0と同じ版を
-`npx -y npm@11.19.0`で使う。ほかのnpmのコマンドは手元の`npm`で打つ。`npm stage download`が認証を求めたら、
-Claudeが`npm login --auth-type=web`を打ち、出たURLを持ち主に開いてもらう（このコマンドはURLを伏せない）。
+Local npm (11.12.1, bundled with mise's Node 24.15.0) has no `npm stage`, so use the same version as the release job's Node 24.21.0
+through `npx -y npm@11.19.0`. Run other npm commands with local `npm`. If `npm stage download` asks for auth,
+Claude runs `npm login --auth-type=web` and has the owner open the URL it prints (this command does not mask the URL).
 
-Renovate の依存更新の PR（月 1、1 本）と lockfile の見直しの PR は直接 merge しない。依存は配布物の入力なので、バージョンを
-上げない PR は CI の version gate で落ちる。release の PR に取り込んでバージョンを上げて出し、元の PR は取り込んだ後に閉じる
-（先に閉じると Renovate がその更新を無視することがある）。脆弱性の修正は月 1 を待たずに出す。
+Do not merge Renovate's dependency PRs (1 a month) or lockfile maintenance PRs directly. Dependencies are package inputs, so a PR
+that does not bump the version fails CI's version gate. Pull them into a release PR, bump the version, ship it, and close the original PR after pulling it in
+(closed first, Renovate may ignore that update). Ship vulnerability fixes without waiting for the monthly one.
 
-| 種別 | 変更 | 動かすversion |
+| Kind | Changes | Versions to move |
 |---|---|---|
-| `none` | 配らない開発文書、repository開発用Skill、testだけ（ルートの`README.md`は npm に入るので`plugin`） | 無し |
-| `plugin` | MCP、CLI（端末の画面を含む）、自動記録、hook、plugin Skill/Agent、共有module | npm packageとplugin channelの3箇所 |
+| `none` | Dev docs that do not ship, repository dev Skills, tests only (the root `README.md` goes into npm, so it is `plugin`) | None |
+| `plugin` | MCP, CLI (including the terminal screen), capture, hooks, plugin Skills and Agents, shared modules | The npm package and the 3 places of the plugin channel |
 
-判定の正本は`scripts/lib/release-scope.mjs`で、version gateと
-release commandが同じものを読む。
+The source of truth for the classification is `scripts/lib/release-scope.mjs`; the version gate and
+the release command read the same file.
 
-1. release versionを決める。`plugin`は次を全部そこへ揃える
-   - npmの`package.json`
+1. Decide the release version. For `plugin`, bring all of these to it
+   - npm's `package.json`
    - `plugin/.claude-plugin/plugin.json`
    - `plugin/.codex-plugin/plugin.json`
-   - marketplaceの`npm` sourceの**exact version**（範囲や`latest`を書かない。同じcommitが時期によって
-     別のtarballを解決する）
-   - gitのtag
-2. marketplace entry直下に`version`を置かない。`plugin.json`が無警告で優先され、古い値がupdateを隠す
-最初のreleaseの前に一度だけ、持ち主が画面で設定する（無いとreleaseが止まる、または保護なしで進む）。
+   - The **exact version** of the marketplace's `npm` source (no ranges or `latest`: the same commit would resolve
+     different tarballs over time)
+   - The git tag
+2. Do not put `version` directly under the marketplace entry. `plugin.json` silently wins, and a stale value hides updates
+Once, before the first release, the owner sets these up in the web UI (without them, the release stops or goes ahead unprotected).
 
-- GitHub: environment `npm-release`（reviewerは持ち主、自己承認の禁止はoff、deploymentはtag `v*`を許す）。
-  `release.yml`の`prepare`は承認者のいないenvironmentを拒む
-- GitHub: tag `v*`の作成・更新・削除を持ち主だけに限るruleset
-- npm: trusted publisher（repository `iroha924/gleanery`、workflow `release.yml`、environment `npm-release`、
-  直接のpublishは許さずstageだけ）、2FA必須、tokenでのpublishを禁止
+- GitHub: the `npm-release` environment (reviewer is the owner, self-approval prevention off, deployments allowed from tags `v*`).
+  `prepare` in `release.yml` rejects an environment with no approver
+- GitHub: a ruleset limiting creating, updating, and deleting tags `v*` to the owner
+- npm: trusted publisher (repository `iroha924/gleanery`, workflow `release.yml`, environment `npm-release`,
+  staging only, no direct publish), 2FA required, publishing with tokens disallowed
 
-3. PRを作り、CI（`check`・`pr-body`）とCodexのレビューを通す。PRのbranchにmainを取り込んだ状態にする
-   （mainが先へ進んでいると、CIが検査したtreeとtagのtreeが一致しない）
-4. **PRのhead**に`git tag v<version> <head>`を打ってpushする。mainではなくheadに打つので、merge前に候補を検査できる。
-   tagを作れるのは持ち主のアカウントだけ（rulesetで限る）。Claudeはこのマシンの持ち主の認証でpushする
-5. `.github/workflows/release.yml`が動く。`prepare`がtagと全versionの一致、tagのcommitがmainへ向かうopenなPRのhead
-   であること、そのheadで`check`と`pr-body`が成功していることを確かめ（`scripts/release-gate.mjs`）、`verify`の後に
-   `npm pack`して`scripts/check-tarball.mjs`で検査する（一覧、リポジトリの外での起動、一時HOMEでの`init`）。
-   SHA-512とintegrityがjob summaryに出る
-6. 持ち主がenvironment `npm-release`を承認する。すると`stage`が同じ判定をもう一度通し、同じtarballのSHA-512を照合してから
-   `npm stage publish <tgz> --tag next --provenance`を打つ。stage IDがjob summaryに出る
-7. Claudeが`npx -y npm@11.19.0 stage download <stage-id>`を打ち、`shasum -a 512`の値が5のSHA-512と一致することを
-   確かめて、stage IDとSHA-512を持ち主に渡す。持ち主がnpmjs.comのStaged Packagesで承認する（provenanceを見て2FAで認証する）。
-   一致しない・provenanceが無いなら承認を頼まず、同じ画面で却下してもらう
-8. mergeの直前にPRのheadとbaseが動いていないことを見て、`gh pr merge <PR> --merge --match-head-commit <head>`で
-   mergeする。`git diff --exit-code <head> <merge commit>`でtreeが変わっていないことを確かめる。差分があれば
-   `latest`へ上げない
-9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、リポジトリの
-   `node <repository>/scripts/check-tarball.mjs <tgz>`が通ることを確かめる。SBOMのattestationも
-   `gh attestation verify <tgz> --repo iroha924/gleanery --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/gleanery/.github/workflows/release.yml`で確かめる
-10. 持ち主が自分の端末で`npm dist-tag add gleanery@<version> latest`を打つ。これで昇格する（OIDCはdist-tagに使えない）。
-    Claudeが`npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
-11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
-    一覧し、残った工程が無いことを確かめる。観測に失敗した項目は`none`や`not found`ではなく`unknown`と出る
-12. PR の本文の「Release notes」の節をそのまま使い、
-    `gh release create v<version> --verify-tag --title v<version> --notes-file <file>`で GitHub Release を作る。
-    節は持ち主が PR の最終レビューで確かめているので、作る前に改めて聞かない。節が無い・空なら作らずに持ち主へ戻す。
-    git log を貼らない（OpenSSF Best Practices の`release_notes`が認めない）
+3. Open a PR and pass CI (`check`, `pr-body`) and the Codex review. Keep main merged into the PR branch
+   (if main has moved ahead, the tree CI checked and the tag's tree do not match)
+4. Run `git tag v<version> <head>` on **the PR head** and push it. Tagging the head, not main, lets the candidate be checked before the merge.
+   Only the owner's account can create tags (the ruleset limits it). Claude pushes with the owner's credentials on this machine
+5. `.github/workflows/release.yml` runs. `prepare` checks that the tag matches every version, that the tag's commit is the head of an open PR into main,
+   and that `check` and `pr-body` succeeded on that head (`scripts/release-gate.mjs`); after `verify`, it runs
+   `npm pack` and checks the result with `scripts/check-tarball.mjs` (the file list, starting outside the repository, `init` in a temporary HOME).
+   The SHA-512 and integrity appear in the job summary
+6. The owner approves the `npm-release` environment. `stage` then runs the same checks again, compares the SHA-512 of the same tarball, and
+   runs `npm stage publish <tgz> --tag next --provenance`. The stage ID appears in the job summary
+7. Claude runs `npx -y npm@11.19.0 stage download <stage-id>`, confirms that the `shasum -a 512` value matches the SHA-512 from step 5,
+   and hands the stage ID and SHA-512 to the owner. The owner approves it in npmjs.com's Staged Packages (checking provenance and authenticating with 2FA).
+   If it does not match or has no provenance, do not ask for approval; have the owner reject it on the same page
+8. Right before merging, check that the PR's head and base have not moved, and merge with `gh pr merge <PR> --merge --match-head-commit <head>`.
+   Confirm with `git diff --exit-code <head> <merge commit>` that the tree did not change. If there is a difference,
+   do not promote to `latest`
+9. In a clean temporary directory, run `npm pack gleanery@<version> --silent`, and confirm that the SHA-512 matches step 5 and that the repository's
+   `node <repository>/scripts/check-tarball.mjs <tgz>` passes. Also check the SBOM attestation with
+   `gh attestation verify <tgz> --repo iroha924/gleanery --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/gleanery/.github/workflows/release.yml`
+10. The owner runs `npm dist-tag add gleanery@<version> latest` in their own terminal. This promotes it (OIDC cannot be used for dist-tags).
+    Claude checks with `npm view gleanery dist-tags --json` that `next` and `latest` both point to `<version>`
+11. List npm's dist-tags, the remote tag, the global CLI, the marketplace, and the Claude/Codex caches with `bun run release:status`,
+    and confirm no step remains. Items it failed to observe show as `unknown`, not `none` or `not found`
+12. Use the PR body's "Release notes" section as is, and
+    create the GitHub Release with `gh release create v<version> --verify-tag --title v<version> --notes-file <file>`.
+    The owner checked the section in the PR's final review, so do not ask again before creating it. If the section is missing or empty, do not create it; go back to the owner.
+    Do not paste git log (OpenSSF Best Practices' `release_notes` does not accept it)
 
-**同じ`v<version>`のtagを打ち直さない。**同じversionは二度stageもpublishもできず、provenanceの参照先も追えなくなる。
+**Do not re-tag the same `v<version>`.** The same version cannot be staged or published twice, and provenance's references could no longer be followed.
 
-- stageの前後で失敗した: 持ち主がStaged Packagesでstageを却下し、直してversionを上げ、新しいtagで出し直す
-- 承認した後にmergeできなかった: `latest`へ上げず、持ち主が自分の端末で`npm dist-tag add gleanery@<直前の正常版> next`を打って`next`を戻し、
-  新しいversionで出し直す
-- `stage`の成功後にrunを再実行しない（同じversionのstageが衝突する）
+- Failed before or after staging: the owner rejects the stage in Staged Packages; fix it, bump the version, and ship again with a new tag
+- Could not merge after approval: do not promote to `latest`; the owner runs `npm dist-tag add gleanery@<previous good version> next` in their own terminal to put `next` back,
+  and ship again with a new version
+- Do not rerun the run after `stage` succeeded (a stage of the same version would collide)
 
-mergeからnpmの承認までの間は、marketplaceが未公開のversionを指さないよう、承認をmergeより先に済ませる（7→8の順）。
+So that the marketplace never points to an unpublished version between the merge and npm approval, finish the approval before the merge (steps 7 then 8).
 
-## 届いたことを確かめる
+## Confirming it arrived
 
-`gleanery doctor`は「npm packageのバージョン」と「plugin channelのバージョン」を分けて出す。
+`gleanery doctor` shows "npm package versions" and "Plugin channel versions" separately.
 
-1. Claude Code: marketplaceを更新してinstallし直し、開いているsessionで`/reload-plugins`。
-   対話端末の無いsessionはMCPが次のsessionまで旧バージョンのまま
-2. Codex: 同じくmarketplaceを更新してから開き直す
-3. **`npm i -g gleanery@<バージョン>`も叩く。**`npm i -g`で入れたCLIはplugin のcacheと別経路で、
-   ホストの更新では上がらない。**DBのrevisionを上げた回は、これを忘れると古いCLIだけが
-   「revision N を期待している」で落ちる**（実測: revision 5へ上げた後、globalのCLIが0.32.0のまま残った）
-4. `gleanery doctor`で、npm packageはrepositoryとglobal CLI、plugin channelはrepositoryと両ホストのcacheが
-   それぞれ揃い、実行中のMCPに張り直しの指示が残っていないことを見る
-5. 反映後のsessionから`recall`を呼び、変更したMCP tool、Skill、Agentの中身を確かめる。自動記録を変えたなら、
-   そのsessionの発言が`gleanery dashboard`のセッションに出ることと、`gleanery doctor`の「自動記録」行に待ちが
-   残っていないことも見る
+1. Claude Code: update the marketplace, reinstall, and run `/reload-plugins` in open sessions.
+   In sessions without an interactive terminal, MCP stays at the old version until the next session
+2. Codex: likewise, update the marketplace and reopen
+3. **Also run `npm i -g gleanery@<version>`.** The CLI installed with `npm i -g` is a separate path from the plugin cache,
+   and host updates do not upgrade it. **In a release that raised the DB revision, forgetting this leaves only the old CLI
+   failing with "expects revision N"** (measured: after moving to revision 5, the global CLI stayed at 0.32.0)
+4. In `gleanery doctor`, check that the npm package matches between the repository and the global CLI, that the plugin channel matches between the repository
+   and both hosts' caches, and that no reconnect instruction remains for the running MCP
+5. From a session after the update, call `recall` and check the contents of the changed MCP tools, Skills, and Agents. If capture changed,
+   also check that the session's messages show in `gleanery dashboard`'s sessions, and that the "Recording" line in `gleanery doctor` has nothing
+   waiting
 
-`plugin/skills/review/reviewers/`もcache経由なので、保存やsession再起動だけでは新しい本文にならない。
-観点を変更する場合は先に`plugin-agent-authoring`も読む。
+`plugin/skills/review/reviewers/` also goes through the cache, so saving or restarting a session does not give the new text.
+When changing aspects, read `plugin-agent-authoring` first too.
 
-## plugin Skill
+## Plugin Skills
 
-- 明示起動だけにするSkillは、SKILL.mdの`disable-model-invocation: true`（Claude Code）と、Skillディレクトリの
-  `agents/openai.yaml`の`policy.allow_implicit_invocation: false`（Codex）を対で置く。Codexは前者を解釈しない。
-  対は`verify:ai`が検査する
-- `allowed-tools`に`${CLAUDE_PLUGIN_ROOT}`を書いた事前承認は効く（2026-09-12に、`claude -p "/gleanery:<skill>" --plugin-dir <plugin>
-  --permission-mode default --output-format json`で`permission_denials`が空だった。利用者の設定にgleaneryを許すBashのルールは無い）
-- 届いた後の確認では、Codexで`$gleanery:<skill>`の明示起動でも本文が読まれることを確かめる
+- For a Skill that should start only when explicitly called, pair `disable-model-invocation: true` in SKILL.md (Claude Code) with
+  `policy.allow_implicit_invocation: false` in the Skill directory's `agents/openai.yaml` (Codex). Codex does not read the former.
+  `verify:ai` checks the pair
+- Pre-approval in `allowed-tools` written with `${CLAUDE_PLUGIN_ROOT}` works (on 2026-09-12, `claude -p "/gleanery:<skill>" --plugin-dir <plugin>
+  --permission-mode default --output-format json` returned empty `permission_denials`; the user's settings had no Bash rule allowing gleanery)
+- When checking after delivery, confirm in Codex that the body is read when explicitly started with `$gleanery:<skill>` too
 
-人向けのCLI出力とAI向けのMCP応答は別々に確認する。
+Check the human-facing CLI output and the AI-facing MCP replies separately.
