@@ -48,7 +48,7 @@ const ENGLISH = [
   "server/src/db-write.ts",
   "server/src/text.ts",
   "server/src/docs.ts",
-  ...filesUnder("scripts", /\.(m?js|ts|d\.mts)$/).filter((f) => !SCRIPTS_LATER.has(f)),
+  ...filesUnder("scripts", /\.(c?js|mjs|m?ts|tsx)$/).filter((f) => !SCRIPTS_LATER.has(f)),
   "server/evals/cases.ts",
   "server/evals/retrieval.ts",
   "server/test/assets.test.ts",

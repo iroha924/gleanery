@@ -3,7 +3,7 @@
 // being made (on main, against the previous commit), and CI checks everything from the `--base` commit to HEAD.
 //
 // .agents/skills/plugin-release/SKILL.md is the source of truth for delivery paths and failure modes.
-// It looks at the bundle inputs, not just the entry: `mcp.js` folds in search.ts and db.ts,
+// It judges by everything that goes into the bundle, not by the entry source alone: `mcp.js` folds in search.ts and db.ts,
 // so judging only by whether `mcp.ts` changed leaves a hole (one did open).
 
 import { execFileSync } from "node:child_process";

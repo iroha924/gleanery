@@ -469,7 +469,7 @@ if (!fs.existsSync(PEER)) {
   }
   // --resume opens a path where, if --agent is dropped, the reviewer runs with Edit and Write.
   if (/`[^`]*claude -p[^`]*--resume/.test(peer)) fail.push(`the claude launch in ${PEER} uses --resume`);
-  // **Bash is the only tool that can write** (measured: a reviewer with only Read and Bash created a file).
+  // **Limit the tools that can write to Bash** (measured: a reviewer with only Read and Bash created a file).
   // Bash goes only to aspects that need to run things, so it is allowed, but no aspect needs Edit or Write.
   for (const tool of ["Edit", "Write", "NotebookEdit"]) {
     if (new RegExp(`"tools"[^\\]]*${tool}`).test(peer)) {
