@@ -11,6 +11,9 @@
       "server/test/**",
       "server/evals/**",
       "scripts/**/*.mjs",
+      "scripts/**/*.ts",
+      "scripts/**/*.mts",
+      "server/*.json",
       "*.json",
       "!server/src/db-types.ts"
     ]
@@ -36,9 +39,10 @@
       }
     }
   },
-  "css": {
-    "parser": {
-      "tailwindDirectives": true
+  "overrides": [
+    {
+      "includes": ["server/test/**"],
+      "linter": { "rules": { "suspicious": { "noSkippedTests": "error" } } }
     }
-  }
+  ]
 }
