@@ -60,6 +60,10 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
 
 最初に`bun run release:plan -- --base <前回のrelease commit>`で変更を分類する。
 
+**手順のコマンドはClaudeが打つ。**持ち主に頼むのは、environment `npm-release`の承認と、npmの2FAやブラウザでの認証
+（コマンドが出す認証のURLを開く）だけ。「手元で」はCIではなくこのマシンで、という意味で、持ち主が打つという意味ではない。
+手元のnpmに`stage`が無い版なら、CIと同じ版で`npx -y npm@11.19.0 stage …`と打つ（release jobのNode 24.21.0が同梱する版）。
+
 Renovate の依存更新の PR（月 1、1 本）と lockfile の見直しの PR は直接 merge しない。依存は配布物の入力なので、バージョンを
 上げない PR は CI の version gate で落ちる。release の PR に取り込んでバージョンを上げて出し、元の PR は取り込んだ後に閉じる
 （先に閉じると Renovate がその更新を無視することがある）。脆弱性の修正は月 1 を待たずに出す。
@@ -91,15 +95,15 @@ release commandが同じものを読む。
 3. PRを作り、CI（`check`・`pr-body`）とCodexのレビューを通す。PRのbranchにmainを取り込んだ状態にする
    （mainが先へ進んでいると、CIが検査したtreeとtagのtreeが一致しない）
 4. **PRのhead**に`git tag v<version> <head>`を打ってpushする。mainではなくheadに打つので、merge前に候補を検査できる。
-   tagは持ち主だけが作れる（rulesetで限る）
+   tagを作れるのは持ち主のアカウントだけ（rulesetで限る）。Claudeはこのマシンの持ち主の認証でpushする
 5. `.github/workflows/release.yml`が動く。`prepare`がtagと全versionの一致、tagのcommitがmainへ向かうopenなPRのhead
    であること、そのheadで`check`と`pr-body`が成功していることを確かめ（`scripts/release-gate.mjs`）、`verify`の後に
    `npm pack`して`scripts/check-tarball.mjs`で検査する（一覧、リポジトリの外での起動、一時HOMEでの`init`）。
    SHA-512とintegrityがjob summaryに出る
-6. environment `npm-release`を承認すると、`stage`が同じ判定をもう一度通し、同じtarballのSHA-512を照合してから
+6. 持ち主がenvironment `npm-release`を承認すると、`stage`が同じ判定をもう一度通し、同じtarballのSHA-512を照合してから
    `npm stage publish <tgz> --tag next --provenance`を打つ。stage IDがjob summaryに出る
 7. 手元で`npm stage download <stage-id>`を打ち、`shasum -a 512`の値が5のSHA-512と一致することを確かめる。
-   npmjs.comのStaged Packagesでprovenanceを確かめ、2FAで承認する（`npm stage approve <stage-id>`でもよい）。
+   npmjs.comのStaged Packagesでprovenanceを確かめ、Claudeが`npm stage approve <stage-id>`を打ち、持ち主が2FAで認証する。
    一致しない・provenanceが無いなら承認せず`npm stage reject <stage-id>`
 8. mergeの直前にPRのheadとbaseが動いていないことを見て、`gh pr merge <PR> --merge --match-head-commit <head>`で
    mergeする。`git diff --exit-code <head> <merge commit>`でtreeが変わっていないことを確かめる。差分があれば
@@ -107,7 +111,7 @@ release commandが同じものを読む。
 9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、リポジトリの
    `node <repository>/scripts/check-tarball.mjs <tgz>`が通ることを確かめる。SBOMのattestationも
    `gh attestation verify <tgz> --repo iroha924/gleanery --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/gleanery/.github/workflows/release.yml`で確かめる
-10. `npm dist-tag add gleanery@<version> latest`で昇格する（OIDCはdist-tagに使えないので手元の認証で打つ）。
+10. `npm dist-tag add gleanery@<version> latest`で昇格する（OIDCはdist-tagに使えないので、Claudeが手元で打ち、持ち主がブラウザで認証する）。
     `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
 11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
     一覧し、残った工程が無いことを確かめる。観測に失敗した項目は`none`や`not found`ではなく`unknown`と出る
