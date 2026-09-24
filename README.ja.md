@@ -3,6 +3,7 @@
 [![License](https://img.shields.io/github/license/iroha924/gleanery)](https://github.com/iroha924/gleanery/blob/main/LICENSE)
 [![CI](https://github.com/iroha924/gleanery/actions/workflows/check.yml/badge.svg)](https://github.com/iroha924/gleanery/actions/workflows/check.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/iroha924/gleanery/badge)](https://scorecard.dev/viewer/?uri=github.com/iroha924/gleanery)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14787/badge)](https://www.bestpractices.dev/projects/14787)
 [![SLSA Build L2](https://img.shields.io/badge/SLSA-Build%20L2-green)](https://www.npmjs.com/package/gleanery#provenance)
 [![Dependabot: GitHub Actions](https://img.shields.io/badge/Dependabot-GitHub%20Actions-025E8C?logo=dependabot)](https://github.com/iroha924/gleanery/blob/main/.github/dependabot.yml)
 
