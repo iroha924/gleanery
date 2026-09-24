@@ -222,12 +222,8 @@ for (const [anchor, owner] of [
     fail(`.agents/skills/plugin-release/SKILL.md: the step with \`${anchor}\` must say \`${owner}\``);
   }
 }
-// Sentences end at a period before whitespace, not at the dots in `release.yml` or `npm@11.19.0`. Table rows explain why the owner acts, so they are skipped.
-const releaseSentences = releaseSteps
-  .split("\n")
-  .filter((line) => !line.trimStart().startsWith("|"))
-  .join("\n")
-  .split(/\.(?=\s)|\n\s*\n|\n(?=\s*(?:\d+\.|-) )/);
+// Sentences end at a period before whitespace, not at the dots in `release.yml` or `npm@11.19.0`. Each table cell counts as one.
+const releaseSentences = releaseSteps.split(/\.(?=\s)|\n\s*\n|\n(?=\s*(?:\d+\.|-) )|\|/);
 for (const sentence of releaseSentences) {
   if (/\bClaude\b/i.test(sentence) && /\bapprov|dist-tag add/i.test(sentence)) {
     fail(`.agents/skills/plugin-release/SKILL.md: Claude must not approve or promote: ${sentence.trim()}`);

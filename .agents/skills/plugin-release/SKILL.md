@@ -67,7 +67,7 @@ Before each of them, hand the owner what to approve (the run URL, the stage ID, 
 |---|---|---|
 | 6 | Approve the `npm-release` environment on the GitHub Actions run page | The owner is the only reviewer |
 | 7 | Look at provenance in npmjs.com's Staged Packages and approve with 2FA (rejecting uses the same page) | 2FA is on the owner's device |
-| 10 | Run `npm dist-tag add` in their own terminal (add `!` in front only when typing it into Claude Code's input; in a shell, `!` inverts the exit code) | npm commands that ask for an OTP fail with EOTP in Claude's shell, which has no TTY, because the auth URL is masked as `***` |
+| 10 | Run `npm dist-tag add` in their own terminal (the `!` prefix is only for this session's input box; in a shell, `!` inverts the exit code) | npm commands that ask for an OTP fail with EOTP in Claude's shell, which has no TTY, because the auth URL is masked as `***` |
 
 Local npm (11.12.1, bundled with mise's Node 24.15.0) has no `npm stage`, so use the same version as the release job's Node 24.21.0
 through `npx -y npm@11.19.0`. Run other npm commands with local `npm`. If `npm stage download` asks for auth,
