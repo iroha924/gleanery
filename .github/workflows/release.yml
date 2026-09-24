@@ -136,7 +136,9 @@ jobs:
           name: sbom
           path: ${{ runner.temp }}/sbom
       - name: SBOM と同梱の告知を照合する
-        run: node scripts/check-sbom.mjs "$RUNNER_TEMP/sbom/sbom.cdx.json"
+        run: |
+          set -eo pipefail
+          node scripts/check-sbom.mjs "$RUNNER_TEMP/sbom/sbom.cdx.json" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

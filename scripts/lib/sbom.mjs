@@ -1,5 +1,5 @@
 // SBOM（CycloneDX）が、バンドルして配る依存を全部載せているかの照合。配る依存の正本は THIRD_PARTY_NOTICES.md の表
-// （scripts/third-party-notices.mjs が node_modules から作る）。SBOM が多く載せるのは構わない。足りない側だけが偽りになる。
+// （scripts/third-party-notices.mjs が node_modules から作る）。足りなくても多すぎても、SBOM が配る物の中身を偽る。
 
 /** THIRD_PARTY_NOTICES.md の表の package とバージョン。 */
 function noticed(text) {
@@ -22,5 +22,8 @@ export function sbomProblems(noticesText, bom) {
       .filter((c) => c.type === "library")
       .map((c) => `${c.group ? `${c.group}/${c.name}` : c.name} ${c.version}`),
   );
-  return [...want].filter((p) => !have.has(p)).map((p) => `SBOM に ${p} が無い`);
+  return [
+    ...[...want].filter((p) => !have.has(p)).map((p) => `SBOM に ${p} が無い`),
+    ...[...have].filter((p) => !want.has(p)).map((p) => `SBOM に同梱していない ${p} がある`),
+  ];
 }

@@ -39,10 +39,27 @@ test("同梱した package が SBOM に無い、版が違うと落とす", () =>
       { name: "zod", version: "4.6.4" },
     ]),
   );
-  assert.deepEqual(got, ["SBOM に @inkjs/ui 2.0.0 が無い", "SBOM に zod 4.6.5 が無い"]);
+  assert.deepEqual(got, [
+    "SBOM に @inkjs/ui 2.0.0 が無い",
+    "SBOM に zod 4.6.5 が無い",
+    "SBOM に同梱していない zod 4.6.4 がある",
+  ]);
 });
 
 test("読めない SBOM と空の一覧は落とす（照合が空振りしない）", () => {
   assert.match(sbomProblems(notices, { bomFormat: "SPDX" }).join("\n"), /CycloneDX/);
   assert.match(sbomProblems("表の無い文書", bom([])).join("\n"), /package を読めない/);
+});
+
+test("同梱していない package が SBOM に載っていても落とす（範囲が一致しなければ偽りになる）", () => {
+  const got = sbomProblems(
+    notices,
+    bom([
+      { group: "@inkjs", name: "ui", version: "2.0.0" },
+      { name: "ajv", version: "8.20.0" },
+      { name: "zod", version: "4.6.5" },
+      { name: "typescript", version: "7.0.2" },
+    ]),
+  );
+  assert.deepEqual(got, ["SBOM に同梱していない typescript 7.0.2 がある"]);
 });

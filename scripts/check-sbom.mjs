@@ -15,4 +15,4 @@ if (problems.length) {
   console.error(problems.join("\n"));
   process.exit(1);
 }
-console.log(`SBOM: ${bom.components.length} 件、同梱した依存を全部載せている`);
+console.log(`SBOM: ${bom.components.length} 件。同梱した依存と過不足なく一致した`);
