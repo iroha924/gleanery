@@ -1,1 +1,1 @@
-export function commitMessageProblems(text: string): string[];
+export function commitMessageProblems(text: string, opts?: { merge?: boolean }): string[];

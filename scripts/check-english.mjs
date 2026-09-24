@@ -36,6 +36,7 @@ const ENGLISH = [
   "scripts/check-english.mjs",
   "scripts/check-commit-msg.mjs",
   "scripts/lib/commit-msg.mjs",
+  "scripts/lib/japanese.mjs",
   "scripts/lib/english.mjs",
 ];
 

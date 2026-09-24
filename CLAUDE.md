@@ -8,7 +8,7 @@
 ## command
 
 ```bash
-mise install              # Node・Bun・actionlint を mise.toml の版で入れる
+mise trust && mise install  # mise.toml を信頼し、Node・Bun・actionlint をその版で入れる
 bun run setup             # 依存と Lefthook を固定 lockfile から入れる
 bun run verify            # lint・型・AI 設定・境界・bundle・test・SQL の到達・CLI の子プロセス。pre-push と CI も同じ
 bun run verify:ai         # CLAUDE.md・AGENTS.md・Skill・Agent の静的検査
