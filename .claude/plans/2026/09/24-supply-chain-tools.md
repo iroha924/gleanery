@@ -86,3 +86,4 @@ CI と配布の経路への攻撃に強くし、推移的な依存の脆弱性�
 2026-09-24: Renovate の PR を release の PR に取り込む運用（月 1、1 本）と、release の gate の既出のバージョンの検査を足した。理由: 依存の更新は配布物の入力で、Renovate の PR は version gate で必ず落ちる（Codex と議論、session 01a0d195）。持ち主の Go を得た。
 2026-09-24: Renovate の bun を 1.4.0 に固定し、依存の更新のグループから lockfile の見直しを外した。Bun の年齢制限は解決し直すときだけ効き、CI の frozen install は見ないことを検証の文に書いた（review-shipping の指摘）。範囲は変わらないので Go は取り直さない。
 2026-09-24: SBOM は syft 1.52.0（配布元のチェックサムを固定した 1 ファイル）で、prepare と別の job で作る。prepare はその JSON を THIRD_PARTY_NOTICES.md と照合するだけにした。理由: cdxgen を npx で入れると推移的な依存が固定されないまま配る物を作る job に入る。syft の出力は告知の 182 件と一致した。範囲は変わらないので Go は取り直さない。
+2026-09-24: PR 4 の許可先に、観測した 6 か所に加えて nodejs.org を入れた。理由: setup-node は GitHub から Node を取れないとき nodejs.org へ切り替え、止めるとその release だけ stage が落ちる（Codex の指摘、setup-node v7.0.0 の README で確認）。範囲は変わらないので Go は取り直さない。
