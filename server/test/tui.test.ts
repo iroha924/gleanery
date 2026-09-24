@@ -216,7 +216,7 @@ function fake(over: Partial<Data> = {}): Data & { searched: string[] } {
           ref: "k:10",
           kind: "dead_end",
           stance: "dont",
-          label: "[tried and failed]",
+          label: "[dead end]",
           text: "端末の時計で判定",
         },
       ],
@@ -290,7 +290,7 @@ test("Tab で作業の画面へ移り、作業を開くと通ってはいけな�
   const frame = r.lastFrame() ?? "";
   assert.match(frame, /Goal: 期限切れで落ちない/);
   assert.match(frame, /端末側の表示/);
-  assert.match(frame, /\[tried and failed\] 端末の時計で判定/);
+  assert.match(frame, /\[dead end\] 端末の時計で判定/);
   r.unmount();
 });
 
@@ -378,7 +378,12 @@ test("全文の先が無ければ、無いと出す", async () => {
     await settle(r);
   }
   const frame = r.frame();
-  assert.ok(frame.includes("This record does not exist"), frame);
+  assert.ok(
+    frame
+      .replace(/\s+/g, " ")
+      .includes("This record does not exist (it was deleted, or it is outside the selected project)"),
+    frame,
+  );
   r.unmount();
 });
 
@@ -532,7 +537,7 @@ test("プロジェクトを切り替えると、セッションの一覧は 1 �
   await settle(r);
   r.stdin.write("l");
   await settle(r);
-  assert.match(r.lastFrame() ?? "", /page 3 of 3/);
+  assert.match(r.lastFrame() ?? "", /page 3\/3/);
   r.stdin.write("p");
   await settle(r);
   assert.deepEqual(pages.at(-1), [1, 1]);

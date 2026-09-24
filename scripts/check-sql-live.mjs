@@ -56,7 +56,7 @@ await withTempDir(async (dir) => {
     const again = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "2" });
     if (!/GitHub: /.test(again.out))
       failures.push(`2 巡目の harvest が GitHub を回していない\n${again.out.slice(0, 400)}`);
-    if (!/(?:PRs and issues|PR or issue) \([^)]*1 removed\)/.test(again.out))
+    if (!/(?:PRs and issues|PR or issue) \([^)]*(?<!\d)1 removed\)/.test(again.out))
       failures.push(`2 巡目の harvest が消えた issue を消していない\n${again.out.slice(0, 400)}`);
     if (!/1 PR or issue \(1 rewritten/.test(again.out) || !/\d+ messages? \(0 rewritten/.test(again.out))
       failures.push(`2 巡目の harvest が題だけ変わった PR の発言を書き直した\n${again.out.slice(0, 400)}`);

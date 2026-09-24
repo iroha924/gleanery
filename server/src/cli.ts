@@ -849,7 +849,7 @@ const traceRoutes = buildRouteMap({
         const now = hostSession(trace.session.host);
         if (now.id !== trace.session.id)
           throw new Error(
-            `The record's session (${trace.session.id}) differs from the current ${now.host} session (${now.id}). Write the session trace context printed`,
+            `The record's session (${trace.session.id}) differs from the current ${now.host} session (${now.id}). Use the session id that trace context printed`,
           );
         const place = placeOf(process.cwd());
         await withDb("ingest", async (db) => {
@@ -1327,7 +1327,7 @@ const root = buildRouteMap({
               },
               { kind: "meter", label: "share with constraints", ratio, text: `${(ratio * 100).toFixed(1)}%` },
             ],
-            `${mark("ok")} constraints shown on ${shown.length} of ${rows.length} edits`,
+            `${mark("ok")} constraints shown on ${shown.length} of ${plural(rows.length, "edit")}`,
           ),
         );
       },

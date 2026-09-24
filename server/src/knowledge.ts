@@ -76,40 +76,28 @@ const LABEL: Labels = {
   question: { open: "【未解決の問い】", blocking: "【作業を止めている問い】", resolved: "【解決した問い】" },
 };
 
-/** English labels for the CLI and dashboard. MCP keeps LABEL until it is translated too. */
+/** English labels for the CLI and dashboard, kept short for narrow terminals. MCP keeps LABEL until it is translated too. */
 const LABEL_EN: Labels = {
   decision: {
     accepted: "[decision]",
-    proposed: "[proposed decision, not decided yet]",
+    proposed: "[proposed decision]",
     rejected: "[rejected decision]",
-    superseded: "[superseded decision, no longer in effect]",
+    superseded: "[superseded decision]",
   },
-  option: {
-    chosen: "[chosen option]",
-    rejected: "[rejected option]",
-    was_chosen: "[option chosen then; that decision no longer holds]",
-  },
-  constraint: { active: "[constraint, do not change]", retired: "[retired constraint]" },
-  non_goal: { active: "[decided not to do]", retired: "[no longer ruled out]" },
-  debt: { active: "[intentional debt, left as is]", retired: "[repaid debt]" },
-  dead_end: "[tried and failed]",
+  option: { chosen: "[chosen option]", rejected: "[rejected option]", was_chosen: "[former choice]" },
+  constraint: { active: "[constraint]", retired: "[retired constraint]" },
+  non_goal: { active: "[non-goal]", retired: "[former non-goal]" },
+  debt: { active: "[intentional debt]", retired: "[repaid debt]" },
+  dead_end: "[dead end]",
   finding: "[finding]",
-  verification: {
-    passed: "[verified: passed]",
-    failed: "[verified: failed, not fixed]",
-    not_run: "[verification not run]",
-  },
-  question: {
-    open: "[open question]",
-    blocking: "[question blocking work]",
-    resolved: "[resolved question]",
-  },
+  verification: { passed: "[verified]", failed: "[failed check]", not_run: "[not verified]" },
+  question: { open: "[open question]", blocking: "[blocking question]", resolved: "[resolved question]" },
 };
 
 /** Document labels come from the location. ADRs carry different weight from explanatory docs. */
 function documentLabel(path: string | null | undefined, lang: "ja" | "en"): string {
   const adr = !!path && (/(^|\/)adrs?\//i.test(path) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(path));
-  if (lang === "en") return adr ? "[decision record (ADR)]" : "[document]";
+  if (lang === "en") return adr ? "[decision record]" : "[document]";
   return adr ? "【決定の記録・ADR】" : "【文書】";
 }
 

@@ -230,7 +230,7 @@ export async function syncDecisions(
     const got = extractDecisions(pr.body);
     // 判断が 1 つも取れない本文（古い PR の自由な文）は数えない。書式の打ち間違いだけを知らせる
     if (got.decisions.length) skipped += got.skipped;
-    const heading = `PR #${pr.number}（${(pr.mergedAt ?? "").slice(0, 10)}）の判断`;
+    const heading = `Decisions in PR #${pr.number} (${(pr.mergedAt ?? "").slice(0, 10)})`;
     const seen = new Map<string, number>();
     for (const d of got.decisions) {
       const h = sha256(d.line).toString("hex").slice(0, 12);

@@ -54,3 +54,28 @@ test("an exemption needs a reason", () => {
   const src = ["// english-exempt:", 'const key = "本文";'].join("\n");
   assert.equal(lines(src).length, 1);
 });
+
+// search.ts and knowledge.ts keep Japanese for MCP, so check-english reads only their comments. The English side is checked here.
+test("the English text for the CLI and dashboard has no Japanese", async () => {
+  const { JAPANESE } = await import("../../scripts/lib/english.mjs");
+  const { WORDS } = await import("../src/search.ts");
+  const { KINDS, STATUSES, labelOf } = await import("../src/knowledge.ts");
+  const sample = (v: unknown): string =>
+    typeof v === "function" ? String((v as (...a: unknown[]) => unknown)("x", "1", "2")) : String(v);
+  for (const [name, v] of Object.entries(WORDS.en)) assert.doesNotMatch(sample(v), JAPANESE, name);
+  const statuses = STATUSES as unknown as Record<string, readonly string[] | null>;
+  for (const kind of KINDS)
+    for (const status of statuses[kind] ?? [null]) {
+      for (const path of [null, "docs/adr/0001-x.md", "README.md"]) {
+        const label = labelOf({ kind, status, path }, "en");
+        assert.ok(label, `${kind} ${status}`);
+        assert.doesNotMatch(label, JAPANESE, `${kind} ${status}`);
+      }
+    }
+});
+
+test("catches the middle dot and long vowel mark, which Unicode assigns to no single script", () => {
+  assert.equal(lines('const s = "PR・issue";').length, 1);
+  assert.equal(lines('const s = "ソート";').length, 1);
+  assert.equal(lines('const s = "ー";').length, 1);
+});

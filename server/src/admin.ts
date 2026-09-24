@@ -188,7 +188,7 @@ export function applyMigrations(
         if (single) {
           const broken = raw.prepare("pragma foreign_key_check").all();
           if (broken.length)
-            throw new Error(`${broken.length} foreign key references are broken after ${next.file}`);
+            throw new Error(`${plural(broken.length, "foreign key reference")} broken after ${next.file}`);
         }
         raw.exec(`pragma user_version = ${(take.at(-1) as { revision: number }).revision}`);
         return take;

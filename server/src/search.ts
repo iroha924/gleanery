@@ -300,7 +300,7 @@ type MessageRow = InferResult<ReturnType<typeof messageBase>>[number];
  */
 export type Lang = "ja" | "en";
 
-const WORDS = {
+export const WORDS = {
   ja: {
     self: "持ち主",
     unknown: "不明",
@@ -415,7 +415,11 @@ const messageHit = (r: MessageRow, lang: Lang = "ja"): Hit => {
     status: null,
     stance: "neutral",
     label:
-      speaker === t.self ? t.selfMessage : r.speaker_kind === "assistant" ? t.aiMessage : t.personMessage,
+      r.speaker_kind === "self" || r.is_self === 1
+        ? t.selfMessage
+        : r.speaker_kind === "assistant"
+          ? t.aiMessage
+          : t.personMessage,
     heading: null,
     text: r.body,
     reason: null,

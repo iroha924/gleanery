@@ -11,8 +11,9 @@ const require = createRequire(path.join(root, "server/package.json"));
 // biome-ignore lint/correctness/noUndeclaredDependencies: resolved from server/package.json devDependencies
 const jsTokens = require("js-tokens");
 
-/** Kana, kanji, CJK punctuation (U+3000-U+303F), and full-width forms (U+FF00-U+FFEF). */
-export const JAPANESE = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}\u3000-\u303f\uff00-\uffef]/u;
+/** Kana (with the shared middle dot U+30FB and long vowel mark U+30FC), kanji, CJK punctuation (U+3000-U+303F), and full-width forms (U+FF00-U+FFEF). */
+export const JAPANESE =
+  /[\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script=Han}\u3000-\u303f\uff00-\uffef]/u;
 
 /** A comment that allows Japanese in the tokens on the next line. The reason after the colon is required. */
 const EXEMPT = /^\/\/\s*english-exempt:\s*(\S.*)$/;

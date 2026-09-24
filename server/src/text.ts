@@ -9,6 +9,7 @@ import crypto from "node:crypto";
 const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
 
 // Hiragana-only terms are particles, auxiliaries, and similar function words; they match every row and dilute ranking.
+// english-exempt: the long vowel mark appears inside hiragana-only words, which must be treated alike
 const HIRAGANA_ONLY = /^[\p{Script=Hiragana}ー]+$/u;
 const STOP = new Set(["the", "a", "an", "of", "to", "in", "is", "and", "or", "for", "on", "it", "be"]);
 // Identifiers the Segmenter splits (file names, snake_case, OT-123, #27) are also kept whole as terms.

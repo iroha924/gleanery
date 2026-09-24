@@ -227,7 +227,7 @@ function SessionList(p: {
       h(
         Text,
         { key: "head", dimColor: true },
-        `${plural(v.total, "session")}${pages > 1 ? ` (page ${page} of ${pages}, ← → to turn)` : ""}`,
+        `${plural(v.total, "session")}${pages > 1 ? ` (page ${page}/${pages})` : ""}`,
       ),
       h(List<SessionRow>, {
         key: "list",
@@ -483,7 +483,7 @@ function WorkView(p: { data: Data; ref: string; project: number | null; height: 
             h(Text, { key: "g" }, `${ICONS.goal} Goal: ${block(w.goal)}`),
             h(Text, { key: "c" }, `Now: ${block(w.current)}`),
             ...w.next.map((n, i) => h(Text, { key: `n${i}` }, `${ICONS.next} ${block(n)}`)),
-            ...hitLines("q", ICONS.question, "Questions", w.questions),
+            ...hitLines("q", ICONS.question, "Open questions", w.questions),
             ...hitLines("a", ICONS.avoid, "Paths to avoid", w.walls),
           ),
   });
@@ -539,8 +539,9 @@ function SearchView(p: {
       h(
         Text,
         { color: PALETTE.terracotta },
-        // Narrow terminals drop the heading word (if it wraps, the input start falls to the second line and it is unclear where to type)
-        p.width < 60
+        // Narrow terminals drop the heading word (if it wraps, the input start falls to the second line and it is unclear where to type).
+        // The heading with the short hint fits in 48 columns, and with the long hint in 84
+        p.width < 48
           ? `${ICONS.search} ❯ `
           : `${ICONS.search} ${mode === "knowledge" ? "Decisions and docs" : "Your messages"} ❯ `,
       ),
@@ -548,7 +549,7 @@ function SearchView(p: {
         isDisabled: !(p.active && p.typing),
         defaultValue: question,
         placeholder:
-          p.width < 60
+          p.width < 84
             ? "Type terms, then Enter"
             : "Type terms, then Enter (m switches decisions / messages)",
         onSubmit: (v) => {
@@ -701,7 +702,7 @@ export function App({ data }: { data: Data }) {
               ? ["m decisions / messages", "i type"]
               : []),
           "↑↓ j k select",
-          "PgUp PgDn page",
+          "PgUp PgDn jump",
           "Tab S-Tab screens",
           "/ search",
           "g G ends",
