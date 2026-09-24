@@ -1,0 +1,446 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { extractDecisions, syncDecisions } from "../src/decisions.ts";
+import { conversationId } from "../src/knowledge.ts";
+import { at, hash, insert, knowledge, project, tempDb } from "./temp-db.ts";
+
+const body = (lines: string) => `## 何を変えたか
+
+本文。
+
+## 採った案と棄却した案
+
+${lines}
+
+## 検証
+
+- 採った: ここは節の外なので読まない
+`;
+
+test("採った案と、括弧の外の「、」で分けた棄却した案と理由を取り出す", () => {
+  const got = extractDecisions(
+    body(
+      "- 採った: `node:sqlite` の 1 ファイル。棄却: PostgreSQL を続ける（利用者に Docker と 4 つの鍵を用意させる）、libSQL（自動記録の列単位の境界が作れない）、DuckDB（cascade と FTS の即時反映が無い）",
+    ),
+  );
+  assert.deepEqual(got.skipped, 0);
+  assert.deepEqual(got.decisions, [
+    {
+      line: "- 採った: `node:sqlite` の 1 ファイル。棄却: PostgreSQL を続ける（利用者に Docker と 4 つの鍵を用意させる）、libSQL（自動記録の列単位の境界が作れない）、DuckDB（cascade と FTS の即時反映が無い）",
+      chosen: "`node:sqlite` の 1 ファイル",
+      rejected: [
+        { text: "PostgreSQL を続ける", reason: "利用者に Docker と 4 つの鍵を用意させる" },
+        { text: "libSQL", reason: "自動記録の列単位の境界が作れない" },
+        { text: "DuckDB", reason: "cascade と FTS の即時反映が無い" },
+      ],
+    },
+  ]);
+});
+
+test("理由の中の「、」と入れ子の括弧では分けない", () => {
+  const got = extractDecisions(
+    body(
+      "- 採った: 返し方は JSON の文字列。棄却: 2 つの見出しで分けた枠付きテキスト（開発用 42 問の 3 回平均で top1 83.3% 対 85.7%、recall@5 92.8% 対 93.7%）、生成 API を持つ（鍵が要る（サブスクは不可）、依存が増える）",
+    ),
+  );
+  assert.deepEqual(got.decisions[0]?.rejected, [
+    {
+      text: "2 つの見出しで分けた枠付きテキスト",
+      reason: "開発用 42 問の 3 回平均で top1 83.3% 対 85.7%、recall@5 92.8% 対 93.7%",
+    },
+    { text: "生成 API を持つ", reason: "鍵が要る（サブスクは不可）、依存が増える" },
+  ]);
+});
+
+test("棄却の無い行は採った案だけ、理由の無い棄却は理由を null にする。全角のコロンも読む", () => {
+  const got = extractDecisions(body("- 採った：単独の案\n- 採った: A。棄却: B"));
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.rejected]),
+    [
+      ["単独の案", []],
+      ["A", [{ text: "B", reason: null }]],
+    ],
+  );
+});
+
+test("書式に合わない箇条書きは飛ばして数え、コードブロックとコメントの中は読まない", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "<!--",
+        "- 採った: テンプレートの例。棄却: 例（例）",
+        "-->",
+        "- 範囲の解決を起動側へ寄せた。棄却: 3 体へ足す案（原因が残る）",
+        "```",
+        "- 採った: コードの中。棄却: 例（例）",
+        "```",
+        "- 採った: 残る案。棄却: 捨てた案（理由）",
+        "- 採った: 。棄却: 採った案が空（理由）",
+        "段落の文は数えない",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["残る案"],
+  );
+  assert.equal(got.skipped, 2);
+});
+
+test("節が無い本文は何も取り出さない", () => {
+  assert.deepEqual(extractDecisions("## 何を変えたか\n\n- 採った: 節の外。棄却: 例（例）\n"), {
+    decisions: [],
+    skipped: 0,
+  });
+});
+
+// ---- DB へ書く（merge した持ち主の PR の本文だけ） ----
+
+const SECTION = (lines: string) => `本文\n\n## 採った案と棄却した案\n\n${lines}\n`;
+const LINE_A = "- 採った: 実 DB。棄却: 偽の db（権限が見えない）、文字列の照合（実行されない SQL が通る）";
+const LINE_B = "- 採った: begin immediate。棄却: 既定の begin（busy_timeout を待たずに落ちる）";
+
+function setup() {
+  const db = tempDb();
+  const p = project(db);
+  const connector = insert(db, "connector", { project_id: p, provider: "github" });
+  const pr = (n: number, state: "merged" | "open") => {
+    const source = insert(db, "source_item", {
+      connector_id: connector,
+      external_id: String(n),
+      kind: "pull_request",
+      title: `PR ${n}`,
+      state,
+      url: `https://github.com/o/r/pull/${n}`,
+      closed_at: state === "merged" ? at("2026-09-20T01:00:00Z") : null,
+      content_hash: hash(),
+    });
+    const conversation = conversationId(p, "github", `o/r#${n}`);
+    insert(db, "conversation", {
+      id: conversation,
+      project_id: p,
+      source_item_id: source,
+      origin: "github",
+      external_id: `o/r#${n}`,
+      started_at: at("2026-09-19T00:00:00Z"),
+    });
+    return { number: n, source, conversation };
+  };
+  const mine = pr(117, "merged");
+  const theirs = pr(118, "merged");
+  const open = pr(119, "open");
+  const input = (body: string, over: Partial<Record<number, { authorId: number }>> = {}) =>
+    [
+      { ...mine, authorId: 1 },
+      { ...theirs, authorId: 2 },
+      { ...open, authorId: 1 },
+    ].map((x) => ({
+      number: x.number,
+      merged: x.number !== 119,
+      mergedAt: x.number !== 119 ? "2026-09-20T01:00:00Z" : null,
+      url: `https://github.com/o/r/pull/${x.number}`,
+      sourceItemId: x.source,
+      conversationId: x.conversation,
+      body,
+      authorId: over[x.number]?.authorId ?? x.authorId,
+    }));
+  const rows = () =>
+    db.owner
+      .prepare(
+        "select id, source_key, kind, status, body, reason, heading, decision_id, source_item_id from knowledge order by id",
+      )
+      .all() as {
+      id: number;
+      source_key: string;
+      kind: string;
+      status: string;
+      body: string;
+      reason: string | null;
+      heading: string;
+      decision_id: number | null;
+      source_item_id: number;
+    }[];
+  const self = () => {
+    const person = insert(db, "person", { display_name: "私", is_self: 1 });
+    insert(db, "person_identity", { person_id: person, provider: "github", external_id: "1", handle: "me" });
+    return person;
+  };
+  return { db, p, mine, rows, input, self };
+}
+
+test("持ち主を結んでいなければ判断を作らず、そのことを返す", async () => {
+  const { db, p, rows, input } = setup();
+  try {
+    const got = await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    assert.equal(got.unlinked, true);
+    assert.equal(rows().length, 0);
+  } finally {
+    await db.done();
+  }
+});
+
+test("merge した持ち主の PR の本文だけを、決定と案にして入れる", async () => {
+  const { db, p, mine, rows, input, self } = setup();
+  try {
+    self();
+    const got = await syncDecisions(db.ingest, p, "o/r", input(SECTION(`${LINE_A}\n- 自由な文`)));
+    assert.deepEqual([got.unlinked, got.written, got.skipped], [false, 4, 1]);
+    const r = rows();
+    assert.deepEqual(
+      r.map((x) => [x.kind, x.status, x.body, x.reason]),
+      [
+        ["decision", "accepted", "実 DB", null],
+        ["option", "chosen", "実 DB", null],
+        ["option", "rejected", "偽の db", "権限が見えない"],
+        ["option", "rejected", "文字列の照合", "実行されない SQL が通る"],
+      ],
+    );
+    assert.ok(r.every((x) => x.source_item_id === mine.source));
+    assert.ok(r.slice(1).every((x) => x.decision_id === r[0]?.id));
+    assert.match(r[0]?.source_key ?? "", /^github:o\/r\/pull\/117#[0-9a-f]{12}-1$/);
+    assert.equal(r[0]?.heading, "PR #117（2026-09-20）の判断");
+    // 判断が 1 つも取れない本文（古い PR の自由な文）の行は数えない（毎回同じ数を出さない）
+    const free = await syncDecisions(db.ingest, p, "o/r", input(SECTION("- 自由な文\n- もう 1 つ")));
+    assert.equal(free.skipped, 0);
+  } finally {
+    await db.done();
+  }
+});
+
+test("同じ本文では書き直さず、行を編集すると古い行を消して新しい行を入れる", async () => {
+  const { db, p, rows, input, self } = setup();
+  try {
+    self();
+    await syncDecisions(db.ingest, p, "o/r", input(SECTION(`${LINE_A}\n${LINE_B}`)));
+    const before = rows();
+    const again = await syncDecisions(db.ingest, p, "o/r", input(SECTION(`${LINE_A}\n${LINE_B}`)));
+    assert.equal(again.written, 0);
+    assert.deepEqual(rows(), before);
+
+    await syncDecisions(
+      db.ingest,
+      p,
+      "o/r",
+      input(SECTION(`${LINE_A}\n- 採った: 束ねて書く。棄却: 1 行ずつ（遅い）`)),
+    );
+    const after = rows();
+    assert.ok(after.some((x) => x.body === "束ねて書く"));
+    assert.ok(!after.some((x) => x.body === "begin immediate"));
+    // 残した行の id は変わらない（k:<id> の参照が切れない）
+    assert.equal(after.find((x) => x.body === "実 DB" && x.kind === "decision")?.id, before[0]?.id);
+  } finally {
+    await db.done();
+  }
+});
+
+test("trace で覆した判断は、再同期と取り出し規則の版の変更の後も覆したまま", async () => {
+  const { db, p, rows, input, self } = setup();
+  try {
+    self();
+    await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    const decision = rows()[0];
+    const later = knowledge(db, p, {
+      source_key: "later",
+      kind: "decision",
+      status: "accepted",
+      body: "覆した",
+    });
+    db.owner
+      .prepare("update knowledge set status = 'superseded', superseded_by_id = ? where id = ?")
+      .run(later, decision?.id ?? 0);
+    db.owner
+      .prepare("update knowledge set status = 'was_chosen' where kind = 'option' and status = 'chosen'")
+      .run();
+    // 規則の版を上げたときと同じく、内容の hash を変えてから同期し直す
+    db.owner.prepare("update knowledge set content_hash = ? where source_key like 'github:%'").run(hash(7));
+    await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    const r = rows().filter((x) => x.source_key.startsWith("github:"));
+    assert.equal(r.find((x) => x.kind === "decision")?.status, "superseded");
+    assert.equal(r.find((x) => x.body === "実 DB" && x.kind === "option")?.status, "was_chosen");
+  } finally {
+    await db.done();
+  }
+});
+
+test("持ち主の紐付けを外すと、次の同期でその人の本文から作った行が消える", async () => {
+  const { db, p, rows, input, self } = setup();
+  try {
+    self();
+    await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    assert.ok(rows().length > 0);
+    db.owner.prepare("update person_identity set person_id = null where external_id = '1'").run();
+    const got = await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    assert.equal(got.unlinked, true);
+    assert.equal(rows().length, 0);
+  } finally {
+    await db.done();
+  }
+});
+
+test("PR が消えると、その PR から作った行も消える", async () => {
+  const { db, p, mine, rows, input, self } = setup();
+  try {
+    self();
+    await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
+    db.owner.prepare("delete from source_item where id = ?").run(mine.source);
+    assert.equal(rows().length, 0);
+  } finally {
+    await db.done();
+  }
+});
+
+test("コードブロックの中の節の見出しと、種類の違う囲みの記号では節を始めない・閉じない", () => {
+  const got = extractDecisions(
+    [
+      "```md",
+      "## 採った案と棄却した案",
+      "- 採った: 例の中。棄却: 例（例）",
+      "```",
+      "## 採った案と棄却した案",
+      "```",
+      "~~~",
+      "- 採った: まだコードの中。棄却: 例（例）",
+      "```",
+      "- 採った: 本物。棄却: 偽物（理由）",
+      "<!-- 閉じていないコメント",
+      "- 採った: コメントの中。棄却: 例（例）",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["本物"],
+  );
+});
+
+test("「棄却:」は句点の後ろだけで分け、欠けた・閉じていない行は丸ごと飛ばす", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "- 採った: 記号「棄却:」を許す。棄却: B（理由）",
+        "- 採った: A。棄却: B（理由）、",
+        "- 採った: A。棄却: B（未閉",
+        "- 採った: A 棄却: B（理由）",
+        "- 採った: A。棄却: B (半角の理由)",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.rejected]),
+    [
+      ["記号「棄却:」を許す", [{ text: "B", reason: "理由" }]],
+      ["A", [{ text: "B", reason: "半角の理由" }]],
+    ],
+  );
+  assert.equal(got.skipped, 3);
+});
+
+test("閉じる囲みは記号の後ろに空白しか無い行だけで、コードの中のコメントの記号で本文を切らない", () => {
+  const got = extractDecisions(
+    [
+      "## 採った案と棄却した案",
+      "```",
+      "```ts",
+      "- 採った: コードの中。棄却: 例（例）",
+      "const s = '<!--';",
+      "```",
+      "- 採った: 本物。棄却: 偽物（理由）",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["本物"],
+  );
+});
+
+test("採った案の括弧も閉じていなければ飛ばし、括弧の中の「。棄却:」では分けない", () => {
+  const got = extractDecisions(
+    body(
+      ["- 採った: A（未閉。棄却: B（理由）", "- 採った: A（説明。棄却: 引用）。棄却: B（理由）"].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.rejected]),
+    [["A（説明。棄却: 引用）", [{ text: "B", reason: "理由" }]]],
+  );
+  assert.equal(got.skipped, 1);
+});
+
+test("CommonMark の境界: 4 個の空白で始まる囲みは閉じず、インラインコードの括弧を数えず、種類の違う括弧は釣り合わない", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "```",
+        "    ```",
+        "- 採った: コードの中。棄却: 例（例）",
+        "```",
+        "- 採った: `parse(` を使う。棄却: 自前（数え落とす）",
+        "- 採った: A（説明)。棄却: B（理由）",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["`parse(` を使う"],
+  );
+  assert.equal(got.skipped, 1);
+});
+
+test("受け付けるのは節の直下の「- 採った:」の箇条書きだけ。タスク・番号付き・他の記号・入れ子は飛ばして数える", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "- [ ] 採った: 未チェック。棄却: B（理由）",
+        "1. 採った: 番号。棄却: B（理由）",
+        "",
+        "+ 採った: 他の記号。棄却: B（理由）",
+        "",
+        "- 親",
+        "  - 採った: 入れ子。棄却: B（理由）",
+        "- 採った: 受け付ける。棄却: B（理由）",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["受け付ける"],
+  );
+  assert.equal(got.skipped, 5);
+});
+
+test("節の中の ### では節を終えず、H2 で終える", () => {
+  const got = extractDecisions(
+    "## 採った案と棄却した案\n\n- 採った: A。棄却: B（理由）\n\n### 注記\n\n- 採った: C。棄却: D（理由）\n\n## 検証\n\n- 採った: 外。棄却: E（理由）\n",
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["A", "C"],
+  );
+});
+
+test("項目の中の HTML は行ごと飛ばし、エスケープと長さの違うバッククォートは marked の判定どおりに読む", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "- 採った: A <!-- 。棄却: 偽（理由） -->。棄却: B（理由）",
+        "- 採った: \\`A（\\`。棄却: B（理由）",
+        "- 採った: ``a（`` を使う。棄却: B（理由）",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["``a（`` を使う"],
+  );
+  assert.equal(got.skipped, 2);
+});
+
+test("強調の中のエスケープも括弧に数えず、引用を挟んだ入れ子のリストも数える", () => {
+  const got = extractDecisions(
+    body(["- 採った: *A \\( B*。棄却: C（理由）", "- 親", "  > - 採った: 子。棄却: D（理由）"].join("\n")),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["*A \\( B*"],
+  );
+  assert.equal(got.skipped, 2);
+});
