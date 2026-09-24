@@ -20,7 +20,7 @@ import { bytes, clean, plural, sha256, uuidFrom } from "./text.ts";
 
 type User = { id: number; login: string } | null;
 
-export type Pull = {
+type Pull = {
   number: number;
   title: string;
   body: string | null;
@@ -33,7 +33,7 @@ export type Pull = {
   html_url: string;
 };
 
-export type RawIssue = {
+type RawIssue = {
   number: number;
   title: string;
   body: string | null;
@@ -47,7 +47,7 @@ export type RawIssue = {
   pull_request?: unknown;
 };
 
-export type ReviewComment = {
+type ReviewComment = {
   id: number;
   in_reply_to_id?: number;
   user: User;
@@ -60,7 +60,7 @@ export type ReviewComment = {
   pull_request_url: string;
 };
 
-export type IssueComment = {
+type IssueComment = {
   id: number;
   user: User;
   body: string;
@@ -85,7 +85,7 @@ function gh(repo: string, endpoint: string): unknown[] {
   return (JSON.parse(out) as unknown[][]).flat();
 }
 
-export const cliSource = (repo: string): GithubSource => ({
+const cliSource = (repo: string): GithubSource => ({
   pulls: async () => gh(repo, "pulls?state=all&per_page=100") as Pull[],
   issues: async () => gh(repo, "issues?state=all&per_page=100") as RawIssue[],
   reviewComments: async () => gh(repo, "pulls/comments?per_page=100") as ReviewComment[],
@@ -115,7 +115,7 @@ export const isFiller = (body: string): boolean => {
   return t.length === 0 || FILLER.test(t) || /^!?\[[^\]]*\]\([^)]*\)$/.test(t);
 };
 
-export type Item = {
+type Item = {
   kind: "pull_request" | "issue";
   number: number;
   title: string;
@@ -128,7 +128,7 @@ export type Item = {
   closedAt: string | null;
 };
 
-export type Said = {
+type Said = {
   /** Unique within the conversation: `body` for the body, `c:<id>` for comments, `r:<id>` for reviews */
   externalId: string;
   replyTo: string | null;

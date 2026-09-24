@@ -44,7 +44,7 @@ export type Hit = {
 };
 
 /** Ranked word search (default) or substring match. Substring match is for proper nouns, symbols, and version numbers that do not split into words. */
-export type Match = "words" | "exact";
+type Match = "words" | "exact";
 
 /** Number of candidates taken before thinning. */
 const POOL = 40;
@@ -787,7 +787,7 @@ const cut = (s: string, n: number, lang: Lang = "ja"): string => {
 };
 
 /** Renders one hit as a few lines. **Cuts by bytes, not characters** (Japanese is 3 bytes per character and slips past a character limit). */
-export function renderHit(h: Hit, perRow = 900, lang: Lang = "ja"): string {
+function renderHit(h: Hit, perRow = 900, lang: Lang = "ja"): string {
   const t = WORDS[lang];
   return [
     `${h.label}${t.gap}${h.speaker ? `${h.speaker}: ` : ""}${cut(h.text, perRow, lang)}`,
@@ -910,7 +910,7 @@ export const missing = (ref: string, lang: Lang = "ja"): string => `${ref}: ${WO
  * The reference format. k: / s: / w: are sequence numbers, m: is a uuid. **Check the format here; never read a database error as a bad reference.**
  * Sequence numbers up to 15 digits (JS numbers are exact only up to 2^53; beyond that they round and read another row).
  */
-export const REF = /^(?:[ksw]:\d{1,15}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+const REF = /^(?:[ksw]:\d{1,15}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 /**
  * Reads references: `k:` knowledge, `m:` a message with its neighbors, `s:` a source (document text, PR, issue), `w:` work.

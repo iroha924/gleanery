@@ -287,7 +287,7 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
 }
 
 /** Maximum number of work items listed. The rest is omitted and reported through more (the screen never cuts silently). */
-export const WORK_LIMIT = 100;
+const WORK_LIMIT = 100;
 
 /** Traced work, including finished work, newest first. The details needed to resume come from search.ts workDetail. */
 export async function listWork(

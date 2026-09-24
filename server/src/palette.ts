@@ -24,8 +24,6 @@ export const PALETTE = {
   sand: "#D6C4A2",
 } as const;
 
-export type PaletteName = keyof typeof PALETTE;
-
 /**
  * 記録の札の色。種類で分け、状態で「避ける道」を赤土へ寄せる（採る・避けるの極性は stance と同じ向き）。
  * 知らない種類は taupe（DB の CHECK が値を縛るので、ここへは来ない想定）。

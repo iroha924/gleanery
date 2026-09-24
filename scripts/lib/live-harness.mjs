@@ -85,7 +85,7 @@ if (args.includes("pulls/comments")) {
  * 子プロセスの環境。DB は一時 HOME の ~/.gleanery/gleanery.db（`gleanery init` で作る）。
  * GitHub のキーを渡さない（偽の gh だけを使う）。
  */
-export function childEnv(dir, covDir, extra = {}) {
+function childEnv(dir, covDir, extra = {}) {
   const env = { ...process.env, ...extra };
   // **home を付け替える。**付け替えないと、子プロセスは持ち主の ~/.gleanery を使う。
   // `capture flush` は ~/.gleanery/spool の待ち行列を読んで、送り終えた分を消す（実測: 持ち主の

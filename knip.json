@@ -1,0 +1,20 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "includeEntryExports": true,
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/bundle-cli.ts"],
+      "project": ["scripts/**/*.{js,mjs,cjs,ts}"],
+      "ignoreDependencies": ["kysely", "kysely-codegen", "js-tokens"],
+      "ignoreBinaries": ["lefthook"]
+    },
+    "server": {
+      "entry": ["src/capture.ts", "test/*.test.ts"],
+      "project": ["src/**/*.{ts,tsx}", "test/**/*.ts", "evals/**/*.ts"],
+      "ignoreDependencies": ["js-tokens", "kysely-codegen", "lefthook"]
+    }
+  },
+  "ignoreIssues": {
+    "server/src/db-types.ts": ["types"]
+  }
+}

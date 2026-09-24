@@ -35,13 +35,16 @@ export const STATUSES = {
 } as const satisfies Record<Kind, readonly [string, ...string[]] | null>;
 
 // self is you, assistant is AI (the last response of a coding session and AI reviewers), bot is automated notices without reasoning.
+/** @public Read as text by scripts/check-pairs.mjs. */
 export const SPEAKERS = ["self", "person", "assistant", "bot"] as const;
 export type SpeakerKind = (typeof SPEAKERS)[number];
 
+/** @public Read as text by scripts/check-pairs.mjs. */
 export const ORIGINS = ["claude-code", "codex", "github"] as const;
 export type Origin = (typeof ORIGINS)[number];
 
 // edit is an edit, review is a file named in a review. read records requirements or design docs read earlier and is no longer written.
+/** @public Read as text by scripts/check-pairs.mjs. */
 export const FILE_ACTIONS = ["edit", "read", "review"] as const;
 export type FileAction = (typeof FILE_ACTIONS)[number];
 
