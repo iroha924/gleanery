@@ -1,9 +1,9 @@
-// 知識の種類と、それを読む側へ渡す札。
+// Knowledge kinds, and the labels passed to readers.
 //
-// 種類と状態の組、発言の主、会話の出どころ、ファイルとの関係は db/schema.sql の CHECK が正本で、ここはその写し
-// （scripts/check-pairs.mjs が突き合わせる）。コードはこの写しだけを参照する。
-// 札は AI が意味を見分ける手がかりになる。素の本文だけを渡すと、棄却した案が
-// 文字面の近さで 1 位に来る（「自動発火する？」に『自動発火もさせる』を返した実測がある）。
+// Kind and status pairs, speakers, conversation origins, and file relations are defined by the CHECKs in db/schema.sql; this
+// is a copy (scripts/check-pairs.mjs compares them). Code refers only to this copy.
+// Labels are how an AI tells records apart. With bare text alone, a rejected option can rank first
+// by wording (measured: asking "does it fire automatically?" returned the rejected "also let it fire automatically").
 
 import { uuidFrom } from "./text.ts";
 
@@ -34,18 +34,18 @@ export const STATUSES = {
   document: null,
 } as const satisfies Record<Kind, readonly [string, ...string[]] | null>;
 
-// self は持ち主、assistant は AI（coding session の最後の応答と AI レビュアー）、bot は推論を含まない自動通知。
+// self is you, assistant is AI (the last response of a coding session and AI reviewers), bot is automated notices without reasoning.
 export const SPEAKERS = ["self", "person", "assistant", "bot"] as const;
 export type SpeakerKind = (typeof SPEAKERS)[number];
 
 export const ORIGINS = ["claude-code", "codex", "github"] as const;
 export type Origin = (typeof ORIGINS)[number];
 
-// edit は編集、review はレビューで指されたファイル。read は以前に読んだ要件定義・設計書の記録で、新しくは書かない。
+// edit is an edit, review is a file named in a review. read records requirements or design docs read earlier and is no longer written.
 export const FILE_ACTIONS = ["edit", "read", "review"] as const;
 export type FileAction = (typeof FILE_ACTIONS)[number];
 
-// 状態を持つ種類は全部の状態に、持たない種類は 1 つの札を持つ（型が漏れを止める）。文書の札は置き場所で決める。
+// Kinds with statuses have a label per status; kinds without have one label (the type catches omissions). Document labels depend on location.
 type Labels = {
   [K in Exclude<Kind, "document">]: (typeof STATUSES)[K] extends readonly (infer S extends string)[]
     ? Record<S, string>
@@ -76,29 +76,62 @@ const LABEL: Labels = {
   question: { open: "【未解決の問い】", blocking: "【作業を止めている問い】", resolved: "【解決した問い】" },
 };
 
-/** 文書の札は、置き場所から決める。ADR は、説明文と重みが違う。 */
-function documentLabel(path: string | null | undefined): string {
-  if (path && (/(^|\/)adrs?\//i.test(path) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(path)))
-    return "【決定の記録・ADR】";
-  return "【文書】";
+/** English labels for the CLI and dashboard. MCP keeps LABEL until it is translated too. */
+const LABEL_EN: Labels = {
+  decision: {
+    accepted: "[decision]",
+    proposed: "[proposed decision, not decided yet]",
+    rejected: "[rejected decision]",
+    superseded: "[superseded decision, no longer in effect]",
+  },
+  option: {
+    chosen: "[chosen option]",
+    rejected: "[rejected option]",
+    was_chosen: "[option chosen then; that decision no longer holds]",
+  },
+  constraint: { active: "[constraint, do not change]", retired: "[retired constraint]" },
+  non_goal: { active: "[decided not to do]", retired: "[no longer ruled out]" },
+  debt: { active: "[intentional debt, left as is]", retired: "[repaid debt]" },
+  dead_end: "[tried and failed]",
+  finding: "[finding]",
+  verification: {
+    passed: "[verified: passed]",
+    failed: "[verified: failed, not fixed]",
+    not_run: "[verification not run]",
+  },
+  question: {
+    open: "[open question]",
+    blocking: "[question blocking work]",
+    resolved: "[resolved question]",
+  },
+};
+
+/** Document labels come from the location. ADRs carry different weight from explanatory docs. */
+function documentLabel(path: string | null | undefined, lang: "ja" | "en"): string {
+  const adr = !!path && (/(^|\/)adrs?\//i.test(path) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(path));
+  if (lang === "en") return adr ? "[decision record (ADR)]" : "[document]";
+  return adr ? "【決定の記録・ADR】" : "【文書】";
 }
 
-export function labelOf(k: { kind: string; status: string | null; path?: string | null }): string {
-  if (k.kind === "document") return documentLabel(k.path);
-  const l = (LABEL as Record<string, string | Record<string, string>>)[k.kind];
+export function labelOf(
+  k: { kind: string; status: string | null; path?: string | null },
+  lang: "ja" | "en" = "ja",
+): string {
+  if (k.kind === "document") return documentLabel(k.path, lang);
+  const l = ((lang === "en" ? LABEL_EN : LABEL) as Record<string, string | Record<string, string>>)[k.kind];
   return typeof l === "string" ? l : ((k.status && l?.[k.status]) ?? "");
 }
 
 /**
- * 検索の対象にする発言か。coding session の AI の応答は、前後の turn を読むために保存するが索引しない。
- * 「私はなんて言った？」の候補を AI の長い応答が押し出すため。
+ * Whether a message is searchable. AI responses in coding sessions are stored to read nearby turns but are not indexed,
+ * because long AI responses would crowd out candidates for "what did I say?".
  */
 export const indexesMessage = (origin: string, speakerKind: string): boolean =>
   speakerKind !== "bot" && !(origin !== "github" && speakerKind === "assistant");
 
 /**
- * 会話の id。GitHub の同期・trace・自動記録が同じ規則で作るので、どれが先に書いても同じ行になる。
- * プロジェクトをまたいだ session（途中で別のリポジトリへ移った）は、プロジェクトごとに別の会話になる。
+ * The conversation id. GitHub sync, trace, and recording use the same rule, so whichever writes first creates the same row.
+ * A session that moved between projects (to another repository midway) becomes a separate conversation per project.
  */
 export const conversationId = (projectId: number, origin: Origin, externalId: string): string =>
   uuidFrom(String(projectId), origin, externalId);

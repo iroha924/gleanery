@@ -1,12 +1,12 @@
-// 実行時に読む同梱物（DB の schema と migrations）の在り処。
+// Where the bundled runtime files (the database schema and migrations) live.
 //
-// **cwd から探さない。**フックは編集中のプロジェクトを cwd として起動し、CLI はどこからでも叩かれる。
-// 基準は常に、いま動いているこのファイルの位置である。
+// **Never search from cwd.** Hooks start with the project being edited as cwd, and the CLI runs from anywhere.
+// The reference point is always the location of this running file.
 //
-// 置かれ方は 2 つある。
-//   配る形    <package>/dist/cli.js から見て <package>/db（package.json の files が dist の隣へ置く）
-//   作業ツリー server/src/assets.ts から見て リポジトリ直下の db
-// bun build は import.meta.url を実行時の値に解決するので、バンドルした後も自分の位置が分かる。
+// There are two layouts.
+//   shipped        <package>/db as seen from <package>/dist/cli.js (package.json `files` puts it next to dist)
+//   working tree   the repository's db as seen from server/src/assets.ts
+// bun build resolves import.meta.url to its runtime value, so the bundle still knows where it is.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const here = (): string => path.dirname(fileURLToPath(import.meta.url));
 
-/** 候補を順に見て、目印のファイルがある最初のものを返す。 */
+/** Returns the first candidate that contains the marker file. */
 function locate(marker: string, candidates: string[]): string | null {
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, marker))) return dir;
@@ -23,13 +23,15 @@ function locate(marker: string, candidates: string[]): string | null {
 }
 
 /**
- * DB の同梱物（schema.sql と、あれば migrations）。
- * **見つからないなら投げる。**黙って既定へ倒すと、空の schema を当てたように見えてしまう。
+ * The bundled database files (schema.sql and, if present, migrations).
+ * **Throws when they are missing.** Falling back to a default would look like an empty schema was applied.
  */
 export function dbDir(from = here()): string {
   const dir = locate("schema.sql", [path.join(from, "..", "db"), path.join(from, "..", "..", "db")]);
   if (!dir) {
-    throw new Error("DB の同梱物（db/schema.sql）が見つからない。配布物が壊れているか、bundle していない");
+    throw new Error(
+      "The bundled database schema (db/schema.sql) is missing. The package is broken or was not bundled.",
+    );
   }
   return dir;
 }

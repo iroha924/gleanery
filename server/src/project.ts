@@ -1,8 +1,8 @@
-// プロジェクト（project）の識別。
+// Identifies projects.
 //
-// key は git remote を正規化したもの（`git:github.com/owner/repo`）で、PC をまたいで同じになる。
-// remote の無いプロジェクトだけ、PC ごとの対応表（~/.gleanery/projects.json）で `local:<名前>` に結ぶ。
-// ローカルのパスは DB に置かない。置き場所は PC ごとに違い、同期は各 PC で ~/Projects を見て探す。
+// The key is the normalized git remote (`git:github.com/owner/repo`), so it is the same on every machine.
+// Only projects without a remote are mapped to `local:<name>` through a per-machine table (~/.gleanery/projects.json).
+// Local paths are not stored in the database. They differ per machine, and each machine finds them under ~/Projects when syncing.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -13,18 +13,18 @@ import type { DB } from "./db-types.ts";
 
 export type Place = { key: string; root: string; name: string };
 
-// 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の対応表を触らない）。
+// Resolve the location on every call (so tests that replace HOME never touch the real table).
 const localFile = (): string => path.join(os.homedir(), ".gleanery", "projects.json");
 const LOCAL_KEY = /^[a-z0-9][a-z0-9._-]*$/;
 
 /**
- * git remote を、ssh / https、.git の有無、ポート、資格情報の差を吸収した形へ揃える。
- * authority は URL パーサに切らせる。パスワードに `@` が入る形で自前に切ると、資格情報の断片が key に残る。
+ * Normalizes a git remote across ssh / https, with or without .git, ports, and credentials.
+ * The URL parser splits the authority. Splitting it by hand leaves pieces of a password containing `@` in the key.
  */
 export function normalizeRemote(url: string | null | undefined): string | null {
   const raw = String(url ?? "").trim();
   if (!raw) return null;
-  // scp 風（git@host:path）は URL ではないので先に捌く。
+  // scp-like remotes (git@host:path) are not URLs, so handle them first.
   const scp = raw.match(/^(?:[^@/]+@)?([^:/]+):(?!\/)(.+?)(?:\.git)?$/);
   if (scp) return `${scp[1]}/${scp[2]}`;
   try {
@@ -49,7 +49,7 @@ const git = (dir: string, ...args: string[]): string | null => {
   }
 };
 
-/** 名前を付けたプロジェクトの対応表。**壊れていたら空とみなさない**（空として書き戻すと、ほかの対応が全部消える）。 */
+/** The table of named projects. **A broken file is not treated as empty** (writing it back empty would drop every other entry). */
 function localMap(): Record<string, string> {
   let raw: string;
   try {
@@ -65,17 +65,19 @@ function localMap(): Record<string, string> {
     m = null;
   }
   if (!m || typeof m !== "object" || Array.isArray(m))
-    throw new Error(`${localFile()} が JSON の対応表として読めない。直すか消してから、名前を付け直す`);
+    throw new Error(
+      `${localFile()} is not a valid JSON project table. Fix or delete it, then name the project again.`,
+    );
   return m as Record<string, string>;
 }
 
-/** リポジトリのルート。git の外なら dir そのもの。 */
+/** The repository root, or dir itself outside git. */
 export const rootOf = (dir: string): string =>
   git(path.resolve(dir), "rev-parse", "--show-toplevel") || path.resolve(dir);
 
 /**
- * dir が属するプロジェクト。どちらでもなければ null（記録も同期もしない）。
- * **ルートはリポジトリの top-level にする。**サブディレクトリから呼ばれても、相対パスの基点がずれない。
+ * The project dir belongs to, or null (nothing is recorded or synced).
+ * **The root is the repository's top level**, so relative paths keep the same base when called from a subdirectory.
  */
 export function identify(dir: string): Place | null {
   const given = path.resolve(dir);
@@ -83,7 +85,7 @@ export function identify(dir: string): Place | null {
   const root = top || given;
   const remote = top ? normalizeRemote(git(root, "remote", "get-url", "origin")) : null;
   if (remote) return { key: `git:${remote}`, root, name: remote.split("/").slice(1).join("/") || remote };
-  // git 管理外のプロジェクトは、サブディレクトリで作業していても名前を付けたルートまで遡って引く。
+  // A project outside git is found by walking up to the named root, even from a subdirectory.
   const map = localMap();
   for (let d = root; ; d = path.dirname(d)) {
     const local = map[d];
@@ -92,34 +94,33 @@ export function identify(dir: string): Place | null {
   }
 }
 
-/** remote の無いプロジェクトに、この PC で名前を付ける。 */
+/** Names a project without a remote on this machine. */
 export function nameLocal(dir: string, name: string): Place {
-  if (!LOCAL_KEY.test(name)) throw new Error(`名前は小文字英数字と . _ - だけにする: ${name}`);
-  // remote があれば key は remote から決まり、名前の key は二度と引かれない（登録しても届かない行になる）。
+  if (!LOCAL_KEY.test(name))
+    throw new Error(`Use only lowercase letters, digits, and . _ - in the name: ${name}`);
+  // With a remote, the key comes from the remote and the named key is never looked up (the entry would be unreachable).
   const place = identify(dir);
   if (place?.key.startsWith("git:"))
-    throw new Error(
-      `${place.root} は git remote を持つので、key は ${place.key} になる。--name を外して登録する`,
-    );
+    throw new Error(`${place.root} has a git remote, so its key is ${place.key}. Add it without --name.`);
   const root = rootOf(dir);
   const m = localMap();
   m[root] = name;
-  // **置き場所を先に作る。**~/.gleanery/ は `gleanery init` で出来るが、その前に名前を付ける利用者には
-  // まだ無い。無いまま書くと ENOENT で落ちて、名前を付けられない。
+  // **Create the directory first.** `gleanery init` creates ~/.gleanery/, but a user may name a project before that.
+  // Writing without it fails with ENOENT, and the project cannot be named.
   fs.mkdirSync(path.dirname(localFile()), { recursive: true, mode: 0o700 });
   fs.writeFileSync(localFile(), `${JSON.stringify(m, null, 2)}\n`);
   return { key: `local:${name}`, root, name };
 }
 
-/** そのプロジェクトの project id。無ければ null（作るのは `gleanery project add` だけ）。 */
+/** The project id, or null (only `gleanery project add` creates one). */
 export async function projectId(db: Kysely<DB>, key: string): Promise<number | null> {
   const r = await db.selectFrom("project").select("id").where("key", "=", key).executeTakeFirst();
   return r?.id ?? null;
 }
 
 /**
- * この PC で、登録済みのプロジェクトの置き場所を探す。~/Projects の直下と、名前を付けたプロジェクトだけを見る。
- * **同じ key の置き場所が 2 つあれば選ばない。**並び順で先に来た複製へ黙って同期しない。
+ * Finds registered projects on this machine. Looks only directly under ~/Projects and at named projects.
+ * **When two places share a key, neither is chosen.** Never sync silently into whichever copy sorts first.
  */
 export function localRoots(roots = [path.join(os.homedir(), "Projects")]): {
   found: Map<string, string>;
@@ -151,11 +152,11 @@ export function localRoots(roots = [path.join(os.homedir(), "Projects")]): {
   return { found, ambiguous };
 }
 
-/** プロジェクトのルートからの相対パス。ルートの外、または読めない形なら null。 */
+/** A path relative to the project root, or null when it is outside the root or unreadable. */
 export function relativeTo(root: string, file: string, cwd = root): string | null {
   const abs = path.resolve(cwd, file);
   const rel = path.relative(root, abs);
-  // `..config` のような名前はルートの中にある。外へ出るのは `..` そのものか `../` で始まるものだけ。
+  // A name like `..config` is inside the root. Only `..` itself or paths starting with `../` leave it.
   if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
   return rel.split(path.sep).join("/");
 }
@@ -163,9 +164,9 @@ export function relativeTo(root: string, file: string, cwd = root): string | nul
 export type Connector = { id: number; headOid: string | null; snapshotAt: string | null };
 
 /**
- * 取り込み元の行。無ければ作る。**transaction（inTransaction。書き込みのロックを先に取る）の中で呼ぶ**
- * （同じ取り込み元の同期の commit を 1 本ずつにする）。
- * 同期の成否と、最後に入れた snapshot はここへ書く（`gleanery doctor` と画面が最後の同期を出す）。
+ * The source row, created when missing. **Call inside a transaction (inTransaction, which takes the write lock first)**
+ * so syncs of the same source commit one at a time.
+ * Sync results and the last snapshot are written here (`gleanery doctor` and the dashboard show the last sync).
  */
 export async function connectorOf(
   db: Kysely<DB>,
@@ -183,11 +184,11 @@ export async function connectorOf(
     .where("project_id", "=", projectId)
     .where("provider", "=", provider)
     .executeTakeFirst();
-  if (!row) throw new Error(`取り込み元を作れなかった: ${provider}`);
+  if (!row) throw new Error(`Could not create the source: ${provider}`);
   return { id: row.id, headOid: row.head_oid, snapshotAt: row.snapshot_at };
 }
 
-/** Codex の apply_patch は編集先を patch の見出しに書く。見出しの 4 形だけを読む（本文は読まない）。 */
+/** Codex apply_patch names the edited file in the patch header. Only the four header forms are read (not the body). */
 export function patchPaths(patch: string): string[] {
   const out: string[] = [];
   for (const line of patch.split("\n")) {

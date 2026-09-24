@@ -28,7 +28,7 @@
 5. `trace.ts` の検査の文（`trace check` / `save` が出す）を英語にする
 6. `plugin/skills/trace/SKILL.md` は、CLI と同じ件数の表現を写している箇所だけ合わせる
 7. 触ったファイルのコメントは英語にする。日本語の値を残すファイル（`knowledge.ts`・`search.ts`・`docs.ts` など）もコメントは英語にする
-8. 機械の検査 `scripts/check-english.mjs` を足す。TypeScript の構文（server の devDependencies の `typescript`）で文字列・template・コメントを読み、ひらがな・カタカナ・漢字を探す
+8. 機械の検査 `scripts/check-english.mjs` を足す。js-tokens（server の devDependencies）で文字列・template・コメントを字句として読み、ひらがな・カタカナ・漢字・全角の記号を探す
    - 英語だけのファイル: 文字列とコメントの両方を見る。コメントだけのファイル: コメントだけを見る
    - 例外は対象のリテラルの直前の印に理由を書く。印の付いたリテラルに日本語が無ければ落とす（要らなくなった例外を残さない）
    - `bun run verify` と lefthook に入れる。一覧は後の段で増やす
@@ -55,7 +55,7 @@
 - 採った: 英語へ置き換える。棄却: i18n と locale の切り替え（最終的に英語だけにする）
 - 採った: 共有の表示は CLI・TUI に英語の経路を渡す。棄却: 共有の札を今回英語にする（MCP の応答が変わる）、共有の札を残す（CLI と dashboard に日本語が残る）
 - 採った: 案内の Error は英語にする。棄却: CLI 側で英語へ写す（同じ文を 2 か所で持つ）
-- 採った: 検査は TypeScript の構文で文字列とコメントを見る。棄却: 出力全体に日本語が無いことを見る（日本語の記録で落ちる）、行単位の正規表現（複数行の template や文字列の中の `//` を見分けられない）
+- 採った: 検査は字句（js-tokens）で文字列とコメントを見る。棄却: 出力全体に日本語が無いことを見る（日本語の記録で落ちる）、行単位の正規表現（複数行の template や文字列の中の `//` を見分けられない）
 - 採った: 1 PR。棄却: CLI の command と dashboard で分ける（同じ版に入り、共有の表示と test がある）
 
 ## 手順
@@ -81,3 +81,4 @@
 - 文字の数が多く（`cli.ts` だけで 183 行）、訳の揺れが出る。用語の表で揃える
 - test の期待値の大量の書き換えで、検査を弱める書き換え（正規表現を緩める）が混ざる。review-shipping に見てもらう
 - 共有の表示の経路を 2 つ持つ間、片方だけを直す誤りが出る。MCP の段で 1 つに戻す
+2026-09-24: 検査の字句解析は TypeScript 7 に JavaScript の API が無いので、server の devDependencies に js-tokens 10.0.0 を足して使う（npm で来歴・公開日・依存 0 を確認）。持ち主の Go を得た（devDependency に限る）。

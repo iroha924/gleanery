@@ -1,7 +1,7 @@
-// CLI の出力を Ink で描く。1 回出して終わる出力なので renderToString で塊ごとに文字列にし、console へ渡す。
-// **中身は必ず字下げし、締めの行だけを行頭に置く。**外から来た文字（PR の題、DB に残ったエラー文）が改行を含んでも、
-// 行頭の締めの行や状態の行を偽造できない（以前は各行の頭の │ がこの役を持っていた。test/cli.test.ts が見る）。
-// 自動記録のフックは CLI ではなく Ink を読み込まないので、server/src/panel.ts の形のまま出す。
+// Draws CLI output with Ink. Output is printed once, so each block is rendered to a string with renderToString and passed to console.
+// **Content is always indented; only the closing line starts at column 0.** Text from outside (PR titles, errors stored in the
+// database) cannot forge a closing or status line even with newlines (the │ at each line start used to do this; test/cli.test.ts checks).
+// Recording hooks are not the CLI and do not load Ink, so they keep the server/src/panel.ts format.
 
 import { Alert, Badge, ProgressBar, StatusMessage, ThemeProvider } from "@inkjs/ui";
 import { Box, renderToString, Text } from "ink";
@@ -11,32 +11,32 @@ import { mark, width } from "../panel.ts";
 import { ICONS } from "./icons.ts";
 import { earth } from "./theme.ts";
 
-/** 色は標準出力と標準エラーの両方が端末のときだけ（panel.ts の mark と同じ条件）。pipe では AI が読むので飾りを足さない */
+/** Color only when both stdout and stderr are terminals (the same condition as panel.ts mark). In pipes an AI reads it, so no decoration */
 const colored = () => Boolean(process.stdout.isTTY && process.stderr.isTTY) && !process.env.NO_COLOR;
 
-/** 端末なら端末の幅で折り返す。pipe では折らない（パスや URL が途中で切れると、読む側が繋ぎ直せない） */
+/** Wrap at the terminal width in a terminal. Never wrap in pipes (a path or URL cut midway cannot be rejoined by the reader) */
 const columns = () => (process.stdout.isTTY ? Math.max(40, process.stdout.columns ?? 100) : 10_000);
 
-// @inkjs/ui の部品の色もアースカラーにするため、テーマを掛けて描く
+// Render with the theme so @inkjs/ui parts use the earth tones too
 const draw = (node: ReactNode): string =>
   renderToString(part(ThemeProvider, { theme: earth }, node), { columns: columns() });
 
 /**
- * 1 行にする。制御文字は落とさない — 印の色（panel.ts の mark）の ESC まで消えて `[32m` が残る。
- * 外から来た文字は、呼び出し側が plain / inline を通してから渡す。
+ * Joins into one line. Control characters are kept — dropping them would remove the ESC of the mark color (panel.ts mark) and leave `[32m`.
+ * Callers pass outside text through plain / inline first.
  */
 const oneLine = (text: string) => text.replace(/\r\n?|[\n\v\f\u0085\u2028\u2029]/g, " ");
 
 /**
- * 見出し。端末では角丸の枠で囲み、要点（meta）を薄く添え、後ろに空行を置く。
- * pipe では `✦ <text>` の 1 行（要点は締めの行に出す。読むのは AI で、枠の文字は読む量を増やすだけ）。
+ * A heading. In a terminal it is boxed with rounded corners, with the summary (meta) dimmed beside it and a blank line after.
+ * In pipes it is one `✦ <text>` line (the summary goes to the closing line; an AI reads it, and box characters only add length).
  */
 export function title(text: string, meta?: string): string {
   const t = oneLine(text);
   if (!colored()) return draw(h(Text, null, `✦ ${t}`));
   const name = `${ICONS.brand} ${t}`;
   const extra = meta ? `  ${oneLine(meta)}` : "";
-  // 枠は中身の幅に合わせ、端末の幅を越えるなら端末の幅で止めて要点の末尾を省く（越えると端末が罫線を折り返して崩れる）
+  // The box fits the content; wider than the terminal, it stops at the terminal width and trims the summary (a wider box wraps and breaks)
   const inner = width(name) + width(extra);
   return `${draw(
     h(
@@ -55,21 +55,21 @@ export function title(text: string, meta?: string): string {
   )}\n`;
 }
 
-/** 節の見出し（中身と同じだけ字下げし、太字にする） */
+/** A section heading (indented like the content, in bold) */
 export function section(text: string): string {
   return draw(h(Box, { paddingLeft: 2 }, h(Text, { bold: true }, oneLine(text))));
 }
 
-/** 印（panel.ts の mark。色の制御文字が前に付くことがある）で始まる行。ラベル・バージョン・値のような列を持つ */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: 印の前に付く色の制御文字を読み飛ばす
+/** A line starting with a mark (panel.ts mark; a color control sequence may precede it). Has columns such as label, version, value */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: skips the color control sequence before the mark
 const MARKED = /^(?:\u001b\[[0-9;]*m)*[✓△✗○](?:\u001b\[[0-9;]*m)* /;
 
 /**
- * 中身の行。全部の行が 2 桁以上下がる。行頭の空白は余白に移すので、端末の幅で折り返した行もその行の文字の頭に揃う
- * （空白を文字のまま渡すと、折り返した 2 行目が 2 桁目へ戻り、どの項目の続きか分からなくなる）。印で始まる行は、2 つ以上
- * 続く空白を列の区切りとみなし、最後の列（値）の中で折り返す。空行は空行のまま
+ * Content lines. Every line is indented by 2 or more. Leading spaces become padding, so lines wrapped at the terminal width align
+ * with the start of that line's text (as plain spaces, the wrapped second line returns to column 2 and loses its item). In lines
+ * starting with a mark, two or more spaces separate columns, and wrapping happens inside the last column (the value). Blank lines stay blank
  */
-/** Ink は空白で折り返すと、その空白を続きの行の頭に残す（wrap-ansi の trim: false）。続きの行を列に揃えるため 1 つ落とす */
+/** When Ink wraps at a space it keeps that space at the start of the next line (wrap-ansi trim: false). Drop one to align with the column */
 const flush = (out: string, column: number): string =>
   out
     .split("\n")
@@ -96,7 +96,7 @@ export function indent(text: string): string {
           );
         const out = row(cells[2]);
         if (!out.includes("\n")) return out;
-        // 値の列の位置は、空白を持たない値を同じ配置で描いたときの続きの行の字下げ（記号の幅を自分で数えない）
+        // The value column starts where a value without spaces would continue in the same layout (symbol widths are not counted by hand)
         const column =
           row("x".repeat(columns() * 2))
             .split("\n")[1]
@@ -108,23 +108,23 @@ export function indent(text: string): string {
     .join("\n");
 }
 
-/** 締めの行。行頭に置く唯一の行なので、改行を潰して 1 行にする（偽の行を作らせない）。端末では前に空行を置く */
+/** The closing line. It is the only line at column 0, so newlines are collapsed into one line (no forged lines). A blank line precedes it in terminals */
 export function closing(text: string): string {
   const line = draw(h(Text, { bold: true }, oneLine(text)));
   return colored() ? `\n${line}` : line;
 }
 
-/** 見出し・中身・締めの 1 塊 */
+/** One block of heading, content, and closing */
 export function panel(head: string, lines: string[], end: string): string {
   return document(head, undefined, lines.length ? [{ kind: "lines", lines }] : [], end);
 }
 
-/** 文書の中の 1 項目。Badge（色は palette.ts の kindColor）・題・本文・出所（行ごとに薄く出し、切らない） */
+/** One item in a document: Badge (color from palette.ts kindColor), title, body, and sources (each dimmed on its own line, never cut) */
 export type Card = { badge?: { text: string; color: string }; title: string; body?: string; meta?: string[] };
 
 /**
- * 文書の節。どれも端末では部品で描き、pipe では字下げした文字で出す。外から来た文字は、枠かセルか字下げの中にだけ入る。
- *   lines 字下げした行 / table 表 / cards Badge 付きの項目 / fields 項目と値 / meter 割合の棒 / note 印付きの 1 行
+ * Document sections. Terminals draw them with parts; pipes print indented text. Outside text only goes inside boxes, cells, or indentation.
+ *   lines indented lines / table a table / cards items with a Badge / fields labels and values / meter a ratio bar / note one line with a mark
  */
 export type Block =
   | { kind: "lines"; lines: string[] }
@@ -134,7 +134,7 @@ export type Block =
   | { kind: "meter"; label: string; ratio: number; text: string }
   | { kind: "note"; tone: "info" | "warning" | "error" | "success"; text: string };
 
-/** 見出し・節・締めの文書。端末では節の間に空行を置く */
+/** A document of heading, sections, and closing. Terminals put a blank line between sections */
 export function document(head: string, meta: string | undefined, blocks: Block[], end: string): string {
   const fancy = colored();
   const body = blocks.map((b) => (fancy ? drawBlock(b) : plainBlock(b)));
@@ -143,16 +143,16 @@ export function document(head: string, meta: string | undefined, blocks: Block[]
     .join("\n");
 }
 
-/** 失敗の文書。端末では赤の枠（Alert。印は Alert が付ける）に理由を入れ、pipe では字下げした理由と行頭の `✗ 止まった` */
+/** A failure document. Terminals show the reason in a red box (Alert, which adds the mark); pipes print the indented reason and a `✗ Stopped` line at column 0 */
 export function failure(head: string, reason: string): string {
-  if (!colored()) return [title(head), indent(reason), closing(`${mark("fail")} 止まった`)].join("\n");
+  if (!colored()) return [title(head), indent(reason), closing(`${mark("fail")} Stopped`)].join("\n");
   return [
     title(head),
     draw(
       h(
         Box,
         { paddingLeft: 2, flexDirection: "column" },
-        part(Alert, { variant: "error", title: "止まった" }, reason),
+        part(Alert, { variant: "error", title: "Stopped" }, reason),
       ),
     ),
   ].join("\n");
@@ -160,7 +160,7 @@ export function failure(head: string, reason: string): string {
 
 const cell = (text: string) => oneLine(text).trim();
 
-/** @inkjs/ui の部品は型が children を props の必須にしているので、children を props に入れて渡す */
+/** @inkjs/ui parts type children as a required prop, so children are passed in props */
 export function part<P extends { children: ReactNode }>(
   C: FC<P>,
   props: Omit<P, "children">,
@@ -174,7 +174,7 @@ function drawBlock(b: Block): string {
     case "lines":
       return b.lines.map(indent).join("\n");
     case "table": {
-      // 最後の列以外は、その列の最も長いセルの幅（上限 40）に揃える。最後の列は残りの幅で切る
+      // Every column but the last is as wide as its longest cell (up to 40). The last column is cut to the remaining width
       const widths = b.head.map((_, i) =>
         Math.min(40, Math.max(...[b.head, ...b.rows].map((r) => width(cell(r[i] ?? ""))))),
       );
@@ -206,7 +206,7 @@ function drawBlock(b: Block): string {
       );
     }
     case "cards":
-      // Badge を左の列に置き、題・本文・出所を右の列に揃える（折り返しても Badge の下へ回り込まない）
+      // The Badge sits in the left column and the title, body, and sources align in the right column (wrapped lines stay clear of the Badge)
       return draw(
         h(
           Box,
@@ -258,7 +258,7 @@ function drawBlock(b: Block): string {
           Box,
           { paddingLeft: 2, gap: 2 },
           h(Box, { flexShrink: 0 }, h(Text, { dimColor: true }, cell(b.label))),
-          // 棒は端末の幅に合わせて縮める（固定の幅だと、狭い端末で見出しと棒が次の行へ折れる）
+          // The bar shrinks to the terminal width (a fixed width pushes the heading and bar onto the next line in narrow terminals)
           h(
             Box,
             {
@@ -285,7 +285,7 @@ function plainBlock(b: Block): string {
       return b.items
         .map((c) =>
           [
-            indent(`${c.badge ? `【${cell(c.badge.text)}】` : ""}${cell(c.title)}`),
+            indent(`${c.badge ? `[${cell(c.badge.text)}] ` : ""}${cell(c.title)}`),
             ...(c.body ? c.body.split("\n").map((l) => indent(`  ${l}`)) : []),
             ...(c.meta ?? []).map((m) => indent(`  ${cell(m)}`)),
           ].join("\n"),
@@ -300,21 +300,21 @@ function plainBlock(b: Block): string {
   }
 }
 
-/** 打つ command の手順の 1 項目。after は打った後にすること */
+/** One step of a command to run. after is what to do once it has run */
 export type Step = { who: string; command: string; after: string | null };
 
 /**
- * 打つ command の手順の塊。端末では角丸の枠で囲み、command を色付きの 1 行で出す（そのまま写せるように）。
- * pipe では枠を付けず、字下げした一覧にする（読むのは AI で、枠の文字は読む量を増やすだけ）。
+ * Steps of commands to run. Terminals draw a rounded box with each command on one colored line (so it can be copied as is).
+ * Pipes print an indented list without a box (an AI reads it, and box characters only add length).
  */
 export function steps(heading: string, items: Step[], note: string): string {
-  // 枠の中（字下げ 4・枠と余白 4・項目の字下げ 2）に command が 1 行で入らなければ枠を付けない。Ink は枠の幅で command を
-  // 折り、写すと途中までの command になる。枠の無い形は Ink を通さず、折り返しを端末に任せる（写しても 1 行のまま取れる）
+  // No box when a command does not fit on one line inside it (indent 4, box and padding 4, item indent 2). Ink would wrap the
+  // command at the box width and a copy would be cut. The boxless form skips Ink and lets the terminal wrap (a copy stays one line)
   const room = columns() - 10;
   if (!colored() || items.some((x) => width(x.command) > room))
     return [
       `    ${oneLine(heading)}:`,
-      ...items.map((x) => `      ${x.who}: ${x.command}${x.after ? ` の後、${x.after}` : ""}`),
+      ...items.map((x) => `      ${x.who}: ${x.command}${x.after ? `, then ${x.after}` : ""}`),
       `      ${oneLine(note)}`,
     ].join("\n");
   return draw(
@@ -336,7 +336,7 @@ export function steps(heading: string, items: Step[], note: string): string {
           h(Text, { bold: true }, x.who),
           h(Box, { paddingLeft: 2 }, h(Text, { color: PALETTE.sand, wrap: "wrap" }, x.command)),
           x.after
-            ? h(Box, { paddingLeft: 2 }, h(Text, { dimColor: true, wrap: "wrap" }, `その後: ${x.after}`))
+            ? h(Box, { paddingLeft: 2 }, h(Text, { dimColor: true, wrap: "wrap" }, `Then: ${x.after}`))
             : null,
         ),
       ),

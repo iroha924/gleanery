@@ -37,7 +37,7 @@ await withTempDir(async (dir) => {
     // 文書の除外。add は connector を作り、list は join で引き、remove は副問い合わせで絞る。
     note("exclude add", runCli(["project", "exclude", "add", "--cwd", repo, "docs"], dir, covDir));
     const excluded = note("exclude list", runCli(["project", "exclude", "list", "--cwd", repo], dir, covDir));
-    if (!/^\s+docs\s+ディレクトリ$/m.test(excluded.out))
+    if (!/^\s+docs\s+directory$/m.test(excluded.out))
       failures.push(`exclude list が足した path を出していない\n${excluded.out.slice(0, 400)}`);
     note("exclude remove", runCli(["project", "exclude", "remove", "--cwd", repo, "docs"], dir, covDir));
     // **harvest はここでは半分だけ通る。**プロジェクトの key は remote の綴りから決まるので、
@@ -47,7 +47,7 @@ await withTempDir(async (dir) => {
     const harvest = runCli(["harvest", "--cwd", repo], dir, covDir);
     if (!/GitHub: /.test(harvest.out))
       failures.push(`harvest の GitHub 側が動いていない\n${harvest.out.slice(0, 600)}`);
-    if (!/remote の既定 branch を取れなかった/.test(harvest.out)) {
+    if (!/Could not fetch the remote's default branch/.test(harvest.out)) {
       failures.push(
         `harvest の文書側が、手元では届かないはずの remote を引けている\n${harvest.out.slice(0, 600)}`,
       );
@@ -56,9 +56,9 @@ await withTempDir(async (dir) => {
     const again = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "2" });
     if (!/GitHub: /.test(again.out))
       failures.push(`2 巡目の harvest が GitHub を回していない\n${again.out.slice(0, 400)}`);
-    if (!/消えた 1 件/.test(again.out))
+    if (!/PRs and issues \([^)]*1 removed\)/.test(again.out))
       failures.push(`2 巡目の harvest が消えた issue を消していない\n${again.out.slice(0, 400)}`);
-    if (!/PR・issue 1 件（書き直した 1 件/.test(again.out) || !/発言 \d+ 件（書き直した 0 件/.test(again.out))
+    if (!/1 PRs and issues \(1 rewritten/.test(again.out) || !/\d+ messages \(0 rewritten/.test(again.out))
       failures.push(`2 巡目の harvest が題だけ変わった PR の発言を書き直した\n${again.out.slice(0, 400)}`);
 
     note("who（名簿）", runCli(["who"], dir, covDir));
@@ -150,7 +150,7 @@ await withTempDir(async (dir) => {
     // プロジェクトを登録したら、退避した分がそのまま入る。ここが繋がらないと退避の意味が無い。
     note("project add（退避先）", runCli(["project", "add", "--cwd", stranger], dir, covDir));
     const retried = runCli(["capture", "flush"], dir, covDir, strangerAs);
-    if (!/新しく入った発言\s+[1-9]/.test(retried.out)) {
+    if (!/new messages\s+[1-9]/.test(retried.out)) {
       failures.push(`登録した後も、退避した記録が入っていない\n${retried.out.slice(0, 400)}`);
     }
     const after = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
@@ -160,9 +160,9 @@ await withTempDir(async (dir) => {
     // 作業ツリーの中身が違う等）、この検査と関係なく 1 になる。DB の行だけを中身で見る。
     const doctor = runCli(["doctor"], dir, covDir);
     for (const [label, want] of [
-      ["schema のバージョン", /✓ schema のバージョン\s+revision \d+/],
-      ["全文検索の索引", /✓ 全文検索の索引\s+整っている/],
-      ["プロジェクト", /プロジェクト/],
+      ["Schema version", /✓ Schema version\s+revision \d+/],
+      ["Full-text index", /✓ Full-text index\s+healthy/],
+      ["Projects", /Projects/],
     ]) {
       if (!want.test(doctor.out))
         failures.push(`doctor が ${label} を健全と言わない\n${doctor.out.slice(0, 800)}`);
@@ -184,7 +184,7 @@ await withTempDir(async (dir) => {
     const esc = "\u001b[2J\u001b]0;pwn\u0007\r";
     // who --me で結んだ後は、merge した持ち主の PR の本文から判断を書く（偽の gh は hostile の回だけ PR を merge 済みにする）
     const decided = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "hostile" });
-    if (!/PR の判断 書き直した行 [1-9]/.test(decided.out))
+    if (!/PR decisions: [1-9]/.test(decided.out))
       failures.push(`harvest が PR の判断の結果を出していない\n${decided.out.slice(0, 600)}`);
     clean("who（第三者のハンドル）", runCli(["who"], dir, covDir), "someone");
     clean("who（結ぶ）", runCli(["who", "--me", "私", `someone${esc}`], dir, covDir), "someone");

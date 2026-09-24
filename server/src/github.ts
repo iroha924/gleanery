@@ -1,13 +1,13 @@
-// GitHub の PR・issue を、今の状態（source_item）と会話（conversation / message）にする。
+// Turns GitHub PRs and issues into their current state (source_item) and conversations (conversation / message).
 //
-// **経路は `gh` の 1 つだけ。**持ち主 1 人なので `gh auth` がそのまま使え、同期先はその PC の DB なので
-// どれか 1 台の PC が毎日回せば全 PC から引ける。
+// **The only path is `gh`.** There is one owner, so `gh auth` works as is. Sync writes to that machine's database, so
+// one machine running it daily is enough for every machine to search it.
 //
-// PR・issue 1 件が 1 つの会話で、本文・コメント・レビューの指摘がそれぞれ 1 発言になる。
-// レビューの返信は reply_to で親を指し、指されたファイルは message_file に置く（「このファイルについて」で引く）。
-// **一覧は毎回全部取る。**消えたコメントと PR を反映するには完全な一覧が要り、持ち主のリポジトリなら数秒で済む。
-// 書き込みは内容の hash が変わった行だけにする。
-// GitHub から来た文字列は全部 clean() を通す（NUL が 1 つあると transaction ごと落ち、毎日の同期が止まる）。
+// One PR or issue is one conversation; its body, comments, and review comments are one message each.
+// Review replies point to their parent with reply_to, and the files they point at go in message_file (found by "about this file").
+// **The whole list is fetched every time.** Reflecting deleted comments and PRs needs a complete list, and an owner's repository takes seconds.
+// Only rows whose content hash changed are written.
+// Every string from GitHub goes through clean() (a single NUL fails the whole transaction and stops the daily sync).
 
 import { execFileSync } from "node:child_process";
 import type { Kysely } from "kysely";
@@ -43,7 +43,7 @@ export type RawIssue = {
   created_at: string;
   updated_at: string;
   html_url: string;
-  /** このキーがあるものは PR。issues エンドポイントは PR も返す */
+  /** Present on PRs. The issues endpoint also returns PRs */
   pull_request?: unknown;
 };
 
@@ -92,8 +92,8 @@ export const cliSource = (repo: string): GithubSource => ({
   issueComments: async () => gh(repo, "issues/comments?per_page=100") as IssueComment[],
 });
 
-// AI のレビューは中身があるので残す。落とすのは推論を含まない自動通知（Terraform の plan、デプロイ URL、
-// カバレッジ表、依存更新）だけ。名前で決めるのは、本文で判定すると書式が変わるたびに漏れるから。
+// AI reviews have substance, so they are kept. Only automated notices without reasoning are dropped (Terraform plans, deploy URLs,
+// coverage tables, dependency updates). They are matched by name because matching the body breaks whenever the format changes.
 const AI_REVIEWERS = new Set([
   "gemini-code-assist[bot]",
   "coderabbitai[bot]",
@@ -107,7 +107,7 @@ export type Speaker = Exclude<SpeakerKind, "self">;
 export const speakerOf = (login: string): Speaker =>
   AI_REVIEWERS.has(login) ? "assistant" : login.endsWith("[bot]") ? "bot" : "person";
 
-// 相槌はナレッジではない。**短さだけで落とさない** — 「これは DBT 側で」は 10 字でも中身がある。
+// Acknowledgments are not knowledge. **Length alone does not drop a message** — a 10-character reply can still carry content.
 const FILLER =
   /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:|:eyes:|:pray:)[!！。.\s]*$/i;
 export const isFiller = (body: string): boolean => {
@@ -124,12 +124,12 @@ export type Item = {
   author: User;
   createdAt: string;
   updatedAt: string;
-  /** マージした（PR）か閉じた時刻。開いているものは null */
+  /** When it was merged (PR) or closed. null while open */
   closedAt: string | null;
 };
 
 export type Said = {
-  /** 会話の中で一意。本文は `body`、コメントは `c:<id>`、レビューは `r:<id>` */
+  /** Unique within the conversation: `body` for the body, `c:<id>` for comments, `r:<id>` for reviews */
   externalId: string;
   replyTo: string | null;
   author: User;
@@ -142,11 +142,11 @@ export type Said = {
 
 export type Collected = { items: Item[]; said: Map<number, Said[]> };
 
-/** PR と issue の本体、コメント、レビューを集めて、書き込む形へ揃える。 */
+/** Collects PR and issue bodies, comments, and reviews into the shape to write. */
 export async function collect(source: GithubSource): Promise<Collected> {
   const items = new Map<number, Item>();
-  // ページ送りの最中に新しい PR やコメントが入ると、境界の項目が 2 ページに現れる。同じ発言は 1 つにする
-  // （まとめて書く upsert に同じ id が 2 行あると、transaction ごと落ちる）。
+  // When a PR or comment arrives during paging, the item at the boundary appears on two pages. Keep one message per id
+  // (a batch upsert with the same id twice fails the whole transaction).
   const said = new Map<number, Map<string, Said>>();
   const push = (n: number, s: Said) => said.set(n, (said.get(n) ?? new Map()).set(s.externalId, s));
   const who = (u: User): User => (u ? { id: u.id, login: clean(u.login) } : null);
@@ -166,7 +166,7 @@ export async function collect(source: GithubSource): Promise<Collected> {
   };
 
   for (const p of await source.pulls()) {
-    // **bot が作った PR も入れる。**リリース PR は release-bot 名義で、落とすと「いつ何を出したか」が消える。
+    // **PRs created by bots are kept.** Release PRs come from release-bot, and dropping them loses what shipped when.
     const state = p.merged_at ? "merged" : p.state === "open" ? "open" : "closed";
     const url = clean(p.html_url);
     items.set(p.number, {
@@ -183,7 +183,7 @@ export async function collect(source: GithubSource): Promise<Collected> {
     body(p.number, who(p.user), p.body, p.created_at, url);
   }
   for (const i of await source.issues()) {
-    // issues エンドポイントは PR も返す。**bot が作った issue は入れない**（定期レポートが並ぶだけになる）。
+    // The issues endpoint also returns PRs. **Issues created by bots are skipped** (they are only recurring reports).
     if (i.pull_request || speakerOf(i.user?.login ?? "") === "bot") continue;
     const state = i.state === "open" ? "open" : "closed";
     const url = clean(i.html_url);
@@ -231,7 +231,7 @@ export async function collect(source: GithubSource): Promise<Collected> {
       file: null,
     });
   }
-  // 返信の親が落とされた（相槌だった）ときは、親を持たない発言として残す。
+  // When the parent of a reply was dropped (an acknowledgment), keep the reply without a parent.
   const lists = new Map([...said].map(([n, m]) => [n, [...m.values()]]));
   for (const list of lists.values()) {
     const ids = new Set(list.map((s) => s.externalId));
@@ -254,25 +254,25 @@ const itemHash = (i: Item): Buffer =>
     ]),
   );
 
-// 1 文で渡す変数の数を SQLite の上限（32,766）より十分下に保つ。
+// Keep the number of variables per statement well below SQLite's limit (32,766).
 const chunks = <T>(xs: T[], n = 1000): T[][] =>
   Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, (i + 1) * n));
 
 /**
- * 1 つのプロジェクトの GitHub を同期する。repo は `owner/name`。
- * **読み始めた時刻が、既に入っている snapshot より古ければ書かない**（遅れて commit した同期が新しい状態を巻き戻さない）。
+ * Syncs one project's GitHub. repo is `owner/name`.
+ * **Nothing is written when reading started before the snapshot already stored** (a late commit never rolls back a newer state).
  */
 export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string): Promise<string> {
-  // 読み始めた時刻。同じ PC の同期どうしを比べるので、この PC の時計で足りる（DB は PC ごとに独立している）。
+  // When reading started. Syncs on the same machine are compared, so this machine's clock is enough (each machine has its own database).
   const snapshotAt = iso(Date.now());
   const { items, said } = await collect(cliSource(repo));
 
   const counts = await inTransaction(db, async (trx) => {
     const connector = await connectorOf(trx, projectId, "github");
-    // 取得を始めた後に、別の同期がより新しい取得を入れていれば書かない（遅れた古い取得で巻き戻さない）。
+    // If another sync stored a newer fetch after this one started, write nothing (an older, late fetch never rolls it back).
     if (connector.snapshotAt && snapshotAt < connector.snapshotAt) return null;
 
-    // 発言者。login は変えられるので user id で結び、handle は今の login に揃える。
+    // Speakers. Logins can change, so they are linked by user id, and handle follows the current login.
     const users = new Map<number, string>();
     for (const i of items) if (i.author) users.set(i.author.id, i.author.login);
     for (const list of said.values())
@@ -308,7 +308,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
           .execute()
       ).map((r) => [r.external_id, r]),
     );
-    // 既に入っている発言を 1 回で読む。変わっていない PR・issue では 1 往復もしない。
+    // Read the stored messages in one query. Unchanged PRs and issues need no round trip.
     const stored = new Map(
       (
         await trx
@@ -361,14 +361,14 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
       for (const x of rows) sourceId.set(x.external_id, x.id);
     }
 
-    // 変わった発言だけを集める。返信は同じ transaction で親を書く（外部キーは文ごとに確かめられるので、
-    // 親を先に並べる。親が無い返信は collect が null にしてある）。
+    // Collect only changed messages. Replies write their parents in the same transaction (foreign keys are checked per statement,
+    // so parents come first; collect already set replies without a parent to null).
     const live = new Set<string>();
     const conversations = new Map<string, { source: number; external: string; at: string }>();
     const messages: { s: Said; id: string; conversation: string; hash: Buffer; indexed: boolean }[] = [];
     for (const item of items) {
       const source = sourceId.get(String(item.number));
-      if (!source) throw new Error(`PR・issue を書けなかった: #${item.number}`);
+      if (!source) throw new Error(`Could not write PR or issue #${item.number}`);
       const conversation = conversationId(projectId, "github", `${repo}#${item.number}`);
       for (const s of said.get(item.number) ?? []) {
         const messageId = uuidFrom(conversation, s.externalId);
@@ -396,7 +396,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
         )
         .onConflict((oc) => oc.column("id").doNothing())
         .execute();
-    // 返信の親を先に書く（親の無い返信を先に書くと、外部キーがその文の終わりで落ちる）。
+    // Write reply parents first (writing a reply before its parent fails the foreign key at the end of that statement).
     const ordered = [...messages].sort((a, b) => Number(a.s.replyTo !== null) - Number(b.s.replyTo !== null));
     for (const part of chunks(ordered))
       await trx
@@ -447,14 +447,14 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
         : [],
     );
     for (const part of chunks(files)) await trx.insertInto("message_file").values(part).execute();
-    // GitHub で消されたコメントは消す。一覧は完全なもの（取れなかったら collect が投げてここに来ない）。
+    // Delete comments deleted on GitHub. The list is complete (if it could not be fetched, collect threw and this is not reached).
     const gone = [...stored.keys()].filter((id) => !live.has(id));
     let messagesRemoved = 0;
     for (const part of chunks(gone))
       messagesRemoved += Number(
         (await trx.deleteFrom("message").where("id", "in", part).executeTakeFirst()).numDeletedRows,
       );
-    // merge した持ち主の PR の本文から、判断を取り出して knowledge に揃える（本文が変わっていなくても毎回判定し直す）
+    // Extract decisions from the bodies of your merged PRs into knowledge (re-evaluated every time, even when the body did not change)
     const decisions = await syncDecisions(
       trx,
       projectId,
@@ -477,7 +477,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
         ];
       }),
     );
-    // 一覧から消えた PR・issue（削除された、別のリポジトリへ移された）は行ごと消す。
+    // PRs and issues gone from the list (deleted, or moved to another repository) are deleted with their rows.
     const present = new Set(items.map((i) => String(i.number)));
     const vanished = [...known.keys()].filter((n) => !present.has(n));
     let itemsRemoved = 0;
@@ -505,13 +505,13 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
     };
   });
 
-  if (!counts) return "飛ばした（読み始めた後に、別の同期がより新しい状態を入れた）";
+  if (!counts) return "skipped (another sync stored a newer state after this one started reading)";
   const total = [...said.values()].reduce((n, l) => n + l.length, 0);
   return [
-    `PR・issue ${items.length} 件（書き直した ${counts.itemsWritten} 件${counts.itemsRemoved ? ` / 消えた ${counts.itemsRemoved} 件` : ""}）`,
-    `発言 ${total} 件（書き直した ${counts.messagesWritten} 件${counts.messagesRemoved ? ` / 消えた ${counts.messagesRemoved} 件` : ""}）`,
+    `${items.length} PRs and issues (${counts.itemsWritten} rewritten${counts.itemsRemoved ? `, ${counts.itemsRemoved} removed` : ""})`,
+    `${total} messages (${counts.messagesWritten} rewritten${counts.messagesRemoved ? `, ${counts.messagesRemoved} removed` : ""})`,
     counts.decisions.unlinked
-      ? "PR の判断は取り込んでいない（持ち主の GitHub のハンドルを結んでいない。gleanery who --me <呼び名> <ハンドル> の後にもう一度 harvest）"
-      : `PR の判断 書き直した行 ${counts.decisions.written}${counts.decisions.skipped ? `（書式に合わず飛ばした行 ${counts.decisions.skipped}）` : ""}`,
+      ? "PR decisions not imported (your GitHub handle is not linked. Run gleanery who --me <name> <handle>, then harvest again)"
+      : `PR decisions: ${counts.decisions.written} rows rewritten${counts.decisions.skipped ? ` (${counts.decisions.skipped} rows skipped for not matching the format)` : ""}`,
   ].join(" / ");
 }

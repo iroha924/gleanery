@@ -1,21 +1,21 @@
 #!/usr/bin/env node
-// 会話の自動記録。フックから呼ばれ、持ち主の発言と AI の最後の応答と、触ったファイルを残す。
+// Conversation recording. Called from hooks, it keeps your messages, the AI's last response, and touched files.
 //
-// **記録のフックは手元の待ち行列へ書くだけにする。**網へは Stop が切り離したプロセスからまとめて送る。
-// DB に届かない間も待ち行列に残り、次の送信で冪等に送り直す（id は入力から決定的に作る）。
+// **Recording hooks only write to a local queue.** A process detached by Stop sends the batch over the network.
+// While the database is unreachable the records stay queued and are resent idempotently next time (ids are derived from the input).
 //
-// **持ち主が打っていない prompt を持ち主の発言として残さない。**先行事例では、別の agent 向けの prompt が
-// 「利用者の発言」として DB の 97.2% を占めた。見分けは 5 つで、どれも推測をしない。
-//   - subagent の中の turn は hook 入力に agent_id が付く
-//   - Claude Code が起動した子（Bash から叩いた claude -p や codex exec）は、親の SessionStart が
-//     CLAUDE_ENV_FILE に書いた GLEANERY_PARENT_SESSION を継ぐ。自分の session id と違えば子である
-//     （記録させたくない起動には、どの session とも一致しない値を置けばよい。値を「その session の id」にしてあるのは、
-//     この変数が将来 hook 自身の環境へ届く仕様になっても、持ち主の session では自分の id と一致して記録が止まらないようにするため）
-//   - Codex が shell から起動した別の Codex は親の CODEX_THREAD_ID を継ぐ。hook 入力の session id と違えば子である
-//   - 印を継がない headless（launchd や Codex から起動した claude -p）は、hook の環境の
-//     CLAUDE_CODE_ENTRYPOINT が sdk-cli になる（2.1.269 で実測。文書には無い）。人が打つ session は cli
-//   - 持ち主の session の中でも、背景タスクの完了・停止の通知と、channel・subagent・teammate・別の session からの伝言が
-//     UserPromptSubmit に届く（通知は 2.1.269 で実測）。決まった形（INJECTED）で外す
+// **Prompts you did not type are never recorded as your messages.** In a prior case, prompts meant for another agent
+// made up 97.2% of the database as "user messages". There are five checks, none of them guesses.
+//   - turns inside a subagent carry agent_id in the hook input
+//   - children started by Claude Code (claude -p or codex exec run from Bash) inherit GLEANERY_PARENT_SESSION, which the parent's
+//     SessionStart wrote to CLAUDE_ENV_FILE. If it differs from its own session id, it is a child
+//     (to keep a launch from being recorded, set a value that matches no session. The value is that session's id so that, if this
+//     variable ever reaches the hook's own environment, it matches your own session id and recording does not stop)
+//   - another Codex started from a Codex shell inherits the parent's CODEX_THREAD_ID. If it differs from the hook input's session id, it is a child
+//   - headless runs that inherit no marker (claude -p from launchd or Codex) have CLAUDE_CODE_ENTRYPOINT set to sdk-cli in the
+//     hook's environment (measured in 2.1.269; undocumented). Sessions people type in are cli
+//   - even within your session, background task completion and stop notices, and messages from channels, subagents, teammates,
+//     or other sessions arrive at UserPromptSubmit (notices measured in 2.1.269). They are dropped by fixed shapes (INJECTED)
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -30,18 +30,18 @@ import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
 import { bytes, clean, head, mask, reason, sha256, tail, uuidFrom } from "./text.ts";
 
-// 置き場所は呼び出しのたびに決める（HOME を差し替えたテストが本物の待ち行列を触らない）。
+// Resolve the location on every call (so tests that replace HOME never touch the real queue).
 export const spoolDir = (): string => path.join(os.homedir(), ".gleanery", "spool");
 const stateFile = (): string => path.join(os.homedir(), ".gleanery", "capture.json");
-/** DB が受け付けなかった記録。消さずにここへ移し、doctor が数を出す（直してから戻せば送り直せる）。 */
+/** Records the database rejected. Moved here instead of deleted, and counted by doctor (fix and move them back to resend). */
 export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
 /**
- * まだ登録していないプロジェクトの記録。消さずにここへ置く。フックは DB に触れないので、登録して
- * あるかは送るときにしか分からない。消すと、あとから `project add` しても間の発言が戻らない。
- * 次の送信がここも読むので、登録すればそのまま入る。
+ * Records of projects not registered yet. Kept here instead of deleted. Hooks do not touch the database, so whether a project is
+ * registered is known only when sending. Deleting them would lose the messages in between even after a later `project add`.
+ * The next send reads here too, so registering is enough for them to go in.
  */
 export const unregisteredDir = (): string => path.join(spoolDir(), "unregistered");
-/** 退避の上限。手元を圧迫しない範囲で、PC を移して登録するまでの猶予をとる。 */
+/** Limit for set-aside records: room to move machines and register without filling the disk. */
 const HOLD_DAYS = 30;
 const HOLD_MAX = 1000;
 
@@ -56,7 +56,7 @@ export type Spooled =
       project: string;
       branch: string | null;
       turn: string;
-      /** 会話の中で一意 */
+      /** Unique within the conversation */
       id: string;
       speaker: "self" | "assistant";
       body: string;
@@ -72,21 +72,21 @@ export type Spooled =
       project: string;
       branch: string | null;
       turn: string;
-      /** 結ぶ先の持ち主の発言（message の id）。触る前に持ち主が最後にした発言 */
+      /** The message of yours it links to (message id): your last message before the touch */
       message: string;
       path: string;
       action: Exclude<FileAction, "review">;
       at: string;
     };
 
-/** 1 発言の上限。超えたら冒頭と末尾だけを残す（間違って貼った巨大なログで DB と全文検索の索引を埋めない）。 */
+/** Limit for one message. Beyond it only the start and end are kept (a huge log pasted by mistake never fills the database and index). */
 export const MAX_MESSAGE = 128 * 1024;
 const KEEP = 8 * 1024;
 
 /**
- * 大きさを収め、キーを伏せる。**伏せ字は残す部分にだけかける** — 巨大な入力の全文へ正規表現を走らせない。
- * 切れ目をまたぐキーを半端に残さないよう、残す長さの倍の窓で伏せてから切る。
- * 残した本文の大きさは、切り詰めないときは伏せた後の本文と一致させる（表の CHECK）。
+ * Fits the size and masks keys. **Masking runs only on the kept part** — never run regexes over the whole of a huge input.
+ * To avoid leaving half a key across the cut, it masks a window twice the kept length, then cuts.
+ * Without cutting, the kept size equals the masked body (the table CHECK).
  */
 export function fit(body: string): { body: string; truncated: boolean; originalBytes: number } {
   const all = bytes(body);
@@ -105,8 +105,8 @@ export function fit(body: string): { body: string; truncated: boolean; originalB
 }
 
 /**
- * 退避した記録を刈り込む。上限を持たないと手元を圧迫する —— 登録しないまま使い続けると、
- * 送れない記録が無限に貯まる。名前の先頭が置いた時刻（ミリ秒）なので、名前の順が古い順になる。
+ * Prunes set-aside records. Without a limit they fill the disk — used without registering, unsendable
+ * records pile up forever. Names start with the time they were stored (ms), so name order is oldest first.
  */
 function prune(held: string): void {
   let files: string[];
@@ -116,7 +116,7 @@ function prune(held: string): void {
       .filter((f) => f.endsWith(".json") && !f.startsWith("."))
       .sort();
   } catch {
-    return; // まだ無い
+    return; // not there yet
   }
   const cutoff = Date.now() - HOLD_DAYS * 24 * 60 * 60 * 1000;
   const stale = files.filter((f) => Number(f.split("-")[0]) < cutoff);
@@ -129,12 +129,12 @@ function spool(record: Spooled): void {
   fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const name = `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 10)}.json`;
   const tmp = path.join(dir, `.${name}`);
-  // 書きかけのファイルを送らないよう、別名で書いてから置き換える。
+  // Write under another name, then replace, so a half-written file is never sent.
   fs.writeFileSync(tmp, JSON.stringify(record), { mode: 0o600 });
   fs.renameSync(tmp, path.join(dir, name));
 }
 
-/** いまの branch。git を起動せずに HEAD を読む（worktree では .git がファイルで、実体の場所を指す）。 */
+/** The current branch. Reads HEAD without starting git (in a worktree .git is a file pointing to the real location). */
 const branchOf = (root: string): string | null => {
   try {
     const dotgit = path.join(root, ".git");
@@ -169,7 +169,7 @@ type HookInput = {
   tool_response?: unknown;
 };
 
-/** 持ち主の turn か。subagent と、エージェントが起動した子と、印を継がない headless を外す。 */
+/** Whether this is your turn. Drops subagents, children started by agents, and headless runs that inherit no marker. */
 export function isOwnerTurn(
   input: HookInput,
   parent = process.env.GLEANERY_PARENT_SESSION,
@@ -177,21 +177,21 @@ export function isOwnerTurn(
   codexParent?: string,
 ): boolean {
   if (!input.session_id || input.agent_id) return false;
-  // Codex が shell から起動した子は親の CODEX_THREAD_ID を継ぐ一方、hook 入力は子自身の session id を持つ。
+  // A child started from a Codex shell inherits the parent's CODEX_THREAD_ID, while the hook input carries the child's own session id.
   if (codexParent && codexParent !== input.session_id) return false;
   if (parent) return parent === input.session_id;
   return entrypoint !== "sdk-cli";
 }
 
 /**
- * 持ち主が打たずに届く prompt の形。hook の入力には出自の印が無い（transcript には付く。2.1.269 で実測）ので、形で外す。
- * 背景タスクの完了通知、背景 agent を止めた通知、channel・Slack・Web の取得結果・別の session・subagent・teammate からの
- * 伝言。Claude Code 2.1.270 で届く形として観測した（完了通知・止めた通知・伝言は手元の transcript に実物がある）。
- * **載っていない形は持ち主の発言として入る**（`/loop` で起きたときの prompt も、印の無い本文だけが届くので外せない）。
- * バージョンが上がったら hook の入力と transcript で取り直す。
- * **書き出しで外す。**機械の文を持ち主の発言と取り違えるより、持ち主が包みや通知の文面で書き始めた発言を落とす方を取る
- * （閉じタグの後ろに文が付く通知もある。手元の全 transcript では、持ち主の入力 830 件を 1 件も外さず、印の付いた通知と
- * 伝言 227 件をすべて外した）。文面は区切り（`:` か `.`）まで一致したときだけ外す。
+ * Shapes of prompts that arrive without you typing them. Hook input has no origin marker (the transcript does; measured in 2.1.269), so they are dropped by shape:
+ * background task completion notices, notices of stopping a background agent, and messages from channels, Slack, web fetch results, other sessions,
+ * subagents, and teammates. Observed as arriving in Claude Code 2.1.270 (completion notices, stop notices, and messages exist in local transcripts).
+ * **Shapes not listed are recorded as your messages** (a prompt fired by `/loop` arrives as bare text and cannot be dropped).
+ * When the version goes up, check hook input and transcripts again.
+ * **Dropped by how they start.** Dropping a message you started with wrapper or notice wording beats mistaking machine text for yours
+ * (some notices carry text after the closing tag. Across all local transcripts, none of your 830 inputs were dropped and all 227 marked notices and
+ * messages were). Wording is dropped only when it matches up to the delimiter (`:` or `.`).
  */
 const INJECTED = [
   /^<(?:task-notification|channel|cross-session-message|teammate-message|agent-message|slack-ping|slack-tag-message|fetched-web-content|remote-review|remote-review-progress)[\s>]/,
@@ -200,31 +200,31 @@ const INJECTED = [
 ];
 
 /**
- * 発言と応答の id の後半。**1 つの turn の id に発言も応答も複数届く** — 作業中に打った発言は走っている turn の id の
- * まま届き（transcript で 148 件中 143 件）、別の session からの伝言で始まる turn は直前の turn の id を使い回す
- * （127 件すべて）。turn の id だけで作ると一意制約でぶつかり、後から届いた方が黙って捨てられる。
- * **伏せた後の本文から作る**（伏せる前から作ると、伏せた本文と突き合わせて弱いキーを総当たりで戻せる）。同じ入力が
- * 2 度届いても 1 行になる。同じ turn の id に同じ文面が 2 度届いたとき（同じ文面の打ち足しや応答）も 1 行になる。
+ * The second half of message and response ids. **One turn id can carry several messages and responses** — messages typed while working arrive
+ * with the running turn's id (143 of 148 in transcripts), and turns started by messages from other sessions reuse the previous turn's id
+ * (all 127). Ids from the turn id alone collide on the unique constraint, and the later one is silently dropped.
+ * **Built from the masked body** (building from the unmasked body would let weak keys be brute-forced by matching the masked body). The same
+ * input arriving twice is one row. The same text arriving twice with the same turn id (a repeated addition or response) is one row too.
  */
 const digest = (s: string): string => sha256(s).toString("hex").slice(0, 16);
 
 const saidDir = (): string => path.join(spoolDir(), "said");
 
 /**
- * 持ち主の最後の発言の id を session ごとに覚える。その後に触ったファイルはこの発言へ結ぶ（完了通知や伝言から
- * 始まった turn には持ち主の発言が無く、turn の id では結べない）。読みかけに半端な値を返さないよう、別名で書いてから
- * 置き換える。30 日触らなかった session の分は消す。
+ * Remembers your last message id per session. Files touched afterward link to it (turns started by completion notices or messages have
+ * no message of yours, so the turn id cannot link them). Written under another name and then replaced so readers never see a half
+ * value. Sessions untouched for 30 days are removed.
  */
 /**
- * 宛先が空くまで待つ回数と間隔（合計 300ms）。
- * ウイルス対策が掴む時間は数ミリ秒から数百ミリ秒に散るので、回数より実時間で足りるかを見る。
+ * How many times and how long to wait for the destination to free up (300ms total).
+ * Antivirus holds files anywhere from a few to hundreds of milliseconds, so real time matters more than the count.
  */
 const RENAME_TRIES = 20;
 const RENAME_WAIT_MS = 15;
 
 /**
- * 同期のまま待つ。**この経路は hook から同期で呼ばれるので await できない。**
- * `Atomics.wait` は Node のメインスレッドでも待つ（実測: v24 で 120ms 指定に 125ms）。
+ * Waits synchronously. **This path is called synchronously from a hook, so it cannot await.**
+ * `Atomics.wait` also waits on Node's main thread (measured: 125ms for 120ms requested on v24).
  */
 const sleepSync = (ms: number): void => {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -236,9 +236,9 @@ function remember(session: string, id: string): void {
   const file = path.join(dir, uuidFrom(session));
   const tmp = `${file}.${process.pid}`;
   fs.writeFileSync(tmp, id, { mode: 0o600 });
-  // Windows は宛先を開いているプロセス（エディタ、ウイルス対策）がいる間 EPERM / EBUSY を返す。
-  // ここで諦めると、後続の編集の記録が前の発言へ誤って結ばれるか、結ばれずに捨てられる。
-  // **実時間を空けて繰り返す。**空けずに回すと、相手が離す前に回数を使い切って同じ結果になる。
+  // On Windows, EPERM / EBUSY is returned while a process (an editor, antivirus) holds the destination.
+  // Giving up here would link later edits to the wrong message, or drop them unlinked.
+  // **Retry with real time in between.** Retrying without a gap uses up the count before the other side lets go, with the same result.
   for (let i = 0; ; i++) {
     try {
       fs.renameSync(tmp, file);
@@ -263,14 +263,14 @@ function lastSaid(session: string): string | null {
   try {
     return fs.readFileSync(path.join(saidDir(), uuidFrom(session)), "utf8");
   } catch {
-    return null; // この session で持ち主がまだ何も言っていない
+    return null; // you have not said anything in this session yet
   }
 }
 
 /**
- * AskUserQuestion で持ち主が選んだ答えと、答えに添えたメモ。質問と答えの組を持ち主の発言として残す。
- * tool_response は `{ questions, answers: {質問: 答え}, annotations: {質問: { notes }} }`（transcript の実物で確認）。
- * **答えは tool_response からだけ取る。**tool_input はモデルが書くので、そこにある値を持ち主の答えにしない。
+ * The answers you chose in AskUserQuestion, and notes added to them. Question and answer pairs are recorded as your messages.
+ * tool_response is `{ questions, answers: {question: answer}, annotations: {question: { notes }} }` (confirmed in real transcripts).
+ * **Answers come only from tool_response.** tool_input is written by the model, so its values are never taken as your answers.
  */
 export function answersOf(input: HookInput): string | null {
   const response = input.tool_response as
@@ -287,8 +287,8 @@ export function answersOf(input: HookInput): string | null {
 }
 
 /**
- * 自動記録が止まっているなら、session の開始時に持ち主へ出す表示。**黙って待ち行列を積み続けない。**
- * DB が無い・送信が失敗し続けている・DB が受け付けなかった記録がある、のどれか。
+ * The notice shown to you at session start when recording has stopped. **The queue never keeps growing silently.**
+ * One of: no database, sends keep failing, or records the database rejected.
  */
 export function captureNotice(file: string = dbFile()): string | null {
   if (!fs.existsSync(file))
@@ -309,14 +309,14 @@ export function captureNotice(file: string = dbFile()): string | null {
   return null;
 }
 
-/** フック 1 回ぶん。何が起きても作業は止めない（例外は呼び出し側で握る）。 */
+/** One hook call. Whatever happens, work is never stopped (callers catch exceptions). */
 export function onHook(host: Host, input: HookInput): { flush: boolean; notice?: string | null } {
   const event = input.hook_event_name;
   const owner = () =>
     isOwnerTurn(input, undefined, undefined, host === "codex" ? process.env.CODEX_THREAD_ID : undefined);
   if (event === "SessionStart") {
     if (!owner()) return { flush: false };
-    // エージェントが Bash から起動する子へ、この session の id を継がせる。
+    // Pass this session's id on to children the agent starts from Bash.
     const file = process.env.CLAUDE_ENV_FILE;
     if (file && input.session_id && /^[A-Za-z0-9_-]+$/.test(input.session_id)) {
       fs.appendFileSync(file, `export GLEANERY_PARENT_SESSION=${input.session_id}\n`);
@@ -324,7 +324,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     return { flush: false, notice: captureNotice() };
   }
   if (!owner()) return { flush: false };
-  // Interrupt は最大 3 秒で打ち切られる。新しい記録は作らないので、git とプロジェクトを調べず待ち行列だけ送る。
+  // Interrupt is cut off after at most 3 seconds. No new records are made, so only the queue is sent without checking git or the project.
   if (event === "Interrupt") return { flush: true };
   const place = identify(input.cwd ?? process.cwd());
   if (!place) return { flush: false };
@@ -364,10 +364,10 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
       if (said) say(`${turn}:ask:${input.tool_use_id ?? at}`, "self", said);
       return { flush: false };
     }
-    // 読んだファイルは残さない（以前は要件定義・設計書を読んだことだけを残していた）。古い hook の設定からも届く。
+    // Read files are not recorded (requirements and design reads used to be). They still arrive from old hook settings.
     if (tool === "Read") return { flush: false };
     const message = lastSaid(base.session);
-    if (!message) return { flush: false }; // 持ち主がまだ何も言っていない session には結ぶ先が無い
+    if (!message) return { flush: false }; // no message of yours to link to in this session yet
     const cwd = input.cwd ?? place.root;
     const files = (
       tool === "apply_patch"
@@ -385,13 +385,13 @@ function writeState(s: State): void {
   try {
     fs.writeFileSync(stateFile(), JSON.stringify(s));
   } catch {
-    // 状態を書けなくても記録は続ける
+    // Recording continues even if the state cannot be written
   }
 }
 
 /**
- * 待ち行列と送信の状態。`stuck` は送れていないときの最後の失敗で、失敗が残っていて待ちもあるときだけ入る
- * （待ちが空になれば失敗は過去のもの）。session の開始時の警告と doctor が同じ判定を使う。
+ * The queue and send state. `stuck` is the last failure when sending is failing, set only while a failure remains and records wait
+ * (once the queue empties, the failure is in the past). The session start warning and doctor share this check.
  */
 export function readState(): State & {
   pending: number;
@@ -403,7 +403,7 @@ export function readState(): State & {
     try {
       return fs.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).length;
     } catch {
-      return 0; // まだ無い
+      return 0; // not there yet
     }
   };
   const counts = {
@@ -411,16 +411,16 @@ export function readState(): State & {
     rejected: count(rejectedDir()),
     unregistered: count(unregisteredDir()),
   };
-  // 欄ごとに型を確かめて読む（外から書き換えられても、doctor と SessionStart の警告を落とさない）。
+  // Read each field with a type check (so doctor and the SessionStart warning survive the file being edited from outside).
   let raw: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
     if (parsed && typeof parsed === "object") raw = parsed as Record<string, unknown>;
   } catch {
-    // まだ送っていないか、書きかけで壊れていて読めない
+    // Not sent yet, or half-written and unreadable
   }
-  // error は送信の失敗で文字列、成功で null。理由の文が空でも失敗は失敗として扱う。
-  const error = typeof raw.error === "string" ? raw.error || "理由の分からない失敗" : null;
+  // error is a string on send failure and null on success. An empty reason still counts as a failure.
+  const error = typeof raw.error === "string" ? raw.error || "unknown failure" : null;
   return {
     flushedAt: typeof raw.flushedAt === "string" ? raw.flushedAt : undefined,
     error,
@@ -431,9 +431,9 @@ export function readState(): State & {
 }
 
 /**
- * 同時に 2 つ走らせない。ロックは排他的に作り（`wx`）、中に持ち主の pid を書く。取れなければ中を読み、
- * 持ち主がもう居ないか 5 分より古ければ壊して 1 度だけ取り直す（`-p` の終了で殺された送信がロックを残すと、
- * 次の送信が黙って空振りする。実測で起きた）。作った直後で pid をまだ書いていないロックは、生きているものとして扱う。
+ * Never run two at once. The lock is created exclusively (`wx`) with the holder's pid inside. If it cannot be taken, it reads it and
+ * breaks and retakes it once when the holder is gone or it is older than 5 minutes (a send killed when `-p` ends would leave the lock
+ * and the next send would silently do nothing; this happened). A lock just created without a pid yet is treated as alive.
  */
 function lock(): (() => void) | null {
   const file = path.join(spoolDir(), ".lock");
@@ -441,12 +441,12 @@ function lock(): (() => void) | null {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       fs.writeFileSync(file, String(process.pid), { flag: "wx", mode: 0o600 });
-      // 自分のロックだけを外す（古いと見なされて別の送信に取り直された後なら、そのロックを消さない）。
+      // Remove only its own lock (if it was deemed stale and retaken by another send, that lock is not removed).
       return () => {
         try {
           if (fs.readFileSync(file, "utf8") === String(process.pid)) fs.rmSync(file, { force: true });
         } catch {
-          // もう無い
+          // already gone
         }
       };
     } catch (e) {
@@ -457,7 +457,7 @@ function lock(): (() => void) | null {
     const holder = Number(fs.readFileSync(file, "utf8") || 0);
     const fresh = Date.now() - st.mtimeMs < 5 * 60_000;
     const alive = (() => {
-      if (holder <= 0) return fresh; // 書きかけ
+      if (holder <= 0) return fresh; // half-written
       try {
         return process.kill(holder, 0);
       } catch {
@@ -471,7 +471,7 @@ function lock(): (() => void) | null {
 }
 
 const BATCH = 500;
-// 1 文で渡す変数の数を SQLite の上限（32,766）より十分下に保つ。発言は 1 行 11 列。
+// Keep the number of variables per statement well below SQLite's limit (32,766). Messages have 11 columns.
 const ROWS = 1000;
 const chunks = <T>(xs: T[], n = ROWS): T[][] =>
   Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, (i + 1) * n));
@@ -479,9 +479,9 @@ const chunks = <T>(xs: T[], n = ROWS): T[][] =>
 type Project = { id: number; name: string };
 
 /**
- * 記録の束を 1 つの transaction で書く。**capture の接続は 3 つの view にだけ書ける**（db/schema.sql、db-write.ts）。
- * view の trigger が `on conflict do nothing` で入れるので、id は待ち行列に書くときに決まり、送り直しは「もう入っている」。
- * **件数を影響行数で数えない。**view への insert の影響行数は 0 になるので、送る前に在った id を引いて差で数える。
+ * Writes a batch of records in one transaction. **The capture connection can write only to the 3 views** (db/schema.sql, db-write.ts).
+ * The views' triggers insert with `on conflict do nothing`, so ids are fixed when queued and a resend means "already there".
+ * **Counts do not use affected rows.** Inserting into a view affects 0 rows, so the ids present before sending are subtracted instead.
  */
 export async function write(
   db: Kysely<DB>,
@@ -563,8 +563,8 @@ export async function write(
           )
           .execute()
       ).length;
-    // 触る前に持ち主が最後にした発言へ結ぶ。その発言がこの DB に無ければ（途中で別のプロジェクトへ移った session など）
-    // view の trigger が捨てる。
+    // Link to your last message before the touch. If that message is not in this database (a session that moved to another project midway),
+    // the view's trigger drops it.
     const files = batch.flatMap((r) => {
       const p = r.kind === "file" ? projects.get(r.project) : undefined;
       if (r.kind !== "file" || !p) return [];
@@ -582,19 +582,19 @@ export async function write(
 }
 
 /**
- * その記録が原因の失敗か。SQLite が制約・型・大きさで拒んだもの（CONSTRAINT / MISMATCH / TOOBIG / RANGE）は
- * 送り直しても同じ結果になる。ロック・入出力・ファイルの失敗は束ごと送り直す。
+ * Whether the record itself caused the failure. What SQLite rejected by constraint, type, or size (CONSTRAINT / MISMATCH / TOOBIG / RANGE)
+ * fails the same way when resent. Lock, I/O, and file failures resend the whole batch.
  */
 const REJECTED = new Set([18, 19, 20, 25]);
 const rejected = (e: unknown): boolean => REJECTED.has(sqliteCode(e) ?? -1);
 
 /**
- * 待ち行列を DB へ送る。**接続は capture（追記だけ）。**同じものを 2 回送っても行は増えない。
- * 登録されていないプロジェクトの記録は捨てる（記録するのは `gleanery project add` したプロジェクトだけ）。
- * **1 件の不正な記録で、以後の記録を止めない。**束が値の誤りで落ちたら 1 件ずつ送り直し、落ちた記録だけを
- * rejected/ へ移す（消さない）。接続断などの失敗は、束ごと待ち行列に残して次の送信で送り直す。
+ * Sends the queue to the database. **The connection is capture (append only).** Sending the same thing twice adds no rows.
+ * Records of unregistered projects are dropped (only projects added with `gleanery project add` are recorded).
+ * **One invalid record never stops later records.** When a batch fails on a bad value it resends one by one and moves only the failed records
+ * to rejected/ (never deleting them). Failures such as a lost connection keep the whole batch queued for the next send.
  *
- * sent は新しく入った発言の数（送り直した分は数えない）。busy は別の送信が走っていて何もしなかったとき。
+ * sent is the number of new messages (resent ones are not counted). busy means another send was running and nothing was done.
  */
 export async function flush(
   file: string = dbFile(),
@@ -604,7 +604,7 @@ export async function flush(
   const dir = spoolDir();
   let client: Kysely<DB> | null = null;
   try {
-    // 退避した分も一緒に読む。プロジェクトを登録した後の送信で、そのまま入る。
+    // Read the set-aside records too. After the project is registered, the next send puts them in.
     const held = unregisteredDir();
     const list = (from: string) => {
       try {
@@ -613,7 +613,7 @@ export async function flush(
           .filter((f) => f.endsWith(".json") && !f.startsWith("."))
           .map((name) => ({ name, from }));
       } catch {
-        return []; // まだ無い
+        return []; // not there yet
       }
     };
     const names = [...list(dir), ...list(held)]
@@ -629,10 +629,10 @@ export async function flush(
           r: JSON.parse(fs.readFileSync(path.join(from, name), "utf8")) as Spooled,
         });
       } catch {
-        fs.rmSync(path.join(from, name), { force: true }); // 読めない残骸
+        fs.rmSync(path.join(from, name), { force: true }); // unreadable leftovers
       }
     }
-    // バージョンを確かめない（db-write.ts）。確かめると、DB を上げてから plugin を上げるまで記録が丸ごと止まる。
+    // No version check (db-write.ts). Checking would stop all recording between upgrading the database and the plugin.
     const db = openWriter("capture", file);
     client = db;
     const projects = new Map(
@@ -657,7 +657,7 @@ export async function flush(
       );
     } catch (e) {
       if (!rejected(e)) throw e;
-      // 1 件ずつ。発言を先に送り、ファイルは後に送る（ファイルは持ち主の発言へ結ぶので、順が逆だと結び先が無い）。
+      // One at a time. Messages go first and files after (files link to your messages, so the reverse order has nothing to link to).
       const ordered = [...known].sort((a, b) => Number(a.r.kind === "file") - Number(b.r.kind === "file"));
       for (const x of ordered) {
         try {
@@ -668,8 +668,8 @@ export async function flush(
         }
       }
     }
-    // この束で弾かれた持ち主の発言へ結ぶファイルの記録も一緒に残す（送っても結ぶ先が無く 0 行になる）。後の束で届いた
-    // ファイルの記録は、結ぶ先が無いまま捨てる。
+    // Keep file records linking to your messages rejected in this batch too (sending them links nothing and writes 0 rows). File records
+    // arriving in later batches are dropped with nothing to link to.
     const lost = new Set(
       bad.flatMap((x) =>
         x.r.kind === "message" && x.r.speaker === "self" ? [`${x.r.session}\0${x.r.id}`] : [],
@@ -683,18 +683,18 @@ export async function flush(
         try {
           fs.renameSync(path.join(x.from, x.name), path.join(rejectedDir(), x.name));
         } catch (e) {
-          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // 並んだ送信が先に動かした
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // a concurrent send moved it first
         }
       }
     }
     if (strayed.length) {
       fs.mkdirSync(held, { recursive: true, mode: 0o700 });
       for (const x of strayed) {
-        if (x.from === held) continue; // すでに退避してある
+        if (x.from === held) continue; // already set aside
         try {
           fs.renameSync(path.join(x.from, x.name), path.join(held, x.name));
         } catch (e) {
-          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // 並んだ送信が先に動かした
+          if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; // a concurrent send moved it first
         }
       }
     }
@@ -712,7 +712,7 @@ export async function flush(
   }
 }
 
-/** フックの入力を読む。塊ごとに文字へ変えると、境目で割れた多バイト文字が化けるので、文字として読ませる。 */
+/** Reads hook input. Converting chunk by chunk garbles multibyte characters split at the boundary, so it is read as text. */
 export async function readInput(stream: NodeJS.ReadableStream): Promise<HookInput> {
   stream.setEncoding("utf8");
   let raw = "";
@@ -727,20 +727,20 @@ async function main(): Promise<void> {
   }
   const input = await readInput(process.stdin);
   const host: Host = process.argv[2] === "codex" ? "codex" : "claude-code";
-  // Stop は成功終了時に JSON が必要。記録処理が失敗しても hook の契約を破らないよう先に返す。
+  // Stop needs JSON on success. Return it first so a failed recording never breaks the hook contract.
   if (host === "codex" && input.hook_event_name === "Stop") process.stdout.write("{}");
   const { flush: send, notice } = onHook(host, input);
-  // systemMessage は持ち主に見える警告で、モデルの文脈には入らない。
+  // systemMessage is a warning you see; it does not enter the model's context.
   if (notice) process.stdout.write(JSON.stringify({ systemMessage: notice }));
-  // 送信は session から切り離したプロセスで行う。フックのプロセスのままだと、session の終わりに
-  // ホストが殺し（`-p` では公式にそうなる）、最後の turn が次の送信まで届かない。
+  // Sending happens in a process detached from the session. As the hook's own process, the host would kill it at session end
+  // (officially so with `-p`), and the last turn would not arrive until the next send.
   if (send)
     spawn(process.execPath, [process.argv[1] ?? "", "--flush"], { detached: true, stdio: "ignore" }).unref();
 }
 
-// フックとして起動されたときだけ動く（テストと CLI は関数だけを使う）。
+// Runs only when started as a hook (tests and the CLI use only the functions).
 if (process.argv[1] && /capture\.(ts|js)$/.test(process.argv[1])) {
   main().catch(() => {
-    // 記録できなくても作業は止めない。送れなかった分は待ち行列に残る。
+    // Even if recording fails, work does not stop. Unsent records stay in the queue.
   });
 }

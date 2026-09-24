@@ -1,66 +1,66 @@
-// 端末の画面と CLI が使う記号。画面のコードは名前で参照し、記号をここ以外に書かない。
-// **Unicode の標準の記号だけを使う**（持ち主の決定、2026-09-23: Nerd Font を必須にしない）。私用領域の記号は、そのフォントが
-// 無い端末で □ になる。標準の記号なら、端末のフォントに無くても OS の代替フォントが描く。東アジアの文字幅が中立（1 桁）の
-// 記号から選ぶ（曖昧の記号は日本語の端末の設定で 2 桁になり、列がずれる。test/tui.test.ts が見る）。
+// Symbols used by the dashboard and the CLI. Screens refer to them by name and never write a symbol anywhere else.
+// **Only standard Unicode symbols** (owner's decision, 2026-09-23: Nerd Fonts are not required). Private-use symbols render
+// as □ in terminals without that font. Standard symbols fall back to an OS font. Pick symbols whose East Asian width is
+// neutral (1 column); ambiguous ones take 2 columns in Japanese terminal settings and break alignment (test/tui.test.ts checks).
 
 export const ICONS = {
-  /** CLI の出力と画面の見出し */
+  /** Headings in CLI output and screens */
   brand: "✦",
-  /** セッション（会話）の一覧のタブ */
+  /** Sessions (conversations) tab */
   sessions: "❝",
-  /** trace した作業のタブ */
+  /** Traced work tab */
   work: "✎",
-  /** 検索のタブ */
+  /** Search tab */
   search: "⌕",
-  /** 持ち主の発言（選んでいる行の印 ❯ と紛れないよう、別の記号にする） */
+  /** Your messages (a different symbol from the selected-row marker ❯) */
   self: "✐",
-  /** AI の応答 */
+  /** AI responses */
   assistant: "✻",
-  /** 持ち主以外の人の発言 */
+  /** Messages from other people */
   person: "❖",
-  /** bot の発言 */
+  /** Bot messages */
   bot: "⌬",
-  /** 触ったファイル */
+  /** Touched files */
   file: "❐",
   /** branch */
   branch: "⎇",
-  /** プロジェクト */
+  /** Projects */
   project: "⌂",
-  /** trace した判断 */
+  /** Traced decisions */
   decision: "✧",
-  /** 通ってはいけない道 */
+  /** Paths to avoid */
   avoid: "✕",
-  /** まだ答えの無い問い */
+  /** Open questions */
   question: "?",
-  /** 目的 */
+  /** Goal */
   goal: "✪",
-  /** 次の手 */
+  /** Next steps */
   next: "➜",
-  /** 状態: 進行中 */
+  /** Status: in progress */
   active: "➤",
-  /** 状態: 止まっている */
+  /** Status: blocked */
   blocked: "✕",
-  /** 状態: 保留 */
+  /** Status: on hold */
   paused: "❙",
-  /** 状態: 終わった */
+  /** Status: done */
   done: "✓",
-  /** 状態: やめた */
+  /** Status: dropped */
   abandoned: "✗",
-  /** 失敗の表示 */
+  /** Failures */
   error: "✘",
-  /** PR・issue へのリンク */
+  /** Links to PRs and issues */
   link: "➚",
 } as const;
 
 export type IconName = keyof typeof ICONS;
 
 /**
- * 読み込み中の回転。形の近い星を順に描き替え、端まで行ったら折り返す（Claude Code の回転と同じ見せ方）。
- * `·` と `✽` は文字幅が曖昧で 2 桁になる端末があるので、描く側は幅 2 の枠に入れる。
+ * Loading spinner. Cycles through similar stars and bounces back at the ends (the same look as Claude Code's spinner).
+ * `·` and `✽` have ambiguous width and take 2 columns in some terminals, so callers draw them in a 2-column box.
  */
 export const TWINKLE = ["·", "✢", "✳", "✶", "✻", "✽"] as const;
 
-/** 作業の状態の記号。知らない状態は目的の記号で出す（DB の CHECK が値を縛るので、ここへは来ない想定）。 */
+/** Symbol for a work status. Unknown statuses use the goal symbol (the database CHECK constrains values, so this is not expected). */
 export function statusIcon(status: string): string {
   return status in ICONS ? ICONS[status as IconName] : ICONS.goal;
 }

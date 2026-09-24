@@ -52,7 +52,7 @@ test("DB のバージョンが違えば、読む接続も書く接続も開か�
   const raw = new DatabaseSync(old);
   raw.exec(`pragma user_version = ${SCHEMA_REVISION + 1}`);
   raw.close();
-  assert.throws(() => connectReader(old), /gleanery を更新する/);
+  assert.throws(() => connectReader(old), /Update gleanery/);
   assert.throws(() => connectWriter("ingest", old), /revision/);
   const empty = path.join(path.dirname(old), "empty.db");
   new DatabaseSync(empty).close();

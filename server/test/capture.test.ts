@@ -572,7 +572,7 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
   assert.deepEqual([s.stuck, s.flushedAt, s.deferred], ["auth", undefined, undefined]);
   // 理由の文が空の失敗も、送れていないことに変わりはない。
   fs.writeFileSync(file, JSON.stringify({ error: "" }));
-  assert.equal(readState().stuck, "理由の分からない失敗");
+  assert.equal(readState().stuck, "unknown failure");
   assert.match(captureNotice(capture) ?? "", /送れていない/);
   reset();
   fs.rmSync(file);

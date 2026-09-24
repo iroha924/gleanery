@@ -1,5 +1,5 @@
-// AI の応答（Markdown）を、端末の幅に合わせた ANSI の文字列にする。Ink の <Text> へそのまま渡す。
-// marked-terminal 7.3.0 の peer は marked <16 だが、18 を入れている（.agents/skills/tui/SKILL.md）。壊れたら test/tui.test.ts が落ちる。
+// Renders AI responses (Markdown) as ANSI strings sized to the terminal. Passed straight to Ink's <Text>.
+// marked-terminal 7.3.0 declares a peer of marked <16, but 18 is installed (.agents/skills/tui/SKILL.md). test/tui.test.ts fails if it breaks.
 
 import { styleText } from "node:util";
 import { Marked } from "marked";
@@ -14,9 +14,9 @@ export function renderMarkdown(text: string, width: number): string {
   const w = Math.max(20, Math.floor(width));
   let m = byWidth.get(w);
   if (!m) {
-    // 折り返しは Ink に任せる。marked-terminal は文字数で折るので、日本語の段落が幅の 2 倍の行になり、Ink が二重に折る。
-    // 既定の色（見出しが緑、表の見出しが赤、code が黄）は画面の色の意味（採る・避ける・止まっている）とぶつかるので、
-    // 意味を持たない太字・下線・薄字に寄せる
+    // Leave wrapping to Ink. marked-terminal wraps by character count, so Japanese paragraphs become lines twice the width and Ink wraps them again.
+    // The default colors (green headings, red table headers, yellow code) clash with the screen's color meanings (take, avoid, blocked),
+    // so use bold, underline, and dim, which carry no meaning
     m = new Marked(
       markedTerminal({
         width: w,
@@ -32,8 +32,8 @@ export function renderMarkdown(text: string, width: number): string {
         href: style(["dim", "underline"]),
         tableOptions: { style: { head: ["bold"], border: ["gray"] } },
       }),
-      // 詰めた箇条書きの中身は text の token で来るが、marked-terminal の text は中の inline の token を読まず、
-      // `**強調**` やリンクの記法が文字のまま残る。inline の token を持つときだけ描かせ、それ以外は marked-terminal に任せる
+      // Items in a tight list arrive as text tokens, but marked-terminal's text ignores their inline tokens and leaves
+      // `**bold**` and link syntax as plain characters. Render them here only when inline tokens exist; otherwise leave it to marked-terminal
       {
         renderer: {
           text(token) {
@@ -48,15 +48,15 @@ export function renderMarkdown(text: string, width: number): string {
   return colorsOnly(out).replace(/\n+$/, "");
 }
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: 描画器が付けた色（SGR）の列だけを見分ける
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matches only the color (SGR) sequences the renderer added
 const SGR = /(\u001b\[[0-9;]*m)/;
 
-/** 文字を隠す・点滅させる指定（8 / 28 / 5 / 6）。色や太字と違い、見えない文を作れる */
+/** Codes that hide or blink text (8 / 28 / 5 / 6). Unlike colors and bold, they can create invisible text */
 const HIDING = new Set(["5", "6", "8", "28"]);
 
 /**
- * 描画器が付けた色だけを残し、ほかの制御文字を落とす。Markdown は文字参照（&#13; など）を戻すので、
- * 入力を plain に通しても、描いた後に CR や ESC が生まれうる。
+ * Keeps only the colors the renderer added and drops other control characters. Markdown decodes character references
+ * (&#13; and so on), so CR or ESC can appear after rendering even when the input went through plain.
  */
 function colorsOnly(s: string): string {
   return s
@@ -64,7 +64,7 @@ function colorsOnly(s: string): string {
     .map((part, i) => {
       if (i % 2 === 0) return plain(part).replace(/\t/g, "  ");
       const params = part.slice(2, -1).split(";");
-      // 38 / 48 の後ろは色の番号や RGB の値なので、指定として読まない
+      // Values after 38 / 48 are color numbers or RGB values, not codes
       for (let j = 0; j < params.length; j++) {
         const x = params[j] ?? "";
         if (x === "38" || x === "48") j += params[j + 1] === "5" ? 2 : 4;

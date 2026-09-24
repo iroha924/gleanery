@@ -64,7 +64,7 @@ test("gleanery init は置く直前に先に置かれた DB を置き換えな�
   t.mock.method(fs, "existsSync", (f: fs.PathLike) =>
     String(f) === file ? false : fs.statSync(f, { throwIfNoEntry: false }) !== undefined,
   );
-  await assert.rejects(async () => quiet(() => dbInit(file)), /既に/);
+  await assert.rejects(async () => quiet(() => dbInit(file)), /already exists/);
   t.mock.restoreAll();
   const raw = new DatabaseSync(file, { readOnly: true });
   assert.equal((raw.prepare("select count(*) as n from project").get() as { n: number }).n, 1);
@@ -101,7 +101,7 @@ test("gleanery init は gleanery の DB でないファイルを上書きしな�
   raw.close();
   await assert.rejects(
     quiet(() => dbInit(file)),
-    /gleanery の DB ではない/,
+    /is not a gleanery database/,
   );
 });
 
@@ -281,7 +281,7 @@ test("知らない宣言や 1 行目以外の宣言があれば、何も当て�
     await quiet(() => dbInit(file));
     const raw = connectWriter("owner", file);
     const files = writeMigrations(path.join(dir, "migrations"), [body]);
-    assert.throws(() => applyMigrations(raw, files, path.join(dir, "migrations")), /宣言/, body);
+    assert.throws(() => applyMigrations(raw, files, path.join(dir, "migrations")), /declaration/, body);
     assert.equal(
       (raw.prepare("pragma user_version").get() as { user_version: number }).user_version,
       SCHEMA_REVISION,
@@ -310,7 +310,7 @@ insert into parent (id) values (1);
 insert into child (id, parent_id) values (1, 1);`);
     const migrations = path.join(dir, "migrations");
     const files = writeMigrations(migrations, [drop]);
-    assert.throws(() => applyMigrations(raw, files, migrations), /not authorized|表を消/, drop);
+    assert.throws(() => applyMigrations(raw, files, migrations), /not authorized/, drop);
     assert.equal((raw.prepare("select count(*) as n from child").get() as { n: number }).n, 1, drop);
     raw.close();
   }

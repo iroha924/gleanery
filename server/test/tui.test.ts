@@ -23,7 +23,7 @@ const tick = () => new Promise((r) => setTimeout(r, 40));
 async function settle(r: { lastFrame?: () => string | undefined; frame?: () => string }): Promise<void> {
   const frame = () => r.lastFrame?.() ?? r.frame?.() ?? "";
   await tick();
-  for (let i = 0; i < 125 && /読んでいる/.test(frame()); i++) await tick();
+  for (let i = 0; i < 125 && /Loading/.test(frame()); i++) await tick();
 }
 const ESC = "\u001b";
 const TAB = "\t";
@@ -147,7 +147,7 @@ const detail: SessionDetail = {
       downsides: [],
       at,
       decisionId: null,
-      label: "【採用した決定】",
+      label: "[decision]",
     },
   ],
   work: [],
@@ -158,7 +158,7 @@ const hit: Hit = {
   kind: "decision",
   status: "accepted",
   stance: "do",
-  label: "【採用した決定】",
+  label: "[decision]",
   heading: null,
   text: "期限はサーバーで見る",
   reason: null,
@@ -216,7 +216,7 @@ function fake(over: Partial<Data> = {}): Data & { searched: string[] } {
           ref: "k:10",
           kind: "dead_end",
           stance: "dont",
-          label: "【試して駄目だった】",
+          label: "[tried and failed]",
           text: "端末の時計で判定",
         },
       ],
@@ -234,7 +234,7 @@ test("セッションの一覧を出し、Enter で詳細、Esc で戻る", asyn
   const r = render(h(App, { data: fake() }));
   await settle(r);
   assert.match(r.lastFrame() ?? "", /認証を直すセッション/);
-  assert.match(r.lastFrame() ?? "", /1 件/);
+  assert.match(r.lastFrame() ?? "", /1 sessions/);
   r.stdin.write(ENTER);
   await settle(r);
   const frame = r.lastFrame() ?? "";
@@ -242,10 +242,10 @@ test("セッションの一覧を出し、Enter で詳細、Esc で戻る", asyn
   assert.match(frame, /トークン/);
   assert.doesNotMatch(frame, /\*\*トークン\*\*/, "AI の応答の Markdown が描かれていない");
   assert.match(frame, /src\/auth\.ts/);
-  assert.match(frame, /【採用した決定】 期限はサーバーで見る/);
+  assert.match(frame, /\[decision\] 期限はサーバーで見る/);
   r.stdin.write(ESC);
   await settle(r);
-  assert.match(r.lastFrame() ?? "", /1 件/);
+  assert.match(r.lastFrame() ?? "", /1 sessions/);
   r.unmount();
 });
 
@@ -253,17 +253,17 @@ test("読み込み中・空・失敗をそれぞれ出す", async () => {
   let resolve: (v: Awaited<ReturnType<Data["sessions"]>>) => void = () => {};
   const pending = render(h(App, { data: fake({ sessions: () => new Promise((r) => (resolve = r)) }) }));
   await tick();
-  assert.match(pending.lastFrame() ?? "", /セッションの一覧を読んでいる/);
+  assert.match(pending.lastFrame() ?? "", /Loading sessions/);
   resolve({ items: [], total: 0, page: 1, pageSize: 50, pages: 0 });
   await tick();
-  assert.match(pending.lastFrame() ?? "", /自動記録したセッションがまだ無い/);
+  assert.match(pending.lastFrame() ?? "", /No recorded sessions/);
   pending.unmount();
 
   const failed = render(
     h(App, { data: fake({ sessions: async () => Promise.reject(new Error("接続できない")) }) }),
   );
   await tick();
-  assert.match(failed.lastFrame() ?? "", /セッションの一覧を読めなかった: 接続できない/);
+  assert.match(failed.lastFrame() ?? "", /Could not read sessions: 接続できない/);
   failed.unmount();
 });
 
@@ -275,7 +275,7 @@ test("作業の一覧が上限で切れたら、切れたことを画面に出�
   await settle(r);
   const frame = r.lastFrame() ?? "";
   assert.match(frame, /認証の作り直し/);
-  assert.match(frame, /最新 1 件（古い作業は省いた）/);
+  assert.match(frame, /Latest 1 \(older work omitted\)/);
   r.unmount();
 });
 
@@ -288,9 +288,9 @@ test("Tab で作業の画面へ移り、作業を開くと通ってはいけな�
   r.stdin.write(ENTER);
   await settle(r);
   const frame = r.lastFrame() ?? "";
-  assert.match(frame, /目的: 期限切れで落ちない/);
+  assert.match(frame, /Goal: 期限切れで落ちない/);
   assert.match(frame, /端末側の表示/);
-  assert.match(frame, /【試して駄目だった】 端末の時計で判定/);
+  assert.match(frame, /\[tried and failed\] 端末の時計で判定/);
   r.unmount();
 });
 
@@ -305,7 +305,7 @@ test("/ で検索へ移って打ち、Enter で引き、結果を開くと全文
   r.stdin.write(ENTER);
   await settle(r);
   assert.deepEqual(data.searched, ["期限"]);
-  assert.match(r.lastFrame() ?? "", /【採用した決定】 期限はサーバーで見る/);
+  assert.match(r.lastFrame() ?? "", /\[decision\] 期限はサーバーで見る/);
   r.stdin.write(ENTER);
   await settle(r);
   assert.match(r.lastFrame() ?? "", /k:9 の全文/);
@@ -345,7 +345,7 @@ test("詳細から Esc で戻っても、検索の語と結果、一覧で選ん
   await settle(r);
   r.stdin.write(ESC);
   await settle(r);
-  assert.match(r.lastFrame() ?? "", /「期限」/);
+  assert.match(r.lastFrame() ?? "", /"期限"/);
   assert.match(r.lastFrame() ?? "", /期限はサーバーで見る/);
   assert.deepEqual(data.searched, ["期限"], "戻っただけで引き直している");
   r.unmount();
@@ -378,7 +378,7 @@ test("全文の先が無ければ、無いと出す", async () => {
     await settle(r);
   }
   const frame = r.frame();
-  assert.ok(frame.includes("この記録は無い（消されたか、選んだプロジェクトの外の記録）"), frame);
+  assert.ok(frame.includes("This record does not exist"), frame);
   r.unmount();
 });
 
@@ -469,13 +469,13 @@ test("狭い端末でも上の枠は 3 行で、画面が端末の高さを超�
     assert.equal(lines.length, 10, `${columns} 桁で ${lines.length} 行になった`);
     assert.match(lines[0] ?? "", /^╭/, `${columns} 桁で上の罫線が押し出された`);
     assert.match(lines[2] ?? "", /^╰/, `${columns} 桁で上の枠が 3 行に収まっていない`);
-    assert.match(lines.slice(8).join("\n"), /q 終わる/, `${columns} 桁で終わり方の案内が切れた`);
+    assert.match(lines.slice(8).join("\n"), /q quit/, `${columns} 桁で終わり方の案内が切れた`);
   }
   // 80 桁では案内が 2 行に分かれ、どのキーも切れない
   const at80 = (await frameAt(80, 12, many)).split("\n");
   assert.equal(at80.length, 12);
   const help = at80.slice(10).join("\n");
-  for (const key of ["q 終わる", "/ 検索", "g G 端へ", "p プロジェクト"])
+  for (const key of ["q quit", "/ search", "g G ends", "p project"])
     assert.ok(help.includes(key), `80 桁で ${key} が見えない\n${help}`);
 });
 
@@ -532,12 +532,12 @@ test("プロジェクトを切り替えると、セッションの一覧は 1 �
   await settle(r);
   r.stdin.write("l");
   await settle(r);
-  assert.match(r.lastFrame() ?? "", /3 \/ 3 ページ/);
+  assert.match(r.lastFrame() ?? "", /page 3 of 3/);
   r.stdin.write("p");
   await settle(r);
   assert.deepEqual(pages.at(-1), [1, 1]);
   assert.match(r.lastFrame() ?? "", /題 1 0/);
-  assert.doesNotMatch(r.lastFrame() ?? "", /まだ無い/);
+  assert.doesNotMatch(r.lastFrame() ?? "", /No recorded sessions/);
   r.unmount();
 });
 
@@ -584,7 +584,7 @@ test("プロジェクトの一覧を読めないとき、狭い端末でも「�
   const data = fake({ projects: async () => Promise.reject(new Error("接続できない")) });
   for (const columns of [50, 80]) {
     const frame = await frameAt(columns, 12, data);
-    assert.match(frame.split("\n")[1] ?? "", /プロジェクトの一覧を読めなかった/, frame);
+    assert.match(frame.split("\n")[1] ?? "", /Could not read the project list/, frame);
   }
 });
 
@@ -599,7 +599,7 @@ test("引ける語の無い問いは、当たらなかったとは別の案内�
   await settle(r);
   r.stdin.write(ENTER);
   await settle(r);
-  assert.match(r.lastFrame() ?? "", /引ける語が無い/);
+  assert.match(r.lastFrame() ?? "", /No searchable terms/);
   r.stdin.write(ESC);
   await settle(r);
   r.stdin.write("/");
@@ -608,7 +608,7 @@ test("引ける語の無い問いは、当たらなかったとは別の案内�
   await settle(r);
   r.stdin.write(ENTER);
   await settle(r);
-  assert.match(r.lastFrame() ?? "", /当たらなかった/);
+  assert.match(r.lastFrame() ?? "", /No matches/);
   r.unmount();
 });
 
@@ -722,7 +722,7 @@ test("外から来た文字の制御列を、どの画面にも出さない", as
     [0, "題"],
     [1, "src/auth.ts"],
     [3, "認証の作り直し"],
-    [4, "目的"],
+    [4, "Goal"],
     [8, "期限はサーバーで見る"],
     [9, "k:9 の全文"],
   ] as const)
@@ -774,7 +774,7 @@ test("作業の一覧が切れた案内は 1 行に収め、狭い端末でも�
     const frame = r.frame();
     assert.equal(frame.split("\n").length, rows, frame);
     assert.match(frame, /❯ .*作業 99/, `${columns}×${rows} で選んだ行が見えない:\n${frame}`);
-    assert.match(frame, /古い作業/, `${columns}×${rows} で切れた案内が見えない:\n${frame}`);
+    assert.match(frame, /older work omitted/, `${columns}×${rows} で切れた案内が見えない:\n${frame}`);
     r.unmount();
   }
 });

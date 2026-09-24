@@ -68,7 +68,7 @@ test("手順の塊は、端末でない出力先では枠を付けず字下げ�
     [
       "    更新するには:",
       "      npm の CLI: npm i -g gleanery@1.0.0",
-      "      Codex: codex plugin add gleanery@gleanery の後、Codex を開き直す",
+      "      Codex: codex plugin add gleanery@gleanery, then Codex を開き直す",
       "      届く中身は取得元で決まる",
     ].join("\n"),
   );
@@ -121,14 +121,14 @@ test("文書の節は、端末でない出力先では字下げした文字に�
   for (const line of lines.slice(1, -1)) assert.match(line, /^ {2,}\S/, out);
   // 項目の本文は、改行の後の行も本文の深さ（4 桁）に揃い、状態の行（2 桁）と紛れない
   assert.match(out, /^ {4}✓ 直すものは無い$/m);
-  assert.match(out, /^ {2}【決定】本文 ✓ 直すものは無い$/m);
+  assert.match(out, /^ {2}\[決定\] 本文 ✓ 直すものは無い$/m);
   assert.match(out, /^ {2}割合 {2}50%$/m);
 });
 
 test("失敗は、端末でない出力先では字下げした理由と行頭の ✗ 止まった", () => {
   assert.equal(
     failure("gleanery x", "理由\n✓ 直すものは無い"),
-    "✦ gleanery x\n  理由\n  ✓ 直すものは無い\n✗ 止まった",
+    "✦ gleanery x\n  理由\n  ✓ 直すものは無い\n✗ Stopped",
   );
 });
 

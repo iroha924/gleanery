@@ -264,15 +264,12 @@ test("取り直して前に入れた commit まで進んでいれば何も書か
       const p = project(db);
       git("checkout", "-q", older);
       const raced = headOnly(db, p, newer, () => git("checkout", "-q", newer));
-      assert.match(
-        await syncDocs(raced, p, repo, { remote: false }),
-        /新しい commit（.{8}）を先に入れていた/,
-      );
+      assert.match(await syncDocs(raced, p, repo, { remote: false }), /stored a newer commit \(.{8}\) first/);
 
       git("checkout", "-q", older);
       await assert.rejects(
         syncDocs(headOnly(db, p, newer), p, repo, { remote: false }),
-        /fast-forward でない/,
+        /is not a fast-forward/,
       );
 
       git("checkout", "-q", "-b", "other");
@@ -281,7 +278,7 @@ test("取り直して前に入れた commit まで進んでいれば何も書か
       git("commit", "-qm", "c");
       await assert.rejects(
         syncDocs(headOnly(db, p, newer), p, repo, { remote: false }),
-        /fast-forward でない/,
+        /is not a fast-forward/,
       );
       assert.equal(written(db), 0, "どの経路も文書を書いていない");
       assert.equal(
@@ -374,7 +371,7 @@ test("同期は節を知識へ入れて索引し、消えた節と文書を消�
         ["docs/a.md"],
       );
       // 変わっていない文書は書き直さない（2 度目の同期で 0 件）
-      assert.match(await syncDocs(db.ingest, p, repo, { remote: false }), /書き直した 0 本/);
+      assert.match(await syncDocs(db.ingest, p, repo, { remote: false }), /0 rewritten/);
     } finally {
       await db.done();
     }

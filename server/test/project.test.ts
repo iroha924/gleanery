@@ -92,12 +92,12 @@ test("名前の対応表が壊れていたら読み飛ばさずに止め、remot
   try {
     fs.mkdirSync(path.join(home, ".gleanery"));
     fs.writeFileSync(path.join(home, ".gleanery", "projects.json"), '{"/x": "a",');
-    assert.throws(() => nameLocal(r.dir, "notes"), /JSON の対応表として読めない/);
-    assert.throws(() => identify(r.dir), /JSON の対応表として読めない/);
+    assert.throws(() => nameLocal(r.dir, "notes"), /is not a valid JSON project table/);
+    assert.throws(() => identify(r.dir), /is not a valid JSON project table/);
     fs.rmSync(path.join(home, ".gleanery", "projects.json"));
     const remote = repo("git@github.com:o/r.git");
     try {
-      assert.throws(() => nameLocal(remote.dir, "notes"), /git remote を持つ/);
+      assert.throws(() => nameLocal(remote.dir, "notes"), /has a git remote/);
     } finally {
       remote.done();
     }
