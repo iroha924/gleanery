@@ -28,7 +28,7 @@ import { openWriter } from "./db-write.ts";
 import { conversationId, type FileAction, indexesMessage, type Origin } from "./knowledge.ts";
 import { panel, plain } from "./panel.ts";
 import { identify, patchPaths, relativeTo } from "./project.ts";
-import { bytes, clean, head, mask, reason, sha256, tail, uuidFrom } from "./text.ts";
+import { bytes, clean, head, mask, plural, reason, sha256, tail, uuidFrom } from "./text.ts";
 
 // Resolve the location on every call (so tests that replace HOME never touch the real queue).
 export const spoolDir = (): string => path.join(os.homedir(), ".gleanery", "spool");
@@ -300,15 +300,15 @@ export function captureNotice(file: string = dbFile()): string | null {
   const s = readState();
   if (s.stuck)
     return panel(
-      "gleanery: cannot send captured records",
-      [`${s.pending} queued / last failure: ${plain(s.stuck.slice(0, 120))}`],
+      "gleanery: cannot send recordings",
+      [`${s.pending} pending / failed: ${plain(s.stuck.slice(0, 120))}`],
       "Check with gleanery doctor",
     );
   if (s.rejected > 0)
     return panel(
-      `gleanery: the database rejected ${s.rejected} records`,
+      `gleanery: the database rejected ${plural(s.rejected, "record")}`,
       [rejectedDir()],
-      "Fix them and move them back to the queue to resend. Check with gleanery doctor",
+      `Fix them and move them back to ${spoolDir()} to resend. Check with gleanery doctor`,
     );
   return null;
 }

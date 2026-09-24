@@ -14,6 +14,7 @@ import {
   onHook,
   readInput,
   readState,
+  rejectedDir,
   type Spooled,
   spoolDir,
   write,
@@ -581,9 +582,27 @@ test("stuck is reported only with queued items and a recorded failure, and a bro
   // A failure with an empty reason is still stuck.
   fs.writeFileSync(file, JSON.stringify({ error: "" }));
   assert.equal(readState().stuck, "unknown failure");
-  assert.match(captureNotice(capture) ?? "", /cannot send captured records/);
+  assert.match(
+    captureNotice(capture) ?? "",
+    /cannot send recordings\n│ 1 pending \/ failed: unknown failure/,
+  );
   reset();
   fs.rmSync(file);
+});
+
+test("the notice for rejected records counts them in words that match doctor, and shows where to move them", () => {
+  reset();
+  fs.rmSync(path.join(home, ".gleanery", "capture.json"), { force: true });
+  const capture = path.join(home, "gleanery.db");
+  fs.writeFileSync(capture, "");
+  fs.mkdirSync(rejectedDir(), { recursive: true });
+  fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
+  const one = captureNotice(capture) ?? "";
+  assert.match(one, /the database rejected 1 record\n/);
+  assert.ok(one.includes(spoolDir()), "shows the queue folder to move them back to");
+  fs.writeFileSync(path.join(rejectedDir(), "2.json"), "{}");
+  assert.match(captureNotice(capture) ?? "", /the database rejected 2 records\n/);
+  reset();
 });
 
 test("SessionStart passes this session id down to children", () => {
