@@ -307,8 +307,9 @@ export function captureNotice(file: string = dbFile()): string | null {
   if (s.rejected > 0)
     return panel(
       `gleanery: the database rejected ${plural(s.rejected, "record")}`,
-      [rejectedDir()],
-      `Fix them and move them back to ${spoolDir()} to resend. Check with gleanery doctor`,
+      // Paths go in the box lines: a newline in HOME must not forge a line outside the box.
+      [rejectedDir(), `Move them back to ${spoolDir()} to resend`],
+      "Fix them first, then check with gleanery doctor",
     );
   return null;
 }

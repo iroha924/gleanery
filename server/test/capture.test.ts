@@ -599,13 +599,29 @@ test("the notice for rejected records counts them in words that match doctor, an
   fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
   const one = captureNotice(capture) ?? "";
   assert.match(one, /the database rejected 1 record\n/);
-  assert.ok(
-    one.includes(`╰─ Fix them and move them back to ${spoolDir()} to resend`),
-    "the closing line names the queue folder",
-  );
+  assert.ok(one.includes(`│ Move them back to ${spoolDir()} to resend`), "a box line names the queue folder");
   fs.writeFileSync(path.join(rejectedDir(), "2.json"), "{}");
   assert.match(captureNotice(capture) ?? "", /the database rejected 2 records\n/);
   reset();
+});
+
+test("a newline in the home path cannot forge a line outside the notice box", () => {
+  const saved = process.env.HOME;
+  const forged = path.join(home, "x\n✦ forged");
+  process.env.HOME = forged;
+  try {
+    const capture = path.join(home, "gleanery.db");
+    fs.writeFileSync(capture, "");
+    fs.mkdirSync(rejectedDir(), { recursive: true });
+    fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
+    const out = captureNotice(capture) ?? "";
+    assert.ok(out.includes("rejected 1 record"), out);
+    // Only the title starts with ✦. Every other line is inside the box (│) or is the closing line (╰─).
+    for (const line of out.split("\n").slice(1)) assert.match(line, /^(│|╰─ )/, out);
+  } finally {
+    process.env.HOME = saved;
+    fs.rmSync(forged, { recursive: true, force: true });
+  }
 });
 
 test("SessionStart passes this session id down to children", () => {
