@@ -23,7 +23,7 @@ jobs:
           # The template's comments also mention Codex, so drop HTML comments before taking the section.
           # PRs opened before the English template use the Japanese heading.
           # english-exempt: the Japanese Verification heading of PRs opened before the English template
-          printf '%s\n' "$BODY" | tr -d '\r' | perl -0pe 's/<!--.*?-->//gs' | awk '/^## (Verification|検証)/{f=1;next} /^## /{f=0} f' > verification.txt
+          printf '%s\n' "$BODY" | tr -d '\r' | perl -0pe 's/<!--.*?-->//gs' | awk '/^## (Verification|検証)[ \t]*$/{f=1;next} /^## /{f=0} f' > verification.txt
           grep -q "Codex" verification.txt || {
             echo "The Verification section of the PR body has no Codex review result (see review in CLAUDE.md and the codex-review Skill)"
             exit 1

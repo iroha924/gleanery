@@ -39,8 +39,9 @@ const DIALECTS: Dialect[] = [
     // english-exempt: accepts the Japanese full stop in bodies written in Japanese
     rejected: /^[.。]\s*Rejected:\s*/,
     bare: /\bRejected:/,
+    // Semicolons, because English option text often contains commas. The Japanese comma is accepted for bodies written in Japanese
     // english-exempt: accepts the Japanese comma in bodies written in Japanese
-    commas: ",、",
+    commas: ";、",
     // english-exempt: accepts the Japanese full stop in bodies written in Japanese
     trailing: /[.。]$/,
   },

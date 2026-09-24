@@ -109,10 +109,10 @@ ${lines}
 - Chosen: outside the section, so this is not read
 `;
 
-test("reads the English format: chosen option, then rejected options with reasons split at commas outside parentheses", () => {
+test("reads the English format: chosen option, then rejected options with reasons split at semicolons outside parentheses", () => {
   const got = extractDecisions(
     en(
-      "- Chosen: one `node:sqlite` file. Rejected: keep PostgreSQL (users would need Docker, and 4 keys), libSQL (no column-level boundary for capture), DuckDB (no cascade)",
+      "- Chosen: one `node:sqlite` file. Rejected: keep PostgreSQL (users would need Docker, and 4 keys); libSQL (no column-level boundary for capture); DuckDB (no cascade)",
     ),
   );
   assert.equal(got.skipped, 0);
@@ -129,6 +129,19 @@ test("reads the English format: chosen option, then rejected options with reason
       ],
     ],
   );
+});
+
+test("in the English format, commas stay inside an option, and semicolons separate rejected options", () => {
+  const got = extractDecisions(
+    en(
+      "- Chosen: SQLite. Rejected: local files, one per project (harder to search); a server, hosted or local (needs ops)",
+    ),
+  );
+  assert.equal(got.skipped, 0);
+  assert.deepEqual(got.decisions[0]?.rejected, [
+    { text: "local files, one per project", reason: "harder to search" },
+    { text: "a server, hosted or local", reason: "needs ops" },
+  ]);
 });
 
 test("in the English format, periods inside the chosen option do not split, a trailing period is dropped, and a missing reason is null", () => {

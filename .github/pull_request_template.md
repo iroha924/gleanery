@@ -18,7 +18,7 @@ so do not mix up Closes and Refs. List several on separate lines. Do not add a h
 <!--
 One line each. **Include the reason for each rejected option.** Without it, nothing was really decided,
 and half a year later the same option gets rejected again for the same reason.
-Lines in the form `- Chosen: <option>. Rejected: <option> (<reason>), <option> (<reason>)` are imported as gleanery
+Lines in the form `- Chosen: <option>. Rejected: <option> (<reason>); <option> (<reason>)` are imported as gleanery
 decision records after the merge (server/src/decisions.ts). Lines in any other form stay only as messages.
 -->
 
