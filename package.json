@@ -5,7 +5,7 @@
   "scripts": {
     "setup": "bun install --cwd server --frozen-lockfile",
     "cli": "node server/src/cli.ts",
-    "lint": "bunx --bun @biomejs/biome@2.5.14 check .",
+    "lint": "server/node_modules/.bin/biome ci . --error-on-warnings",
     "verify:ai": "node scripts/check-ai-config.mjs",
     "architecture": "node scripts/check-architecture.mjs",
     "english": "node scripts/check-english.mjs",
