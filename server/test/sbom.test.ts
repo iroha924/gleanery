@@ -17,7 +17,7 @@ const bom = (components: { name: string; group?: string; version: string; type?:
   components: components.map((c) => ({ type: "library", ...c })),
 });
 
-test("同梱した package が全部 SBOM にあれば通る（group 付きの名前も揃える）", () => {
+test("passes when every bundled package is in the SBOM (scoped names included)", () => {
   assert.deepEqual(
     sbomProblems(
       notices,
@@ -31,7 +31,7 @@ test("同梱した package が全部 SBOM にあれば通る（group 付きの�
   );
 });
 
-test("同梱した package が SBOM に無い、版が違うと落とす", () => {
+test("fails when a bundled package is missing from the SBOM or has a different version", () => {
   const got = sbomProblems(
     notices,
     bom([
@@ -46,12 +46,12 @@ test("同梱した package が SBOM に無い、版が違うと落とす", () =>
   ]);
 });
 
-test("読めない SBOM と空の一覧は落とす（照合が空振りしない）", () => {
+test("fails on an unreadable SBOM and an empty list (so the comparison never passes vacuously)", () => {
   assert.match(sbomProblems(notices, { bomFormat: "SPDX" }).join("\n"), /CycloneDX/);
   assert.match(sbomProblems("表の無い文書", bom([])).join("\n"), /package を読めない/);
 });
 
-test("同梱していない package が SBOM に載っていても落とす（範囲が一致しなければ偽りになる）", () => {
+test("fails when the SBOM lists a package that is not bundled (a mismatched scope would be false)", () => {
   const got = sbomProblems(
     notices,
     bom([
@@ -64,7 +64,7 @@ test("同梱していない package が SBOM に載っていても落とす（�
   assert.deepEqual(got, ["SBOM に同梱していない typescript 7.0.2 がある"]);
 });
 
-test("告知の表で書式の崩れた行があれば、照合から外さずに落とす", () => {
+test("fails on a malformed row in the notices table instead of leaving it out of the comparison", () => {
   const broken = `${notices}| react | 19.3.0 (patched) | MIT |\n| ink | | MIT |\n`;
   const got = sbomProblems(
     broken,

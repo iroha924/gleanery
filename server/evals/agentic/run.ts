@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-// 出荷の plugin/dist/mcp.js を `claude -p` に渡して retrieval.json の問いを解かせる（先に bun run bundle）。
-// **実 DB と持ち主のサブスクを使うので verify に入れない。**結果は os.tmpdir()/gleanery-evals/<name>/<split>/ に残る。
-//   bun run evals:agentic -- --name base --split dev --model sonnet（同じ構成の繰り返しは base-r2, base-r3 と名付ける）
+// Gives the shipped plugin/dist/mcp.js to `claude -p` and has it answer the retrieval.json questions (run bun run bundle first).
+// **It uses the real database and the owner's subscription, so it is not part of verify.** Results stay in os.tmpdir()/gleanery-evals/<name>/<split>/.
+//   bun run evals:agentic -- --name base --split dev --model sonnet (name repeats of the same setup base-r2, base-r3)
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -22,8 +22,8 @@ export type Case = { q: string; expect: string[]; kind: string; source: string }
 const CASES = fs.readFileSync(path.join(HERE, "../retrieval.json"), "utf8");
 export const { cases } = JSON.parse(CASES) as { cases: Case[] };
 /**
- * 問いの集合の指紋。retrieval.json を作り直すと split の中身が入れ替わるので、違う集合どうしを比べない。
- * 流す前に外す問い（retired）の添字も入れる（外す前に測った基準と、同じ集合として比べさせない）。
+ * Fingerprint of the question set. Rebuilding retrieval.json reshuffles the splits, so different sets are never compared.
+ * It includes the indexes of questions dropped before running (retired), so baselines measured before dropping do not count as the same set.
  */
 export const CASES_SHA = crypto
   .createHash("sha256")
@@ -32,8 +32,8 @@ export const CASES_SHA = crypto
   .digest("hex")
   .slice(0, 16);
 
-// 番号は retrieval.json の cases の添字で、変えない。dev（知識の偶数番）でツールを直し、holdout（奇数番）は
-// ゲートの判定でだけ流す（見て直すと、ゲートが改善の途中を測るだけになる）。message は正解が発言の id。
+// Numbers are the case indexes in retrieval.json and never change. Tune the tools on dev (even knowledge indexes) and run holdout (odd)
+// only for the gate decision (tuning against it would make the gate measure work in progress). message answers are message ids.
 export const SPLITS = {
   dev: (c: Case, i: number) => c.source !== "message" && i % 2 === 0 && !retired(c),
   holdout: (c: Case, i: number) => c.source !== "message" && i % 2 === 1 && !retired(c),
@@ -45,38 +45,42 @@ export type Result = {
   i: number;
   q: string;
   kind: string;
-  /** 正解の順位（0 始まり）。上位 5 件に無ければ -1 */
+  /** Rank of the answer (0-based), or -1 if not in the top 5 */
   rank: number;
   refs: string[];
-  /** refs を正解と同じキー（知識は source_key、発言は id）へ直したもの。DB を入れ直しても比べられる */
+  /** refs mapped to the answer keys (source_key for knowledge, id for messages), comparable across reimports */
   keys: (string | null)[];
   turns: number;
   cost: number;
   ms: number;
-  /** 実際に使われたモデルの ID と Claude Code のバージョン（trace の init から）。別名（sonnet / opus）の指す先は変わる */
+  /** The model id actually used and the Claude Code version (from the trace init). Aliases (sonnet / opus) change targets */
   resolved: { model: string | null; claude: string | null };
   error?: string;
 };
 
+// The prompt is part of the measurement. Translating it would make results incomparable with the baseline.
 const ANSWER = [
   "gleanery の recall と read には all_projects: true を付ける（記録は複数のプロジェクトにまたがる）。",
   '最後の行に {"refs":["k:1","k:2"]} の形の JSON だけを出す（問いに最も直接答える記録を関連の高い順に最大 5 件）。',
 ].join("\n");
 
 /**
- * 結果の置き場所。開始時に丸ごと消すので、消す前に OUT の中に収まることを確かめる。
- * 名前は字句で限り、OUT と既にある `<name>` が symlink なら拒む（文字列では中でも、指す先は外になりうる）。
+ * Where results go. It is wiped at start, so first confirm it stays inside OUT.
+ * The name is restricted lexically, and OUT or an existing `<name>` that is a symlink is rejected (a path inside by text can point outside).
  */
 export function runDir(out: string, name: string, split: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.includes(".."))
-    throw new Error(`--name は英数字で始まり、英数字と . _ - だけを使う（${JSON.stringify(name)}）`);
+    throw new Error(
+      `--name must start with a letter or digit and use only letters, digits, and . _ - (${JSON.stringify(name)})`,
+    );
   if (fs.lstatSync(out, { throwIfNoEntry: false })?.isSymbolicLink())
-    throw new Error(`結果の置き場所 ${out} が symlink なので使わない`);
+    throw new Error(`not using the results directory ${out} because it is a symlink`);
   const dir = path.join(out, name);
   const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
-  if (stat?.isSymbolicLink()) throw new Error(`--name の置き場所 ${dir} が symlink なので使わない`);
+  if (stat?.isSymbolicLink())
+    throw new Error(`not using the --name directory ${dir} because it is a symlink`);
   if (stat && !fs.realpathSync(dir).startsWith(`${fs.realpathSync(out)}${path.sep}`))
-    throw new Error(`--name の置き場所 ${dir} が ${out} の外にある`);
+    throw new Error(`the --name directory ${dir} is outside ${out}`);
   return path.join(dir, split);
 }
 
@@ -86,15 +90,15 @@ async function main() {
       name: { type: "string", default: "base" },
       split: { type: "string", default: "dev" },
       model: { type: "string", default: "sonnet" },
-      // 渡さなければ Claude Code の既定の effort で測る（基準もそうして取った）。既定はバージョンで変わるので、バージョンと一緒に記録する
+      // Without it, measure at Claude Code's default effort (as the baseline was). The default changes by version, so record it with the version
       effort: { type: "string" },
       par: { type: "string", default: "4" },
     },
   });
   const split = values.split as Split;
-  if (!(split in SPLITS)) throw new Error(`--split は ${Object.keys(SPLITS).join(" / ")} のどれか`);
+  if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
   const mcp = path.join(REPO, "plugin/dist/mcp.js");
-  if (!fs.existsSync(mcp)) throw new Error("plugin/dist/mcp.js が無い。先に bun run bundle");
+  if (!fs.existsSync(mcp)) throw new Error("plugin/dist/mcp.js is missing. Run bun run bundle first");
 
   const run = runDir(OUT, values.name, split);
   fs.rmSync(run, { recursive: true, force: true });
@@ -110,7 +114,7 @@ async function main() {
         const r = await solve(x.c, x.i, { run, mcp, model: values.model, effort: values.effort, keyOf });
         results.push(r);
         console.error(
-          `q${r.i} ${r.rank === 0 ? "✓" : r.rank < 0 ? "✗" : `${r.rank + 1} 位`}${r.error ? ` ${r.error}` : ""}`,
+          `q${r.i} ${r.rank === 0 ? "✓" : r.rank < 0 ? "✗" : `#${r.rank + 1}`}${r.error ? ` ${r.error}` : ""}`,
         );
       }
     }),
@@ -120,8 +124,9 @@ async function main() {
     name: values.name,
     split,
     model: values.model,
-    // --effort が無ければ、環境変数、それも無ければモデルの既定（2.1.280 では Sonnet 5 は high、Opus 5.5 は medium）で決まる。
-    // プロジェクトは一時ディレクトリなので、repository の設定の effortLevel は読まれない
+    // Without --effort, the environment variable decides, or else the model default (in 2.1.280, high for Sonnet 5 and medium for Opus 5.5).
+    // The project is a temp directory, so the repository's effortLevel setting is not read.
+    // These values are stored in summaries and compared with baseline.json, so they stay as recorded
     effort:
       values.effort ??
       (process.env.CLAUDE_CODE_EFFORT_LEVEL ? `環境変数 ${process.env.CLAUDE_CODE_EFFORT_LEVEL}` : "既定"),
@@ -133,12 +138,12 @@ async function main() {
   for (const r of results)
     if (r.rank !== 0)
       console.log(
-        `  ${r.rank < 0 ? "圏外" : `${r.rank + 1} 位`} [${r.kind}] q${r.i} ${r.q}${r.error ? ` (${r.error})` : ""}`,
+        `  ${r.rank < 0 ? "miss" : `#${r.rank + 1}`} [${r.kind}] q${r.i} ${r.q}${r.error ? ` (${r.error})` : ""}`,
       );
-  console.log(`結果: ${run}`);
+  console.log(`results: ${run}`);
 }
 
-/** ref から正解と同じキーへ。id では突き合わせない（入れ直しで変わる）。発言は id がそのままキー。 */
+/** Maps a ref to the answer key. Never matches by id (ids change on reimport). A message id is its own key. */
 async function keys(): Promise<(ref: string) => string | null> {
   const db = openReader();
   try {
@@ -163,11 +168,11 @@ async function solve(
 ): Promise<Result> {
   const dir = path.join(o.run, `q${i}`);
   fs.mkdirSync(dir);
-  // 作業ディレクトリは repository でも ~/.gleanery でもない空の場所にする。持ち主の CLAUDE.md・plugin・hook を
-  // 読ませると、測るのが出荷のツールではなく持ち主の設定になる（hook は自動記録まで走らせる）。
+  // The working directory is an empty place, neither the repository nor ~/.gleanery. Loading the owner's CLAUDE.md, plugins, and hooks
+  // would measure the owner's setup instead of the shipped tools (and the hooks would even run capture).
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
   const config = path.join(dir, "mcp.json");
-  // 評価用に写した DB を測るときは GLEANERY_DB で指す。MCP へ明示して渡す（親の環境が届くかに頼らない）。
+  // Point GLEANERY_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
   const env = process.env.GLEANERY_DB ? { GLEANERY_DB: process.env.GLEANERY_DB } : undefined;
   fs.writeFileSync(
     config,
@@ -191,11 +196,11 @@ async function solve(
         "",
         "--allowedTools",
         "mcp__gleanery__recall,mcp__gleanery__read",
-        // stream-json はツールの呼び出しを 1 行ずつ出す。json では最後の応答しか残らず、なぜ外したかを追えない
+        // stream-json prints each tool call on its own line. json keeps only the last reply, so misses cannot be traced
         "--output-format",
         "stream-json",
         "--verbose",
-        // 付けないと ~/.claude/projects/ に 1 問 1 つずつセッションが溜まる（実験で 379 個できた）
+        // Without it, ~/.claude/projects/ collects one session per question (379 in one experiment)
         "--no-session-persistence",
       ],
       cwd,
@@ -220,9 +225,9 @@ async function solve(
         claude: typeof init?.claude_code_version === "string" ? init.claude_code_version : null,
       },
       ...(last === undefined || last.is_error
-        ? { error: String(last?.result ?? "応答が無い").slice(0, 200) }
+        ? { error: String(last?.result ?? "no response").slice(0, 200) }
         : refs === null
-          ? { error: "最後の refs の JSON が読めない（書式の失敗で、検索の外れではない）" }
+          ? { error: "cannot parse the final refs JSON (a format failure, not a search miss)" }
           : {}),
     };
     fs.writeFileSync(path.join(dir, "result.json"), JSON.stringify(res, null, 1));
@@ -234,7 +239,7 @@ async function solve(
 
 type Event = { type?: string; [k: string]: unknown };
 
-// --no-session-persistence でも、cwd ごとに ~/.claude/projects/<cwd>/memory/ が作られる（実測: 42 問で 42 個）
+// Even with --no-session-persistence, ~/.claude/projects/<cwd>/memory/ is created per cwd (measured: 42 for 42 questions)
 export const CLAUDE_ENV = { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
 
 function claude(args: string[], cwd: string): Promise<Event[]> {
@@ -266,14 +271,14 @@ function claude(args: string[], cwd: string): Promise<Event[]> {
         events.push({
           type: "result",
           is_error: true,
-          result: `claude が ${code} で終わった: ${err.slice(0, 300)}`,
+          result: `claude exited with ${code}: ${err.slice(0, 300)}`,
         });
       resolve(events);
     });
   });
 }
 
-/** 最後の行の `{"refs":[...]}`。途中の例示を拾わないよう最後の一致を使う。読めなければ null */
+/** The `{"refs":[...]}` on the last line. Uses the last match so examples earlier in the text are skipped. null if unreadable */
 export function refsOf(text: string): string[] | null {
   const m = [...text.matchAll(/\{\s*"refs"\s*:\s*\[[^\]]*\]\s*\}/g)].pop();
   if (!m) return null;
@@ -289,6 +294,7 @@ export function summarize(
   meta: { name: string; split: string; model: string; effort: string; cases: string; ms: number },
 ) {
   const n = results.length;
+  // Stored in summary.json and compared across runs by judge.ts, so the value stays as recorded
   const distinct = (xs: (string | null)[]) => [...new Set(xs.map((x) => x ?? "不明"))].sort();
   const pct = (k: number) => Math.round((k / Math.max(n, 1)) * 1000) / 10;
   return {

@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { pendingMigrations } from "../src/admin.ts";
 import { SCHEMA_REVISION } from "../src/db.ts";
 
-test("DB のバージョンより新しい migration だけを、revision の昇順で返す", () => {
+test("returns only migrations newer than the database version, in ascending revision order", () => {
   const files = ["0005_c.sql", "0003_a.sql", "0004_b.sql"];
   assert.deepEqual(pendingMigrations(files, 3), [
     { revision: 4, file: "0004_b.sql" },
@@ -17,14 +17,14 @@ test("DB のバージョンより新しい migration だけを、revision の昇
   ]);
 });
 
-test("DB が最後の migration のバージョンか、それより新しければ何も返さない", () => {
+test("returns nothing when the database is at or past the last migration", () => {
   const files = ["0003_a.sql", "0004_b.sql"];
   assert.deepEqual(pendingMigrations(files, 4), []);
   assert.deepEqual(pendingMigrations(files, 5), []);
 });
 
-// 読めない名前を飛ばすと、DB が最新に見えたままその手順だけが当たらない。
-test("名前が NNNN_<英小文字・数字・_>.sql でないファイルがあれば、DB が最新でもその名前を挙げて投げる", () => {
+// Skipping unreadable names would make the database look current while that step never runs.
+test("throws with the name of any file not named NNNN_<lowercase, digits, _>.sql, even when the database is current", () => {
   for (const bad of ["004_b.sql", "0004-b.sql", "0004_B.sql", "0004.sql", "0004_b.sql~", "README.md"]) {
     assert.throws(
       () => pendingMigrations(["0003_a.sql", bad], 3),
@@ -36,16 +36,16 @@ test("名前が NNNN_<英小文字・数字・_>.sql でないファイルがあ
   }
 });
 
-// Finder や vim が置く隠しファイルで止まると、当てるべき migration まで当たらなくなる。
-test("`.` で始まる名前は migration として読まず、残りだけを返す", () => {
+// Stopping on hidden files left by Finder or vim would block the migrations that should run.
+test("names starting with `.` are not read as migrations, and the rest are returned", () => {
   assert.deepEqual(pendingMigrations([".DS_Store", "0003_a.sql", ".0004_b.sql.swp", "0004_b.sql"], 2), [
     { revision: 3, file: "0003_a.sql" },
     { revision: 4, file: "0004_b.sql" },
   ]);
 });
 
-// 別々の branch で同じ番号を取ると、DB は片方だけを当ててバージョンを進め、もう片方は二度と当たらない。
-test("同じ revision の migration が 2 本あれば、DB がそのバージョンを過ぎていても両方の名前を挙げて投げる", () => {
+// If two branches take the same number, the database applies one, advances the version, and never applies the other.
+test("throws with both names when two migrations share a revision, even if the database is past it", () => {
   for (const current of [2, 4]) {
     assert.throws(
       () => pendingMigrations(["0003_a.sql", "0004_b.sql", "0004_c.sql"], current),
@@ -60,21 +60,21 @@ test("同じ revision の migration が 2 本あれば、DB がそのバージ�
   }
 });
 
-// 欠けたバージョンを飛ばして次を当てると、DB の形が schema.sql からずれたままバージョンだけが揃う。
-test("DB の次のバージョンから最後までに欠番があれば、欠けた revision を挙げて投げる", () => {
+// Skipping a missing version would leave the database shape off from schema.sql while the version number matches.
+test("throws with the missing revision when there is a gap between the next version and the last", () => {
   assert.throws(() => pendingMigrations(["0003_a.sql", "0005_c.sql"], 2), /(?<!\d)0*4(?!\d)/);
   assert.throws(() => pendingMigrations(["0004_b.sql"], 2), /(?<!\d)0*3(?!\d)/);
 });
 
-// SQLite の DB は schema.sql（revision 1）から始まり、ここの migration を順に当てて今の形へ進む。
-test("db/migrations は revision 2 から欠番も重複も無く続き、最後のバージョンがコードと schema.sql のバージョンに一致する", () => {
+// The SQLite database starts at schema.sql (revision 1) and reaches its current shape by applying these migrations in order.
+test("db/migrations runs from revision 2 without gaps or duplicates, and the last version matches the code and schema.sql", () => {
   const dir = new URL("../../db/migrations/", import.meta.url);
   const revisions = (fs.existsSync(dir) ? fs.readdirSync(dir) : [])
     .filter((f) => !f.startsWith("."))
     .sort()
     .map((f) => {
       const m = f.match(/^(\d{4})_[a-z0-9_]+\.sql$/);
-      assert.ok(m, `名前が NNNN_<名前>.sql でない: ${f}`);
+      assert.ok(m, `name is not NNNN_<name>.sql: ${f}`);
       return Number(m[1]);
     });
   assert.deepEqual(

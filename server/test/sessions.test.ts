@@ -10,7 +10,7 @@ before(() => {
   db = tempDb();
   p1 = project(db);
   p2 = project(db, "git:github.com/o/other", "o/other");
-  // 貼り付けで始めた session。最初の発言がホストの囲みの札で始まる。
+  // A session that starts with a paste. The first message starts with the host's wrapper tag.
   message(db, p1, {
     id: "m-a1",
     session: "a",
@@ -37,7 +37,7 @@ before(() => {
 });
 after(() => db.done());
 
-test("プロジェクトの一覧は名前順で、session と知識の数と取り込み元の状態を持つ", async () => {
+test("the project list is sorted by name and has session and knowledge counts and source status", async () => {
   const got = await projects(db.reader);
   assert.deepEqual(
     got.map((x) => [x.name, x.sessions]),
@@ -51,7 +51,7 @@ test("プロジェクトの一覧は名前順で、session と知識の数と取
   ]);
 });
 
-test("セッションの一覧は最後の発言の新しい順で、題の囲みの札を外し、触ったファイルを重ねずに数える", async () => {
+test("the session list is newest by last message, strips wrapper tags from titles, and counts touched files without duplicates", async () => {
   const page = await listSessions(db.reader, { project: p1, page: 1, pageSize: 30 });
   assert.equal(page.total, 2);
   assert.deepEqual(
@@ -71,15 +71,15 @@ test("セッションの一覧は最後の発言の新しい順で、題の囲�
   assert.equal(
     (await listSessions(db.reader, { page: 1, pageSize: 30 })).total,
     3,
-    "プロジェクトを省けば全部",
+    "all projects when none is given",
   );
 });
 
-test("無い session は null", async () => {
+test("a missing session is null", async () => {
   assert.equal(await sessionDetail(db.reader, "無い"), null);
 });
 
-test("session の詳細は発言・触ったファイル・知識・作業をまとめ、知識に札を付ける", async () => {
+test("session details gather messages, touched files, knowledge, and work, with labels on knowledge", async () => {
   const conversation = `c-${p1}-a`;
   insert(db, "knowledge", {
     project_id: p1,
@@ -115,7 +115,7 @@ test("session の詳細は発言・触ったファイル・知識・作業をま
   assert.deepEqual(found?.work[0]?.next, ["次"]);
 });
 
-test("作業の一覧は終わった作業も含め、プロジェクトで絞れる", async () => {
+test("the work list includes finished work and filters by project", async () => {
   insert(db, "work_item", {
     project_id: p2,
     source_key: "done",
@@ -134,7 +134,7 @@ test("作業の一覧は終わった作業も含め、プロジェクトで絞�
   assert.ok((await listWork(db.reader, null)).items.length >= 2);
 });
 
-test("作業の一覧が上限で切れたら、切れたことを返す", async () => {
+test("reports when the work list is cut at the limit", async () => {
   const all = (await listWork(db.reader, null)).items.length;
   assert.ok(all >= 2);
   const cut = await listWork(db.reader, null, all - 1);
@@ -145,7 +145,7 @@ test("作業の一覧が上限で切れたら、切れたことを返す", async
   assert.equal(exact.more, false);
 });
 
-test("検索で当たった発言を session ごとにまとめ、題の囲みの札を外す", async () => {
+test("groups matched messages by session and strips wrapper tags from titles", async () => {
   assert.deepEqual(await searchSessions(db.reader, { q: "当たらない語", mode: "said" }), []);
   const found = await searchSessions(db.reader, { q: "SQLite", mode: "said", project: p1 });
   assert.equal(found.length, 1);
@@ -158,7 +158,7 @@ test("検索で当たった発言を session ごとにまとめ、題の囲み�
   assert.equal(byKnowledge[0]?.hits[0]?.text, "認証は OAuth");
 });
 
-test("札の無い題と札だけの題はそのまま出す", async () => {
+test("titles without tags and titles that are only a tag are shown as is", async () => {
   const p3 = project(db, "git:github.com/o/third", "o/third");
   message(db, p3, { id: "m-x", session: "x", body: "a < b > c" });
   message(db, p3, { id: "m-y", session: "y", body: "<x>", sent: "2026-09-09T00:00:00Z" });
@@ -169,8 +169,8 @@ test("札の無い題と札だけの題はそのまま出す", async () => {
   );
 });
 
-// trace だけで作業を結ばなかった session は、持ち主の発言も作業の題も持たない。空欄だとどの session か分からない。
-test("題の無い session は session id を名指す", async () => {
+// A session with only trace and no linked work has no owner message or work title. A blank title would not identify it.
+test("a session without a title is named by its session id", async () => {
   const p4 = project(db, "git:github.com/o/fourth", "o/fourth");
   insert(db, "conversation", {
     id: "c-none",

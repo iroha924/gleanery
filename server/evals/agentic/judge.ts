@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// 各構成の 1 位と eval の正解を、出所を伏せて Opus に判定させる。正解のキーは各問 1 つで、同じ内容に答える別の記録を外れにするため。
-// 判定は (問い, source_key, 判定モデル・プロンプト・本文の hash) ごとにキャッシュする。**id で持たない**（DB を入れ直すと変わる）。
-//   bun run evals:judge -- <run の結果の dir か baseline.json> ... [--out server/evals/agentic/baseline.json]
+// Has Opus grade each setup's top hit and the eval answer blind to their source. Each question has one answer key, which would count other records with the same content as misses.
+// Grades are cached per (question, source_key, hash of judge model, prompt, and body). **Never keyed by id** (ids change on reimport).
+//   bun run evals:judge -- <run result dir or baseline.json> ... [--out server/evals/agentic/baseline.json]
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -20,7 +20,7 @@ type Row = {
   body: string;
   reason: string | null;
 };
-/** slot は判定した組の指紋（source_key・判定モデル・プロンプトのバージョン・本文）。どれかが変われば判定し直す */
+/** slot fingerprints a graded pair (source_key, judge model, prompt version, body). Any change triggers a new grade */
 type Top = { i: number; rank: number; key: string | null; grade?: Grade; slot?: string };
 type System = { summary: ReturnType<typeof summarize>; top: Top[] };
 type Baseline = {
@@ -29,7 +29,7 @@ type Baseline = {
   answers: { i: number; key: string; grade?: Grade; slot?: string }[];
 };
 
-// 判定のプロンプトを変えたら上げる（古い判定をキャッシュから引かないため）
+// Bump when the judge prompt changes (so old grades are not read from the cache)
 const PROMPT_VERSION = 1;
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -44,7 +44,7 @@ const { values, positionals } = parseArgs({
   },
 });
 if (positionals.length === 0)
-  throw new Error("run の結果の dir（os.tmpdir()/gleanery-evals/<name>/<split>）か baseline.json を渡す");
+  throw new Error("pass a run result dir (os.tmpdir()/gleanery-evals/<name>/<split>) or baseline.json");
 fs.mkdirSync(CACHE, { recursive: true });
 
 const db = openReader();
@@ -54,6 +54,7 @@ const rows = await db
   .execute();
 const counted = rows.length;
 await db.destroy();
+// Part of the judge prompt and the slot hash. Translating it would invalidate cached and baseline grades.
 const text = (r: Row) =>
   `種類: ${r.kind}${r.status ? `/${r.status}` : ""}\n見出し: ${r.heading ?? ""}\n本文: ${r.body.slice(0, 1500)}${r.reason ? `\n理由: ${r.reason.slice(0, 400)}` : ""}`;
 const byKey = new Map<string, Row>(rows.map((r) => [r.source_key, r]));
@@ -77,7 +78,7 @@ function cached(i: number): Record<string, Grade> {
   const f = cacheFile(i);
   if (fs.existsSync(f)) {
     const saved = JSON.parse(fs.readFileSync(f, "utf8")) as { q: string; grades: Record<string, Grade> };
-    // 問いの文が変わっていれば別の問いなので使わない
+    // A changed question text means a different question, so skip it
     if (saved.q === cases[i]?.q) g = saved.grades;
   }
   cache.set(i, g);
@@ -95,8 +96,10 @@ for (const src of positionals) {
   if (src.endsWith(".json")) {
     const b = JSON.parse(fs.readFileSync(src, "utf8")) as Baseline;
     if (b.cases !== CASES_SHA)
-      throw new Error(`${src} は別の retrieval.json（${b.cases}）で測った。比べられない`);
-    // 基準の判定は、同じ判定モデル・プロンプト・本文のときだけ使う（slot が一致する）
+      throw new Error(
+        `${src} was measured with a different retrieval.json (${b.cases}) and cannot be compared`,
+      );
+    // Baseline grades are reused only for the same judge model, prompt, and body (matching slot)
     const seed = (i: number, key: string | null, grade?: Grade, slot?: string) => {
       if (key && grade && slot && slot === slotOf(key) && !cached(i)[slot]) remember(i, slot, grade);
     };
@@ -114,7 +117,8 @@ for (const src of positionals) {
     results: Result[];
   };
   const { results, ...summary } = s;
-  if (summary.cases !== CASES_SHA) throw new Error(`${src} は別の retrieval.json で測った。比べられない`);
+  if (summary.cases !== CASES_SHA)
+    throw new Error(`${src} was measured with a different retrieval.json and cannot be compared`);
   systems.push({ summary, top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })) });
 }
 const questions = [...new Set(systems.flatMap((s) => s.top.map((t) => t.i)))].sort((a, b) => a - b);
@@ -126,7 +130,8 @@ async function judge(i: number) {
     (k): k is string => !!k && byKey.has(k) && !gradeOf(i, k),
   );
   if (keys.length === 0) return;
-  // 出所（どの構成の 1 位か、正解か）を伏せ、順番も毎回混ぜる
+  // Hide the source (which setup's top hit, or the answer) and shuffle the order every time.
+  // The prompt is part of the measurement (PROMPT_VERSION), so it stays as written
   keys.sort(() => Math.random() - 0.5);
   const labels = keys.map((_, n) => String.fromCharCode(65 + n));
   const out = await claude(
@@ -151,10 +156,10 @@ async function judge(i: number) {
     const slot = slotOf(k);
     if (slot && (v === "direct" || v === "partial" || v === "no")) remember(i, slot, v);
   });
-  console.error(`q${i} 判定 ${keys.length} 件`);
+  console.error(`q${i} graded ${keys.length}`);
 }
 
-/** この回に判定したモデルの ID（`--model` は別名で、指す先はバージョンで変わる）。cache から引いた判定は数えない */
+/** Model ids that graded in this run (`--model` is an alias whose target changes by version). Cached grades do not count */
 const judgedBy = new Set<string>();
 
 function claude(prompt: string): Promise<string> {
@@ -170,7 +175,7 @@ function claude(prompt: string): Promise<string> {
         "project",
         "--tools",
         "",
-        // 持ち主の claude.ai コネクタ（書き込みのツールを含む）を読ませない。判定に渡す本文は untrusted
+        // Keep out the owner's claude.ai connectors (which include write tools). The graded text is untrusted
         "--strict-mcp-config",
         "--mcp-config",
         '{"mcpServers":{}}',
@@ -206,10 +211,9 @@ await Promise.all(
   }),
 );
 
-if (judgedBy.size > 1) console.log(`⚠ この回の判定に複数のモデルが混ざった: ${[...judgedBy].join("・")}`);
-console.log(
-  `判定のモデル: ${judgedBy.size ? [...judgedBy].join("・") : "新しく判定していない（全部 cache から）"}`,
-);
+if (judgedBy.size > 1)
+  console.log(`⚠ grades in this run came from more than one model: ${[...judgedBy].join(", ")}`);
+console.log(`judge model: ${judgedBy.size ? [...judgedBy].join(", ") : "no new grades (all from cache)"}`);
 const pct = (a: number, b: number) => Math.round((a / Math.max(b, 1)) * 1000) / 10;
 const answers = questions.flatMap((i) => {
   const key = cases[i]?.expect[0];
@@ -217,7 +221,7 @@ const answers = questions.flatMap((i) => {
 });
 const graded = answers.filter((a) => a.grade);
 console.log(
-  `eval の正解そのものの判定: direct ${pct(graded.filter((a) => a.grade === "direct").length, graded.length)}% / partial ${graded.filter((a) => a.grade === "partial").length} / no ${graded.filter((a) => a.grade === "no").length}（${graded.length} 問）`,
+  `grades of the eval answers themselves: direct ${pct(graded.filter((a) => a.grade === "direct").length, graded.length)}% / partial ${graded.filter((a) => a.grade === "partial").length} / no ${graded.filter((a) => a.grade === "no").length} (${graded.length} questions)`,
 );
 const withGrades = (s: System): System => ({
   ...s,
@@ -227,23 +231,25 @@ const withGrades = (s: System): System => ({
   }),
 });
 const runs = systems.map(withGrades);
-const origin = new Map(systems.map((s, n) => [runs[n] as System, fromBaseline.has(s) ? "基準" : "今回"]));
+const origin = new Map(
+  systems.map((s, n) => [runs[n] as System, fromBaseline.has(s) ? "baseline" : "current"]),
+);
 const rowsOut = runs.map((s) => {
   const n = s.top.length;
   return {
-    構成: `${origin.get(s)} ${s.summary.name} / ${s.summary.split} / ${s.summary.model}`,
-    問: n,
-    "正解の top1": `${s.summary.top1}%`,
+    setup: `${origin.get(s)} ${s.summary.name} / ${s.summary.split} / ${s.summary.model}`,
+    questions: n,
+    "answer top1": `${s.summary.top1}%`,
     "recall@5": `${s.summary.recall5}%`,
-    "判定 direct": `${pct(s.top.filter((t) => t.grade === "direct").length, n)}%`,
+    "graded direct": `${pct(s.top.filter((t) => t.grade === "direct").length, n)}%`,
     "direct+partial": `${pct(s.top.filter((t) => t.grade === "direct" || t.grade === "partial").length, n)}%`,
-    未判定: s.top.filter((t) => !t.grade).length,
-    手数: s.summary.turns,
+    ungraded: s.top.filter((t) => !t.grade).length,
+    turns: s.summary.turns,
   };
 });
 console.table(rowsOut);
 
-// 同じ構成でも 1 回ごとに 42 問中 7 問動く（2026-09-23 実測）。ゲートは構成（名前の -rN を除く）・split・モデルごとの平均で比べる
+// Even the same setup moves 7 of 42 questions per run (measured 2026-09-23). The gate compares means per setup (name without -rN), split, and model
 const configOf = (s: System) => s.summary.name.replace(/-r\d+$/, "");
 const groups = Map.groupBy(
   runs,
@@ -265,26 +271,26 @@ console.table(
     means.map((m) => [
       m.name,
       {
-        回数: m.runs,
-        "正解の top1": `${m.top1}%`,
+        runs: m.runs,
+        "answer top1": `${m.top1}%`,
         "recall@5": `${m.recall5}%`,
-        "判定 direct": `${m.direct}%`,
+        "graded direct": `${m.direct}%`,
       },
     ]),
   ),
 );
 
-// **比べる条件が揃っているか。**別名（sonnet / opus）の指す先と Claude Code の既定の effort はバージョンで変わる。揃っていなければ、
-// 差はツールの差ではなくモデルか effort の差かもしれない（2026-09-23 に Opus 5.5 が既定になり、既定の effort が変わった）。
+// **Whether the conditions match.** Alias targets (sonnet / opus) and Claude Code's default effort change by version. If they differ,
+// the gap may come from the model or effort rather than the tools (on 2026-09-23 Opus 5.5 became the default and the default effort changed).
 const conditionOf = (s: System) => {
   const x = s.summary as Partial<ReturnType<typeof summarize>>;
-  return `モデル ${(x.resolved_models ?? ["記録なし"]).join("・")} / Claude Code ${(x.claude_code ?? ["記録なし"]).join("・")} / effort ${x.effort ?? "記録なし"}`;
+  return `model ${(x.resolved_models ?? ["not recorded"]).join(", ")} / Claude Code ${(x.claude_code ?? ["not recorded"]).join(", ")} / effort ${x.effort ?? "not recorded"}`;
 };
 for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`)) {
   const seen = [...new Set(ss.map(conditionOf))];
   if (seen.length > 1)
     console.log(
-      `⚠ ${key} の run で比べる条件が揃っていない（差がモデルか effort の差かもしれない）:\n  ${seen.join("\n  ")}`,
+      `⚠ ${key} runs differ in conditions (the gap may come from the model or effort):\n  ${seen.join("\n  ")}`,
     );
 }
 
@@ -292,10 +298,10 @@ if (values.out) {
   const version = JSON.parse(
     fs.readFileSync(path.join(HERE, "../../../plugin/package.json"), "utf8"),
   ).version;
-  // 渡した baseline.json の分は書き戻さない（新しく流した run だけで基準を作る）
-  const fresh = runs.filter((s) => origin.get(s) === "今回");
+  // Do not write back the runs from the given baseline.json (the baseline is built only from new runs)
+  const fresh = runs.filter((s) => origin.get(s) === "current");
   const baseline = {
-    note: "PR のゲートで比べる基準。1 位は source_key で持つ（id は DB の入れ直しで変わる）。runs[].top[].grade は盲検の判定で、無いものは 1 位を返さなかったか発言（m:）を返した問い（direct に数えない）。slot は判定した組の指紋。ゲートは means（構成・split・モデルごとの平均）で比べる",
+    note: "Baseline for the PR gate. Top hits are stored by source_key (ids change on reimport). runs[].top[].grade is a blind grade; a missing grade means the question returned no top hit or returned a message (m:), and is not counted as direct. slot fingerprints the graded pair. The gate compares means (averages per setup, split, and model)",
     measured_at: new Date().toLocaleDateString("sv-SE"),
     gleanery: version,
     cases: CASES_SHA,
@@ -303,10 +309,10 @@ if (values.out) {
     knowledge: counted,
     judge_model: values.model,
     judge_resolved: [...judgedBy],
-    means: means.filter((m) => m.name.startsWith("今回")).map(({ name: _, ...m }) => m),
+    means: means.filter((m) => m.name.startsWith("current")).map(({ name: _, ...m }) => m),
     runs: fresh,
     answers,
   };
   fs.writeFileSync(values.out, `${JSON.stringify(baseline, null, 2)}\n`);
-  console.log(`書いた: ${values.out}`);
+  console.log(`wrote: ${values.out}`);
 }

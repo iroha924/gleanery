@@ -16,9 +16,9 @@ import {
 import { insert, project, type TempDb, tempDb } from "./temp-db.ts";
 import { put, withRepo } from "./temp-repo.ts";
 
-// **コードフェンスの中の `#` は見出しではない。**シェルのコメントで節が割れると、
-// 説明と、その説明が指すコマンドが別々の断片になる。
-test("コードフェンスの中の見出しでは割らない", () => {
+// **A `#` inside a code fence is not a heading.** Splitting at a shell comment would separate
+// an explanation from the command it describes.
+test("does not split at a heading inside a code fence", () => {
   const out = sections(
     "a.md",
     ["## 使い方", "", "```bash", "# これはコメント", "run --now", "```", "", "続き"].join("\n"),
@@ -28,8 +28,8 @@ test("コードフェンスの中の見出しでは割らない", () => {
   assert.match(out[0]?.text ?? "", /続き/);
 });
 
-// 4 つのバッククォートの例の中の 3 つのバッククォートで閉じたと読むと、例の中の見出しが節になる。
-test("フェンスは同じ文字で同じ長さ以上の、info の無い行でだけ閉じる", () => {
+// Treating 3 backticks inside a 4-backtick example as the close would turn headings in the example into sections.
+test("a fence closes only on a line with the same character, at least the same length, and no info", () => {
   const md = ["## 書き方", "````md", "```ts", "# 例の中の見出し", "```", "````", "", "## 次", "本文"].join(
     "\n",
   );
@@ -41,27 +41,27 @@ test("フェンスは同じ文字で同じ長さ以上の、info の無い行で
   assert.equal(sections("b.md", ["## a", "```ts", "```ts", "# 中", "```"].join("\n")).length, 1);
 });
 
-test("チルダのフェンスも見る", () => {
+test("handles tilde fences", () => {
   const out = sections("a.md", ["## 節", "~~~", "### 中の見出し", "~~~"].join("\n"));
   assert.equal(out.length, 1);
 });
 
-// **同じ題が 1 つのファイルに何度も出る。**key が衝突すると unique (record_id, kind, key) で
-// 後勝ちになり、先に書かれた節が黙って消える。
-test("同じ題の節でも key が衝突しない", () => {
+// **The same heading appears many times in one file.** A key collision makes the later section win on
+// unique (record_id, kind, key), and the earlier one silently disappears.
+test("sections with the same heading get distinct keys", () => {
   const out = sections("a.md", ["## 背景", "いち", "## 判断", "に", "## 背景", "さん"].join("\n"));
   assert.equal(out.length, 3);
   assert.equal(new Set(out.map((s) => s.key)).size, 3);
 });
 
-// 中身は子が持っている。見出しは子の trail に残るので、落としても失われない。
-// 番号を付けた key が別の見出しと同じ文字列になると、1 つの upsert に同じ key が並んで同期ごと落ちる。
-test("番号を付けた節の key が、同じ文字列の見出しと重ならない", () => {
+// The children hold the content. The heading stays in the children's trail, so dropping it loses nothing.
+// If a numbered key equals another heading, one upsert gets the same key twice and the whole sync fails.
+test("a numbered section key does not collide with a heading of the same text", () => {
   const out = sections("x.md", ["## 背景", "a", "## 背景", "b", "## 背景:2", "c"].join("\n"));
   assert.equal(new Set(out.map((s) => s.key)).size, out.length, out.map((s) => s.key).join(" / "));
 });
 
-test("見出しだけの節は置かない", () => {
+test("drops sections that are only a heading", () => {
   const out = sections("a.md", ["## 親", "", "### 子", "中身"].join("\n"));
   assert.deepEqual(
     out.map((s) => s.title),
@@ -70,19 +70,19 @@ test("見出しだけの節は置かない", () => {
   assert.match(out[0]?.trail ?? "", /親 > 子/);
 });
 
-// リポジトリが消えた後は原文を取り直せない。切り落とすと永久に失われる。
-test("長い節は切り捨てずに続きへ回す", () => {
+// The original cannot be fetched again once the repository is gone. Cutting it off loses it for good.
+test("a long section continues in the next part instead of being cut", () => {
   const body = Array.from({ length: 60 }, (_, i) => `段落${i}。${"あ".repeat(200)}`).join("\n\n");
   const out = sections("a.md", `## 長い節\n\n${body}`);
-  assert.ok(out.length > 1, "分割されていない");
-  for (const s of out) assert.ok(s.text.length <= 4000, `${s.text.length} 字の節がある`);
+  assert.ok(out.length > 1, "not split");
+  for (const s of out) assert.ok(s.text.length <= 4000, `a section has ${s.text.length} characters`);
   const joined = out.map((s) => s.text).join("");
-  assert.ok(joined.includes("段落0"), "先頭が落ちた");
-  assert.ok(joined.includes("段落59"), "末尾が落ちた");
+  assert.ok(joined.includes("段落0"), "the start was lost");
+  assert.ok(joined.includes("段落59"), "the end was lost");
 });
 
-// 節だけでは何の話か分からない。見出し（全文検索の索引で 3 倍に重い列）に、どの文書のどの節かを前置する。
-test("節の見出しにはどの文書のどの節かが前置される", () => {
+// A section alone does not say what it is about. The heading (weighted 3x in the full-text index) is prefixed with the document and section.
+test("a section heading is prefixed with its document and section path", () => {
   const out = sections("docs/adr/0001-x.md", ["# 決定", "## Context", "背景の説明"].join("\n"));
   const s = out.find((x) => x.title === "Context");
   assert.ok(s);
@@ -90,18 +90,18 @@ test("節の見出しにはどの文書のどの節かが前置される", () =>
   assert.equal(s.text, "## Context\n背景の説明");
 });
 
-// 見出しの無い文書（README の冒頭だけ、CLAUDE.md の `@AGENTS.md` など）も落とさない。
-test("見出しの無い本文も 1 件になる", () => {
+// Documents without headings (a README intro only, a CLAUDE.md with just `@AGENTS.md`) are kept too.
+test("a body without headings becomes one section", () => {
   const out = sections("CLAUDE.md", "@AGENTS.md\n");
   assert.equal(out.length, 1);
   assert.equal(out[0]?.text, "@AGENTS.md");
   assert.equal(out[0]?.key, "doc:CLAUDE.md#claude.md");
 });
 
-// **追跡された symlink を辿ると、リポジトリの外が本文として保存される。**
-// commit の tree では symlink は mode 120000 の項目で、ディレクトリの symlink の先はそもそも tree に無い。
-// 取り込みは利用者が打つが、出力を読まないことも多い。ここが開くと気付かないまま資格情報が出ていく。
-test("commit の tree から読み、symlink の先は本文に入れない", async () => {
+// **Following a tracked symlink would store files outside the repository as body text.**
+// In a commit tree a symlink is an entry with mode 120000, and a directory symlink's target is not in the tree at all.
+// Users run the import but often do not read its output. A hole here would leak credentials unnoticed.
+test("reads from the commit tree and does not include symlink targets", async () => {
   await withRepo((repo, git) => {
     put(repo, "docs/real.md", "# 本物\n中身\n");
     fs.symlinkSync("../../outside.env", path.join(repo, "docs", "leak.md"));
@@ -118,9 +118,9 @@ test("commit の tree から読み、symlink の先は本文に入れない", as
   });
 });
 
-// 追跡された Markdown が全部「事実を述べた文書」とは限らない。監査の fixture は意図的に壊した見本で、
-// 取り込むと架空の規約が本物の手順より上位で返る（実測。iroha924/hir4ta-developer の bloated/CLAUDE.md）。
-test("除外した file と directory は取り込まない", async () => {
+// Not every tracked Markdown file states facts. Audit fixtures are deliberately broken samples, and
+// importing them ranks made-up rules above real procedures (measured: bloated/CLAUDE.md in iroha924/hir4ta-developer).
+test("does not import excluded files and directories", async () => {
   await withRepo((repo, git) => {
     put(repo, "README.md", "# 本物\n中身\n");
     put(repo, "evals/how-to-run.md", "# 回し方\n残す\n");
@@ -144,8 +144,8 @@ test("除外した file と directory は取り込まない", async () => {
   });
 });
 
-// 作業ツリーを読むと、書きかけの本文が DB に入る。
-test("作業ツリーの未 commit の編集は読まず、commit した本文だけを見る", async () => {
+// Reading the working tree would put unfinished text into the database.
+test("ignores uncommitted edits in the working tree and reads only committed text", async () => {
   await withRepo((repo, git) => {
     put(repo, "README.md", "# 読んで\n公開した本文\n");
     git("add", "-A");
@@ -157,8 +157,8 @@ test("作業ツリーの未 commit の編集は読まず、commit した本文�
   });
 });
 
-// 以前の要件定義・設計書の置き場所に残った下書きを検索に出さない。壊れた manifest があっても同期は止めない。
-test(".gleanery/ は入れ子も中身も問わず取り込まず、祖先で fast-forward かを見る", async () => {
+// Keep drafts left in the old requirements and design folder out of search. A broken manifest does not stop the sync.
+test("never imports .gleanery/ at any depth, and checks fast-forward by ancestry", async () => {
   await withRepo((repo, git) => {
     put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
     put(repo, ".gleanery/changes/a/change.json", "{");
@@ -181,29 +181,29 @@ test(".gleanery/ は入れ子も中身も問わず取り込まず、祖先で fa
     const second = commitOf(repo, false);
     assert.equal(isAncestor(repo, first, second), true);
     assert.equal(isAncestor(repo, second, first), false);
-    assert.equal(isAncestor(repo, "0".repeat(40), second), false, "この clone に無い commit");
+    assert.equal(isAncestor(repo, "0".repeat(40), second), false, "a commit not in this clone");
   });
 });
 
-test("大文字の拡張子の文書にも最終更新日が付く", async () => {
+test("documents with an uppercase extension also get a last-modified date", async () => {
   await withRepo(async (repo, git) => {
     put(repo, "README.MD", "# 読んで\n本文\n");
     git("add", "-A");
     git("commit", "-qm", "a");
     const { docs } = collectDocs(repo, commitOf(repo, false));
-    assert.ok(docs.find((d) => d.path === "README.MD")?.at, "README.MD に日付が無い");
+    assert.ok(docs.find((d) => d.path === "README.MD")?.at, "README.MD has no date");
   });
 });
 
-// 除外は docs の connector に付く。同期は transaction の外でこれを読み、blob を読む前に当てる。
-test("除外は docs の connector から読み、kind で file と directory に分かれる", async () => {
+// Exclusions belong to the docs connector. The sync reads them outside the transaction and applies them before reading blobs.
+test("exclusions are read from the docs connector and split into files and directories by kind", async () => {
   const db = tempDb();
   try {
     const p = project(db);
     assert.deepEqual(
       await excludedOf(db.reader, p),
       { files: [], directories: [] },
-      "connector がまだ無くても読める",
+      "works before the connector exists",
     );
     const docs = insert(db, "connector", { project_id: p, provider: "docs" });
     insert(db, "docs_exclude", { connector_id: docs, kind: "file", path: "assets/skeleton.md" });
@@ -221,8 +221,8 @@ test("除外は docs の connector から読み、kind で file と directory �
 });
 
 /**
- * 文書の connector に head だけを持つ DB。onRead は connector を読んだ瞬間に 1 度だけ走る
- * （その間に別の同期が新しい commit を入れた、を再現する）。
+ * A database whose docs connector holds only head. onRead runs once, right when the connector is read
+ * (reproducing another sync storing a newer commit in between).
  */
 function headOnly(db: TempDb, p: number, head: string, onRead: () => void = () => {}) {
   db.owner
@@ -247,8 +247,8 @@ function headOnly(db: TempDb, p: number, head: string, onRead: () => void = () =
 const written = (db: TempDb) =>
   (db.owner.prepare("select count(*) as n from source_item").get() as { n: number }).n;
 
-// 同じ朝に 2 本の同期が走り、新しい commit を先に入れられた側が失敗を報告しない。巻き戻しと分岐は止めて、画面に出す。
-test("取り直して前に入れた commit まで進んでいれば何も書かずに終え、巻き戻しと分岐は止める", async () => {
+// When two syncs run the same morning, the one that lost to a newer commit does not report failure. Rewinds and forks stop and are shown.
+test("finishes without writing when a re-read shows the stored commit is already ahead, and stops on rewinds and forks", async () => {
   await withRepo(async (repo, git) => {
     put(repo, "README.md", "# a\n");
     git("add", "-A");
@@ -280,7 +280,7 @@ test("取り直して前に入れた commit まで進んでいれば何も書か
         syncDocs(headOnly(db, p, newer), p, repo, { remote: false }),
         /is not a fast-forward/,
       );
-      assert.equal(written(db), 0, "どの経路も文書を書いていない");
+      assert.equal(written(db), 0, "no path wrote documents");
       assert.equal(
         (
           db.owner.prepare("select head_oid from connector where project_id = ?").get(p) as {
@@ -295,33 +295,37 @@ test("取り直して前に入れた commit まで進んでいれば何も書か
   });
 });
 
-// **JS の `.` は `\r` を行終端として扱う。**CRLF の見出しに `/^(#{1,3}) +(\S.*)$/` が
-// 一致せず、Windows で書かれた文書だけが 1 本まるごと 1 つのベクトルに潰れる。
-test("CRLF と BOM でも見出しで割れる", () => {
+// **In JS, `.` treats `\r` as a line terminator.** `/^(#{1,3}) +(\S.*)$/` does not match CRLF headings,
+// so only documents written on Windows collapse into a single section.
+test("splits at headings with CRLF and a BOM", () => {
   const want = ["背景", "決定"];
   const lf = "# 設計\n\n## 背景\n本文\n\n## 決定\nこちら\n";
   assert.deepEqual(
     sections("a.md", lf.replace(/\n/g, "\r\n")).map((s) => s.title),
     want,
-    "CRLF で割れなかった",
+    "did not split with CRLF",
   );
   assert.deepEqual(
     sections("a.md", `﻿${lf}`).map((s) => s.title),
     want,
-    "BOM で先頭の見出しが落ちた",
+    "the BOM dropped the first heading",
   );
 });
 
-// 節は見出しだけの節を落とすので、連結しても元に戻らない。画面が出す原文は読んだ本文をそのまま持つ。
-test("原文は見出しだけの節・コードフェンス・末尾の改行を含めて元の本文と一致する", () => {
+// Sections drop heading-only sections, so joining them does not restore the original. The screen shows the body as read.
+test("the original text matches the body, including heading-only sections, code fences, and trailing newlines", () => {
   const body = "# 題\n\n## 見出しだけ\n### 子\n\n```sh\n# コメント\n```\n\n末尾\n\n";
   const [doc] = projectDocs(new Map([["docs/a.md", body]]), new Map());
   assert.equal(doc?.body, body);
-  assert.notEqual(doc?.sections.map((s) => s.text).join("\n"), body, "節の連結で戻るなら原文は要らない");
+  assert.notEqual(
+    doc?.sections.map((s) => s.text).join("\n"),
+    body,
+    "if joining sections restored it, the original would not be needed",
+  );
 });
 
-// **本文が同じ文書には書かない。**毎日の同期で全節を書き直すと、索引の書き換えが膨らむ（実測で 2 万回の書き換え）。
-test("文書の hash は本文で決まり、同じなら同じ値になる", () => {
+// **Do not write documents whose body is unchanged.** Rewriting every section in the daily sync bloats index writes (measured: 20,000 rewrites).
+test("a document hash depends on its body and is equal for equal bodies", () => {
   const bodies = new Map([["a.md", "# a\n\n本文\n"]]);
   const [x] = projectDocs(bodies, new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
   const [y] = projectDocs(bodies, new Map([["a.md", "2026-09-01T00:00:00+09:00"]]));
@@ -331,12 +335,12 @@ test("文書の hash は本文で決まり、同じなら同じ値になる", ()
   assert.ok(!docHash(x).equals(docHash(z)));
 });
 
-test("中身の無い文書は入れない", () => {
+test("does not store empty documents", () => {
   assert.deepEqual(projectDocs(new Map([["empty.md", "  \n"]]), new Map()), []);
 });
 
-// 撤回した節が検索に残ると、古い記述が正解として返る。消えた文書の原文も残さない。
-test("同期は節を知識へ入れて索引し、消えた節と文書を消す", async () => {
+// A withdrawn section left in search returns outdated text as the answer. Deleted documents' originals go too.
+test("the sync stores and indexes sections and deletes removed sections and documents", async () => {
   await withRepo(async (repo, git) => {
     const db = tempDb();
     try {
@@ -370,7 +374,7 @@ test("同期は節を知識へ入れて索引し、消えた節と文書を消�
         ),
         ["docs/a.md"],
       );
-      // 変わっていない文書は書き直さない（2 度目の同期で 0 件）
+      // Unchanged documents are not rewritten (0 on the second sync)
       assert.match(await syncDocs(db.ingest, p, repo, { remote: false }), /0 rewritten/);
     } finally {
       await db.done();

@@ -10,9 +10,9 @@ import {
   withoutReleaseVersion,
 } from "../../scripts/lib/release-scope.mjs";
 
-test("release対象外と plugin を分ける（Web の画面が無くなり、npm だけの release は無い）", () => {
+test("separates no-release changes from plugin ones (the web UI is gone, so there are no npm-only releases)", () => {
   assert.equal(releaseKind(["README.ja.md", ".agents/skills/plugin-release/SKILL.md"]), "none");
-  // README.md は bundle が tarball へ写し、npm の package のページに出る
+  // bundle copies README.md into the tarball, and it shows on the npm package page
   assert.equal(releaseKind(["README.md"]), "plugin");
   assert.equal(releaseKind(["plugin/skills/trace/SKILL.md"]), "plugin");
   assert.equal(releaseKind(["server/src/mcp.ts"]), "plugin");
@@ -20,7 +20,7 @@ test("release対象外と plugin を分ける（Web の画面が無くなり、n
   assert.equal(releaseKind(["scripts/bundle-cli.ts"]), "plugin");
 });
 
-test("versionだけの変更をrelease種別の入力から外せる", () => {
+test("version-only changes can be left out of the release type input", () => {
   assert.equal(
     withoutReleaseVersion('{"name":"gleanery","version":"1.1.0"}'),
     withoutReleaseVersion('{"name":"gleanery","version":"1.0.0"}'),
@@ -31,15 +31,15 @@ test("versionだけの変更をrelease種別の入力から外せる", () => {
   );
 });
 
-test("pre-commit の bundle の glob は、配布物の入力を全部拾う（入力を変えてバージョンを据え置く commit を手元で止める）", () => {
+test("the pre-commit bundle glob covers every shipped input (stopping locally a commit that changes inputs without a version bump)", () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
   const lefthook = fs.readFileSync(path.join(root, "lefthook.yml"), "utf8");
   const glob = /- name: bundle\n(?:\s+#.*\n)*\s+glob: "\{([^}]*)\}"/.exec(lefthook)?.[1]?.split(",") ?? [];
-  assert.ok(glob.length > 0, "lefthook.yml の bundle の glob を読めない");
+  assert.ok(glob.length > 0, "cannot read the bundle glob in lefthook.yml");
   const covers = (file: string) =>
     glob.some((g) => g === file || (g.endsWith("/**") && file.startsWith(g.slice(0, -2))));
-  for (const file of EXACT_PACKAGE_INPUTS) assert.ok(covers(file), `${file} が bundle の glob に無い`);
-  // 前方一致の入力は、その下の全部のファイルを拾う glob でなければならない（`*.ts` に絞ると JSON などを落とす）
+  for (const file of EXACT_PACKAGE_INPUTS) assert.ok(covers(file), `${file} is not in the bundle glob`);
+  // Prefix inputs need a glob that covers every file below them (narrowing to `*.ts` would miss JSON and others)
   for (const prefix of PACKAGE_PREFIXES)
-    assert.ok(glob.includes(`${prefix}**`), `${prefix}** が bundle の glob に無い`);
+    assert.ok(glob.includes(`${prefix}**`), `${prefix}** is not in the bundle glob`);
 });

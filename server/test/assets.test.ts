@@ -6,8 +6,8 @@ import { test } from "node:test";
 import { dbDir } from "../src/assets.ts";
 
 /**
- * 配る形を temp へ組み立てる。**リポジトリの外に作る。**
- * 中に作ると、候補を外しても親を辿ってリポジトリ直下の db に当たり、壊れたまま通る。
+ * Builds the shipped layout in a temp directory. **Build it outside the repository.**
+ * Inside it, lookups would walk up to the repository's db even with candidates removed, and a broken layout would pass.
  */
 function packaged(): { pkg: string; dist: string } {
   const pkg = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-assets-"));
@@ -17,19 +17,19 @@ function packaged(): { pkg: string; dist: string } {
   return { pkg, dist: path.join(pkg, "dist") };
 }
 
-test("配る形では、DB は package 直下から引く", () => {
+test("in the shipped layout, db resolves from the package root", () => {
   const { pkg, dist } = packaged();
-  // npm の files が db を <package>/db へ置くので、dist から 1 つ上がる。
+  // npm files puts db at <package>/db, so go up one level from dist.
   assert.equal(dbDir(dist), path.join(pkg, "db"));
 });
 
-test("配布物に db が無ければ、既定へ倒さず投げる", () => {
+test("throws instead of falling back when the package has no db", () => {
   const { pkg, dist } = packaged();
   fs.rmSync(path.join(pkg, "db"), { recursive: true });
   assert.throws(() => dbDir(dist), /db\/schema\.sql/);
 });
 
-test("作業ツリーでは、リポジトリ直下の db を引く", () => {
+test("in the working tree, db resolves from the repository root", () => {
   const dir = dbDir();
-  assert.ok(fs.existsSync(path.join(dir, "schema.sql")), `${dir} に schema.sql が無い`);
+  assert.ok(fs.existsSync(path.join(dir, "schema.sql")), `${dir} has no schema.sql`);
 });

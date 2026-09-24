@@ -1,6 +1,6 @@
-// 一時リポジトリを作り、fn に渡す。git は既定の設定を読まない。
+// Creates a temp repository and passes it to fn. git does not read the default config.
 //
-// 文書の取り込みは git の中身から SQL を組み立てるので、検査には本物の commit が要る。
+// Document import builds SQL from git contents, so the checks need real commits.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

@@ -22,48 +22,56 @@ import { conversationId } from "../src/knowledge.ts";
 import { bytes, mask, sha256, uuidFrom } from "../src/text.ts";
 import { project, tempDb } from "./temp-db.ts";
 
-// HOME を差し替えて本物の待ち行列を守っている。bun の os.homedir() は差し替えに追従せず、本物の待ち行列を消す。
-if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
+// These tests swap HOME to protect the real queue. Bun's os.homedir() ignores the swap and would delete the real queue.
+if (process.versions.bun) throw new Error("run these tests with node --test (bun run test)");
 
-// 別の agent 向けの prompt が「持ち主の発言」として DB の大半を占めた先行事例がある。見分けに推測を使わない。
-test("subagent と、エージェントが起動した子と、印を継がない headless の turn は持ち主の発言にしない", () => {
-  assert.equal(isOwnerTurn({ session_id: "s1" }, undefined, "cli"), true, "人が打つ session");
-  assert.equal(isOwnerTurn({ session_id: "s1" }, "s1", "cli"), true, "自分が書いた印は自分の id と一致する");
-  assert.equal(isOwnerTurn({ session_id: "child" }, "s1", "sdk-cli"), false, "親の印を継いだ子");
-  assert.equal(isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"), false, "gleanery が起動した headless");
+// Prompts meant for other agents once filled most of the database as owner messages. Do not guess when telling them apart.
+test("subagents, children started by an agent, and headless turns without the marker are not owner messages", () => {
+  assert.equal(isOwnerTurn({ session_id: "s1" }, undefined, "cli"), true, "session a person types in");
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "s1", "cli"), true, "a marker it wrote matches its own id");
+  assert.equal(
+    isOwnerTurn({ session_id: "child" }, "s1", "sdk-cli"),
+    false,
+    "child that inherited the parent marker",
+  );
+  assert.equal(
+    isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"),
+    false,
+    "headless run started by gleanery",
+  );
   assert.equal(
     isOwnerTurn({ session_id: "s1" }, undefined, "sdk-cli"),
     false,
-    "launchd や Codex から起動した claude -p",
+    "claude -p started from launchd or Codex",
   );
   assert.equal(isOwnerTurn({ session_id: "s1", agent_id: "a1" }, undefined, "cli"), false, "subagent");
   assert.equal(
     isOwnerTurn({ session_id: "child" }, undefined, undefined, "parent"),
     false,
-    "Codex が起動した別 session",
+    "another session started by Codex",
   );
   assert.equal(
     isOwnerTurn({ session_id: "s1" }, undefined, undefined, "s1"),
     true,
-    "Codex の持ち主の session",
+    "the owner's Codex session",
   );
-  assert.equal(isOwnerTurn({}, undefined, "cli"), false, "session の分からない入力");
+  assert.equal(isOwnerTurn({}, undefined, "cli"), false, "input without a session");
 });
 
-test("128 KiB を超えた発言は冒頭と末尾だけを残し、元の大きさを持つ", () => {
+test("a message over 128 KiB keeps only its start and end and records the original size", () => {
   const small = fit("短い");
   assert.deepEqual(small, { body: "短い", truncated: false, originalBytes: bytes("短い") });
   const big = `${"頭".repeat(20_000)}${"中".repeat(50_000)}${"尾".repeat(20_000)}`;
   const got = fit(big);
   assert.equal(got.truncated, true);
   assert.equal(got.originalBytes, bytes(big));
-  assert.ok(bytes(got.body) < 20 * 1024, `${bytes(got.body)} bytes 残っている`);
+  assert.ok(bytes(got.body) < 20 * 1024, `${bytes(got.body)} bytes remain`);
   assert.ok(got.body.startsWith("頭") && got.body.endsWith("尾"));
   assert.match(got.body, /\[[\d,]+ bytes in the middle not saved\]/);
   assert.ok(bytes(big) > MAX_MESSAGE);
 });
 
-// [入力, 残ってはいけない断片]。レビューで素通りを再現した形を足していく。
+// [input, fragment that must not remain]. Add each shape that reviews showed slipping through.
 const LEAKS: [string, string][] = [
   ["OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123", "sk-proj-abc"],
   ["VOYAGE=pa-abcdefghijklmnopqrstuvwxyz0123", "pa-abcdef"],
@@ -133,7 +141,7 @@ const LEAKS: [string, string][] = [
   ["(password=Tr0ub4dor33)", "Tr0ub4dor33"],
 ];
 
-// 伏せた文は元に戻せない。コードの型注釈・変数の参照・画面の文言・パスをキーとみなして消すと、会話の中身が失われる。
+// Masked text cannot be restored. Treating type annotations, variable references, UI text, or paths as keys would lose the conversation.
 const KEEPS = [
   "ふつうの文: sk は短いので伏せない、pa-ge も伏せない",
   "max_tokens: 5000 と keyboard の key の話。const token = await getToken();",
@@ -141,7 +149,7 @@ const KEEPS = [
   "const token = await getToken();",
   "apiKey: process.env.API_KEY",
   "PASSWORD=$DB_PASSWORD",
-  // biome-ignore lint/suspicious/noTemplateCurlyInString: テンプレートの参照を文字として貼った形を試す
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: tests a template reference pasted as text
   'token: "${process.env.TOKEN}"',
   "MONKEY=banana TURKEY=roast COMPASS=north",
   "http://localhost:5173/@vite/client",
@@ -157,9 +165,9 @@ const KEEPS = [
   "the bearer src/app/api/v2/route.ts handles it",
 ];
 
-test("形の決まったキーと、名前で分かる代入・ヘッダ・URL の資格情報・mysql -p・秘密鍵を伏せる", () => {
+test("masks known key formats, named assignments, headers, URL credentials, mysql -p, and private keys", () => {
   for (const [input, leak] of LEAKS)
-    assert.ok(!mask(input).includes(leak), `${leak} が残った: ${mask(input)}`);
+    assert.ok(!mask(input).includes(leak), `${leak} remained: ${mask(input)}`);
   assert.match(
     mask("url: postgres://gleanery_reader:s3cr3t@ep-x.example.com/db"),
     /gleanery_reader:\[redacted\]@ep-x\.example\.com\/db/,
@@ -168,16 +176,16 @@ test("形の決まったキーと、名前で分かる代入・ヘッダ・URL �
     mask("postgresql://db_owner:ab@cdEFGH123@ep-x.example.com/appdb"),
     /@ep-x\.example\.com\/appdb/,
   );
-  assert.match(mask("redis://:hunter2x@cache:6379"), /@cache:6379/, "どこへ繋いだかは残す");
-  assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[redacted]"}', "引用符を残す");
-  // キーの名前に付いた引用符の値は、文言でも伏せる側に倒す（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
+  assert.match(mask("redis://:hunter2x@cache:6379"), /@cache:6379/, "keeps where it connected");
+  assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[redacted]"}', "keeps the quotes");
+  // A quoted value after a key name is masked even if it is prose (a leak cannot be undone; over-masking only loses one word).
   assert.equal(mask('{ password: "Required" }'), '{ password: "[redacted]" }');
-  // URL の次の引数は値に含めない（伏せた値の後ろを消さない）。
+  // The argument after a URL is not part of the value (do not erase what follows the masked value).
   assert.equal(
     mask("?access_token=abc123def456&user=alice&page=2"),
     "?access_token=[redacted]&user=alice&page=2",
   );
-  // 同じコマンドの最初の -p だけ。後ろの別のコマンドの -p は消さない。
+  // Only the first -p of the same command. A later command's -p stays.
   const chained = mask("mysql -u root -phunter2x db && ssh -p2222 host && cp -pr src dst");
   assert.ok(
     !chained.includes("hunter2x") && chained.includes("ssh -p2222") && chained.includes("cp -pr"),
@@ -185,12 +193,12 @@ test("形の決まったキーと、名前で分かる代入・ヘッダ・URL �
   );
 });
 
-test("キーでない代入・画面の文言・パス・URL は変えない", () => {
+test("leaves non-key assignments, UI text, paths, and URLs unchanged", () => {
   for (const text of KEEPS) assert.equal(mask(text), text, text);
 });
 
-// 伏せ字は発言の全文へかける。引き金を繰り返しただけの入力で、フックや trace の保存が何秒も止まらない。
-test("伏せ字は引き金を繰り返した入力でも線形に終わる", () => {
+// Masking runs over the whole message. Input that only repeats a trigger must not stall the hook or trace for seconds.
+test("masking finishes in linear time on input that repeats a trigger", () => {
   const N = 512 * 1024;
   for (const unit of [
     "postgres://u:",
@@ -211,13 +219,13 @@ test("伏せ字は引き金を繰り返した入力でも線形に終わる", ()
     mask(text);
     assert.ok(performance.now() - t < 500, `${unit}: ${(performance.now() - t).toFixed(0)} ms`);
   }
-  // 引き金の後に長い空白・改行・閉じない値が続く形。
+  // A trigger followed by long whitespace, newlines, or an unclosed value.
   for (const [name, text] of [
-    ["Authorization: の後の空白", `Authorization:${" ".repeat(N)}`],
-    ["Authorization: の後の改行", `Authorization:${"\n".repeat(N)}`],
-    ["閉じない引用符", `token: "${"a".repeat(N)}`],
-    ["長い mysql の行", `mysql ${"a ".repeat(N / 2)}`],
-    ["継いだ行が続く mysql", `mysql ${"\\\n".repeat(N / 2)}`],
+    ["spaces after Authorization:", `Authorization:${" ".repeat(N)}`],
+    ["newlines after Authorization:", `Authorization:${"\n".repeat(N)}`],
+    ["unclosed quote", `token: "${"a".repeat(N)}`],
+    ["long mysql line", `mysql ${"a ".repeat(N / 2)}`],
+    ["mysql with continued lines", `mysql ${"\\\n".repeat(N / 2)}`],
   ]) {
     const t = performance.now();
     mask(text as string);
@@ -225,7 +233,7 @@ test("伏せ字は引き金を繰り返した入力でも線形に終わる", ()
   }
 });
 
-test("AskUserQuestion の答えを、質問と答えの組にする", () => {
+test("turns AskUserQuestion answers into question and answer pairs", () => {
   assert.equal(
     answersOf({ tool_response: { answers: { "全部推奨で？": "推奨", 選ぶもの: ["A", "B"] } } }),
     "Q: 全部推奨で？\nA: 推奨\n\nQ: 選ぶもの\nA: A / B",
@@ -240,17 +248,17 @@ test("AskUserQuestion の答えを、質問と答えの組にする", () => {
   assert.equal(
     answersOf({ tool_input: { answers: { 質問: "モデルが書いた答え" } } }),
     null,
-    "入力側の答えは使わない",
+    "answers from the input side are not used",
   );
 });
 
-// ---- フックの入力から待ち行列までを通す ----
+// ---- From hook input to the queue ----
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-capture-home-")));
 const realHome = process.env.HOME;
 const repoDir = path.join(home, "repo");
 before(() => {
-  // この試験を Claude Code の Bash から走らせると、親の session を示す環境変数（GLEANERY_PARENT_SESSION と CLAUDE_CODE_ENTRYPOINT）を継いでいる。
+  // Run from Claude Code's Bash, this test inherits the environment variables that point to the parent session (GLEANERY_PARENT_SESSION and CLAUDE_CODE_ENTRYPOINT).
   delete process.env.GLEANERY_PARENT_SESSION;
   delete process.env.CLAUDE_CODE_ENTRYPOINT;
   process.env.HOME = home;
@@ -274,10 +282,10 @@ const spooled = (): Spooled[] => {
     .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as Spooled);
 };
 const reset = () => fs.rmSync(spoolDir(), { recursive: true, force: true });
-/** 本文から作る id の後半を伏せて、形だけを比べる。 */
+/** Hides the second half of ids built from the body so only the shape is compared. */
 const shape = (id: string) => id.replace(/:(self|assistant):[0-9a-f]{16}$/, ":$1:<hash>");
 
-test("持ち主の発言・AI の最後の応答・編集したファイルが待ち行列に入る", () => {
+test("owner messages, the last AI reply, and edited files go into the queue", () => {
   reset();
   const base = { session_id: "s1", prompt_id: "p1", cwd: path.join(repoDir, "server") };
   onHook("claude-code", {
@@ -291,7 +299,7 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
     tool_name: "Edit",
     tool_input: { file_path: path.join(repoDir, "db", "schema.sql") },
   });
-  // リポジトリの外と、読んだだけのファイル（Read）は残さない。
+  // Files outside the repository and files only read (Read) are not kept.
   onHook("claude-code", {
     ...base,
     hook_event_name: "PostToolUse",
@@ -315,7 +323,7 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
     hook_event_name: "Stop",
     last_assistant_message: "作り直した。",
   });
-  assert.equal(r.flush, true, "Stop で送る");
+  assert.equal(r.flush, true, "Stop sends");
   const got = spooled();
   const messages = got.filter((x) => x.kind === "message");
   const files = got.filter((x) => x.kind === "file");
@@ -327,8 +335,8 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
     ],
   );
   const said = messages[0]?.kind === "message" ? messages[0] : null;
-  assert.ok(said && !said.body.includes("sk-proj-abc"), "キーが待ち行列に入った");
-  // id の後半は伏せた後の本文から作る（伏せる前から作ると、伏せた本文と突き合わせて弱いキーを総当たりで戻せる）。
+  assert.ok(said && !said.body.includes("sk-proj-abc"), "a key got into the queue");
+  // The second half of the id comes from the masked body (building it from the unmasked body would let weak keys be brute-forced against the masked body).
   assert.equal(
     said?.id,
     `p1:self:${sha256(said?.body ?? "")
@@ -338,11 +346,11 @@ test("持ち主の発言・AI の最後の応答・編集したファイルが�
   assert.deepEqual(
     files.map((f) => (f.kind === "file" ? [f.path, f.action, f.message] : [])),
     [["db/schema.sql", "edit", said?.id]],
-    "読んだファイル（Read）は記録しない",
+    "files only read (Read) are not recorded",
   );
 });
 
-test("通知と伝言は持ち主の発言にせず、同じ turn の id に届いた発言と応答は本文ごとの id で全部残す", () => {
+test("notifications and relayed messages are not owner messages, and all messages and replies on one turn id are kept with per-body ids", () => {
   reset();
   const base = { session_id: "s1", cwd: repoDir };
   const prompt = (prompt_id: string, prompt: string) =>
@@ -362,9 +370,9 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
       tool_name: "Edit",
       tool_input: { file_path: path.join(repoDir, file) },
     });
-  // 持ち主がまだ何も言っていない session で触ったファイルは、結ぶ先が無いので書かない。
+  // Files touched before the owner has said anything have nothing to link to, so they are not written.
   edit("p0", "a.ts");
-  // 作業の途中で届いたものは、走っている turn の id のまま来る。
+  // Messages that arrive mid-turn come with the running turn's id.
   for (const p of [
     "DB を作り直す",
     "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>",
@@ -383,13 +391,13 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
     "急ぎで",
   ])
     prompt("p1", p);
-  // 同じ入力が 2 度届いても同じ id になる（DB で 1 行）。
+  // The same input arriving twice gets the same id (one row in the database).
   prompt("p1", "急ぎで");
   stop("作り直した。");
-  // 別の session からの伝言で始まる turn は、直前の turn の id を使い回す。
+  // A turn that starts with a message from another session reuses the previous turn's id.
   prompt("p1", "Another Claude session sent a message while you were working:\n確認して");
   stop("伝言も確かめた。");
-  // 完了通知から始まった turn で触ったファイルは、持ち主の最後の発言へ結ぶ。
+  // Files touched in a turn started by a completion notice link to the owner's last message.
   prompt("p2", "  <task-notification>\n</task-notification>");
   edit("p2", "b.ts");
   const got = spooled();
@@ -402,7 +410,7 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
     ["p1:self:<hash>", "急ぎで"],
     ["p1:self:<hash>", "急ぎで"],
   ]);
-  // 2 度届いた「急ぎで」だけが同じ id で、ほかは別の id（同じ id は一意制約で 1 行に潰れる）。
+  // Only the message that arrived twice shares an id; the others differ (equal ids collapse into one row by the unique constraint).
   assert.equal(new Set(messages.map((m) => m.id)).size, messages.length - 1);
   const last = messages.find((m) => m.body === "急ぎで")?.id;
   assert.deepEqual(
@@ -411,10 +419,10 @@ test("通知と伝言は持ち主の発言にせず、同じ turn の id に届�
   );
 });
 
-test("閉じタグの後ろに文が付く通知も外し、区切りの無い文面で始めた持ち主の問いは残す", () => {
+test("drops notifications with text after the closing tag, and keeps owner questions that start with the same words without a separator", () => {
   reset();
   const base = { session_id: "s1", prompt_id: "p1", cwd: repoDir, hook_event_name: "UserPromptSubmit" };
-  // 入力待ちで止まった背景のシェルの通知は、閉じタグの後ろに最後の出力が付く。
+  // A notice for a background shell waiting on input has its last output after the closing tag.
   onHook("claude-code", {
     ...base,
     prompt: "<task-notification>\n<status>running</status>\n</task-notification>\nLast output: Password:",
@@ -430,7 +438,7 @@ test("閉じタグの後ろに文が付く通知も外し、区切りの無い�
   );
 });
 
-test("DB へ書くとき、ファイルは turn ではなく待ち行列に書いた持ち主の発言の id へ結ぶ", async () => {
+test("when writing to the database, files link to the queued owner message id, not the turn", async () => {
   const db = tempDb();
   const id = project(db);
   const said = "t1:self:0123456789abcdef";
@@ -453,13 +461,13 @@ test("DB へ書くとき、ファイルは turn ではなく待ち行列に書�
       truncated: false,
       originalBytes: 9,
     },
-    // 完了通知から始まった turn（t2）で触ったファイル。
+    // A file touched in a turn started by a completion notice (t2).
     { ...base, kind: "file", turn: "t2", message: said, path: "a.ts", action: "edit" },
   ];
   const projects = new Map([["git:github.com/o/r", { id, name: "r" }]]);
   try {
-    assert.equal(await write(db.capture, batch, projects), 1, "新しく入った発言の数");
-    // 送り直しは「もう入っている」。view への insert の影響行数は 0 なので、在った id との差で数える。
+    assert.equal(await write(db.capture, batch, projects), 1, "number of newly inserted messages");
+    // A resend is "already there". An insert into the view reports 0 changed rows, so count by the difference from existing ids.
     assert.equal(await write(db.capture, batch, projects), 0);
     const anchor = uuidFrom(conversationId(id, "claude-code", "s1"), said);
     assert.deepEqual(
@@ -474,7 +482,7 @@ test("DB へ書くとき、ファイルは turn ではなく待ち行列に書�
   }
 });
 
-test("エージェントが起動した子と、プロジェクトの外の session は何も書かない", () => {
+test("children started by an agent and sessions outside a project write nothing", () => {
   reset();
   process.env.GLEANERY_PARENT_SESSION = "parent";
   try {
@@ -498,21 +506,21 @@ test("エージェントが起動した子と、プロジェクトの外の sess
   assert.deepEqual(spooled(), []);
 });
 
-test("フックの入力は、多バイト文字が塊の境目で割れても化けずに読む", async () => {
-  // 標準入力は塊で届く。「境」の 3 バイトの途中で塊を分け、境目を作る。
+test("hook input reads correctly when a multibyte character is split across chunks", async () => {
+  // stdin arrives in chunks. Split inside the 3 bytes of the first character to create a boundary.
   const input = Buffer.from(JSON.stringify({ prompt: "境界" }));
   const cut = input.indexOf(Buffer.from("境")) + 1;
   const parts = () => Readable.from([input.subarray(0, cut), input.subarray(cut)], { objectMode: false });
-  // 塊が 1 つにまとまると境目ができず、この試験は何も確かめなくなる。先に 2 つ届くことを見る。
+  // If the chunks merge there is no boundary and the test checks nothing. First confirm that two chunks arrive.
   const chunks: unknown[] = [];
   for await (const chunk of parts()) chunks.push(chunk);
   assert.equal(chunks.length, 2);
   assert.equal((await readInput(parts())).prompt, "境界");
 });
 
-test("記録のフックを起動すると、標準入力の持ち主の発言が待ち行列に入る", () => {
-  // エントリポイントの判定と main の配線を通す。main は例外を握りつぶすので、壊れても記録が黙って止まるだけになる。
-  // 本番のフックが起動するのはバンドルした dist/capture.js なので、ソースと両方を通す。
+test("running the capture hook puts the owner message from stdin into the queue", () => {
+  // Exercises the entry point check and main's wiring. main swallows exceptions, so a break would silently stop recording.
+  // The real hook runs the bundled dist/capture.js, so run both it and the source.
   const entries = [
     path.join(import.meta.dirname, "..", "src", "capture.ts"),
     path.join(import.meta.dirname, "..", "..", "plugin", "dist", "capture.js"),
@@ -528,7 +536,7 @@ test("記録のフックを起動すると、標準入力の持ち主の発言�
         prompt: "境界",
       }),
       env: { ...process.env, HOME: home },
-      // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
+      // Keep a hanging regression from stalling the test run (--test-timeout does not apply to sync calls).
       timeout: 10_000,
     });
     assert.deepEqual(
@@ -539,7 +547,7 @@ test("記録のフックを起動すると、標準入力の持ち主の発言�
   }
 });
 
-test("DB が無ければ、session の開始時に同じ枠の形で知らせる", () => {
+test("without a database, session start reports it in the same box format", () => {
   const missing = path.join(home, "無い.db");
   assert.equal(
     captureNotice(missing),
@@ -547,15 +555,15 @@ test("DB が無ければ、session の開始時に同じ枠の形で知らせる
   );
 });
 
-test("送れていない判定は、待ちがあって失敗が残るときだけで、状態ファイルが壊れていても落ちない", () => {
+test("stuck is reported only with queued items and a recorded failure, and a broken state file does not crash", () => {
   reset();
   const file = path.join(home, ".gleanery", "capture.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const capture = path.join(home, "gleanery.db");
   fs.writeFileSync(capture, "");
   fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
-  assert.equal(readState().stuck, null, "待ちが空なら、失敗は過去のもの");
-  // 以降は待ちが 1 件ある状態で見る（待ちが無ければ、壊れた状態でも判定は null になって何も確かめない）。
+  assert.equal(readState().stuck, null, "with an empty queue the failure is in the past");
+  // From here on, check with one queued item (without it the result is null even for broken state, which checks nothing).
   fs.mkdirSync(spoolDir(), { recursive: true });
   fs.writeFileSync(path.join(spoolDir(), "1.json"), "{}");
   for (const body of ["null", "{", "3", '{"error":1}', '{"error":{"a":1}}']) {
@@ -563,14 +571,14 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
     assert.equal(readState().stuck, null, body);
     assert.equal(captureNotice(capture), null, body);
   }
-  // 型の違う欄は読まない（doctor の行へ、壊れた日時や制御文字をそのまま出さない）。
+  // Fields of the wrong type are ignored (so doctor never prints broken dates or control characters).
   fs.writeFileSync(
     file,
     JSON.stringify({ error: "auth", flushedAt: 5, deferred: String.fromCodePoint(0x1b) }),
   );
   const s = readState();
   assert.deepEqual([s.stuck, s.flushedAt, s.deferred], ["auth", undefined, undefined]);
-  // 理由の文が空の失敗も、送れていないことに変わりはない。
+  // A failure with an empty reason is still stuck.
   fs.writeFileSync(file, JSON.stringify({ error: "" }));
   assert.equal(readState().stuck, "unknown failure");
   assert.match(captureNotice(capture) ?? "", /送れていない/);
@@ -578,13 +586,13 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
   fs.rmSync(file);
 });
 
-test("SessionStart は、この session の id を子へ継がせる", () => {
+test("SessionStart passes this session id down to children", () => {
   const file = path.join(home, "env-file");
   fs.writeFileSync(file, "");
   process.env.CLAUDE_ENV_FILE = file;
   try {
     onHook("claude-code", { session_id: "abc-123", hook_event_name: "SessionStart" });
-    // 形の違う id はシェルへ書かない（CLAUDE_ENV_FILE はシェルで読まれる）。
+    // An id of the wrong shape is not written for the shell (the shell reads CLAUDE_ENV_FILE).
     onHook("claude-code", { session_id: "x; rm -rf ~", hook_event_name: "SessionStart" });
   } finally {
     delete process.env.CLAUDE_ENV_FILE;
@@ -592,7 +600,7 @@ test("SessionStart は、この session の id を子へ継がせる", () => {
   assert.equal(fs.readFileSync(file, "utf8"), "export GLEANERY_PARENT_SESSION=abc-123\n");
 });
 
-test("Codex の apply_patch は見出しから編集先を読む", () => {
+test("reads the edited file of a Codex apply_patch from its headers", () => {
   reset();
   const base = { session_id: process.env.CODEX_THREAD_ID ?? "t1", turn_id: "turn-1", cwd: repoDir };
   onHook("codex", { ...base, hook_event_name: "UserPromptSubmit", prompt: "a.ts を直して" });
@@ -624,7 +632,7 @@ test("Codex の apply_patch は見出しから編集先を読む", () => {
   assert.ok(files[0]?.kind === "file" && files[0].path === "server/src/a.ts" && files[0].host === "codex");
 });
 
-test("Codex のフックのエントリポイントは host を分け、Stop に有効な JSON を返す", () => {
+test("the Codex hook entry point sets the host and returns valid JSON for Stop", () => {
   const entries = [
     path.join(import.meta.dirname, "..", "src", "capture.ts"),
     path.join(import.meta.dirname, "..", "..", "plugin", "dist", "capture.js"),
