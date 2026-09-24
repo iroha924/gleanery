@@ -18,8 +18,15 @@ function stored(revs) {
     .filter(Boolean)
     .map((r) => {
       const [sha = "", parents = "", body = ""] = r.split("\0");
-      return { name: sha.slice(0, 7), body, merge: parents.split(" ").length > 1 };
+      return { sha, name: sha.slice(0, 7), body, merge: parents.split(" ").length > 1 };
     });
+}
+
+/** Whether any remote-tracking ref exists to tell new commits from ones already pushed. */
+function hasRemoteRefs() {
+  return (
+    execFileSync("git", ["for-each-ref", "--count=1", "refs/remotes"], { encoding: "utf8" }).trim() !== ""
+  );
 }
 
 /** Commits each pushed ref adds: from the remote's old tip, or, for a new ref, those on no remote-tracking ref. */
@@ -36,8 +43,13 @@ function pushed(stdin) {
         known = false; // the remote moved to a commit not fetched here
       }
     }
+    if (!known && !hasRemoteRefs()) {
+      // With no base, the whole history would be checked and old messages would block a valid push. CI checks it instead.
+      console.log(`commit messages: ${local.slice(0, 7)} skipped (no remote-tracking refs to compare with)`);
+      continue;
+    }
     for (const m of stored(known ? [`${remote}..${local}`] : [local, "--not", "--remotes"]))
-      seen.set(m.name, m);
+      seen.set(m.sha, m);
   }
   return [...seen.values()];
 }

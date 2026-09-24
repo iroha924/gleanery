@@ -110,8 +110,20 @@ test("--pre-push checks the stored messages of the pushed refs, not HEAD and not
 
     // The remote already has clean: nothing new. A remote tip not fetched here falls back to the remote-tracking refs.
     assert.match(String(check(`refs/heads/clean ${clean} refs/heads/clean ${clean}\n`).stdout), /0 checked/);
-    assert.equal(check(`refs/heads/bodied ${bodied} refs/heads/bodied ${"1".repeat(40)}\n`).status, 1);
+    const unknownTip = check(`refs/heads/bodied ${bodied} refs/heads/bodied ${"1".repeat(40)}\n`);
+    assert.equal(unknownTip.status, 1);
+    assert.match(String(unknownTip.stderr), /use a one-line subject with no body/);
+    assert.doesNotMatch(String(unknownTip.stderr), /write the message in English/);
     assert.match(String(check(`(delete) ${zero} refs/heads/gone ${clean}\n`).stdout), /0 checked/);
+    // Two refs in one push, the same commit on both: counted once.
+    const twoRefs = `refs/heads/clean ${clean} refs/heads/clean ${zero}\nrefs/heads/c2 ${clean} refs/heads/c2 ${zero}\n`;
+    assert.match(String(check(twoRefs).stdout), /1 checked/);
+
+    // With no remote-tracking refs there is no base: skip rather than reject the old message in the history.
+    git("update-ref", "-d", "refs/remotes/origin/main");
+    const noBase = check(`refs/heads/clean ${clean} refs/heads/clean ${zero}\n`);
+    assert.equal(noBase.status, 0, String(noBase.stderr));
+    assert.match(String(noBase.stdout), /skipped/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
