@@ -42,7 +42,7 @@ bun run bundle      # MCP・CLI・自動記録の配布物を作る
 
 ### 配布物
 
-- 配布物に入る変更は、npm と 3 つの plugin manifest のバージョンを同じ値へ上げ、同じ commit に入れる <!-- invariant: version-sync -->
+- 配布物に入る変更は、npm と 3 つの plugin manifest のバージョンを同じ値へ上げ、同じ branch（PR）に入れる <!-- invariant: version-sync -->
 - バージョンを編集する前に `bun run release:plan -- --base <前回のrelease commit>` の種別を見る <!-- invariant: release-plan -->
 - `plugin/dist` と `plugin/db` は追跡しないので `git diff` に出ない。`npm pack` して repository の外へ展開して見る <!-- invariant: pack-and-inspect -->
 - 配る物は Windows でも動かす。POSIX shell・`0600`・`/tmp` 固定・`.cmd` の execFile に依存しない <!-- invariant: windows -->

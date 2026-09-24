@@ -208,3 +208,72 @@ test("4 箇所のバージョンだけを揃えて上げた commit は、配布�
     r.done();
   }
 });
+
+test("基準が無ければ、作業ブランチでは main から分かれた点と比べる（ブランチの中で 1 回上げれば、後の commit を積める）", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "1.0.0");
+    write(r.dir, "plugin/skills/a.md", "a");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+    r.git("branch", "-M", "main");
+    r.git("update-ref", "refs/remotes/origin/main", "HEAD");
+
+    r.git("switch", "-q", "-c", "feature");
+    write(r.dir, "plugin/skills/a.md", "b");
+    bump(r.dir, "1.0.1");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "変えて上げる");
+
+    write(r.dir, "plugin/skills/a.md", "c");
+    r.git("add", "-A");
+    const next = check(r.dir);
+    assert.equal(next.status, 0, next.stderr);
+
+    // 分かれた後に main が同じバージョンを出していたら、それを超えるまで落とす（CI は今の main と比べる）
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "main");
+    bump(r.dir, "1.0.1");
+    write(r.dir, "plugin/skills/b.md", "main");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "main が同じ番号を出す");
+    r.git("switch", "-q", "feature");
+    write(r.dir, "plugin/skills/a.md", "c2");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+    r.git("reset", "-q", "--hard");
+    // 配布物を変えないブランチは、main が先へ進んでいても止めない
+    r.git("switch", "-q", "-c", "docs", base);
+    write(r.dir, "README.ja.md", "ja");
+    r.git("add", "-A");
+    const docs = check(r.dir);
+    assert.equal(docs.status, 0, docs.stderr);
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "feature");
+
+    // ブランチの中での下げは、分かれた点より大きくても落とす
+    bump(r.dir, "1.0.2");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "もう一度上げる");
+    bump(r.dir, "1.0.1");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+
+    // ブランチの中で一度も上げていなければ落とす
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "-c", "other", "main");
+    write(r.dir, "plugin/skills/a.md", "d");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+
+    // main の上では、これまでどおり HEAD と比べる
+    r.git("reset", "-q", "--hard");
+    r.git("switch", "-q", "main");
+    write(r.dir, "plugin/skills/a.md", "e");
+    r.git("add", "-A");
+    assert.equal(check(r.dir).status, 1);
+  } finally {
+    r.done();
+  }
+});

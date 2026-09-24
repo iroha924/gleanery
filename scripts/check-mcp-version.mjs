@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// plugin の配布物が変わったのにバージョンが上がっていないものを落とす。pre-commit はこれから作る commit を、
-// CI は `--base` で渡した commit から HEAD までをまとめて見る。
+// plugin の配布物が変わったのにバージョンが上がっていないものを落とす。pre-commit はこれから作る commit を
+// 含めた作業ブランチ全体を（main の上では直前の commit と）、CI は `--base` で渡した commit から HEAD までをまとめて見る。
 //
 // 配布経路と壊れ方は .agents/skills/plugin-release/SKILL.md が正本。
 // 見るのはソースではなくバンドルそのもの — `mcp.js` には search.ts も db.ts も
@@ -72,7 +72,17 @@ if (pluginVersion.localeCompare(packageVersion, undefined, { numeric: true }) > 
 // 書き終える前に読んで素通りする。CI は checkout 直後で index が HEAD と同じなので、基準を
 // `--base` へ変えるだけで同じ比べ方になる。
 // manifest はバージョンを落とした姿（release-scope.mjs の withoutReleaseVersion）で比べる。
-const ref = base ?? "HEAD";
+// 基準を渡されなければ、作業ブランチでは main から分かれた点と比べる（ブランチの中で 1 回上げれば後の commit を積める）。
+// main の上と、分かれた点を取れないときは HEAD と比べる。CI は `--base` で PR の範囲全体を見る。
+function defaultBase() {
+  try {
+    if (git("symbolic-ref", "--quiet", "--short", "HEAD").trim() === "main") return "HEAD";
+    return git("merge-base", "HEAD", "refs/remotes/origin/main").trim();
+  } catch {
+    return "HEAD";
+  }
+}
+const ref = base ?? defaultBase();
 const changed = git("diff", "--cached", "--name-only", ref)
   .split("\n")
   .filter(Boolean)
@@ -82,19 +92,38 @@ const changed = git("diff", "--cached", "--name-only", ref)
       (f !== PACKAGE && !(f in PLUGIN_MANIFESTS)) ||
       withoutReleaseVersion(at(ref, f)) !== withoutReleaseVersion(staged(f)),
   );
-const oldPackageVersion = JSON.parse(at(ref, PACKAGE) ?? "{}").version;
-const oldPluginVersion = JSON.parse(at(ref, "plugin/.claude-plugin/plugin.json") ?? "{}").version;
 /** major.minor.patch を数で比べる（文字列では 1.10.0 が 1.9.0 より小さくなる）。 */
 const compare = (a, b) => {
   const [x, y] = [a, b].map((v) => String(v).split(".").map(Number));
   for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0);
   return 0;
 };
+// 基準を渡されないときは、分かれた点の後に main が出したバージョンも超える必要がある（CI は PR を今の main と比べる）。
+// origin/main が手元の main より古いこともあるので、両方を見て一番新しいものを取る
+const versionRefs = base ? [ref] : [ref, "refs/heads/main", "refs/remotes/origin/main"];
+const newest = (file) =>
+  versionRefs
+    .map((r) => at(r, file))
+    .filter((text) => text !== null)
+    .map((text) => JSON.parse(text).version)
+    .filter((v) => typeof v === "string")
+    .reduce((a, b) => (a === undefined || compare(b, a) > 0 ? b : a), undefined);
+const oldPackageVersion = newest(PACKAGE);
+const oldPluginVersion = newest("plugin/.claude-plugin/plugin.json");
 
 // **下げは配布物が変わっていなくても落とす。**利用者の cache は新しいバージョンにしか入れ替わらない。
+// 基準（分かれた点）に加えて直前の commit とも比べる（ブランチの中で上げた後の下げを見逃さない）。
+const versionAt = (r, file) => {
+  const text = at(r, file);
+  return text ? JSON.parse(text).version : undefined;
+};
+const headVersion = (file) => versionAt("HEAD", file);
+// main の新しいバージョンとは比べない（配布物を変えない commit まで止める）。それは配布物が変わったときだけ見る
 for (const [was, now] of [
-  [oldPackageVersion, packageVersion],
-  [oldPluginVersion, pluginVersion],
+  [versionAt(ref, PACKAGE), packageVersion],
+  [versionAt(ref, "plugin/.claude-plugin/plugin.json"), pluginVersion],
+  [headVersion(PACKAGE), packageVersion],
+  [headVersion("plugin/.claude-plugin/plugin.json"), pluginVersion],
 ]) {
   if (was && compare(now, was) < 0) {
     console.error(`バージョンを ${was} から ${now} へ下げている。公開済みのバージョンより大きい値にする。`);
