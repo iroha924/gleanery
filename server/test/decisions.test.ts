@@ -199,6 +199,9 @@ test("merge した持ち主の PR の本文だけを、決定と案にして入�
     assert.ok(r.slice(1).every((x) => x.decision_id === r[0]?.id));
     assert.match(r[0]?.source_key ?? "", /^github:o\/r\/pull\/117#[0-9a-f]{12}-1$/);
     assert.equal(r[0]?.heading, "PR #117（2026-09-20）の判断");
+    // 判断が 1 つも取れない本文（古い PR の自由な文）の行は数えない（毎回同じ数を出さない）
+    const free = await syncDecisions(db.ingest, p, "o/r", input(SECTION("- 自由な文\n- もう 1 つ")));
+    assert.equal(free.skipped, 0);
   } finally {
     await db.done();
   }
@@ -329,4 +332,35 @@ test("「棄却:」は句点の後ろだけで分け、欠けた・閉じてい�
     ],
   );
   assert.equal(got.skipped, 3);
+});
+
+test("閉じる囲みは記号の後ろに空白しか無い行だけで、コードの中のコメントの記号で本文を切らない", () => {
+  const got = extractDecisions(
+    [
+      "## 採った案と棄却した案",
+      "```",
+      "```ts",
+      "- 採った: コードの中。棄却: 例（例）",
+      "const s = '<!--';",
+      "```",
+      "- 採った: 本物。棄却: 偽物（理由）",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["本物"],
+  );
+});
+
+test("採った案の括弧も閉じていなければ飛ばし、括弧の中の「。棄却:」では分けない", () => {
+  const got = extractDecisions(
+    body(
+      ["- 採った: A（未閉。棄却: B（理由）", "- 採った: A（説明。棄却: 引用）。棄却: B（理由）"].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.rejected]),
+    [["A（説明。棄却: 引用）", [{ text: "B", reason: "理由" }]]],
+  );
+  assert.equal(got.skipped, 1);
 });

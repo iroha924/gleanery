@@ -13,11 +13,27 @@ export type Extracted = { line: string; chosen: string; rejected: Rejected[] };
 const SECTION = /^##\s*採った案と棄却した案\s*$/;
 const HEADING = /^#{1,2}\s/;
 const FENCE = /^\s*(`{3,}|~{3,})/;
+// 閉じる囲みは記号の後ろに空白しか置けない（CommonMark）
+const CLOSING = /^\s*(`{3,}|~{3,})\s*$/;
 const ITEM = /^\s*[-*]\s+/;
 const CHOSEN = /^\s*[-*]\s+採った[:：]\s*(.*)$/;
-// 分けるのは句点の後ろの「棄却:」だけ（採った案の中に「棄却:」と書いても分けない）
-const REJECTED = /。\s*棄却[:：]\s*/;
+const REJECTED = /^。\s*棄却[:：]\s*/;
 const BARE_REJECTED = /棄却[:：]/;
+
+/** 括弧の外で句点の後ろにある最初の「棄却:」。採った案の中や括弧の中に「棄却:」と書いても分けない。 */
+function rejectedAt(s: string): { index: number; length: number } | null {
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (c === "（" || c === "(") depth++;
+    else if ((c === "）" || c === ")") && depth > 0) depth--;
+    else if (c === "。" && depth === 0) {
+      const m = REJECTED.exec(s.slice(i));
+      if (m) return { index: i, length: m[0].length };
+    }
+  }
+  return null;
+}
 
 /** 括弧（全角・半角）の外にある sep で分ける。括弧が閉じていなければ null（書式に合わない）。 */
 function splitOutside(s: string, sep: string): string[] | null {
@@ -58,23 +74,38 @@ function withReason(item: string): Rejected | null {
   return null;
 }
 
-/** 節の中の行。HTML のコメント（閉じていなければ最後まで）とコードブロックの中は、節の見出しも含めて読まない。 */
+/** 節の中の行。HTML のコメントとコードブロックの中は、節の見出しも含めて読まない。コメントの記号はコードの外でだけ見る。 */
 function sectionLines(body: string): string[] {
-  let text = body.replace(/<!--[\s\S]*?-->/g, "");
-  const unclosed = text.indexOf("<!--");
-  if (unclosed >= 0) text = text.slice(0, unclosed);
   const out: string[] = [];
   let fence: string | null = null;
+  let comment = false;
   let inside = false;
-  for (const line of text.split(/\r?\n/)) {
-    const f = FENCE.exec(line)?.[1];
-    if (f) {
+  for (const raw of body.split(/\r?\n/)) {
+    let line = raw;
+    if (fence === null) {
+      if (comment) {
+        const end = line.indexOf("-->");
+        if (end < 0) continue;
+        comment = false;
+        line = line.slice(end + 3);
+      }
+      line = line.replace(/<!--[\s\S]*?-->/g, "");
+      const open = line.indexOf("<!--");
+      if (open >= 0) {
+        comment = true;
+        line = line.slice(0, open);
+      }
+      const f = FENCE.exec(line)?.[1];
+      if (f) {
+        fence = f;
+        continue;
+      }
+    } else {
       // 閉じるのは開いたときと同じ記号で、同じ長さ以上のものだけ
-      if (fence === null) fence = f;
-      else if (f[0] === fence[0] && f.length >= fence.length) fence = null;
+      const f = CLOSING.exec(line)?.[1];
+      if (f && f[0] === fence[0] && f.length >= fence.length) fence = null;
       continue;
     }
-    if (fence !== null) continue;
     if (!inside) {
       inside = SECTION.test(line);
       continue;
@@ -91,16 +122,22 @@ export function extractDecisions(body: string): { decisions: Extracted[]; skippe
   for (const line of sectionLines(body)) {
     if (!ITEM.test(line)) continue;
     const rest = CHOSEN.exec(line)?.[1];
-    const at = rest === undefined ? null : REJECTED.exec(rest);
+    const at = rest === undefined ? null : rejectedAt(rest);
     // 句点の無い「棄却:」は分け方が決まらないので、行ごと飛ばす
     if (rest === undefined || (!at && BARE_REJECTED.test(rest))) {
       skipped++;
       continue;
     }
     const chosen = (at ? rest.slice(0, at.index) : rest).trim().replace(/。$/, "");
-    const parts = at ? splitOutside(rest.slice(at.index + at[0].length), "、") : [];
+    const parts = at ? splitOutside(rest.slice(at.index + at.length), "、") : [];
     const rejected = parts?.map(withReason) ?? null;
-    if (!chosen || !rejected || rejected.some((r) => r === null) || (at && rejected.length === 0)) {
+    if (
+      !chosen ||
+      !splitOutside(chosen, "、") ||
+      !rejected ||
+      rejected.some((r) => r === null) ||
+      (at && rejected.length === 0)
+    ) {
       skipped++;
       continue;
     }
@@ -166,7 +203,8 @@ export async function syncDecisions(
   for (const pr of prs) {
     if (!pr.merged || !pr.body || pr.authorId === null || !self.has(String(pr.authorId))) continue;
     const got = extractDecisions(pr.body);
-    skipped += got.skipped;
+    // 判断が 1 つも取れない本文（古い PR の自由な文）は数えない。書式の打ち間違いだけを知らせる
+    if (got.decisions.length) skipped += got.skipped;
     const heading = `PR #${pr.number}（${(pr.mergedAt ?? "").slice(0, 10)}）の判断`;
     const seen = new Map<string, number>();
     for (const d of got.decisions) {

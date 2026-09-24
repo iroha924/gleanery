@@ -512,6 +512,6 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
     `発言 ${total} 件（書き直した ${counts.messagesWritten} 件${counts.messagesRemoved ? ` / 消えた ${counts.messagesRemoved} 件` : ""}）`,
     counts.decisions.unlinked
       ? "PR の判断は取り込んでいない（持ち主の GitHub のハンドルを結んでいない。gleanery who --me <呼び名> <ハンドル> の後にもう一度 harvest）"
-      : `PR の判断 書き直した ${counts.decisions.written} 件${counts.decisions.skipped ? `（書式に合わず飛ばした行 ${counts.decisions.skipped}）` : ""}`,
+      : `PR の判断 書き直した行 ${counts.decisions.written}${counts.decisions.skipped ? `（書式に合わず飛ばした行 ${counts.decisions.skipped}）` : ""}`,
   ].join(" / ");
 }
