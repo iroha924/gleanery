@@ -63,6 +63,11 @@ bun run cli -- dashboard  # 端末の画面。TTY が要るので前面でだけ
 - `review-shipping`: 配布物・バージョン・bundle の入力・検査 script を変えた commit の前
 - `review-ui`: `server/src/tui/` か `server/src/palette.ts` を変えた commit の前
 - Codex: PR ごとに merge の前。`codex-review` Skill の手順で頼む
+- GitHub の Codex（ChatGPT connector）は PR を作ると自動でレビューする。監視と再レビューの判断は Claude が持ち、持ち主は仕上がった PR だけを見る。
+  状態の正本は要約コメント（Codex Review Summary）の表で、head の commit の Code Review が Completed なら終わり（PR 本文の 👀 は実行中、
+  👍 は全部が指摘なしで終わった印）。指摘は未解決のレビューのスレッドで、直すか見送るかを決めて resolve する。直したら push が remote に
+  届いたのを確かめてから `@codex review` とコメントする。指摘が端のケースに収束したら打ち切り、残りは見送った指摘の issue に残す。
+  head の Code Review が Completed・未解決のスレッドが 0・CI が全部通過、がそろってから持ち主に最終判断を頼む
 
 ## 外へ出す文章
 
