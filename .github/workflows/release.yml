@@ -167,9 +167,24 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      # 許可先は v0.37.7 の release で audit が観測した stage の通信先（GitHub の基盤は harden-runner が既定で通す）
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            release-assets.githubusercontent.com:443
+            registry.npmjs.org:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+      # block が効いていなければ publish の前に止める
+      - name: 許可先の外へ出られないか
+        run: |
+          if curl -sS --max-time 10 -o /dev/null https://example.com; then
+            echo "許可先の外へ出られた" >&2
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
