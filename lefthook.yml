@@ -54,9 +54,10 @@ pre-commit:
 pre-push:
   jobs:
     # The commit-msg hook cannot tell `-m` from the editor, so a `-m '# body'` passes it and is stored as a body.
-    # Check what was actually committed, over the commits not yet on main. Lefthook skips it when the pushed commits change no files; CI still checks those.
+    # Check the stored messages of the pushed refs. Lefthook skips it when the pushed commits change no files; CI still checks those.
     - name: commit-messages
-      run: node scripts/check-commit-msg.mjs --range origin/main..HEAD
+      use_stdin: true
+      run: node scripts/check-commit-msg.mjs --pre-push
     - name: verify
       # If left set, git in the temp repositories the tests create points at this repository
       # (measured: it wrote core.bare=true and user.*, and added 2 commits).
