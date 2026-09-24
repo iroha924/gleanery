@@ -1,14 +1,14 @@
-// CLI（server/src/cli.ts）を plugin/dist/cli.js の 1 ファイルにバンドルする。scripts/bundle.mjs から bun で呼ぶ。
-// CLI は出力と dashboard の画面を Ink で描く。Ink は DEV=true で react-devtools-core が見つかると ink/build/devtools.js を
-// 読み込み、その中で ws と react-devtools-core を使う。devtools.js を丸ごと空の module にし、2 つを束に入れない。
+// Bundles the CLI (server/src/cli.ts) into the single file plugin/dist/cli.js. scripts/bundle.mjs runs it with bun.
+// The CLI draws its output and the dashboard with Ink. With DEV=true and react-devtools-core present, Ink loads ink/build/devtools.js,
+// which uses ws and react-devtools-core. devtools.js becomes an empty module so neither goes into the bundle.
 
 import path from "node:path";
 import type { BunPlugin } from "bun";
 
 const root = path.resolve(import.meta.dir, "..");
 
-// ws と react-devtools-core だけを空にすると、DEV=true で react-devtools-core が上の階層に在る環境では、空の ws を
-// new して起動ごと落ちた（実測: TypeError: ws_default is not a constructor）。読み込む側の devtools.js ごと空にする
+// Emptying only ws and react-devtools-core crashed at startup when DEV=true and react-devtools-core sat in a parent directory,
+// because the empty ws was constructed (measured: TypeError: ws_default is not a constructor). Empty devtools.js, the module that loads them
 const stub: BunPlugin = {
   name: "stub-devtools",
   setup(b) {

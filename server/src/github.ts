@@ -109,6 +109,7 @@ export const speakerOf = (login: string): Speaker =>
 
 // Acknowledgments are not knowledge. **Length alone does not drop a message** — a 10-character reply can still carry content.
 const FILLER =
+  // english-exempt: matches Japanese acknowledgments that people write
   /^(lgtm|ok(です)?|了解(です)?|確認しました|ありがとうございます?|修正しました|対応しました|なるほど|承知(しました)?|わかりました|👍|:\+1:|:eyes:|:pray:)[!！。.\s]*$/i;
 export const isFiller = (body: string): boolean => {
   const t = body.trim();

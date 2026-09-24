@@ -551,7 +551,7 @@ test("without a database, session start reports it in the same box format", () =
   const missing = path.join(home, "無い.db");
   assert.equal(
     captureNotice(missing),
-    `✦ gleanery: DB が無いので、会話を自動記録できない\n│ ${missing}\n╰─ gleanery init で作る`,
+    `✦ gleanery: no database, so conversations are not recorded\n│ ${missing}\n╰─ Create it with gleanery init`,
   );
 });
 
@@ -581,7 +581,7 @@ test("stuck is reported only with queued items and a recorded failure, and a bro
   // A failure with an empty reason is still stuck.
   fs.writeFileSync(file, JSON.stringify({ error: "" }));
   assert.equal(readState().stuck, "unknown failure");
-  assert.match(captureNotice(capture) ?? "", /送れていない/);
+  assert.match(captureNotice(capture) ?? "", /cannot send captured records/);
   reset();
   fs.rmSync(file);
 });

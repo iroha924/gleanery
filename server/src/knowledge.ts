@@ -56,32 +56,6 @@ type Labels = {
 };
 const LABEL: Labels = {
   decision: {
-    accepted: "【採用した決定】",
-    proposed: "【提案どまり。まだ決まっていない】",
-    rejected: "【却下した決定。採用していない】",
-    superseded: "【後で覆した決定。もう有効ではない】",
-  },
-  option: {
-    chosen: "【採用した案】",
-    rejected: "【棄却した案】",
-    was_chosen: "【当時は採った案。その決定はもう有効ではない】",
-  },
-  constraint: { active: "【変えてはいけない制約】", retired: "【外した制約】" },
-  non_goal: { active: "【やらないと決めたこと】", retired: "【やらないことから外したこと】" },
-  debt: { active: "【意図して残した負債。直しにいかない】", retired: "【返済した負債】" },
-  dead_end: "【試して駄目だった】",
-  finding: "【分かったこと】",
-  verification: {
-    passed: "【検証・通った】",
-    failed: "【検証・落ちた。直っていない】",
-    not_run: "【検証・未実行。確かめていない】",
-  },
-  question: { open: "【未解決の問い】", blocking: "【作業を止めている問い】", resolved: "【解決した問い】" },
-};
-
-/** English labels for the CLI and dashboard, kept short for narrow terminals. MCP keeps LABEL until it is translated too. */
-const LABEL_EN: Labels = {
-  decision: {
     accepted: "[decision]",
     proposed: "[proposed decision]",
     rejected: "[rejected decision]",
@@ -98,18 +72,14 @@ const LABEL_EN: Labels = {
 };
 
 /** Document labels come from the location. ADRs carry different weight from explanatory docs. */
-function documentLabel(path: string | null | undefined, lang: "ja" | "en"): string {
+function documentLabel(path: string | null | undefined): string {
   const adr = !!path && (/(^|\/)adrs?\//i.test(path) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(path));
-  if (lang === "en") return adr ? "[decision record]" : "[document]";
-  return adr ? "【決定の記録・ADR】" : "【文書】";
+  return adr ? "[decision record]" : "[document]";
 }
 
-export function labelOf(
-  k: { kind: string; status: string | null; path?: string | null },
-  lang: "ja" | "en" = "ja",
-): string {
-  if (k.kind === "document") return documentLabel(k.path, lang);
-  const l = ((lang === "en" ? LABEL_EN : LABEL) as Record<string, string | Record<string, string>>)[k.kind];
+export function labelOf(k: { kind: string; status: string | null; path?: string | null }): string {
+  if (k.kind === "document") return documentLabel(k.path);
+  const l = (LABEL as Record<string, string | Record<string, string>>)[k.kind];
   return typeof l === "string" ? l : ((k.status && l?.[k.status]) ?? "");
 }
 

@@ -387,7 +387,7 @@ test("MCP recall and read return failures with isError and a non-empty reason", 
     ] as const) {
       const r = await client.callTool({ name, arguments: args });
       assert.equal(r.isError, true, name);
-      assert.match(JSON.stringify(r.content), /gleanery: 失敗した（No database at/, name);
+      assert.match(JSON.stringify(r.content), /gleanery: failed \(No database at/, name);
     }
   } finally {
     await client.close();
@@ -486,7 +486,7 @@ test("the response fits the limit even with a long unregistered project name", a
   try {
     const r = await client.callTool({ name: "recall", arguments: { question: "x", cwd: repo } });
     const t = (r.content as { text: string }[])[0]?.text ?? "";
-    assert.match(t, /登録されていない/);
+    assert.match(t, /is not registered with gleanery/);
     assert.ok(Buffer.byteLength(t) <= 4096, `${Buffer.byteLength(t)} bytes`);
   } finally {
     await client.close();

@@ -56,22 +56,20 @@ export async function liveData(cwd: string): Promise<{ data: Data; close: () => 
     sessions: (p, page, pageSize) => listSessions(db, { project: p, page, pageSize }),
     session: (id) => sessionDetail(db, id),
     works: (p) => listWork(db, scope(p)),
-    work: (ref, p) => workDetail(db, Number(ref.replace(/^w:/, "")), scope(p), undefined, "en"),
+    work: (ref, p) => workDetail(db, Number(ref.replace(/^w:/, "")), scope(p)),
     // Same function and ranking as MCP recall. Document sections follow the decision records.
     search: async (question, mode, p) => {
-      if (mode === "said")
-        return searchMessages(db, { question, projects: scope(p), who: "me", limit: 20, lang: "en" });
+      if (mode === "said") return searchMessages(db, { question, projects: scope(p), who: "me", limit: 20 });
       const { records, documents } = await searchSplit(db, {
         question,
         projects: scope(p),
         limit: 20,
-        lang: "en",
       });
       return [...records, ...documents];
     },
     read: async (ref, p) => {
-      const text = await read(db, [ref], READ_BYTES, { projects: scope(p), lang: "en" });
-      return text === missing(ref, "en") ? null : text;
+      const text = await read(db, [ref], READ_BYTES, { projects: scope(p) });
+      return text === missing(ref) ? null : text;
     },
   };
   return { data, close: () => db.destroy() };

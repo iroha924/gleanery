@@ -1,6 +1,6 @@
-// kysely の SqliteDialect は better-sqlite3 の形を要求し、`node:sqlite` の公式 dialect は無い（0.29.6）。薄く包んで渡す。
-// 行は prototype を持たない object で返るので、普通の object に直す（assert.deepStrictEqual が prototype まで比べる）。
-// BLOB は Uint8Array で返る。型の生成（db-types.ts）は Buffer と書くので、Buffer に揃える（`.equals` で hash を比べる）。
+// kysely's SqliteDialect expects the better-sqlite3 shape, and there is no official `node:sqlite` dialect (0.29.6). A thin wrapper adapts it.
+// Rows come back as objects without a prototype, so they become plain objects (assert.deepStrictEqual compares prototypes).
+// BLOBs come back as Uint8Array. The generated types (db-types.ts) say Buffer, so convert to Buffer (hashes are compared with `.equals`).
 
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type { SqliteDatabase } from "kysely";

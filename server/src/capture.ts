@@ -292,19 +292,23 @@ export function answersOf(input: HookInput): string | null {
  */
 export function captureNotice(file: string = dbFile()): string | null {
   if (!fs.existsSync(file))
-    return panel("gleanery: DB が無いので、会話を自動記録できない", [file], "gleanery init で作る");
+    return panel(
+      "gleanery: no database, so conversations are not recorded",
+      [file],
+      "Create it with gleanery init",
+    );
   const s = readState();
   if (s.stuck)
     return panel(
-      "gleanery: 自動記録を送れていない",
-      [`待ち ${s.pending} 件 / 最後の失敗: ${plain(s.stuck.slice(0, 120))}`],
-      "gleanery doctor で確かめる",
+      "gleanery: cannot send captured records",
+      [`${s.pending} queued / last failure: ${plain(s.stuck.slice(0, 120))}`],
+      "Check with gleanery doctor",
     );
   if (s.rejected > 0)
     return panel(
-      `gleanery: DB が受け付けなかった記録が ${s.rejected} 件ある`,
+      `gleanery: the database rejected ${s.rejected} records`,
       [rejectedDir()],
-      "直して待ち行列へ戻せば送り直す。gleanery doctor で確かめる",
+      "Fix them and move them back to the queue to resend. Check with gleanery doctor",
     );
   return null;
 }

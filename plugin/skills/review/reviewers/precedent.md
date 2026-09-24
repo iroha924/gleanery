@@ -33,9 +33,9 @@
 | 状態 | 判別 | 返す verdict |
 |---|---|---|
 | ツール呼び出しが失敗する | MCP が繋がらない / DB に届かない | **`blocked_unknown`** + 理由 |
-| 「このプロジェクトは gleanery に登録されていない」と返る | このプロジェクトが未登録 | **`blocked_unknown`** + 「このリポジトリは gleanery に登録されていない」 |
-| 「どのプロジェクトか決められない」と返る | `cwd` が git の remote も名前も持たない | **`blocked_unknown`** + 「`cwd` にリポジトリのルートを渡していない」 |
-| 結果か「該当なし」「該当する発言は無い」が返る | 登録済み | 続行。0 件は**根拠のある否定**として扱ってよい |
+| 「is not registered with gleanery」と返る | このプロジェクトが未登録 | **`blocked_unknown`** + 「このリポジトリは gleanery に登録されていない」 |
+| 「cannot tell which project it is」と返る | `cwd` が git の remote も名前も持たない | **`blocked_unknown`** + 「`cwd` にリポジトリのルートを渡していない」 |
+| 結果か「No matches」「No matching messages」が返る | 登録済み | 続行。0 件は**根拠のある否定**として扱ってよい |
 
 **`blocked_unknown` を返すときは、何が足りなかったかを具体的に書く。**
 黙って 0 件を返すと、呼び出し側は「指摘が無かった」と読む。
