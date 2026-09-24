@@ -12,58 +12,73 @@ export type Extracted = { line: string; chosen: string; rejected: Rejected[] };
 
 const SECTION = /^##\s*採った案と棄却した案\s*$/;
 const HEADING = /^#{1,2}\s/;
-const FENCE = /^\s*(```|~~~)/;
+const FENCE = /^\s*(`{3,}|~{3,})/;
 const ITEM = /^\s*[-*]\s+/;
 const CHOSEN = /^\s*[-*]\s+採った[:：]\s*(.*)$/;
-const REJECTED = /。?\s*棄却[:：]\s*/;
+// 分けるのは句点の後ろの「棄却:」だけ（採った案の中に「棄却:」と書いても分けない）
+const REJECTED = /。\s*棄却[:：]\s*/;
+const BARE_REJECTED = /棄却[:：]/;
 
-/** 括弧（全角・半角）の外にある sep で分ける。 */
-function splitOutside(s: string, sep: string): string[] {
+/** 括弧（全角・半角）の外にある sep で分ける。括弧が閉じていなければ null（書式に合わない）。 */
+function splitOutside(s: string, sep: string): string[] | null {
   const out: string[] = [];
   let depth = 0;
   let start = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === "（" || c === "(") depth++;
-    else if ((c === "）" || c === ")") && depth > 0) depth--;
-    else if (c === sep && depth === 0) {
+    else if (c === "）" || c === ")") {
+      if (depth === 0) return null;
+      depth--;
+    } else if (c === sep && depth === 0) {
       out.push(s.slice(start, i));
       start = i + 1;
     }
   }
+  if (depth !== 0) return null;
   out.push(s.slice(start));
   return out;
 }
 
-/** 末尾の「（…）」を理由として分ける。入れ子の括弧は理由の中に残す。 */
-function withReason(item: string): Rejected {
+/** 末尾の括弧（全角か半角）を理由として分ける。入れ子の括弧は理由の中に残す。空の案は null。 */
+function withReason(item: string): Rejected | null {
   const s = item.trim().replace(/。$/, "");
-  if (!s.endsWith("）")) return { text: s, reason: null };
+  if (!s) return null;
+  const close = s.at(-1);
+  const open = close === "）" ? "（" : close === ")" ? "(" : null;
+  if (!open) return { text: s, reason: null };
   let depth = 0;
   for (let i = s.length - 1; i >= 0; i--) {
-    const c = s[i];
-    if (c === "）") depth++;
-    else if (c === "（" && --depth === 0) {
+    if (s[i] === close) depth++;
+    else if (s[i] === open && --depth === 0) {
       const text = s.slice(0, i).trim();
-      return text ? { text, reason: s.slice(i + 1, -1).trim() || null } : { text: s, reason: null };
+      return text ? { text, reason: s.slice(i + 1, -1).trim() || null } : null;
     }
   }
-  return { text: s, reason: null };
+  return null;
 }
 
-/** 節の中の行。HTML のコメントとコードブロックの中は読まない。 */
+/** 節の中の行。HTML のコメント（閉じていなければ最後まで）とコードブロックの中は、節の見出しも含めて読まない。 */
 function sectionLines(body: string): string[] {
-  const lines = body.replace(/<!--[\s\S]*?-->/g, "").split(/\r?\n/);
-  const start = lines.findIndex((l) => SECTION.test(l));
-  if (start < 0) return [];
+  let text = body.replace(/<!--[\s\S]*?-->/g, "");
+  const unclosed = text.indexOf("<!--");
+  if (unclosed >= 0) text = text.slice(0, unclosed);
   const out: string[] = [];
-  let fenced = false;
-  for (const line of lines.slice(start + 1)) {
-    if (FENCE.test(line)) {
-      fenced = !fenced;
+  let fence: string | null = null;
+  let inside = false;
+  for (const line of text.split(/\r?\n/)) {
+    const f = FENCE.exec(line)?.[1];
+    if (f) {
+      // 閉じるのは開いたときと同じ記号で、同じ長さ以上のものだけ
+      if (fence === null) fence = f;
+      else if (f[0] === fence[0] && f.length >= fence.length) fence = null;
       continue;
     }
-    if (fenced) continue;
+    if (fence !== null) continue;
+    if (!inside) {
+      inside = SECTION.test(line);
+      continue;
+    }
     if (HEADING.test(line)) break;
     out.push(line);
   }
@@ -75,27 +90,21 @@ export function extractDecisions(body: string): { decisions: Extracted[]; skippe
   let skipped = 0;
   for (const line of sectionLines(body)) {
     if (!ITEM.test(line)) continue;
-    const m = CHOSEN.exec(line);
-    if (!m) {
+    const rest = CHOSEN.exec(line)?.[1];
+    const at = rest === undefined ? null : REJECTED.exec(rest);
+    // 句点の無い「棄却:」は分け方が決まらないので、行ごと飛ばす
+    if (rest === undefined || (!at && BARE_REJECTED.test(rest))) {
       skipped++;
       continue;
     }
-    const rest = m[1] ?? "";
-    const at = REJECTED.exec(rest);
-    const head = at ? rest.slice(0, at.index) : rest;
-    const tail = at ? rest.slice(at.index + at[0].length) : undefined;
-    const chosen = head.trim().replace(/。$/, "");
-    const rejected =
-      tail === undefined
-        ? []
-        : splitOutside(tail, "、")
-            .map(withReason)
-            .filter((r) => r.text);
-    if (!chosen || (tail !== undefined && rejected.length === 0)) {
+    const chosen = (at ? rest.slice(0, at.index) : rest).trim().replace(/。$/, "");
+    const parts = at ? splitOutside(rest.slice(at.index + at[0].length), "、") : [];
+    const rejected = parts?.map(withReason) ?? null;
+    if (!chosen || !rejected || rejected.some((r) => r === null) || (at && rejected.length === 0)) {
       skipped++;
       continue;
     }
-    decisions.push({ line: line.trim(), chosen, rejected });
+    decisions.push({ line: line.trim(), chosen, rejected: rejected as Rejected[] });
   }
   return { decisions, skipped };
 }
