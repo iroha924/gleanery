@@ -24,3 +24,6 @@ plugin/THIRD_PARTY_NOTICES.md
 
 # npm pack が置く。publish する物は bundle から作り直す。
 *.tgz
+
+# Plans made with grill-codex stay on this machine.
+.claude/plans/
