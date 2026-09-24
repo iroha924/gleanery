@@ -22,19 +22,38 @@ const CLOSERS = new Set(Object.values(PAIRS));
 /** 中に置けない inline の token。HTML は行ごと飛ばす（コメントの中の区切りで分けない） */
 const REFUSED = new Set(["html"]);
 
+/** token の子（強調・リンク・引用の中など）。 */
+const children = (t: Token): Token[] =>
+  "tokens" in t && Array.isArray(t.tokens) ? (t.tokens as Token[]) : [];
+
+/** 1 つの token の raw を、コードとエスケープを同じ長さの記号で埋めた写しにする。子は raw の中の位置を探して埋める。 */
+function maskToken(t: Token): string | null {
+  if (REFUSED.has(t.type)) return null;
+  if (t.type === "codespan" || t.type === "escape") return "_".repeat(t.raw.length);
+  const kids = children(t);
+  if (kids.length === 0) return t.raw;
+  const inner = kids.map((k) => k.raw).join("");
+  const at = t.raw.indexOf(inner);
+  if (at < 0) return null;
+  let out = "";
+  for (const k of kids) {
+    const m = maskToken(k);
+    if (m === null) return null;
+    out += m;
+  }
+  return t.raw.slice(0, at) + out + t.raw.slice(at + inner.length);
+}
+
 /**
  * インラインコードとエスケープを同じ長さの記号で埋めた写し。判定は marked の inline の lexer に任せる。
- * HTML を含む行、入れ子の中にコードや HTML がある行、埋めた写しの長さが合わない行は null（行ごと飛ばす）。
+ * HTML を含む行と、埋めた写しの長さが合わない行は null（行ごと飛ばす）。
  */
 function masked(s: string): string | null {
   let out = "";
-  const nested = (t: Token): boolean =>
-    "tokens" in t && Array.isArray(t.tokens)
-      ? t.tokens.some((k: Token) => k.type === "codespan" || REFUSED.has(k.type) || nested(k))
-      : false;
   for (const t of Lexer.lexInline(s)) {
-    if (REFUSED.has(t.type) || nested(t)) return null;
-    out += t.type === "codespan" || t.type === "escape" ? "_".repeat(t.raw.length) : t.raw;
+    const m = maskToken(t);
+    if (m === null) return null;
+    out += m;
   }
   return out.length === s.length ? out : null;
 }
@@ -74,13 +93,11 @@ function withReason(s: string, m: string): Rejected | null {
   return null;
 }
 
-/** 数える箇条書きの数（入れ子を含む）。 */
-const count = (t: Tokens.List): number =>
-  t.items.reduce(
-    (n, item) =>
-      n + 1 + item.tokens.reduce((k, x) => k + (x.type === "list" ? count(x as Tokens.List) : 0), 0),
-    0,
-  );
+/** token の下にあるリストの項目の数（引用などを挟んだ入れ子も数える）。 */
+const nestedItems = (tokens: Token[]): number =>
+  tokens.reduce((n, x) => n + (x.type === "list" ? count(x as Tokens.List) : nestedItems(children(x))), 0);
+/** リストの項目の数（入れ子を含む）。 */
+const count = (t: Tokens.List): number => t.items.reduce((n, item) => n + 1 + nestedItems(item.tokens), 0);
 
 /** 節の直下の `- 採った:` の項目の 1 行目と、受け付けなかった箇条書きの数。見出し・コード・HTML・リストの解釈は marked（CommonMark）。 */
 function sectionItems(body: string): { lines: string[]; refused: number } {
@@ -100,7 +117,7 @@ function sectionItems(body: string): { lines: string[]; refused: number } {
       continue;
     }
     for (const item of list.items) {
-      refused += item.tokens.reduce((k, x) => k + (x.type === "list" ? count(x as Tokens.List) : 0), 0);
+      refused += nestedItems(item.tokens);
       const first = (item.raw.split("\n")[0] ?? "").trimEnd();
       if (item.task || !ITEM.test(first)) refused++;
       else lines.push(first);

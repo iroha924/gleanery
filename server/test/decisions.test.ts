@@ -433,3 +433,14 @@ test("項目の中の HTML は行ごと飛ばし、エスケープと長さの�
   );
   assert.equal(got.skipped, 2);
 });
+
+test("強調の中のエスケープも括弧に数えず、引用を挟んだ入れ子のリストも数える", () => {
+  const got = extractDecisions(
+    body(["- 採った: *A \\( B*。棄却: C（理由）", "- 親", "  > - 採った: 子。棄却: D（理由）"].join("\n")),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => d.chosen),
+    ["*A \\( B*"],
+  );
+  assert.equal(got.skipped, 2);
+});
