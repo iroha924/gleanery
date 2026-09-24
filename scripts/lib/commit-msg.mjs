@@ -1,30 +1,36 @@
 // Checks commit messages: one Conventional Commits line in English.
-// The commit-msg hook sees the message before Git strips comments, so an editor template (a blank line followed only by
-// `#` lines) is ignored. Anything else counts; CI checks the stored messages again.
+// The commit-msg hook sees the message before Git strips comments, so in hook mode an editor template (a blank line
+// followed only by comment lines) and the `git commit -v` diff are ignored. Stored messages (CI) are checked as they are.
 
 import { JAPANESE } from "./japanese.mjs";
 
 const TYPES = "feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert";
 const CONVENTIONAL = new RegExp(`^(?:${TYPES})(?:\\([a-z0-9-]+\\))?!?: \\S`);
 const MAX = 100;
-const MERGE = /^Merge (?:branch|remote-tracking branch|tag|commit|pull request) \S/;
+const MERGE = /^Merge (?:branches|branch|remote-tracking branch|tag|commit|pull request) \S/;
 /** The whole message `git revert` writes. */
 const REVERT = /^Revert ".+"\n\nThis reverts commit [0-9a-f]{40}\.$/;
-/** `git commit -v` appends the diff below this line; Git drops it and everything after it. */
-const SCISSORS = /^# -+ >8 -+$/m;
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * @param {string} text the message file as the hook receives it, or a stored message
- * @param {{ merge?: boolean }} [opts] merge: the commit is a merge (MERGE_HEAD exists, or it has two parents)
+ * @param {{ merge?: boolean, hook?: boolean, commentChar?: string }} [opts]
+ *   merge: the commit is a merge (MERGE_HEAD exists, or it has two or more parents).
+ *   hook: the text is the hook input, before Git's cleanup. commentChar: Git's core.commentChar (default `#`)
  * @returns {string[]} problems, empty when the message is fine
  */
 export function commitMessageProblems(text, opts = {}) {
-  const normalized = text.replace(/\r\n/g, "\n");
-  const cut = normalized.search(SCISSORS);
-  const kept = (cut === -1 ? normalized : normalized.slice(0, cut)).replace(/\n+$/, "");
-  let lines = kept.split("\n");
+  let kept = text.replace(/\r\n/g, "\n");
+  if (opts.hook) {
+    const c = escapeRegExp(opts.commentChar ?? "#");
+    // `git commit -v` appends the diff below this line; Git drops it and everything after it.
+    const cut = kept.search(new RegExp(`^${c} -+ >8 -+$`, "m"));
+    if (cut !== -1) kept = kept.slice(0, cut);
+  }
+  let lines = kept.replace(/\n+$/, "").split("\n");
   const blank = lines.indexOf("");
-  if (blank > 0 && lines.slice(blank + 1).every((l) => l === "" || l.startsWith("#")))
+  const comment = opts.commentChar ?? "#";
+  if (opts.hook && blank > 0 && lines.slice(blank + 1).every((l) => l === "" || l.startsWith(comment)))
     lines = lines.slice(0, blank);
   const [subject = "", ...rest] = lines;
   const problems = [];

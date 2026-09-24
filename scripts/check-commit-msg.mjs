@@ -18,7 +18,24 @@ const messages =
           const [sha = "", parents = "", body = ""] = r.split("\0");
           return { name: sha.slice(0, 7), body, merge: parents.split(" ").length > 1 };
         })
-    : [{ name: "this commit", body: fs.readFileSync(args[0] ?? "", "utf8"), merge: mergeInProgress() }];
+    : [
+        {
+          name: "this commit",
+          body: fs.readFileSync(args[0] ?? "", "utf8"),
+          merge: mergeInProgress(),
+          hook: true,
+        },
+      ];
+
+/** Git's comment character for templates (core.commentChar), `#` when unset or `auto`. */
+function commentChar() {
+  try {
+    const c = execFileSync("git", ["config", "core.commentChar"], { encoding: "utf8" }).trim();
+    return c && c !== "auto" ? c : "#";
+  } catch {
+    return "#";
+  }
+}
 
 /** `git merge` leaves MERGE_HEAD while it waits for the message. */
 function mergeInProgress() {
@@ -32,7 +49,11 @@ function mergeInProgress() {
 
 let failed = 0;
 for (const m of messages) {
-  const problems = commitMessageProblems(m.body, { merge: m.merge });
+  const problems = commitMessageProblems(m.body, {
+    merge: m.merge,
+    hook: m.hook === true,
+    commentChar: commentChar(),
+  });
   if (!problems.length) continue;
   failed++;
   console.error(`${m.name}: ${m.body.split("\n")[0]}`);
