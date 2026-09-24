@@ -72,7 +72,7 @@ function localMap(): Record<string, string> {
 }
 
 /** The repository root, or dir itself outside git. */
-export const rootOf = (dir: string): string =>
+const rootOf = (dir: string): string =>
   git(path.resolve(dir), "rev-parse", "--show-toplevel") || path.resolve(dir);
 
 /**

@@ -182,7 +182,7 @@ type Entry = { mode: string; oid: string; size: number };
 const FILE_MODES = new Set(["100644", "100755"]);
 
 /** The whole tree of a commit. **Symlinks (120000) and submodules (160000) are not read as text.** */
-export function treeOf(root: string, commit: string): { entries: Map<string, Entry>; dirs: Set<string> } {
+function treeOf(root: string, commit: string): { entries: Map<string, Entry>; dirs: Set<string> } {
   const entries = new Map<string, Entry>();
   const dirs = new Set<string>();
   for (const record of git(root, ["ls-tree", "-r", "-z", "-l", "--full-tree", commit])
@@ -200,7 +200,7 @@ export function treeOf(root: string, commit: string): { entries: Map<string, Ent
 }
 
 /** Reads blobs with one `git cat-file --batch`. No clean / smudge filters (the commit's exact content). */
-export function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
+function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
   const out = new Map<string, Buffer>();
   if (oids.length === 0) return out;
   const raw = git(root, ["cat-file", "--batch"], Buffer.from(`${[...new Set(oids)].join("\n")}\n`));

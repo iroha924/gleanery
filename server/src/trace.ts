@@ -104,9 +104,8 @@ const boundary = z
 const event = z.object({ ...common, kind: z.enum(["dead_end", "finding"]) }).strict();
 
 const item = z.discriminatedUnion("kind", [decision, verification, question, boundary, event]);
-export type TraceItem = z.infer<typeof item>;
 
-export const traceSchema = z
+const traceSchema = z
   .object({
     schema: z.literal("trace/1"),
     session: z
@@ -195,7 +194,7 @@ export function checkTrace(
 }
 
 /** Keys of the session's elements. Unique within the project. */
-export const sourceKey = (t: Trace, k: string): string =>
+const sourceKey = (t: Trace, k: string): string =>
   k.includes("#") ? k : `${t.session.host}:${t.session.id}#${k}`;
 
 type Row = {

@@ -52,7 +52,7 @@ export const ICONS = {
   link: "➚",
 } as const;
 
-export type IconName = keyof typeof ICONS;
+type IconName = keyof typeof ICONS;
 
 /**
  * Loading spinner. Cycles through similar stars and bounces back at the ends (the same look as Claude Code's spinner).

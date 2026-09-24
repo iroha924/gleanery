@@ -52,7 +52,7 @@ export const ROOT =
  * **`.orphaned_at` is only a hint.** The official docs describe the orphaned state; the file name is observed.
  * Its absence is not proof of being current.
  */
-export function rootState(root: string): "gone" | "orphaned" | "ok" {
+function rootState(root: string): "gone" | "orphaned" | "ok" {
   if (!fs.existsSync(path.join(root, MANIFEST))) return "gone";
   if (fs.existsSync(path.join(root, ".orphaned_at"))) return "orphaned";
   return "ok";
@@ -185,7 +185,7 @@ function cwdOf(pid: number): { dir: string; replaced: boolean } | null {
 const CACHED = /\/plugins\/cache\/[^/]+\/gleanery\/[^/]+$/;
 
 export type Install = { version: string | null; packageVersion?: string | null; root: string };
-export type Running = {
+type Running = {
   pid: number;
   started: Date;
   root: string | null;

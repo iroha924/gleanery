@@ -8,7 +8,7 @@ import { iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { sha256 } from "./text.ts";
 
-export type Rejected = { text: string; reason: string | null };
+type Rejected = { text: string; reason: string | null };
 export type Extracted = { line: string; chosen: string; rejected: Rejected[] };
 
 const SECTION = "採った案と棄却した案";

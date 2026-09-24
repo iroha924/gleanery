@@ -32,7 +32,7 @@ export const faint = (text: string): string => (colored() ? chalk.dim(text) : te
 /** 直す理由を黄土にする。色の条件は mark と同じ */
 export const caution = (text: string): string => (colored() ? chalk.hex(PALETTE.ochre)(text) : text);
 
-export const title = (text: string): string => `✦ ${text}`;
+const title = (text: string): string => `✦ ${text}`;
 
 /** 中身の行。複数行はそれぞれに印を付け、空行は印だけにする（行末に空白を残さない）。 */
 export const rule = (text: string): string =>
@@ -41,7 +41,7 @@ export const rule = (text: string): string =>
     .map((line) => (line ? `│ ${line}` : "│"))
     .join("\n");
 
-export const foot = (text: string): string => `╰─ ${text}`;
+const foot = (text: string): string => `╰─ ${text}`;
 
 export const panel = (head: string, lines: string[], end: string): string =>
   [title(head), ...lines.map(rule), foot(end)].join("\n");
