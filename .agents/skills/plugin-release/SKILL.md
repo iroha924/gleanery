@@ -105,7 +105,8 @@ release commandが同じものを読む。
    mergeする。`git diff --exit-code <head> <merge commit>`でtreeが変わっていないことを確かめる。差分があれば
    `latest`へ上げない
 9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、リポジトリの
-   `node <repository>/scripts/check-tarball.mjs <tgz>`が通ることを確かめる
+   `node <repository>/scripts/check-tarball.mjs <tgz>`が通ることを確かめる。SBOMのattestationも
+   `gh attestation verify <tgz> --repo iroha924/gleanery --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/gleanery/.github/workflows/release.yml`で確かめる
 10. `npm dist-tag add gleanery@<version> latest`で昇格する（OIDCはdist-tagに使えないので手元の認証で打つ）。
     `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
 11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを

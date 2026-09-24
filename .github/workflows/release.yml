@@ -18,6 +18,8 @@ on:
       - scripts/check-tarball.mjs
       - scripts/lib/release-gate.mjs
       - scripts/lib/tarball.mjs
+      - scripts/check-sbom.mjs
+      - scripts/lib/sbom.mjs
       # version を上げた PR は release の PR なので、tag を打つ前に同じ手順を通しておく
       - plugin/package.json
 
@@ -25,7 +27,36 @@ permissions:
   contents: read
 
 jobs:
+  # SBOM は配る物を作る job（prepare）と分けて作る。syft は配布元のチェックサムを固定して取る（依存を持たない 1 ファイル）
+  sbom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: bun.lock から CycloneDX の SBOM を作る
+        env:
+          SYFT: "1.52.0"
+          SYFT_SHA256: caeedb81fb0491615f1ebd1761e4145d41ee86dd2cc7bf80669f9f5ad9d6133d
+        run: |
+          set -e
+          cd "$RUNNER_TEMP"
+          curl -fsSLo syft.tar.gz "https://github.com/anchore/syft/releases/download/v${SYFT}/syft_${SYFT}_linux_amd64.tar.gz"
+          echo "${SYFT_SHA256}  syft.tar.gz" | sha256sum -c -
+          tar xzf syft.tar.gz syft
+          ./syft scan "dir:$GITHUB_WORKSPACE/server" -o "cyclonedx-json=$RUNNER_TEMP/sbom.cdx.json" -q
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom.cdx.json
+          retention-days: 7
+          if-no-files-found: error
+
   prepare:
+    needs: sbom
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -99,6 +130,16 @@ jobs:
             echo "- integrity: \`$integrity\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # SBOM が、バンドルして配る依存（THIRD_PARTY_NOTICES.md の表）を全部載せているか
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+      - name: SBOM と同梱の告知を照合する
+        run: |
+          set -eo pipefail
+          node scripts/check-sbom.mjs "$RUNNER_TEMP/sbom/sbom.cdx.json" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: tarball
@@ -107,7 +148,7 @@ jobs:
           if-no-files-found: error
 
   stage:
-    needs: prepare
+    needs: [sbom, prepare]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -118,6 +159,7 @@ jobs:
       pull-requests: read
       actions: read
       id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -159,6 +201,16 @@ jobs:
           set -e
           actual="$(sha512sum "$RUNNER_TEMP/release/$TGZ" | cut -d' ' -f1)"
           test "$actual" = "$SHA512"
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+      # 照合した同じ tarball に SBOM の attestation を付ける（npm の provenance とは別。gh attestation verify で確かめる）
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/release/${{ needs.prepare.outputs.tgz }}
+          sbom-path: ${{ runner.temp }}/sbom/sbom.cdx.json
 
       # 同じ version は二度 stage できない。この step が成功した後に run を再実行しない（失敗したら version を上げて出し直す）
       - name: npm へ stage する
