@@ -215,6 +215,8 @@ Dependabot opens pull requests to update the GitHub Actions used in CI. It does 
 
 Issues are welcome. Pull requests from outside contributors are closed without review, because the review tools here run with maintainer credentials and cannot safely check out code written by others.
 
+Changes that add or change behavior include automated tests in the same pull request. CI runs them with `bun run verify` on every pull request.
+
 ## License
 
 [MIT](https://github.com/iroha924/gleanery/blob/main/LICENSE). The published package bundles its dependencies. Their licenses are listed in `THIRD_PARTY_NOTICES.md` inside the package.
