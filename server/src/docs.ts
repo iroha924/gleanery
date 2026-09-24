@@ -37,7 +37,7 @@ const slug = (s: string): string =>
     .replace(/[`*_[\]()#]/g, "")
     .trim()
     .replace(/\s+/g, "-")
-    .slice(0, 60) || "本文";
+    .slice(0, 60) || "body";
 
 /**
  * Splits at headings. **Code fences are skipped.** Shell comments and frontmatter delimiters would turn into headings.
@@ -284,7 +284,7 @@ export function projectDocs(bodies: Map<string, string>, at: Map<string, string>
  * Version of how documents are projected into rows. **Bump it when splitting, labels, or metadata change.** The hash changes even
  * for the same text, and the next sync rewrites every document (without it, sections in the old shape stay).
  */
-const PROJECTION = 2;
+const PROJECTION = 3;
 
 /** Hash of one document. **When it matches, nothing is written to that document's rows.** Daily syncs do not rewrite every section. */
 export const docHash = (d: Doc): Buffer =>

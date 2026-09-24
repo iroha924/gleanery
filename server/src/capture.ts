@@ -98,7 +98,7 @@ export function fit(body: string): { body: string; truncated: boolean; originalB
   const z = tail(mask(tail(body, KEEP * 2)), KEEP);
   const cut = all - bytes(a) - bytes(z);
   return {
-    body: `${a}\n\n[中央 ${cut.toLocaleString("en-US")} bytes を保存していない]\n\n${z}`,
+    body: `${a}\n\n[${cut.toLocaleString("en-US")} bytes in the middle not saved]\n\n${z}`,
     truncated: true,
     originalBytes: all,
   };
@@ -280,7 +280,7 @@ export function answersOf(input: HookInput): string | null {
   if (!answers || typeof answers !== "object") return null;
   const lines = Object.entries(answers).map(([q, a]) => {
     const notes = response?.annotations?.[q]?.notes;
-    const memo = typeof notes === "string" && notes.trim() ? `\nメモ: ${notes.trim()}` : "";
+    const memo = typeof notes === "string" && notes.trim() ? `\nNotes: ${notes.trim()}` : "";
     return `Q: ${q}\nA: ${Array.isArray(a) ? a.join(" / ") : String(a)}${memo}`;
   });
   return lines.length ? lines.join("\n\n") : null;

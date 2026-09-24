@@ -82,3 +82,4 @@
 - test の期待値の大量の書き換えで、検査を弱める書き換え（正規表現を緩める）が混ざる。review-shipping に見てもらう
 - 共有の表示の経路を 2 つ持つ間、片方だけを直す誤りが出る。MCP の段で 1 つに戻す
 2026-09-24: 検査の字句解析は TypeScript 7 に JavaScript の API が無いので、server の devDependencies に js-tokens 10.0.0 を足して使う（npm で来歴・公開日・依存 0 を確認）。持ち主の Go を得た（devDependency に限る）。
+2026-09-24: 持ち主のゴール（英語の利用者は CLI と dashboard で、自分の記録以外の日本語を見ない）に合わせ、DB に入る gleanery の札も英語にした: 秘密の伏せ字、長い発言を切った印、AskUserQuestion のメモ、文書の節の key の既定値（PROJECTION を 3 へ）。持ち主の Go を得た（既存の DB は消してよい）。README の英語表示の注記は持ち主の判断で置かない。

@@ -105,23 +105,23 @@ export const visible = (s: string): string =>
 // **Every pattern stays linear in the input length.** The hook passes messages up to 128 KiB and trace passes unbounded text.
 // Quantifiers are never adjacent (competing for the same characters goes quadratic). Matching never starts mid-word (`eyJ-eyJ-…` goes quadratic).
 const SECRETS: [RegExp, string][] = [
-  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
-  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
-  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
-  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
-  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
-  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
-  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
-  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
-  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
-  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
-  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
+  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API key"],
+  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API key"],
+  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "webhook signing secret"],
+  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API key"],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, "API key"],
+  [/\bnpg_[A-Za-z0-9]{12,}/g, "database password"],
+  [/\bnapi_[A-Za-z0-9]{30,}/g, "API key"],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm token"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab token"],
+  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub token"],
+  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub token"],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack token"],
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack webhook"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS key"],
   [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
   // Values pasted outside a header. Only a capitalized Bearer with a value containing digits (so "the bearer src/app/v2/route.ts" survives).
-  [/\b(?:Bearer|BEARER)\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"],
+  [/\b(?:Bearer|BEARER)\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "auth header value"],
 ];
 // Authorization header values. Header, JSON, and code forms (`"Authorization": "Basic …"`) are treated alike.
 const AUTH_HEADER =
@@ -190,7 +190,7 @@ function maskFields(text: string): string {
     }
     if (!secretValue(quote !== "", value)) continue;
     if (!quote && value.length === 256) value += bareAt(BARE_REST, text, at + 256);
-    out += `${text.slice(last, at)}${quote}[伏せた]`;
+    out += `${text.slice(last, at)}${quote}[redacted]`;
     last = at + quote.length + value.length;
     FIELD_NAME.lastIndex = last;
   }
@@ -225,7 +225,7 @@ function maskPrivateKeys(text: string): string {
     while (e < ends.length && (ends[e]?.[0] ?? 0) < after) e++;
     const end = ends[e];
     if (!end) break;
-    out += `${text.slice(last, m.index)}[伏せた: 秘密鍵]`;
+    out += `${text.slice(last, m.index)}[redacted: private key]`;
     last = end[1];
   }
   return out + text.slice(last);
@@ -235,12 +235,12 @@ export function mask(text: string): string {
   // Mask assignments, headers, and URLs first (the whole value goes). Then mask the remaining bare keys by shape.
   let out = maskFields(
     maskPrivateKeys(text)
-      .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
-      .replace(AUTH_HEADER, "$1[伏せた]")
-      .replace(HEADER_BEARER, "$1[伏せた]")
-      .replace(ENV_ASSIGN, "$1$2[伏せた]"),
-  ).replace(MYSQL_COMMAND, (command) => command.replace(MYSQL_PASSWORD, "$1[伏せた]"));
-  for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
+      .replace(URL_CREDENTIALS, "$1[redacted]@$2")
+      .replace(AUTH_HEADER, "$1[redacted]")
+      .replace(HEADER_BEARER, "$1[redacted]")
+      .replace(ENV_ASSIGN, "$1$2[redacted]"),
+  ).replace(MYSQL_COMMAND, (command) => command.replace(MYSQL_PASSWORD, "$1[redacted]"));
+  for (const [re, what] of SECRETS) out = out.replace(re, `[redacted: ${what}]`);
   return out;
 }
 

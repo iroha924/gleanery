@@ -31,6 +31,8 @@ const ENGLISH = [
   "server/src/sessions.ts",
   "server/src/db.ts",
   "server/src/db-write.ts",
+  "server/src/text.ts",
+  "server/src/docs.ts",
   "scripts/check-english.mjs",
   "scripts/lib/english.mjs",
 ];
@@ -39,9 +41,7 @@ const ENGLISH = [
 const COMMENTS = [
   "server/src/knowledge.ts",
   "server/src/search.ts",
-  "server/src/docs.ts",
   "server/src/github.ts",
-  "server/src/text.ts",
   "server/src/capture.ts",
 ];
 
