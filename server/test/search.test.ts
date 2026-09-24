@@ -142,11 +142,11 @@ test("the per-source cap scales with limit", () => {
 test("the speaker label tells the owner, a named person, and the AI apart", () => {
   assert.equal(
     speakerLabel({ speaker_kind: "self", handle: null, display_name: null, is_self: null }),
-    "You",
+    "Owner",
   );
   assert.equal(
     speakerLabel({ speaker_kind: "person", handle: "iroha924", display_name: "平田", is_self: 1 }),
-    "You",
+    "Owner",
   );
   assert.equal(
     speakerLabel({ speaker_kind: "person", handle: "reviewer-a", display_name: "◯◯さん", is_self: 0 }),
@@ -419,7 +419,7 @@ test("read includes the options of a decision and applies the project filter to 
 // Even when more messages share a timestamp than the context window holds, the target message stays.
 test("surrounding messages are cut by time and order, and the target stays even with equal times", async () => {
   const out = await read(db.reader, [`m:${UUID(4)}`], 8192, { projects: [p1], around: 1 });
-  assert.match(out, /▶ \[your message\] You: 同じ時刻の発言 4/);
+  assert.match(out, /▶ \[owner message\] Owner: 同じ時刻の発言 4/);
   assert.match(out, /同じ時刻の発言 3/);
   assert.match(out, /同じ時刻の発言 5/);
 });

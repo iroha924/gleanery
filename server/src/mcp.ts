@@ -2,7 +2,7 @@
 // MCP server that lets Claude Code and Codex look up past decisions, conversations, and documents. **The database is read only** (the reader connection, sqlite.ts).
 // The only local write is ~/.gleanery/advice.jsonl, where check_path measures how well the hook works.
 //
-// The calling AI repeats searches with different words (agentic search). This server only returns ranked word search and exact matches.
+// The calling AI repeats searches with different words (agentic search). This server only returns ranked word search and substring matches.
 // Three tools: recall (search), read (read a reference), and check_path (constraints on a file before editing it).
 // **Responses are text content only.** With structuredContent, neither host passes the text to the model,
 // and declaring outputSchema makes the SDK throw when structuredContent is missing (plan chapter 2).
@@ -116,7 +116,7 @@ server.registerTool(
     title: "Search the past",
     description:
       "Searches past decisions, rejected options, constraints, dead ends, verifications, questions, and documents (mode: knowledge), " +
-      "only the paths not to take (mode: avoid), messages from you or others (mode: said), or work in progress (mode: resume). " +
+      "only the paths not to take (mode: avoid), messages from the owner (the person you work for) or others (mode: said), or work in progress (mode: resume). " +
       "Defaults to the current project. Results are candidates; read the full text with read. " +
       "It matches words, and saved records are often in Japanese, so on a miss search again with different words (Japanese and English, synonyms, short words). 0 results does not mean none. " +
       "knowledge without kinds returns JSON with decision records (records) and document sections (documents) in separate fields.",
@@ -132,7 +132,7 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "Whose messages for mode: said. me (default) is you, others is everyone else, anything else is a name or handle",
+          "Whose messages for mode: said. me (default) is the owner (the person you work for), others is everyone else, anything else is a name or handle",
         ),
       kinds: z
         .array(z.enum(KINDS))
