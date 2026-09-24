@@ -476,7 +476,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
       .toLocaleString("sv-SE")
       .slice(r.started.toDateString() === now.toDateString() ? 11 : 5, 16);
     const label = `MCP pid ${r.pid}`;
-    const aside = `(started ${when})`;
+    const aside = ` (started ${when})`;
     if (!r.root) {
       row(label, null, "unknown start directory", aside, "none");
       continue;

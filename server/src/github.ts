@@ -16,7 +16,7 @@ import type { DB } from "./db-types.ts";
 import { syncDecisions } from "./decisions.ts";
 import { conversationId, indexesMessage, type SpeakerKind } from "./knowledge.ts";
 import { connectorOf } from "./project.ts";
-import { bytes, clean, sha256, uuidFrom } from "./text.ts";
+import { bytes, clean, plural, sha256, uuidFrom } from "./text.ts";
 
 type User = { id: number; login: string } | null;
 
@@ -508,10 +508,10 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
   if (!counts) return "skipped (another sync stored a newer state after this one started reading)";
   const total = [...said.values()].reduce((n, l) => n + l.length, 0);
   return [
-    `${items.length} PRs and issues (${counts.itemsWritten} rewritten${counts.itemsRemoved ? `, ${counts.itemsRemoved} removed` : ""})`,
-    `${total} messages (${counts.messagesWritten} rewritten${counts.messagesRemoved ? `, ${counts.messagesRemoved} removed` : ""})`,
+    `${plural(items.length, "PR or issue", "PRs and issues")} (${counts.itemsWritten} rewritten${counts.itemsRemoved ? `, ${counts.itemsRemoved} removed` : ""})`,
+    `${plural(total, "message")} (${counts.messagesWritten} rewritten${counts.messagesRemoved ? `, ${counts.messagesRemoved} removed` : ""})`,
     counts.decisions.unlinked
       ? "PR decisions not imported (your GitHub handle is not linked. Run gleanery who --me <name> <handle>, then harvest again)"
-      : `PR decisions: ${counts.decisions.written} rows rewritten${counts.decisions.skipped ? ` (${counts.decisions.skipped} rows skipped for not matching the format)` : ""}`,
+      : `PR decisions: ${plural(counts.decisions.written, "row")} rewritten${counts.decisions.skipped ? ` (${plural(counts.decisions.skipped, "row")} skipped for not matching the format)` : ""}`,
   ].join(" / ");
 }

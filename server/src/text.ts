@@ -250,6 +250,9 @@ export function mask(text: string): string {
  */
 export const reason = (e: unknown): string => explain(e, 0) || "unknown failure";
 
+/** A count with its noun: `1 result`, `2 results`. Pass the plural when it is not the singular plus "s". */
+export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
 /** The reason text, or an empty string when nothing is known (callers join only the inner errors that are known). */
 function explain(e: unknown, depth: number): string {
   if (!(e instanceof Error)) {

@@ -11,7 +11,7 @@ import { kindColor, PALETTE } from "../palette.ts";
 import { inline, plain, width } from "../panel.ts";
 import type { Hit } from "../search.ts";
 import type { SessionDetail, SessionRow } from "../sessions.ts";
-import { ftsQuery, reason } from "../text.ts";
+import { ftsQuery, plural, reason } from "../text.ts";
 import type { Data, Mode } from "./data.ts";
 import { ICONS, statusIcon, TWINKLE } from "./icons.ts";
 import { renderMarkdown } from "./markdown.ts";
@@ -227,7 +227,7 @@ function SessionList(p: {
       h(
         Text,
         { key: "head", dimColor: true },
-        `${v.total} sessions${pages > 1 ? ` (page ${page} of ${pages}, ← → to turn)` : ""}`,
+        `${plural(v.total, "session")}${pages > 1 ? ` (page ${page} of ${pages}, ← → to turn)` : ""}`,
       ),
       h(List<SessionRow>, {
         key: "list",
@@ -378,7 +378,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
       h(
         Text,
         { key: w.ref },
-        `${statusIcon(w.status)} Work: ${oneLine(w.title)}(${statusName(w.status)}) Now: ${oneLine(w.current)}`,
+        `${statusIcon(w.status)} Work: ${oneLine(w.title)} (${statusName(w.status)}) Now: ${oneLine(w.current)}`,
       ),
     );
   return out;

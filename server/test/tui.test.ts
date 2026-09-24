@@ -234,7 +234,7 @@ test("セッションの一覧を出し、Enter で詳細、Esc で戻る", asyn
   const r = render(h(App, { data: fake() }));
   await settle(r);
   assert.match(r.lastFrame() ?? "", /認証を直すセッション/);
-  assert.match(r.lastFrame() ?? "", /1 sessions/);
+  assert.match(r.lastFrame() ?? "", /1 session\b/);
   r.stdin.write(ENTER);
   await settle(r);
   const frame = r.lastFrame() ?? "";
@@ -245,7 +245,7 @@ test("セッションの一覧を出し、Enter で詳細、Esc で戻る", asyn
   assert.match(frame, /\[decision\] 期限はサーバーで見る/);
   r.stdin.write(ESC);
   await settle(r);
-  assert.match(r.lastFrame() ?? "", /1 sessions/);
+  assert.match(r.lastFrame() ?? "", /1 session\b/);
   r.unmount();
 });
 

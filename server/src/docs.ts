@@ -14,7 +14,7 @@ import type { Kysely } from "kysely";
 import { inTransaction, iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { connectorOf } from "./project.ts";
-import { clean, sha256 } from "./text.ts";
+import { clean, plural, sha256 } from "./text.ts";
 
 export type Section = {
   /** A key unique within the project: `doc:<path>#<heading>` */
@@ -489,10 +489,10 @@ export async function syncDocs(
   }
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
-    `${docs.length} documents, ${sectionCount} sections`,
+    `${plural(docs.length, "document")}, ${plural(sectionCount, "section")}`,
     `${done.changed} rewritten`,
     done.removed ? `${done.removed} removed` : null,
-    skipped ? `${skipped} symlinks and submodules skipped` : null,
+    skipped ? `${plural(skipped, "symlink or submodule", "symlinks and submodules")} skipped` : null,
   ]
     .filter(Boolean)
     .join(" / ");

@@ -55,7 +55,7 @@ import {
   workDetail,
 } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
-import { ftsQuery, head, reason } from "./text.ts";
+import { ftsQuery, head, plural, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 import { runTui } from "./tui/tui.ts";
 import {
@@ -562,7 +562,7 @@ const excludeRoutes = buildRouteMap({
                       text: "No excluded paths (every document is imported)",
                     },
                   ],
-              rows.length ? `${rows.length} excluded` : "none excluded",
+              rows.length ? `${plural(rows.length, "path")} excluded` : "none excluded",
             ),
           );
         });
@@ -706,7 +706,7 @@ const projectRoutes = buildRouteMap({
                       text: "No registered projects. Register one with gleanery project add",
                     },
                   ],
-              cards.length ? `${cards.length} projects` : "none registered",
+              cards.length ? plural(cards.length, "project") : "none registered",
             ),
           );
         });
@@ -733,7 +733,7 @@ const projectRoutes = buildRouteMap({
             .execute();
           const p = hit[0];
           if (hit.length !== 1 || !p)
-            throw new Error(`${hit.length} projects match ${target}. Specify it by key`);
+            throw new Error(`${plural(hit.length, "project")} match ${target}. Specify it by key`);
           const x = await db
             .selectFrom("project")
             .select([
@@ -815,14 +815,18 @@ const traceRoutes = buildRouteMap({
             panel(
               "gleanery trace check",
               r.problems.map((p) => `${mark("fail")} ${p}`),
-              `${r.problems.length} problems`,
+              plural(r.problems.length, "problem"),
             ),
           );
           process.exitCode = 1;
           return;
         }
         console.log(
-          panel("gleanery trace check", [], `${mark("ok")} valid: ${r.trace?.items.length ?? 0} items`),
+          panel(
+            "gleanery trace check",
+            [],
+            `${mark("ok")} valid: ${plural(r.trace?.items.length ?? 0, "item")}`,
+          ),
         );
       },
     }),
@@ -855,7 +859,7 @@ const traceRoutes = buildRouteMap({
             panel(
               "gleanery trace save",
               [],
-              `stored: ${saved.written} items rewritten${saved.superseded ? `, ${saved.superseded} decisions superseded` : ""}`,
+              `stored: ${plural(saved.written, "item")} rewritten${saved.superseded ? `, ${plural(saved.superseded, "decision")} superseded` : ""}`,
             ),
           );
         });
@@ -1106,7 +1110,7 @@ const root = buildRouteMap({
                 lang: "en",
               }).then((x) => [...x.records, ...x.documents]);
           const where = place ? inline(place.name) : "all projects";
-          const end = `${hits.length ? `${hits.length} results` : "no results"} / ${where}`;
+          const end = `${hits.length ? plural(hits.length, "result") : "no results"} / ${where}`;
           // Agents read pipe output too (from Bash). It goes through the record frame (framed) and drops control characters in the text.
           // Terminals are read by people, so results are items with the label as a Badge
           if (!process.stdout.isTTY) {
@@ -1205,7 +1209,7 @@ const root = buildRouteMap({
                       ] as Block[])
                     : []),
                 ],
-                people.length ? `${people.length} people` : "directory is empty",
+                people.length ? plural(people.length, "person", "people") : "directory is empty",
               ),
             );
             return;

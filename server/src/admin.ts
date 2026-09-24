@@ -11,6 +11,7 @@ import { constants as C, type DatabaseSync } from "node:sqlite";
 import { dbDir } from "./assets.ts";
 import { dbFile, SCHEMA_REVISION } from "./db.ts";
 import { connectWriter } from "./db-write.ts";
+import { plural } from "./text.ts";
 import { indent } from "./tui/view.ts";
 
 /** Indented like other CLI output (the db command in cli.ts adds the heading and closing) */
@@ -262,7 +263,9 @@ export function reindex(file: string = dbFile()): void {
       };
     }),
   );
-  say(`Rebuilt the index: ${counts.knowledge} knowledge rows, ${counts.message} messages`);
+  say(
+    `Rebuilt the index: ${plural(counts.knowledge, "knowledge row")}, ${plural(counts.message, "message")}`,
+  );
 }
 
 /** Database state for doctor. Everything is read only; no file is modified. */
