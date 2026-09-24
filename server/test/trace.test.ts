@@ -57,7 +57,7 @@ test("通る記録は、決定の案を option の行にし、key を session �
 test("棄却した案と理由・確かめ方の無い決定を通さない", () => {
   assert.match(
     problems(base([decision({ options: [{ text: "FTS5", chosen: true }] })])),
-    /棄却した案と、その理由/,
+    /rejected option with its reason/,
   );
   assert.match(
     problems(
@@ -70,7 +70,7 @@ test("棄却した案と理由・確かめ方の無い決定を通さない", ()
         }),
       ]),
     ),
-    /why を書く/,
+    /write why for every option not chosen/,
   );
   assert.match(problems(base([decision({ confirmation: undefined })])), /confirmation/);
 });
@@ -78,7 +78,7 @@ test("棄却した案と理由・確かめ方の無い決定を通さない", ()
 test("根拠の無い fact と、理由の無い未実行の検証を通さない", () => {
   assert.match(
     problems(base([{ key: "f-1", kind: "finding", at, text: "SQLite は 3.50", confidence: "fact" }])),
-    /fact には refs か evidence/,
+    /fact needs refs or evidence/,
   );
   assert.deepEqual(
     checkTrace(
@@ -106,7 +106,7 @@ test("参照は、この記録の決定か別の session の key だけ", () => 
     problems(
       base([{ key: "v-1", kind: "verification", at, text: "型", status: "passed", verifies: "d-none" }]),
     ),
-    /d-none はこの記録の決定に無い/,
+    /d-none is not a decision in this record/,
   );
   assert.deepEqual(
     checkTrace(
@@ -120,7 +120,10 @@ test("参照は、この記録の決定か別の session の key だけ", () => 
 
 // 後継の無い superseded は、何に置き換わったのかが分からず迷子になる。
 test("superseded は、この記録の別の決定が覆していなければならない", () => {
-  assert.match(problems(base([decision({ status: "superseded" })])), /supersedes でこの key を指す/);
+  assert.match(
+    problems(base([decision({ status: "superseded" })])),
+    /point supersedes of the newer decision at this key/,
+  );
   const ok = checkTrace(
     base([
       decision({ status: "superseded" }),
@@ -139,7 +142,7 @@ test("superseded は、この記録の別の決定が覆していなければな
 test("この記録の中で覆された決定は superseded でなければならない", () => {
   assert.match(
     problems(base([decision(), decision({ key: "d-like", text: "LIKE に戻す", supersedes: "d-fts5" })])),
-    /d-like が覆しているので、status は superseded にする/,
+    /d-like supersedes it, so set status to superseded/,
   );
 });
 
@@ -184,9 +187,9 @@ test("知らない欄と、形の違う日時・パスを弾く", () => {
         },
       ]),
     ),
-    /相対パス/,
+    /relative to the project root/,
   );
-  assert.match(problems(base([decision(), decision()])), /重複/);
+  assert.match(problems(base([decision(), decision()])), /duplicated/);
 });
 
 // ---- 本物の SQLite へ入れる ----
@@ -324,7 +327,7 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
           ],
         }),
       ),
-      /互いに覆し合う/,
+      /supersede each other/,
     );
   } finally {
     await db.done();
@@ -337,7 +340,7 @@ test("このプロジェクトに無い決定を指す記録は、何も書か�
   try {
     const p = project(db);
     const t = valid(base([decision({ supersedes: "claude-code:other#d-none" })]));
-    await assert.rejects(saveTrace(db.ingest, p, t), /このプロジェクトに無い決定/);
+    await assert.rejects(saveTrace(db.ingest, p, t), /decisions not in this project/);
     assert.equal((db.owner.prepare("select count(*) as n from conversation").get() as { n: number }).n, 0);
   } finally {
     await db.done();

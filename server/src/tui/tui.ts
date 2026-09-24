@@ -1,4 +1,4 @@
-// `gleanery dashboard` の本体（端末の画面。Web の画面から移した）。CLI の出力も Ink で描くので、Ink ごと cli.js にバンドルする。
+// `gleanery dashboard` (the terminal screen, moved from the web screen). CLI output is also drawn with Ink, so Ink is bundled into cli.js.
 
 import { ThemeProvider } from "@inkjs/ui";
 import { render } from "ink";
@@ -10,10 +10,10 @@ import { earth } from "./theme.ts";
 import { part } from "./view.ts";
 
 export async function runTui(cwd: string): Promise<void> {
-  // 画面を描けない出力先（pipe・CI）では起動しない。読むだけの一覧は CLI が別に持つ
+  // Do not start where the screen cannot be drawn (pipes, CI). The CLI has separate read-only listings
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error(
-      "gleanery dashboard は端末の中でだけ動く。記録を引くだけなら `gleanery search <語>` を使う。",
+      "gleanery dashboard runs only in a terminal. To look up records, use `gleanery search <terms>`.",
     );
     process.exitCode = 1;
     return;
@@ -22,11 +22,13 @@ export async function runTui(cwd: string): Promise<void> {
   try {
     live = await liveData(cwd);
   } catch (e) {
-    throw new Error(`DB に繋げなかった（${reason(e)}）。\`gleanery doctor\` の DB の節で確かめる`);
+    throw new Error(
+      `Could not open the database (${reason(e)}). Check the DB section of \`gleanery doctor\`.`,
+    );
   }
   const { data, close } = live;
   try {
-    // @inkjs/ui の部品（読み込みの回転など）の色もアースカラーにする
+    // Use the earth tones for @inkjs/ui parts (such as the loading spinner) too
     const app = render(part(ThemeProvider, { theme: earth }, h(App, { data })), {
       alternateScreen: true,
       exitOnCtrlC: true,

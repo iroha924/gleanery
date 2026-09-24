@@ -30,6 +30,7 @@
     "@types/node": "^24.13.6",
     "@types/react": "19.3.0",
     "ink-testing-library": "4.0.0",
+    "js-tokens": "10.0.0",
     "kysely-codegen": "0.20.0",
     "lefthook": "^2.1.14",
     "typescript": "^7.0.2"

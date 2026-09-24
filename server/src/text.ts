@@ -1,24 +1,25 @@
-// 文字列の下ごしらえ。語の切り出し、全文索引の問い、ハッシュ、決定的な id、バイトでの切り詰め。
+// String preparation: splitting terms, full-text queries, hashes, deterministic ids, and cutting by bytes.
 //
-// **語は SQLite に切らせない。**FTS5 の既定の tokenizer は日本語を語に割れないので、索引側（DB の trigger が呼ぶ
-// gleanery_terms。server/src/db-write.ts が登録する）と問い合わせ側の両方で同じ関数（terms）を通す。
-// 両側が同じ切り方なら、辞書の差で片側だけ語がずれることが起きない。
+// **SQLite does not split terms.** FTS5's default tokenizer cannot split Japanese into words, so the index side (gleanery_terms,
+// called by database triggers and registered in server/src/db-write.ts) and the query side go through the same function (terms).
+// With the same splitting on both sides, dictionary differences never shift terms on one side only.
 
 import crypto from "node:crypto";
 
 const segmenter = new Intl.Segmenter("ja", { granularity: "word" });
 
-// ひらがなだけの語は助詞・助動詞・「こと」「ため」の類で、どの行にも当たって順位を薄める。
+// Hiragana-only terms are particles, auxiliaries, and similar function words; they match every row and dilute ranking.
+// english-exempt: the long vowel mark appears inside hiragana-only words, which must be treated alike
 const HIRAGANA_ONLY = /^[\p{Script=Hiragana}ー]+$/u;
 const STOP = new Set(["the", "a", "an", "of", "to", "in", "is", "and", "or", "for", "on", "it", "be"]);
-// Segmenter が割ってしまう識別子（ファイル名、snake_case、OT-123、#27）は丸ごとも語にする。
+// Identifiers the Segmenter splits (file names, snake_case, OT-123, #27) are also kept whole as terms.
 const IDENT = /#\d+|[a-z0-9][a-z0-9_./#-]*[a-z0-9]/g;
-// 長すぎる塊は語ではない（base64 やハッシュ）。
+// Overly long chunks are not terms (base64 or hashes).
 const MAX_TERM = 100;
 
 /**
- * 検索に使う語を出現順に返す（重複を含む）。取り込みと問い合わせで同じものを使う。
- * **規則を変えたら、既存の索引は古いまま残る。**変える PR は release の手順に `gleanery db reindex` を書く。
+ * Returns search terms in order of appearance (with duplicates). Imports and queries use the same function.
+ * **Changing the rules leaves existing indexes as they were.** A PR that changes them adds `gleanery db reindex` to its release steps.
  */
 export function terms(text: string): string[] {
   const norm = text.normalize("NFKC").toLowerCase();
@@ -33,9 +34,9 @@ export function terms(text: string): string[] {
 }
 
 /**
- * 問いの語のどれかに当たる FTS5 の問い。語が無ければ null（引かない）。
- * **語を必ず `"..."` で括り、中の `"` を二重にする。**括らないと `AND`・`NEAR`・`*`・`:`・`-` が FTS5 の演算子として
- * 読まれ、利用者の文字列が問いの構文を変える（`sql:live` は列の指定になる）。
+ * An FTS5 query matching any of the question's terms. null when there are no terms (no search).
+ * **Every term is wrapped in `"..."` with inner `"` doubled.** Unwrapped, `AND`, `NEAR`, `*`, `:`, and `-` would be read as FTS5
+ * operators and the user's text would change the query syntax (`sql:live` would become a column filter).
  */
 export function ftsQuery(question: string): string | null {
   const ws = [...new Set(terms(question))].slice(0, 24);
@@ -45,8 +46,8 @@ export function ftsQuery(question: string): string | null {
 export const sha256 = (s: string): Buffer => crypto.createHash("sha256").update(s).digest();
 
 /**
- * 部品から決定的に作る UUID（RFC 9562 の version 8）。同じ会話・同じ発言を 2 回送っても同じ id になるので、
- * 取り込みと自動記録の再送が `on conflict do nothing` だけで冪等になる。
+ * A UUID built deterministically from parts (RFC 9562 version 8). Sending the same conversation or message twice gives the same id,
+ * so resending imports and recordings stays idempotent with just `on conflict do nothing`.
  */
 export function uuidFrom(...parts: string[]): string {
   const b = crypto.createHash("sha256").update(parts.join("\u0000")).digest().subarray(0, 16);
@@ -58,7 +59,7 @@ export function uuidFrom(...parts: string[]): string {
 
 export const bytes = (s: string): number => Buffer.byteLength(s, "utf8");
 
-/** n バイト以内に先頭から詰める。文字の途中で切らない。 */
+/** Fits the start into n bytes without cutting a character. */
 export function head(s: string, n: number): string {
   if (bytes(s) <= n) return s;
   let out = "";
@@ -72,7 +73,7 @@ export function head(s: string, n: number): string {
   return out;
 }
 
-/** n バイト以内に末尾から詰める。 */
+/** Fits the end into n bytes. */
 export function tail(s: string, n: number): string {
   if (bytes(s) <= n) return s;
   const chars = [...s];
@@ -87,61 +88,61 @@ export function tail(s: string, n: number): string {
   return chars.slice(i).join("");
 }
 
-/** SQLite の length・substr は NUL の後ろを読まない（題が切れる）。外から来た文字列は入れる前にここを通す。 */
+/** SQLite length and substr stop reading at NUL (titles get cut). Outside strings go through here before storing. */
 export const clean = (s: string): string => s.replaceAll("\u0000", "");
 
 /**
- * Unicode が既定で見えないとする文字（Default_Ignorable_Code_Point。タグ文字・ゼロ幅・双方向の制御など）を落とし、
- * 人に見えない文をモデルにだけ読ませない。文字の結合に要る ZWJ・ZWNJ と、絵文字・異体字に要る異体字セレクタは残す
- * （タグ列でできた地域旗とソフトハイフンは崩れるが、落とす側を取る）。残した文字も並べれば文を運べる。そこへの守りは
- * framed の札である。
+ * Drops characters Unicode treats as invisible by default (Default_Ignorable_Code_Point: tag characters, zero-width, bidi controls)
+ * so models are never fed text people cannot see. ZWJ and ZWNJ, needed to join characters, and variation selectors for emoji stay
+ * (tag-sequence flags and soft hyphens break, but dropping wins). The kept characters can still carry text when lined up; the guard
+ * against that is the framed tag.
  */
 export const visible = (s: string): string =>
   s.replace(/(?!\p{Join_Control}|\p{Variation_Selector})\p{Default_Ignorable_Code_Point}/gu, "");
 
-// 貼ってしまったキーを DB・待ち行列へ入れない。**伏せるのは形で分かるものだけ**（推測で文を消さない）。
-// 形は 5 つ: 接頭辞の決まったキー、キーの名前への代入（KEY=… / "password": "…"）、URL に埋めた資格情報、認証ヘッダの値、
-// `mysql -p` のパスワード。載っていない形式のキーは伏せられない。貼らないのが先で、これは取りこぼしを減らす網である。
-// **どれも入力の長さに対して線形で終わる形に保つ。**フックは 128 KiB までの発言を、trace は上限の無い本文を通す。
-// 量指定子を隣り合わせない（同じ文字を取り合って二乗になる）。語の途中から照合を始めない（`eyJ-eyJ-…` で二乗になる）。
+// Pasted keys never enter the database or the queue. **Only what is recognizable by shape is masked** (no guessing away text).
+// Five shapes: keys with known prefixes, assignments to key names (KEY=… / "password": "…"), credentials in URLs, auth header values,
+// and `mysql -p` passwords. Keys in other formats are not masked. Not pasting comes first; this is a net that catches some misses.
+// **Every pattern stays linear in the input length.** The hook passes messages up to 128 KiB and trace passes unbounded text.
+// Quantifiers are never adjacent (competing for the same characters goes quadratic). Matching never starts mid-word (`eyJ-eyJ-…` goes quadratic).
 const SECRETS: [RegExp, string][] = [
-  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API キー"],
-  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "Webhook の署名鍵"],
-  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API キー"],
-  [/\bAIza[0-9A-Za-z_-]{35}/g, "API キー"],
-  [/\bnpg_[A-Za-z0-9]{12,}/g, "DB のパスワード"],
-  [/\bnapi_[A-Za-z0-9]{30,}/g, "API キー"],
-  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm のトークン"],
-  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab のトークン"],
-  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub トークン"],
-  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub トークン"],
-  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack トークン"],
-  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack の Webhook"],
-  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS のキー"],
+  [/\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}/g, "API key"],
+  [/\b[srp]k_(?:live|test)_[A-Za-z0-9]{16,}/g, "API key"],
+  [/\bwhsec_[A-Za-z0-9+/=]{16,}/g, "webhook signing secret"],
+  [/\bpa-[A-Za-z0-9_-]{20,}/g, "API key"],
+  [/\bAIza[0-9A-Za-z_-]{35}/g, "API key"],
+  [/\bnpg_[A-Za-z0-9]{12,}/g, "database password"],
+  [/\bnapi_[A-Za-z0-9]{30,}/g, "API key"],
+  [/\bnpm_[A-Za-z0-9]{36}\b/g, "npm token"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "GitLab token"],
+  [/\bgh[pousr]_[A-Za-z0-9]{30,}/g, "GitHub token"],
+  [/\bgithub_pat_[A-Za-z0-9_]{40,}/g, "GitHub token"],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "Slack token"],
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "Slack webhook"],
+  [/\bAKIA[0-9A-Z]{16}\b/g, "AWS key"],
   [/(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "JWT"],
-  // ヘッダの外に貼った値。大文字の Bearer と数字を含む値だけ（「the bearer src/app/v2/route.ts」を消さない）。
-  [/\b(?:Bearer|BEARER)\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "認証ヘッダの値"],
+  // Values pasted outside a header. Only a capitalized Bearer with a value containing digits (so "the bearer src/app/v2/route.ts" survives).
+  [/\b(?:Bearer|BEARER)\s+(?=[A-Za-z0-9._~+/=-]{0,512}\d)[A-Za-z0-9._~+/=-]{16,}/g, "auth header value"],
 ];
-// Authorization ヘッダの値。ヘッダ・JSON・コードの形（`"Authorization": "Basic …"`）を同じに扱う。
+// Authorization header values. Header, JSON, and code forms (`"Authorization": "Basic …"`) are treated alike.
 const AUTH_HEADER =
   /(\bAuthorization["']?\s*[:=]\s*(?:["']\s*)?(?:Bearer|Basic|Token|Digest)\s+)[A-Za-z0-9._~+/=-]{8,}/gi;
-// ほかの名前のヘッダに入れた bearer の値（`-H "X-Auth: bearer …"`、`{"X-Auth": "bearer …"}`）。
+// bearer values in headers with other names (`-H "X-Auth: bearer …"`, `{"X-Auth": "bearer …"}`).
 const HEADER_BEARER = /(:[ \t]*(?:["'][ \t]*)?bearer[ \t]+)[A-Za-z0-9._~+/=-]{16,}/gi;
-// 環境変数の形（大文字の名前への代入）。**値が変数の参照なら伏せない**（`PASSWORD=$DB_PASSWORD`）。
-// KEY は単独か、語の区切り（`_`）かキーの語（MASTERKEY）の後だけ。PASS・PWD は `_` の後だけ
-// （MONKEY=banana、COMPASS=north と、シェルの作業ディレクトリ PWD=/Users/… を消さない）。
+// Environment variable form (assignment to an uppercase name). **Values that reference a variable are not masked** (`PASSWORD=$DB_PASSWORD`).
+// KEY stands alone or follows a word separator (`_`) or a key word (MASTERKEY). PASS and PWD only follow `_`
+// (so MONKEY=banana, COMPASS=north, and the shell's PWD=/Users/… survive).
 const ENV_ASSIGN =
   /\b((?:[A-Z][A-Z0-9_]*_)?(?:API|SECRET|MASTER|ENCRYPTION|PRIVATE|ACCESS|SIGNING|AUTH)?KEY|[A-Z][A-Z0-9_]*_(?:PASS|PWD)|(?:[A-Z][A-Z0-9_]*?)?(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?))(\s*=\s*)(?:"(?!\$)[^"\n]+"|'(?!\$)[^'\n]+'|(?![$"'])[^\s"']+)/g;
-// 設定ファイル・JSON・ヘッダ・URL・コードの形（名前がキーの語で終わる。`:` `=` `:=` `=>`）。照合はキーの語から始め、
-// 名前の前半は見ない。
+// Config files, JSON, headers, URLs, and code (names ending in a key word, with `:` `=` `:=` `=>`). Matching starts at the key word
+// and ignores the front of the name.
 const FIELD_NAME =
   /(?:(?:api|account|access|private|secret)[-_]?key|secret|token|passw(?:or)?d)["']?\s*(?::=|=>|[:=])\s*/gi;
-/** 引用符で囲んだ値として読む長さの上限。越える値は判定しない。 */
+/** Maximum length read as a quoted value. Longer values are not judged. */
 const MAX_QUOTED = 4096;
 /**
- * 囲まない値は、先頭の 256 字でキーらしいかを決め、伏せるときだけ続きを最後まで読む（キーの語ごとに長く読み直さない）。
- * URL の次の引数（`&user=…`）は値に含めない。パスワードの中の `&`（`Xk9&mZ2p`）は値に含める。
+ * Unquoted values are judged as key-like from their first 256 characters, and read to the end only when masked (not reread per key word).
+ * The next URL parameter (`&user=…`) is not part of the value. An `&` inside a password (`Xk9&mZ2p`) is.
  */
 const BARE_HEAD = /[^\s"',;)]{1,256}/y;
 const BARE_REST = /[^\s"',;)]*/y;
@@ -153,11 +154,11 @@ const bareAt = (re: RegExp, text: string, at: number): string => {
   return cut < 0 ? v : v.slice(0, cut);
 };
 /**
- * 代入の値がキーらしいか。**キーの名前に付いた値は、伏せる側に倒す**（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
- *   変数の参照（`${…}`、`$NAME`）は伏せない
- *   囲まない値: 数字と英字を両方含む 8 文字以上（`token = getToken()`、`password: string`、`#ff00aa` を消さない）
- *   囲んだ値: 8 文字以上は伏せる。例外は CSS の色、英数字を含まない文言（日本語だけ）、数字と英字の混ざった語を
- *   1 つも持たない文（`"Password is required"`）。英字だけの合言葉を空白で区切った値も文と区別できないので残る
+ * Whether an assigned value looks like a key. **Values attached to key names lean toward masking** (a leak cannot be undone; over-masking only loses a word).
+ *   Variable references (`${…}`, `$NAME`) are not masked
+ *   Unquoted values: 8 or more characters mixing digits and letters (so `token = getToken()`, `password: string`, `#ff00aa` survive)
+ *   Quoted values: 8 or more characters are masked. Exceptions: CSS colors, text without ASCII letters or digits (for example only Japanese), and
+ *   sentences with no word mixing digits and letters (`"Password is required"`). Letter-only passphrases separated by spaces also survive, since they look like sentences
  */
 function secretValue(quoted: boolean, v: string): boolean {
   if (v.length < 8 || /^\$(?:\{|[A-Za-z_])/.test(v)) return false;
@@ -167,8 +168,8 @@ function secretValue(quoted: boolean, v: string): boolean {
 }
 
 /**
- * キーの名前への代入を伏せる。**伏せなかった値の中も続けて見る**（`?refresh_token=$RT&client_secret=…` の後ろのキー、
- * `"token": "run it with password='…'"` の中のキー）。伏せた値は読み飛ばすので、読む量は入力の長さに比例する。
+ * Masks assignments to key names. **Values left unmasked are still scanned** (the key after `?refresh_token=$RT&client_secret=…`,
+ * the key inside `"token": "run it with password='…'"`). Masked values are skipped, so the work stays proportional to input length.
  */
 function maskFields(text: string): string {
   let out = "";
@@ -190,28 +191,28 @@ function maskFields(text: string): string {
     }
     if (!secretValue(quote !== "", value)) continue;
     if (!quote && value.length === 256) value += bareAt(BARE_REST, text, at + 256);
-    out += `${text.slice(last, at)}${quote}[伏せた]`;
+    out += `${text.slice(last, at)}${quote}[redacted]`;
     last = at + quote.length + value.length;
     FIELD_NAME.lastIndex = last;
   }
   return out + text.slice(last);
 }
 
-// `mysql -p<パスワード>`（-p の直後に空白を置かない形だけがパスワードを持つ）。同じコマンドの中（`&&` `;` `|` と
-// 改行まで。引用符の中の区切りは区切りでなく、`\` で継いだ行は続き）の最初の -p だけを伏せる
-// （後ろの `ssh -p2222`、`cp -pr` を消さない）。
+// `mysql -p<password>` (only the form with no space after -p carries a password). Only the first -p within the same command (up to
+// `&&` `;` `|` and newlines; separators inside quotes do not count, and lines continued with `\` continue) is masked
+// (so a later `ssh -p2222` or `cp -pr` survives).
 const MYSQL_COMMAND = /\bmysql(?:dump|admin)?\b(?:'[^'\n]*'|"[^"\n]*"|[^\n;&|\\'"]|\\\r?\n|\\(?!\r?\n))*/g;
 const MYSQL_PASSWORD = /(\s-p)(?:'[^'\n]*'|"[^"\n]*"|(?=[^\s-])\S+)/;
-// URL の資格情報は、パスワードに @ を含んでも host の直前の @ まで伏せる。どこへ繋いだかは話の中身として残す。
-// userinfo は最初の `/` より前にしか無い（`http://localhost:5173/@vite` のポートを伏せない）。ここで切ると線形で終わる。
+// URL credentials are masked up to the @ right before the host, even when the password contains @. Where it connected stays as content.
+// userinfo appears only before the first `/` (so the port in `http://localhost:5173/@vite` is not masked). Cutting there keeps it linear.
 const URL_CREDENTIALS =
   /\b((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|rediss?|amqps?|https?):\/\/[^:\s/@]*:)[^\s/]*@([^@\s/?#]+)/g;
 const KEY_BEGIN = /-----BEGIN [A-Z ]*PRIVATE KEY-----/g;
 const KEY_END = /-----END [A-Z ]*PRIVATE KEY-----/g;
 
 /**
- * 秘密鍵の BEGIN から次の END までを伏せる。END の位置を先に 1 回で集める — 正規表現の最短一致で探すと、
- * END の無い BEGIN が並んだ入力で、BEGIN ごとに末尾まで読み直して二乗に伸びる。
+ * Masks from a private key's BEGIN to the next END. END positions are collected in one pass first — a lazy regex match would reread
+ * to the end for every BEGIN when many BEGINs have no END, going quadratic.
  */
 function maskPrivateKeys(text: string): string {
   const ends = [...text.matchAll(KEY_END)].map((m) => [m.index, m.index + m[0].length] as const);
@@ -225,41 +226,44 @@ function maskPrivateKeys(text: string): string {
     while (e < ends.length && (ends[e]?.[0] ?? 0) < after) e++;
     const end = ends[e];
     if (!end) break;
-    out += `${text.slice(last, m.index)}[伏せた: 秘密鍵]`;
+    out += `${text.slice(last, m.index)}[redacted: private key]`;
     last = end[1];
   }
   return out + text.slice(last);
 }
 
 export function mask(text: string): string {
-  // 代入・ヘッダ・URL を先に伏せる（値ごと消える）。残った裸のキーを形で伏せる。
+  // Mask assignments, headers, and URLs first (the whole value goes). Then mask the remaining bare keys by shape.
   let out = maskFields(
     maskPrivateKeys(text)
-      .replace(URL_CREDENTIALS, "$1[伏せた]@$2")
-      .replace(AUTH_HEADER, "$1[伏せた]")
-      .replace(HEADER_BEARER, "$1[伏せた]")
-      .replace(ENV_ASSIGN, "$1$2[伏せた]"),
-  ).replace(MYSQL_COMMAND, (command) => command.replace(MYSQL_PASSWORD, "$1[伏せた]"));
-  for (const [re, what] of SECRETS) out = out.replace(re, `[伏せた: ${what}]`);
+      .replace(URL_CREDENTIALS, "$1[redacted]@$2")
+      .replace(AUTH_HEADER, "$1[redacted]")
+      .replace(HEADER_BEARER, "$1[redacted]")
+      .replace(ENV_ASSIGN, "$1$2[redacted]"),
+  ).replace(MYSQL_COMMAND, (command) => command.replace(MYSQL_PASSWORD, "$1[redacted]"));
+  for (const [re, what] of SECRETS) out = out.replace(re, `[redacted: ${what}]`);
   return out;
 }
 
 /**
- * 例外の理由の文。中のエラー（AggregateError の errors と cause）の理由も添える。Node の接続は、複数のアドレスが
- * すべて拒まれると理由の文が空の AggregateError を返し、fetch は本当の理由（名前解決の失敗など）を cause にだけ持つ。
+ * The reason text of an error, with the reasons of inner errors (AggregateError errors and cause). When every address of a Node
+ * connection is refused it returns an AggregateError with an empty message, and fetch keeps the real reason (a DNS failure) only in cause.
  */
-export const reason = (e: unknown): string => explain(e, 0) || "理由の分からない失敗";
+export const reason = (e: unknown): string => explain(e, 0) || "unknown failure";
 
-/** 理由の文。何も分からなければ空文字（呼び出し側が、中のエラーのうち分かったものだけをつなぐ）。 */
+/** A count with its noun: `1 result`, `2 results`. Pass the plural when it is not the singular plus "s". */
+export const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
+
+/** The reason text, or an empty string when nothing is known (callers join only the inner errors that are known). */
 function explain(e: unknown, depth: number): string {
   if (!(e instanceof Error)) {
     try {
       return String(e);
     } catch {
-      return ""; // null prototype のオブジェクトは文字列にできない
+      return ""; // an object with a null prototype cannot become a string
     }
   }
-  // 理由の文が空なら、種類の名前（TimeoutError など）を理由にする。Error と AggregateError は何も言っていないので使わない。
+  // With an empty message, use the error name (TimeoutError and so on). Error and AggregateError say nothing, so they are not used.
   const own = e.message || (e.name === "Error" || e.name === "AggregateError" ? "" : e.name);
   const parts: unknown[] =
     depth >= 3
@@ -269,5 +273,5 @@ function explain(e: unknown, depth: number): string {
     .map((x) => explain(x, depth + 1))
     .filter(Boolean)
     .join(" / ");
-  return own && inner ? `${own}（${inner}）` : own || inner;
+  return own && inner ? `${own} (${inner})` : own || inner;
 }

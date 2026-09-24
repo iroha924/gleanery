@@ -68,20 +68,20 @@ test("例外の理由の文は、中のエラー（AggregateError の errors と
   const fetchFailed = new Error("fetch failed", {
     cause: new Error("getaddrinfo ENOTFOUND api.example.com"),
   });
-  assert.equal(reason(fetchFailed), "fetch failed（getaddrinfo ENOTFOUND api.example.com）");
+  assert.equal(reason(fetchFailed), "fetch failed (getaddrinfo ENOTFOUND api.example.com)");
   assert.equal(reason(new Error("キーが無い")), "キーが無い");
-  assert.equal(reason(new Error("")), "理由の分からない失敗");
+  assert.equal(reason(new Error("")), "unknown failure");
   // 理由の文が空なら種類の名前を理由にし、中のエラーのうち分かったものだけをつなぐ。
   const timeout = new Error("");
   timeout.name = "TimeoutError";
   assert.equal(reason(timeout), "TimeoutError");
   assert.equal(reason(new AggregateError([new Error(""), new Error("b")])), "b");
   assert.equal(reason(new AggregateError([], "", { cause: new Error("c") })), "c");
-  assert.equal(reason(new AggregateError([])), "理由の分からない失敗");
-  assert.equal(reason(Object.create(null)), "理由の分からない失敗");
+  assert.equal(reason(new AggregateError([])), "unknown failure");
+  assert.equal(reason(Object.create(null)), "unknown failure");
   // 自分を cause に持つエラーでも止まる。
   const loop = new Error("a");
   loop.cause = loop;
-  assert.equal(reason(loop), "a（a（a（a）））");
+  assert.equal(reason(loop), "a (a (a (a)))");
   assert.equal(reason("文字列"), "文字列");
 });

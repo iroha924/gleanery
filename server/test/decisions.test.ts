@@ -198,7 +198,7 @@ test("merge した持ち主の PR の本文だけを、決定と案にして入�
     assert.ok(r.every((x) => x.source_item_id === mine.source));
     assert.ok(r.slice(1).every((x) => x.decision_id === r[0]?.id));
     assert.match(r[0]?.source_key ?? "", /^github:o\/r\/pull\/117#[0-9a-f]{12}-1$/);
-    assert.equal(r[0]?.heading, "PR #117（2026-09-20）の判断");
+    assert.equal(r[0]?.heading, "Decisions in PR #117 (2026-09-20)");
     // 判断が 1 つも取れない本文（古い PR の自由な文）の行は数えない（毎回同じ数を出さない）
     const free = await syncDecisions(db.ingest, p, "o/r", input(SECTION("- 自由な文\n- もう 1 つ")));
     assert.equal(free.skipped, 0);

@@ -14,9 +14,6 @@ gleanery records your coding sessions and the decisions made in them.
 You or your agent can then look up what was decided, what was rejected, and why, before making the same call again.
 The database is a single SQLite file on your machine.
 
-> [!NOTE]
-> The `gleanery` CLI, the terminal dashboard, and the plugin skills currently speak Japanese. Search works with both Japanese and English text.
-
 ## Features
 
 - **Look things up while you work.** The MCP tools `recall` and `read` let Claude Code and Codex search past decisions, rejected options, constraints, dead ends, and what you or others said in earlier sessions.

@@ -30,6 +30,9 @@ pre-commit:
     - name: architecture
       glob: "{server/src/**/*.ts,scripts/check-architecture.mjs}"
       run: bun run architecture
+    - name: english
+      glob: "{server/src/*.ts,server/src/**/*.ts,scripts/check-english.mjs,scripts/lib/english.mjs}"
+      run: bun run english
     - name: codegen
       glob: "{db/schema.sql,server/src/db-types.ts,server/src/kysely-node-sqlite.ts,server/package.json,server/bun.lock,scripts/codegen.mjs}"
       run: bun run codegen:check

@@ -111,7 +111,7 @@ test("session の詳細は発言・触ったファイル・知識・作業をま
       ["assistant", ["server/src/db.ts"]],
     ],
   );
-  assert.equal(found?.knowledge[0]?.label, "【採用した決定】");
+  assert.equal(found?.knowledge[0]?.label, "[decision]");
   assert.deepEqual(found?.work[0]?.next, ["次"]);
 });
 
@@ -180,6 +180,6 @@ test("題の無い session は session id を名指す", async () => {
     started_at: at("2026-09-08T00:00:00Z"),
   });
   const page = await listSessions(db.reader, { project: p4, page: 1, pageSize: 30 });
-  assert.equal(page.items[0]?.title, "（題なし）only-trace");
-  assert.equal((await sessionDetail(db.reader, "c-none"))?.title, "（題なし）only-trace");
+  assert.equal(page.items[0]?.title, "(untitled) only-trace");
+  assert.equal((await sessionDetail(db.reader, "c-none"))?.title, "(untitled) only-trace");
 });

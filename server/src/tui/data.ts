@@ -1,6 +1,6 @@
-// TUI が読むものの口。**SQL をここにも画面にも書かない** — MCP・CLI と同じ関数（sessions.ts・search.ts）を呼ぶ。
-// 接続は reader だけで、この module から書く接続（db-write.ts）へ import を辿らせない（`bun run architecture`）。
-// プロセスの分離ではない — dashboard は CLI と同じプロセスで動き、バンドルした cli.js には書く接続も入っている。
+// What the dashboard reads. **No SQL here or in the screens** — call the same functions as MCP and the CLI (sessions.ts, search.ts).
+// Only reader connections. Imports from this module never reach a writing connection (db-write.ts) (`bun run architecture`).
+// This is not process isolation — the dashboard runs in the CLI process, and the bundled cli.js also contains writing connections.
 
 import { openReader } from "../db.ts";
 import { identify, projectId } from "../project.ts";
@@ -26,22 +26,22 @@ import {
 
 export type Mode = "knowledge" | "said";
 
-/** 画面が使う読み出し。test では偽の関数を渡す。 */
+/** Reads the screens use. Tests pass fakes. */
 export type Data = {
-  /** 起動した場所のプロジェクト。未登録なら project は null で、全部のプロジェクトを見る */
+  /** The project where the dashboard started. When unregistered, project is null and every project is shown */
   here: { project: number | null; name: string | null };
   projects(): Promise<Project[]>;
   sessions(project: number | null, page: number, pageSize: number): Promise<SessionsPage>;
   session(id: string): Promise<SessionDetail | null>;
-  /** more は上限で切れたとき true */
+  /** more is true when the list was cut at the limit */
   works(project: number | null): Promise<{ items: Work[]; more: boolean }>;
   work(ref: string, project: number | null): Promise<WorkDetail | null>;
   search(question: string, mode: Mode, project: number | null): Promise<Hit[]>;
-  /** 参照の先が無ければ null */
+  /** null when the reference points to nothing */
   read(ref: string, project: number | null): Promise<string | null>;
 };
 
-/** 全文を読むときの上限。MCP の read（8KB）より広く取る — 人が画面で読むので、切った先を読みに行く手段が無い。 */
+/** Limit for reading a full record. Wider than MCP read (8KB) — a person reads it on screen and has no way to fetch the rest. */
 const READ_BYTES = 64 * 1024;
 
 const scope = (project: number | null) => (project === null ? null : [project]);
@@ -56,16 +56,22 @@ export async function liveData(cwd: string): Promise<{ data: Data; close: () => 
     sessions: (p, page, pageSize) => listSessions(db, { project: p, page, pageSize }),
     session: (id) => sessionDetail(db, id),
     works: (p) => listWork(db, scope(p)),
-    work: (ref, p) => workDetail(db, Number(ref.replace(/^w:/, "")), scope(p)),
-    // MCP の recall と同じ関数・同じ順位。判断の記録の後に文書の節を並べる。
+    work: (ref, p) => workDetail(db, Number(ref.replace(/^w:/, "")), scope(p), undefined, "en"),
+    // Same function and ranking as MCP recall. Document sections follow the decision records.
     search: async (question, mode, p) => {
-      if (mode === "said") return searchMessages(db, { question, projects: scope(p), who: "me", limit: 20 });
-      const { records, documents } = await searchSplit(db, { question, projects: scope(p), limit: 20 });
+      if (mode === "said")
+        return searchMessages(db, { question, projects: scope(p), who: "me", limit: 20, lang: "en" });
+      const { records, documents } = await searchSplit(db, {
+        question,
+        projects: scope(p),
+        limit: 20,
+        lang: "en",
+      });
       return [...records, ...documents];
     },
     read: async (ref, p) => {
-      const text = await read(db, [ref], READ_BYTES, { projects: scope(p) });
-      return text === missing(ref) ? null : text;
+      const text = await read(db, [ref], READ_BYTES, { projects: scope(p), lang: "en" });
+      return text === missing(ref, "en") ? null : text;
     },
   };
   return { data, close: () => db.destroy() };

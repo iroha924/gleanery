@@ -1,12 +1,12 @@
-// リポジトリの Markdown を、原文（source_item）と検索用の節（knowledge の document）にする。
+// Turns the repository's Markdown into source text (source_item) and searchable sections (knowledge of kind document).
 //
-// **コードは入れないが、文書は入れる。**設計文書と ADR は「なぜそうしたか」で、リポジトリが消えれば読む先も消える。
-// **見出しで切る。**1 本を丸ごと 1 件にすると、長い設計書の語が 1 件に混ざり、どの節の話かが分からなくなる。
-// **原文は別に持つ。**節は見出しだけの節を落とすので、連結しても元の Markdown に戻らない。画面は原文を出す。
+// **Code is not imported, documents are.** Design docs and ADRs say why things are the way they are, and they vanish with the repository.
+// **Split at headings.** One entry per file mixes the terms of a long design doc into one hit and hides which section it came from.
+// **The source text is kept separately.** Heading-only sections are dropped, so joining sections does not restore the Markdown. Screens show the source.
 //
-// **正は remote の既定 branch の commit で、作業ツリーは読まない。**作業ツリーを読むと、どの PC の・どの branch の・
-// 書きかけの状態が DB に入るかが同期した順で決まる（branch の切り替え、未 push の commit、古い clone で巻き戻る）。
-// 一覧・本文・manifest・更新日を 1 つの commit の tree から読むので、読む順も filesystem の symlink も関係しない。
+// **The truth is the commit on the remote's default branch; the working tree is never read.** Reading it would let sync order decide which
+// machine's, which branch's, half-written state lands in the database (branch switches, unpushed commits, and old clones would roll it back).
+// The list, bodies, manifest, and dates all come from one commit's tree, so read order and filesystem symlinks do not matter.
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -14,21 +14,21 @@ import type { Kysely } from "kysely";
 import { inTransaction, iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { connectorOf } from "./project.ts";
-import { clean, sha256 } from "./text.ts";
+import { clean, plural, sha256 } from "./text.ts";
 
 export type Section = {
-  /** プロジェクトの中で一意な key。`doc:<path>#<見出し>` */
+  /** A key unique within the project: `doc:<path>#<heading>` */
   key: string;
   path: string;
   title: string;
-  /** 祖先の見出しをつないだ道。検索の見出しになる */
+  /** The path of ancestor headings. It becomes the search heading */
   trail: string;
   text: string;
 };
 
-/** 1 つの節の上限。**超えたぶんは捨てずに続きの節へ回す。**リポジトリが消えた後は取り直せない。 */
+/** Limit for one section. **The excess moves to the next section instead of being dropped.** Once the repository is gone it cannot be fetched again. */
 const MAX = 4000;
-/** 1 ファイルの上限。これを超える .md は文書ではない（生成物かデータの取り違え）。 */
+/** Limit for one file. A .md file larger than this is not a document (a generated file or misplaced data). */
 const MAX_FILE = 2 * 1024 * 1024;
 
 const slug = (s: string): string =>
@@ -37,15 +37,15 @@ const slug = (s: string): string =>
     .replace(/[`*_[\]()#]/g, "")
     .trim()
     .replace(/\s+/g, "-")
-    .slice(0, 60) || "本文";
+    .slice(0, 60) || "body";
 
 /**
- * 見出しで節に割る。**コードフェンスの中は見ない。**シェルのコメントや frontmatter の区切りが見出しに化ける。
- * フェンスは開いたときと同じ文字で、同じ長さ以上の、info の無い行でだけ閉じる（CommonMark）。
- * 4 つのバッククォートで囲んだ例の中の 3 つのバッククォートで閉じたと読むと、例の中の見出しが節になる。
+ * Splits at headings. **Code fences are skipped.** Shell comments and frontmatter delimiters would turn into headings.
+ * A fence closes only on a line with the same character, at least the same length, and no info string (CommonMark).
+ * Reading three backticks inside an example fenced with four as a close would turn headings in the example into sections.
  */
 export function sections(rel: string, body: string): Section[] {
-  // JS の `.` は `\r` を行終端として扱うので、CRLF の見出しが一致しない。BOM は先頭の見出しを落とす。
+  // JS `.` treats `\r` as a line terminator, so CRLF headings would not match. A BOM would drop the first heading.
   const lines = body
     .replace(/^\uFEFF/, "")
     .split("\n")
@@ -65,9 +65,9 @@ export function sections(rel: string, body: string): Section[] {
   const flush = (): void => {
     const raw = cur.buf.join("\n").trim();
     if (!raw) return;
-    // 見出しだけの節は置かない。中身は子が持ち、見出しは子の trail に残る。
+    // Heading-only sections are not stored. Their children hold the content, and the heading stays in the children's trail.
     if (cur.level > 0 && raw === cur.buf.find((l) => l.trim())?.trim()) return;
-    // 上限で割る。段落の切れ目で割る — 文の途中で切ると両側とも読めなくなる。
+    // Split at the limit, between paragraphs — cutting mid-sentence makes both sides unreadable.
     const parts: string[] = [];
     let rest = raw;
     while (rest.length > MAX) {
@@ -79,8 +79,8 @@ export function sections(rel: string, body: string): Section[] {
     parts.push(rest);
     for (const text of parts) {
       const base = `doc:${rel}#${slug(cur.title)}`;
-      // 同じ題の節は 1 つのファイルに何度も出る（「## 背景」など）。番号で分けないと後勝ちで前の節が消える。
-      // 番号を付けた key が別の見出し（「## 背景:2」）と重ならないよう、使った key 全体で一意にする。
+      // Sections with the same title appear many times in one file (such as "## Background"). Without numbers the last one would win.
+      // Keys are unique across all used keys, so a numbered key never collides with another heading ("## Background:2").
       let n = (used.get(base) ?? 0) + 1;
       let key = n === 1 && parts.length === 1 ? base : `${base}:${n}`;
       while (keys.has(key)) key = `${base}:${++n}`;
@@ -105,7 +105,7 @@ export function sections(rel: string, body: string): Section[] {
       cur.buf.push(line);
       continue;
     }
-    // `.*\S` にしない。` +` と取り合って行長の二乗になり、空白 80,000 の 1 行で数秒止まる。
+    // Not `.*\S`. It competes with ` +` and goes quadratic in line length; one line of 80,000 spaces stalls for seconds.
     const h = fence === null ? line.match(/^(#{1,3}) +(\S.*)$/) : null;
     if (!h?.[1] || !h[2]) {
       cur.buf.push(line);
@@ -122,7 +122,7 @@ export function sections(rel: string, body: string): Section[] {
   return out;
 }
 
-// 無人の同期（launchd）で資格情報の入力を待って止まらない。
+// Unattended syncs (launchd) never stop waiting for credentials.
 const git = (root: string, args: string[], input?: Buffer): Buffer =>
   execFileSync("git", ["-C", root, ...args], {
     input,
@@ -133,10 +133,10 @@ const git = (root: string, args: string[], input?: Buffer): Buffer =>
   });
 
 /**
- * 同期する commit。remote を持つプロジェクトは、remote の HEAD（既定 branch）をその場で取る。**ローカルの
- * origin/HEAD は読まない** — fetch だけでは既定 branch の名前変更に追随しない。取れなければ投げる（前回の状態を保つ）。
- * 取った先は専用の ref に置く（共有の FETCH_HEAD は同じ PC の別の fetch に上書きされる）。
- * remote の無いプロジェクトは HEAD。branch を切り替えても fast-forward なら入る（戻すと止まる）。
+ * The commit to sync. For projects with a remote, the remote's HEAD (default branch) is fetched on the spot. **The local
+ * origin/HEAD is not read** — fetch alone does not follow a renamed default branch. Throws when it cannot fetch (the previous state stays).
+ * The fetched commit goes to a dedicated ref (the shared FETCH_HEAD is overwritten by other fetches on the same machine).
+ * Projects without a remote use HEAD. Switching branches is imported when it is a fast-forward (going back stops).
  */
 export function commitOf(root: string, remote: boolean): string {
   if (remote) {
@@ -153,20 +153,22 @@ export function commitOf(root: string, remote: boolean): string {
       const err = e as { code?: string; stderr?: Buffer };
       const detail =
         err.code === "ETIMEDOUT"
-          ? "60 秒で終わらなかった"
+          ? "did not finish in 60 seconds"
           : (err.stderr?.toString().trim().split("\n").at(-1) ?? "");
-      throw new Error(`remote の既定 branch を取れなかった（${detail}）。文書は前回の同期のまま`);
+      throw new Error(
+        `Could not fetch the remote's default branch (${detail}). Documents stay as of the last sync.`,
+      );
     }
     return git(root, ["rev-parse", "--verify", "refs/gleanery/docs-head^{commit}"]).toString().trim();
   }
   try {
     return git(root, ["rev-parse", "--verify", "HEAD^{commit}"]).toString().trim();
   } catch {
-    throw new Error("commit が 1 つも無い");
+    throw new Error("There are no commits");
   }
 }
 
-/** a が b の祖先か（a から b へ fast-forward できるか）。どちらかがこの clone に無ければ false。 */
+/** Whether a is an ancestor of b (b is a fast-forward from a). false when either is not in this clone. */
 export function isAncestor(root: string, a: string, b: string): boolean {
   try {
     git(root, ["merge-base", "--is-ancestor", a, b]);
@@ -179,7 +181,7 @@ export function isAncestor(root: string, a: string, b: string): boolean {
 type Entry = { mode: string; oid: string; size: number };
 const FILE_MODES = new Set(["100644", "100755"]);
 
-/** commit の tree 全体。**symlink（120000）とサブモジュール（160000）は本文として読まない。** */
+/** The whole tree of a commit. **Symlinks (120000) and submodules (160000) are not read as text.** */
 export function treeOf(root: string, commit: string): { entries: Map<string, Entry>; dirs: Set<string> } {
   const entries = new Map<string, Entry>();
   const dirs = new Set<string>();
@@ -197,7 +199,7 @@ export function treeOf(root: string, commit: string): { entries: Map<string, Ent
   return { entries, dirs };
 }
 
-/** blob を 1 回の `git cat-file --batch` でまとめて読む。clean / smudge の filter は通さない（commit の中身そのもの）。 */
+/** Reads blobs with one `git cat-file --batch`. No clean / smudge filters (the commit's exact content). */
 export function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
   const out = new Map<string, Buffer>();
   if (oids.length === 0) return out;
@@ -207,7 +209,7 @@ export function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
     const nl = raw.indexOf(10, at);
     const [oid, , size] = raw.subarray(at, nl).toString("utf8").split(" ");
     const n = Number(size);
-    if (!oid || !Number.isFinite(n)) throw new Error("git cat-file の応答を読めなかった");
+    if (!oid || !Number.isFinite(n)) throw new Error("Could not read the git cat-file response");
     out.set(oid, raw.subarray(nl + 1, nl + 1 + n));
     at = nl + 1 + n + 1;
   }
@@ -215,9 +217,9 @@ export function blobsOf(root: string, oids: string[]): Map<string, Buffer> {
 }
 
 /**
- * 文書ごとの最終更新日（その commit から遡って最後に触ったコミット）。**1 回の git log で全部取る。**
- * 観測時点の無い文書は、10 年前の記述でも今の事実として読まれる。取れなければ投げる（日付の無い節を書かない）。
- * pathspec は一覧の `/\.mdx?$/i` と同じく大文字小文字を区別しない（`README.MD` の日付を落とさない）。
+ * The last update date of each document (the last commit touching it, going back from that commit). **One git log for all.**
+ * A document without a date reads as current fact even when written ten years ago. Throws when unavailable (no undated sections are written).
+ * The pathspec is case-insensitive like the list's `/\.mdx?$/i` (so `README.MD` keeps its date).
  */
 function lastTouched(root: string, commit: string): Map<string, string> {
   const at = new Map<string, string>();
@@ -234,14 +236,14 @@ function lastTouched(root: string, commit: string): Map<string, string> {
   ]).toString("utf8");
   let cur = "";
   for (const line of out.split("\n")) {
-    // 日付の形まで見る。`@` で始まるパスを日付と読むと、次のファイルがパスを日付として受け取る。
+    // Check the date format too. Reading a path starting with `@` as a date would give the next file a path as its date.
     if (/^@\d{4}-\d{2}-\d{2}T/.test(line)) cur = line.slice(1);
     else if (line && cur && !at.has(line)) at.set(line, cur);
   }
   return at;
 }
 
-/** 取り込まない path。file は完全一致、directory は `<path>/` で始まるもの（`fixtures-old` は当たらない）。 */
+/** Paths not imported. file is an exact match; directory matches paths starting with `<path>/` (`fixtures-old` does not match). */
 export type Excluded = { files: string[]; directories: string[] };
 
 const EXCLUDE_NONE: Excluded = { files: [], directories: [] };
@@ -249,7 +251,7 @@ const EXCLUDE_NONE: Excluded = { files: [], directories: [] };
 const excluded = (rel: string, ex: Excluded): boolean =>
   ex.files.includes(rel) || ex.directories.some((d) => rel.startsWith(`${d}/`));
 
-/** 以前の要件定義・設計書の置き場所。承認していない下書きを検索に出さないよう、入れ子も含めて取り込まない。 */
+/** Where requirements and design docs used to live. Excluded with nested paths so unapproved drafts never reach search. */
 const underGleanery = (rel: string): boolean => /(^|\/)\.gleanery\//.test(rel);
 
 export type Doc = {
@@ -260,7 +262,7 @@ export type Doc = {
   sections: Section[];
 };
 
-/** 読んだ本文を文書の形へ投影する。 */
+/** Projects the text that was read into the document shape. */
 export function projectDocs(bodies: Map<string, string>, at: Map<string, string>): Doc[] {
   const out: Doc[] = [];
   for (const [rel, raw] of bodies) {
@@ -279,22 +281,22 @@ export function projectDocs(bodies: Map<string, string>, at: Map<string, string>
 }
 
 /**
- * 文書を行へ投影する形のバージョン。**節の割り方・札・metadata を変えたら上げる。**本文が同じでも hash が変わり、
- * 次の同期で全文書が書き直される（上げないと、古い形の節が残り続ける）。
+ * Version of how documents are projected into rows. **Bump it when splitting, labels, or metadata change.** The hash changes even
+ * for the same text, and the next sync rewrites every document (without it, sections in the old shape stay).
  */
-const PROJECTION = 2;
+const PROJECTION = 3;
 
-/** 文書 1 本の hash。**これが同じなら、その文書の行には一切書かない。**毎日の同期で全節を書き直さない。 */
+/** Hash of one document. **When it matches, nothing is written to that document's rows.** Daily syncs do not rewrite every section. */
 export const docHash = (d: Doc): Buffer =>
   sha256(JSON.stringify([PROJECTION, d.path, d.title, d.body, d.at]));
 
-// 1 文で渡す変数の数を SQLite の上限（32,766）より十分下に保つ。
+// Keep the number of variables per statement well below SQLite's limit (32,766).
 const CHUNK = 500;
 const chunks = <T>(xs: T[]): T[][] =>
   Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 
 /**
- * commit の tree から、入れる文書を組み立てる（DB に触らない）。
+ * Builds the documents to import from a commit's tree (without touching the database).
  */
 export function collectDocs(
   root: string,
@@ -302,7 +304,7 @@ export function collectDocs(
   ex: Excluded = EXCLUDE_NONE,
 ): { docs: Doc[]; skipped: number } {
   const tree = treeOf(root, commit);
-  // **除外は blob を読む前に当てる。**読んでから捨てると、外したはずの本文が一度メモリへ載る。
+  // **Apply exclusions before reading blobs.** Reading then discarding would load excluded text into memory once.
   const md = [...tree.entries].filter(
     ([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex) && !underGleanery(rel),
   );
@@ -314,7 +316,7 @@ export function collectDocs(
   const bodies = new Map(
     readable.map(([rel, e]) => {
       const b = blobs.get(e.oid);
-      if (!b) throw new Error(`${rel} を読んでいない`);
+      if (!b) throw new Error(`${rel} was not read`);
       return [rel, b.toString("utf8")];
     }),
   );
@@ -322,7 +324,7 @@ export function collectDocs(
   return { docs: projectDocs(bodies, lastTouched(root, commit)), skipped };
 }
 
-/** docs の connector に付いた除外。connector がまだ無ければ空（最初の同期でも読める）。 */
+/** Exclusions on the docs connector. Empty when the connector does not exist yet (the first sync can still read them). */
 export async function excludedOf(db: Kysely<DB>, projectId: number): Promise<Excluded> {
   const rows = await db
     .selectFrom("docs_exclude as x")
@@ -337,13 +339,13 @@ export async function excludedOf(db: Kysely<DB>, projectId: number): Promise<Exc
 }
 
 /**
- * 1 つのプロジェクトの文書を同期する。tree の一覧は完全なので、一覧から消えた文書は行ごと消す。
+ * Syncs one project's documents. The tree list is complete, so documents gone from it are deleted with their rows.
  *
- * **自動で進めるのは fast-forward だけ。**そうでなければ一度だけ取り直す。前に入れた commit 以降まで進んでいれば、
- * 同時に走った別の同期が新しい commit を先に入れたので、何も書かずに終える（別の PC が入れた commit は、取り直すまで
- * この clone に無い）。進んでいなければ巻き戻し・force-push・分岐した branch への切り替えで、どちらが正しいかを
- * 決められないので書かずに止まる（止まれば doctor と画面に出る。漏れた文書を巻き戻して消したときに黙って残さない）。
- * 今の状態に揃えるのは人の操作（reset）だけ。
+ * **Only fast-forwards advance automatically.** Otherwise it fetches once more. If the stored commit has moved past the refused one,
+ * another concurrent sync stored a newer commit first, so this ends without writing (a commit stored by another machine is not in
+ * this clone until fetched). If not, it is a rollback, force push, or switch to a diverged branch, and it cannot tell which is right,
+ * so it stops without writing (doctor and the dashboard show it; a leaked document removed by rollback is never kept silently).
+ * Only a person (reset) brings it to the current state.
  */
 export async function syncDocs(
   db: Kysely<DB>,
@@ -411,7 +413,7 @@ export async function syncDocs(
         hash: sha256(JSON.stringify([s.trail, s.text])),
       })),
     );
-    // 節が消えた・key が変わったものを先に消す。残すと撤回した記述が検索で返る。
+    // Delete sections that disappeared or changed key first. Keeping them would return withdrawn text in search.
     const keep = new Set(sections.map((x) => x.s.key));
     const stale: number[] = [];
     for (const part of chunks([...sourceOf.values()]))
@@ -427,7 +429,7 @@ export async function syncDocs(
         .insertInto("knowledge")
         .values(
           part.map((x) => {
-            if (x.source === undefined) throw new Error(`文書を書けなかった: ${x.s.key}`);
+            if (x.source === undefined) throw new Error(`Could not write the document: ${x.s.key}`);
             return {
               project_id: projectId,
               source_item_id: x.source,
@@ -453,7 +455,7 @@ export async function syncDocs(
             .where("knowledge.content_hash", "<>", (eb) => eb.ref("excluded.content_hash")),
         )
         .execute();
-    // git の一覧は完全なので、一覧から消えた文書は行ごと消す。
+    // The git list is complete, so documents gone from it are deleted with their rows.
     const present = new Set(docs.map((d) => d.path));
     let removed = 0;
     for (const part of chunks([...known.keys()].filter((p) => !present.has(p))))
@@ -475,22 +477,22 @@ export async function syncDocs(
   });
 
   if (done.refused) {
-    // 取り直しは transaction の外で行う（connector の行を掴んだまま、最大 60 秒の fetch を待たない）。
+    // Fetch again outside the transaction (do not hold the connector row while waiting up to 60 seconds for fetch).
     const latest = commitOf(root, opts.remote);
     if (latest === done.refused || isAncestor(root, done.refused, latest))
-      return `別の同期が新しい commit（${done.refused.slice(0, 8)}）を先に入れていたので、何も書かなかった`;
+      return `another sync stored a newer commit (${done.refused.slice(0, 8)}) first, so nothing was written`;
     throw new Error(
-      `前に入れた commit（${done.refused.slice(0, 8)}）から ${opts.remote ? "remote の既定 branch" : "HEAD"}（${commit.slice(0, 8)}）へ ` +
-        "fast-forward でないので書かなかった（巻き戻し・force-push・分岐した branch への切り替え）。" +
-        `今の状態に揃えるなら \`gleanery harvest --cwd ${root} --reset-docs\``,
+      `The stored commit (${done.refused.slice(0, 8)}) is not a fast-forward to ${opts.remote ? "the remote's default branch" : "HEAD"} (${commit.slice(0, 8)}), ` +
+        "so nothing was written (a rollback, force push, or switch to a diverged branch). " +
+        `To match the current state, run \`gleanery harvest --cwd ${root} --reset-docs\``,
     );
   }
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);
   return [
-    `文書 ${docs.length} 本・節 ${sectionCount} 件`,
-    `書き直した ${done.changed} 本`,
-    done.removed ? `消えた ${done.removed} 本` : null,
-    skipped ? `symlink とサブモジュールを飛ばした ${skipped} 件` : null,
+    `${plural(docs.length, "document")}, ${plural(sectionCount, "section")}`,
+    `${done.changed} rewritten`,
+    done.removed ? `${done.removed} removed` : null,
+    skipped ? `${plural(skipped, "symlink or submodule", "symlinks and submodules")} skipped` : null,
   ]
     .filter(Boolean)
     .join(" / ");

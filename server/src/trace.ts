@@ -1,10 +1,10 @@
-// trace の記録を知識（knowledge）と作業の現在地（work_item）へ入れる。
+// Stores trace records as knowledge and as where work stands (work_item).
 //
-// **会話は入れない。**会話は自動記録（capture.ts）が逐語で持っている。trace が選ぶのは、
-// 次の判断を誤らないために残す判断だけ — 決定と棄却した案、制約、やらないこと、行き止まり、分かったこと、
-// 意図して残した負債、検証、問い。そして「続きをやる」ときに読む作業の現在地。
+// **Conversations are not stored here.** Recording (capture.ts) keeps them verbatim. trace picks only
+// what keeps the next decision from going wrong — decisions and rejected options, constraints, non-goals, dead ends, findings,
+// intentional debt, verifications, questions — plus where work stands, read when continuing it.
 //
-// 形の検査はここに 1 つだけ置き、`gleanery trace check` と `gleanery trace save` が同じ関数を通る。
+// Shape validation lives here only; `gleanery trace check` and `gleanery trace save` go through the same function.
 
 import { type Kysely, type SqlBool, sql } from "kysely";
 import { z } from "zod";
@@ -14,14 +14,16 @@ import { conversationId, STATUSES } from "./knowledge.ts";
 import { mask, sha256 } from "./text.ts";
 
 const KEY = /^[a-z0-9][a-z0-9._-]*$/;
-const key = z.string().regex(KEY, "小文字英数字と . _ - だけの意味のある語にする");
-/** 別の session の決定を指すときは `<host>:<session id>#<key>`。`gleanery trace context` がこの形で出す。 */
-const ref = z.string().regex(/^([a-z-]+:[^#\s]+#)?[a-z0-9][a-z0-9._-]*$/, "key か <host>:<session id>#<key>");
+const key = z.string().regex(KEY, "use a meaningful word of lowercase letters, digits, and . _ - only");
+/** A decision in another session is `<host>:<session id>#<key>`. `gleanery trace context` prints this form. */
+const ref = z
+  .string()
+  .regex(/^([a-z-]+:[^#\s]+#)?[a-z0-9][a-z0-9._-]*$/, "a key, or <host>:<session id>#<key>");
 const at = z.iso.datetime({
   offset: true,
-  message: "ISO 8601 のオフセット付きで書く（例 2026-09-13T10:00:00+09:00）",
+  message: "use ISO 8601 with an offset (for example 2026-09-13T10:00:00+09:00)",
 });
-// 記録は DB へ入り、MCP から引かれる。貼ってしまったキーを伏せてから持つ（自動記録と同じ網）。
+// Records go into the database and are read through MCP. Pasted keys are masked before storing (the same filter as recording).
 const text = z.string().trim().min(1).transform(mask);
 const file = z
   .object({
@@ -30,7 +32,7 @@ const file = z
       .min(1)
       .refine(
         (p) => !p.startsWith("/") && !/(^|\/)\.\.(\/|$)/.test(p),
-        "プロジェクトのルートからの相対パスにする",
+        "use a path relative to the project root",
       ),
     role: z.enum(["applies_to", "evidence"]),
     line: z.number().int().positive().optional(),
@@ -42,7 +44,7 @@ const common = {
   at,
   text,
   confidence: z.enum(["fact", "inference", "opinion"]).optional(),
-  /** ファイル以外の根拠。`commit:<sha>`、`url:<URL>`、`cmd:<コマンド>`、`issue:#<番号>` のように種類を前置する */
+  /** Evidence other than files, prefixed with its kind: `commit:<sha>`, `url:<URL>`, `cmd:<command>`, `issue:#<number>` */
   refs: z
     .array(
       text.pipe(
@@ -50,7 +52,7 @@ const common = {
           .string()
           .regex(
             /^(commit|url|cmd|issue|pr|doc|file):\S/,
-            "commit: / url: / cmd: / issue: / pr: / doc: / file: のどれかを前置する",
+            "prefix it with one of commit: / url: / cmd: / issue: / pr: / doc: / file:",
           ),
       ),
     )
@@ -63,14 +65,14 @@ const decision = z
     ...common,
     kind: z.literal("decision"),
     status: z.enum(STATUSES.decision),
-    /** そのとき働いていた力。なぜこの決定が要ったか */
+    /** The forces at play at the time: why this decision was needed */
     context: text,
     options: z.array(z.object({ text, chosen: z.boolean(), why: text.optional() }).strict()).min(1),
-    /** この決定が守られていることをどう確かめるか */
+    /** How to check that this decision is being kept */
     confirmation: text.optional(),
-    /** 承知で引き受けた不利 */
+    /** Downsides knowingly accepted */
     downsides: z.array(text).default([]),
-    /** この決定が覆す決定 */
+    /** The decision this one supersedes */
     supersedes: ref.optional(),
   })
   .strict();
@@ -81,9 +83,9 @@ const verification = z
     kind: z.literal("verification"),
     status: z.enum(STATUSES.verification),
     command: text.optional(),
-    /** 実行しなかった理由（not_run のとき） */
+    /** Why it was not run (when not_run) */
     reason: text.optional(),
-    /** どの決定を確かめたか */
+    /** Which decision it checked */
     verifies: ref.optional(),
   })
   .strict();
@@ -91,7 +93,7 @@ const verification = z
 const question = z
   .object({ ...common, kind: z.literal("question"), status: z.enum(STATUSES.question) })
   .strict();
-// 制約・やらないこと・負債は同じ状態を持つ（knowledge.ts の STATUSES）。
+// Constraints, non-goals, and debt share the same statuses (knowledge.ts STATUSES).
 const boundary = z
   .object({
     ...common,
@@ -119,10 +121,10 @@ export const traceSchema = z
       .object({
         key,
         title: text,
-        /** 達成を測れる形で */
+        /** Stated so that success can be measured */
         goal: text,
         current: text,
-        /** 次にやること。人が手を動かすものは先頭に「人:」を付ける */
+        /** What to do next. Items a person must do start with the Japanese "person:" prefix (see the trace Skill) */
         next: z.array(text).default([]),
         status: z.enum(["active", "blocked", "paused", "done", "abandoned"]),
       })
@@ -137,51 +139,50 @@ export const traceSchema = z
     t.items.forEach((i, n) => {
       const at = (m: string, ...p: (string | number)[]) =>
         ctx.addIssue({ code: "custom", message: m, path: ["items", n, ...p] });
-      if (keys.has(i.key)) at(`key ${i.key} が重複している`, "key");
+      if (keys.has(i.key)) at(`key ${i.key} is duplicated`, "key");
       keys.add(i.key);
-      // 根拠を出せない断定は、事実として読まれて後で覆る。
+      // Assertions without evidence are read as facts and later overturned.
       if (i.confidence === "fact" && i.refs.length === 0 && !i.files.some((f) => f.role === "evidence")) {
-        at(
-          "confidence: fact には refs か evidence のファイルが要る。出せないなら inference にする",
-          "confidence",
-        );
+        at("confidence: fact needs refs or evidence files. Without them, use inference", "confidence");
       }
       const local = (r: string | undefined, field: string) => {
-        if (r && !r.includes("#") && !decisions.has(r)) at(`${r} はこの記録の決定に無い`, field);
+        if (r && !r.includes("#") && !decisions.has(r)) at(`${r} is not a decision in this record`, field);
       };
       if (i.kind === "decision") {
-        // 決定の価値は捨てた案にある。棄却理由の無い決定は、同じ案を再検討させる。
+        // A decision's value lies in the options it dropped. A decision without reasons for rejection invites the same options again.
         if (!i.options.some((o) => !o.chosen && o.why))
-          at("棄却した案と、その理由（why）が 1 つ以上要る", "options");
-        if (i.options.some((o) => !o.chosen && !o.why)) at("採らなかった案には why を書く", "options");
+          at("needs at least one rejected option with its reason (why)", "options");
+        if (i.options.some((o) => !o.chosen && !o.why))
+          at("write why for every option not chosen", "options");
         if (i.status === "accepted" && !i.options.some((o) => o.chosen))
-          at("採用した決定には chosen: true の案が要る", "options");
+          at("an accepted decision needs an option with chosen: true", "options");
         if (i.status === "accepted" && !i.confirmation)
-          at("採用した決定には confirmation（守られているかの確かめ方）が要る", "confirmation");
-        if (i.supersedes === i.key) at("自分自身は覆せない", "supersedes");
+          at("an accepted decision needs confirmation (how to check it is kept)", "confirmation");
+        if (i.supersedes === i.key) at("a decision cannot supersede itself", "supersedes");
         local(i.supersedes, "supersedes");
       }
       if (i.kind === "verification") {
-        if (i.status === "not_run" && !i.reason) at("実行しなかった検証には reason（理由）が要る", "reason");
+        if (i.status === "not_run" && !i.reason)
+          at("a verification that was not run needs a reason", "reason");
         local(i.verifies, "verifies");
       }
     });
-    // superseded と、この記録の中で覆されたことは同じことを 2 通りに書いている。食い違えば止める
-    // （後継の無い superseded は迷子になり、覆されたのに有効のままの決定は DB の CHECK で落ちる）。
+    // superseded, and being superseded within this record, say the same thing two ways. Stop when they disagree
+    // (a superseded decision without a successor is lost, and a superseded decision still in effect fails the database CHECK).
     for (const [n, i] of t.items.entries()) {
       if (i.kind !== "decision") continue;
       const by = t.items.find((x) => x.kind === "decision" && x.supersedes === i.key);
       const issue = (message: string) =>
         ctx.addIssue({ code: "custom", message, path: ["items", n, "status"] });
       if (i.status === "superseded" && !by)
-        issue("superseded にするなら、覆した決定の supersedes でこの key を指す");
-      if (by && i.status !== "superseded") issue(`${by.key} が覆しているので、status は superseded にする`);
+        issue("to mark it superseded, point supersedes of the newer decision at this key");
+      if (by && i.status !== "superseded") issue(`${by.key} supersedes it, so set status to superseded`);
     }
   });
 
 export type Trace = z.infer<typeof traceSchema>;
 
-/** 形を確かめる。問題があれば 1 行ずつの説明を返す。 */
+/** Validates the shape. Returns one line per problem. */
 export function checkTrace(
   raw: unknown,
 ): { trace: Trace; problems: [] } | { trace: null; problems: string[] } {
@@ -189,11 +190,11 @@ export function checkTrace(
   if (r.success) return { trace: r.data, problems: [] };
   return {
     trace: null,
-    problems: r.error.issues.map((i) => `${i.path.join(".") || "(ルート)"}: ${i.message}`),
+    problems: r.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
   };
 }
 
-/** その session の要素の key。プロジェクトの中で一意にする。 */
+/** Keys of the session's elements. Unique within the project. */
 export const sourceKey = (t: Trace, k: string): string =>
   k.includes("#") ? k : `${t.session.host}:${t.session.id}#${k}`;
 
@@ -210,13 +211,13 @@ type Row = {
   refs: string[];
   files: z.infer<typeof file>[];
   at: string;
-  /** option の親、verification の確かめた決定（source key） */
+  /** The parent of an option, or the decision a verification checked (source key) */
   parent: string | null;
-  /** この記録の中でこの決定を覆した決定（source key） */
+  /** The decision in this record that superseded this one (source key) */
   supersededBy: string | null;
 };
 
-/** 記録を行の形へ落とす。決定の案は、決定を親に持つ option の行になる。 */
+/** Turns a record into rows. A decision's options become option rows whose parent is the decision. */
 export function rows(t: Trace): Row[] {
   const out: Row[] = [];
   for (const i of t.items) {
@@ -252,7 +253,7 @@ export function rows(t: Trace): Row[] {
           ...base,
           key: `${base.key}:o${n + 1}`,
           kind: "option",
-          // 覆された・却下された決定の「採った案」を、採用のまま返さない（死んだ設計を推奨する）。
+          // Never return the chosen option of a superseded or rejected decision as chosen (that recommends a dead design).
           status: o.chosen
             ? i.status === "superseded" || i.status === "rejected"
               ? "was_chosen"
@@ -275,19 +276,19 @@ export function rows(t: Trace): Row[] {
         parent: i.verifies ? sourceKey(t, i.verifies) : null,
       });
     } else {
-      // 行き止まりと分かったことは状態を持たない（表の CHECK が status is null を求める）。
+      // Dead ends and findings have no status (the table CHECK requires status is null).
       out.push({ ...base, status: "status" in i ? i.status : null });
     }
   }
   return out;
 }
 
-// 1 文で渡す変数の数を SQLite の上限（32,766）より十分下に保つ。知識は 1 行 18 列。
+// Keep the number of variables per statement well below SQLite's limit (32,766). Knowledge rows have 18 columns.
 const CHUNK = 500;
 const chunks = <T>(xs: T[]): T[][] =>
   Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 
-/** 記録を入れる。同じ session の同じ key は上書きし、書かれていない要素は残す（後から足した trace は追記になる）。 */
+/** Stores a record. The same key in the same session is overwritten; elements not written stay (a later trace appends). */
 export async function saveTrace(
   db: Kysely<DB>,
   projectId: number,
@@ -295,12 +296,12 @@ export async function saveTrace(
 ): Promise<{ written: number; superseded: number }> {
   const all = rows(t);
   const conversation = conversationId(projectId, t.session.host, t.session.id);
-  // 時刻は文字列ではなく時点で比べる（+09:00 と Z が混ざると辞書順は最早にならない）。
+  // Compare times as instants, not strings (with +09:00 and Z mixed, lexical order is not the earliest).
   const earliest = t.items.map((i) => i.at).sort((a, b) => Date.parse(a) - Date.parse(b))[0];
   const startedAt = iso(t.session.startedAt ?? earliest ?? Date.now());
 
   return inTransaction(db, async (trx) => {
-    // 自動記録がこの session を先に作っていれば、そのまま使う（id は同じ規則で決まる）。
+    // If recording created this session first, use it (ids follow the same rule).
     await trx
       .insertInto("conversation")
       .values({
@@ -345,7 +346,7 @@ export async function saveTrace(
       workId = w?.id ?? null;
     }
 
-    // 別の session の決定を指す参照を、ここで引く。無ければ止める（壊れた参照を黙って落とさない）。
+    // Resolve references to decisions in other sessions here. Stop when missing (never drop a broken reference silently).
     const idOf = new Map<string, number>();
     const outside = [
       ...new Set([
@@ -365,11 +366,11 @@ export async function saveTrace(
         .execute())
         idOf.set(f.source_key, f.id);
     const missing = outside.filter((k) => !idOf.has(k));
-    if (missing.length) throw new Error(`このプロジェクトに無い決定を指している: ${missing.join(" / ")}`);
+    if (missing.length) throw new Error(`Points to decisions not in this project: ${missing.join(" / ")}`);
 
-    // **DB 側の覆しを優先する。**別の session が後で覆した決定を、古い session の再 trace が「採用」に戻さない。
-    // work を省いた再 trace は、既に結んだ作業（とその題の見出し）から要素を外さない。
-    // 読んでから書くまでの間に別の trace が覆しを付けることは無い（inTransaction が書き込みのロックを先に取る）。
+    // **Supersessions in the database win.** Re-tracing an old session never returns a decision superseded later by another session to accepted.
+    // A re-trace without work never removes elements from work already linked (or from its title heading).
+    // No other trace can add a supersession between the read and the write (inTransaction takes the write lock first).
     const prior: {
       source_key: string;
       superseded_by_id: number | null;
@@ -395,7 +396,7 @@ export async function saveTrace(
         r.status = "was_chosen";
     }
 
-    // 書く順: 後継の決定 → 覆された決定 → 案と検証。superseded の行は後継の id を持って入る（表の CHECK）。
+    // Write order: successor decisions, superseded decisions, then options and verifications. Superseded rows carry the successor id (the table CHECK).
     const decisions = all.filter((r) => r.kind === "decision");
     const layers: Row[][] = [];
     const placed = new Set<string>();
@@ -403,7 +404,7 @@ export async function saveTrace(
       const next = decisions.filter(
         (d) => !placed.has(d.key) && (!d.supersededBy || placed.has(d.supersededBy)),
       );
-      if (next.length === 0) throw new Error("この記録の決定が互いに覆し合っている");
+      if (next.length === 0) throw new Error("Decisions in this record supersede each other");
       for (const d of next) placed.add(d.key);
       layers.push(next);
     }
@@ -440,7 +441,7 @@ export async function saveTrace(
             content_hash: sha256(JSON.stringify([r, heading, work, parentId, supersededById])),
           };
         });
-        // 内容の hash が変わった行だけを書き換える。書き換えなかった行は returning に出ない。
+        // Rewrite only rows whose content hash changed. Unchanged rows do not appear in returning.
         const got = await trx
           .insertInto("knowledge")
           .values(values)
@@ -474,7 +475,7 @@ export async function saveTrace(
           const row = byKey.get(g.source_key);
           if (row) written.push({ id: g.id, row });
         }
-        // 書かなかった行（内容が同じ）の id も要る（子の decision_id）。
+        // The ids of rows not written (same content) are needed too (children's decision_id).
         for (const k of await trx
           .selectFrom("knowledge")
           .select(["id", "source_key"])
@@ -488,10 +489,10 @@ export async function saveTrace(
           idOf.set(k.source_key, k.id);
       }
       const lost = layer.filter((r) => !idOf.has(r.key));
-      if (lost.length) throw new Error(`知識を書けなかった: ${lost.map((r) => r.key).join(" / ")}`);
+      if (lost.length) throw new Error(`Could not write knowledge: ${lost.map((r) => r.key).join(" / ")}`);
     }
 
-    // 決定を書き直したら、その決定の案は入力の案で置き換える。書き直した案の数が減っても、古い案を棄却として残さない。
+    // When a decision is rewritten, its options are replaced by the input's. Even with fewer options, old ones are not kept as rejected.
     const decisionIds = decisions.flatMap((d) => idOf.get(d.key) ?? []);
     const options = new Set(all.filter((r) => r.kind === "option").map((r) => r.key));
     const stale: number[] = [];
@@ -506,7 +507,7 @@ export async function saveTrace(
         if (!options.has(o.source_key)) stale.push(o.id);
     for (const part of chunks(stale)) await trx.deleteFrom("knowledge").where("id", "in", part).execute();
 
-    // ファイルは書き直した行の分だけ。
+    // Files only for the rows rewritten.
     for (const part of chunks(written.map((w) => w.id)))
       await trx.deleteFrom("knowledge_file").where("knowledge_id", "in", part).execute();
     const files = written.flatMap((w) =>
@@ -525,21 +526,21 @@ export async function saveTrace(
         .onConflict((oc) => oc.doNothing())
         .execute();
 
-    // 別の session の決定を覆したら、その決定を superseded にして後継を指す。
-    // **消さない** — 消すと、なぜ変えたかが失われて再提案される。この記録の中の決定は上で後継を持って入っている。
+    // When a decision from another session is superseded, mark it superseded and point to the successor.
+    // **Never delete it** — deleting loses why it changed and invites re-proposals. Decisions in this record already carry their successor above.
     let superseded = 0;
     for (const i of t.items) {
       if (i.kind !== "decision" || !i.supersedes || !i.supersedes.includes("#")) continue;
       const newer = idOf.get(sourceKey(t, i.key));
       const older = idOf.get(sourceKey(t, i.supersedes));
-      if (!newer || !older) throw new Error(`覆す決定を引けなかった: ${i.supersedes}`);
-      // 輪を作らない。後継の側を遡って older に着くなら、older はもう newer の後にある。
+      if (!newer || !older) throw new Error(`Could not find the decision to supersede: ${i.supersedes}`);
+      // No cycles. If walking back from the successor reaches older, older is already after newer.
       const loop = await sql`
         with recursive chain(id) as (
           select superseded_by_id from knowledge where id = ${newer}
           union select k.superseded_by_id from knowledge k join chain c on k.id = c.id
         ) select 1 from chain where id = ${older} limit 1`.execute(trx);
-      if (loop.rows.length) throw new Error(`${i.key} と ${i.supersedes} が互いに覆し合う形になる`);
+      if (loop.rows.length) throw new Error(`${i.key} and ${i.supersedes} would supersede each other`);
       const r = await trx
         .updateTable("knowledge")
         .set({ status: "superseded", superseded_by_id: newer })
@@ -548,7 +549,7 @@ export async function saveTrace(
         .executeTakeFirst();
       if (Number(r.numUpdatedRows)) {
         superseded++;
-        // その決定で採った案は「当時は採った案」になる。
+        // The option chosen in that decision becomes "chosen then".
         await trx
           .updateTable("knowledge")
           .set({ status: "was_chosen" })

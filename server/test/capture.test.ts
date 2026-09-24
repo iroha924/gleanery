@@ -59,7 +59,7 @@ test("128 KiB を超えた発言は冒頭と末尾だけを残し、元の大き
   assert.equal(got.originalBytes, bytes(big));
   assert.ok(bytes(got.body) < 20 * 1024, `${bytes(got.body)} bytes 残っている`);
   assert.ok(got.body.startsWith("頭") && got.body.endsWith("尾"));
-  assert.match(got.body, /中央 [\d,]+ bytes を保存していない/);
+  assert.match(got.body, /\[[\d,]+ bytes in the middle not saved\]/);
   assert.ok(bytes(big) > MAX_MESSAGE);
 });
 
@@ -162,20 +162,20 @@ test("形の決まったキーと、名前で分かる代入・ヘッダ・URL �
     assert.ok(!mask(input).includes(leak), `${leak} が残った: ${mask(input)}`);
   assert.match(
     mask("url: postgres://gleanery_reader:s3cr3t@ep-x.example.com/db"),
-    /gleanery_reader:\[伏せた\]@ep-x\.example\.com\/db/,
+    /gleanery_reader:\[redacted\]@ep-x\.example\.com\/db/,
   );
   assert.match(
     mask("postgresql://db_owner:ab@cdEFGH123@ep-x.example.com/appdb"),
     /@ep-x\.example\.com\/appdb/,
   );
   assert.match(mask("redis://:hunter2x@cache:6379"), /@cache:6379/, "どこへ繋いだかは残す");
-  assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[伏せた]"}', "引用符を残す");
+  assert.equal(mask('{"password": "hunter2-example"}'), '{"password": "[redacted]"}', "引用符を残す");
   // キーの名前に付いた引用符の値は、文言でも伏せる側に倒す（漏れは取り返せない。消しすぎは語が 1 つ減るだけ）。
-  assert.equal(mask('{ password: "Required" }'), '{ password: "[伏せた]" }');
+  assert.equal(mask('{ password: "Required" }'), '{ password: "[redacted]" }');
   // URL の次の引数は値に含めない（伏せた値の後ろを消さない）。
   assert.equal(
     mask("?access_token=abc123def456&user=alice&page=2"),
-    "?access_token=[伏せた]&user=alice&page=2",
+    "?access_token=[redacted]&user=alice&page=2",
   );
   // 同じコマンドの最初の -p だけ。後ろの別のコマンドの -p は消さない。
   const chained = mask("mysql -u root -phunter2x db && ssh -p2222 host && cp -pr src dst");
@@ -234,7 +234,7 @@ test("AskUserQuestion の答えを、質問と答えの組にする", () => {
     answersOf({
       tool_response: { answers: { 進め方: "推奨" }, annotations: { 進め方: { notes: "全部推奨で" } } },
     }),
-    "Q: 進め方\nA: 推奨\nメモ: 全部推奨で",
+    "Q: 進め方\nA: 推奨\nNotes: 全部推奨で",
   );
   assert.equal(answersOf({ tool_response: {} }), null);
   assert.equal(
@@ -572,7 +572,7 @@ test("送れていない判定は、待ちがあって失敗が残るときだ�
   assert.deepEqual([s.stuck, s.flushedAt, s.deferred], ["auth", undefined, undefined]);
   // 理由の文が空の失敗も、送れていないことに変わりはない。
   fs.writeFileSync(file, JSON.stringify({ error: "" }));
-  assert.equal(readState().stuck, "理由の分からない失敗");
+  assert.equal(readState().stuck, "unknown failure");
   assert.match(captureNotice(capture) ?? "", /送れていない/);
   reset();
   fs.rmSync(file);

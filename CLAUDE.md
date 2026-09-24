@@ -34,6 +34,7 @@ bun run cli -- dashboard  # 端末の画面。TTY が要るので前面でだけ
 - 配布物に入る変更は、npm と 3 つの plugin manifest のバージョンを同じ値へ上げ、同じ branch（PR）に入れる <!-- invariant: version-sync -->
 - 外部入力は system 境界で検査する。資格情報を追跡ファイル・command 引数・log に書かない <!-- invariant: boundary-validation -->
 - 配る物は Windows でも動かす。POSIX shell・`0600`・`/tmp` 固定・`.cmd` の execFile に依存しない <!-- invariant: windows -->
+- 新しく書く・変えるコードの文字列とコメント、commit message は英語で書く。既存の日本語の文言は段ごとの範囲で英語へ直し、利用者が保存した記録は訳さない（`bun run english` が英語だけのファイルを見る） <!-- invariant: english-code -->
 
 ## 作業別の Skill
 

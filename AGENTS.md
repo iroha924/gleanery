@@ -65,6 +65,7 @@ bun run bundle      # MCP・CLI・自動記録の配布物を作る
 ### コメント
 
 - 1〜3 行。それを越える説明は Skill か設計文書へ置いてパスで指す <!-- invariant: comment-length -->
+- 新しく書く・変えるコードの文字列とコメント、commit message は英語で書く。既存の日本語の文言は段ごとの範囲で英語へ直し、利用者が保存した記録は訳さない（`bun run english` が英語だけのファイルを見る） <!-- invariant: english-code -->
 
 ## 作業別の Skill（`.agents/skills/`）
 

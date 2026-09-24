@@ -1,5 +1,5 @@
-// 端末の画面（gleanery dashboard）が読むセッション・プロジェクト・作業の一覧。**読むだけ**で、reader の接続を渡す。
-// 検索と参照は search.ts の関数を使い、ここには人向けの並べ方とまとめ方だけを置く。
+// Sessions, projects, and work lists the dashboard (gleanery dashboard) reads. **Read only**; takes a reader connection.
+// Search and lookups use search.ts. Only the ordering and grouping for people live here.
 
 import { type Kysely, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
@@ -7,8 +7,8 @@ import type { DB } from "./db-types.ts";
 import { labelOf } from "./knowledge.ts";
 import { type Hit, type Scope, searchMessages, searchSplit, toWork, type Work, workBase } from "./search.ts";
 
-// session の題。持ち主の最初の発言、それが無ければ（trace だけで残した session）結んだ作業の題。
-// 題を生成して保存することはしない（生成 API を持たない）。
+// A session title: your first message, or (for sessions left only by trace) the title of the linked work.
+// Titles are never generated and stored (there is no generation API).
 const TITLE = sql<string | null>`coalesce(
   (select substr(m.body, 1, 200) from message m
    where m.conversation_id = c.id and m.speaker_kind = 'self' order by m.sent_at, m.seq limit 1),
@@ -16,7 +16,7 @@ const TITLE = sql<string | null>`coalesce(
 
 const OPENING = /^\s*<([a-z][\w-]*)(?:\s[^>]*)?>\s*/i;
 
-/** 題の頭に付いたホストの囲みの札（`<pasted_content id="…">` など）と、その閉じ札を外す。札しか無ければそのまま。 */
+/** Strips a leading host wrapper tag (such as `<pasted_content id="…">`) and its closing tag from a title. Returns it unchanged if nothing else remains. */
 function bare<T extends string | null>(title: T): T {
   if (title === null) return title;
   let rest: string = title;
@@ -80,11 +80,11 @@ export type SessionRow = {
   project: string;
   lastAt: Date | null;
   title: string;
-  /** 持ち主の発言の数 */
+  /** Number of your messages */
   said: number;
-  /** trace で残した判断の数（案は数えない） */
+  /** Number of decisions left by trace (options are not counted) */
   traced: number;
-  /** 自動記録が拾った、触ったファイルの数（重複を除く） */
+  /** Number of distinct files touched, as captured by recording */
   files: number;
 };
 
@@ -96,7 +96,7 @@ export type SessionsPage = {
   pages: number;
 };
 
-/** coding session の一覧を、最後の発言の新しい順に。GitHub の会話は PR・issue の単位なので出さない。 */
+/** Coding sessions, newest last message first. GitHub conversations are per PR or issue, so they are left out. */
 export async function listSessions(
   db: Kysely<DB>,
   q: { project?: number | null; page: number; pageSize: number },
@@ -137,9 +137,9 @@ export async function listSessions(
       ...i,
       startedAt: new Date(i.startedAt),
       lastAt: i.lastAt === null ? null : new Date(i.lastAt),
-      // 発言も作業も持たない session は無い（自動記録は発言と一緒に会話を作り、trace は作業を作る）。
-      // 発言も作業も持たない session（trace だけで作業を結ばなかった）は題が無い。空欄にせず session を名指す
-      title: bare(i.title ?? "") || `（題なし）${i.sessionId}`,
+      // Every session has messages or work (recording creates the conversation with its messages; trace creates work).
+      // A session with neither (trace without linked work) has no title. Name the session instead of leaving it blank
+      title: bare(i.title ?? "") || `(untitled) ${i.sessionId}`,
     })),
     total,
     page: q.page,
@@ -158,8 +158,8 @@ export type FoundSession = {
 };
 
 /**
- * 「あの判断をしたのはどの session だったか」「あのとき何と言ったか」から session を探す。
- * GitHub の会話と文書は session ではないので外す。
+ * Finds sessions from "which session made that decision" or "what did I say then".
+ * GitHub conversations and documents are not sessions, so they are left out.
  */
 export async function searchSessions(
   db: Kysely<DB>,
@@ -171,7 +171,7 @@ export async function searchSessions(
       ? await searchMessages(db, { question: q.q, projects, who: "me", sessionsOnly: true, limit: 20 })
       : (await searchSplit(db, { question: q.q, projects, avoid: q.mode === "avoid", limit: 20 })).records;
   if (hits.length === 0) return [];
-  // 引いた先の表が mode で変わる（発言か知識か）。
+  // The table searched depends on mode (messages or knowledge).
   const ids = hits.map((h) => h.ref.slice(2));
   const owners = await db
     .selectFrom("conversation as c")
@@ -213,7 +213,7 @@ export async function searchSessions(
 
 export type SessionDetail = NonNullable<Awaited<ReturnType<typeof sessionDetail>>>;
 
-/** session 1 件の発言・触ったファイル・trace した知識と作業。無ければ null。 */
+/** One session's messages, touched files, and traced knowledge and work. null when missing. */
 export async function sessionDetail(db: Kysely<DB>, id: string) {
   const conversation = await db
     .selectFrom("conversation as c")
@@ -226,7 +226,7 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
       "c.started_at as startedAt",
       "p.id as projectId",
       "p.name as project",
-      // 本文の #123 を issue へ繋ぐのに、表示名ではなく key が要る（ホストが入っている）。
+      // Linking #123 in the body to an issue needs the key (it includes the host), not the display name.
       "p.key as projectKey",
       TITLE.as("title"),
     ])
@@ -262,7 +262,7 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
       "k.id",
       "k.kind",
       "k.status",
-      // 生成列（型の生成が拾わない）。
+      // A generated column (the type generator does not see it).
       sql<Hit["stance"]>`k.stance`.as("stance"),
       "k.body",
       "k.reason",
@@ -279,17 +279,17 @@ export async function sessionDetail(db: Kysely<DB>, id: string) {
   return {
     ...conversation,
     startedAt: new Date(conversation.startedAt),
-    title: bare(conversation.title ?? "") || `（題なし）${conversation.sessionId}`,
+    title: bare(conversation.title ?? "") || `(untitled) ${conversation.sessionId}`,
     messages: messages.map((m) => ({ ...m, sentAt: new Date(m.sentAt), truncated: m.truncated === 1 })),
-    knowledge: knowledge.map((k) => ({ ...k, at: new Date(k.at), label: labelOf(k) })),
+    knowledge: knowledge.map((k) => ({ ...k, at: new Date(k.at), label: labelOf(k, "en") })),
     work: work.map(toWork),
   };
 }
 
-/** 作業の一覧に出す上限。超えた分は出さず、超えたことを more で返す（画面が黙って切らない）。 */
+/** Maximum number of work items listed. The rest is omitted and reported through more (the screen never cuts silently). */
 export const WORK_LIMIT = 100;
 
-/** trace した作業を、終わったものも含めて新しい順に。再開に要る詳しい中身は search.ts の workDetail で読む。 */
+/** Traced work, including finished work, newest first. The details needed to resume come from search.ts workDetail. */
 export async function listWork(
   db: Kysely<DB>,
   projects: Scope,

@@ -1,8 +1,8 @@
-// npm packageと配布pluginのバージョン、それぞれがどこから動いているかを見る。
+// Versions of the npm package and the distributed plugin, and where each one runs from.
 //
-// Claude Code と Codex はどちらも plugin を `<cache>/<marketplace>/gleanery/<バージョン>/` へ複製して、
-// そこから MCP を起動する。directory 型 marketplace の Claude Code（2.1.268 で観測）と
-// `--plugin-dir` だけは作業ツリーを直接読む。
+// Claude Code and Codex both copy the plugin to `<cache>/<marketplace>/gleanery/<version>/`
+// and start MCP from there. Only Claude Code with a directory marketplace (observed in 2.1.268) and
+// `--plugin-dir` read the working tree directly.
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -14,7 +14,7 @@ import { caution, faint, type Mark, mark, pad, width } from "./panel.ts";
 const MANIFEST = path.join(".claude-plugin", "plugin.json");
 const PACKAGE = "package.json";
 
-/** root が gleanery の配布物ならそのバージョン。消えた cache や別の plugin なら null。 */
+/** The version when root is a gleanery package. null for a removed cache or another plugin. */
 export function versionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, MANIFEST), "utf8")) as {
@@ -27,7 +27,7 @@ export function versionAt(root: string): string | null {
   }
 }
 
-/** root が gleanery のnpm packageならそのバージョン。plugin channelのバージョンとは独立して進みうる。 */
+/** The version when root is the gleanery npm package. It can move independently of the plugin channel version. */
 export function packageVersionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, PACKAGE), "utf8")) as {
@@ -40,17 +40,17 @@ export function packageVersionAt(root: string): string | null {
   }
 }
 
-// bundle は <root>/dist/*.js から、テストと `node src/*.ts` は server/src/ から動く。
+// The bundle runs from <root>/dist/*.js; tests and `node src/*.ts` run from server/src/.
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT =
   [path.join(here, ".."), path.join(here, "..", "..", "plugin")].find((r) => versionAt(r) !== null) ??
   path.join(here, "..");
 
 /**
- * 起動元がまだ配布物として生きているか。
- * Codex は更新で旧バージョンの cache を即座に消し、Claude Code は約 14 日残して `.orphaned_at` を置く。
- * **`.orphaned_at` は補助の手がかり。**公式が書くのは orphaned という扱いだけで、ファイル名は観測値。
- * 無いことを「最新」の根拠にしない。
+ * Whether the directory it started from is still a live package.
+ * Codex deletes the old version's cache immediately on update; Claude Code keeps it for about 14 days with `.orphaned_at`.
+ * **`.orphaned_at` is only a hint.** The official docs describe the orphaned state; the file name is observed.
+ * Its absence is not proof of being current.
  */
 export function rootState(root: string): "gone" | "orphaned" | "ok" {
   if (!fs.existsSync(path.join(root, MANIFEST))) return "gone";
@@ -58,7 +58,7 @@ export function rootState(root: string): "gone" | "orphaned" | "ok" {
   return "ok";
 }
 
-/** 0.10.9 < 0.10.18 を文字列比較で逆転させない。 */
+/** Keeps 0.10.9 < 0.10.18 from flipping under string comparison. */
 export function compareVersions(a: string, b: string): number {
   const x = a.split(".").map(Number);
   const y = b.split(".").map(Number);
@@ -69,21 +69,21 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-// Claude Code が cache の root に書き足す印（置き換えたバージョンの `.orphaned_at`、使っているバージョンの `.in_use/<pid>`）。
-// **名前で挙げる。**ドットで始まるものをまとめて外すと、`.mcp.json` のような配布物の差まで黙って消える。
+// Markers Claude Code adds to the cache root (`.orphaned_at` on replaced versions, `.in_use/<pid>` on versions in use).
+// **Listed by name.** Skipping everything starting with a dot would silently hide package differences such as `.mcp.json`.
 const HOST_MARKS = new Set([".orphaned_at", ".in_use"]);
 
 /**
- * bundle が作り、npm が配るが、git は追跡しないもの。
- * **ディレクトリだけでなくファイルも挙げる** — 同梱の告知を入れ忘れて、正常な導入先が
- * 「同じバージョンなのに中身が違う」と出た（実測: 自己比較で THIRD_PARTY_NOTICES.md だけが差になった）。
+ * Files the bundle creates and npm ships but git does not track.
+ * **List files, not only directories** — forgetting the bundled notices made a healthy install show
+ * "same version, different contents" (measured: comparing a package with itself differed only in THIRD_PARTY_NOTICES.md).
  */
 const GENERATED = /^(dist|db)\/|^THIRD_PARTY_NOTICES\.md$|^README\.md$/;
 
-/** OS と editor が置く物。追跡もされず、npm にも詰められない。 */
+/** Files the OS and editors create. Not tracked, and not packed by npm. */
 const JUNK = /^\.DS_Store$|\.sw[a-p]$|~$/;
 
-/** root 以下の配布物。印のディレクトリへは降りない（走査中に session が終わると消える）。 */
+/** Package files under root. Marker directories are not entered (they vanish if a session ends during the scan). */
 function distributed(root: string, tracked: boolean): Map<string, string> {
   const walk = (dir: string): string[] =>
     fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -91,8 +91,8 @@ function distributed(root: string, tracked: boolean): Map<string, string> {
       const abs = path.join(dir, e.name);
       return e.isDirectory() ? walk(abs) : e.isFile() ? [path.relative(root, abs)] : [];
     });
-  // repository は git が追跡しているものと、bundle が作る配布物が配られる。
-  // ignore 対象や editor の一時ファイルは差に数えない。
+  // The repository ships what git tracks plus what the bundle creates.
+  // Ignored files and editor temporary files are not counted as differences.
   let rels: string[] | undefined;
   if (tracked) {
     try {
@@ -102,11 +102,11 @@ function distributed(root: string, tracked: boolean): Map<string, string> {
       })
         .split("\0")
         .filter((rel) => rel && fs.existsSync(path.join(root, rel)));
-      // **生成物は git が追跡しないが、npm の files はこれを配る**（.gitignore の plugin/dist と plugin/db）。
-      // 追跡分だけを基準にすると、導入先にあって基準に無いものが全部差になり、正常な導入が壊れて見える。
+      // **Generated files are not tracked by git, but npm files ships them** (plugin/dist and plugin/db in .gitignore).
+      // Comparing only tracked files would count everything installed but untracked as a difference and make a healthy install look broken.
       rels = [...rels, ...walk(root).filter((rel) => GENERATED.test(rel) && !JUNK.test(path.basename(rel)))];
     } catch {
-      // git の外（tarball で取った repository など）は全部を数える。
+      // Outside git (a repository taken from a tarball, for example) everything counts.
     }
   }
   rels ??= walk(root);
@@ -116,8 +116,8 @@ function distributed(root: string, tracked: boolean): Map<string, string> {
 }
 
 /**
- * 2 つの root で中身が違うファイル。**mtime は見ない** — 同じ中身の再 bundle で誤検知する。
- * `tracked` は a が repository の作業ツリーのときに立てる。
+ * Files whose contents differ between two roots. **mtime is ignored** — rebundling the same content would be a false alarm.
+ * `tracked` is set when a is the repository's working tree.
  */
 export function differingFiles(a: string, b: string, { tracked = false } = {}): string[] {
   const x = distributed(a, tracked);
@@ -133,7 +133,7 @@ export function differingFiles(a: string, b: string, { tracked = false } = {}): 
 
 export type McpProcess = { pid: number; started: Date; script: string };
 
-/** `LC_ALL=C ps -o pid=,lstart=,args=` の出力から、`node …/dist/mcp.js` だけを拾う。 */
+/** Picks only `node …/dist/mcp.js` from the output of `LC_ALL=C ps -o pid=,lstart=,args=`. */
 export function parsePs(out: string): McpProcess[] {
   const procs: McpProcess[] = [];
   for (const line of out.split("\n")) {
@@ -145,16 +145,16 @@ export function parsePs(out: string): McpProcess[] {
 }
 
 /**
- * Codex は `./dist/mcp.js` を plugin root を cwd にして起動するので、相対パスは cwd で解く。
- * **同じパスに作り直された cache を生きていると読まない。**プロセスが握る cwd は消えた旧ディレクトリの
- * ままなので、Linux は ` (deleted)` の印、macOS は inode の食い違いで見分ける。
+ * Codex starts `./dist/mcp.js` with the plugin root as cwd, so relative paths are resolved against cwd.
+ * **A cache recreated at the same path is not read as alive.** The process still holds the removed old directory
+ * as its cwd, so Linux shows a ` (deleted)` marker and macOS an inode mismatch.
  */
 function cwdOf(pid: number): { dir: string; replaced: boolean } | null {
   try {
     const link = fs.readlinkSync(`/proc/${pid}/cwd`);
     return { dir: link.replace(/ \(deleted\)$/, ""), replaced: link.endsWith(" (deleted)") };
   } catch {
-    // /proc が無い（macOS）。
+    // No /proc (macOS).
   }
   try {
     const out = execFileSync("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fin"], {
@@ -173,7 +173,7 @@ function cwdOf(pid: number): { dir: string; replaced: boolean } | null {
     try {
       now = String(fs.statSync(dir).ino);
     } catch {
-      // 消えていれば rootState() が拾う。
+      // If it is gone, rootState() catches it.
     }
     const held = field("i");
     return { dir, replaced: now !== undefined && held !== undefined && now !== held };
@@ -190,28 +190,28 @@ export type Running = {
   started: Date;
   root: string | null;
   version: string | null;
-  /** 同じパスに作り直された起動元から、消えた旧ディレクトリの中身で動いている。 */
+  /** Started from a path that was recreated and runs on the contents of the removed old directory. */
   replaced?: boolean;
 };
 
 export type Seen = {
-  /** 作業ツリーの plugin/。cwd か CLI の置き場所が gleanery の repository のときだけ見える。 */
+  /** The working tree's plugin/. Visible only when cwd or the CLI location is the gleanery repository. */
   repository: Install | null;
   cli: Install;
   /**
-   * `npm i -g` で入れた CLI。実行中のものとは別に古いまま残りうる（plugin の cache とも更新の操作が違う）。
-   * null は入っていないか、npm を叩けなかったとき。
+   * The CLI installed with `npm i -g`. It can stay old apart from the running one (it updates separately from the plugin cache).
+   * null when not installed or when npm could not be run.
    */
   global: Install | null;
-  /** null は導入されていない、"unknown" は claude コマンドが使えず観測できなかった。 */
+  /** null when not installed; "unknown" when the claude command is unavailable and nothing could be observed. */
   claude: Install | null | "unknown";
   codex: Install[];
   codexCache: string;
-  /** null は ps が使えず観測できなかった。 */
+  /** null when ps is unavailable and nothing could be observed. */
   running: Running[] | null;
 };
 
-/** 外部コマンドを叩く観測をここに集める。判定は report() が行い、テストは Seen を組んで渡す。 */
+/** Observations that run external commands live here. report() decides; tests build Seen and pass it. */
 export function observe(cwdRoot: string): Seen {
   const install = (root: string): Install => ({
     version: versionAt(root),
@@ -234,23 +234,23 @@ export function observe(cwdRoot: string): Seen {
         timeout: 30_000,
       }),
     ) as { id: string; version?: string; installPath?: string; scope?: string }[];
-    // 同じ id が scope ごとに並ぶ。README の導入手順と、下で案内する `claude plugin update`（既定は
-    // user scope）に揃えて user の導入だけを見る。project / local は別の場所の session にしか効かない。
+    // The same id appears per scope. Only the user install is checked, matching the README install steps and `claude plugin update`
+    // below (user scope by default). project / local installs only affect sessions elsewhere.
     const m = list.find((p) => p.id.startsWith("gleanery@") && p.scope === "user");
     claude = m?.installPath ? { version: m.version ?? null, root: m.installPath } : null;
   } catch {
     claude = "unknown";
   }
 
-  // `codex plugin list --json` は 7 秒かかり、返る version が cache のものか source のものか
-  // 区別できない。cache の置き場所を直接読む。
-  // lsof は symlink を解いたパスを返すので、実行中の MCP と突き合わせる側も解いておく。
-  // cache が丸ごと消えていても解けるよう、CODEX_HOME の側で解く。
+  // `codex plugin list --json` takes 7 seconds and cannot tell whether the version comes from the cache or the source.
+  // Read the cache location directly.
+  // lsof returns paths with symlinks resolved, so the side matched with the running MCP resolves them too.
+  // Resolve on the CODEX_HOME side so it works even when the whole cache is gone.
   let codexHome = process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex");
   try {
     codexHome = fs.realpathSync(codexHome);
   } catch {
-    // 無ければ下の走査が空になり、「見つからない」と出る。
+    // When missing, the scan below is empty and reports "not found".
   }
   const codexCache = path.join(codexHome, "plugins", "cache");
   const codex: Install[] = [];
@@ -274,10 +274,10 @@ export function observe(cwdRoot: string): Seen {
       const root = path.dirname(path.dirname(path.resolve(cwd.dir, p.script)));
       const cached = CACHED.test(root);
       const now = versionAt(root);
-      // 別の plugin の dist/mcp.js を除く。消えた cache は manifest を読めないので置き場所の形で見分ける。
+      // Skip dist/mcp.js of other plugins. A removed cache has no readable manifest, so it is recognized by its path.
       if (now === null && !cached) return [];
-      // 表示するのは起動時のバージョン。消えた・作り直された cache はディレクトリ名がそれにあたる。作業ツリーは
-      // 起動後も書き換わるので、bundle か manifest が起動より新しければ今のバージョンで動いているとは言えない。
+      // Shows the version at start. For removed or recreated caches, the directory name is that version. The working tree
+      // changes after start, so when the bundle or manifest is newer than the start time, it cannot claim the current version.
       let version = cwd.replaced || now === null ? (cached ? path.basename(root) : null) : now;
       if (!cached && version !== null) {
         try {
@@ -295,8 +295,8 @@ export function observe(cwdRoot: string): Seen {
     running = null;
   }
 
-  // **plugin の cache とは別経路である。**`claude plugin update` では上がらず、DB の revision が
-  // 上がった日に、古い CLI だけが「revision N を期待している」で落ちる。
+  // **This is a separate path from the plugin cache.** `claude plugin update` does not update it, and on the day the database
+  // revision goes up, only the old CLI fails with "expects revision N".
   let global: Install | null = null;
   try {
     const at = path.join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "gleanery");
@@ -319,35 +319,35 @@ function safeDirs(dir: string): string[] {
   }
 }
 
-// `plugin update` は marketplace を取り直すと公式に書かれていないので、先に取り直す。
-// 更新後も動いている MCP は旧バージョンのパスのまま。Claude Code は対話端末の session なら
-// /reload-plugins で新しいパスへ移る（公式 plugins-reference）。Codex は開き直す。
-/** 古い導入の直し方。打つ command と、打った後にすること（after） */
+// The official docs do not say `plugin update` refetches the marketplace, so it is refetched first.
+// MCP servers still running after the update keep the old path. In an interactive Claude Code session
+// /reload-plugins moves them to the new path (official plugins-reference). Codex needs to be reopened.
+/** How to fix an old install: the command to run and what to do after it (after) */
 const UPDATE = {
-  global: { who: "npm の CLI", command: "npm i -g gleanery@<バージョン>", after: null },
+  global: { who: "npm CLI", command: "npm i -g gleanery@<version>", after: null },
   claude: {
     who: "Claude Code",
     command: "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery",
-    after: "開いている session で /reload-plugins",
+    after: "run /reload-plugins in open sessions",
   },
   codex: {
     who: "Codex",
     command: "codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery",
-    after: "Codex を開き直す",
+    after: "reopen Codex",
   },
 } as const;
 
 export type Update = { who: string; command: string; after: string | null };
 
-/** 更新の手順の最後に添える注意。届く中身が何で決まるか */
+/** A note at the end of the update steps: what decides the delivered contents */
 export const UPDATE_NOTE =
-  "届く中身は各ホストの marketplace の取得元で決まる。GitHub から取る設定なら、push していない変更は届かない";
-const RELOAD = { claude: "/reload-plugins か session の張り直し", codex: "Codex の開き直し" };
+  "Each host's marketplace source decides what is delivered. When it pulls from GitHub, unpushed changes do not arrive";
+const RELOAD = { claude: "/reload-plugins or a new session", codex: "reopening Codex" };
 
 /**
- * doctor の plugin 節。**比較の基準は repository**（無ければ各ホストの導入済みバージョン）で、
- * 実行中の CLI は基準にしない。古い session の PATH にある cache の CLI を基準にすると、
- * 新しいほうを「古い」と言う逆転が起きる。
+ * The plugin section of doctor. **The baseline is the repository** (or each host's installed version when absent); the running
+ * CLI is never the baseline. Using the cached CLI on an old session's PATH as the baseline would call
+ * the newer one "old".
  */
 export function report(s: Seen, now = new Date()): { lines: string[]; issues: string[]; updates: Update[] } {
   const lines: string[] = [];
@@ -359,7 +359,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     if (m === "warn" || m === "fail") issues.push(label);
     lines.push(`  ${mark(m)} ${pad(label, 19)}${text}`);
   };
-  // 理由はパスの後ろに続けず、次の行でパスの列に揃える（パスが長いと、続けた理由が端末の右で折れて読めない）
+  // The reason goes on the next line aligned with the path column, not after the path (with a long path it wraps off the right edge)
   const row = (
     label: string,
     i: Install | null,
@@ -367,7 +367,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     aside = "",
     m: Mark = note ? "warn" : "ok",
   ) => {
-    const version = pad(i?.version ?? "不明", 9);
+    const version = pad(i?.version ?? "unknown", 9);
     const indent = " ".repeat(2 + 2 + width(pad(label, 19)) + width(version));
     say(
       m,
@@ -381,101 +381,104 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     const candidate = packageInstall(i);
     if (!candidate.version || !packageBase.version) return {};
     const c = compareVersions(candidate.version, packageBase.version);
-    if (c < 0) return { note: `repositoryのnpm package（${packageBase.version}）より古い`, update: true };
+    if (c < 0)
+      return { note: `older than the repository npm package (${packageBase.version})`, update: true };
     if (c > 0 && s.repository) {
-      return { note: `repositoryのnpm package（${packageBase.version}）より新しい。checkoutが古い` };
+      return { note: `newer than the repository npm package (${packageBase.version}); the checkout is old` };
     }
     return {};
   };
 
-  lines.push("npm package のバージョン");
+  lines.push("npm package versions");
   if (s.repository) row("repository", packageInstall(s.repository));
-  row("実行中の CLI", packageInstall(s.cli), packageAgainst(s.cli).note);
+  row("Running CLI", packageInstall(s.cli), packageAgainst(s.cli).note);
   if (s.global && path.resolve(s.global.root) !== path.resolve(s.cli.root)) {
     const { note, update } = packageAgainst(s.global);
     if (update) todo.add("global");
-    row("npm i -g の CLI", packageInstall(s.global), note);
+    row("npm i -g CLI", packageInstall(s.global), note);
   }
   lines.push("");
-  // **repository が無いほうが普通になる。**npm から入れた利用者は clone を持たないので、
-  // そこで比べるのをやめると、CLI と plugin が別々に更新されてずれたことを誰も言わなくなる
-  // （CLI は `npm i -g`、plugin は `claude plugin update` で、更新の操作が別々）。
+  // **Usually there is no repository.** Users who installed from npm have no clone, and if comparison stopped there
+  // nobody would report the CLI and plugin drifting apart after separate updates
+  // (the CLI updates with `npm i -g`, the plugin with `claude plugin update`).
   const base = s.repository ?? (s.cli.version ? s.cli : null);
-  const baseName = s.repository ? "repository" : "この CLI";
+  const baseName = s.repository ? "repository" : "this CLI";
 
   /**
-   * 基準との食い違いと、ホストの更新で直るか。同じバージョンなら中身まで比べる（バージョンを上げずに変えたものを見落とさない）。
-   * 導入側が新しいときと、同じバージョンで中身だけ違うときは、更新しても変わらないので手順を出さない
-   * （cache はバージョンが変わったときだけ複製し直される）。
+   * Differences from the baseline, and whether a host update fixes them. At the same version the contents are compared too (so changes made without a version bump are caught).
+   * When the install is newer, or the same version with different contents, updating changes nothing, so no steps are shown
+   * (the cache is copied again only when the version changes).
    */
   const against = (i: Install): { note?: string; update?: boolean } => {
-    if (!fs.existsSync(i.root)) return { note: "導入先が無い。Skill のパスも無効", update: true };
+    if (!fs.existsSync(i.root))
+      return { note: "The install directory is gone. Skill paths are invalid too", update: true };
     if (!base?.version || !i.version) return {};
     const c = compareVersions(i.version, base.version);
-    if (c < 0) return { note: `${baseName}（${base.version}）より古い`, update: true };
+    if (c < 0) return { note: `older than ${baseName} (${base.version})`, update: true };
     if (c > 0) {
       return {
         note: s.repository
-          ? `repository（${base.version}）より新しい。repository の checkout が古い`
-          : `この CLI（${base.version}）より新しい。\`npm i -g gleanery@${i.version}\` で CLI を揃える`,
+          ? `newer than the repository (${base.version}); the repository checkout is old`
+          : `newer than this CLI (${base.version}). Match the CLI with \`npm i -g gleanery@${i.version}\``,
       };
     }
     if (path.resolve(i.root) === path.resolve(base.root)) return {};
-    // `tracked` は基準が repository の作業ツリーのときだけ立てる。導入先どうしの比較では、
-    // 追跡の概念が無く、配られたファイルがそのまま両側にある。
+    // `tracked` is set only when the baseline is the repository's working tree. Comparing two installs has
+    // no notion of tracking; the shipped files are on both sides as is.
     const diff = differingFiles(base.root, i.root, { tracked: Boolean(s.repository) });
     if (!diff.length) return {};
-    const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " など" : ""}`;
+    const files = `${diff.slice(0, 3).join(", ")}${diff.length > 3 ? " and more" : ""}`;
     return {
       note: s.repository
-        ? `同じバージョンなのに中身が違う（${files}）。repository の変更は、バージョンを上げて main へ入れるまで届かない`
-        : `同じバージョンなのに中身が違う（${files}）。入れ直して揃える`,
+        ? `same version, different contents (${files}). Repository changes do not arrive until the version is bumped and merged to main`
+        : `same version, different contents (${files}). Reinstall to match`,
     };
   };
 
-  lines.push("plugin channel のバージョン");
+  lines.push("Plugin channel versions");
   if (s.repository) row("repository", s.repository);
-  else say("none", "repository", "見えない。この CLI のバージョンを基準に比べる");
+  else say("none", "repository", "not visible. Comparing against this CLI's version");
 
-  row("この CLI 内 plugin", s.cli, against(s.cli).note);
+  row("Plugin in this CLI", s.cli, against(s.cli).note);
 
-  if (s.claude === "unknown") say("none", "Claude Code", "不明（claude plugin list --json が使えない）");
-  else if (s.claude === null) say("none", "Claude Code", "導入されていない");
+  if (s.claude === "unknown")
+    say("none", "Claude Code", "unknown (claude plugin list --json is unavailable)");
+  else if (s.claude === null) say("none", "Claude Code", "not installed");
   else {
     const { note, update } = against(s.claude);
     if (update) todo.add("claude");
     row("Claude Code", s.claude, note);
   }
 
-  if (s.codex.length === 0) say("none", "Codex", `見つからない（${short(s.codexCache)} を見た）`);
+  if (s.codex.length === 0) say("none", "Codex", `not found (looked in ${short(s.codexCache)})`);
   for (const x of s.codex) {
-    // 入れ直すと Codex は旧バージョンの cache を消す（codex-cli 0.153.4 で観測）。
+    // Reinstalling makes Codex delete the old version's cache (observed in codex-cli 0.153.4).
     const { note, update } =
       s.codex.length > 1
-        ? { note: "cache が複数ある。どれを使うかは Codex が決める", update: true }
+        ? { note: "multiple caches. Codex decides which one it uses", update: true }
         : against(x);
     if (update) todo.add("codex");
     row("Codex", x, note);
   }
 
-  // repository が見えないときの最低限: 同じバージョンなのに 2 つのホストで中身が違う。どちらが古いかは断定しない。
+  // The minimum without a visible repository: the same version with different contents on the two hosts. It does not claim which is older.
   const x = s.codex.length === 1 ? s.codex[0] : undefined;
   if (!base && s.claude && s.claude !== "unknown" && x && s.claude.version === x.version) {
     if (fs.existsSync(s.claude.root) && differingFiles(s.claude.root, x.root).length) {
-      say("warn", "Claude Code と Codex", "同じバージョンなのに中身が違う");
+      say("warn", "Claude Code and Codex", "same version, different contents");
     }
   }
 
-  if (s.running === null) say("none", "実行中の MCP", "不明（ps が使えない）");
-  else if (s.running.length === 0) say("none", "実行中の MCP", "無い");
+  if (s.running === null) say("none", "Running MCP", "unknown (ps is unavailable)");
+  else if (s.running.length === 0) say("none", "Running MCP", "none");
   for (const r of s.running ?? []) {
     const when = r.started
       .toLocaleString("sv-SE")
       .slice(r.started.toDateString() === now.toDateString() ? 11 : 5, 16);
     const label = `MCP pid ${r.pid}`;
-    const aside = `（${when} 起動）`;
+    const aside = ` (started ${when})`;
     if (!r.root) {
-      row(label, null, "起動元が分からない", aside, "none");
+      row(label, null, "unknown start directory", aside, "none");
       continue;
     }
     const codex = r.root.startsWith(`${s.codexCache}/`);
@@ -483,21 +486,22 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
     const again = RELOAD[codex ? "codex" : "claude"];
     const state = rootState(r.root);
     let note: string | undefined;
-    if (state === "gone") note = `起動元が消えている。Skill のパスも無効なので、${again}で直す`;
+    if (state === "gone")
+      note = `The start directory is gone, and Skill paths are invalid too. Fix with ${again}`;
     else if (r.replaced)
-      note = `起動元が同じ場所に作り直され、消えた古いバージョンの中身で動いている。${again}で直す`;
+      note = `The start directory was recreated in place, and it runs on the removed old version. Fix with ${again}`;
     else if (!CACHED.test(r.root)) {
       note =
-        "配布された cache ではなく、この場所を直接読んでいる（directory 型 marketplace か --plugin-dir）";
-    } else if (state === "orphaned") note = `Claude Code が更新で置き換えたバージョン。${again}で直す`;
+        "reads this location directly, not a distributed cache (a directory marketplace or --plugin-dir)";
+    } else if (state === "orphaned") note = `a version Claude Code replaced on update. Fix with ${again}`;
     else if (installed && installed !== "unknown" && installed.version && r.version) {
       if (compareVersions(r.version, installed.version) < 0)
-        note = `導入済みの ${installed.version} より古い。${again}で直す`;
+        note = `older than the installed ${installed.version}. Fix with ${again}`;
     }
     row(label, { version: r.version, root: r.root }, note, aside);
   }
 
-  // npm の CLI は上げる先のバージョンが分かっているので埋める（そのまま打てる形にする）
+  // The npm CLI's target version is known, so fill it in (a command that can be run as is)
   const updates = [...todo].map((k): Update => {
     const u = UPDATE[k];
     return k === "global" && packageBase.version

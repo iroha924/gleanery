@@ -1,8 +1,8 @@
-// この PC の DB（~/.gleanery/gleanery.db）の面倒を見る。持ち主が手元で叩く。owner の接続（authorizer を掛けない）で繋ぐ。
+// Looks after this machine's database (~/.gleanery/gleanery.db). The owner runs these locally, with the owner connection (no authorizer).
 //
-//   gleanery init                 DB を作り、db/schema.sql を当てる。何度流してもよい（あれば触らない）
-//   gleanery db migrate [--yes]   DB のバージョン（user_version）より新しい db/migrations を当てる
-//   gleanery db reindex           全文検索の索引（FTS）を作り直す。server/src/text.ts の terms() の規則を変えた後に打つ
+//   gleanery init                 creates the database and applies db/schema.sql. Safe to run again (an existing one is left alone)
+//   gleanery db migrate [--yes]   applies db/migrations newer than the database version (user_version)
+//   gleanery db reindex           rebuilds the full-text index (FTS). Run it after changing the rules of terms() in server/src/text.ts
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,19 +11,20 @@ import { constants as C, type DatabaseSync } from "node:sqlite";
 import { dbDir } from "./assets.ts";
 import { dbFile, SCHEMA_REVISION } from "./db.ts";
 import { connectWriter } from "./db-write.ts";
+import { plural } from "./text.ts";
 import { indent } from "./tui/view.ts";
 
-/** CLI の他の出力と同じく字下げする（見出しと締めは cli.ts の db command が付ける） */
+/** Indented like other CLI output (the db command in cli.ts adds the heading and closing) */
 const say = (text: string) => console.log(indent(text));
 
-// 同梱物の在り処は assets.ts が 1 箇所で決める（配る形と作業ツリーで置かれ方が違う）。
+// assets.ts alone decides where bundled files live (the shipped package and the working tree differ).
 const SCHEMA = (): string => path.join(dbDir(), "schema.sql");
 const MIGRATIONS = (): string => path.join(dbDir(), "migrations");
 
 const versionOf = (raw: DatabaseSync): number =>
   (raw.prepare("pragma user_version").get() as { user_version: number }).user_version;
 
-/** 書き込みのロックを先に取った transaction で fn を流す。失敗すれば rollback して元の例外を投げる。 */
+/** Runs fn in a transaction that takes the write lock first. On failure it rolls back and rethrows the original error. */
 function immediate<T>(raw: DatabaseSync, fn: () => T): T {
   raw.exec("begin immediate");
   try {
@@ -36,7 +37,7 @@ function immediate<T>(raw: DatabaseSync, fn: () => T): T {
   }
 }
 
-/** 接続を開いて fn を流し、必ず閉じる。 */
+/** Opens a connection, runs fn, and always closes it. */
 function withOwner<T>(file: string, fn: (raw: DatabaseSync) => T, create = false): T {
   const raw = connectWriter("owner", file, create);
   try {
@@ -47,19 +48,21 @@ function withOwner<T>(file: string, fn: (raw: DatabaseSync) => T, create = false
 }
 
 /**
- * この PC の DB を用意する。**既にあれば触らない**ので何度流してもよい。
- * 一時ファイルへ schema を当ててから置く（途中で止まっても、schema の半分だけ当たった DB を残さない）。置き場所が先に
- * 埋まっていれば置かずに止まる。
+ * Prepares this machine's database. **An existing one is left alone**, so it is safe to run again.
+ * The schema is applied to a temporary file before it is put in place (stopping midway never leaves a half-applied database).
+ * If the destination is already taken, it stops without placing it.
  */
 export function dbInit(file: string = dbFile()): void {
   if (fs.existsSync(file)) {
     const got = withOwner(file, versionOf);
-    if (got === SCHEMA_REVISION) say(`既にある: ${file}（revision ${got}）`);
+    if (got === SCHEMA_REVISION) say(`Already exists: ${file} (revision ${got})`);
     else if (got === 0)
-      throw new Error(`${file} は gleanery の DB ではない（schema が無い）。別の名前へ動かしてから打ち直す`);
+      throw new Error(
+        `${file} is not a gleanery database (no schema). Move it to another name, then run this again.`,
+      );
     else
       say(
-        `既にある: ${file}（revision ${got}。このコードは ${SCHEMA_REVISION}。\`gleanery db migrate\` で進める）`,
+        `Already exists: ${file} (revision ${got}; this gleanery expects ${SCHEMA_REVISION}. Run \`gleanery db migrate\`.)`,
       );
     return;
   }
@@ -70,62 +73,66 @@ export function dbInit(file: string = dbFile()): void {
     withOwner(
       tmp,
       (raw) => {
-        // WAL は DB ファイルに残る設定で、接続ごとに打たなくてよい。読む側（MCP）が書く側（取り込み）を待たない。
+        // WAL is a setting stored in the database file, so it need not be set per connection. Readers (MCP) do not wait for writers (imports).
         raw.exec("pragma journal_mode = wal");
         raw.exec(fs.readFileSync(SCHEMA(), "utf8"));
         if (versionOf(raw) !== SCHEMA_REVISION)
           throw new Error(
-            `db/schema.sql の user_version が ${versionOf(raw)}、コードは ${SCHEMA_REVISION} を期待している`,
+            `db/schema.sql has user_version ${versionOf(raw)}, but the code expects ${SCHEMA_REVISION}`,
           );
       },
       true,
     );
-    // rename は先に置かれた DB を置き換える。link は置き場所が埋まっていれば EEXIST で止まる（同時の init の後から来た側）。
-    // hard link を持たない FS（FAT・exFAT など）では rename で置く。複製は途中で止まると半端な DB を残すので使わない。
+    // rename replaces a database already in place. link stops with EEXIST when the destination is taken (the later of two concurrent inits).
+    // File systems without hard links (FAT, exFAT) fall back to rename. Copying is not used: stopping midway leaves a partial database.
     try {
       fs.linkSync(tmp, file);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "EEXIST" || fs.existsSync(file))
-        throw new Error(`${file} は既にある（別の gleanery init が先に作った）。打ち直せば確かめる`);
+        throw new Error(
+          `${file} already exists (another gleanery init created it first). Run this again to check it.`,
+        );
       fs.renameSync(tmp, file);
     }
   } finally {
     for (const f of [tmp, `${tmp}-wal`, `${tmp}-shm`]) fs.rmSync(f, { force: true });
   }
-  say(`作った: ${file}（revision ${SCHEMA_REVISION}）`);
+  say(`Created: ${file} (revision ${SCHEMA_REVISION})`);
 }
 
 /**
- * 名前の NNNN は当てた後のバージョン。名前の形と重複は当てるものが無くても検査する（飛ばした 1 本は、バージョンが進むと二度と当たらない）。
+ * NNNN in a name is the version after applying it. Name format and duplicates are checked even with nothing to apply (a skipped one never applies once the version moves on).
  */
 export function pendingMigrations(files: string[], current: number): { revision: number; file: string }[] {
   const all = files
-    // `.` で始まる名前は OS やエディタの隠しファイル（.DS_Store、vim の swap）で、書き損じた migration ではない。
+    // Names starting with `.` are OS or editor hidden files (.DS_Store, vim swap files), not misnamed migrations.
     .filter((file) => !file.startsWith("."))
     .map((file) => {
       const revision = file.match(/^(\d{4})_[a-z0-9_]+\.sql$/)?.[1];
-      if (!revision) throw new Error(`db/migrations/${file} の名前が NNNN_<英小文字・数字・_>.sql でない`);
+      if (!revision)
+        throw new Error(`db/migrations/${file} is not named NNNN_<lowercase letters, digits, _>.sql`);
       return { revision: Number(revision), file };
     })
     .sort((a, b) => a.revision - b.revision);
   const seen = new Map<number, string>();
   for (const m of all) {
     const other = seen.get(m.revision);
-    if (other) throw new Error(`db/migrations に revision ${m.revision} が 2 本ある: ${other} と ${m.file}`);
+    if (other)
+      throw new Error(`db/migrations has two migrations for revision ${m.revision}: ${other} and ${m.file}`);
     seen.set(m.revision, m.file);
   }
   const pending = all.filter((m) => m.revision > current);
   for (const [i, m] of pending.entries()) {
     if (m.revision !== current + 1 + i)
-      throw new Error(`db/migrations に revision ${current + 1 + i} の migration が無い`);
+      throw new Error(`db/migrations has no migration for revision ${current + 1 + i}`);
   }
   return pending;
 }
 
 /**
- * migration の 1 行目の宣言。`-- gleanery: foreign_keys=off` だけを認め、ほかの `-- gleanery:` は投げる。
- * **読み損ねて外部キーが効いたまま当てると、表の作り直しが子の行を cascade で消す。**先頭の空白も宣言として読む。
- * 宣言の無い migration が表を消すのは、applyMigrations の authorizer が止める（SQL の文字列からは判定しない）。
+ * The declaration on a migration's first line. Only `-- gleanery: foreign_keys=off` is accepted; any other `-- gleanery:` throws.
+ * **Misreading it and applying with foreign keys on lets a table rebuild cascade-delete child rows.** Leading spaces also count as a declaration.
+ * The authorizer in applyMigrations stops undeclared migrations from dropping tables (not judged from the SQL text).
  */
 function directiveOf(dir: string, m: { file: string }): "foreign_keys=off" | null {
   const lines = fs.readFileSync(path.join(dir, m.file), "utf8").split(/\r?\n/);
@@ -134,23 +141,23 @@ function directiveOf(dir: string, m: { file: string }): "foreign_keys=off" | nul
     const d = /^\s*--\s*gleanery:\s*(.*?)\s*$/.exec(line)?.[1];
     if (d === undefined) continue;
     if (i !== 0 || d !== "foreign_keys=off")
-      throw new Error(`db/migrations/${m.file} の ${i + 1} 行目の宣言を読めない: ${d}`);
+      throw new Error(`Cannot read the declaration on line ${i + 1} of db/migrations/${m.file}: ${d}`);
     found = d;
   }
   return found;
 }
 
 /**
- * DB のバージョンより新しい migration を当て、transaction ごとに user_version を上げる（途中で落ちても前の分は残り、打ち直せる）。
- * 宣言の無い migration は続く分を 1 つの transaction で当てる。`-- gleanery: foreign_keys=off` を宣言した migration は単独で、
- * transaction の外で外部キーを切って当て、commit の前に foreign_key_check を空と確かめ、終わったら戻す（transaction の中では切り替わらない）。
+ * Applies migrations newer than the database version and raises user_version per transaction (earlier ones stay if it fails midway, so it can be rerun).
+ * Undeclared migrations in a row are applied in one transaction. A migration declaring `-- gleanery: foreign_keys=off` runs alone,
+ * turning foreign keys off outside the transaction, checks foreign_key_check is empty before commit, and turns them back on (they cannot switch inside a transaction).
  */
 export function applyMigrations(
   raw: DatabaseSync,
   files: string[],
   dir: string,
 ): { revision: number; file: string }[] {
-  // 当てる前に全部の宣言を読む。読めない 1 本があれば何も当てない。
+  // Read every declaration before applying. If one cannot be read, nothing is applied.
   const pending = pendingMigrations(files, versionOf(raw));
   const off = new Set(pending.filter((m) => directiveOf(dir, m) !== null).map((m) => m.file));
   const applied: { revision: number; file: string }[] = [];
@@ -161,18 +168,18 @@ export function applyMigrations(
     if (single) {
       raw.exec("pragma foreign_keys = off");
       if ((raw.prepare("pragma foreign_keys").get() as { foreign_keys: number }).foreign_keys !== 0)
-        throw new Error("外部キーを切れなかった（transaction の中にいる）");
+        throw new Error("Could not turn foreign keys off (inside a transaction)");
     }
-    // 宣言の無い migration では表を消させず、作り変えさせない（列の追加も含め、ALTER は宣言した migration で行う）。
-    // 外部キーが効いたままの drop は子の行を cascade で消し、親の rename は子の外部キーを退避先へ書き換える。
-    // SQLite が解析した文で止めるので、コメントや改行を挟んだ書き方でも抜けない。
+    // Undeclared migrations may not drop or rebuild tables (ALTER, including adding columns, belongs in a declared migration).
+    // A drop with foreign keys on cascade-deletes child rows, and renaming a parent rewrites children's foreign keys to the backup.
+    // It stops on statements SQLite has parsed, so comments or line breaks in between do not slip through.
     if (!single)
       raw.setAuthorizer((action) =>
         action === C.SQLITE_DROP_TABLE || action === C.SQLITE_ALTER_TABLE ? C.SQLITE_DENY : C.SQLITE_OK,
       );
     try {
       const batch = immediate(raw, () => {
-        // ロックを取った後に読み直す。確かめている間に別の db migrate が進めていれば、その残りから当てる。
+        // Read again after taking the lock. If another db migrate advanced it meanwhile, apply the rest from there.
         const now = pendingMigrations(files, versionOf(raw));
         if (now[0]?.file !== next.file) return [];
         const stop = now.findIndex((m) => off.has(m.file));
@@ -181,7 +188,7 @@ export function applyMigrations(
         if (single) {
           const broken = raw.prepare("pragma foreign_key_check").all();
           if (broken.length)
-            throw new Error(`${next.file} の後に外部キーの参照が ${broken.length} 件壊れている`);
+            throw new Error(`${plural(broken.length, "foreign key reference")} broken after ${next.file}`);
         }
         raw.exec(`pragma user_version = ${(take.at(-1) as { revision: number }).revision}`);
         return take;
@@ -195,8 +202,8 @@ export function applyMigrations(
 }
 
 /**
- * DB のバージョンより新しい migration を当てる。当て方は applyMigrations。
- * **当てる前に一覧を出して確かめる。**端末でないときは打たせられないので `--yes` を要る形にする。
+ * Applies migrations newer than the database version. See applyMigrations for how.
+ * **Lists them for confirmation before applying.** Without a terminal it cannot ask, so `--yes` is required.
  */
 export async function migrate(
   yes: boolean,
@@ -207,36 +214,36 @@ export async function migrate(
   const current = withOwner(file, versionOf);
   const todo = pendingMigrations(files, current);
   if (todo.length === 0) {
-    say(`当てるものは無い: ${file} は revision ${current}`);
+    say(`Nothing to apply: ${file} is at revision ${current}`);
     return;
   }
   say(`DB: ${file}`);
-  say(`いまの revision: ${current}`);
-  say(`当てる: ${todo.map((m) => m.file).join(" / ")}`);
+  say(`Current revision: ${current}`);
+  say(`To apply: ${todo.map((m) => m.file).join(" / ")}`);
   if (!yes) {
-    if (!process.stdin.isTTY) throw new Error("端末でないときは --yes を付ける");
+    if (!process.stdin.isTTY) throw new Error("Add --yes when not running in a terminal");
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    // 標準入力が EOF で閉じても question は settle しない。
+    // question never settles when stdin closes at EOF.
     const closed = new AbortController();
     rl.once("close", () => closed.abort());
     const typed = (
-      await rl.question("続けるなら yes を打つ: ", { signal: closed.signal }).catch(() => "")
+      await rl.question("Type yes to continue: ", { signal: closed.signal }).catch(() => "")
     ).trim();
     rl.close();
     if (typed !== "yes") {
-      say("止めた。");
+      say("Stopped.");
       process.exitCode = 1;
       return;
     }
   }
   const applied = withOwner(file, (raw) => applyMigrations(raw, files, dir));
-  say(`当てた: ${applied.map((m) => m.file).join(" / ") || "無し"}`);
-  say(`${file} は revision ${withOwner(file, versionOf)}`);
+  say(`Applied: ${applied.map((m) => m.file).join(" / ") || "none"}`);
+  say(`${file} is at revision ${withOwner(file, versionOf)}`);
 }
 
 /**
- * 全文検索の索引を作り直す。**terms() の規則を変えた PR は、release の手順にこれを書く。**
- * 規則を変えても、既存の行の索引は書いたときの規則のまま残り、問いの語と合わなくなる。
+ * Rebuilds the full-text index. **A PR changing the rules of terms() adds this to its release steps.**
+ * Changing the rules leaves existing rows indexed with the old rules, and they stop matching query terms.
  */
 export function reindex(file: string = dbFile()): void {
   const counts = withOwner(file, (raw) =>
@@ -256,15 +263,17 @@ export function reindex(file: string = dbFile()): void {
       };
     }),
   );
-  say(`索引を作り直した: 知識 ${counts.knowledge} 件 / 発言 ${counts.message} 件`);
+  say(
+    `Rebuilt the index: ${plural(counts.knowledge, "knowledge row")}, ${plural(counts.message, "message")}`,
+  );
 }
 
-/** doctor が出す DB の状態。どれも読むだけで、ファイルを書き換えない。 */
+/** Database state for doctor. Everything is read only; no file is modified. */
 export type Inspection = {
   revision: number;
-  /** DB と WAL のファイルの大きさ（バイト） */
+  /** Sizes of the database and WAL files (bytes) */
   bytes: number;
-  /** 全文検索の索引の integrity-check。壊れていれば理由の文 */
+  /** integrity-check of the full-text index. The reason text when broken */
   fts: { knowledge: string | null; message: string | null };
 };
 

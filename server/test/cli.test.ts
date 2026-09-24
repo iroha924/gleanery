@@ -33,28 +33,28 @@ test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落�
   for (const bad of ["--avod", "--limitt", "--all-scopes"]) {
     const r = run("search", "認証", bad);
     assert.notEqual(r.code, 0);
-    assert.match(r.out, new RegExp(`知らないフラグ: ${bad}`), `${bad}: ${r.out}`);
-    assert.doesNotMatch(r.out, /DB が無い/, "DB へ繋ぎにいっている");
+    assert.match(r.out, new RegExp(`Unknown flag: ${bad}`), `${bad}: ${r.out}`);
+    assert.doesNotMatch(r.out, /No database at/, "DB へ繋ぎにいっている");
   }
   const r = run("frobnicate");
   assert.notEqual(r.code, 0);
-  assert.match(r.out, /知らないコマンド: frobnicate/);
-  assert.doesNotMatch(r.out, /DB が無い/, "DB へ繋ぎにいっている");
+  assert.match(r.out, /Unknown command: frobnicate/);
+  assert.doesNotMatch(r.out, /No database at/, "DB へ繋ぎにいっている");
 });
 
 // 全コマンド共通のフラグ表を持つと、そのコマンドが見もしないフラグが黙って通る。
 // 通ってしまうと「指定したつもりの絞り込み」が効かないまま結果が返り、打った人は気付けない。
 test("そのコマンドが取らないフラグと、余分な位置引数は名指しして落ちる", () => {
   for (const [args, want] of [
-    [["doctor", "--yes"], /知らないフラグ: --yes/],
-    [["project", "list", "--reset-docs"], /知らないフラグ: --reset-docs/],
-    [["harvest", "--avoid"], /知らないフラグ: --avoid/],
-    [["project", "list", "garbage"], /余分な引数: garbage/],
+    [["doctor", "--yes"], /Unknown flag: --yes/],
+    [["project", "list", "--reset-docs"], /Unknown flag: --reset-docs/],
+    [["harvest", "--avoid"], /Unknown flag: --avoid/],
+    [["project", "list", "garbage"], /Extra argument: garbage/],
   ] as const) {
     const r = run(...args);
     assert.notEqual(r.code, 0, `gleanery ${args.join(" ")}: ${r.out}`);
     assert.match(r.out, want, r.out);
-    assert.doesNotMatch(r.out, /DB が無い/, `gleanery ${args.join(" ")} が DB へ繋ぎにいった`);
+    assert.doesNotMatch(r.out, /No database at/, `gleanery ${args.join(" ")} が DB へ繋ぎにいった`);
   }
 });
 
@@ -73,23 +73,23 @@ test("エラーの見出しは、振り分けが決めた道の名前だけで�
   // 締めの行と状態の行は行頭に置く。中身は字下げするので、仕込んだ改行から行頭の偽の行を作れない
   for (const forged of [run("x\n✓ 直すものは無い"), run("x\n╰─ ✓ 直すものは無い")]) {
     assert.doesNotMatch(forged.out, /^(?:╰─ )?✓ 直すものは無い$/m, forged.out);
-    assert.match(forged.out, /^✗ 止まった$/m, forged.out);
+    assert.match(forged.out, /^✗ Stopped$/m, forged.out);
   }
 });
 
 test("--limit は 1 から 20 の整数だけ", () => {
   for (const v of ["abc", "0", "21", "1.5", "-1"]) {
     const r = run("search", "認証", `--limit=${v}`);
-    assert.match(r.out, /--limit は 1 から 20 の整数にする/, `${v}: ${r.out}`);
+    assert.match(r.out, /--limit must be an integer from 1 to 20/, `${v}: ${r.out}`);
   }
-  assert.match(run("search", "認証", "--limit", "abc").out, /--limit は/, "--name 値 の形も解釈する");
+  assert.match(run("search", "認証", "--limit", "abc").out, /--limit must be/, "--name 値 の形も解釈する");
 });
 
 test("引数なしと --help は、そこから下の使い方を出して成功する", () => {
   for (const args of [[], ["--help"], ["project", "--help"], ["db", "--help"]]) {
     const r = run(...args);
     assert.equal(r.code, 0, `${args.join(" ")}: ${r.out}`);
-    assert.match(r.out, /使い方:/, `${args.join(" ")}: ${r.out}`);
+    assert.match(r.out, /Usage:/, `${args.join(" ")}: ${r.out}`);
   }
   // 使い方は宣言から組み立てる。書き写した文と食い違わせないため、コマンドの名前がそこに出ることを見る。
   assert.match(run("--help").out, /^ {2}db {2}/m);

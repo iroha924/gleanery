@@ -1,4 +1,4 @@
-// marked-terminal は型を同梱しない。@types/marked-terminal は依存に marked <12 を引き込むので入れず、使う分だけ宣言する。
+// marked-terminal ships no types. @types/marked-terminal pulls in marked <12, so only what is used is declared here.
 declare module "marked-terminal" {
   import type { MarkedExtension } from "marked";
 

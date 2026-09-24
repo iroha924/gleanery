@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// gleanery の CLI。取り込み・trace・名簿の書き込みは ingest の接続、検索は reader の接続で繋ぐ（sqlite.ts・db-write.ts）。
+// The gleanery CLI. Imports, trace, and directory writes use the ingest connection; searches use the reader connection (sqlite.ts, db-write.ts).
 //
-// 引数の解釈は @stricli/core に任せる。**コマンドごとに受け付けるフラグと位置引数を宣言する**ので、
-// 別のコマンドのフラグ（`gleanery doctor --yes`）も余分な位置引数（`gleanery project list garbage`）も
-// 構文の段階で落ちる。使い方の文はこの宣言から組み立て、別に書かない。
+// Argument parsing is left to @stricli/core. **Each command declares the flags and positional arguments it accepts**, so
+// another command's flag (`gleanery doctor --yes`) or an extra positional argument (`gleanery project list garbage`)
+// fails at parse time. Usage text is built from these declarations and never written separately.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -55,7 +55,7 @@ import {
   workDetail,
 } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
-import { ftsQuery, head, reason } from "./text.ts";
+import { ftsQuery, head, plural, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 import { runTui } from "./tui/tui.ts";
 import {
@@ -72,52 +72,52 @@ import {
 } from "./tui/view.ts";
 
 /**
- * エラーの枠の見出し。**振り分けが決めた道の名前だけで作る**（打った引数そのものは入れない）。
- * 引数の解釈より前に決まるので、フラグの綴りを間違えた失敗でもサブコマンドまで出る。
+ * Heading of the error box. **Built only from the route name routing chose** (never from the typed arguments).
+ * It is decided before argument parsing, so even a misspelled flag reports the subcommand.
  */
 let heading = "gleanery";
 
-/** 止まったときの塊。本文は字下げされるので、引数に仕込んだ改行で行頭の締めの行を作れない（tui/view.ts）。 */
+/** The block printed on failure. The body is indented, so newlines smuggled into arguments cannot forge a closing line at column 0 (tui/view.ts). */
 const failed = (body: string): string => failure(heading, plain(body));
 
-/** 引数の解釈で出た失敗の文。stricli の例外の種類ごとに、何が悪いかを名指しする。 */
+/** Messages for argument parsing failures. Names what is wrong for each kind of stricli error. */
 const describeScannerError = (e: ArgumentScannerError): string =>
   formatMessageForArgumentScannerError(e, {
     FlagNotFoundError: (x) =>
-      `知らないフラグ: --${inline(x.input)}${x.corrections.length ? `（もしかして ${x.corrections.map((c) => `--${c}`).join(" / ")}）` : ""}`,
-    AliasNotFoundError: (x) => `知らない短縮フラグ: -${inline(x.input)}`,
-    // ここは flag と位置引数を区別できないので、**parse が投げる文が自分で名乗る**。
+      `Unknown flag: --${inline(x.input)}${x.corrections.length ? ` (did you mean ${x.corrections.map((c) => `--${c}`).join(" / ")}?)` : ""}`,
+    AliasNotFoundError: (x) => `Unknown short flag: -${inline(x.input)}`,
+    // This cannot tell flags from positional arguments, so **the message thrown by parse names itself**.
     ArgumentParseError: (x) => reason(x.exception),
     EnumValidationError: (x) =>
-      `--${x.externalFlagName} は ${x.values.join(" か ")} にする: ${inline(x.input)}`,
-    UnexpectedFlagError: (x) => `--${x.externalFlagName} は 1 つだけ指定する: ${inline(x.input)}`,
+      `--${x.externalFlagName} must be ${x.values.join(" or ")}: ${inline(x.input)}`,
+    UnexpectedFlagError: (x) => `--${x.externalFlagName} can be given only once: ${inline(x.input)}`,
     UnexpectedPositionalError: (x) =>
-      `余分な引数: ${inline(x.input)}（このコマンドが取る引数は ${x.expectedCount} 個）`,
-    UnsatisfiedFlagError: (x) => `--${x.externalFlagName} に値が無い`,
-    UnsatisfiedPositionalError: (x) => `${x.placeholder} を指定する`,
-    InvalidNegatedFlagSyntaxError: (x) => `--no-${x.externalFlagName} に値は付けられない`,
+      `Extra argument: ${inline(x.input)} (this command takes ${x.expectedCount})`,
+    UnsatisfiedFlagError: (x) => `--${x.externalFlagName} needs a value`,
+    UnsatisfiedPositionalError: (x) => `Specify ${x.placeholder}`,
+    InvalidNegatedFlagSyntaxError: (x) => `--no-${x.externalFlagName} takes no value`,
   });
 
-/** 使い方と失敗の文。stricli が出す文はここだけで日本語にし、書式を組み立て直さない。 */
+/** Usage and failure text. Only stricli's text is overridden here; its layout is not rebuilt. */
 const TEXT: ApplicationText = {
   ...text_en,
   headers: {
-    usage: "使い方:",
-    aliases: "別名:",
-    commands: "コマンド:",
-    flags: "フラグ:",
-    arguments: "引数:",
+    usage: "Usage:",
+    aliases: "Aliases:",
+    commands: "Commands:",
+    flags: "Flags:",
+    arguments: "Arguments:",
   },
-  keywords: { default: "既定 =", separator: "区切り =" },
+  keywords: { default: "default =", separator: "separator =" },
   briefs: {
-    help: "使い方を出す",
-    helpAll: "隠しているコマンドとフラグも含めた使い方を出す",
-    version: "この CLI のバージョンと置き場所",
-    argumentEscapeSequence: "これより後ろは全部を引数として読む",
+    help: "Show usage",
+    helpAll: "Show usage including hidden commands and flags",
+    version: "Show this CLI's version and location",
+    argumentEscapeSequence: "Treat everything after this as arguments",
   },
   noCommandRegisteredForInput: ({ input, corrections }) =>
     failed(
-      `知らないコマンド: ${inline(input)}${corrections.length ? `（もしかして ${corrections.join(" / ")}）` : ""}\n\n--help で使い方を出す`,
+      `Unknown command: ${inline(input)}${corrections.length ? ` (did you mean ${corrections.join(" / ")}?)` : ""}\n\nRun --help for usage`,
     ),
   exceptionWhileParsingArguments: (e) =>
     failed(e instanceof ArgumentScannerError ? describeScannerError(e) : reason(e)),
@@ -138,7 +138,7 @@ function placeOf(cwd: string): Place {
   const place = identify(cwd);
   if (!place) {
     throw new Error(
-      `${cwd} は git の remote を持たず、名前も付いていない。\`gleanery project add --name <名前>\` で名前を付ける`,
+      `${cwd} has no git remote and no name. Name it with \`gleanery project add --name <name>\``,
     );
   }
   return place;
@@ -147,30 +147,32 @@ function placeOf(cwd: string): Place {
 async function registered(db: Kysely<DB>, place: Place): Promise<number> {
   const id = await projectId(db, place.key);
   if (id === null)
-    throw new Error(`${place.name} は gleanery に登録されていない。\`gleanery project add\` で登録する`);
+    throw new Error(
+      `${place.name} is not registered with gleanery. Register it with \`gleanery project add\``,
+    );
   return id;
 }
 
 /**
- * 検索の 1 件を、端末で人が読む項目にする。札は種類ごとの色の Badge、本文は先頭だけ、出所は薄く 2 行で切らずに出す。
- * プロジェクトを 1 つに絞っているときは、見出しに出ているので出所からプロジェクトを外す
+ * Turns one search hit into an item a person reads in a terminal: a Badge colored by kind, the start of the text, and sources dimmed on two uncut lines.
+ * When scoped to one project, the heading shows it, so the project is left out of the sources
  */
 function hitCard(x: Hit, scoped: boolean): Card {
-  // 文書の節は見出し（path と節）が題になる。判断の記録の heading は作業の題で出所と同じなので、本文の 1 行目を題にする
+  // A document section's title is its heading (path and section). A decision record's heading is the work title, same as its source, so the first line of the text is the title
   const [first = "", ...rest] = plain(x.text).split("\n");
   const doc = x.kind === "document" && x.heading !== null;
   const title = doc ? plain(x.heading ?? "") : first;
   const body = [
     head((doc ? [first, ...rest] : rest).join("\n").trim(), 600),
-    x.reason ? `理由: ${plain(x.reason)}` : "",
+    x.reason ? `Reason: ${plain(x.reason)}` : "",
   ]
     .filter(Boolean)
     .join("\n");
   return {
-    badge: { text: x.label.replace(/^【|】$/g, ""), color: kindColor(x.kind, x.status) },
+    badge: { text: x.label.replace(/^\[|\]$/g, ""), color: kindColor(x.kind, x.status) },
     title,
     ...(body ? { body } : {}),
-    // 1 行目は参照（read に渡す）と日時と話者、2 行目は出所の題（作業・PR・issue）
+    // Line 1: the reference (for read), the time, and the speaker. Line 2: the source title (work, PR, issue)
     meta: [
       [x.ref, x.at.toLocaleString("sv-SE").slice(0, 16), x.speaker, scoped ? null : x.project]
         .filter(Boolean)
@@ -181,15 +183,15 @@ function hitCard(x: Hit, scoped: boolean): Card {
   };
 }
 
-/** trace の記録を読む。`-` は標準入力（Skill はファイルを作らずに渡す）。 */
+/** Reads a trace record. `-` is stdin (the Skill passes it without creating a file). */
 const readTrace = (file: string): unknown => JSON.parse(fs.readFileSync(file === "-" ? 0 : file, "utf8"));
 
 const githubRepo = (key: string): string | null =>
   key.match(/^git:github\.com\/([^/]+\/[^/]+)$/)?.[1] ?? null;
 
 /**
- * 1 つのプロジェクトを同期する。**GitHub と文書は互いに独立**なので、片方が落ちてももう片方は回す。
- * 失敗は取り込み元の last_error に残し（doctor と画面が出す）、最後にまとめて投げる。
+ * Syncs one project. **GitHub and documents are independent**, so one failing does not stop the other.
+ * Failures are stored in the source's last_error (doctor and the dashboard show it) and thrown together at the end.
  */
 async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = false): Promise<string[]> {
   const out: string[] = [];
@@ -206,13 +208,13 @@ async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = fal
         .where("provider", "=", provider)
         .execute()
         .catch(() => {});
-      failures.push(`${place.name} の ${provider}: ${message}`);
+      failures.push(`${place.name} ${provider}: ${message}`);
     }
   };
   const repo = githubRepo(place.key);
   if (repo) await one("github", "GitHub", () => syncGithub(db, id, repo));
   if (fs.existsSync(path.join(place.root, ".git")))
-    await one("docs", "文書", () =>
+    await one("docs", "Docs", () =>
       syncDocs(db, id, place.root, { remote: place.key.startsWith("git:"), reset: resetDocs }),
     );
   if (failures.length) throw new Error([...out, ...failures].join("\n  "));
@@ -227,8 +229,8 @@ const SESSION_ENV: Record<Host, string[]> = {
 };
 
 /**
- * いまの session。**両方のホストの id が環境にあれば決めない**（Claude Code の Bash から起動した Codex は
- * CLAUDE_CODE_SESSION_ID を継ぐ。先に見つかった方を使うと、別のホストの session を読んで書く）。
+ * The current session. **When both hosts' ids are in the environment, it does not choose** (Codex started from Claude Code's Bash
+ * inherits CLAUDE_CODE_SESSION_ID. Taking whichever comes first would read and write another host's session).
  */
 function hostSession(host?: Host): { host: Host; id: string } {
   const found = HOSTS.flatMap((h) => {
@@ -238,18 +240,18 @@ function hostSession(host?: Host): { host: Host; id: string } {
   if (found.length === 1 && found[0]) return found[0];
   if (found.length > 1)
     throw new Error(
-      "Claude Code と Codex の両方の session が環境にある。自分のホストを --host claude-code か --host codex で指定する",
+      "Both Claude Code and Codex sessions are in the environment. Name your host with --host claude-code or --host codex",
     );
   throw new Error(
     host
-      ? `${host} の session の id が環境に無い（${SESSION_ENV[host].join(" / ")}）`
-      : "いまの session の id が分からない（Claude Code か Codex の中で実行する）",
+      ? `No ${host} session id in the environment (${SESSION_ENV[host].join(" / ")})`
+      : "Cannot tell the current session id (run this inside Claude Code or Codex)",
   );
 }
 
 async function traceContext(cwd: string, host?: Host): Promise<string> {
   const session = hostSession(host);
-  // 待ち行列に残っている分を先に送る。送れなくても続ける（会話は自分の文脈から書ける）。
+  // Send what is left in the queue first. Continue even if it cannot be sent (the conversation can be written from your own context).
   await flush().catch(() => {});
   const place = placeOf(cwd);
   return withDb("reader", async (db) => {
@@ -284,7 +286,9 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
       .execute();
     const works = await openWork(db, [id], 5);
     const detail =
-      works.length === 1 && works[0] ? await workDetail(db, Number(works[0].ref.slice(2))) : null;
+      works.length === 1 && works[0]
+        ? await workDetail(db, Number(works[0].ref.slice(2)), null, undefined, "en")
+        : null;
     const workKeys = await db
       .selectFrom("work_item")
       .select(["source_key", "title", "status"])
@@ -303,28 +307,28 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
       .orderBy("k.id", "desc")
       .limit(30)
       .execute();
-    // 持ち主の発言は長めに、AI の応答は要点だけ出す（決めたのは持ち主の発言で、AI の応答はその前後）。
+    // Your messages are shown longer and AI responses only in brief (you decided in your messages; AI responses surround them).
     const said = messages.map(
       (m) =>
-        `## ${m.speaker_kind === "self" ? "持ち主" : "AI"}（${m.sent_at}）${m.truncated ? " ※一部だけ保存" : ""}\n` +
-        `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nこの発言の後に触ったファイル: ${m.paths.map((p) => p.path).join(" / ")}` : ""}`,
+        `## ${m.speaker_kind === "self" ? "You" : "AI"} (${m.sent_at})${m.truncated ? " (partly saved)" : ""}\n` +
+        `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nFiles touched after this message: ${m.paths.map((p) => p.path).join(" / ")}` : ""}`,
     );
     const edited = [...new Set(messages.flatMap((m) => m.paths.map((p) => p.path)))];
     return [
-      `session: ${session.host} ${session.id}（プロジェクト ${place.name}）`,
+      `session: ${session.host} ${session.id} (project ${place.name})`,
       messages.length
-        ? `\n# この session の会話（自動記録）\n\n${said.join("\n\n")}`
-        : "\n# この session の会話\n\nまだ記録されていない。自分の文脈から書く。",
-      edited.length ? `\n# この session で触ったファイル\n\n${edited.map((p) => `- ${p}`).join("\n")}` : null,
+        ? `\n# Conversation in this session (recorded)\n\n${said.join("\n\n")}`
+        : "\n# Conversation in this session\n\nNot recorded yet. Write from your own context.",
+      edited.length ? `\n# Files touched in this session\n\n${edited.map((p) => `- ${p}`).join("\n")}` : null,
       mine.length
-        ? `\n# この session で既に記録した要素（同じ key で書くと上書き）\n\n${mine.map((k) => `- ${k.source_key.split("#")[1]}（${k.kind}${k.status ? ` / ${k.status}` : ""}）${head(k.body, 200)}`).join("\n")}`
+        ? `\n# Elements already recorded in this session (the same key overwrites)\n\n${mine.map((k) => `- ${k.source_key.split("#")[1]} (${k.kind}${k.status ? ` / ${k.status}` : ""}) ${head(k.body, 200)}`).join("\n")}`
         : null,
       workKeys.length
-        ? `\n# 進行中の作業（work.key に同じ key を書くと更新）\n\n${workKeys.map((w) => `- ${w.source_key}: ${w.title}（${w.status}）`).join("\n")}`
-        : "\n# 進行中の作業\n\n無い。",
-      detail ? `\n${renderWork(detail, 6000)}` : null,
+        ? `\n# Work in progress (the same key in work.key updates it)\n\n${workKeys.map((w) => `- ${w.source_key}: ${w.title} (${w.status})`).join("\n")}`
+        : "\n# Work in progress\n\nNone.",
+      detail ? `\n${renderWork(detail, 6000, "en")}` : null,
       decisions.length
-        ? `\n# 進行中の作業の決定（覆すなら supersedes にこの key を書く）\n\n${decisions.map((d) => `- ${d.source_key}（${d.status}）${head(d.body, 200)}`).join("\n")}`
+        ? `\n# Decisions of work in progress (to supersede one, put its key in supersedes)\n\n${decisions.map((d) => `- ${d.source_key} (${d.status}) ${head(d.body, 200)}`).join("\n")}`
         : null,
     ]
       .filter(Boolean)
@@ -343,12 +347,12 @@ async function doctor(cwd: string): Promise<void> {
     console.log(indent(`  ${mark(m)} ${pad(label, 26)}${text}`));
   };
   console.log(title("gleanery doctor"));
-  // DB より先に出す。バージョンの食い違いは DB と無関係に見たい。
+  // Print before the database. Version drift should be visible regardless of the database.
   const plugin = report(observe(identify(cwd)?.root ?? cwd));
   issues.push(...plugin.issues);
-  // 行頭から始まる行は節の見出し、字下げした行はその中身（plugin.ts の report が組む形）
+  // Lines at column 0 are section headings; indented lines are their contents (the shape plugin.ts report builds)
   for (const line of plugin.lines) console.log(/^\S/.test(line) ? section(line) : indent(line));
-  if (plugin.updates.length) console.log(steps("更新するには", plugin.updates, UPDATE_NOTE));
+  if (plugin.updates.length) console.log(steps("To update", plugin.updates, UPDATE_NOTE));
   console.log(`\n${section("DB")}`);
   let runtime = true;
   try {
@@ -360,40 +364,40 @@ async function doctor(cwd: string): Promise<void> {
   }
   const file = dbFile();
   let usable = false;
-  if (!runtime) say("none", "DB", "Node を上げるまで確かめられない");
-  else if (!fs.existsSync(file)) say("fail", "DB", `無い（${file}）。gleanery init で作る`);
+  if (!runtime) say("none", "DB", "cannot check until Node is upgraded");
+  else if (!fs.existsSync(file)) say("fail", "DB", `missing (${file}). Create it with gleanery init`);
   else {
     try {
       const x = inspect(file);
       usable = x.revision === SCHEMA_REVISION;
-      say("ok", "DB", `${file}（${(x.bytes / 1024 / 1024).toFixed(1)} MB）`);
+      say("ok", "DB", `${file} (${(x.bytes / 1024 / 1024).toFixed(1)} MB)`);
       say(
         usable ? "ok" : "fail",
-        "schema のバージョン",
+        "Schema version",
         usable
           ? `revision ${x.revision}`
-          : `revision ${x.revision}、このコードは ${SCHEMA_REVISION}（${x.revision < SCHEMA_REVISION ? "gleanery db migrate で進める" : "gleanery を更新する"}）`,
+          : `revision ${x.revision}, this gleanery expects ${SCHEMA_REVISION} (${x.revision < SCHEMA_REVISION ? "run gleanery db migrate" : "update gleanery"})`,
       );
       const broken = Object.entries(x.fts).filter(([, v]) => v !== null);
       say(
         broken.length ? "fail" : "ok",
-        "全文検索の索引",
+        "Full-text index",
         broken.length
-          ? `壊れている: ${broken.map(([k, v]) => `${k}（${plain(v ?? "")}）`).join(" / ")}。gleanery db reindex で作り直す`
-          : "整っている",
+          ? `broken: ${broken.map(([k, v]) => `${k} (${plain(v ?? "")})`).join(" / ")}. Rebuild it with gleanery db reindex`
+          : "healthy",
       );
     } catch (e) {
-      say("fail", "DB", `読めない: ${plain(reason(e))}`);
+      say("fail", "DB", `cannot read: ${plain(reason(e))}`);
     }
   }
   const s = readState();
   say(
     s.stuck ? "fail" : s.rejected ? "warn" : "ok",
-    "自動記録",
-    `待ち ${s.pending} 件${s.flushedAt ? ` / 最後の送信 ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
-      s.stuck ? ` / 失敗: ${plain(s.stuck)}` : ""
-    }${s.unregistered ? ` / 未登録のプロジェクトで退避した ${s.unregistered} 件（${unregisteredDir()}）` : ""}${
-      s.rejected ? ` / DB が受け付けなかった ${s.rejected} 件（${rejectedDir()}）` : ""
+    "Recording",
+    `${s.pending} pending${s.flushedAt ? ` / last sent ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
+      s.stuck ? ` / failed: ${plain(s.stuck)}` : ""
+    }${s.unregistered ? ` / ${s.unregistered} set aside for unregistered projects (${unregisteredDir()})` : ""}${
+      s.rejected ? ` / ${s.rejected} rejected by the database (${rejectedDir()})` : ""
     }`,
   );
   if (usable) {
@@ -407,90 +411,91 @@ async function doctor(cwd: string): Promise<void> {
           .orderBy("p.name")
           .orderBy("cn.provider")
           .execute();
-        if (rows.length) console.log(`\n${section("プロジェクト")}`);
-        const label = (x: (typeof rows)[number]) => `${inline(x.name)} ${x.provider ?? "未同期"}`;
+        if (rows.length) console.log(`\n${section("Projects")}`);
+        const label = (x: (typeof rows)[number]) => `${inline(x.name)} ${x.provider ?? "not synced"}`;
         const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
         for (const x of rows) {
-          // 取り込みは gleanery harvest を打ったときだけ走る。間が空くのは運用どおりなので、失敗だけを直すものに数える。
+          // Imports run only when gleanery harvest is run. Gaps are normal, so only failures count as things to fix.
           const m: Mark = x.last_error ? "fail" : x.provider === null || !x.last_success_at ? "none" : "ok";
-          count(m, `プロジェクト ${label(x)}`);
-          const where = found.get(x.key) ? "" : "（この PC に置き場所が無い）";
+          count(m, `project ${label(x)}`);
+          const where = found.get(x.key) ? "" : " (not on this machine)";
           console.log(
             indent(
               `  ${mark(m)} ${pad(label(x), column)}${
                 x.last_success_at
-                  ? `最後の取り込み ${new Date(x.last_success_at).toLocaleString("sv-SE")}`
-                  : "まだ取り込んでいない"
-              }${x.last_error ? ` / 失敗: ${plain(x.last_error)}` : ""}${where}`,
+                  ? `last import ${new Date(x.last_success_at).toLocaleString("sv-SE")}`
+                  : "not imported yet"
+              }${x.last_error ? ` / failed: ${plain(x.last_error)}` : ""}${where}`,
             ),
           );
         }
       });
     } catch (e) {
-      say("fail", "DB", `読めない: ${plain(reason(e))}`);
+      say("fail", "DB", `cannot read: ${plain(reason(e))}`);
     }
   }
-  // 件数は行の数で数え、名前だけ重ねない（同じ名前の Codex の cache やプロジェクトが複数あっても件数は減らさない）。
+  // Count by rows, not unique names (multiple Codex caches or projects with the same name still count separately).
   console.log(
     `${closing(
       `${mark(issues.length ? "warn" : "ok")} ${
         issues.length
-          ? `直すもの ${issues.length} 件: ${[...new Set(issues)]
+          ? `${issues.length} to fix: ${[...new Set(issues)]
               .map((name) => {
                 const n = issues.filter((x) => x === name).length;
                 return n > 1 ? `${name} ×${n}` : name;
               })
               .join(" / ")}`
-          : "直すものは無い"
+          : "nothing to fix"
       }`,
     )}`,
   );
 }
 
-/** どのコマンドでも同じ意味の `--cwd`。渡さなければいまのディレクトリ。 */
+/** `--cwd` means the same in every command. Defaults to the current directory. */
 const CWD = {
   kind: "parsed",
   parse: String,
-  brief: "プロジェクトのディレクトリ（既定はいまのディレクトリ）",
+  brief: "The project directory (defaults to the current directory)",
   placeholder: "dir",
   optional: true,
 } as const;
 
-// MCP は 1〜10 に縛っている。人が読む CLI は 20 まで。負の値や 0 を SQL の limit へ流さない。
+// MCP limits it to 1-10. The CLI people read allows up to 20. Negative values and 0 never reach the SQL limit.
 function limitOf(input: string): number {
   const n = Number(input);
-  if (!Number.isInteger(n) || n < 1 || n > 20) throw new Error(`--limit は 1 から 20 の整数にする: ${input}`);
+  if (!Number.isInteger(n) || n < 1 || n > 20)
+    throw new Error(`--limit must be an integer from 1 to 20: ${input}`);
   return n;
 }
 
-/** 除外に入れる path と、それが file か directory か。作業ツリーに無い path は打ち間違いとして落とす。 */
+/** A path to exclude, and whether it is a file or directory. A path not in the working tree is rejected as a typo. */
 function excludeTarget(
   cwd: string,
   target: string,
 ): { place: Place; kind: "file" | "directory"; rel: string } {
   const place = placeOf(cwd);
   const rel = relativeTo(place.root, target, cwd);
-  if (!rel) throw new Error(`${target} は ${place.name}（${place.root}）の中に無い`);
-  // symlink は辿らない。commit の tree でも 1 項目で、先が directory でも本文としては読まれない。
+  if (!rel) throw new Error(`${target} is not inside ${place.name} (${place.root})`);
+  // Symlinks are not followed. In the commit tree they are one entry and are not read as text even when they point to a directory.
   const st = fs.lstatSync(path.join(place.root, rel), { throwIfNoEntry: false });
-  if (!st) throw new Error(`${rel} が作業ツリーに無い`);
+  if (!st) throw new Error(`${rel} is not in the working tree`);
   return { place, kind: st.isDirectory() ? "directory" : "file", rel };
 }
 
 const excludeRoutes = buildRouteMap({
   docs: {
-    brief: "文書の同期で取り込まない path",
+    brief: "Paths the document sync does not import",
     fullDescription:
-      "追跡された Markdown が全部「事実を述べた文書」とは限らない（監査の fixture、穴埋めのテンプレート）。外したものは次の同期で、節も一緒に消える。",
+      "Not every tracked Markdown file states facts (audit fixtures, fill-in templates). Excluded files and their sections are removed on the next sync.",
   },
   routes: {
     add: buildCommand({
-      docs: { brief: "取り込まない path を足す（ファイルかディレクトリ）" },
+      docs: { brief: "Exclude a path (file or directory)" },
       parameters: {
         flags: { cwd: CWD },
         positional: {
           kind: "tuple",
-          parameters: [{ parse: String, brief: "外す path", placeholder: "path" }],
+          parameters: [{ parse: String, brief: "Path to exclude", placeholder: "path" }],
         },
       },
       func: async (flags: { cwd?: string }, target: string) => {
@@ -512,18 +517,18 @@ const excludeRoutes = buildRouteMap({
                   kind: "fields",
                   rows: [
                     ["path", inline(rel)],
-                    ["種類", kind === "file" ? "ファイル" : "ディレクトリ"],
+                    ["type", kind],
                   ],
                 },
               ],
-              `${mark("ok")} 次の同期から取り込まない`,
+              `${mark("ok")} not imported from the next sync`,
             ),
           );
         });
       },
     }),
     list: buildCommand({
-      docs: { brief: "そのプロジェクトで取り込まない path" },
+      docs: { brief: "Paths excluded in the project" },
       parameters: { flags: { cwd: CWD } },
       func: async (flags: { cwd?: string }) => {
         const place = placeOf(flags.cwd ?? process.cwd());
@@ -546,38 +551,38 @@ const excludeRoutes = buildRouteMap({
                 ? [
                     {
                       kind: "table",
-                      head: ["path", "種類"],
-                      rows: rows.map((r) => [plain(r.path), r.kind === "file" ? "ファイル" : "ディレクトリ"]),
+                      head: ["path", "type"],
+                      rows: rows.map((r) => [plain(r.path), r.kind]),
                     },
                   ]
                 : [
                     {
                       kind: "note",
                       tone: "info",
-                      text: "取り込まない path は無い（全部の文書を取り込んでいる）",
+                      text: "No excluded paths (every document is imported)",
                     },
                   ],
-              rows.length ? `${rows.length} 件` : "除外なし",
+              rows.length ? `${plural(rows.length, "path")} excluded` : "none excluded",
             ),
           );
         });
       },
     }),
     remove: buildCommand({
-      docs: { brief: "取り込まない path を外す（次の同期で取り込みに戻る）" },
+      docs: { brief: "Stop excluding a path (it is imported again on the next sync)" },
       parameters: {
         flags: { cwd: CWD },
         positional: {
           kind: "tuple",
-          parameters: [{ parse: String, brief: "戻す path", placeholder: "path" }],
+          parameters: [{ parse: String, brief: "Path to include again", placeholder: "path" }],
         },
       },
       func: async (flags: { cwd?: string }, target: string) => {
         const cwd = flags.cwd ?? process.cwd();
         const place = placeOf(cwd);
-        // 消すときは作業ツリーを見ない。外した後にその path が消えても、設定だけは消せる。
+        // Removing does not check the working tree. Even if the path is gone after excluding it, the setting can still be removed.
         const rel = relativeTo(place.root, target, cwd);
-        if (!rel) throw new Error(`${target} は ${place.name}（${place.root}）の中に無い`);
+        if (!rel) throw new Error(`${target} is not inside ${place.name} (${place.root})`);
         await withDb("ingest", async (db) => {
           const id = await registered(db, place);
           const gone = await db
@@ -597,8 +602,8 @@ const excludeRoutes = buildRouteMap({
               inline(place.name),
               [{ kind: "fields", rows: [["path", inline(rel)]] }],
               Number(gone.numDeletedRows)
-                ? `${mark("ok")} 次の同期から取り込みに戻る`
-                : `${mark("none")} 除外に入っていない`,
+                ? `${mark("ok")} imported again from the next sync`
+                : `${mark("none")} was not excluded`,
             ),
           );
         });
@@ -608,18 +613,18 @@ const excludeRoutes = buildRouteMap({
 });
 
 const projectRoutes = buildRouteMap({
-  docs: { brief: "記録するプロジェクトの登録と、消去" },
+  docs: { brief: "Register and remove recorded projects" },
   routes: {
     add: buildCommand({
-      docs: { brief: "プロジェクトを登録する（remote が無いなら --name でこの PC での名前を付ける）" },
+      docs: { brief: "Register a project (without a remote, name it on this machine with --name)" },
       parameters: {
         flags: {
           cwd: CWD,
           name: {
             kind: "parsed",
             parse: String,
-            brief: "remote を持たないプロジェクトに、この PC での名前を付ける",
-            placeholder: "名前",
+            brief: "Name a project without a remote on this machine",
+            placeholder: "name",
             optional: true,
           },
         },
@@ -642,20 +647,20 @@ const projectRoutes = buildRouteMap({
                 {
                   kind: "fields",
                   rows: [
-                    ["プロジェクト", inline(place.name)],
+                    ["project", inline(place.name)],
                     ["key", inline(place.key)],
-                    ["置き場所", inline(place.root)],
+                    ["location", inline(place.root)],
                   ],
                 },
               ],
-              added ? `${mark("ok")} 登録した` : `${mark("none")} 既に登録済み`,
+              added ? `${mark("ok")} registered` : `${mark("none")} already registered`,
             ),
           );
         });
       },
     }),
     list: buildCommand({
-      docs: { brief: "登録済みのプロジェクトと、最後の同期" },
+      docs: { brief: "Registered projects and their last sync" },
       parameters: {},
       func: async () => {
         const { found, ambiguous } = localRoots();
@@ -675,16 +680,16 @@ const projectRoutes = buildRouteMap({
                 ? `~${root.slice(home.length)}`
                 : root
               : ambiguous.has(x.key)
-                ? "置き場所が複数ある（同期しない）"
-                : "この PC に無い";
+                ? "multiple locations (not synced)"
+                : "not on this machine";
             return {
               title: inline(x.name),
               body: inline(where),
               meta: [
                 inline(x.key),
                 x.last
-                  ? `最後の同期 ${new Date(x.last).toLocaleString("sv-SE").slice(0, 16)}`
-                  : "まだ同期していない",
+                  ? `last sync ${new Date(x.last).toLocaleString("sv-SE").slice(0, 16)}`
+                  : "not synced yet",
               ],
             };
           });
@@ -698,10 +703,10 @@ const projectRoutes = buildRouteMap({
                     {
                       kind: "note",
                       tone: "info",
-                      text: "登録したプロジェクトは無い。gleanery project add で登録する",
+                      text: "No registered projects. Register one with gleanery project add",
                     },
                   ],
-              cards.length ? `${cards.length} 件` : "登録なし",
+              cards.length ? plural(cards.length, "project") : "none registered",
             ),
           );
         });
@@ -709,12 +714,14 @@ const projectRoutes = buildRouteMap({
     }),
     exclude: excludeRoutes,
     forget: buildCommand({
-      docs: { brief: "プロジェクトのデータを消す（--yes が無ければ数えるだけ）" },
+      docs: { brief: "Delete a project's data (without --yes it only counts)" },
       parameters: {
-        flags: { yes: { kind: "boolean", brief: "本当に消す（元に戻せない）", optional: true } },
+        flags: { yes: { kind: "boolean", brief: "Really delete (cannot be undone)", optional: true } },
         positional: {
           kind: "tuple",
-          parameters: [{ parse: String, brief: "消すプロジェクトの key か名前", placeholder: "key|名前" }],
+          parameters: [
+            { parse: String, brief: "Key or name of the project to delete", placeholder: "key|name" },
+          ],
         },
       },
       func: async (flags: { yes?: boolean }, target: string) => {
@@ -726,7 +733,7 @@ const projectRoutes = buildRouteMap({
             .execute();
           const p = hit[0];
           if (hit.length !== 1 || !p)
-            throw new Error(`${target} に当たるプロジェクトが ${hit.length} 件ある。key で指定する`);
+            throw new Error(`${plural(hit.length, "project")} match ${target}. Specify it by key`);
           const x = await db
             .selectFrom("project")
             .select([
@@ -742,12 +749,12 @@ const projectRoutes = buildRouteMap({
           const counts: Block = {
             kind: "fields",
             rows: [
-              ["プロジェクト", inline(p.name)],
+              ["project", inline(p.name)],
               ["key", inline(p.key)],
-              ["会話", `${x?.conversations} 件`],
-              ["発言", `${x?.messages} 件`],
-              ["知識", `${x?.knowledge} 件`],
-              ["取り込み元の項目", `${x?.items} 件`],
+              ["conversations", `${x?.conversations}`],
+              ["messages", `${x?.messages}`],
+              ["knowledge", `${x?.knowledge}`],
+              ["source items", `${x?.items}`],
             ],
           };
           if (flags.yes !== true) {
@@ -755,14 +762,17 @@ const projectRoutes = buildRouteMap({
               document(
                 "gleanery project forget",
                 undefined,
-                [counts, { kind: "note", tone: "warning", text: "消すなら --yes を付ける。元に戻せない" }],
-                `${mark("none")} 消していない`,
+                [
+                  counts,
+                  { kind: "note", tone: "warning", text: "Add --yes to delete. This cannot be undone" },
+                ],
+                `${mark("none")} nothing deleted`,
               ),
             );
             return;
           }
           await db.deleteFrom("project").where("id", "=", p.id).execute();
-          console.log(document("gleanery project forget", undefined, [counts], `${mark("ok")} 消した`));
+          console.log(document("gleanery project forget", undefined, [counts], `${mark("ok")} deleted`));
         });
       },
     }),
@@ -770,30 +780,32 @@ const projectRoutes = buildRouteMap({
 });
 
 const traceRoutes = buildRouteMap({
-  docs: { brief: "判断の記録（trace）を読み、形を確かめ、DB へ入れる" },
+  docs: { brief: "Read, validate, and store decision records (trace)" },
   routes: {
     context: buildCommand({
-      docs: { brief: "いまの session の会話と、進行中の作業を出す（trace の材料）" },
+      docs: { brief: "Print the current session's conversation and work in progress (material for trace)" },
       parameters: {
         flags: {
           host: {
             kind: "enum",
             values: HOSTS,
-            brief: "自分のホスト（両方の session が環境にあるときに要る）",
+            brief: "Your host (needed when both sessions are in the environment)",
             optional: true,
           },
         },
       },
       func: async (flags: { host?: Host }) => {
-        console.log(plain(framed(await traceContext(process.cwd(), flags.host))));
+        console.log(plain(framed(await traceContext(process.cwd(), flags.host), "en")));
       },
     }),
     check: buildCommand({
-      docs: { brief: "trace の記録の形を確かめる（DB に触らない）" },
+      docs: { brief: "Validate a trace record (does not touch the database)" },
       parameters: {
         positional: {
           kind: "tuple",
-          parameters: [{ parse: String, brief: "trace の記録（- は標準入力）", placeholder: "trace.json|-" }],
+          parameters: [
+            { parse: String, brief: "The trace record (- for stdin)", placeholder: "trace.json|-" },
+          ],
         },
       },
       func: (_flags: Record<never, never>, file: string) => {
@@ -803,7 +815,7 @@ const traceRoutes = buildRouteMap({
             panel(
               "gleanery trace check",
               r.problems.map((p) => `${mark("fail")} ${p}`),
-              `問題 ${r.problems.length} 件`,
+              plural(r.problems.length, "problem"),
             ),
           );
           process.exitCode = 1;
@@ -813,28 +825,31 @@ const traceRoutes = buildRouteMap({
           panel(
             "gleanery trace check",
             [],
-            `${mark("ok")} 形は通った: 要素 ${r.trace?.items.length ?? 0} 件`,
+            `${mark("ok")} valid: ${plural(r.trace?.items.length ?? 0, "item")}`,
           ),
         );
       },
     }),
     save: buildCommand({
-      docs: { brief: "trace の記録を入れる（同じ key は上書き）" },
+      docs: { brief: "Store a trace record (the same key overwrites)" },
       parameters: {
         positional: {
           kind: "tuple",
-          parameters: [{ parse: String, brief: "trace の記録（- は標準入力）", placeholder: "trace.json|-" }],
+          parameters: [
+            { parse: String, brief: "The trace record (- for stdin)", placeholder: "trace.json|-" },
+          ],
         },
       },
       func: async (_flags: Record<never, never>, file: string) => {
         const r = checkTrace(readTrace(file));
-        if (!r.trace) throw new Error(`記録の形が通らない:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
+        if (!r.trace)
+          throw new Error(`The record is not valid:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
         const trace = r.trace;
-        // 書けるのはいまの session の記録だけ。ファイルの session を信じると、別の session の決定や制約を上書きできる。
+        // Only the current session's record can be written. Trusting the file's session would let it overwrite another session's decisions and constraints.
         const now = hostSession(trace.session.host);
         if (now.id !== trace.session.id)
           throw new Error(
-            `記録の session（${trace.session.id}）が、いまの ${now.host} の session（${now.id}）と違う。trace context が出した session を書く`,
+            `The record's session (${trace.session.id}) differs from the current ${now.host} session (${now.id}). Use the session id that trace context printed`,
           );
         const place = placeOf(process.cwd());
         await withDb("ingest", async (db) => {
@@ -844,7 +859,7 @@ const traceRoutes = buildRouteMap({
             panel(
               "gleanery trace save",
               [],
-              `入れた: 書き直した要素 ${saved.written} 件${saved.superseded ? ` / 覆した決定 ${saved.superseded} 件` : ""}`,
+              `stored: ${plural(saved.written, "item")} rewritten${saved.superseded ? `, ${plural(saved.superseded, "decision")} superseded` : ""}`,
             ),
           );
         });
@@ -854,10 +869,10 @@ const traceRoutes = buildRouteMap({
 });
 
 const captureRoutes = buildRouteMap({
-  docs: { brief: "会話の自動記録" },
+  docs: { brief: "Conversation recording" },
   routes: {
     flush: buildCommand({
-      docs: { brief: "自動記録の待ち行列を DB へ送る" },
+      docs: { brief: "Send the recording queue to the database" },
       parameters: {},
       func: async () => {
         const r = await flush();
@@ -866,7 +881,7 @@ const captureRoutes = buildRouteMap({
             panel(
               "gleanery capture flush",
               [],
-              "別の送信が走っているので何もしなかった（終われば待ち行列は空になる）",
+              "Another send is running, so nothing was done (the queue empties when it finishes)",
             ),
           );
           return;
@@ -879,12 +894,12 @@ const captureRoutes = buildRouteMap({
               {
                 kind: "fields",
                 rows: [
-                  ["新しく入った発言", `${r.sent} 件`],
+                  ["new messages", `${r.sent}`],
                   ...(r.deferred
-                    ? ([["未登録のプロジェクトで退避", `${r.deferred} 件`]] as [string, string][])
+                    ? ([["set aside for unregistered projects", `${r.deferred}`]] as [string, string][])
                     : []),
                   ...(r.rejected
-                    ? ([["DB が受け付けなかった", `${r.rejected} 件（${rejectedDir()} に残した）`]] as [
+                    ? ([["rejected by the database", `${r.rejected} (kept in ${rejectedDir()})`]] as [
                         string,
                         string,
                       ][])
@@ -892,7 +907,7 @@ const captureRoutes = buildRouteMap({
                 ],
               },
             ],
-            `${mark(r.rejected ? "warn" : "ok")} 送った`,
+            `${mark(r.rejected ? "warn" : "ok")} sent`,
           ),
         );
       },
@@ -900,27 +915,31 @@ const captureRoutes = buildRouteMap({
   },
 });
 
-/** admin.ts の 1 行ずつの出力に見出しと締めを付ける。失敗は stricli の exceptionWhileRunningCommand が塊にする */
+/** Adds a heading and closing to admin.ts output lines. Failures become a block through stricli exceptionWhileRunningCommand */
 async function boxed(head: string, fn: () => void | Promise<void>): Promise<void> {
   console.log(title(head));
   await fn();
-  console.log(closing(`${mark("ok")} 終わった`));
+  console.log(closing(`${mark("ok")} done`));
 }
 
 const dbRoutes = buildRouteMap({
-  docs: { brief: "この PC の DB（~/.gleanery/gleanery.db）と schema" },
+  docs: { brief: "This machine's database (~/.gleanery/gleanery.db) and schema" },
   routes: {
     migrate: buildCommand({
-      docs: { brief: "DB のバージョンより新しい db/migrations を当てる" },
+      docs: { brief: "Apply db/migrations newer than the database version" },
       parameters: {
         flags: {
-          yes: { kind: "boolean", brief: "当てる前の確認を省く（端末でないときは必須）", optional: true },
+          yes: {
+            kind: "boolean",
+            brief: "Skip the confirmation before applying (required outside a terminal)",
+            optional: true,
+          },
         },
       },
       func: (flags: { yes?: boolean }) => boxed("gleanery db migrate", () => migrate(flags.yes === true)),
     }),
     reindex: buildCommand({
-      docs: { brief: "全文検索の索引を作り直す（検索の語の切り方を変えた後に打つ）" },
+      docs: { brief: "Rebuild the full-text index (run after changing how search splits words)" },
       parameters: {},
       func: () => boxed("gleanery db reindex", () => reindex()),
     }),
@@ -929,37 +948,37 @@ const dbRoutes = buildRouteMap({
 
 const root = buildRouteMap({
   docs: {
-    brief: "過去の判断・会話・文書を溜めて引く",
-    fullDescription: "DB: ~/.gleanery/gleanery.db（gleanery init で作る）。資格情報は要らない",
+    brief: "Keep and search past decisions, conversations, and documents",
+    fullDescription:
+      "Database: ~/.gleanery/gleanery.db (created by gleanery init). No credentials are needed",
   },
   routes: {
     project: projectRoutes,
     harvest: buildCommand({
       docs: {
-        brief: "この PC にあるプロジェクトの GitHub と文書を同期する",
+        brief: "Sync GitHub and documents for the projects on this machine",
         fullDescription:
-          "文書は remote の既定 branch から入れ、fast-forward でなければ止まる（--reset-docs はそのプロジェクトを今の状態に揃える）。",
+          "Documents come from the remote's default branch and stop when it is not a fast-forward (--reset-docs brings a project to its current state).",
       },
       parameters: {
         flags: {
           cwd: CWD,
           "reset-docs": {
             kind: "boolean",
-            brief: "文書をそのプロジェクトの今の状態に揃える（--cwd と一緒にだけ使える）",
+            brief: "Bring the project's documents to its current state (only with --cwd)",
             optional: true,
           },
         },
       },
       func: async (flags: { cwd?: string; "reset-docs"?: boolean }) => {
         const resetDocs = flags["reset-docs"] === true;
-        // 揃え直しはプロジェクトを 1 つ名指ししたときだけ（全件の同期で、比較不能なプロジェクトをまとめて上書きしない）。
-        if (resetDocs && !flags.cwd)
-          throw new Error("--reset-docs は --cwd でプロジェクトを 1 つ指定したときだけ使える");
-        // ログは追記で残るので、いつ走ったかを見出しに必ず出す。
+        // Resetting only when one project is named (a sync of everything never overwrites every project that cannot be compared).
+        if (resetDocs && !flags.cwd) throw new Error("--reset-docs works only when --cwd names one project");
+        // The log is appended to, so the heading always shows when it ran.
         const startedAt = new Date();
         console.log(title(`gleanery harvest ${startedAt.toLocaleString("sv-SE")}`));
         await flush().catch((e: unknown) =>
-          console.error(indent(`${mark("fail")} 自動記録の送信に失敗: ${plain(reason(e))}`)),
+          console.error(indent(`${mark("fail")} failed to send recordings: ${plain(reason(e))}`)),
         );
         const failures: string[] = [];
         let done = 0;
@@ -979,7 +998,7 @@ const root = buildRouteMap({
               if (!root) {
                 console.log(
                   indent(
-                    `${mark("none")} ${inline(p.name)}: 飛ばした（${ambiguous.has(p.key) ? "この PC に置き場所が複数ある" : "この PC に置き場所が無い"}）`,
+                    `${mark("none")} ${inline(p.name)}: skipped (${ambiguous.has(p.key) ? "multiple locations on this machine" : "not on this machine"})`,
                   ),
                 );
                 continue;
@@ -991,7 +1010,7 @@ const root = buildRouteMap({
                 }
                 done++;
               } catch (e) {
-                // 1 つ落ちても残りは回す。失敗は終了コードへ出す（launchd の LastExitStatus で見える）。
+                // One failure does not stop the rest. Failures go to the exit code (visible in launchd LastExitStatus).
                 failures.push(inline(p.name));
                 const lines = plain(reason(e)).split("\n");
                 console.error(
@@ -1006,16 +1025,16 @@ const root = buildRouteMap({
             }
           });
         } catch (e) {
-          // 見出しを出した後で止まっても、枠を閉じてから終わる（ログは日をまたいで追記される）。
+          // Even when stopping after the heading was printed, close the box before ending (the log is appended across days).
           console.error(indent(`${mark("fail")} ${plain(reason(e))}`));
-          console.log(closing(`${mark("fail")} 止まった ${new Date().toLocaleString("sv-SE")}`));
+          console.log(closing(`${mark("fail")} stopped ${new Date().toLocaleString("sv-SE")}`));
           process.exitCode = 1;
           return;
         }
         console.log(
           closing(
-            `おわり ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} 秒 / 成功 ${done}${
-              failures.length ? ` / 失敗 ${failures.join(" / ")}` : ""
+            `finished ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} s / succeeded ${done}${
+              failures.length ? ` / failed ${failures.join(" / ")}` : ""
             }`,
           ),
         );
@@ -1023,33 +1042,37 @@ const root = buildRouteMap({
       },
     }),
     search: buildCommand({
-      docs: { brief: "引けるかを確かめる（--said は発言を探す）" },
+      docs: { brief: "Check what can be found (--said searches messages)" },
       parameters: {
         flags: {
-          avoid: { kind: "boolean", brief: "棄却済みか、行き止まりだけを引く", optional: true },
+          avoid: { kind: "boolean", brief: "Search only rejected options and dead ends", optional: true },
           said: {
             kind: "parsed",
             parse: String,
-            brief: "発言を探す（me / others / 呼び名）",
-            placeholder: "me|others|名前",
+            brief: "Search messages (me / others / a name)",
+            placeholder: "me|others|name",
             optional: true,
           },
-          all: { kind: "boolean", brief: "すべてのプロジェクトから引く", optional: true },
+          all: { kind: "boolean", brief: "Search every project", optional: true },
           exact: {
             kind: "boolean",
-            brief: "部分一致で引く（語に切れない固有名・記号・バージョン番号）",
+            brief:
+              "Substring match (for proper nouns, symbols, and version numbers that do not split into words)",
             optional: true,
           },
           cwd: CWD,
           limit: {
             kind: "parsed",
             parse: limitOf,
-            brief: "出す件数（1 から 20）",
+            brief: "Number of results (1 to 20)",
             placeholder: "N",
             default: "5",
           },
         },
-        positional: { kind: "array", parameter: { parse: String, brief: "質問", placeholder: "質問" } },
+        positional: {
+          kind: "array",
+          parameter: { parse: String, brief: "Question", placeholder: "question" },
+        },
       },
       func: async (
         flags: {
@@ -1063,12 +1086,12 @@ const root = buildRouteMap({
         ...words: string[]
       ) => {
         const question = words.join(" ");
-        if (!question && !flags.said) throw new Error("質問を指定する（--said なら質問は要らない）");
+        if (!question && !flags.said) throw new Error("Give a question (not needed with --said)");
         const place = flags.all ? null : placeOf(flags.cwd ?? process.cwd());
         const match = flags.exact ? ("exact" as const) : undefined;
         await withDb("reader", async (db) => {
           const projects = place ? [await registered(db, place)] : null;
-          // MCP の recall と同じ関数・同じ順位。種類を省いた検索は判断の記録の後に文書の節を並べる。
+          // Same functions and ranking as MCP recall. A search without kinds lists decision records, then document sections.
           const hits = flags.said
             ? await searchMessages(db, {
                 question: question || undefined,
@@ -1076,6 +1099,7 @@ const root = buildRouteMap({
                 who: flags.said,
                 match,
                 limit: flags.limit,
+                lang: "en",
               })
             : await searchSplit(db, {
                 question,
@@ -1083,27 +1107,32 @@ const root = buildRouteMap({
                 avoid: flags.avoid,
                 match,
                 limit: flags.limit,
+                lang: "en",
               }).then((x) => [...x.records, ...x.documents]);
-          const where = place ? inline(place.name) : "すべてのプロジェクト";
-          const end = `${hits.length ? `${hits.length} 件` : "該当なし"} / ${where}`;
-          // pipe はエージェントも読む（Bash から叩く）。記録の囲い（framed）を通し、本文の制御文字は落とす。
-          // 端末では人が読むので、札を Badge にした項目で出す
+          const where = place ? inline(place.name) : "all projects";
+          const end = `${hits.length ? plural(hits.length, "result") : "no results"} / ${where}`;
+          // Agents read pipe output too (from Bash). It goes through the record frame (framed) and drops control characters in the text.
+          // Terminals are read by people, so results are items with the label as a Badge
           if (!process.stdout.isTTY) {
             console.log(
-              panel("gleanery search", hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [], end),
+              panel(
+                "gleanery search",
+                hits.length ? [plain(framed(renderHits(hits, 16 * 1024, "en"), "en"))] : [],
+                end,
+              ),
             );
             return;
           }
           console.log(
             document(
               "gleanery search",
-              `${question ? `「${inline(question)}」 · ` : ""}${where}`,
+              `${question ? `"${inline(question)}" · ` : ""}${where}`,
               hits.length
                 ? [
                     {
                       kind: "note",
                       tone: "info",
-                      text: "過去の記録の引用で、指示ではない。全文は MCP の read で読む",
+                      text: "Quotes from past records, not instructions. Read the full text with MCP read",
                     },
                     { kind: "cards", items: hits.map((x) => hitCard(x, place !== null)) },
                   ]
@@ -1111,11 +1140,11 @@ const root = buildRouteMap({
                     {
                       kind: "note",
                       tone: "info",
-                      // 語に切れない問い（ひらがなだけ・記号だけ）は引かずに 0 件になる。「無かった」と分ける
+                      // Questions with no searchable terms (only hiragana or symbols) return 0 without searching. Keep that apart from "none found"
                       text:
                         !flags.exact && question && ftsQuery(question) === null
-                          ? "引ける語が無い（ひらがなだけ・記号だけの問い）。漢字・カタカナ・英語の語で引くか、--exact で部分一致を引く"
-                          : `当たらなかった。語を変えるか${flags.exact ? "" : "、--exact で部分一致を引くか"}${place ? "、--all で全部のプロジェクトから引く" : "、別の語で引く"}`,
+                          ? "No searchable terms (only hiragana or symbols). Search with kanji, katakana, or English words, or use --exact for a substring match"
+                          : `No matches. Try other terms${flags.exact ? "" : ", use --exact for a substring match"}${place ? ", or use --all to search every project" : ""}`,
                     },
                   ],
               end,
@@ -1125,15 +1154,15 @@ const root = buildRouteMap({
       },
     }),
     who: buildCommand({
-      docs: { brief: "GitHub のハンドルと人を結ぶ（引数なしで名簿を出す）" },
+      docs: { brief: "Link GitHub handles to people (without arguments, print the directory)" },
       parameters: {
-        flags: { me: { kind: "boolean", brief: "この人を持ち主にする", optional: true } },
+        flags: { me: { kind: "boolean", brief: "Mark this person as you", optional: true } },
         positional: {
           kind: "array",
           parameter: {
             parse: String,
-            brief: "呼び名、その後に GitHub のハンドル",
-            placeholder: "呼び名|ハンドル",
+            brief: "A name, then GitHub handles",
+            placeholder: "name|handle",
           },
         },
       },
@@ -1159,36 +1188,35 @@ const root = buildRouteMap({
                   people.length
                     ? {
                         kind: "table",
-                        head: ["呼び名", "GitHub のハンドル"],
+                        head: ["name", "GitHub handles"],
                         rows: people.map((p) => [
-                          `${p.isSelf ? "→ " : ""}${inline(p.display)}${p.isSelf ? "（持ち主）" : ""}`,
+                          `${p.isSelf ? "→ " : ""}${inline(p.display)}${p.isSelf ? " (you)" : ""}`,
                           p.handles.map(inline).join(" / "),
                         ]),
                       }
                     : {
                         kind: "note",
                         tone: "info",
-                        text: "名簿は空。gleanery who <呼び名> <ハンドル>... で入れる",
+                        text: "The directory is empty. Add people with gleanery who <name> <handle>...",
                       },
                   ...(unknown.length
                     ? ([
                         {
                           kind: "table",
-                          head: ["まだ誰か決めていないハンドル", "発言"],
-                          rows: unknown.map((u) => [inline(u.handle), `${u.n} 件`]),
+                          head: ["handles not linked to anyone yet", "messages"],
+                          rows: unknown.map((u) => [inline(u.handle), `${u.n}`]),
                         },
                       ] as Block[])
                     : []),
                 ],
-                people.length ? `${people.length} 人` : "名簿は空",
+                people.length ? plural(people.length, "person", "people") : "directory is empty",
               ),
             );
             return;
           }
           const [display, ...handles] = args;
-          if (!display || handles.length === 0)
-            throw new Error("呼び名と、GitHub のハンドルを 1 つ以上指定する");
-          // 持ち主の付け替えは 1 つの transaction で。途中で落ちると持ち主が 0 人になる。
+          if (!display || handles.length === 0) throw new Error("Give a name and at least one GitHub handle");
+          // Moving "you" happens in one transaction. Failing midway would leave nobody marked as you.
           const linked = await inTransaction(db, async (trx) => {
             if (flags.me)
               await trx.updateTable("person").set({ is_self: 0 }).where("is_self", "=", 1).execute();
@@ -1222,10 +1250,10 @@ const root = buildRouteMap({
               "gleanery who",
               missing.length
                 ? [
-                    `まだ取り込んでいないハンドル: ${missing.map(inline).join(" / ")}（同期の後にもう一度結ぶ）`,
+                    `Handles not imported yet: ${missing.map(inline).join(" / ")} (link them again after a sync)`,
                   ]
                 : [],
-              `名簿に入れた: ${inline(display)}${flags.me ? "（持ち主）" : ""} = ${linked.map((l) => inline(l.handle)).join(" / ") || "（結べたハンドルなし）"}`,
+              `Added to the directory: ${inline(display)}${flags.me ? " (you)" : ""} = ${linked.map((l) => inline(l.handle)).join(" / ") || "(no handles linked)"}`,
             ),
           );
         });
@@ -1235,31 +1263,37 @@ const root = buildRouteMap({
     capture: captureRoutes,
     db: dbRoutes,
     init: buildCommand({
-      docs: { brief: "この PC の DB（~/.gleanery/gleanery.db）を作る（あれば触らない。何度流してもよい）" },
+      docs: {
+        brief:
+          "Create this machine's database (~/.gleanery/gleanery.db). An existing one is left alone; safe to run again",
+      },
       parameters: {},
       func: () => boxed("gleanery init", () => dbInit()),
     }),
     dashboard: buildCommand({
-      docs: { brief: "セッション・作業・検索を端末の画面で見る（読むだけ）" },
+      docs: { brief: "Browse sessions, work, and search in the terminal (read only)" },
       parameters: {},
       func: () => runTui(process.cwd()),
     }),
     doctor: buildCommand({
-      docs: { brief: "npm packageとpluginのバージョン、Node、DB と schema、同期と自動記録の状態" },
+      docs: {
+        brief:
+          "npm package and plugin versions, Node, the database and schema, and sync and recording status",
+      },
       parameters: {},
       func: () => doctor(process.cwd()),
     }),
     advice: buildCommand({
-      docs: { brief: "編集フックが制約を出した割合" },
+      docs: { brief: "How often the edit hook showed constraints" },
       parameters: {},
       func: () => {
-        // 編集フックが役に立っているかを測る。1 か月見て、出した割合が低ければフックごと消す。
+        // Measures whether the edit hook helps. After a month, if it rarely shows anything, remove the hook.
         const log = path.join(os.homedir(), ".gleanery", "advice.jsonl");
         if (!fs.existsSync(log)) {
-          console.log(panel("gleanery advice", [], "まだ記録が無い（編集フックが一度も走っていない）"));
+          console.log(panel("gleanery advice", [], "No records yet (the edit hook has never run)"));
           return;
         }
-        // 途中で切れた行（書いている最中に止まったプロセス）は飛ばす。1 行のために全体を読めなくしない。
+        // Skip lines cut midway (a process stopped while writing). One line does not make the whole unreadable.
         const rows = fs
           .readFileSync(log, "utf8")
           .split("\n")
@@ -1279,21 +1313,21 @@ const root = buildRouteMap({
         console.log(
           document(
             "gleanery advice",
-            since ? `${new Date(since).toLocaleString("sv-SE").slice(0, 16)} から` : undefined,
+            since ? `since ${new Date(since).toLocaleString("sv-SE").slice(0, 16)}` : undefined,
             [
               {
                 kind: "fields",
                 rows: [
-                  ["フックが走った編集", `${rows.length} 回`],
-                  ["制約を出した", `${shown.length} 回`],
+                  ["edits with the hook", `${rows.length}`],
+                  ["constraints shown", `${shown.length}`],
                   ...(since
-                    ? ([["記録の始まり", new Date(since).toLocaleString("sv-SE")]] as [string, string][])
+                    ? ([["records since", new Date(since).toLocaleString("sv-SE")]] as [string, string][])
                     : []),
                 ],
               },
-              { kind: "meter", label: "制約を出した割合", ratio, text: `${(ratio * 100).toFixed(1)}%` },
+              { kind: "meter", label: "share with constraints", ratio, text: `${(ratio * 100).toFixed(1)}%` },
             ],
-            `${mark("ok")} 編集 ${rows.length} 回のうち ${shown.length} 回で制約を出した`,
+            `${mark("ok")} constraints shown on ${shown.length} of ${plural(rows.length, "edit")}`,
           ),
         );
       },
@@ -1312,7 +1346,7 @@ const app = buildApplication(
   {
     name: "gleanery",
     localization: { text: TEXT },
-    // 枠と印の色は panel.ts が決める（標準出力と標準エラーの両方が端末のときだけ付ける）。
+    // panel.ts decides box and mark colors (only when both stdout and stderr are terminals).
     documentation: { disableAnsiColor: true },
   },
   {
@@ -1333,7 +1367,7 @@ const app = buildApplication(
     version: version({
       brief: TEXT.briefs.version,
       alias: "v",
-      info: { getCurrentVersion: async () => `${packageVersionAt(ROOT) ?? "不明"}  ${ROOT}` },
+      info: { getCurrentVersion: async () => `${packageVersionAt(ROOT) ?? "unknown"}  ${ROOT}` },
     }),
   },
 );
@@ -1345,5 +1379,5 @@ await run(app, process.argv.slice(2), {
     return { process };
   },
 });
-// stricli の内部の終了コードは負（引数の解釈の失敗は -4）。シェルは下位 8 bit しか見ないので 1 に寄せる。
+// stricli's internal exit codes are negative (argument parse failure is -4). Shells see only the low 8 bits, so map them to 1.
 if (typeof process.exitCode === "number" && process.exitCode < 0) process.exitCode = 1;

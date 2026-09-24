@@ -1,5 +1,5 @@
-// TUI の画面。セッション一覧・セッション詳細・作業・検索（計画 7 章）。**読むだけ**で、書き込みを起動する経路を持たない。
-// JSX を使わず createElement で書く。この repository は Node の型剥がしで src を直接動かし、Node は JSX を読めない。
+// The dashboard screens: session list, session detail, work, and search. **Read only**; nothing here can start a write.
+// Written with createElement instead of JSX. This repository runs src directly with Node's type stripping, and Node cannot read JSX.
 
 import { stripVTControlCharacters } from "node:util";
 import { TextInput } from "@inkjs/ui";
@@ -11,27 +11,27 @@ import { kindColor, PALETTE } from "../palette.ts";
 import { inline, plain, width } from "../panel.ts";
 import type { Hit } from "../search.ts";
 import type { SessionDetail, SessionRow } from "../sessions.ts";
-import { ftsQuery, reason } from "../text.ts";
+import { ftsQuery, plural, reason } from "../text.ts";
 import type { Data, Mode } from "./data.ts";
 import { ICONS, statusIcon, TWINKLE } from "./icons.ts";
 import { renderMarkdown } from "./markdown.ts";
 
 const TABS = [
-  { key: "sessions", label: "セッション", icon: ICONS.sessions },
-  { key: "work", label: "作業", icon: ICONS.work },
-  { key: "search", label: "検索", icon: ICONS.search },
+  { key: "sessions", label: "Sessions", icon: ICONS.sessions },
+  { key: "work", label: "Work", icon: ICONS.work },
+  { key: "search", label: "Search", icon: ICONS.search },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
-/** 一覧の上に開いている詳細。Esc で一覧へ戻る。 */
+/** A detail view open over a list. Esc returns to the list. */
 type Detail = { kind: "session"; id: string } | { kind: "work"; ref: string } | { kind: "read"; ref: string };
 
-/** 画面の上（タブ）と下（操作の案内）が使う行数。本文の高さはこれを引いて決める。 */
+/** Rows used by the top (tabs) and bottom (key help). The body height is what remains. */
 const CHROME = 4;
 
 /**
- * 操作の案内を幅に収まる lines 行までに詰める。キーと説明の組は途中で割らない。入らない組は後ろから落とす
- * （大事なキーを前に並べてある）。幅は panel.ts の width で数える（記号を広めに数えるので、はみ出さない向きに外れる）。
+ * Fits the key help into `lines` rows at the given width. A key and its description are never split. Pairs that do not fit
+ * are dropped from the end (important keys come first). Width uses panel.ts width (which counts symbols wide, so it errs toward fitting).
  */
 export function helpLines(items: string[], columns: number, lines = 2): string[] {
   const out: string[] = [];
@@ -47,25 +47,25 @@ const PAGE = 50;
 
 const when = (d: Date | null) => (d ? new Date(d).toLocaleString("sv-SE").slice(0, 16) : "—");
 
-/** 会話を記録したホスト。一覧と詳細で同じ語にする */
+/** The host that recorded a conversation. The same word in the list and the detail */
 const hostName = (origin: string) =>
   origin === "codex" ? "Codex" : origin === "claude-code" ? "Claude Code" : origin;
 
 const STATUS: Record<string, string> = {
-  active: "進行中",
-  blocked: "止まっている",
-  paused: "保留",
-  done: "終わった",
-  abandoned: "やめた",
+  active: "in progress",
+  blocked: "blocked",
+  paused: "on hold",
+  done: "done",
+  abandoned: "dropped",
 };
 const statusName = (status: string) => STATUS[status] ?? status;
-/** 作業の状態の色。ローズウッドは「避ける判断」と「読めなかった」に取ってあるので、止まっている作業は黄土にする */
+/** Work status colors. Rosewood is reserved for "decisions to avoid" and "could not read", so blocked work is ochre */
 const statusColor = (status: string) =>
   status === "blocked" ? PALETTE.ochre : status === "active" ? PALETTE.sage : undefined;
 
 type Load<T> = { status: "loading" } | { status: "error"; error: string } | { status: "ok"; value: T };
 
-/** 読み込み・失敗・成功を 1 つの値で持つ。deps が変わったら読み直し、古い応答は捨てる。 */
+/** Loading, failure, and success in one value. Reloads when deps change and drops stale responses. */
 function useLoad<T>(load: () => Promise<T>, deps: unknown[]): Load<T> {
   const [state, setState] = useState<Load<T>>({ status: "loading" });
   useEffect(
@@ -80,13 +80,13 @@ function useLoad<T>(load: () => Promise<T>, deps: unknown[]): Load<T> {
         live = false;
       };
     },
-    // biome-ignore lint/correctness/useExhaustiveDependencies: 読み直す条件は呼び出し側が deps で決める
+    // biome-ignore lint/correctness/useExhaustiveDependencies: callers decide when to reload through deps
     deps,
   );
   return state;
 }
 
-/** 読み込み中の回転（icons.ts の TWINKLE を行って戻る）。記号は幅 2 の枠に入れ、横の文字がずれないようにする */
+/** The loading spinner (bounces through icons.ts TWINKLE). The symbol sits in a 2-column box so nearby text does not shift */
 function Twinkle({ label }: { label: string }) {
   const { frame } = useAnimation({ interval: 120 });
   const n = TWINKLE.length;
@@ -100,19 +100,19 @@ function Twinkle({ label }: { label: string }) {
   );
 }
 
-/** 読み込み中と失敗の表示。失敗は「何ができなかったか」から始める。 */
+/** Loading and failure display. A failure starts with what could not be done. */
 function Pending<T>({ load, what, render }: { load: Load<T>; what: string; render: (v: T) => ReactNode }) {
-  if (load.status === "loading") return h(Twinkle, { label: `${what}を読んでいる…` });
+  if (load.status === "loading") return h(Twinkle, { label: `Loading ${what}…` });
   if (load.status === "error")
     return h(
       Text,
       { color: PALETTE.failure },
-      `${ICONS.error} ${what}を読めなかった: ${oneLine(String(load.error))}`,
+      `${ICONS.error} Could not read ${what}: ${oneLine(String(load.error))}`,
     );
   return h(Box, { flexDirection: "column", flexGrow: 1 }, render(load.value));
 }
 
-/** 選んでいる行が見える範囲だけを描く一覧。行は 1 行ずつで、選んだ行を反転する。 */
+/** A list that draws only the rows around the selection. One row per line; the selected row is inverted. */
 function List<T>(props: {
   items: T[];
   selected: number;
@@ -150,7 +150,7 @@ function List<T>(props: {
   );
 }
 
-/** ↑↓ / j k で動かす選択。PageUp / PageDown は画面の高さずつ。 */
+/** Selection moved with ↑↓ / j k. PageUp / PageDown move by the screen height. */
 function useSelection(count: number, height: number, active: boolean): [number, (n: number) => void] {
   const [selected, setSelected] = useState(0);
   const clamp = (n: number) => Math.max(0, Math.min(count - 1, n));
@@ -171,14 +171,14 @@ function useSelection(count: number, height: number, active: boolean): [number, 
   return [selected, setSelected];
 }
 
-/** 長い本文。↑↓ / j k で 1 行、PageUp / PageDown で 1 画面ずつ動かす。 */
+/** Long text. ↑↓ / j k move one line, PageUp / PageDown one screen. */
 function Scroll({ height, active, children }: { height: number; active: boolean; children?: ReactNode }) {
   const ref = useRef<ScrollViewRef>(null);
   useInput(
     (input, key) => {
       const s = ref.current;
       if (!s) return;
-      // scrollBy は本文の終わりで止まらず、画面が空になる。終わり（getBottomOffset）までに収めて動かす
+      // scrollBy does not stop at the end and leaves the screen empty. Clamp to the end (getBottomOffset)
       const by = (delta: number) =>
         s.scrollTo(Math.max(0, Math.min(s.getBottomOffset(), s.getScrollOffset() + delta)));
       if (key.downArrow || input === "j") by(1);
@@ -222,19 +222,19 @@ function SessionList(p: {
   );
   return h(Pending<{ items: SessionRow[]; total: number }>, {
     load,
-    what: "セッションの一覧",
+    what: "sessions",
     render: (v) => [
       h(
         Text,
         { key: "head", dimColor: true },
-        `${v.total} 件${pages > 1 ? `（${page} / ${pages} ページ、← → でめくる）` : ""}`,
+        `${plural(v.total, "session")}${pages > 1 ? ` (page ${page}/${pages})` : ""}`,
       ),
       h(List<SessionRow>, {
         key: "list",
         items: v.items,
         selected,
         height: p.height - 1,
-        empty: "このプロジェクトには自動記録したセッションがまだ無い。",
+        empty: "No recorded sessions in this project yet.",
         row: (s, on) =>
           h(
             Box,
@@ -244,8 +244,8 @@ function SessionList(p: {
               { flexGrow: 1, flexShrink: 1, minWidth: 8 },
               h(Text, { wrap: "truncate-end", bold: on }, oneLine(s.title)),
             ),
-            // 右の列は縮めず、題だけを切る（縮めると長い題の行で日時と件数が先に消え、行ごとに列もずれる）。
-            // 狭い端末では出す項目を減らす
+            // The right column never shrinks; only the title is cut (shrinking drops the time and counts first on long titles and misaligns rows).
+            // Narrow terminals show fewer fields
             h(
               Box,
               { flexShrink: 0 },
@@ -265,12 +265,12 @@ function SessionList(p: {
   });
 }
 
-// 外から来た文字（記録された PR・issue の本文、会話、名前、path）は表示の直前にここを通す。制御列を落とさないと画面を書き換えられる
+// Outside text (recorded PR and issue bodies, conversations, names, paths) passes through here right before display. Without dropping control sequences it could rewrite the screen
 const oneLine = (s: string) => inline(s).replace(/\s+/g, " ").trim();
-// タブは端末が 8 桁先まで進めるが、Ink は幅を 0 と数えて行がずれるので、空白にする
+// Terminals advance tabs to the next 8-column stop, but Ink counts them as width 0 and misaligns rows, so they become spaces
 const block = (s: string) => plain(s).replace(/\t/g, "  ");
 
-/** marked-terminal（cli-table3）が描く表の行。罫線で始まる行か、│ で始まって │ で終わる行だけ。地の文の │ は当てない */
+/** Table rows drawn by marked-terminal (cli-table3): lines starting with a border, or starting and ending with │. A │ in prose does not match */
 const TABLE_LINE = /^\s*(?:[┌├└]|│.*│\s*$)/u;
 
 const speakerIcon: Record<string, string> = {
@@ -279,16 +279,20 @@ const speakerIcon: Record<string, string> = {
   person: ICONS.person,
   bot: ICONS.bot,
 };
-const speakerName: Record<string, string> = { self: "持ち主", assistant: "AI", person: "人", bot: "bot" };
+const speakerName: Record<string, string> = { self: "You", assistant: "AI", person: "Person", bot: "bot" };
 
 function SessionView(p: { data: Data; id: string; height: number; width: number; active: boolean }) {
   const load = useLoad(() => p.data.session(p.id), [p.id]);
   return h(Pending<SessionDetail | null>, {
     load,
-    what: "セッション",
+    what: "session",
     render: (s) =>
       s === null
-        ? h(Text, { dimColor: true }, "このセッションは無い（消されたか、GitHub の会話）。")
+        ? h(
+            Text,
+            { dimColor: true },
+            "This session does not exist (it was deleted, or it is a GitHub conversation).",
+          )
         : h(Scroll, { height: p.height, active: p.active }, ...sessionBody(s, p.width)),
   });
 }
@@ -310,7 +314,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
   for (const m of s.messages) {
     const files = m.files.map(
       (f) =>
-        `${f.action === "edit" ? "編集" : f.action === "read" ? "読んだ" : "レビュー"} ${oneLine(f.path)}`,
+        `${f.action === "edit" ? "edited" : f.action === "read" ? "read" : "reviewed"} ${oneLine(f.path)}`,
     );
     out.push(
       h(
@@ -327,7 +331,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
           h(
             Text,
             { dimColor: true, bold: false },
-            `  ${when(m.sentAt)}${m.truncated ? `  （${m.originalBytes} bytes から切った）` : ""}`,
+            `  ${when(m.sentAt)}${m.truncated ? `  (cut from ${m.originalBytes} bytes)` : ""}`,
           ),
         ),
         h(
@@ -337,10 +341,10 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
             ? renderMarkdown(block(m.body), body)
                 .split("\n")
                 .map((line, i) =>
-                  // 表の罫線の行は折り返すと崩れるので切る。本文は Ink が端末の幅で折り返す
+                  // Table border lines break when wrapped, so they are cut. Ink wraps the body at the terminal width
                   h(
                     Text,
-                    // 表の行の頭には色の制御文字が付くので、外してから見る
+                    // Table rows start with a color control sequence, so strip it before checking
                     {
                       key: i,
                       wrap: TABLE_LINE.test(stripVTControlCharacters(line)) ? "truncate-end" : "wrap",
@@ -359,12 +363,12 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
       h(
         Box,
         { key: "knowledge", flexDirection: "column", marginBottom: 1 },
-        h(Text, { bold: true }, `${ICONS.decision} このセッションで trace した記録`),
+        h(Text, { bold: true }, `${ICONS.decision} Records traced in this session`),
         ...s.knowledge.map((k) =>
           h(
             Text,
             { key: k.id, color: kindColor(k.kind, k.status) },
-            `  ${k.label} ${oneLine(k.body)}${k.reason ? `（${oneLine(k.reason)}）` : ""}`,
+            `  ${k.label} ${oneLine(k.body)}${k.reason ? ` (${oneLine(k.reason)})` : ""}`,
           ),
         ),
       ),
@@ -374,7 +378,7 @@ function sessionBody(s: SessionDetail, width: number): ReactNode[] {
       h(
         Text,
         { key: w.ref },
-        `${statusIcon(w.status)} 作業: ${oneLine(w.title)}（${statusName(w.status)}） いま: ${oneLine(w.current)}`,
+        `${statusIcon(w.status)} Work: ${oneLine(w.title)} (${statusName(w.status)}) Now: ${oneLine(w.current)}`,
       ),
     );
   return out;
@@ -389,7 +393,7 @@ function WorkList(p: {
 }) {
   const load = useLoad(() => p.data.works(p.project), [p.project]);
   const items = load.status === "ok" ? load.value.items : [];
-  // 切れたことの案内に 1 行使う。一覧が 1 行しか残らない高さでは案内を出さない
+  // One row goes to the "cut" notice. When only one list row would remain, the notice is not shown
   const more = load.status === "ok" && load.value.more && p.height >= 2;
   const height = more ? p.height - 1 : p.height;
   const [selected] = useSelection(items.length, height, p.active);
@@ -402,7 +406,7 @@ function WorkList(p: {
   );
   return h(Pending<{ items: typeof items; more: boolean }>, {
     load,
-    what: "作業の一覧",
+    what: "work",
     render: (works) =>
       h(
         Box,
@@ -412,7 +416,7 @@ function WorkList(p: {
               h(
                 Text,
                 { key: "more", dimColor: true, wrap: "truncate-end" },
-                `最新 ${works.items.length} 件（古い作業は省いた）`,
+                `Latest ${works.items.length} (older work omitted)`,
               ),
             ]
           : []),
@@ -421,7 +425,7 @@ function WorkList(p: {
           items: works.items,
           selected,
           height,
-          empty: "trace した作業はまだ無い。作業の現在地は trace で残す（/gleanery:trace）。",
+          empty: "No traced work yet. Record where work stands with trace (/gleanery:trace).",
           row: (w, on) =>
             h(
               Box,
@@ -442,7 +446,7 @@ function WorkList(p: {
                 h(
                   Text,
                   { dimColor: true },
-                  `  ${statusName(w.status).padEnd(6, "　")}  ${when(w.updatedAt)}`,
+                  `  ${statusName(w.status).padEnd(11, " ")}  ${when(w.updatedAt)}`,
                 ),
               ),
             ),
@@ -455,28 +459,32 @@ function WorkView(p: { data: Data; ref: string; project: number | null; height: 
   const load = useLoad(() => p.data.work(p.ref, p.project), [p.ref, p.project]);
   return h(Pending<Awaited<ReturnType<Data["work"]>>>, {
     load,
-    what: "作業",
+    what: "work",
     render: (w) =>
       w === null
-        ? h(Text, { dimColor: true }, "この作業は無い（別のプロジェクトの作業か、消された）。")
+        ? h(
+            Text,
+            { dimColor: true },
+            "This work does not exist (it belongs to another project, or was deleted).",
+          )
         : h(
             Scroll,
             { height: p.height, active: p.active },
             h(
               Text,
               { key: "t", bold: true },
-              `${statusIcon(w.status)} ${oneLine(w.title)}（${statusName(w.status)}）`,
+              `${statusIcon(w.status)} ${oneLine(w.title)} (${statusName(w.status)})`,
             ),
             h(
               Text,
               { key: "p", dimColor: true },
               `${ICONS.project} ${oneLine(w.project)}  ${when(w.updatedAt)}`,
             ),
-            h(Text, { key: "g" }, `${ICONS.goal} 目的: ${block(w.goal)}`),
-            h(Text, { key: "c" }, `いま: ${block(w.current)}`),
+            h(Text, { key: "g" }, `${ICONS.goal} Goal: ${block(w.goal)}`),
+            h(Text, { key: "c" }, `Now: ${block(w.current)}`),
             ...w.next.map((n, i) => h(Text, { key: `n${i}` }, `${ICONS.next} ${block(n)}`)),
-            ...hitLines("q", ICONS.question, "問い", w.questions),
-            ...hitLines("a", ICONS.avoid, "通ってはいけない道", w.walls),
+            ...hitLines("q", ICONS.question, "Open questions", w.questions),
+            ...hitLines("a", ICONS.avoid, "Paths to avoid", w.walls),
           ),
   });
 }
@@ -531,36 +539,40 @@ function SearchView(p: {
       h(
         Text,
         { color: PALETTE.terracotta },
-        // 狭い端末では見出しの語を省く（折れると入力の頭が 2 行目へ落ち、どこに打つかが分からなくなる）
-        p.width < 60
+        // Narrow terminals drop the heading word (if it wraps, the input start falls to the second line and it is unclear where to type).
+        // The heading with the short hint fits in 48 columns, and with the long hint in 84
+        p.width < 48
           ? `${ICONS.search} ❯ `
-          : `${ICONS.search} ${mode === "knowledge" ? "判断と文書" : "持ち主の発言"} ❯ `,
+          : `${ICONS.search} ${mode === "knowledge" ? "Decisions and docs" : "Your messages"} ❯ `,
       ),
       h(TextInput, {
         isDisabled: !(p.active && p.typing),
         defaultValue: question,
-        placeholder: p.width < 60 ? "語を打って Enter" : "語を打って Enter（m で判断 / 発言を切り替え）",
+        placeholder:
+          p.width < 84
+            ? "Type terms, then Enter"
+            : "Type terms, then Enter (m switches decisions / messages)",
         onSubmit: (v) => {
           setQuestion(v.trim());
           p.setTyping(false);
         },
       }),
     ),
-    h(Text, { dimColor: true }, question ? `「${question}」` : " "),
+    h(Text, { dimColor: true }, question ? `"${question}"` : " "),
     question
       ? h(Pending<Hit[] | null>, {
           load,
-          what: "検索の結果",
+          what: "search results",
           render: () =>
             h(List<Hit>, {
               items: hits,
               selected,
               height: p.height - 3,
-              // 語に切れない問い（ひらがなだけ・記号だけ）は引かずに 0 件になる。「無かった」と分ける
+              // Questions with no searchable terms (only hiragana or symbols) return 0 hits without searching. Keep that apart from "none found"
               empty:
                 ftsQuery(question) === null
-                  ? "引ける語が無い（ひらがなだけ・記号だけの問い）。漢字・カタカナ・英語の語で引く。"
-                  : "当たらなかった。語を変えるか、m で発言を引く。",
+                  ? "No searchable terms (only hiragana or symbols). Search with kanji, katakana, or English words."
+                  : "No matches. Try other terms, or press m to search messages.",
               row: (x, on) =>
                 h(
                   Box,
@@ -575,17 +587,17 @@ function SearchView(p: {
                       oneLine(x.heading ? `${x.heading} — ${x.text}` : x.text),
                     ),
                   ),
-                  // プロジェクトの列は幅を決めて切る（名前の長さで行ごとに列がずれないように）
+                  // The project column has a fixed width and is cut (so rows do not misalign with name length)
                   h(
                     Box,
                     { flexShrink: 0, width: 22, marginLeft: 2 },
                     h(Text, { dimColor: true, wrap: "truncate-end" }, oneLine(x.project)),
                   ),
-                  // PR・issue の発言は端末のリンクにする。対応しない端末では URL を後ろに添える
+                  // Messages from PRs and issues become terminal links. Terminals without link support get the URL appended
                   x.url
                     ? h(Link, {
                         url: oneLine(x.url),
-                        // biome-ignore lint/correctness/noChildrenProp: ink-link の型が children を props の必須にしている
+                        // biome-ignore lint/correctness/noChildrenProp: ink-link types children as a required prop
                         children: h(Text, { color: PALETTE.slate }, ` ${ICONS.link}`),
                       })
                     : null,
@@ -600,10 +612,14 @@ function ReadView(p: { data: Data; refId: string; project: number | null; height
   const load = useLoad(() => p.data.read(p.refId, p.project), [p.refId, p.project]);
   return h(Pending<string | null>, {
     load,
-    what: "全文",
+    what: "full text",
     render: (text) =>
       text === null
-        ? h(Text, { dimColor: true }, "この記録は無い（消されたか、選んだプロジェクトの外の記録）。")
+        ? h(
+            Text,
+            { dimColor: true },
+            "This record does not exist (it was deleted, or it is outside the selected project).",
+          )
         : h(
             Scroll,
             { height: p.height, active: p.active },
@@ -625,14 +641,14 @@ export function App({ data }: { data: Data }) {
   const projectList = projectsLoad.status === "ok" ? projectsLoad.value : [];
   const projectName =
     project === null
-      ? "全部のプロジェクト"
+      ? "All projects"
       : (projectList.find((x) => x.id === project)?.name ??
         (project === data.here.project ? data.here.name : null) ??
         `#${project}`);
-  // 失敗のときは名前を出さない。狭い端末で頭から切ると、何ができなかったかが消える
+  // On failure no name is shown. Cutting from the start in a narrow terminal would hide what failed
   const projectLabel =
     projectsLoad.status === "error"
-      ? `${ICONS.error} プロジェクトの一覧を読めなかった`
+      ? `${ICONS.error} Could not read the project list`
       : `${ICONS.project} ${oneLine(projectName)}`;
 
   useInput((input, key) => {
@@ -655,7 +671,7 @@ export function App({ data }: { data: Data }) {
       setDetail(null);
       setTyping(true);
     } else if (input === "p" && detail === null) {
-      // プロジェクトを順に切り替える。最後の次は全部のプロジェクト。一覧を読めなくても、起動したプロジェクトへは戻れる
+      // Cycle through projects. After the last comes all projects. Even if the list cannot be read, the starting project is reachable
       const ids = [...new Set([...projectList.map((x) => x.id), data.here.project])].filter(
         (x): x is number => x !== null,
       );
@@ -664,42 +680,46 @@ export function App({ data }: { data: Data }) {
     }
   });
 
-  // 終わり方と戻り方、その画面にしか無いキーを先に置き、どの画面でも同じキーを後ろへ回す（入らなければ後ろから切れる）
+  // Quit, back, and screen-specific keys come first; keys shared by every screen come last (cut from the end when they do not fit)
   const items = detail
     ? [
-        "q 終わる",
-        "Esc 戻る",
-        "↑↓ j k 動かす",
-        "PgUp PgDn Space めくる",
-        "g G 端へ",
-        "/ 検索",
-        "Tab S-Tab 画面",
+        "q quit",
+        "Esc back",
+        "↑↓ j k scroll",
+        "PgUp PgDn Space page",
+        "g G ends",
+        "/ search",
+        "Tab S-Tab screens",
       ]
     : typing
-      ? ["Enter 引く", "Esc 打つのをやめる", "Tab 画面"]
+      ? ["Enter search", "Esc stop typing", "Tab screens"]
       : [
-          "q 終わる",
-          "Enter 開く",
-          ...(tab === "sessions" ? ["← → h l ページ"] : tab === "search" ? ["m 判断 / 発言", "i 打つ"] : []),
-          "↑↓ j k 選ぶ",
-          "PgUp PgDn めくる",
-          "Tab S-Tab 画面",
-          "/ 検索",
-          "g G 端へ",
-          "p プロジェクト",
+          "q quit",
+          "Enter open",
+          ...(tab === "sessions"
+            ? ["← → h l page"]
+            : tab === "search"
+              ? ["m decisions / messages", "i type"]
+              : []),
+          "↑↓ j k select",
+          "PgUp PgDn jump",
+          "Tab S-Tab screens",
+          "/ search",
+          "g G ends",
+          "p project",
         ];
   const packed = helpLines(items, columns - 2);
-  // 2 行にすると一覧に 3 行が残らない高さでは 1 行に戻す（選んだ行が画面の外へ出る）
+  // Two rows fall back to one when fewer than 3 list rows would remain (the selected row would leave the screen)
   const help = packed.length > 1 && rows - CHROME - 1 < 3 ? helpLines(items, columns - 2, 1) : packed;
 
   const height = Math.max(1, rows - CHROME - (help.length - 1));
-  // タブの名前を出すと 1 行に収まらない幅では、アイコンだけにする（折れると上の枠が 4 行になり、画面がはみ出す）
+  // Show only icons when tab names do not fit on one line (wrapping makes the top frame 4 rows and the screen overflows)
   const narrow = columns < 64;
-  // 詳細を開いている間も一覧は隠すだけで残す。作り直すと、選んでいた行・ページ・検索の語が Esc で消える
+  // While a detail is open the list is only hidden. Recreating it would lose the selected row, page, and search terms on Esc
   const listActive = detail === null;
   const list =
     tab === "sessions"
-      ? // プロジェクトを変えたら 1 ページ目から読み直す（前のプロジェクトのページ番号を持ち越すと、空のページを「無い」と出す）
+      ? // A project change reloads from page 1 (carrying the old page number over would show an empty page as "none")
         h(SessionList, {
           key: `sessions-${project ?? "all"}`,
           data,

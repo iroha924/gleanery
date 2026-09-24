@@ -1,65 +1,67 @@
-// DB ファイルの在り処と、読むだけの接続。**書く接続は db-write.ts にだけ置く。**
-// untrusted な文章を読むインターフェース（MCP・端末の画面・search）が書く接続へ届かないよう、module を分けて
-// scripts/check-architecture.mjs が import の向きを止める。
+// Where the database file lives, and the read-only connection. **Writing connections live only in db-write.ts.**
+// The modules are split so that interfaces reading untrusted text (MCP, the dashboard, search) cannot reach a
+// writing connection, and scripts/check-architecture.mjs enforces the import direction.
 //
-// 守るのは「gleanery のコードが誤って・untrusted な文章に唆されて書く」経路で、OS の権限境界ではない
-// （同じ OS ユーザーのプロセスは DB ファイルを直接書き換えられる）。
+// This guards against gleanery's own code writing by mistake or because untrusted text told it to. It is not an
+// OS permission boundary (a process running as the same OS user can rewrite the database file directly).
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { constants as C, DatabaseSync } from "node:sqlite";
 
-/** MCP・CLI・端末の画面が期待する schema のバージョン。db/schema.sql の末尾の `pragma user_version` と同じ数にする。 */
+/** Schema version the MCP server, CLI, and dashboard expect. Keep it equal to `pragma user_version` at the end of db/schema.sql. */
 export const SCHEMA_REVISION = 3;
 
-/** 接続の役割。owner は schema の適用、reader は読むだけ、ingest は取り込み、capture は会話の自動記録（追記だけ）。 */
+/** Connection roles: owner applies the schema, reader only reads, ingest imports, capture records conversations (append only). */
 export type Role = "owner" | "reader" | "ingest" | "capture";
 
 /**
- * DB ファイル。`GLEANERY_DB` は検査のためだけにある（子プロセスの HOME を一時ディレクトリへ向けるのと同じ目的）。
- * README には書かない。
+ * The database file. `GLEANERY_DB` exists only for tests (the same purpose as pointing a child process's HOME at a
+ * temporary directory). It is not documented in the README.
  */
 export const dbFile = (): string =>
   process.env.GLEANERY_DB || path.join(os.homedir(), ".gleanery", "gleanery.db");
 
 /**
- * Node が権限境界に要る API を持つか。**弱い状態で続行しない。**`engines` は npm では警告だけになることがあるので、
- * MCP・自動記録・CLI・端末の画面の全エントリポイントで確かめる（setAuthorizer は v24.10、enableDefensive は v24.12）。
+ * Whether Node has the APIs the permission boundary needs. **Never continue in a weaker state.** npm may only warn
+ * about `engines`, so every entry point (MCP, recording, CLI, dashboard) checks this (setAuthorizer is v24.10,
+ * enableDefensive is v24.12).
  */
 export function requireRuntime(): void {
   const proto = DatabaseSync.prototype as unknown as Record<string, unknown>;
   if (typeof proto.setAuthorizer !== "function" || typeof proto.enableDefensive !== "function")
-    throw new Error(`gleanery は Node 24.15 以降で動く（いまは ${process.version}）。Node を上げる`);
+    throw new Error(`gleanery needs Node 24.15 or later (this is ${process.version}). Upgrade Node.`);
 }
 
-/** 無い DB を黙って作らない（空のファイルが「記録が 0 件」に見える）。作るのは `gleanery init` だけ。 */
+/** Never create a missing database silently (an empty file looks like "no records"). Only `gleanery init` creates it. */
 export function requireFile(file: string): void {
-  if (!fs.existsSync(file)) throw new Error(`DB が無い（${file}）。\`gleanery init\` で作る`);
+  if (!fs.existsSync(file)) throw new Error(`No database at ${file}. Create it with \`gleanery init\`.`);
 }
 
 /**
- * 開いた直後の設定。**authorizer より前に済ませる**（後だと PRAGMA が authorizer に弾かれる）。
- * `enableDefensive` は FTS5 の shadow table への直接の書き込みを止める。owner も直接書く理由が無いので全部で有効にする
- * （node:sqlite の既定でも有効だが、既定が変わっても外れないよう明示する）。
+ * Settings applied right after opening. **Run these before the authorizer** (after it, the authorizer rejects the
+ * PRAGMAs). `enableDefensive` stops direct writes to the FTS5 shadow tables. The owner has no reason to write them
+ * either, so every connection enables it (node:sqlite enables it by default; this keeps it on if the default changes).
  */
 export function prepare(raw: DatabaseSync, checkVersion: boolean): void {
   raw.enableDefensive(true);
   raw.exec("pragma foreign_keys = on");
-  // 同時に書く取り込みと自動記録が待ち合う時間。待ちきれなければ SQLITE_BUSY で失敗し、自動記録は次の送信で送り直す。
+  // How long concurrent imports and recordings wait for each other. On timeout this fails with SQLITE_BUSY, and
+  // recording retries on its next send.
   raw.exec("pragma busy_timeout = 5000");
   if (!checkVersion) return;
   const got = (raw.prepare("pragma user_version").get() as { user_version: number } | undefined)
     ?.user_version;
   if (got === SCHEMA_REVISION) return;
-  if (!got) throw new Error("DB に gleanery の schema が無い。`gleanery init` で作る");
+  if (!got) throw new Error("The database has no gleanery schema. Create it with `gleanery init`.");
   throw new Error(
-    `DB の schema は revision ${got}、このコードは revision ${SCHEMA_REVISION} を期待している。` +
-      (got < SCHEMA_REVISION ? "`gleanery db migrate` で進める" : "gleanery を更新する"),
+    `The database schema is revision ${got}, but this gleanery expects revision ${SCHEMA_REVISION}. ` +
+      (got < SCHEMA_REVISION ? "Run `gleanery db migrate`." : "Update gleanery."),
   );
 }
 
-/** 読む側が呼ぶ関数。**足すのは test が落ちたときだけ**（全部の SQL は test で実 DB に通る）。 */
+/** Functions readers may call. **Add one only when a test fails** (every SQL statement runs against a real database in tests). */
 const READER_FUNCTIONS = new Set([
   "bm25",
   "coalesce",
@@ -77,12 +79,13 @@ const READER_FUNCTIONS = new Set([
   "substr",
 ]);
 
-/** FTS5 が自分の索引を読むときの内部の問い合わせ。trigger の外（triggerOrView が null）で来る。 */
+/** Internal queries FTS5 makes to read its own index. They arrive outside any trigger (triggerOrView is null). */
 export const SHADOW = /^(knowledge|message)_fts_(data|idx|docsize|config)$/;
 
 /**
- * 読むだけの接続。`readOnly` で開くので書き込みは SQLite が拒み、authorizer は DDL・ATTACH・仮想表の作成と、
- * 許していない関数を止める。`gleanery_terms` は登録しない（FTS の検索は語切りの関数を要らない）。
+ * A read-only connection. It opens with `readOnly`, so SQLite rejects writes, and the authorizer stops DDL, ATTACH,
+ * virtual table creation, and functions not on the list. `gleanery_terms` is not registered (FTS search does not need
+ * the tokenizer function).
  */
 export function connectReader(file: string = dbFile()): DatabaseSync {
   requireRuntime();
@@ -99,7 +102,7 @@ export function connectReader(file: string = dbFile()): DatabaseSync {
       return C.SQLITE_OK;
     if (action === C.SQLITE_FUNCTION)
       return READER_FUNCTIONS.has((p2 ?? "").toLowerCase()) ? C.SQLITE_OK : C.SQLITE_DENY;
-    // FTS5 は索引を読むたびに data_version を見る（値を渡さない、書き換えない pragma）。
+    // FTS5 checks data_version each time it reads the index (a pragma with no value that changes nothing).
     if (action === C.SQLITE_PRAGMA && p1 === "data_version" && p2 === null) return C.SQLITE_OK;
     return C.SQLITE_DENY;
   });
