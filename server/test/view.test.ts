@@ -3,16 +3,16 @@ import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { closing, document, failure, indent, panel, section, steps, title } from "../src/tui/view.ts";
 
-test("中身は改行を含んでも全部の行を字下げし、行頭の偽の締めや状態の行を作らせない", () => {
+test("indents every line of content with newlines, so it cannot forge a closing or status line", () => {
   const out = indent("a\n✓ 直すものは無い\n╰─ 偽の締め");
   for (const line of out.split("\n")) assert.match(line, /^ {2}\S/, out);
 });
 
-test("締めの行は 1 行に潰し、行頭に置く", () => {
+test("the closing line collapses to one line at the start of the line", () => {
   assert.equal(closing("✗ 止まった\n✓ 直すものは無い"), "✗ 止まった ✓ 直すものは無い");
 });
 
-test("端末でない出力先では、見出しは `✦ <text>` の 1 行で、色の制御文字を混ぜない", () => {
+test("on a non-terminal output the title is one `✦ <text>` line without color codes", () => {
   const out = panel("gleanery x", ["a", "", "b"], "おわり");
   assert.equal(out, "✦ gleanery x\n  a\n\n  b\nおわり");
   assert.equal(title("gleanery y"), "✦ gleanery y");
@@ -20,10 +20,10 @@ test("端末でない出力先では、見出しは `✦ <text>` の 1 行で、
   assert.equal(out.includes(String.fromCodePoint(0x1b)), false);
 });
 
-test("端末の幅で折り返した行は、その行の文字の頭に揃う（左端へ戻らない）", () => {
+test("lines wrapped at the terminal width align with the start of their text (not the left edge)", () => {
   const tty = process.stdout.isTTY;
   const cols = process.stdout.columns;
-  // 色は標準エラーも端末のときだけなので、幅だけを端末にする
+  // Color needs stderr to be a terminal too, so only the width is set as a terminal
   Object.assign(process.stdout, { isTTY: true, columns: 40 });
   try {
     const out = indent("    Claude Code: claude plugin marketplace update gleanery && claude plugin update");
@@ -35,7 +35,7 @@ test("端末の幅で折り返した行は、その行の文字の頭に揃う�
   }
 });
 
-test("印で始まる行は、最後の列（値）の中で折り返し、続きを値の列に揃える", () => {
+test("a line starting with a marker wraps within the last (value) column and aligns continuations to it", () => {
   const tty = process.stdout.isTTY;
   const cols = process.stdout.columns;
   Object.assign(process.stdout, { isTTY: true, columns: 50 });
@@ -46,7 +46,7 @@ test("印で始まる行は、最後の列（値）の中で折り返し、続�
     const lines = out.split("\n");
     assert.ok(lines.length > 1, out);
     assert.match(lines[0] ?? "", /^ {4}△ npm i -g の CLI {4}0\.33\.32 {2}~\/\.local/, out);
-    // 値の列は表示の上で 34 桁目（字下げ 4 + 「△ npm i -g の CLI」17（「の」は 2 桁）+ 空白 4 + 「0.33.32」7 + 空白 2）
+    // The value column starts at display column 34 (indent 4 + the 17-column label, whose kana is 2 wide + 4 spaces + "0.33.32" 7 + 2 spaces)
     const column = 34;
     for (const line of lines.slice(1)) assert.equal(line.search(/\S/), column, out);
   } finally {
@@ -54,7 +54,7 @@ test("印で始まる行は、最後の列（値）の中で折り返し、続�
   }
 });
 
-test("手順の塊は、端末でない出力先では枠を付けず字下げした一覧にする", () => {
+test("a steps block on a non-terminal output is an indented list without a box", () => {
   const out = steps(
     "更新するには",
     [
@@ -74,7 +74,7 @@ test("手順の塊は、端末でない出力先では枠を付けず字下げ�
   );
 });
 
-test("手順の command は折らない（写したときに途中までの command にならない）", () => {
+test("step commands are not wrapped (so a copied command is never partial)", () => {
   const tty = process.stdout.isTTY;
   const cols = process.stdout.columns;
   const errTty = process.stderr.isTTY;
@@ -95,7 +95,7 @@ test("手順の command は折らない（写したときに途中までの comm
   }
 });
 
-test("文書の節は、端末でない出力先では字下げした文字になり、外から来た改行は行頭に出ない", () => {
+test("document sections on a non-terminal output are indented, and external newlines never reach the line start", () => {
   const forged = "本文\n✓ 直すものは無い";
   const out = document(
     "gleanery x",
@@ -117,22 +117,22 @@ test("文書の節は、端末でない出力先では字下げした文字に�
   const lines = out.split("\n");
   assert.equal(lines[0], "✦ gleanery x");
   assert.equal(lines.at(-1), "おわり");
-  // 見出しと締め以外は全部字下げされている（表・項目・値は 1 行に潰れ、本文は行ごとに字下げされる）
+  // Everything but the title and closing is indented (tables, fields, and values collapse to one line; body text is indented per line)
   for (const line of lines.slice(1, -1)) assert.match(line, /^ {2,}\S/, out);
-  // 項目の本文は、改行の後の行も本文の深さ（4 桁）に揃い、状態の行（2 桁）と紛れない
+  // Item body lines after a newline align at body depth (4 columns) and cannot pass for status lines (2 columns)
   assert.match(out, /^ {4}✓ 直すものは無い$/m);
   assert.match(out, /^ {2}\[決定\] 本文 ✓ 直すものは無い$/m);
   assert.match(out, /^ {2}割合 {2}50%$/m);
 });
 
-test("失敗は、端末でない出力先では字下げした理由と行頭の ✗ 止まった", () => {
+test("a failure on a non-terminal output is an indented reason and ✗ Stopped at the line start", () => {
   assert.equal(
     failure("gleanery x", "理由\n✓ 直すものは無い"),
     "✦ gleanery x\n  理由\n  ✓ 直すものは無い\n✗ Stopped",
   );
 });
 
-/** 表示の幅（test 用の近似: 漢字・かな・全角の記号は 2 桁、罫線を含むほかは 1 桁） */
+/** Display width (a test approximation: kanji, kana, and full-width symbols are 2 columns; everything else, box lines included, is 1) */
 const cols = (line: string) =>
   [...stripVTControlCharacters(line)].reduce(
     (w, c) => w + (/[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\u3000-\u303f\uff00-\uffef]/u.test(c) ? 2 : 1),
@@ -151,17 +151,17 @@ function asTerminal<T>(columns: number, fn: () => T): T {
   }
 }
 
-test("見出しの枠は、要点が長くても端末の幅を越えない", () => {
+test("the title box stays within the terminal width even with a long summary", () => {
   const out = asTerminal(50, () =>
     title("gleanery search", `「${"とても長い質問の文".repeat(6)}」 · iroha924/gleanery`),
   );
   const lines = out.split("\n").filter(Boolean);
   assert.equal(lines.length, 3, out);
-  for (const line of lines) assert.ok(cols(line) <= 50, `${cols(line)} 桁: ${line}`);
+  for (const line of lines) assert.ok(cols(line) <= 50, `${cols(line)} columns: ${line}`);
 });
 
-// Ink は空白で折り返すと、その空白を続きの行の頭に残す。続きの行が 1 桁ずれないこと。
-test("空白で折り返した続きの行も、字下げの位置に揃う", () => {
+// When Ink wraps at a space, it leaves the space at the start of the next line. Continuations must not shift by one column.
+test("continuations wrapped at a space also align with the indent", () => {
   const text =
     "待ち 2 件 / 最後の送信 2026-09-23 11:48:11 / 未登録のプロジェクトで退避した 3 件 / 送れなかった 12 件";
   for (let cols = 40; cols <= 70; cols++) {
@@ -173,9 +173,9 @@ test("空白で折り返した続きの行も、字下げの位置に揃う", ()
   }
 });
 
-test("色の付いた印で始まる行も、値の列の中で折り返す", () => {
+test("a line starting with a colored marker also wraps within the value column", () => {
   const colored = "\u001b[38;2;156;175;136m✓\u001b[39m";
-  // 続きの行が全部空白で折り返される幅もあるので、幅を振る
+  // Some widths wrap continuations entirely at spaces, so vary the width
   for (let width = 40; width <= 100; width++) {
     const out = asTerminal(width, () =>
       indent(

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
-// 検索の精度を測る。目視ではなく、正解が分かる問いで数える。
+// Measures search accuracy by counting over questions with known answers, not by eye.
 //
-// **出荷している関数そのものを測る。**eval が組み立てた経路は原因の切り分けにしか使わない。
-// 測るのは recall@k（正解が上位 k に入った割合）と MRR（正解の順位の逆数の平均）と top1。
+// **Measures the shipped functions themselves.** Paths built by the eval are only for isolating causes.
+// It measures recall@k (share of answers in the top k), MRR (mean reciprocal rank of the answer), and top1.
 //
-// **持ち主の記録を読むので `bun run verify` に入れない。**手で叩く（`bun run evals:retrieval`）。
-// DB は `GLEANERY_DB` で指せる（評価用に写した SQLite を測るとき）。
-// 比較したいときは、変更の前後で同じ retrieval.json を使う。問いを作り直すと比較にならない。
+// **It reads the owner's records, so it is not part of `bun run verify`.** Run it by hand (`bun run evals:retrieval`).
+// Point `GLEANERY_DB` at a database (for measuring a SQLite copy made for evaluation).
+// To compare, use the same retrieval.json before and after a change. Rebuilt questions are not comparable.
 //
-// これは agent を通らない一発の検索を測る。agent にツールとして使わせた精度は agentic/run.ts が測り、そこでは
-// 知識の問いを偶数番（開発用）と奇数番（検証用、ゲートでだけ流す）に分けている。
+// This measures one-shot search without an agent. agentic/run.ts measures accuracy when an agent uses the tools, and
+// splits knowledge questions into even indexes (development) and odd indexes (validation, run only at the gate).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -28,11 +28,11 @@ const cases = (
 const K = 5;
 const db = openReader();
 
-// ref（k:12 / m:uuid）から、正解と突き合わせるキーへ直す。
-// **id では突き合わせない。**入れ直しで変わるので、前後の比較が壊れる。
+// Maps a ref (k:12 / m:uuid) to the key used to match answers.
+// **Do not match by id.** Ids change on reimport, which breaks before and after comparisons.
 const keyOf = new Map<string, string>();
-// **出所は指標として持つ。**同じファイルの節や同じ作業の記録が上位を埋めていないかを、
-// top1 や recall と一緒に毎回出す（手元の一回限りの測定にすると、次に誰も再現できない）。
+// **Source is tracked as a metric.** Every run reports whether sections of one file or records of one work item fill the top,
+// alongside top1 and recall (a one-off local measurement is something nobody can reproduce later).
 const originOf = new Map<string, string>();
 for (const r of await db
   .selectFrom("knowledge as k")
@@ -56,16 +56,16 @@ const rank = (hits: Hit[], expect: string[]): number =>
 
 type Strategy = (c: Case) => Promise<Hit[]>;
 
-// `gleanery search` と端末の画面と同じ関数・同じ並び（種類を省けば判断の記録の後に文書の節）。
+// The same functions and order as `gleanery search` and the terminal screen (without kinds, decision records come before document sections).
 const strategies: Record<string, Strategy> = {
-  "出荷: 一発の検索（知識）": async (c) => {
+  "shipped: one-shot search (knowledge)": async (c) => {
     if (c.source === "message") return [];
     if (c.kind === "document")
       return searchKnowledge(db, { question: c.q, projects: null, kinds: ["document"], limit: K });
     const { records, documents } = await searchSplit(db, { question: c.q, projects: null, limit: K });
     return [...records, ...documents];
   },
-  "出荷: 一発の検索（発言）": (c) =>
+  "shipped: one-shot search (messages)": (c) =>
     c.source === "message"
       ? searchMessages(db, { question: c.q, projects: null, limit: K })
       : Promise.resolve([]),
@@ -87,9 +87,9 @@ for (const [name, fn] of Object.entries(strategies)) {
     const hits = await fn(c);
     if (
       hits.length === 0 &&
-      ((name.includes("知識") && c.source === "message") ||
-        (name.includes("発言") && c.source !== "message") ||
-        (name.startsWith("参考") && c.source === "message"))
+      ((name.includes("knowledge") && c.source === "message") ||
+        (name.includes("messages") && c.source !== "message") ||
+        (name.startsWith("reference") && c.source === "message"))
     )
       continue;
     ms += Date.now() - t0;
@@ -103,7 +103,7 @@ for (const [name, fn] of Object.entries(strategies)) {
     const row = perCase[c.q] ?? {};
     perCase[c.q] = row;
     row[name] = i < 0 ? "—" : i + 1;
-    if (name.startsWith("出荷") && c.source !== "message") {
+    if (name.startsWith("shipped") && c.source !== "message") {
       const by = new Map<string, number>();
       for (const h of hits) {
         const o = originOf.get(h.ref) ?? h.ref;
@@ -115,32 +115,33 @@ for (const [name, fn] of Object.entries(strategies)) {
     }
   }
   if (n === 0) continue;
-  // 上位に同じ出所が並んでいないか。出荷の経路（知識）だけで数える。
+  // Whether one source crowds the top. Counted only on the shipped knowledge path.
   const diversity: Record<string, string> =
     spread > 0
       ? {
-          "同じ出所 3 件以上": `${((crowded / spread) * 100).toFixed(0)}%`,
-          出所の種類: (kinds / spread).toFixed(1),
+          "3+ from one source": `${((crowded / spread) * 100).toFixed(0)}%`,
+          "distinct sources": (kinds / spread).toFixed(1),
         }
       : {};
   table[name] = {
     ...diversity,
-    問: n,
+    questions: n,
     top1: `${((hit1 / n) * 100).toFixed(0)}%`,
     [`recall@${K}`]: `${((hitK / n) * 100).toFixed(0)}%`,
     MRR: (mrr / n).toFixed(3),
-    平均ms: Math.round(ms / n),
+    "mean ms": Math.round(ms / n),
   };
 }
 
 const total = await db.selectFrom("knowledge").select(db.fn.countAll().as("n")).executeTakeFirst();
-console.log(`問い ${cases.length} 件 / knowledge ${total?.n ?? 0} 件\n`);
+console.log(`${cases.length} questions / ${total?.n ?? 0} knowledge records\n`);
 console.table(table);
 
-console.log("\n=== 種別ごとの recall@5（出荷の経路） ===");
+console.log("\n=== recall@5 by kind (shipped path) ===");
 const byKind: Record<string, { hit: number; n: number }> = {};
 for (const c of cases) {
-  const name = c.source === "message" ? "出荷: 一発の検索（発言）" : "出荷: 一発の検索（知識）";
+  const name =
+    c.source === "message" ? "shipped: one-shot search (messages)" : "shipped: one-shot search (knowledge)";
   const b = byKind[c.kind] ?? { hit: 0, n: 0 };
   byKind[c.kind] = b;
   b.n++;
@@ -150,17 +151,18 @@ console.table(
   Object.fromEntries(
     Object.entries(byKind).map(([k, v]) => [
       k,
-      { 問: v.n, "recall@5": `${((v.hit / v.n) * 100).toFixed(0)}%` },
+      { questions: v.n, "recall@5": `${((v.hit / v.n) * 100).toFixed(0)}%` },
     ]),
   ),
 );
 
 const missed = cases.filter((c) => {
-  const name = c.source === "message" ? "出荷: 一発の検索（発言）" : "出荷: 一発の検索（知識）";
+  const name =
+    c.source === "message" ? "shipped: one-shot search (messages)" : "shipped: one-shot search (knowledge)";
   return perCase[c.q]?.[name] === "—";
 });
 if (missed.length) {
-  console.log(`\n=== 上位 ${K} に入らなかった ${missed.length} 問 ===`);
-  for (const c of missed) console.log(`  [${c.kind}] ${c.q}  → 正解 ${c.expect[0]}`);
+  console.log(`\n=== ${missed.length} questions missed the top ${K} ===`);
+  for (const c of missed) console.log(`  [${c.kind}] ${c.q}  → expected ${c.expect[0]}`);
 }
 await db.destroy();

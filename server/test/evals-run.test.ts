@@ -10,16 +10,16 @@ after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 const out = path.join(tmp, "out");
 fs.mkdirSync(out);
 
-test("結果の置き場所は OUT の中の <name>/<split>", () => {
+test("results go to <name>/<split> inside OUT", () => {
   assert.equal(runDir(out, "base-r2", "dev"), path.join(out, "base-r2", "dev"));
 });
 
-test("OUT の外を指す名前を、消す前に拒む", () => {
+test("rejects a name pointing outside OUT before deleting", () => {
   for (const name of ["../x", "..", ".", "a/b", "/etc", "", "-x", "a\\b"])
     assert.throws(() => runDir(out, name, "dev"), /--name/, name);
 });
 
-test("OUT/<name> が symlink なら、外を指していても中を指していても拒む", () => {
+test("rejects OUT/<name> as a symlink, whether it points outside or inside", () => {
   const outside = path.join(tmp, "outside");
   fs.mkdirSync(outside);
   fs.symlinkSync(outside, path.join(out, "link"));
@@ -27,7 +27,7 @@ test("OUT/<name> が symlink なら、外を指していても中を指してい
   assert.ok(fs.existsSync(outside));
 });
 
-test("OUT そのものが symlink なら拒む（共有の一時領域で別の場所を指されうる）", () => {
+test("rejects OUT itself as a symlink (in a shared temp area it could point elsewhere)", () => {
   const elsewhere = path.join(tmp, "elsewhere");
   fs.mkdirSync(elsewhere);
   const linked = path.join(tmp, "linked-out");

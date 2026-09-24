@@ -17,7 +17,7 @@ ${lines}
 - 採った: ここは節の外なので読まない
 `;
 
-test("採った案と、括弧の外の「、」で分けた棄却した案と理由を取り出す", () => {
+test("extracts the chosen option and the rejected options with reasons, split at commas outside parentheses", () => {
   const got = extractDecisions(
     body(
       "- 採った: `node:sqlite` の 1 ファイル。棄却: PostgreSQL を続ける（利用者に Docker と 4 つの鍵を用意させる）、libSQL（自動記録の列単位の境界が作れない）、DuckDB（cascade と FTS の即時反映が無い）",
@@ -37,7 +37,7 @@ test("採った案と、括弧の外の「、」で分けた棄却した案と�
   ]);
 });
 
-test("理由の中の「、」と入れ子の括弧では分けない", () => {
+test("does not split at commas inside reasons or nested parentheses", () => {
   const got = extractDecisions(
     body(
       "- 採った: 返し方は JSON の文字列。棄却: 2 つの見出しで分けた枠付きテキスト（開発用 42 問の 3 回平均で top1 83.3% 対 85.7%、recall@5 92.8% 対 93.7%）、生成 API を持つ（鍵が要る（サブスクは不可）、依存が増える）",
@@ -52,7 +52,7 @@ test("理由の中の「、」と入れ子の括弧では分けない", () => {
   ]);
 });
 
-test("棄却の無い行は採った案だけ、理由の無い棄却は理由を null にする。全角のコロンも読む", () => {
+test("a line without rejections has only the chosen option, a rejection without a reason gets null, and full-width colons work", () => {
   const got = extractDecisions(body("- 採った：単独の案\n- 採った: A。棄却: B"));
   assert.deepEqual(
     got.decisions.map((d) => [d.chosen, d.rejected]),
@@ -63,7 +63,7 @@ test("棄却の無い行は採った案だけ、理由の無い棄却は理由�
   );
 });
 
-test("書式に合わない箇条書きは飛ばして数え、コードブロックとコメントの中は読まない", () => {
+test("skips and counts bullets that do not fit the format, and ignores code blocks and comments", () => {
   const got = extractDecisions(
     body(
       [
@@ -87,14 +87,14 @@ test("書式に合わない箇条書きは飛ばして数え、コードブロ�
   assert.equal(got.skipped, 2);
 });
 
-test("節が無い本文は何も取り出さない", () => {
+test("extracts nothing from a body without the section", () => {
   assert.deepEqual(extractDecisions("## 何を変えたか\n\n- 採った: 節の外。棄却: 例（例）\n"), {
     decisions: [],
     skipped: 0,
   });
 });
 
-// ---- DB へ書く（merge した持ち主の PR の本文だけ） ----
+// ---- Write to the database (bodies of merged PRs by the owner only) ----
 
 const SECTION = (lines: string) => `本文\n\n## 採った案と棄却した案\n\n${lines}\n`;
 const LINE_A = "- 採った: 実 DB。棄却: 偽の db（権限が見えない）、文字列の照合（実行されない SQL が通る）";
@@ -168,7 +168,7 @@ function setup() {
   return { db, p, mine, rows, input, self };
 }
 
-test("持ち主を結んでいなければ判断を作らず、そのことを返す", async () => {
+test("creates no decisions and says so when the owner is not linked", async () => {
   const { db, p, rows, input } = setup();
   try {
     const got = await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
@@ -179,7 +179,7 @@ test("持ち主を結んでいなければ判断を作らず、そのことを�
   }
 });
 
-test("merge した持ち主の PR の本文だけを、決定と案にして入れる", async () => {
+test("stores decisions and options only from bodies of merged PRs by the owner", async () => {
   const { db, p, mine, rows, input, self } = setup();
   try {
     self();
@@ -199,7 +199,7 @@ test("merge した持ち主の PR の本文だけを、決定と案にして入�
     assert.ok(r.slice(1).every((x) => x.decision_id === r[0]?.id));
     assert.match(r[0]?.source_key ?? "", /^github:o\/r\/pull\/117#[0-9a-f]{12}-1$/);
     assert.equal(r[0]?.heading, "Decisions in PR #117 (2026-09-20)");
-    // 判断が 1 つも取れない本文（古い PR の自由な文）の行は数えない（毎回同じ数を出さない）
+    // Lines in a body with no decisions (free text in old PRs) are not counted (so the same count is not reported every time)
     const free = await syncDecisions(db.ingest, p, "o/r", input(SECTION("- 自由な文\n- もう 1 つ")));
     assert.equal(free.skipped, 0);
   } finally {
@@ -207,7 +207,7 @@ test("merge した持ち主の PR の本文だけを、決定と案にして入�
   }
 });
 
-test("同じ本文では書き直さず、行を編集すると古い行を消して新しい行を入れる", async () => {
+test("does not rewrite an unchanged body, and replaces old rows when a line is edited", async () => {
   const { db, p, rows, input, self } = setup();
   try {
     self();
@@ -226,14 +226,14 @@ test("同じ本文では書き直さず、行を編集すると古い行を消�
     const after = rows();
     assert.ok(after.some((x) => x.body === "束ねて書く"));
     assert.ok(!after.some((x) => x.body === "begin immediate"));
-    // 残した行の id は変わらない（k:<id> の参照が切れない）
+    // Kept rows keep their ids (k:<id> references do not break)
     assert.equal(after.find((x) => x.body === "実 DB" && x.kind === "decision")?.id, before[0]?.id);
   } finally {
     await db.done();
   }
 });
 
-test("trace で覆した判断は、再同期と取り出し規則の版の変更の後も覆したまま", async () => {
+test("a decision overturned by trace stays overturned after a resync and an extraction rule version bump", async () => {
   const { db, p, rows, input, self } = setup();
   try {
     self();
@@ -251,7 +251,7 @@ test("trace で覆した判断は、再同期と取り出し規則の版の変�
     db.owner
       .prepare("update knowledge set status = 'was_chosen' where kind = 'option' and status = 'chosen'")
       .run();
-    // 規則の版を上げたときと同じく、内容の hash を変えてから同期し直す
+    // As with a rule version bump, change the content hash and sync again
     db.owner.prepare("update knowledge set content_hash = ? where source_key like 'github:%'").run(hash(7));
     await syncDecisions(db.ingest, p, "o/r", input(SECTION(LINE_A)));
     const r = rows().filter((x) => x.source_key.startsWith("github:"));
@@ -262,7 +262,7 @@ test("trace で覆した判断は、再同期と取り出し規則の版の変�
   }
 });
 
-test("持ち主の紐付けを外すと、次の同期でその人の本文から作った行が消える", async () => {
+test("unlinking the owner removes rows built from their bodies on the next sync", async () => {
   const { db, p, rows, input, self } = setup();
   try {
     self();
@@ -277,7 +277,7 @@ test("持ち主の紐付けを外すと、次の同期でその人の本文か�
   }
 });
 
-test("PR が消えると、その PR から作った行も消える", async () => {
+test("deleting a PR removes the rows built from it", async () => {
   const { db, p, mine, rows, input, self } = setup();
   try {
     self();
@@ -289,7 +289,7 @@ test("PR が消えると、その PR から作った行も消える", async () =
   }
 });
 
-test("コードブロックの中の節の見出しと、種類の違う囲みの記号では節を始めない・閉じない", () => {
+test("a section heading inside a code block, or a fence of a different kind, neither starts nor ends the section", () => {
   const got = extractDecisions(
     [
       "```md",
@@ -312,7 +312,7 @@ test("コードブロックの中の節の見出しと、種類の違う囲み�
   );
 });
 
-test("「棄却:」は句点の後ろだけで分け、欠けた・閉じていない行は丸ごと飛ばす", () => {
+test("splits at the rejection marker only after a full stop, and skips incomplete or unclosed lines entirely", () => {
   const got = extractDecisions(
     body(
       [
@@ -334,7 +334,7 @@ test("「棄却:」は句点の後ろだけで分け、欠けた・閉じてい�
   assert.equal(got.skipped, 3);
 });
 
-test("閉じる囲みは記号の後ろに空白しか無い行だけで、コードの中のコメントの記号で本文を切らない", () => {
+test("a fence closes only on a line with nothing but spaces after the marker, and comment markers in code do not cut the body", () => {
   const got = extractDecisions(
     [
       "## 採った案と棄却した案",
@@ -352,7 +352,7 @@ test("閉じる囲みは記号の後ろに空白しか無い行だけで、コ�
   );
 });
 
-test("採った案の括弧も閉じていなければ飛ばし、括弧の中の「。棄却:」では分けない", () => {
+test("skips a chosen option with unclosed parentheses, and does not split at the rejection marker inside parentheses", () => {
   const got = extractDecisions(
     body(
       ["- 採った: A（未閉。棄却: B（理由）", "- 採った: A（説明。棄却: 引用）。棄却: B（理由）"].join("\n"),
@@ -365,7 +365,7 @@ test("採った案の括弧も閉じていなければ飛ばし、括弧の中�
   assert.equal(got.skipped, 1);
 });
 
-test("CommonMark の境界: 4 個の空白で始まる囲みは閉じず、インラインコードの括弧を数えず、種類の違う括弧は釣り合わない", () => {
+test("CommonMark edges: a fence indented 4 spaces does not close, parentheses in inline code do not count, and mismatched brackets do not balance", () => {
   const got = extractDecisions(
     body(
       [
@@ -385,7 +385,7 @@ test("CommonMark の境界: 4 個の空白で始まる囲みは閉じず、イ�
   assert.equal(got.skipped, 1);
 });
 
-test("受け付けるのは節の直下の「- 採った:」の箇条書きだけ。タスク・番号付き・他の記号・入れ子は飛ばして数える", () => {
+test("accepts only top-level chosen-option bullets in the section, and skips and counts tasks, numbered items, other markers, and nested items", () => {
   const got = extractDecisions(
     body(
       [
@@ -407,7 +407,7 @@ test("受け付けるのは節の直下の「- 採った:」の箇条書きだ�
   assert.equal(got.skipped, 5);
 });
 
-test("節の中の ### では節を終えず、H2 で終える", () => {
+test("### inside the section does not end it, H2 does", () => {
   const got = extractDecisions(
     "## 採った案と棄却した案\n\n- 採った: A。棄却: B（理由）\n\n### 注記\n\n- 採った: C。棄却: D（理由）\n\n## 検証\n\n- 採った: 外。棄却: E（理由）\n",
   );
@@ -417,7 +417,7 @@ test("節の中の ### では節を終えず、H2 で終える", () => {
   );
 });
 
-test("項目の中の HTML は行ごと飛ばし、エスケープと長さの違うバッククォートは marked の判定どおりに読む", () => {
+test("skips items containing HTML, and reads escapes and backticks of different lengths the way marked does", () => {
   const got = extractDecisions(
     body(
       [
@@ -434,7 +434,7 @@ test("項目の中の HTML は行ごと飛ばし、エスケープと長さの�
   assert.equal(got.skipped, 2);
 });
 
-test("強調の中のエスケープも括弧に数えず、引用を挟んだ入れ子のリストも数える", () => {
+test("escapes inside emphasis do not count as parentheses, and nested lists inside a quote are counted", () => {
   const got = extractDecisions(
     body(["- 採った: *A \\( B*。棄却: C（理由）", "- 親", "  > - 採った: 子。棄却: D（理由）"].join("\n")),
   );

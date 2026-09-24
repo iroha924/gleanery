@@ -32,11 +32,11 @@ const ok = {
   runs: [run("check"), run("pr-body")],
 };
 
-test("tag・全 version・PR・CI が揃えば通り、PR の番号を返す", () => {
+test("passes and returns the PR number when the tag, all versions, the PR, and CI line up", () => {
   assert.deepEqual(gateProblems(ok), { problems: [], pull: 7 });
 });
 
-test("tag と version の食い違いを拒む", () => {
+test("rejects a mismatch between the tag and versions", () => {
   assert.match(gateProblems({ ...ok, tag: "v1.2.4" }).problems.join("\n"), /tag v1\.2\.4/);
   for (const key of ["package", "claude", "codex", "marketplace"] as const)
     assert.match(
@@ -47,11 +47,11 @@ test("tag と version の食い違いを拒む", () => {
   assert.match(gateProblems({ ...ok, tag: "1.2.3" }).problems.join("\n"), /v<version>/);
 });
 
-test("main を取り込んでいない commit を拒む", () => {
+test("rejects a commit that does not include main", () => {
   assert.match(gateProblems({ ...ok, mainIsAncestor: false }).problems.join("\n"), /main/);
 });
 
-test("main へ向かう open な同じリポジトリの PR の head でなければ拒む", () => {
+test("rejects a commit that is not the head of an open same-repository PR into main", () => {
   for (const pulls of [
     [],
     [{ ...pull, state: "closed" }],
@@ -63,7 +63,7 @@ test("main へ向かう open な同じリポジトリの PR の head でなけ�
   assert.match(gateProblems({ ...ok, pulls: [pull, { ...pull, number: 8 }] }).problems.join("\n"), /PR/);
 });
 
-test("その commit の check と pr-body が最後の実行で成功していなければ拒む", () => {
+test("rejects a commit whose latest check and pr-body runs did not succeed", () => {
   assert.match(gateProblems({ ...ok, runs: [run("check")] }).problems.join("\n"), /pr-body/);
   assert.match(
     gateProblems({ ...ok, runs: [run("check", "failure"), run("pr-body")] }).problems.join("\n"),
@@ -101,7 +101,7 @@ test("その commit の check と pr-body が最後の実行で成功してい�
   );
 });
 
-test("別の PR の run は数えない", () => {
+test("runs from other PRs do not count", () => {
   const other = (name: string) => ({
     ...run(name),
     pull_requests: [{ number: 9, base: { ref: "release" } }],
@@ -118,11 +118,11 @@ test("別の PR の run は数えない", () => {
   );
 });
 
-test("remote の tag が今もその commit を指していなければ拒む", () => {
+test("rejects when the remote tag no longer points to the commit", () => {
   assert.match(gateProblems({ ...ok, tagCommit: "b".repeat(40) }).problems.join("\n"), /tag/);
   assert.match(gateProblems({ ...ok, tagCommit: null }).problems.join("\n"), /tag/);
 });
 
-test("tag のバージョンが npm に既にあれば拒む（持ち主の承認の後で stage が落ちるのを先に止める）", () => {
+test("rejects a tag version already on npm (stopping before stage fails after the owner approves)", () => {
   assert.match(gateProblems({ ...ok, published: true }).problems.join("\n"), /npm に既にある/);
 });

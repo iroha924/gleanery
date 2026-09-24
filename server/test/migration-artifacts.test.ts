@@ -1,5 +1,5 @@
-// revision 1 の DB から、要件定義・設計書の種類を外す migration（0002・0003）を当てる。
-// 0003 は表を作り直すので、外部キーが効いたままだと、残すべき子の行まで cascade で消える。
+// Applies the migrations (0002 and 0003) that remove the requirements and design kinds to a revision 1 database.
+// 0003 rebuilds tables, so with foreign keys on, cascade would delete child rows that should stay.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -68,7 +68,7 @@ function section(raw: DatabaseSync, projectId: number, sourceId: number, word: s
   );
 }
 
-test("要件定義・設計書の行と子孫だけが消え、ほかは残り、新しく作った DB と同じ schema になる", () => {
+test("only requirements and design rows and their descendants go, the rest stays, and the schema matches a new database", () => {
   const { raw } = r1Db();
   const p = Number(
     one(raw, "insert into project (key, name) values ('git:github.com/o/r', 'o/r') returning id")?.id,
@@ -137,28 +137,32 @@ test("要件定義・設計書の行と子孫だけが消え、ほかは残り�
       .map((r) => Number((r as { id: number }).id)),
     [keepDoc],
   );
-  assert.equal(count(raw, "select count(*) as n from knowledge_file"), 1, "消した節のファイルだけが消える");
+  assert.equal(
+    count(raw, "select count(*) as n from knowledge_file"),
+    1,
+    "only the files of deleted sections go",
+  );
   assert.equal(count(raw, "select count(*) as n from conversation"), 1);
   assert.equal(count(raw, "select count(*) as n from message"), 1);
   assert.equal(
     count(raw, "select count(*) as n from message_file where action = 'read'"),
     1,
-    "読んだ記録は履歴として残す",
+    "read records stay as history",
   );
   assert.deepEqual(matches(raw, "keepword"), [keepDoc]);
   assert.deepEqual(matches(raw, "reqword"), []);
   assert.deepEqual(matches(raw, "desword"), []);
   assert.equal(desSec > 0, true);
 
-  // 消した id を振り直さない
+  // Deleted ids are not reused
   const next = source(raw, docs, "document", { path: "docs/b.md", body: "次" });
-  assert.ok(next > seqBefore, `次の id ${next} が移行前の最大 ${seqBefore} を越える`);
+  assert.ok(next > seqBefore, `next id ${next} is above the pre-migration max ${seqBefore}`);
   assert.throws(
     () => source(raw, docs, "requirements", { path: "r.md", body: "x" }),
     /CHECK constraint failed/,
   );
 
-  // 新しく作った DB と schema が文字列で一致する
+  // The schema text equals that of a new database
   const fresh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-fresh-")), "gleanery.db");
   dbInit(fresh);
   const schemaOf = (db: DatabaseSync) =>
@@ -173,7 +177,7 @@ test("要件定義・設計書の行と子孫だけが消え、ほかは残り�
   raw.close();
 });
 
-test("残る source_item が 0 件でも、消した id を振り直さない", () => {
+test("deleted ids are not reused even when no source_item remains", () => {
   const { raw } = r1Db();
   const p = Number(
     one(raw, "insert into project (key, name) values ('git:github.com/o/r', 'o/r') returning id")?.id,
@@ -186,14 +190,14 @@ test("残る source_item が 0 件でも、消した id を振り直さない", 
   applyMigrations(raw, fs.readdirSync(MIGRATIONS), MIGRATIONS);
   assert.equal(count(raw, "select count(*) as n from source_item"), 0);
   const next = source(raw, docs, "document", { path: "docs/a.md", body: "本文" });
-  assert.ok(next > last, `次の id ${next} が消した ${last} を越える`);
+  assert.ok(next > last, `next id ${next} is above the deleted ${last}`);
   raw.close();
 });
 
-// 宣言を消すと、0003 は外部キーが効いたまま表を作り直し、子の行を消す。宣言が付いていることを固定する。
-test("表を作り直す 0003 は外部キーを切る宣言を持つ", () => {
+// Without the declaration, 0003 would rebuild tables with foreign keys on and delete child rows. Pin the declaration.
+test("0003, which rebuilds tables, declares foreign keys off", () => {
   const file = fs.readdirSync(MIGRATIONS).find((f) => f.startsWith("0003_"));
-  assert.ok(file, "0003 がある");
+  assert.ok(file, "0003 exists");
   assert.equal(
     fs.readFileSync(path.join(MIGRATIONS, file), "utf8").split("\n")[0],
     "-- gleanery: foreign_keys=off",

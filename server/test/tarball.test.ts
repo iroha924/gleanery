@@ -19,7 +19,7 @@ const complete = new Set([
   ...tracked,
 ]);
 
-test("配る物が揃っていれば通り、追跡している manifest・Skill・hook の欠けを見つける", () => {
+test("passes when everything shipped is present, and finds missing tracked manifests, Skills, and hooks", () => {
   assert.deepEqual(tarballProblems(complete, tracked), []);
   for (const must of [
     ".codex-plugin/plugin.json",
@@ -29,14 +29,14 @@ test("配る物が揃っていれば通り、追跡している manifest・Skill
   ]) {
     assert.ok(
       tracked.includes(must) || must.startsWith(".codex") || must === "README.md",
-      `${must} は配布物`,
+      `${must} is shipped`,
     );
     const missing = new Set([...complete].filter((f) => f !== must));
     assert.ok(tarballProblems(missing, tracked).includes(`tarballに${must}が無い`), must);
   }
 });
 
-test("入れてはいけないファイルを見つける", () => {
+test("finds files that must not be shipped", () => {
   for (const bad of ["node_modules/x/index.js", ".env", "server/bun.lock", "src/cli.ts"])
     assert.match(tarballProblems(new Set([...complete, bad]), tracked).join("\n"), /入れてはいけない/, bad);
 });

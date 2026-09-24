@@ -33,7 +33,7 @@ function write(dir: string, file: string, body: string) {
 
 function bump(dir: string, version: string) {
   write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
-  // バージョンは source の中に置く（entry 直下にも置くと Claude Code が黙って plugin.json を優先する）。
+  // The version lives in source (putting it directly in the entry too makes Claude Code silently prefer plugin.json).
   write(
     dir,
     ".claude-plugin/marketplace.json",
@@ -53,8 +53,8 @@ function check(dir: string, ...args: string[]) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: "utf8" });
 }
 
-// CI は checkout 直後で index が HEAD と同じなので、基準の commit と比べないと常に素通りする。
-test("基準を渡すと、その後に plugin を変えてバージョンを上げていない範囲を落とす", () => {
+// In CI the index equals HEAD right after checkout, so without a base commit the check always passes.
+test("with a base, fails a range that changes the plugin afterwards without a version bump", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -65,19 +65,19 @@ test("基準を渡すと、その後に plugin を変えてバージョンを上
     const base = r.git("rev-parse", "HEAD");
 
     write(r.dir, "plugin/skills/a.md", "b");
-    r.git("commit", "-qam", "plugin だけ変える");
+    r.git("commit", "-qam", "change only the plugin");
     const missed = check(r.dir, "--base", base);
     assert.equal(missed.status, 1, missed.stderr);
     assert.match(missed.stderr, /plugin\/skills\/a\.md/);
 
     bump(r.dir, "1.0.1");
-    r.git("commit", "-qam", "バージョンを上げる");
+    r.git("commit", "-qam", "bump the version");
     const bumped = check(r.dir, "--base", base);
     assert.equal(bumped.status, 0, bumped.stderr);
 
     const head = r.git("rev-parse", "HEAD");
     write(r.dir, "README.ja.md", "s");
-    r.git("commit", "-qam", "plugin 以外だけ変える");
+    r.git("commit", "-qam", "change only non-plugin files");
     const other = check(r.dir, "--base", head);
     assert.equal(other.status, 0, other.stderr);
   } finally {
@@ -85,7 +85,7 @@ test("基準を渡すと、その後に plugin を変えてバージョンを上
   }
 });
 
-test("基準が無ければ、index に入った plugin の変更を HEAD のバージョンと比べる", () => {
+test("without a base, compares staged plugin changes with the HEAD version", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -100,7 +100,7 @@ test("基準が無ければ、index に入った plugin の変更を HEAD のバ
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
 
-    // バージョン上げを stage し忘れると、commit にはバージョン上げが入らない。
+    // If the version bump is not staged, the commit does not include it.
     bump(r.dir, "1.0.1");
     assert.equal(check(r.dir).status, 1);
 
@@ -113,7 +113,7 @@ test("基準が無ければ、index に入った plugin の変更を HEAD のバ
   }
 });
 
-test("以前 npm だけで出していた server.ts でも、npm package のバージョンだけを上げれば止め、plugin channel と揃えれば通す", () => {
+test("even for server.ts, once shipped only via npm, bumping only the npm package version fails and matching the plugin channel passes", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -138,7 +138,7 @@ test("以前 npm だけで出していた server.ts でも、npm package のバ�
   }
 });
 
-test("marketplace の取得元だけを変えてバージョンを上げていない commit を落とす", () => {
+test("fails a commit that changes only the marketplace source without a version bump", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -154,7 +154,7 @@ test("marketplace の取得元だけを変えてバージョンを上げてい�
         ],
       }),
     );
-    r.git("commit", "-qam", "取得元だけを変える");
+    r.git("commit", "-qam", "change only the source");
     const missed = check(r.dir, "--base", base);
     assert.equal(missed.status, 1, missed.stderr);
     assert.match(missed.stderr, /marketplace\.json/);
@@ -163,7 +163,7 @@ test("marketplace の取得元だけを変えてバージョンを上げてい�
   }
 });
 
-test("バージョンを下げる commit を、配布物が変わっていなくても落とす", () => {
+test("fails a commit that lowers the version, even without shipped changes", () => {
   const r = repo();
   try {
     bump(r.dir, "1.2.0");
@@ -173,19 +173,19 @@ test("バージョンを下げる commit を、配布物が変わっていなく
     const base = r.git("rev-parse", "HEAD");
 
     bump(r.dir, "1.1.9");
-    r.git("commit", "-qam", "バージョンだけを下げる");
+    r.git("commit", "-qam", "lower only the version");
     const down = check(r.dir, "--base", base);
     assert.equal(down.status, 1, down.stderr);
     assert.match(down.stderr, /下げ/);
 
     write(r.dir, "plugin/skills/a.md", "b");
-    r.git("commit", "-qam", "配布物も変える");
+    r.git("commit", "-qam", "change shipped files too");
     const changed = check(r.dir, "--base", base);
     assert.equal(changed.status, 1, changed.stderr);
 
-    // 数で比べる（文字列では 1.10.0 < 1.9.0 になる）
+    // Compare as numbers (as strings, 1.10.0 < 1.9.0)
     bump(r.dir, "1.10.0");
-    r.git("commit", "-qam", "上げる");
+    r.git("commit", "-qam", "bump");
     const up = check(r.dir, "--base", base);
     assert.equal(up.status, 0, up.stderr);
   } finally {
@@ -193,7 +193,7 @@ test("バージョンを下げる commit を、配布物が変わっていなく
   }
 });
 
-test("4 箇所のバージョンだけを揃えて上げた commit は、配布物の変更に数えず通す", () => {
+test("a commit that only bumps all 4 versions together is not counted as a shipped change and passes", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -201,7 +201,7 @@ test("4 箇所のバージョンだけを揃えて上げた commit は、配布�
     r.git("commit", "-qm", "base");
     const base = r.git("rev-parse", "HEAD");
     bump(r.dir, "1.0.1");
-    r.git("commit", "-qam", "バージョンだけ");
+    r.git("commit", "-qam", "version only");
     const only = check(r.dir, "--base", base);
     assert.equal(only.status, 0, only.stderr);
   } finally {
@@ -209,7 +209,7 @@ test("4 箇所のバージョンだけを揃えて上げた commit は、配布�
   }
 });
 
-test("基準が無ければ、作業ブランチでは main から分かれた点と比べる（ブランチの中で 1 回上げれば、後の commit を積める）", () => {
+test("without a base, a work branch compares against its fork point from main (one bump in the branch covers later commits)", () => {
   const r = repo();
   try {
     bump(r.dir, "1.0.0");
@@ -224,26 +224,26 @@ test("基準が無ければ、作業ブランチでは main から分かれた�
     write(r.dir, "plugin/skills/a.md", "b");
     bump(r.dir, "1.0.1");
     r.git("add", "-A");
-    r.git("commit", "-qm", "変えて上げる");
+    r.git("commit", "-qm", "change and bump");
 
     write(r.dir, "plugin/skills/a.md", "c");
     r.git("add", "-A");
     const next = check(r.dir);
     assert.equal(next.status, 0, next.stderr);
 
-    // 分かれた後に main が同じバージョンを出していたら、それを超えるまで落とす（CI は今の main と比べる）
+    // If main shipped the same version after the fork, fail until the branch goes above it (CI compares with the current main)
     r.git("reset", "-q", "--hard");
     r.git("switch", "-q", "main");
     bump(r.dir, "1.0.1");
     write(r.dir, "plugin/skills/b.md", "main");
     r.git("add", "-A");
-    r.git("commit", "-qm", "main が同じ番号を出す");
+    r.git("commit", "-qm", "main ships the same number");
     r.git("switch", "-q", "feature");
     write(r.dir, "plugin/skills/a.md", "c2");
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
     r.git("reset", "-q", "--hard");
-    // 配布物を変えないブランチは、main が先へ進んでいても止めない
+    // A branch that does not change shipped files is not blocked even when main has moved ahead
     r.git("switch", "-q", "-c", "docs", base);
     write(r.dir, "README.ja.md", "ja");
     r.git("add", "-A");
@@ -252,22 +252,22 @@ test("基準が無ければ、作業ブランチでは main から分かれた�
     r.git("reset", "-q", "--hard");
     r.git("switch", "-q", "feature");
 
-    // ブランチの中での下げは、分かれた点より大きくても落とす
+    // Lowering the version within a branch fails even if it stays above the fork point
     bump(r.dir, "1.0.2");
     r.git("add", "-A");
-    r.git("commit", "-qm", "もう一度上げる");
+    r.git("commit", "-qm", "bump again");
     bump(r.dir, "1.0.1");
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
 
-    // ブランチの中で一度も上げていなければ落とす
+    // Fail if the branch never bumped the version
     r.git("reset", "-q", "--hard");
     r.git("switch", "-q", "-c", "other", "main");
     write(r.dir, "plugin/skills/a.md", "d");
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
 
-    // main の上では、これまでどおり HEAD と比べる
+    // On main, compare with HEAD as before
     r.git("reset", "-q", "--hard");
     r.git("switch", "-q", "main");
     write(r.dir, "plugin/skills/a.md", "e");

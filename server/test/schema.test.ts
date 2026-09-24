@@ -1,5 +1,5 @@
-// db/schema.sql の制約が、拒むべき値を拒み、通すべき値を通すか。
-// 書き込みは owner の接続で行う（authorizer ではなく schema そのものを見る）。
+// Whether the constraints in db/schema.sql reject what they should and accept what they should.
+// Writes use the owner connection (testing the schema itself, not the authorizer).
 
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
@@ -53,7 +53,7 @@ const fact = (v: Record<string, string | number | Buffer | null>) => ({
   ...v,
 });
 
-test("取り込み元の項目は種類ごとの形を守る", () => {
+test("source items keep the shape of their kind", () => {
   insert(db, "source_item", item({ kind: "document", path: "a.md", body: "本文" }));
   rejects("source_item", item({ kind: "pull_request", state: "open", path: "a.md" }));
   rejects("source_item", item({ kind: "pull_request" }));
@@ -65,7 +65,7 @@ test("取り込み元の項目は種類ごとの形を守る", () => {
   rejects("source_item", item({ kind: "document", path: "a.md", body: "b", metadata: "[]" }));
 });
 
-test("知識は種類と状態の組・案の親・覆しの後継を守り、stance は種類と状態から決まる", () => {
+test("knowledge enforces kind and status pairs, option parents, and successors, and stance follows kind and status", () => {
   const d = insert(db, "knowledge", fact({ kind: "decision", status: "accepted" }));
   const stance = db.owner.prepare("select stance from knowledge where id = ?").get(d) as { stance: string };
   assert.equal(stance.stance, "do");
@@ -79,8 +79,8 @@ test("知識は種類と状態の組・案の親・覆しの後継を守り、st
   rejects("knowledge", fact({ kind: "finding", occurred_at: "2026-09-01T00:00:00Z" }));
 });
 
-// 時刻は文字列の辞書順で比べる。ミリ秒の無い形や時差付きが混ざると、同じ秒の中で並びが狂い、日付の境界で外れる。
-test("時刻は ISO 8601 の UTC（ミリ秒まで）の形だけを受ける", () => {
+// Times compare as strings. Mixing forms without milliseconds or with offsets breaks ordering within a second and at date boundaries.
+test("times accept only ISO 8601 UTC with milliseconds", () => {
   for (const bad of [
     "2026-09-01T00:00:00Z",
     "2026-09-01T09:00:00.000+09:00",
@@ -96,7 +96,7 @@ test("時刻は ISO 8601 の UTC（ミリ秒まで）の形だけを受ける", 
     });
 });
 
-test("発言の大きさは本文のバイト数と合い、主キーと id は null を受けない", () => {
+test("message size matches the body byte count, and primary keys and ids reject null", () => {
   const ok = (id: string, body: string) => ({
     id,
     conversation_id: conversation,
@@ -119,12 +119,12 @@ test("発言の大きさは本文のバイト数と合い、主キーと id は 
     external_id: "n",
     started_at: at("2026-09-01T00:00:00Z"),
   });
-  // STRICT: 型の違う値を黙って入れない（失わずに変わる "1" は受け、変わらない値を拒む）
+  // STRICT: no silent type mismatches (accepts "1", which converts without loss, and rejects values that do not convert)
   rejects("message", { ...ok("m4", "x"), original_bytes: "abc" as unknown as number }, /cannot store/);
 });
 
-// key は `git:<空白の無い文字列>` か `local:<英小文字・数字で始まる名前>` だけ。
-test("プロジェクトの key は決まった形だけを通す", () => {
+// A key is only `git:<text without spaces>` or `local:<name starting with a lowercase letter or digit>`.
+test("project keys accept only the defined forms", () => {
   const cases: [string, boolean][] = [
     ["git:github.com/o/r2", true],
     ["local:my-app.v2", true],
@@ -145,14 +145,14 @@ test("プロジェクトの key は決まった形だけを通す", () => {
   }
 });
 
-test("取り込まない path は末尾のスラッシュと制御文字を拒む", () => {
+test("excluded paths reject trailing slashes and control characters", () => {
   for (const path of ["a/", "a\u0001b", "a\u007fb", "a\u001fb", "..", "../a"])
     rejects("docs_exclude", { connector_id: connector, kind: "file", path });
   insert(db, "docs_exclude", { connector_id: connector, kind: "file", path: "..config/a.md" });
 });
 
-// 暗黙の rowid は VACUUM で振り直されうる。FTS の rowid は明示の seq に結ぶ。
-test("発言の索引は VACUUM の後も引け、会話を消すと発言も索引も消える", () => {
+// VACUUM can renumber implicit rowids. The FTS rowid is tied to the explicit seq.
+test("the message index still works after VACUUM, and deleting a conversation removes its messages and index entries", () => {
   const c = "c-fts";
   insert(db, "conversation", {
     id: c,
@@ -188,13 +188,13 @@ test("発言の索引は VACUUM の後も引け、会話を消すと発言も索
   assert.deepEqual(hit('"消す"'), []);
   assert.deepEqual(hit('"残る"'), ["u3"]);
   db.owner.prepare("delete from conversation where id = ?").run(c);
-  assert.deepEqual(hit('"残る"'), [], "cascade で索引も消える");
+  assert.deepEqual(hit('"残る"'), [], "cascade removes the index entries too");
   db.owner.exec("insert into message_fts (message_fts, rank) values ('integrity-check', 1)");
   db.owner.exec("insert into knowledge_fts (knowledge_fts, rank) values ('integrity-check', 1)");
   assert.deepEqual(db.owner.prepare("pragma foreign_key_check").all(), []);
 });
 
-test("知識の索引は見出し・本文・理由のどれでも引け、書き換えに追従する", () => {
+test("the knowledge index matches heading, body, or reason, and follows updates", () => {
   const k = insert(db, "knowledge", fact({ heading: "見出しの語", body: "柑橘の語", reason: "理由の語" }));
   const hit = (q: string) =>
     (

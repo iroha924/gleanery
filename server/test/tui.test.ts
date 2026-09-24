@@ -17,8 +17,8 @@ const at = new Date("2026-09-20T01:00:00Z");
 const tick = () => new Promise((r) => setTimeout(r, 40));
 
 /**
- * 読み込み中の表示が消えるまで待つ（上限 5 秒）。決め打ちの待ち時間だと、最初の描画が遅い CI で読み込みが間に合わない
- * （実測: GitHub Actions で最初の test だけ「読んでいる…」のまま落ちた）
+ * Waits until the loading indicator is gone (up to 5 seconds). A fixed wait is too short in CI, where the first render is slow
+ * (measured: on GitHub Actions only the first test failed while still loading)
  */
 async function settle(r: { lastFrame?: () => string | undefined; frame?: () => string }): Promise<void> {
   const frame = () => r.lastFrame?.() ?? r.frame?.() ?? "";
@@ -29,23 +29,26 @@ const ESC = "\u001b";
 const TAB = "\t";
 const ENTER = "\r";
 
-test("記号は Unicode の標準の文字だけで、Nerd Font が無い端末でも描ける", () => {
+test("icons are standard Unicode characters that render without a Nerd Font", () => {
   for (const [name, g] of [...Object.entries(ICONS), ...TWINKLE.map((t, i) => [`twinkle${i}`, t] as const)]) {
     const c = g.codePointAt(0) ?? 0;
-    assert.equal([...g].length, 1, `${name} は 1 文字`);
-    // 私用領域（U+E000〜U+F8FF、U+F0000 以降）は、その字を持つフォントが無いと □ になる
-    assert.ok(!(c >= 0xe000 && c <= 0xf8ff) && c < 0xf0000, `${name} U+${c.toString(16)} が私用領域`);
-    // 絵文字として描かれる字は幅が 2 桁になり、色も端末任せになる
-    assert.doesNotMatch(g, /\p{Emoji_Presentation}/u, `${name} が絵文字として描かれる`);
+    assert.equal([...g].length, 1, `${name} is one character`);
+    // Private use areas (U+E000 to U+F8FF, U+F0000 and up) show as □ without a font that has the glyph
+    assert.ok(
+      !(c >= 0xe000 && c <= 0xf8ff) && c < 0xf0000,
+      `${name} U+${c.toString(16)} is in a private use area`,
+    );
+    // Characters drawn as emoji take two columns and their color is up to the terminal
+    assert.doesNotMatch(g, /\p{Emoji_Presentation}/u, `${name} is drawn as emoji`);
   }
-  // 作業の状態は blocked と avoid が同じ ✕ を使うほかは重ならない
+  // Work states do not overlap, except that blocked and avoid share ✕
   const codes = Object.entries(ICONS)
     .filter(([name]) => name !== "blocked")
     .map(([, g]) => g);
   assert.equal(new Set(codes).size, codes.length);
 });
 
-test("Markdown を端末向けに描く（marked 18 と marked-terminal 7.3.0 の組み合わせ）", () => {
+test("renders Markdown for the terminal (marked 18 with marked-terminal 7.3.0)", () => {
   const out = renderMarkdown(
     [
       "## 見出し",
@@ -65,16 +68,16 @@ test("Markdown を端末向けに描く（marked 18 と marked-terminal 7.3.0 �
     ].join("\n"),
     60,
   );
-  // 色の有無は端末で変わるので、色を落として中身を見る
+  // Color depends on the terminal, so strip it and check the content
   const plain = stripVTControlCharacters(out);
   for (const s of ["見出し", "強調", "schema.sql", "箇条の一つ目", "日本語", "abc", "const x: number = 1;"])
-    assert.ok(plain.includes(s), `${s} が出ていない:\n${plain}`);
-  assert.ok(!plain.includes("**強調**"), "強調の記号が残っている");
-  assert.ok(!plain.includes("## 見出し"), "見出しの ## が残っている");
-  assert.ok(plain.includes("┌") && plain.includes("┘"), "表が罫線で描かれていない");
+    assert.ok(plain.includes(s), `${s} is missing:\n${plain}`);
+  assert.ok(!plain.includes("**強調**"), "bold markers remain");
+  assert.ok(!plain.includes("## 見出し"), "heading ## remains");
+  assert.ok(plain.includes("┌") && plain.includes("┘"), "table is not drawn with box lines");
 });
 
-test("箇条書きの中の強調・リンク・code も描く（記法を文字のまま残さない）", () => {
+test("renders bold, links, and code inside list items (no raw markup left)", () => {
   const plain = stripVTControlCharacters(
     renderMarkdown("- **強い** と [リンク](http://x) と `code`\n- 二つ目", 60),
   );
@@ -84,10 +87,10 @@ test("箇条書きの中の強調・リンク・code も描く（記法を文字
   assert.ok(plain.includes("強い") && plain.includes("リンク") && plain.includes("code"), plain);
 });
 
-test("日本語の段落を Markdown の側で折らない（折り返しは Ink が端末の幅で行う）", () => {
+test("does not wrap a Japanese paragraph in Markdown (Ink wraps at the terminal width)", () => {
   const paragraph = "端末の幅は全角で数える。".repeat(20);
   const out = stripVTControlCharacters(renderMarkdown(paragraph, 30));
-  assert.equal(out.trim().split("\n").length, 1, `段落が文字数で折られた:\n${out}`);
+  assert.equal(out.trim().split("\n").length, 1, `paragraph was wrapped by character count:\n${out}`);
 });
 
 const session = (over: Partial<SessionRow> = {}): SessionRow => ({
@@ -230,7 +233,7 @@ function fake(over: Partial<Data> = {}): Data & { searched: string[] } {
   };
 }
 
-test("セッションの一覧を出し、Enter で詳細、Esc で戻る", async () => {
+test("lists sessions, opens details with Enter, and goes back with Esc", async () => {
   const r = render(h(App, { data: fake() }));
   await settle(r);
   assert.match(r.lastFrame() ?? "", /認証を直すセッション/);
@@ -240,7 +243,7 @@ test("セッションの一覧を出し、Enter で詳細、Esc で戻る", asyn
   const frame = r.lastFrame() ?? "";
   assert.match(frame, /認証を直して/);
   assert.match(frame, /トークン/);
-  assert.doesNotMatch(frame, /\*\*トークン\*\*/, "AI の応答の Markdown が描かれていない");
+  assert.doesNotMatch(frame, /\*\*トークン\*\*/, "Markdown in the AI reply is not rendered");
   assert.match(frame, /src\/auth\.ts/);
   assert.match(frame, /\[decision\] 期限はサーバーで見る/);
   r.stdin.write(ESC);
@@ -249,7 +252,7 @@ test("セッションの一覧を出し、Enter で詳細、Esc で戻る", asyn
   r.unmount();
 });
 
-test("読み込み中・空・失敗をそれぞれ出す", async () => {
+test("shows loading, empty, and failed states", async () => {
   let resolve: (v: Awaited<ReturnType<Data["sessions"]>>) => void = () => {};
   const pending = render(h(App, { data: fake({ sessions: () => new Promise((r) => (resolve = r)) }) }));
   await tick();
@@ -267,7 +270,7 @@ test("読み込み中・空・失敗をそれぞれ出す", async () => {
   failed.unmount();
 });
 
-test("作業の一覧が上限で切れたら、切れたことを画面に出す", async () => {
+test("shows when the work list is cut at the limit", async () => {
   const base = await fake().works(1);
   const r = render(h(App, { data: fake({ works: async () => ({ ...base, more: true }) }) }));
   await settle(r);
@@ -279,7 +282,7 @@ test("作業の一覧が上限で切れたら、切れたことを画面に出�
   r.unmount();
 });
 
-test("Tab で作業の画面へ移り、作業を開くと通ってはいけない道まで出る", async () => {
+test("Tab moves to the work screen, and opening work shows paths not to take", async () => {
   const r = render(h(App, { data: fake() }));
   await settle(r);
   r.stdin.write(TAB);
@@ -294,7 +297,7 @@ test("Tab で作業の画面へ移り、作業を開くと通ってはいけな�
   r.unmount();
 });
 
-test("/ で検索へ移って打ち、Enter で引き、結果を開くと全文を読む", async () => {
+test("/ opens search, Enter runs it, and opening a result reads the full text", async () => {
   const data = fake();
   const r = render(h(App, { data }));
   await settle(r);
@@ -312,7 +315,7 @@ test("/ で検索へ移って打ち、Enter で引き、結果を開くと全文
   r.unmount();
 });
 
-test("詳細から Esc で戻っても、検索の語と結果、一覧で選んだ行が残る", async () => {
+test("going back from details with Esc keeps the query, results, and selected row", async () => {
   const data = fake({
     sessions: async () => ({
       items: [
@@ -347,11 +350,11 @@ test("詳細から Esc で戻っても、検索の語と結果、一覧で選ん
   await settle(r);
   assert.match(r.lastFrame() ?? "", /"期限"/);
   assert.match(r.lastFrame() ?? "", /期限はサーバーで見る/);
-  assert.deepEqual(data.searched, ["期限"], "戻っただけで引き直している");
+  assert.deepEqual(data.searched, ["期限"], "going back ran the search again");
   r.unmount();
 });
 
-test("本文の終わりを越えて下へ進まない（画面が空にならない）", async () => {
+test("does not scroll past the end of the text (the screen never goes blank)", async () => {
   const long = Array.from({ length: 80 }, (_, i) => `行 ${i}`).join("\n");
   const r = renderAt(60, 16, fake({ read: async () => long }));
   await settle(r);
@@ -365,12 +368,12 @@ test("本文の終わりを越えて下へ進まない（画面が空になら�
   }
   const frame = r.frame();
   assert.match(frame, /行 79/, frame);
-  assert.match(frame, /行 72/, `最後まで行った後も、画面いっぱいに本文が残る:\n${frame}`);
+  assert.match(frame, /行 72/, `after reaching the end, the text should still fill the screen:\n${frame}`);
   r.unmount();
 });
 
-// 消えた記録や選んだプロジェクトの外の記録は、本文としてではなく、セッション・作業の詳細と同じ「無い」の表示で見せる。
-test("全文の先が無ければ、無いと出す", async () => {
+// A deleted record, or one outside the chosen projects, shows the same not-found message as session and work details, not as body text.
+test("shows not found when the full text is missing", async () => {
   const r = renderAt(60, 16, fake({ read: async () => null }));
   await settle(r);
   for (const key of ["/", "期限", ENTER, ENTER]) {
@@ -387,7 +390,7 @@ test("全文の先が無ければ、無いと出す", async () => {
   r.unmount();
 });
 
-test("打っている間の q は文字として入り、終わらない", async () => {
+test("q while typing is entered as text and does not quit", async () => {
   const data = fake();
   const r = render(h(App, { data }));
   await settle(r);
@@ -401,7 +404,7 @@ test("打っている間の q は文字として入り、終わらない", async
   r.unmount();
 });
 
-/** 端末の大きさを決めて描く。ink-testing-library は大きさを変えられないので、Ink に偽の stdout と stdin を渡す。 */
+/** Renders at a fixed terminal size. ink-testing-library cannot set the size, so pass Ink a fake stdout and stdin. */
 function renderAt(columns: number, rows: number, data: Data) {
   const out = Object.assign(new EventEmitter(), {
     columns,
@@ -441,7 +444,7 @@ function renderAt(columns: number, rows: number, data: Data) {
       stdin.emit("readable");
       stdin.emit("data", d);
     },
-    // unmount の後始末の書き出しを拾わないよう、枠を含む最後の 1 枚を取る
+    // Take the last frame with the border so the cleanup output from unmount is not picked up
     frame: () => out.frames.findLast((f) => f.includes("╭")) ?? "",
     unmount: () => app.unmount(),
   };
@@ -455,7 +458,7 @@ async function frameAt(columns: number, rows: number, data: Data): Promise<strin
   return frame;
 }
 
-test("狭い端末でも上の枠は 3 行で、画面が端末の高さを超えない", async () => {
+test("the top box stays 3 lines on a narrow terminal and the screen fits the terminal height", async () => {
   const many = fake({
     here: { project: 1, name: "iroha924/gleanery" },
     projects: async () => [
@@ -471,21 +474,21 @@ test("狭い端末でも上の枠は 3 行で、画面が端末の高さを超�
   });
   for (const columns of [40, 60, 120]) {
     const lines = (await frameAt(columns, 10, many)).split("\n");
-    assert.equal(lines.length, 10, `${columns} 桁で ${lines.length} 行になった`);
-    assert.match(lines[0] ?? "", /^╭/, `${columns} 桁で上の罫線が押し出された`);
-    assert.match(lines[2] ?? "", /^╰/, `${columns} 桁で上の枠が 3 行に収まっていない`);
-    assert.match(lines.slice(8).join("\n"), /q quit/, `${columns} 桁で終わり方の案内が切れた`);
+    assert.equal(lines.length, 10, `${columns} columns gave ${lines.length} lines`);
+    assert.match(lines[0] ?? "", /^╭/, `${columns} columns pushed out the top border`);
+    assert.match(lines[2] ?? "", /^╰/, `${columns} columns: the top box is not 3 lines`);
+    assert.match(lines.slice(8).join("\n"), /q quit/, `${columns} columns cut off the quit hint`);
   }
-  // 80 桁では案内が 2 行に分かれ、どのキーも切れない
+  // At 80 columns the help splits into 2 lines and no key is cut off
   const at80 = (await frameAt(80, 12, many)).split("\n");
   assert.equal(at80.length, 12);
   const help = at80.slice(10).join("\n");
   for (const key of ["q quit", "/ search", "g G ends", "p project"])
-    assert.ok(help.includes(key), `80 桁で ${key} が見えない\n${help}`);
+    assert.ok(help.includes(key), `${key} is not visible at 80 columns\n${help}`);
 });
 
-// 案内を 2 行にすると一覧に 3 行が残らない高さでは、案内を 1 行に戻し、選んだ行を画面に残す。
-test("低い端末でも、端へ動いた後の選んだ行が見える", async () => {
+// When 2 help lines would leave fewer than 3 list rows, the help goes back to 1 line and the selected row stays on screen.
+test("the selected row stays visible after jumping to an end on a short terminal", async () => {
   const many = fake({
     sessions: async () => ({
       items: Array.from({ length: 30 }, (_, i) =>
@@ -504,12 +507,12 @@ test("低い端末でも、端へ動いた後の選んだ行が見える", async
     await settle(r);
     const frame = r.frame();
     assert.equal(frame.split("\n").length, rows, frame);
-    assert.match(frame, /❯/, `${rows} 行で選んだ行が見えない:\n${frame}`);
+    assert.match(frame, /❯/, `selected row not visible at ${rows} rows:\n${frame}`);
     r.unmount();
   }
 });
 
-test("プロジェクトを切り替えると、セッションの一覧は 1 ページ目から読み直す", async () => {
+test("switching projects reloads the session list from the first page", async () => {
   const pages: [number | null, number][] = [];
   const data = fake({
     here: { project: null, name: null },
@@ -546,7 +549,7 @@ test("プロジェクトを切り替えると、セッションの一覧は 1 �
   r.unmount();
 });
 
-test("AI の応答の地の文に罫線の文字があっても、段落を 1 行で切らない（切るのは表の行だけ）", async () => {
+test("box characters in AI reply prose do not cut a paragraph to one line (only table rows are cut)", async () => {
   const long = "左の `│` と締めの `╰─` をやめ、中身は字下げする。".repeat(6);
   const data = fake({
     session: async () => ({
@@ -559,12 +562,12 @@ test("AI の応答の地の文に罫線の文字があっても、段落を 1 �
   r.stdin.write(ENTER);
   await settle(r);
   const frame = r.lastFrame() ?? "";
-  // 6 回繰り返した最後の文まで出ていれば、段落は折り返されている
+  // If the last of the 6 repeated sentences shows, the paragraph was wrapped
   assert.equal(frame.split("中身は字下げする").length - 1, 6, frame);
   r.unmount();
 });
 
-test("AI の応答の表は、端末より広くても折らずに行ごとに切る（罫線が崩れない）", async () => {
+test("a table in an AI reply wider than the terminal is cut per row instead of wrapped (box lines stay intact)", async () => {
   const wide = "とても長い列の中身".repeat(8);
   const table = `| 列A | 列B |\n|---|---|\n| ${wide} | ${wide} |\n`;
   const data = fake({
@@ -581,11 +584,11 @@ test("AI の応答の表は、端末より広くても折らずに行ごとに�
     .split("\n")
     .filter((l) => /[┌├└│]/.test(l) && !/^[│╭╰]/.test(l));
   assert.ok(lines.length >= 5, lines.join("\n"));
-  for (const line of lines) assert.match(line.trim(), /^[┌├└│]/, `表の行が折れた:\n${lines.join("\n")}`);
+  for (const line of lines) assert.match(line.trim(), /^[┌├└│]/, `a table row wrapped:\n${lines.join("\n")}`);
   r.unmount();
 });
 
-test("プロジェクトの一覧を読めないとき、狭い端末でも「読めなかった」が見える", async () => {
+test("the read failure for the project list is visible on a narrow terminal", async () => {
   const data = fake({ projects: async () => Promise.reject(new Error("接続できない")) });
   for (const columns of [50, 80]) {
     const frame = await frameAt(columns, 12, data);
@@ -593,8 +596,8 @@ test("プロジェクトの一覧を読めないとき、狭い端末でも「�
   }
 });
 
-// 語に切れない問い（ひらがなだけ）は引かずに 0 件になる。「当たらなかった」と出すと、無いと読み違える。
-test("引ける語の無い問いは、当たらなかったとは別の案内を出す", async () => {
+// A question with no searchable terms (only hiragana) returns 0 hits without searching. Saying "no matches" would read as "none exist".
+test("a question with no searchable terms shows a different message from no matches", async () => {
   const data = fake({ search: async () => [] });
   const r = render(h(App, { data }));
   await settle(r);
@@ -617,8 +620,8 @@ test("引ける語の無い問いは、当たらなかったとは別の案内�
   r.unmount();
 });
 
-// 狭い幅でも案内は行数と幅に収まり、キーと説明の組を割らない（入らない組は後ろから落とす）。
-test("操作の案内は、どの幅でも行数と幅に収まり、組を割らない", () => {
+// Even at narrow widths the help fits the line count and width without splitting a key from its label (pairs that do not fit drop from the end).
+test("the key help fits the lines and width at every width without splitting pairs", () => {
   const items = [
     "q 終わる",
     "Enter 開く",
@@ -631,21 +634,21 @@ test("操作の案内は、どの幅でも行数と幅に収まり、組を割�
   for (let columns = 1; columns <= 120; columns++)
     for (const lines of [1, 2]) {
       const out = helpLines(items, columns, lines);
-      assert.ok(out.length <= lines, `${columns}: ${out.length} 行`);
+      assert.ok(out.length <= lines, `${columns}: ${out.length} lines`);
       for (const line of out) assert.ok(width(line) <= columns, `${columns}: ${line}`);
       for (const line of out)
         for (const pair of line.split("  ")) assert.ok(items.includes(pair), `${columns}: ${pair}`);
     }
 });
 
-// 記録された PR・issue の本文や会話は第三者が書ける。端末の制御列を落とさずに出すと、画面を書き換えられる。
+// Third parties can write recorded PR and issue bodies and conversations. Printing terminal control sequences would let them rewrite the screen.
 const HOSTILE = "\u001b[2J\u001b]0;pwn\u0007\r偽の行";
 const hostile = (s: string) => `${s}${HOSTILE}`;
-/** 注入した制御列が残っているか。画面の色（SGR）の ESC は Ink が付けるので、それ以外の列だけを見る */
+/** Whether an injected control sequence remains. Ink adds ESC for colors (SGR), so only other sequences count */
 const controlled = (frame: string) =>
   ["\u001b[2J", "\u001b]", "\u0007", "\r", "\u001b[8m"].some((c) => frame.includes(c));
 
-test("外から来た文字の制御列を、どの画面にも出さない", async () => {
+test("no screen prints control sequences from external text", async () => {
   const works = await fake().works(1);
   const work = await fake().work("w:3", 1);
   const data = fake({
@@ -666,7 +669,7 @@ test("外から来た文字の制御列を、どの画面にも出さない", as
       branch: hostile("main"),
       messages: detail.messages.map((m) => ({
         ...m,
-        // Markdown は文字参照を戻すので、描いた後にも制御文字が生まれうる
+        // Markdown decodes character references, so control characters can appear after rendering
         body: `${hostile(m.body)} &#13;偽の行 &#27;[2J &#27;[8m隠した文字`,
         files: m.files.map((f) => ({ ...f, path: hostile(f.path) })),
       })),
@@ -722,7 +725,7 @@ test("外から来た文字の制御列を、どの画面にも出さない", as
   r.stdin.write(ENTER);
   await see();
   r.unmount();
-  // 各画面が実際に開いたこと（開かなければ制御列が無いのは当然になる）
+  // Each screen actually opened (otherwise the absence of control sequences proves nothing)
   for (const [i, want] of [
     [0, "題"],
     [1, "src/auth.ts"],
@@ -731,15 +734,15 @@ test("外から来た文字の制御列を、どの画面にも出さない", as
     [8, "期限はサーバーで見る"],
     [9, "k:9 の全文"],
   ] as const)
-    assert.ok(frames[i]?.includes(want), `画面 ${i} に ${want} が無い:\n${frames[i]}`);
+    assert.ok(frames[i]?.includes(want), `screen ${i} is missing ${want}:\n${frames[i]}`);
   assert.ok(
     frames.some((f) => f.includes("偽の行")),
-    "外から来た文字そのものは出る",
+    "the external text itself is shown",
   );
-  for (const [i, f] of frames.entries()) assert.ok(!controlled(f), `画面 ${i}`);
+  for (const [i, f] of frames.entries()) assert.ok(!controlled(f), `screen ${i}`);
 });
 
-test("読み込みに失敗したときのエラー文の制御列も出さない", async () => {
+test("the error message of a failed load has no control sequences either", async () => {
   const r = render(
     h(App, { data: fake({ sessions: async () => Promise.reject(new Error(hostile("接続できない"))) }) }),
   );
@@ -749,7 +752,7 @@ test("読み込みに失敗したときのエラー文の制御列も出さな�
   r.unmount();
 });
 
-test("作業の一覧が切れた案内は 1 行に収め、狭い端末でも端へ動いた後の選んだ行が見える", async () => {
+test("the cut work list notice fits one line, and the selected row stays visible after jumping on a narrow terminal", async () => {
   const many = fake({
     works: async () => ({
       more: true,
@@ -778,8 +781,8 @@ test("作業の一覧が切れた案内は 1 行に収め、狭い端末でも�
     await settle(r);
     const frame = r.frame();
     assert.equal(frame.split("\n").length, rows, frame);
-    assert.match(frame, /❯ .*作業 99/, `${columns}×${rows} で選んだ行が見えない:\n${frame}`);
-    assert.match(frame, /older work omitted/, `${columns}×${rows} で切れた案内が見えない:\n${frame}`);
+    assert.match(frame, /❯ .*作業 99/, `selected row not visible at ${columns}×${rows}:\n${frame}`);
+    assert.match(frame, /older work omitted/, `cut notice not visible at ${columns}×${rows}:\n${frame}`);
     r.unmount();
   }
 });

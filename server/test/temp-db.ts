@@ -1,5 +1,5 @@
-// test が使う本物の SQLite。一時ディレクトリに作り、db/schema.sql を当てる。**~/.gleanery を触らない。**
-// 役割ごとの接続（reader・ingest・capture）は本番と同じ factory で開くので、authorizer も本番と同じに効く。
+// The real SQLite database tests use. Created in a temp directory with db/schema.sql applied. **Never touches ~/.gleanery.**
+// Role connections (reader, ingest, capture) open through the production factory, so the authorizer works as in production.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -17,7 +17,7 @@ export type TempDb = {
   reader: Kysely<DB>;
   ingest: Kysely<DB>;
   capture: Kysely<DB>;
-  /** authorizer を掛けない接続。fixture を入れるときと、権限の外から確かめるときに使う */
+  /** A connection without the authorizer, for inserting fixtures and checking from outside the permissions */
   owner: DatabaseSync;
   done: () => Promise<void>;
 };
@@ -45,13 +45,13 @@ export function tempDb(): TempDb {
   };
 }
 
-/** fixture の時刻。schema の CHECK が求める形（ISO 8601 の UTC、ミリ秒まで）。 */
+/** Fixture time in the form the schema CHECK requires (ISO 8601 UTC with milliseconds). */
 export const at = (s: string): string => new Date(s).toISOString();
 
-/** fixture の hash（32 バイト）。 */
+/** Fixture hash (32 bytes). */
 export const hash = (n = 0): Buffer => Buffer.alloc(32, n);
 
-/** プロジェクトを 1 つ入れて id を返す。 */
+/** Inserts one project and returns its id. */
 export function project(db: TempDb, key = "git:github.com/o/r", name = "o/r"): number {
   return Number(
     db.owner.prepare("insert into project (key, name) values (?, ?) returning id").get(key, name)?.id,
@@ -60,7 +60,7 @@ export function project(db: TempDb, key = "git:github.com/o/r", name = "o/r"): n
 
 type Values = Record<string, string | number | Buffer | null>;
 
-/** 1 行入れて rowid を返す。**owner の接続で書く**（語切りの関数があり、FTS の trigger も本番と同じに動く）。 */
+/** Inserts one row and returns its rowid. **Writes with the owner connection** (it has the tokenizer function, so FTS triggers run as in production). */
 export function insert(db: TempDb, table: string, v: Values): number {
   const cols = Object.keys(v);
   const r = db.owner
@@ -71,7 +71,7 @@ export function insert(db: TempDb, table: string, v: Values): number {
   return Number(r?.rowid);
 }
 
-/** trace の知識を 1 件入れる。会話が無ければ作る。 */
+/** Inserts one trace knowledge record, creating the conversation if needed. */
 export function knowledge(
   db: TempDb,
   projectId: number,
@@ -93,7 +93,7 @@ export function knowledge(
   });
 }
 
-/** 文書の節を 1 件入れる。docs の connector と source_item も作る。 */
+/** Inserts one document section, also creating the docs connector and source_item. */
 export function documentSection(
   db: TempDb,
   projectId: number,
@@ -129,7 +129,7 @@ export function documentSection(
   });
 }
 
-/** coding session の発言を 1 件入れて id を返す。 */
+/** Inserts one coding session message and returns its id. */
 export function message(
   db: TempDb,
   projectId: number,

@@ -8,43 +8,43 @@ import { fileURLToPath } from "node:url";
 
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts");
 
-/** DB も資格情報も無い環境で走らせる。ここで見たいのは引数の解釈と、DB へ繋ぐ前の検査だけ。 */
+/** Runs without a database or credentials. Only argument parsing and checks before connecting matter here. */
 function run(...args: string[]): { code: number; out: string } {
   try {
     const out = execFileSync(process.execPath, [CLI, ...args], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent" },
-      // 終わらない退行で試験ごと止まらないようにする（同期の呼び出しには --test-timeout が効かない）。
+      // Keep a hanging regression from stalling the test run (--test-timeout does not apply to sync calls).
       timeout: 30_000,
     });
     return { code: 0, out };
   } catch (e) {
     const err = e as { status?: number; stdout?: string; stderr?: string; code?: string };
-    // 時間切れは、期待どおりの出力を出した後でも失敗にする（終わらない退行を、終了コードの比べ方で通さない）。
-    if (err.code === "ETIMEDOUT") throw new Error(`gleanery ${args.join(" ")} が 30 秒で終わらなかった`);
+    // A timeout fails even after the expected output (so the exit code comparison cannot hide a hang).
+    if (err.code === "ETIMEDOUT") throw new Error(`gleanery ${args.join(" ")} did not finish in 30 seconds`);
     return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
   }
 }
 
-// 引数を読み飛ばす解釈は、--avod と書いても絞り込みが掛からないまま成功し、
-// 「過去に棄却されていないか」への答えが逆になる。
-test("知らないフラグと知らないコマンドは DB へ繋ぐ前に落ちる", () => {
+// A parser that skips unknown arguments succeeds on --avod without filtering,
+// which inverts the answer to "was this rejected before?".
+test("unknown flags and commands fail before connecting to the database", () => {
   for (const bad of ["--avod", "--limitt", "--all-scopes"]) {
     const r = run("search", "認証", bad);
     assert.notEqual(r.code, 0);
     assert.match(r.out, new RegExp(`Unknown flag: ${bad}`), `${bad}: ${r.out}`);
-    assert.doesNotMatch(r.out, /No database at/, "DB へ繋ぎにいっている");
+    assert.doesNotMatch(r.out, /No database at/, "tried to connect to the database");
   }
   const r = run("frobnicate");
   assert.notEqual(r.code, 0);
   assert.match(r.out, /Unknown command: frobnicate/);
-  assert.doesNotMatch(r.out, /No database at/, "DB へ繋ぎにいっている");
+  assert.doesNotMatch(r.out, /No database at/, "tried to connect to the database");
 });
 
-// 全コマンド共通のフラグ表を持つと、そのコマンドが見もしないフラグが黙って通る。
-// 通ってしまうと「指定したつもりの絞り込み」が効かないまま結果が返り、打った人は気付けない。
-test("そのコマンドが取らないフラグと、余分な位置引数は名指しして落ちる", () => {
+// A flag table shared by all commands silently accepts flags a command ignores.
+// The results then come back without the intended filter, and the user cannot tell.
+test("flags the command does not take and extra positional arguments fail by name", () => {
   for (const [args, want] of [
     [["doctor", "--yes"], /Unknown flag: --yes/],
     [["project", "list", "--reset-docs"], /Unknown flag: --reset-docs/],
@@ -54,50 +54,58 @@ test("そのコマンドが取らないフラグと、余分な位置引数は�
     const r = run(...args);
     assert.notEqual(r.code, 0, `gleanery ${args.join(" ")}: ${r.out}`);
     assert.match(r.out, want, r.out);
-    assert.doesNotMatch(r.out, /No database at/, `gleanery ${args.join(" ")} が DB へ繋ぎにいった`);
+    assert.doesNotMatch(
+      r.out,
+      /No database at/,
+      `gleanery ${args.join(" ")} tried to connect to the database`,
+    );
   }
 });
 
-// エラーの見出しに打った引数が入ると、引数に仕込んだ改行で印の付いた偽の行を作れる。
-test("エラーの見出しは、振り分けが決めた道の名前だけで作る", () => {
+// If typed arguments went into the error title, a newline in an argument could forge a marked line.
+test("the error title uses only the command path the dispatcher chose", () => {
   assert.match(run("trace", "check").out, /^✦ gleanery trace check$/m);
   assert.match(
     run("trace", "check", "--limit", "0", "f").out,
     /^✦ gleanery trace check$/m,
-    "引数の解釈で止まってもサブコマンドまで出す",
+    "shows the subcommand even when parsing fails",
   );
   assert.match(run("search", "--lmit", "3", "認証").out, /^✦ gleanery search$/m);
   const flagValue = run("trace", "--cwd", "/nonexistent", "check");
   assert.match(flagValue.out, /^✦ gleanery$/m, flagValue.out);
-  assert.doesNotMatch(flagValue.out, /^✦.*nonexistent/m, "フラグの値を見出しにしない");
-  // 締めの行と状態の行は行頭に置く。中身は字下げするので、仕込んだ改行から行頭の偽の行を作れない
+  assert.doesNotMatch(flagValue.out, /^✦.*nonexistent/m, "flag values never go into the title");
+  // Closing and status lines start at the line start. Content is indented, so an injected newline cannot forge one
   for (const forged of [run("x\n✓ 直すものは無い"), run("x\n╰─ ✓ 直すものは無い")]) {
     assert.doesNotMatch(forged.out, /^(?:╰─ )?✓ 直すものは無い$/m, forged.out);
     assert.match(forged.out, /^✗ Stopped$/m, forged.out);
   }
 });
 
-test("--limit は 1 から 20 の整数だけ", () => {
+test("--limit accepts only integers from 1 to 20", () => {
   for (const v of ["abc", "0", "21", "1.5", "-1"]) {
     const r = run("search", "認証", `--limit=${v}`);
     assert.match(r.out, /--limit must be an integer from 1 to 20/, `${v}: ${r.out}`);
   }
-  assert.match(run("search", "認証", "--limit", "abc").out, /--limit must be/, "--name 値 の形も解釈する");
+  assert.match(
+    run("search", "認証", "--limit", "abc").out,
+    /--limit must be/,
+    "also parses the --name value form",
+  );
 });
 
-test("引数なしと --help は、そこから下の使い方を出して成功する", () => {
+test("no arguments and --help print usage for that level and succeed", () => {
   for (const args of [[], ["--help"], ["project", "--help"], ["db", "--help"]]) {
     const r = run(...args);
     assert.equal(r.code, 0, `${args.join(" ")}: ${r.out}`);
     assert.match(r.out, /Usage:/, `${args.join(" ")}: ${r.out}`);
   }
-  // 使い方は宣言から組み立てる。書き写した文と食い違わせないため、コマンドの名前がそこに出ることを見る。
+  // Usage is built from the declarations. Check that command names show up there so no hand-copied text drifts.
   assert.match(run("--help").out, /^ {2}db {2}/m);
   assert.match(run("db", "--help").out, /^ {2}migrate {2}/m);
   assert.match(run("project", "--help").out, /^ {2}forget {2}/m);
 });
 
-test("trace check は DB に触らずに記録の形を確かめる", () => {
+test("trace check validates the record shape without touching the database", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-cli-trace-"));
   try {
     const bad = path.join(dir, "bad.json");

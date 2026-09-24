@@ -6,10 +6,10 @@ import path from "node:path";
 import { test } from "node:test";
 import { identify, localRoots, nameLocal, normalizeRemote, patchPaths, relativeTo } from "../src/project.ts";
 
-// HOME を差し替えて本物の名前の対応表を守っている。bun の os.homedir() は差し替えに追従せず、本物の対応表を書き換える。
-if (process.versions.bun) throw new Error("このテストは node --test で走らせる（bun run test）");
+// These tests swap HOME to protect the real name map. Bun's os.homedir() ignores the swap and would rewrite the real map.
+if (process.versions.bun) throw new Error("run these tests with node --test (bun run test)");
 
-test("ssh と https の remote が同じ key へ揃う", () => {
+test("ssh and https remotes map to the same key", () => {
   const want = "github.com/iroha924/gleanery";
   assert.equal(normalizeRemote("git@github.com:iroha924/gleanery.git"), want);
   assert.equal(normalizeRemote("https://github.com/iroha924/gleanery.git"), want);
@@ -17,8 +17,8 @@ test("ssh と https の remote が同じ key へ揃う", () => {
   assert.equal(normalizeRemote("ssh://git@github.com/iroha924/gleanery.git"), want);
 });
 
-// key は DB へ平文で入る。「最初の @ まで」で切ると、パスワードに @ があるとき断片が残る。
-test("remote に埋まった資格情報は key へ持ち込まない", () => {
+// The key is stored in plain text. Cutting at the first @ leaves a fragment when the password contains @.
+test("credentials embedded in a remote never reach the key", () => {
   for (const url of [
     "https://user:ghp_secret@github.com/o/r.git",
     "https://user:tok@en@github.com/o/r",
@@ -28,10 +28,10 @@ test("remote に埋まった資格情報は key へ持ち込まない", () => {
   ]) {
     const got = normalizeRemote(url) ?? "";
     for (const leak of ["ghp_secret", "AKIAsecret", "tok", "p@ss", "pass", "@"]) {
-      assert.ok(!got.includes(leak), `${url} → ${got} に ${leak} が残っている`);
+      assert.ok(!got.includes(leak), `${url} → ${got} still contains ${leak}`);
     }
   }
-  // ポートは識別子ではない。付けると同じリポジトリが 2 つのプロジェクトに割れる。
+  // A port is not part of the identity. Keeping it would split one repository into two projects.
   assert.equal(normalizeRemote("https://user:pass@host:2222/o/r.git"), "host/o/r");
   assert.equal(normalizeRemote("git@gitlab.com:org/team/repo.git"), "gitlab.com/org/team/repo");
   assert.equal(normalizeRemote(""), null);
@@ -46,8 +46,8 @@ function repo(remote: string | null): { dir: string; done: () => void } {
   return { dir, done: () => fs.rmSync(tmp, { recursive: true, force: true }) };
 }
 
-// 相対パスの基点がサブディレクトリにずれると、同じファイルが別の path として記録される。
-test("リポジトリの途中から見ても、ルートと key は同じ", () => {
+// If relative paths were based on a subdirectory, the same file would be recorded under different paths.
+test("the root and key are the same from any subdirectory", () => {
   const r = repo("https://github.com/o/r.git");
   try {
     for (const d of [r.dir, path.join(r.dir, "a"), path.join(r.dir, "a", "b")]) {
@@ -61,8 +61,8 @@ test("リポジトリの途中から見ても、ルートと key は同じ", () 
   }
 });
 
-// remote も名前も無い場所の会話を、どこかのプロジェクトへ推測で入れない。
-test("remote も名前も無い場所はプロジェクトにならない", () => {
+// Conversations from a place with no remote or name are not guessed into some project.
+test("a place with no remote or name is not a project", () => {
   const r = repo(null);
   try {
     assert.equal(identify(r.dir), null);
@@ -72,19 +72,19 @@ test("remote も名前も無い場所はプロジェクトにならない", () =
   }
 });
 
-test("相対パスはルートからの形にし、ルートの外は null", () => {
+test("relative paths are from the root, and paths outside it are null", () => {
   assert.equal(relativeTo("/w/repo", "/w/repo/server/src/db.ts"), "server/src/db.ts");
   assert.equal(relativeTo("/w/repo", "src/db.ts", "/w/repo/server"), "server/src/db.ts");
   assert.equal(relativeTo("/w/repo", "/w/other/x.ts"), null);
   assert.equal(relativeTo("/w/repo", "../x.ts"), null);
   assert.equal(relativeTo("/w/repo", "/w/repo"), null);
-  // `..` で始まる名前はルートの中にある。
+  // A name starting with `..` is inside the root.
   assert.equal(relativeTo("/w/repo", "/w/repo/..config/a.ts"), "..config/a.ts");
   assert.equal(relativeTo("/w/repo", "/w/repo/..."), "...");
 });
 
-// 空とみなして書き戻すと、ほかのプロジェクトの名前が全部消える。
-test("名前の対応表が壊れていたら読み飛ばさずに止め、remote のある場所には名前を付けない", () => {
+// Treating it as empty and writing back would erase every other project name.
+test("a broken name map stops instead of being skipped, and places with a remote get no name", () => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-map-")));
   const realHome = process.env.HOME;
   process.env.HOME = home;
@@ -109,10 +109,10 @@ test("名前の対応表が壊れていたら読み飛ばさずに止め、remot
   }
 });
 
-// 同じ remote のクローンが 2 つあると、並び順で先に来た方へ黙って同期してしまう。
-test("同じ key の置き場所が 2 つあれば選ばない", () => {
+// With two clones of the same remote, the sync would silently pick whichever sorts first.
+test("does not choose when two locations share a key", () => {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-roots-")));
-  // この PC の名前の対応表を読ませない（名前を付けたプロジェクトが found に混ざる）。
+  // Keep this machine's name map out (named projects would mix into found).
   const realHome = process.env.HOME;
   process.env.HOME = tmp;
   try {
@@ -142,8 +142,8 @@ test("同じ key の置き場所が 2 つあれば選ばない", () => {
   }
 });
 
-// patch の本文（ファイルの中身）から path を拾うと、書いた文字列次第で好きな path を名乗れる。
-test("Codex の patch は見出しの 4 形だけから編集先を読む", () => {
+// Taking paths from the patch body (file contents) would let written text claim any path.
+test("reads edited files of a Codex patch only from the 4 header forms", () => {
   const patch = [
     "*** Begin Patch",
     "*** Update File: server/src/db.ts",

@@ -14,7 +14,7 @@ import { at, hash } from "./temp-db.ts";
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts");
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-admin-"));
 
-/** admin の出力（console.log）を黙らせて fn を流す。 */
+/** Runs fn with admin output (console.log) silenced. */
 async function quiet<T>(fn: () => T | Promise<T>): Promise<T> {
   const log = console.log;
   console.log = () => {};
@@ -25,7 +25,7 @@ async function quiet<T>(fn: () => T | Promise<T>): Promise<T> {
   }
 }
 
-test("gleanery init は DB を WAL で作ってバージョンを付け、2 度目は触らない", async () => {
+test("gleanery init creates the database in WAL mode with a version and leaves it alone the second time", async () => {
   const file = path.join(tmp(), "nested", "gleanery.db");
   await quiet(() => dbInit(file));
   const raw = new DatabaseSync(file, { readOnly: true });
@@ -43,24 +43,24 @@ test("gleanery init は DB を WAL で作ってバージョンを付け、2 度�
   assert.equal(
     (again.prepare("select count(*) as n from project").get() as { n: number }).n,
     1,
-    "作り直していない",
+    "not recreated",
   );
   again.close();
   assert.deepEqual(
     fs.readdirSync(path.dirname(file)).filter((f) => f.includes(".tmp")),
     [],
-    "一時ファイルを残さない",
+    "no temp file left",
   );
 });
 
-// 2 つの gleanery init が同時に「まだ無い」を見ても、後から置く側が先に置かれて記録の入った DB を空の DB で置き換えない。
-test("gleanery init は置く直前に先に置かれた DB を置き換えない", async (t) => {
+// Even if two gleanery init runs both see no database, the later one does not replace the first one's database, with its records, by an empty one.
+test("gleanery init does not replace a database placed just before it", async (t) => {
   const file = path.join(tmp(), "gleanery.db");
   await quiet(() => dbInit(file));
   const w = connectWriter("owner", file);
   w.prepare("insert into project (key, name) values ('git:x/y', 'x/y')").run();
   w.close();
-  // 存在の確かめをすり抜けた側を再現する。
+  // Reproduces the side that slipped past the existence check.
   t.mock.method(fs, "existsSync", (f: fs.PathLike) =>
     String(f) === file ? false : fs.statSync(f, { throwIfNoEntry: false }) !== undefined,
   );
@@ -75,7 +75,7 @@ test("gleanery init は置く直前に先に置かれた DB を置き換えな�
   );
 });
 
-test("hard link を持たない FS では rename で置く", async (t) => {
+test("uses rename on file systems without hard links", async (t) => {
   const file = path.join(tmp(), "gleanery.db");
   t.mock.method(fs, "linkSync", () => {
     throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
@@ -93,8 +93,8 @@ test("hard link を持たない FS では rename で置く", async (t) => {
   );
 });
 
-// 別のアプリの DB を同じ名前で置いていたとき、上から schema を当てて壊さない。
-test("gleanery init は gleanery の DB でないファイルを上書きしない", async () => {
+// If another app's database sits under the same name, do not break it by applying the schema on top.
+test("gleanery init does not overwrite a file that is not a gleanery database", async () => {
   const file = path.join(tmp(), "gleanery.db");
   const raw = new DatabaseSync(file);
   raw.exec("create table mine (a)");
@@ -105,7 +105,7 @@ test("gleanery init は gleanery の DB でないファイルを上書きしな�
   );
 });
 
-test("db reindex は全文検索の索引を作り直し、doctor の確かめが通る", async () => {
+test("db reindex rebuilds the full-text index and passes the doctor check", async () => {
   const file = path.join(tmp(), "gleanery.db");
   await quiet(() => dbInit(file));
   const w = connectWriter("owner", file);
@@ -133,15 +133,15 @@ test("db reindex は全文検索の索引を作り直し、doctor の確かめ�
   assert.ok(x.bytes > 0);
 });
 
-test("当てる migration が無ければ db migrate は何もしない", async () => {
+test("db migrate does nothing when there are no migrations to apply", async () => {
   const file = path.join(tmp(), "gleanery.db");
   await quiet(() => dbInit(file));
   await quiet(() => migrate(true, file));
   assert.equal(inspect(file).revision, SCHEMA_REVISION);
 });
 
-// 配った CLI から打つ経路。HOME を一時ディレクトリへ向け、持ち主の ~/.gleanery を触らない。
-test("gleanery init は HOME の .gleanery に DB を作る", () => {
+// The path taken by the shipped CLI. HOME points to a temp directory so the owner's ~/.gleanery is untouched.
+test("gleanery init creates the database in .gleanery under HOME", () => {
   const home = tmp();
   execFileSync(process.execPath, [CLI, "init"], {
     env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home },
@@ -151,8 +151,8 @@ test("gleanery init は HOME の .gleanery に DB を作る", () => {
   assert.equal(inspect(path.join(home, ".gleanery", "gleanery.db")).revision, SCHEMA_REVISION);
 });
 
-// 旧名の別名は残さない。旧 `gleanery db init` と、要件定義の置き場所を作っていた旧 `gleanery init --cwd`・`gleanery check` は通らない。
-test("旧い command の形は拒まれ、DB を作らない", () => {
+// No aliases for old names. The old `gleanery db init`, and the old `gleanery init --cwd` and `gleanery check` that created the requirements folder, fail.
+test("old command forms are rejected and create no database", () => {
   for (const args of [["db", "init"], ["init", "--cwd", "."], ["check"]]) {
     const home = tmp();
     const r = spawnSync(process.execPath, [CLI, ...args], {
@@ -165,8 +165,8 @@ test("旧い command の形は拒まれ、DB を作らない", () => {
   }
 });
 
-// 当てる途中で落ちたら、前半だけ確定してバージョンが上がらないまま残らない（打ち直すと二重に当たる）。
-test("db migrate は新しい migration を 1 つの transaction で当ててバージョンを上げ、落ちたら何も残さない", async () => {
+// A failure midway must not leave the first half committed without a version bump (running again would apply it twice).
+test("db migrate applies new migrations in one transaction and bumps the version, leaving nothing on failure", async () => {
   const dir = tmp();
   const file = path.join(dir, "gleanery.db");
   await quiet(() => dbInit(file));
@@ -187,14 +187,14 @@ test("db migrate は新しい migration を 1 つの transaction で当ててバ
     new DatabaseSync(file, { readOnly: true })
       .prepare("select name from sqlite_schema where name = 'note'")
       .all().length;
-  assert.equal(tables(), 0, "前半の DDL も戻っている");
+  assert.equal(tables(), 0, "the first half of the DDL is rolled back too");
   fs.writeFileSync(path.join(migrations, name), "create table note (a text) strict;\n");
   await quiet(() => migrate(true, file, migrations));
   assert.equal(inspect(file).revision, next);
   assert.equal(tables(), 1);
 });
 
-/** 番号が current + 1 から続く migration を dir に置く。 */
+/** Writes migrations numbered from current + 1 into dir. */
 function writeMigrations(dir: string, bodies: string[]): string[] {
   fs.mkdirSync(dir, { recursive: true });
   return bodies.map((body, i) => {
@@ -204,8 +204,8 @@ function writeMigrations(dir: string, bodies: string[]): string[] {
   });
 }
 
-// 親の表を作り直す migration は、外部キーが効いたままだと DROP の暗黙の削除で子の行を cascade で消す。
-test("foreign_keys=off を宣言した migration は外部キーを切って単独で当て、終わったら戻す", async () => {
+// A migration that rebuilds a parent table deletes child rows by cascade through DROP's implicit delete while foreign keys are on.
+test("a migration declaring foreign_keys=off runs alone with foreign keys off and turns them back on after", async () => {
   const dir = tmp();
   const file = path.join(dir, "gleanery.db");
   await quiet(() => dbInit(file));
@@ -216,7 +216,7 @@ test("foreign_keys=off を宣言した migration は外部キーを切って単�
 create table child (id integer primary key not null, parent_id integer not null references parent (id) on delete cascade) strict;
 insert into parent (v) values ('a');
 insert into child (id, parent_id) values (1, 1);`,
-    // 1 行目の先頭の空白は宣言として読む（読み損ねると外部キーが効いたまま作り直す）
+    // Leading spaces on line 1 still count as the declaration (missing it would rebuild with foreign keys on)
     `  -- gleanery: foreign_keys=off
 create table "parent_new" (id integer primary key autoincrement not null, v text not null check (v <> '')) strict;
 insert into "parent_new" (id, v) select id, v from parent;
@@ -233,11 +233,15 @@ alter table "parent_new" rename to parent;`,
     (raw.prepare("pragma user_version").get() as { user_version: number }).user_version,
     SCHEMA_REVISION + 2,
   );
-  assert.equal((raw.prepare("select count(*) as n from child").get() as { n: number }).n, 1, "子の行が残る");
+  assert.equal(
+    (raw.prepare("select count(*) as n from child").get() as { n: number }).n,
+    1,
+    "child rows remain",
+  );
   raw.close();
 });
 
-test("外部キーを切る migration が落ちたら、同じ接続で戻して外部キーを効かせ直し、前の migration のバージョンで止まる", async () => {
+test("when a foreign-keys-off migration fails, it rolls back on the same connection, turns foreign keys back on, and stops at the previous version", async () => {
   const dir = tmp();
   const file = path.join(dir, "gleanery.db");
   await quiet(() => dbInit(file));
@@ -254,8 +258,8 @@ test("外部キーを切る migration が落ちたら、同じ接続で戻して
     SCHEMA_REVISION + 1,
   );
   const has = (t: string) => raw.prepare("select 1 from sqlite_schema where name = ?").get(t) !== undefined;
-  assert.ok(has("note"), "前の migration は確定している");
-  assert.ok(!has("half"), "落ちた migration の前半は戻っている");
+  assert.ok(has("note"), "the previous migration is committed");
+  assert.ok(!has("half"), "the first half of the failed migration is rolled back");
   fs.writeFileSync(
     path.join(migrations, files[1] as string),
     "-- gleanery: foreign_keys=off\ncreate table half (a text) strict;",
@@ -268,12 +272,12 @@ test("外部キーを切る migration が落ちたら、同じ接続で戻して
   raw.close();
 });
 
-// 宣言を読み損ねて外部キーが効いたまま当てると、残すべき子の行を消す。読めない宣言は当てる前に止める。
-test("知らない宣言や 1 行目以外の宣言があれば、何も当てずに止まる", async () => {
+// Misreading the declaration and applying with foreign keys on deletes child rows that should stay. Unreadable declarations stop before applying.
+test("stops without applying anything on an unknown declaration or one not on line 1", async () => {
   for (const body of [
     "-- gleanery: foreign_keys=of\ncreate table x (a text) strict;",
     "create table x (a text) strict;\n-- gleanery: foreign_keys=off",
-    // 先頭に空白があっても宣言として読む（宣言なしと読むと、外部キーが効いたまま表を作り直す）
+    // Leading spaces still count as the declaration (reading it as absent would rebuild tables with foreign keys on)
     "create table x (a text) strict;\n  -- gleanery: foreign_keys=off",
   ]) {
     const dir = tmp();
@@ -290,14 +294,14 @@ test("知らない宣言や 1 行目以外の宣言があれば、何も当て�
   }
 });
 
-// 宣言が無いまま表を消すと、外部キーが効いたまま子の行を cascade で消す。書き方（コメント・改行）によらず、
-// SQLite が実際に消そうとした時点で止め、何も残さない。コメントの中の drop table は止めない。
-test("宣言の無い migration は、書き方によらず表を消すことも作り変えることもできず、コメントの中の drop は通る", async () => {
+// Dropping a table without the declaration deletes child rows by cascade with foreign keys on. Regardless of formatting
+// (comments, newlines), stop when SQLite actually tries to delete, leaving nothing behind. drop table inside a comment is fine.
+test("a migration without the declaration cannot drop or rebuild tables however it is written, and drop inside a comment passes", async () => {
   for (const drop of [
     "drop table parent;",
     "DROP /* rebuild */ TABLE parent;",
     "DROP -- rebuild\nTABLE parent;",
-    // 親を rename すると、子の外部キーが退避先を指すよう書き換わり、退避先を消すと子も消える
+    // Renaming the parent rewrites child foreign keys to point to the renamed table, and dropping that deletes the children
     "alter table parent rename to parent_old;\ncreate table parent (id integer primary key not null) strict;\ninsert into parent select * from parent_old;\ndelete from parent_old;",
   ]) {
     const dir = tmp();

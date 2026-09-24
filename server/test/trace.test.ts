@@ -34,7 +34,7 @@ const trigram = {
 };
 const problems = (raw: unknown) => checkTrace(raw).problems.join("\n");
 
-test("通る記録は、決定の案を option の行にし、key を session で一意にする", () => {
+test("a valid record turns decision options into option rows and makes keys unique per session", () => {
   const r = checkTrace(
     base([decision()], {
       work: { key: "rebuild", title: "作り直し", goal: "13 表", current: "実装中", status: "active" },
@@ -53,8 +53,8 @@ test("通る記録は、決定の案を option の行にし、key を session �
   assert.equal(out[2]?.reason, "資格情報とネットワークが要る");
 });
 
-// 決定の価値は捨てた案にある。棄却理由の無い決定は、同じ案を再検討させる。
-test("棄却した案と理由・確かめ方の無い決定を通さない", () => {
+// A decision is worth its rejected options. A decision without rejection reasons invites the same options again.
+test("rejects decisions without rejected options, reasons, or a way to confirm", () => {
   assert.match(
     problems(base([decision({ options: [{ text: "FTS5", chosen: true }] })])),
     /rejected option with its reason/,
@@ -75,7 +75,7 @@ test("棄却した案と理由・確かめ方の無い決定を通さない", ()
   assert.match(problems(base([decision({ confirmation: undefined })])), /confirmation/);
 });
 
-test("根拠の無い fact と、理由の無い未実行の検証を通さない", () => {
+test("rejects facts without evidence and unrun verifications without a reason", () => {
   assert.match(
     problems(base([{ key: "f-1", kind: "finding", at, text: "SQLite は 3.50", confidence: "fact" }])),
     /fact needs refs or evidence/,
@@ -101,7 +101,7 @@ test("根拠の無い fact と、理由の無い未実行の検証を通さな�
   );
 });
 
-test("参照は、この記録の決定か別の session の key だけ", () => {
+test("references point only to decisions in this record or keys of other sessions", () => {
   assert.match(
     problems(
       base([{ key: "v-1", kind: "verification", at, text: "型", status: "passed", verifies: "d-none" }]),
@@ -118,8 +118,8 @@ test("参照は、この記録の決定か別の session の key だけ", () => 
   );
 });
 
-// 後継の無い superseded は、何に置き換わったのかが分からず迷子になる。
-test("superseded は、この記録の別の決定が覆していなければならない", () => {
+// A superseded decision without a successor is lost, since nothing says what replaced it.
+test("superseded requires another decision in this record to overturn it", () => {
   assert.match(
     problems(base([decision({ status: "superseded" })])),
     /point supersedes of the newer decision at this key/,
@@ -134,20 +134,20 @@ test("superseded は、この記録の別の決定が覆していなければな
   const out = rows(ok.trace as Trace);
   const old = out.find((x) => x.key === "claude-code:s1#d-fts5");
   assert.equal(old?.supersededBy, "claude-code:s1#d-like");
-  // 覆された決定で採った案を、採用のまま返さない。
+  // The chosen option of an overturned decision is not returned as chosen.
   assert.equal(out.find((x) => x.key === "claude-code:s1#d-fts5:o1")?.status, "was_chosen");
 });
 
-// 同じ記録で覆したのに有効のまま書くと、check を通って save だけが DB の CHECK で落ちる。
-test("この記録の中で覆された決定は superseded でなければならない", () => {
+// Writing a decision as active after overturning it in the same record passes check and fails only at save on the database CHECK.
+test("a decision overturned within this record must be superseded", () => {
   assert.match(
     problems(base([decision(), decision({ key: "d-like", text: "LIKE に戻す", supersedes: "d-fts5" })])),
     /d-like supersedes it, so set status to superseded/,
   );
 });
 
-// 根拠は後から辿れる形で持つ。種類の無い文字列は、何を指すのかが分からない。
-test("refs は種類を前置した形だけを通し、本文に貼ったキーは伏せてから持つ", () => {
+// Evidence is kept in a traceable form. A string without a kind does not say what it points to.
+test("refs must have a kind prefix, and keys pasted in text are masked before storing", () => {
   const fact = (refs: string[]) =>
     base([{ key: "f1", kind: "finding", at, text: "索引は要らない", confidence: "fact", refs }]);
   assert.match(problems(fact(["schema.sql"])), /commit: \/ url: \/ cmd:/);
@@ -171,7 +171,7 @@ test("refs は種類を前置した形だけを通し、本文に貼ったキー
   assert.ok(!out.includes("npg_AbCdEf"), out);
 });
 
-test("知らない欄と、形の違う日時・パスを弾く", () => {
+test("rejects unknown fields and malformed dates and paths", () => {
   assert.match(problems(base([decision({ extra: 1 })])), /Unrecognized key|extra/);
   assert.match(problems(base([decision({ at: "2026-09-13" })])), /ISO 8601/);
   assert.match(
@@ -192,7 +192,7 @@ test("知らない欄と、形の違う日時・パスを弾く", () => {
   assert.match(problems(base([decision(), decision()])), /duplicated/);
 });
 
-// ---- 本物の SQLite へ入れる ----
+// ---- Store into a real SQLite database ----
 
 const valid = (raw: unknown): Trace => {
   const r = checkTrace(raw);
@@ -200,7 +200,7 @@ const valid = (raw: unknown): Trace => {
   return r.trace as Trace;
 };
 
-test("記録を入れると決定・案・作業・ファイルが入り、同じ内容の再保存は書き直さない", async () => {
+test("saving a record stores decisions, options, work, and files, and saving the same content again writes nothing", async () => {
   const db = tempDb();
   try {
     const p = project(db);
@@ -220,7 +220,7 @@ test("記録を入れると決定・案・作業・ファイルが入り、同�
     assert.deepEqual(
       await saveTrace(db.ingest, p, t),
       { written: 0, superseded: 0 },
-      "同じ内容は書き直さない",
+      "same content is not rewritten",
     );
     const rows = db.owner
       .prepare("select kind, status, heading, work_item_id is not null as w from knowledge order by id")
@@ -242,7 +242,7 @@ test("記録を入れると決定・案・作業・ファイルが入り、同�
         .map((r) => ({ ...r })),
       [{ path: "db/schema.sql", role: "applies_to" }],
     );
-    // 案を減らして書き直すと、古い案を棄却として残さない
+    // Rewriting with fewer options does not keep the old ones as rejected
     const three = [
       { text: "FTS5", chosen: true },
       { text: "外部の検索サービス", chosen: false, why: "資格情報とネットワークが要る" },
@@ -269,8 +269,8 @@ test("記録を入れると決定・案・作業・ファイルが入り、同�
   }
 });
 
-// 覆した決定は消さない（消すと、なぜ変えたかが失われて再提案される）。後継を指して superseded にする。
-test("別の session の決定を覆すと、古い決定は後継を指して superseded になり、その採った案は当時の案になる", async () => {
+// Overturned decisions are not deleted (deleting loses why it changed, and it gets proposed again). They point to the successor as superseded.
+test("overturning another session's decision makes it superseded with a successor, and its chosen option becomes was_chosen", async () => {
   const db = tempDb();
   try {
     const p = project(db);
@@ -302,7 +302,7 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
       ).status,
       "was_chosen",
     );
-    // 古い session を再 trace しても、DB 側の覆しを「採用」に戻さない
+    // Re-tracing the old session does not flip the overturn in the database back to accepted
     await saveTrace(db.ingest, p, valid(base([decision({ text: "FTS5 で持つ（再 trace）" })])));
     assert.equal(
       (
@@ -312,7 +312,7 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
       ).status,
       "superseded",
     );
-    // 逆向きに覆し返すと輪になるので止める
+    // Overturning back in the other direction would make a cycle, so it stops
     const loop = valid(base([decision({ key: "d-loop", supersedes: "claude-code:s2#d-trigram" })]));
     await saveTrace(db.ingest, p, loop);
     await assert.rejects(
@@ -334,8 +334,8 @@ test("別の session の決定を覆すと、古い決定は後継を指して s
   }
 });
 
-// 壊れた参照を黙って落とさない。途中まで書いた状態も残さない（1 つの transaction）。
-test("このプロジェクトに無い決定を指す記録は、何も書かずに止まる", async () => {
+// Broken references are not silently dropped, and no partial write remains (one transaction).
+test("a record pointing to a decision outside this project stops without writing", async () => {
   const db = tempDb();
   try {
     const p = project(db);
@@ -347,8 +347,8 @@ test("このプロジェクトに無い決定を指す記録は、何も書か�
   }
 });
 
-// 配る Skill が「形はこれ」と指す見本。契約から外れると、AI は通らない形を真似て書く。
-test("trace Skill の見本は記録の検査を通る", () => {
+// The sample the shipped Skill points to as the format. If it breaks the contract, the AI copies a shape that fails.
+test("the trace Skill sample passes the record check", () => {
   const example = new URL("../../plugin/skills/trace/example.json", import.meta.url);
   assert.deepEqual(checkTrace(JSON.parse(fs.readFileSync(example, "utf8"))).problems, []);
 });

@@ -32,7 +32,7 @@ const source: GithubSource = {
     },
   ],
   issues: async () => [
-    // issues エンドポイントは PR も返す
+    // The issues endpoint also returns PRs
     {
       number: 12,
       title: "取り込みを作り直す",
@@ -122,7 +122,7 @@ const source: GithubSource = {
   ],
 };
 
-test("PR・issue を今の状態に揃え、bot が作った issue と自動通知を落とす", async () => {
+test("syncs PRs and issues to their current state and drops bot-made issues and automated notices", async () => {
   const got = await collect(source);
   assert.deepEqual(
     got.items.map((i) => [i.number, i.kind, i.state]),
@@ -131,14 +131,14 @@ test("PR・issue を今の状態に揃え、bot が作った issue と自動通�
       [13, "pull_request", "merged"],
       [20, "issue", "open"],
     ],
-    "リリース PR は残し、bot の定期レポートの issue は入れない",
+    "keeps release PRs and leaves out bot report issues",
   );
   const said12 = got.said.get(12) ?? [];
   assert.deepEqual(
     said12.map((s) => [s.externalId, s.speaker, s.replyTo]),
     [
       ["body", "person", null],
-      // LGTM は相槌なので落ち、返信は親を持たない発言として残る
+      // LGTM is filler and gets dropped, and the reply stays as a message without a parent
       ["r:31", "person", null],
       ["r:32", "assistant", null],
     ],
@@ -147,7 +147,7 @@ test("PR・issue を今の状態に揃え、bot が作った issue と自動通�
   assert.equal(
     got.said.get(13)?.[0]?.speaker,
     "bot",
-    "リリース PR の本文は bot の発言として持つ（索引しない）",
+    "the release PR body is kept as a bot message (not indexed)",
   );
   assert.deepEqual(
     (got.said.get(20) ?? []).map((s) => s.externalId),
@@ -155,8 +155,8 @@ test("PR・issue を今の状態に揃え、bot が作った issue と自動通�
   );
 });
 
-// GitHub から来た文字の NUL を落とす。旧構成では 1 つで同期の transaction ごと毎日落ちた。
-test("GitHub から来た題・handle・URL・path の NUL を落とし、マージ・クローズの時刻を持つ", async () => {
+// Drop NUL from GitHub text. In the old setup, a single one failed the whole sync transaction every day.
+test("drops NUL from GitHub titles, handles, URLs, and paths, and keeps merge and close times", async () => {
   const nul = "\u0000";
   const got = await collect({
     pulls: async () => [
@@ -190,12 +190,16 @@ test("GitHub から来た題・handle・URL・path の NUL を落とし、マー
   });
   const all = JSON.stringify(got.items) + JSON.stringify([...got.said.values()]);
   assert.ok(!all.includes("\\u0000"), all);
-  assert.equal(got.items[0]?.closedAt, "2026-09-03T00:00:00Z", "マージせず閉じた PR は閉じた時刻");
+  assert.equal(
+    got.items[0]?.closedAt,
+    "2026-09-03T00:00:00Z",
+    "a PR closed without merging has its close time",
+  );
   assert.equal(got.items[0]?.state, "closed");
 });
 
-// ページ送りの最中に項目が増えると、境界の PR やコメントが 2 ページに現れる。
-test("2 ページに現れた同じ PR とコメントを 1 つにする", async () => {
+// When items are added during pagination, a PR or comment at the boundary shows up on two pages.
+test("merges the same PR and comment that appear on two pages", async () => {
   const pr = {
     number: 5,
     title: "t",
@@ -228,15 +232,15 @@ test("2 ページに現れた同じ PR とコメントを 1 つにする", async
   );
 });
 
-test("発言者の種類は名前で決める", () => {
+test("the speaker kind is decided by name", () => {
   assert.equal(speakerOf("alice"), "person");
   assert.equal(speakerOf("gemini-code-assist[bot]"), "assistant");
   assert.equal(speakerOf("Copilot"), "assistant");
   assert.equal(speakerOf("dependabot[bot]"), "bot");
 });
 
-// 短さだけで落とさない —「これは DBT 側で」は 10 字でも中身がある。
-test("相槌だけを落とす", () => {
+// Do not drop by length alone. A short Japanese reply of 10 characters can still carry meaning.
+test("drops only filler replies", () => {
   assert.equal(isFiller("LGTM!"), true);
   assert.equal(isFiller("了解です。"), true);
   assert.equal(isFiller("![img](https://x)"), true);

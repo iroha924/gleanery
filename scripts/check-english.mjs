@@ -38,7 +38,24 @@ const ENGLISH = [
   "scripts/lib/commit-msg.mjs",
   "scripts/lib/japanese.mjs",
   "scripts/lib/english.mjs",
+  "server/evals/cases.ts",
+  "server/evals/retrieval.ts",
+  "server/test/assets.test.ts",
+  "server/test/evals-run.test.ts",
+  "server/test/migrate.test.ts",
+  "server/test/project.test.ts",
+  "server/test/release-scope.test.ts",
+  "server/test/temp-db.ts",
+  "server/test/temp-repo.ts",
 ];
+
+/** Every .ts file under dir, as a repository path. New files are checked without being listed. */
+const tsUnder = (dir) =>
+  fs
+    .readdirSync(path.join(root, dir), { recursive: true })
+    .filter((f) => f.endsWith(".ts"))
+    .map((f) => `${dir}/${f.split(path.sep).join("/")}`)
+    .sort();
 
 /** Comments must be English. Strings still hold Japanese that MCP or the database relies on. */
 const COMMENTS = [
@@ -46,6 +63,8 @@ const COMMENTS = [
   "server/src/search.ts",
   "server/src/github.ts",
   "server/src/capture.ts",
+  // Tests keep Japanese fixtures, and evals keep their measured prompts.
+  ...[...tsUnder("server/test"), ...tsUnder("server/evals")].filter((f) => !ENGLISH.includes(f)),
 ];
 
 let count = 0;
