@@ -63,3 +63,19 @@ test("同梱していない package が SBOM に載っていても落とす（�
   );
   assert.deepEqual(got, ["SBOM に同梱していない typescript 7.0.2 がある"]);
 });
+
+test("告知の表で書式の崩れた行があれば、照合から外さずに落とす", () => {
+  const broken = `${notices}| react | 19.3.0 (patched) | MIT |\n| ink | | MIT |\n`;
+  const got = sbomProblems(
+    broken,
+    bom([
+      { group: "@inkjs", name: "ui", version: "2.0.0" },
+      { name: "ajv", version: "8.20.0" },
+      { name: "zod", version: "4.6.5" },
+    ]),
+  );
+  assert.deepEqual(got, [
+    "THIRD_PARTY_NOTICES.md の表の行を読めない: | react | 19.3.0 (patched) | MIT |",
+    "THIRD_PARTY_NOTICES.md の表の行を読めない: | ink | | MIT |",
+  ]);
+});
