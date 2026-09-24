@@ -167,7 +167,8 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      # 許可先は v0.37.7 の release で audit が観測した stage の通信先（GitHub の基盤は harden-runner が既定で通す）
+      # 許可先は v0.37.7 の release で audit が観測した stage の通信先と、setup-node が GitHub から取れないときの nodejs.org
+      # （OIDC・artifact などの GitHub の基盤は harden-runner が既定で通す）
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
@@ -178,6 +179,7 @@ jobs:
             registry.npmjs.org:443
             fulcio.sigstore.dev:443
             rekor.sigstore.dev:443
+            nodejs.org:443
       # block が効いていなければ publish の前に止める
       - name: 許可先の外へ出られないか
         run: |
