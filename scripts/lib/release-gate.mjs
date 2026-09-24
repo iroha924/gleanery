@@ -4,13 +4,26 @@
 const REQUIRED_WORKFLOWS = ["check", "pr-body"];
 
 /** 判定の失敗の一覧と、tag の commit を head に持つ PR の番号。problems が空なら stage してよい。 */
-export function gateProblems({ tag, commit, repo, versions, mainIsAncestor, tagCommit, pulls, runs }) {
+export function gateProblems({
+  tag,
+  commit,
+  repo,
+  versions,
+  mainIsAncestor,
+  tagCommit,
+  published,
+  pulls,
+  runs,
+}) {
   const problems = [];
   const match = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(tag);
   if (!match) problems.push(`tag ${tag} は v<version> の形ではない`);
   else
     for (const [key, version] of Object.entries(versions))
       if (version !== match[1]) problems.push(`tag ${tag} と ${key} の version ${version} が一致しない`);
+
+  // 同じバージョンは npm が stage を拒むが、それは持ち主の承認の後になる。前回の release より上がっているかをここで見る
+  if (published) problems.push(`tag ${tag} のバージョンは npm に既にある。バージョンを上げて tag を打ち直す`);
 
   // main が tag の commit の祖先なら、PR の CI が検査した仮の merge commit の tree は tag の commit の tree と同じになる
   if (!mainIsAncestor)

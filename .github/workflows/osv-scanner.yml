@@ -1,0 +1,25 @@
+# 依存の既知の脆弱性を OSV で見て、code scanning へ上げる。GitHub の依存のグラフは server/bun.lock を読まないので、
+# 推移的な依存はここでしか見えない。既知の脆弱性では落とさず（fail-on-vuln: false）、走査そのものの失敗だけを落とす。
+# PR の新規の比較（osv-scanner-reusable-pr.yml）は使わない（google/osv-scanner-action#136）。PR ではこの workflow を変えたときだけ走らせる。
+name: osv-scanner
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 5 * * 1"
+  pull_request:
+    paths: [".github/workflows/osv-scanner.yml"]
+
+permissions: {}
+
+jobs:
+  scan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@a345acffa64b0eaede81a3d9aae6141214d9c8fc # v2.6.0
+    with:
+      fail-on-vuln: false

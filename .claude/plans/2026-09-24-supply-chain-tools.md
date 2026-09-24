@@ -22,7 +22,9 @@ CI と配布の経路への攻撃に強くし、推移的な依存の脆弱性�
 
 - zizmor: zizmor-action と zizmor 本体の版を固定し、PR と main への push で走らせて SARIF を上げる（指摘で job は落とさない）。初回の指摘は同じ PR で直す（`actions/checkout` の `persist-credentials: false` など）
 - OSV-Scanner: 公式の reusable workflow（全体の走査）を SHA で pin し、main への push・週 1 の schedule・その workflow ファイル自身を paths に持つ pull_request で走らせる。fork の PR では走らせない。`fail-on-vuln: false` を明示し、走査そのものの失敗だけを job の失敗にする。必須の checks にはしない。初回の結果を見て既知の扱いを決める
-- Renovate: Mend の GitHub App を持ち主が gleanery 1 つに限って入れる。`renovate.json` で `enabledManagers: ["bun"]`、`minimumReleaseAge` 7 日（Dependabot の cooldown と揃える）、lockFileMaintenance を週 1（依存の更新とは別の PR になる）。github-actions は Dependabot のまま
+- Renovate: Mend の GitHub App を持ち主が gleanery 1 つに限って入れる。`renovate.json` で `enabledManagers: ["bun"]`、`minimumReleaseAge` 7 日（Dependabot の cooldown と揃える）、依存の更新は月 1 で 1 本の PR にまとめ、lockFileMaintenance も月 1（別の PR）。github-actions は Dependabot のまま
+- Renovate の PR は直接 merge しない（依存は配布物の入力なので、バージョンを上げない PR は CI の version gate で落ちる）。release の PR に取り込んでバージョンを上げて出し、元の PR は取り込んだ後に閉じる。脆弱性の修正は月 1 を待たずに出す
+- release の gate: tag のバージョンが npm に既にあれば prepare で止める（前回より上がったかを見ていなかった。同じバージョンは npm が stage を拒むが、それが持ち主の承認の後になる）
 - Bun の年齢制限: `server/bunfig.toml` に Bun の minimumReleaseAge（7 日）を置く。Renovate の設定だけでは、lockFileMaintenance が解決し直す推移的な依存まで 7 日待つ保証にならないため。Bun 1.4.0 で効くことと frozen install が通ることを実走で確かめる（効かなければ計画を直す）
 
 ### PR 2: SBOM と attestation
@@ -80,3 +82,5 @@ CI と配布の経路への攻撃に強くし、推移的な依存の脆弱性�
 - harden-runner は job のメタデータを第三者（StepSecurity）へ送る
 - 検査と更新の PR が増え、一人開発では捌く手間が増える
 - OSV の初回の走査で既知の脆弱性が多く出ると、扱いの判断が要る
+
+2026-09-24: Renovate の PR を release の PR に取り込む運用（月 1、1 本）と、release の gate の既出のバージョンの検査を足した。理由: 依存の更新は配布物の入力で、Renovate の PR は version gate で必ず落ちる（Codex と議論、session 01a0d195）。持ち主の Go を得た。

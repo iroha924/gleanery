@@ -37,6 +37,14 @@ const refs = run("git", ["ls-remote", "origin", `refs/tags/${tag}`, `refs/tags/$
 const exact = (name) => refs.find(([, ref]) => ref === name)?.[0];
 const tagCommit = exact(`refs/tags/${tag}^{}`) ?? exact(`refs/tags/${tag}`) ?? null;
 
+// npm に同じバージョンがあるか。無ければ npm view は E404 で落ちる（それ以外の失敗は投げて止める）
+let published = false;
+try {
+  published = run("npm", ["view", `gleanery@${tag.replace(/^v/, "")}`, "version"]) !== "";
+} catch (e) {
+  if (!String(e instanceof Error && "stderr" in e ? e.stderr : e).includes("E404")) throw e;
+}
+
 const { problems, pull } = gateProblems({
   tag,
   commit,
@@ -50,6 +58,7 @@ const { problems, pull } = gateProblems({
   },
   mainIsAncestor,
   tagCommit,
+  published,
   pulls: api(`repos/${repo}/commits/${commit}/pulls`),
   runs: api(`repos/${repo}/actions/runs?head_sha=${commit}&event=pull_request&per_page=100`).workflow_runs,
 });

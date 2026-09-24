@@ -5,6 +5,7 @@ export function gateProblems(input: {
   versions: Record<string, string | undefined>;
   mainIsAncestor: boolean;
   tagCommit: string | null;
+  published: boolean;
   pulls: unknown[];
   runs: unknown[];
 }): { problems: string[]; pull: number | null };
