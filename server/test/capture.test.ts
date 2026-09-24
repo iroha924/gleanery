@@ -599,7 +599,10 @@ test("the notice for rejected records counts them in words that match doctor, an
   fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
   const one = captureNotice(capture) ?? "";
   assert.match(one, /the database rejected 1 record\n/);
-  assert.ok(one.includes(spoolDir()), "shows the queue folder to move them back to");
+  assert.ok(
+    one.includes(`╰─ Fix them and move them back to ${spoolDir()} to resend`),
+    "the closing line names the queue folder",
+  );
   fs.writeFileSync(path.join(rejectedDir(), "2.json"), "{}");
   assert.match(captureNotice(capture) ?? "", /the database rejected 2 records\n/);
   reset();
