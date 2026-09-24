@@ -73,8 +73,10 @@ test("lets through only the exact shapes Git writes for merges and reverts", () 
 test("--pre-push checks the stored messages of the pushed refs, not HEAD and not commits already on a remote", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-pre-push-"));
   try {
-    // Without this, git inside a hook would act on the repository running the tests.
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+    // Without this, git inside a hook would act on the repository running the tests, and children would inherit the owner's DB.
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_") && k !== "GLEANERY_DB"),
+    );
     const git = (...a: string[]) =>
       execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...a], {
         cwd: dir,
