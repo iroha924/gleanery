@@ -8,7 +8,8 @@
   "packageRules": [
     {
       "matchManagers": ["bun"],
-      "groupName": "bun の依存"
+      "groupName": "bun の依存",
+      "separateMajorMinor": false
     }
   ],
   "lockFileMaintenance": {
