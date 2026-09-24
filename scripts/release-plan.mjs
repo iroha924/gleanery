@@ -60,13 +60,17 @@ const actions =
     : [
         "pass PR CI (check, pr-body) and the Codex review, and merge main into the branch",
         `git tag v${packageVersion} <PR head> && git push origin v${packageVersion}`,
-        "check prepare in release.yml and approve the npm-release environment",
-        "compare the SHA-512 of npm stage download <stage-id> with the job summary, check provenance, and approve with 2FA",
+        "check prepare in release.yml, then hand the run URL to the owner",
+        "owner: approve the npm-release environment",
+        "compare the SHA-512 of npx -y npm@11.19.0 stage download <stage-id> with the job summary, then hand the stage ID to the owner",
+        "owner: approve the stage on npmjs.com (Staged Packages, check provenance, 2FA)",
         "gh pr merge <PR> --merge --match-head-commit <PR head>",
         "git diff --exit-code <PR head> <merge commit>",
         `compare the SHA-512 of npm pack gleanery@${packageVersion} --silent`,
-        `npm dist-tag add gleanery@${packageVersion} latest`,
+        `owner: in your own terminal, npm dist-tag add gleanery@${packageVersion} latest (OTP fails in Claude's non-TTY shell)`,
+        "npm view gleanery dist-tags --json",
         "bun run release:status",
+        `gh release create v${packageVersion} --verify-tag --title v${packageVersion} --notes-file <Release notes from the PR>`,
         "update the Claude and Codex plugin caches and restart sessions",
       ];
 const plan = {

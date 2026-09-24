@@ -2,7 +2,7 @@
 #
 # Runs when a `v<version>` tag is pushed to the PR head with the owner's account (before the merge). prepare checks the tag, PR, and CI and builds the tarball,
 # and after the `npm-release` environment is approved, stage passes the same tarball to `npm stage publish --tag next`.
-# Claude runs the local steps for approval, merge, and promotion to latest, and the owner approves and authenticates (.agents/skills/plugin-release/SKILL.md).
+# The owner approves the environment and the stage on npmjs.com and runs `npm dist-tag add` for latest; Claude runs the other local steps (.agents/skills/plugin-release/SKILL.md).
 #
 # No secrets. It reaches npm through trusted publishing (OIDC), with provenance.
 name: release

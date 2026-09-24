@@ -215,19 +215,46 @@ for (const step of releaseOrder) {
   }
 }
 // The owner approves and authenticates these; Claude's shell has no TTY, so npm masks the OTP URL and fails.
-for (const required of [
+// Each owner step is tied to the numbered step that holds its command, so a summary elsewhere cannot stand in for it.
+const numberedSteps = releaseSteps.split(/^(?=\d+\. )/m).filter((step) => /^\d+\. /.test(step));
+for (const [anchor, owner] of [
   // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
-  "持ち主がenvironment `npm-release`を承認する",
+  ["npm stage publish <tgz>", "持ち主がenvironment `npm-release`を承認する"],
   // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
-  "持ち主がnpmjs.comのStaged Packagesで承認する",
-  "`! npm dist-tag add gleanery@<version> latest`",
+  ["stage download <stage-id>", "持ち主がnpmjs.comのStaged Packagesで承認する"],
+  [
+    "npm dist-tag add gleanery@<version> latest",
+    // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
+    "持ち主が自分の端末で`npm dist-tag add gleanery@<version> latest`を打つ",
+  ],
 ]) {
-  if (!releaseSteps.includes(required)) {
-    fail(`.agents/skills/plugin-release/SKILL.md: release steps must leave \`${required}\` to the owner`);
+  const step = numberedSteps.find((text) => text.includes(anchor));
+  if (!step?.includes(owner)) {
+    fail(`.agents/skills/plugin-release/SKILL.md: the step with \`${anchor}\` must say \`${owner}\``);
   }
+}
+// english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
+for (const [line] of releaseSteps.matchAll(/Claude[^。]*(承認|dist-tag add)[^。]*/g)) {
+  fail(`.agents/skills/plugin-release/SKILL.md: Claude must not approve or promote: ${line}`);
 }
 if (releaseSteps.includes("npm stage approve")) {
   fail(".agents/skills/plugin-release/SKILL.md: approve stages on npmjs.com, not with `npm stage approve`");
+}
+if (/`!\s*npm /.test(releaseSteps)) {
+  fail(
+    ".agents/skills/plugin-release/SKILL.md: `!` is Claude Code input syntax; in a shell it inverts the exit code",
+  );
+}
+const releasePlanScript = read("scripts/release-plan.mjs");
+for (const owner of [
+  "owner: approve the npm-release environment",
+  "owner: approve the stage on npmjs.com",
+  "owner: in your own terminal, npm dist-tag add",
+]) {
+  if (!releasePlanScript.includes(owner)) fail(`scripts/release-plan.mjs: actions must include \`${owner}\``);
+}
+if (!read("scripts/release-status.mjs").includes('"npm@11.19.0", "stage"')) {
+  fail("scripts/release-status.mjs: list stages with npm@11.19.0, the version the Skill uses for npm stage");
 }
 for (const [publish] of releaseSteps.matchAll(/npm publish[^\n`]*/g)) {
   if (!publish.includes("--tag next")) {

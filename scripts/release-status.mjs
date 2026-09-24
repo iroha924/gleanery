@@ -52,8 +52,8 @@ try {
 } catch {
   tags = null;
 }
-// Listing stages needs an npm login. If it cannot be read, report unknown
-const stagedText = attempt("npm", ["stage", "list", "gleanery", "--json"]);
+// Listing stages needs an npm login and npm 11.19.0 (the release job's; older npm has no stage). If it cannot be read, report unknown
+const stagedText = attempt("npx", ["-y", "npm@11.19.0", "stage", "list", "gleanery", "--json"]);
 let staged = null;
 try {
   staged = stagedText ? JSON.parse(stagedText) : null;

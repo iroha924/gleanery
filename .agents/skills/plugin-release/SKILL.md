@@ -67,7 +67,7 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
 |---|---|---|
 | 6 | GitHub Actionsのrunの画面でenvironment `npm-release`を承認する | reviewerは持ち主だけ |
 | 7 | npmjs.comのStaged Packagesでprovenanceを見て、2FAで承認する（却下も同じ画面） | 2FAは持ち主の端末にある |
-| 10 | 自分の端末で`npm dist-tag add`を打つ（Claude Codeなら先頭に`!`を付けて打つ） | OTPを求めるnpmのコマンドは、TTYの無いClaudeのshellでは認証のURLが`***`に伏せられ、EOTPで落ちる |
+| 10 | 自分の端末で`npm dist-tag add`を打つ（Claude Codeの入力欄から打つときだけ先頭に`!`を付ける。shellで`!`を付けると終了コードが反転する） | OTPを求めるnpmのコマンドは、TTYの無いClaudeのshellでは認証のURLが`***`に伏せられ、EOTPで落ちる |
 
 `npm stage`は手元のnpm（miseのNode 24.15.0に同梱の11.12.1）に無いので、release jobのNode 24.21.0と同じ版を
 `npx -y npm@11.19.0`で使う。ほかのnpmのコマンドは手元の`npm`で打つ。`npm stage download`が認証を求めたら、
@@ -120,7 +120,7 @@ release commandが同じものを読む。
 9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、リポジトリの
    `node <repository>/scripts/check-tarball.mjs <tgz>`が通ることを確かめる。SBOMのattestationも
    `gh attestation verify <tgz> --repo iroha924/gleanery --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/gleanery/.github/workflows/release.yml`で確かめる
-10. 持ち主が自分の端末で`! npm dist-tag add gleanery@<version> latest`を打って昇格する（OIDCはdist-tagに使えない）。
+10. 持ち主が自分の端末で`npm dist-tag add gleanery@<version> latest`を打つ。これで昇格する（OIDCはdist-tagに使えない）。
     Claudeが`npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
 11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
     一覧し、残った工程が無いことを確かめる。観測に失敗した項目は`none`や`not found`ではなく`unknown`と出る
@@ -132,7 +132,7 @@ release commandが同じものを読む。
 **同じ`v<version>`のtagを打ち直さない。**同じversionは二度stageもpublishもできず、provenanceの参照先も追えなくなる。
 
 - stageの前後で失敗した: 持ち主がStaged Packagesでstageを却下し、直してversionを上げ、新しいtagで出し直す
-- 承認した後にmergeできなかった: `latest`へ上げず、持ち主が自分の端末で`! npm dist-tag add gleanery@<直前の正常版> next`を打って`next`を戻し、
+- 承認した後にmergeできなかった: `latest`へ上げず、持ち主が自分の端末で`npm dist-tag add gleanery@<直前の正常版> next`を打って`next`を戻し、
   新しいversionで出し直す
 - `stage`の成功後にrunを再実行しない（同じversionのstageが衝突する）
 
