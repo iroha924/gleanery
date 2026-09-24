@@ -1,6 +1,14 @@
+commit-msg:
+  jobs:
+    - name: commit-message
+      run: node scripts/check-commit-msg.mjs {1}
+
 pre-commit:
   parallel: true
   jobs:
+    - name: actionlint
+      glob: ".github/workflows/*.yml"
+      run: mise exec -- actionlint {staged_files}
     - name: biome
       glob: "*.{ts,mts,tsx,js,mjs,cjs,json,jsonc}"
       run: server/node_modules/.bin/biome check --write --no-errors-on-unmatched {staged_files}
