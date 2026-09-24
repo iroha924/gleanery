@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor != 'dependabot[bot]'
     steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
       - name: 検証の節に Codex のレビューの結果があるか
         env:
           BODY: ${{ github.event.pull_request.body }}
