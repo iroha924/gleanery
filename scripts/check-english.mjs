@@ -17,6 +17,8 @@ const filesUnder = (dir, re) =>
     .readdirSync(path.join(root, dir), { recursive: true })
     .map((f) => `${dir}/${f.split(path.sep).join("/")}`)
     .filter((f) => re.test(f))
+    // Symlinked directories (.claude/skills -> .agents/skills) would list the same file twice; keep only the real path.
+    .filter((f) => fs.realpathSync(path.join(root, f)) === path.join(fs.realpathSync(root), f))
     .sort();
 
 /** Strings, templates, and comments must be English. Grows with each translation stage. */
@@ -59,6 +61,12 @@ const TEXT = [
   "server/bunfig.toml",
   "db/schema.sql",
   ...filesUnder("db/migrations", /\.sql$/),
+  "CLAUDE.md",
+  "AGENTS.md",
+  ...filesUnder(".claude/rules", /\.md$/),
+  ...filesUnder(".claude/agents", /\.md$/),
+  ...filesUnder(".claude/skills", /\.md$/),
+  ...filesUnder(".agents/skills", /\.(md|ya?ml)$/),
 ];
 
 /** A comment line (`#`, `--`, `//`, or `<!-- -->`) that allows Japanese on the next line. The reason is required. */

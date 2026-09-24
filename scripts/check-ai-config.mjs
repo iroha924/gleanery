@@ -70,14 +70,12 @@ const agents = read("AGENTS.md");
 const lines = agents.trimEnd().split("\n").length;
 const bytes = Buffer.byteLength(agents);
 if (lines >= 200) fail(`AGENTS.md: ${lines} lines. Keep it under 200`);
-// english-exempt: matches the Japanese text in AGENTS.md until #141 translates it
-if (!agents.includes("`plugin/skills/review/SKILL.md`を読む")) {
+if (!agents.includes("Read `plugin/skills/review/SKILL.md` from the checkout")) {
   fail(
     "AGENTS.md: missing the rule that Codex reads the review Skill from the checkout as the source of truth",
   );
 }
-// english-exempt: matches the Japanese text in AGENTS.md until #141 translates it
-if (!agents.includes("`Skill roots`にある`rN`の値と残りをそのまま結合する")) {
+if (!agents.includes("join the value of `rN` in `Skill roots` with the rest exactly as written")) {
   fail("AGENTS.md: missing the rule that Codex resolves shortened Skill paths literally");
 }
 
@@ -131,14 +129,10 @@ for (const id of codexSide)
     fail(`CLAUDE.md, .claude/rules: invariant ${id} exists only on the AGENTS.md side`);
 const claudeVerification = read(".claude/rules/verification.md");
 for (const required of [
-  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
-  "bun run release:plan -- --base <前回のrelease commit>",
-  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
-  "`plugin`: 配布物に入る変更",
-  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
-  "`.github/workflows/release.yml` が stage した tarball だけ",
-  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
-  "release の各段の前に `plugin-release` Skill を開き直し",
+  "bun run release:plan -- --base <previous release commit>",
+  "`plugin`: a change that goes into the package",
+  "the tarball `.github/workflows/release.yml` stages",
+  "Before each release step, reopen the `plugin-release` Skill",
 ]) {
   if (!claudeVerification.includes(required)) {
     fail(`.claude/rules/verification.md: Claude's release rules are missing \`${required}\``);
@@ -188,10 +182,8 @@ for (const name of developmentSkills) {
 }
 
 const releaseGuide = read(".agents/skills/plugin-release/SKILL.md");
-// english-exempt: matches the Japanese heading in .agents/skills/plugin-release/SKILL.md until #141 translates it
-const releaseStart = releaseGuide.indexOf("## 届けるまで");
-// english-exempt: matches the Japanese heading in .agents/skills/plugin-release/SKILL.md until #141 translates it
-const releaseEnd = releaseGuide.indexOf("## 届いたことを確かめる");
+const releaseStart = releaseGuide.indexOf("## Shipping");
+const releaseEnd = releaseGuide.indexOf("## Confirming it arrived");
 const releaseSteps =
   releaseStart === -1 || releaseEnd === -1 ? "" : releaseGuide.slice(releaseStart, releaseEnd);
 const releaseOrder = [
@@ -218,14 +210,11 @@ for (const step of releaseOrder) {
 // Each owner step is tied to the numbered step that holds its command, so a summary elsewhere cannot stand in for it.
 const numberedSteps = releaseSteps.split(/^(?=\d+\. )/m).filter((step) => /^\d+\. /.test(step));
 for (const [anchor, owner] of [
-  // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
-  ["npm stage publish <tgz>", "持ち主がenvironment `npm-release`を承認する"],
-  // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
-  ["stage download <stage-id>", "持ち主がnpmjs.comのStaged Packagesで承認する"],
+  ["npm stage publish <tgz>", "The owner approves the `npm-release` environment"],
+  ["stage download <stage-id>", "The owner approves it in npmjs.com's Staged Packages"],
   [
     "npm dist-tag add gleanery@<version> latest",
-    // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
-    "持ち主が自分の端末で`npm dist-tag add gleanery@<version> latest`を打つ",
+    "The owner runs `npm dist-tag add gleanery@<version> latest` in their own terminal",
   ],
 ]) {
   const step = numberedSteps.find((text) => text.includes(anchor));
@@ -233,9 +222,12 @@ for (const [anchor, owner] of [
     fail(`.agents/skills/plugin-release/SKILL.md: the step with \`${anchor}\` must say \`${owner}\``);
   }
 }
-// english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
-for (const [line] of releaseSteps.matchAll(/Claude[^。]*(承認|dist-tag add)[^。]*/g)) {
-  fail(`.agents/skills/plugin-release/SKILL.md: Claude must not approve or promote: ${line}`);
+// Sentences end at a period before whitespace, not at the dots in `release.yml` or `npm@11.19.0`. Each table cell counts as one.
+const releaseSentences = releaseSteps.split(/\.(?=\s)|\n\s*\n|\n(?=\s*(?:\d+\.|-) )|\|/);
+for (const sentence of releaseSentences) {
+  if (/\bClaude\b/i.test(sentence) && /\bapprov|dist-tag add/i.test(sentence)) {
+    fail(`.agents/skills/plugin-release/SKILL.md: Claude must not approve or promote: ${sentence.trim()}`);
+  }
 }
 if (releaseSteps.includes("npm stage approve")) {
   fail(".agents/skills/plugin-release/SKILL.md: approve stages on npmjs.com, not with `npm stage approve`");

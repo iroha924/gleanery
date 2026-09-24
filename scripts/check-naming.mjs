@@ -17,12 +17,6 @@ const ALLOWED = [
     pattern: /actually hit on Vercel/,
   },
   {
-    // A record of why the rule's basis changed. Removing it loses why the rule exists.
-    file: ".agents/skills/knowledge-schema/SKILL.md",
-    // english-exempt: matches the Japanese text in .agents/skills/knowledge-schema/SKILL.md until #141 translates it
-    pattern: /Neonの80ms前後の往復/,
-  },
-  {
     // A real case that a bulk replace missed. The old name itself is the subject, so removing the spelling would break the example.
     file: ".claude/agents/review-shipping.md",
     pattern: /μίτος|mcp__plugin_mitos_mitos__/,

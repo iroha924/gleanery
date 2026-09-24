@@ -3,13 +3,13 @@ paths:
   - "server/evals/**"
 ---
 
-# agentic の eval
+# Agentic evals
 
-`bun run evals:agentic` は出荷の MCP を `claude -p` に渡し、持ち主の DB とサブスクで測る。`bun run verify` にも CI にも入れない。
+`bun run evals:agentic` passes the shipped MCP to `claude -p` and measures against the owner's DB and subscription. It is in neither `bun run verify` nor CI.
 
-- `claude -p` に `--no-session-persistence` を付け、`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` を渡す（付けないと `~/.claude/projects/` に問いごとの session と `memory/` が溜まる）
-- 作業ディレクトリは問いごとの一時ディレクトリにし、`--setting-sources project` と `--strict-mcp-config` を付ける（持ち主の plugin と hook が eval の会話を DB へ書く）
-- holdout の問いはゲートの判定でだけ流す
-- 同じ構成を 3 回流した平均どうしで比べる
-- 比べる run のモデルの ID・Claude Code のバージョン・effort を揃える（`--model sonnet` のような別名と既定の effort はバージョンで変わる）。run が記録し、judge が揃わないと警告する
-- 測る DB は `GLEANERY_DB` で指す（MCP の設定へ明示して渡す）
+- Give `claude -p` `--no-session-persistence` and pass `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (without them, a session and `memory/` per question pile up in `~/.claude/projects/`)
+- Use a temporary working directory per question, and pass `--setting-sources project` and `--strict-mcp-config` (otherwise the owner's plugins and hooks write the eval's conversation to the DB)
+- Run holdout questions only for the gate's verdict
+- Compare averages of 3 runs of the same setup
+- Match the model ID, Claude Code version, and effort across the runs you compare (aliases like `--model sonnet` and the default effort change between versions). The run records them, and the judge warns when they do not match
+- Point `GLEANERY_DB` at the DB being measured (pass it explicitly in the MCP config)

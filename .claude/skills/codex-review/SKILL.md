@@ -1,42 +1,42 @@
 ---
 name: codex-review
-description: gleanery の差分のレビューや調査を Codex（codex exec）に頼む。PR を merge する前、一次情報で決まらない判断を別のモデルと突き合わせるとき、入った変更を振り返るときに使う。Codex の指摘を受け取って直すところまでを扱う。Claude Code 側の reviewer（review-shipping・review-ui）を立てるときには使わない。
+description: Asks Codex (codex exec) to review or investigate a gleanery diff. Use before merging a PR, when checking a decision that primary sources cannot settle against another model, and when looking back at a change that landed. Covers receiving Codex's findings and fixing them. Not for launching Claude Code's reviewers (review-shipping, review-ui).
 ---
 
-# Codex にレビューと調査を頼む
+# Ask Codex for reviews and investigations
 
 ## Triggers
 
-- PR を merge する前（差分の独立レビュー）
-- 一次情報で決まらない判断や、規範どうしが衝突したとき
-- main へ入った変更を振り返るとき
+- Before merging a PR (an independent review of the diff)
+- When primary sources cannot settle a decision, or rules conflict
+- When looking back at a change that landed on main
 
 ## Does not trigger
 
-- Claude Code 側の reviewer（`review-shipping`・`review-ui`）を立てる
-- Codex に実装を任せる
+- Launching Claude Code's reviewers (`review-shipping`, `review-ui`)
+- Handing implementation to Codex
 
-## 頼み方
+## How to ask
 
 ```bash
-codex exec -s read-only --ephemeral - < <依頼文のファイル> > <出力のファイル> 2>&1
+codex exec -s read-only --ephemeral - < <request file> > <output file> 2>&1
 ```
 
-- Bash の `run_in_background` で投げ、完了の通知を待つ。1 本で 10〜15 分かかる。途中で止めない
-- モデルと effort は渡さない（持ち主の `~/.codex/config.toml` に従う）
-- 依頼文は scratchpad に書き、次を入れる
-  - 範囲: `git diff <base>..<head>`、または未 commit の `git diff` と基準の commit
-  - 変更の要旨と、持ち主が決めたこと（指摘の対象にしない）
-  - 受け入れ条件
-  - 返す形: 重い順、`file:line`、再現できる入力、確かさ（再現済み / 読んで確定 / 推測）。欠陥が無ければ無いと書く
-  - 読むだけでファイルを書き換えないこと
-- Claude 側の reviewer の結論と自分の見立てを渡さない（独立した判断でなくなる）
+- Launch it with Bash's `run_in_background` and wait for the completion notice. One run takes 10 to 15 minutes. Do not stop it midway
+- Do not pass a model or effort (the owner's `~/.codex/config.toml` decides)
+- Write the request in the scratchpad, and include:
+  - Scope: `git diff <base>..<head>`, or the uncommitted `git diff` and its base commit
+  - What the change does, and what the owner decided (not open to findings)
+  - Acceptance criteria
+  - The shape of the answer: heaviest first, `file:line`, an input that reproduces it, certainty (reproduced / read and confirmed / inference). If there are no defects, say so
+  - Read only; do not modify files
+- Do not pass the conclusions of Claude's reviewers or your own view (the judgment would stop being independent)
 
-## 受け取り方
+## How to receive it
 
-- 最終の答えは出力の `tokens used` の後にもう一度出る。そこを読む
-- 指摘は主張として扱う。コードか再現で裏を取り、直す前のコードで落ちる test を書いてから直す
-- 直したら、直した差分だけを範囲にして再レビューに出す
-- PR 本文の「検証」に、Codex のレビューの結果（指摘の数と扱い）を書く。無いと CI（`pr-body`）が落ちる
-- 採らなかった指摘は、理由を 1 行ずつ PR 本文の「見送った指摘」に書く
-- 指摘が周辺の入力だけになり、受け入れ条件の違反が無くなったら止める
+- The final answer appears again after `tokens used` in the output. Read it there
+- Treat findings as claims. Confirm them in the code or by reproducing them, and write a test that fails on the unfixed code before fixing
+- After fixing, send only the fix's diff out for re-review
+- Write Codex's review result (the number of findings and how each was handled) in the PR body's "Verification" section. Without it, CI (`pr-body`) fails
+- For findings you did not take, write the reason, one line each, in the PR body's "Declined findings" section
+- Stop when findings narrow to edge inputs and nothing violates the acceptance criteria
