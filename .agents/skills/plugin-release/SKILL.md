@@ -60,6 +60,10 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
 
 最初に`bun run release:plan -- --base <前回のrelease commit>`で変更を分類する。
 
+Renovate の依存更新の PR（月 1、1 本）と lockfile の見直しの PR は直接 merge しない。依存は配布物の入力なので、バージョンを
+上げない PR は CI の version gate で落ちる。release の PR に取り込んでバージョンを上げて出し、元の PR は取り込んだ後に閉じる
+（先に閉じると Renovate がその更新を無視することがある）。脆弱性の修正は月 1 を待たずに出す。
+
 | 種別 | 変更 | 動かすversion |
 |---|---|---|
 | `none` | 配らない開発文書、repository開発用Skill、testだけ（ルートの`README.md`は npm に入るので`plugin`） | 無し |

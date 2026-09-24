@@ -1,0 +1,24 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [":semanticCommits"],
+  "enabledManagers": ["bun"],
+  "timezone": "Asia/Tokyo",
+  "schedule": ["before 6am on the first day of the month"],
+  "minimumReleaseAge": "7 days",
+  "separateMajorMinor": false,
+  "constraints": {
+    "bun": "1.4.0"
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["bun"],
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "digest", "bump"],
+      "groupName": "bun の依存"
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
+  },
+  "prConcurrentLimit": 2
+}

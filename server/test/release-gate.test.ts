@@ -27,6 +27,7 @@ const ok = {
   versions,
   mainIsAncestor: true,
   tagCommit: COMMIT,
+  published: false,
   pulls: [pull],
   runs: [run("check"), run("pr-body")],
 };
@@ -120,4 +121,8 @@ test("別の PR の run は数えない", () => {
 test("remote の tag が今もその commit を指していなければ拒む", () => {
   assert.match(gateProblems({ ...ok, tagCommit: "b".repeat(40) }).problems.join("\n"), /tag/);
   assert.match(gateProblems({ ...ok, tagCommit: null }).problems.join("\n"), /tag/);
+});
+
+test("tag のバージョンが npm に既にあれば拒む（持ち主の承認の後で stage が落ちるのを先に止める）", () => {
+  assert.match(gateProblems({ ...ok, published: true }).problems.join("\n"), /npm に既にある/);
 });

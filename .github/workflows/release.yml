@@ -40,12 +40,15 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # 配る物を作る job なので、別の run が書いたキャッシュを読まない（cache poisoning）
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.0
+          no-cache: true
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.21.0"
+          package-manager-cache: false
 
       # tag 名と全 version の一致、main へ向かう open な PR の head であること、その PR の check と pr-body の成功
       - name: stage してよい tag か
@@ -124,6 +127,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24.21.0"
+          package-manager-cache: false
           registry-url: "https://registry.npmjs.org"
 
       - name: npm が stage を持つ版か
