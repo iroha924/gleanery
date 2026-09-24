@@ -1,9 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "includeEntryExports": true,
   "workspaces": {
     ".": {
       "entry": ["scripts/bundle-cli.ts"],
-      "project": ["scripts/**/*.{mjs,ts}"],
+      "project": ["scripts/**/*.{js,mjs,cjs,ts}"],
       "ignoreDependencies": ["kysely", "kysely-codegen", "js-tokens"],
       "ignoreBinaries": ["lefthook"]
     },
