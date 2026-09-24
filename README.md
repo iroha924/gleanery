@@ -15,7 +15,7 @@ You or your agent can then look up what was decided, what was rejected, and why,
 The database is a single SQLite file on your machine.
 
 > [!NOTE]
-> The `gleanery` CLI, the terminal dashboard, and the plugin skills currently speak Japanese. Search works with both Japanese and English text.
+> The `gleanery` CLI and the terminal dashboard are in English. The plugin skills and MCP responses are still in Japanese. Search works with both Japanese and English text.
 
 ## Features
 

@@ -51,7 +51,7 @@ Claude Code と Codex では会話が自動で残っている（持ち主の発�
 | decision | frame-shape | 開いた枠にする（全周の枠は狭い画面で崩れる） |
 | question | ansi-in-hooks | フックの表示で色を描けるか（blocking ではない） |
 
-╰─ 入れた: 書き直した要素 2 件
+╰─ stored: 2 items rewritten
 ```
 
 ## 何を残すか
