@@ -109,13 +109,16 @@ function mergeInProgress() {
   }
 }
 
+// Read once: one `git config` per commit made a 300-commit push take about 10 seconds.
+const comment = commentChar();
+const cleanup = cleanupMode();
 let failed = 0;
 for (const m of messages) {
   const problems = commitMessageProblems(m.body, {
     merge: m.merge,
     hook: m.hook === true,
-    commentChar: commentChar(),
-    cleanup: cleanupMode(),
+    commentChar: comment,
+    cleanup,
   });
   if (!problems.length) continue;
   failed++;
