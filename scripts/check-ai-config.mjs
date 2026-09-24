@@ -137,6 +137,8 @@ for (const required of [
   "`plugin`: 配布物に入る変更",
   // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
   "`.github/workflows/release.yml` が stage した tarball だけ",
+  // english-exempt: matches the Japanese text in .claude/rules/verification.md until #141 translates it
+  "release の各段の前に `plugin-release` Skill を開き直し",
 ]) {
   if (!claudeVerification.includes(required)) {
     fail(`.claude/rules/verification.md: Claude's release rules are missing \`${required}\``);
@@ -195,7 +197,7 @@ const releaseSteps =
 const releaseOrder = [
   "git tag v<version> <head>",
   "npm stage publish <tgz> --tag next --provenance",
-  "npm stage download <stage-id>",
+  "npx -y npm@11.19.0 stage download <stage-id>",
   "--match-head-commit <head>",
   "git diff --exit-code <head> <merge commit>",
   "npm pack gleanery@<version> --silent",
@@ -211,6 +213,21 @@ for (const step of releaseOrder) {
   } else {
     releaseCursor = position;
   }
+}
+// The owner approves and authenticates these; Claude's shell has no TTY, so npm masks the OTP URL and fails.
+for (const required of [
+  // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
+  "持ち主がenvironment `npm-release`を承認する",
+  // english-exempt: matches the Japanese text in .agents/skills/plugin-release/SKILL.md until #141 translates it
+  "持ち主がnpmjs.comのStaged Packagesで承認する",
+  "`! npm dist-tag add gleanery@<version> latest`",
+]) {
+  if (!releaseSteps.includes(required)) {
+    fail(`.agents/skills/plugin-release/SKILL.md: release steps must leave \`${required}\` to the owner`);
+  }
+}
+if (releaseSteps.includes("npm stage approve")) {
+  fail(".agents/skills/plugin-release/SKILL.md: approve stages on npmjs.com, not with `npm stage approve`");
 }
 for (const [publish] of releaseSteps.matchAll(/npm publish[^\n`]*/g)) {
   if (!publish.includes("--tag next")) {

@@ -6,6 +6,7 @@
   - `none`: release しない
   - `plugin`: 配布物に入る変更（MCP・CLI・端末の画面・hook・plugin Skill/Agent・共有 module）。npm と 3 つの plugin manifest を同じバージョンへ上げる
 - npm へ出すのは、PR の head に打った `v<version>` の tag から `.github/workflows/release.yml` が stage した tarball だけ。手元から `npm publish` しない。stage の承認・merge・latest への昇格は `plugin-release` Skill の手順で手で打つ
+- release の各段の前に `plugin-release` Skill を開き直し、書かれたコマンドをそのまま打つ。environment `npm-release` の承認、npm の Staged Packages の承認、`npm dist-tag add` は持ち主がする。Claude は代わりに押さない・打たない <!-- invariant: release-owner-steps -->
 
 ## test
 

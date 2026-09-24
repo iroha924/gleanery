@@ -60,9 +60,18 @@ MITは著作権表示とライセンス文、Apache-2.0は4条でLicenseの写�
 
 最初に`bun run release:plan -- --base <前回のrelease commit>`で変更を分類する。
 
-**手順のコマンドはClaudeが打つ。**持ち主に頼むのは、environment `npm-release`の承認と、npmの2FAやブラウザでの認証
-（コマンドが出す認証のURLを開く）だけ。「手元で」はCIではなくこのマシンで、という意味で、持ち主が打つという意味ではない。
-手元のnpmに`stage`が無い版なら、CIと同じ版で`npx -y npm@11.19.0 stage …`と打つ（release jobのNode 24.21.0が同梱する版）。
+**持ち主がするのは次の3つだけで、Claudeは代わりに押さない・打たない。**それ以外のコマンドはClaudeが下の手順の文面のまま打つ。
+各段の前に、持ち主へ何を承認するか（runのURL、stage ID、version）を渡して待つ。
+
+| 段 | 持ち主がすること | 理由 |
+|---|---|---|
+| 6 | GitHub Actionsのrunの画面でenvironment `npm-release`を承認する | reviewerは持ち主だけ |
+| 7 | npmjs.comのStaged Packagesでprovenanceを見て、2FAで承認する（却下も同じ画面） | 2FAは持ち主の端末にある |
+| 10 | 自分の端末で`npm dist-tag add`を打つ（Claude Codeなら先頭に`!`を付けて打つ） | OTPを求めるnpmのコマンドは、TTYの無いClaudeのshellでは認証のURLが`***`に伏せられ、EOTPで落ちる |
+
+`npm stage`は手元のnpm（miseのNode 24.15.0に同梱の11.12.1）に無いので、release jobのNode 24.21.0と同じ版を
+`npx -y npm@11.19.0`で使う。ほかのnpmのコマンドは手元の`npm`で打つ。`npm stage download`が認証を求めたら、
+Claudeが`npm login --auth-type=web`を打ち、出たURLを持ち主に開いてもらう（このコマンドはURLを伏せない）。
 
 Renovate の依存更新の PR（月 1、1 本）と lockfile の見直しの PR は直接 merge しない。依存は配布物の入力なので、バージョンを
 上げない PR は CI の version gate で落ちる。release の PR に取り込んでバージョンを上げて出し、元の PR は取り込んだ後に閉じる
@@ -100,19 +109,19 @@ release commandが同じものを読む。
    であること、そのheadで`check`と`pr-body`が成功していることを確かめ（`scripts/release-gate.mjs`）、`verify`の後に
    `npm pack`して`scripts/check-tarball.mjs`で検査する（一覧、リポジトリの外での起動、一時HOMEでの`init`）。
    SHA-512とintegrityがjob summaryに出る
-6. 持ち主がenvironment `npm-release`を承認すると、`stage`が同じ判定をもう一度通し、同じtarballのSHA-512を照合してから
+6. 持ち主がenvironment `npm-release`を承認する。すると`stage`が同じ判定をもう一度通し、同じtarballのSHA-512を照合してから
    `npm stage publish <tgz> --tag next --provenance`を打つ。stage IDがjob summaryに出る
-7. 手元で`npm stage download <stage-id>`を打ち、`shasum -a 512`の値が5のSHA-512と一致することを確かめる。
-   npmjs.comのStaged Packagesでprovenanceを確かめ、Claudeが`npm stage approve <stage-id>`を打ち、持ち主が2FAで認証する。
-   一致しない・provenanceが無いなら承認せず`npm stage reject <stage-id>`
+7. Claudeが`npx -y npm@11.19.0 stage download <stage-id>`を打ち、`shasum -a 512`の値が5のSHA-512と一致することを
+   確かめて、stage IDとSHA-512を持ち主に渡す。持ち主がnpmjs.comのStaged Packagesで承認する（provenanceを見て2FAで認証する）。
+   一致しない・provenanceが無いなら承認を頼まず、同じ画面で却下してもらう
 8. mergeの直前にPRのheadとbaseが動いていないことを見て、`gh pr merge <PR> --merge --match-head-commit <head>`で
    mergeする。`git diff --exit-code <head> <merge commit>`でtreeが変わっていないことを確かめる。差分があれば
    `latest`へ上げない
 9. cleanな一時directoryで`npm pack gleanery@<version> --silent`を実行し、SHA-512が5と一致すること、リポジトリの
    `node <repository>/scripts/check-tarball.mjs <tgz>`が通ることを確かめる。SBOMのattestationも
    `gh attestation verify <tgz> --repo iroha924/gleanery --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/gleanery/.github/workflows/release.yml`で確かめる
-10. `npm dist-tag add gleanery@<version> latest`で昇格する（OIDCはdist-tagに使えないので、Claudeが手元で打ち、持ち主がブラウザで認証する）。
-    `npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
+10. 持ち主が自分の端末で`! npm dist-tag add gleanery@<version> latest`を打って昇格する（OIDCはdist-tagに使えない）。
+    Claudeが`npm view gleanery dist-tags --json`で`next`と`latest`がどちらも`<version>`を指すことを見る
 11. `bun run release:status`でnpmのdist-tag、remote tag、global CLI、marketplace、Claude/Codex cacheを
     一覧し、残った工程が無いことを確かめる。観測に失敗した項目は`none`や`not found`ではなく`unknown`と出る
 12. PR の本文の「Release notes」の節をそのまま使い、
@@ -122,8 +131,8 @@ release commandが同じものを読む。
 
 **同じ`v<version>`のtagを打ち直さない。**同じversionは二度stageもpublishもできず、provenanceの参照先も追えなくなる。
 
-- stageの前後で失敗した: stageを`npm stage reject`し、直してversionを上げ、新しいtagで出し直す
-- 承認した後にmergeできなかった: `latest`へ上げず、`npm dist-tag add gleanery@<直前の正常版> next`で`next`を戻し、
+- stageの前後で失敗した: 持ち主がStaged Packagesでstageを却下し、直してversionを上げ、新しいtagで出し直す
+- 承認した後にmergeできなかった: `latest`へ上げず、持ち主が自分の端末で`! npm dist-tag add gleanery@<直前の正常版> next`を打って`next`を戻し、
   新しいversionで出し直す
 - `stage`の成功後にrunを再実行しない（同じversionのstageが衝突する）
 
