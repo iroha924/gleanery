@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "gleanery",
-  "version": "0.37.5",
+  "version": "0.37.6",
   "description": "Records conversations automatically and recalls past decisions, rejected options, constraints, and what was said.",
   "author": {
     "name": "iroha924",

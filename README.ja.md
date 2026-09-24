@@ -212,6 +212,8 @@ Dependabot は CI で使う GitHub Actions を更新する PR を作ります。
 
 issue は歓迎します。外部からの PR はレビューせずに閉じます。ここのレビューのツールはメンテナーの資格情報を持った環境で動くので、ほかの人が書いたコードを安全に checkout できないためです。
 
+動作を足す・変える変更には、同じ PR に自動テストを入れます。CI が PR ごとに `bun run verify` で流します。
+
 ## ライセンス
 
 [MIT](https://github.com/iroha924/gleanery/blob/main/LICENSE)。公開しているパッケージは依存をバンドルしています。それらのライセンスはパッケージの中の `THIRD_PARTY_NOTICES.md` にあります。
