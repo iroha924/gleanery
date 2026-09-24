@@ -72,7 +72,7 @@ CI と配布の経路への攻撃に強くし、推移的な依存の脆弱性�
 - zizmor: SARIF が code scanning に上がる。初回の指摘を直した後の結果
 - OSV: PR 1 の中で全体の走査が走り、SARIF が上がる。既知の脆弱性で job が落ちない
 - Renovate: 最初の PR が bun の依存だけを対象にし、7 日より新しい版を提案しない。lockFileMaintenance の PR で `bun install --frozen-lockfile` が通る
-- Bun の年齢制限: 7 日より新しい版を、直接・推移的な依存のどちらにも入れない
+- Bun の年齢制限: 依存を解決し直すとき（Renovate・手元の bun add / update）に、7 日より新しい版を直接・推移的な依存のどちらにも入れない。CI の frozen install は lockfile の版の年齢を見ないので、CI では確かめられない
 - SBOM: `THIRD_PARTY_NOTICES.md` の package と一致する。次の release で `gh attestation verify` が上の条件で通る
 - harden-runner: release の実走で通信先が観測できる。block の後、stage が通り、許可先の外が止まる
 
@@ -84,3 +84,4 @@ CI と配布の経路への攻撃に強くし、推移的な依存の脆弱性�
 - OSV の初回の走査で既知の脆弱性が多く出ると、扱いの判断が要る
 
 2026-09-24: Renovate の PR を release の PR に取り込む運用（月 1、1 本）と、release の gate の既出のバージョンの検査を足した。理由: 依存の更新は配布物の入力で、Renovate の PR は version gate で必ず落ちる（Codex と議論、session 01a0d195）。持ち主の Go を得た。
+2026-09-24: Renovate の bun を 1.4.0 に固定し、依存の更新のグループから lockfile の見直しを外した。Bun の年齢制限は解決し直すときだけ効き、CI の frozen install は見ないことを検証の文に書いた（review-shipping の指摘）。範囲は変わらないので Go は取り直さない。

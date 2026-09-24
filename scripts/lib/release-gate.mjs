@@ -22,7 +22,7 @@ export function gateProblems({
     for (const [key, version] of Object.entries(versions))
       if (version !== match[1]) problems.push(`tag ${tag} と ${key} の version ${version} が一致しない`);
 
-  // 同じバージョンは npm が stage を拒むが、それは持ち主の承認の後になる。前回の release より上がっているかをここで見る
+  // 同じバージョンは npm が stage を拒むが、それは持ち主の承認の後になる。npm に既にあるバージョンをここで止める
   if (published) problems.push(`tag ${tag} のバージョンは npm に既にある。バージョンを上げて tag を打ち直す`);
 
   // main が tag の commit の祖先なら、PR の CI が検査した仮の merge commit の tree は tag の commit の tree と同じになる
