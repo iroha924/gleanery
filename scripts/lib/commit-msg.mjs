@@ -16,7 +16,11 @@ const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** Problems in a message, empty when fine. `hook`: the hook input before Git's cleanup; `merge`: MERGE_HEAD or 2+ parents. */
 export function commitMessageProblems(text, opts = {}) {
   let kept = text.replace(/\r\n/g, "\n");
-  if (opts.hook) {
+  // Git's commit.cleanup: verbatim and whitespace keep comments and the scissors section, scissors keeps comments.
+  const cleanup = opts.cleanup ?? "default";
+  const cutScissors = opts.hook && cleanup !== "verbatim" && cleanup !== "whitespace";
+  const stripComments = cutScissors && cleanup !== "scissors";
+  if (cutScissors) {
     const c = escapeRegExp(opts.commentChar ?? "#");
     // `git commit -v` appends the diff below this line; Git drops it and everything after it.
     const cut = kept.search(new RegExp(`^${c} -+ >8 -+$`, "m"));
@@ -25,7 +29,7 @@ export function commitMessageProblems(text, opts = {}) {
   let lines = kept.replace(/\n+$/, "").split("\n");
   const blank = lines.indexOf("");
   const comment = opts.commentChar ?? "#";
-  if (opts.hook && blank > 0 && lines.slice(blank + 1).every((l) => l === "" || l.startsWith(comment)))
+  if (stripComments && blank > 0 && lines.slice(blank + 1).every((l) => l === "" || l.startsWith(comment)))
     lines = lines.slice(0, blank);
   const [subject = "", ...rest] = lines;
   const problems = [];

@@ -48,7 +48,7 @@ pre-commit:
       glob: "{.claude/rules/**,scripts/check-rule-scopes.mjs,server/**/*.ts,db/schema.sql,lefthook.yml,README.md,AGENTS.md,package.json}"
       run: bun run rule-scopes
     - name: pairs
-      glob: "{db/schema.sql,server/src/*.ts,plugin/skills/review/SKILL.md,plugin/skills/review/reviewers/*.md,scripts/check-pairs.mjs}"
+      glob: "{db/schema.sql,server/src/*.ts,plugin/skills/review/SKILL.md,plugin/skills/review/reviewers/*.md,scripts/check-pairs.mjs,mise.toml,package.json,server/package.json,.github/workflows/*.yml}"
       run: node scripts/check-pairs.mjs
 
 pre-push:

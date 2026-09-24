@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { commitMessageProblems } from "../../scripts/lib/commit-msg.mjs";
 
-type Opts = { merge?: boolean; hook?: boolean; commentChar?: string };
+type Opts = { merge?: boolean; hook?: boolean; commentChar?: string; cleanup?: string };
 const ok = (m: string, opts: Opts = {}) => assert.deepEqual(commitMessageProblems(m, opts), [], m);
 const bad = (m: string, re: RegExp, opts: Opts = {}) =>
   assert.match(commitMessageProblems(m, opts).join("\n"), re, m);
@@ -29,6 +29,11 @@ test("in the hook, ignores the editor template and the verbose diff, with the co
     commentChar: ";",
   });
   bad("feat: add a check\n# second line", /one-line subject/, hook);
+  // commit.cleanup=verbatim keeps the template in the stored commit, so the hook must count it too
+  bad("feat: add x\n\n# Please enter the commit message", /one-line subject/, {
+    hook: true,
+    cleanup: "verbatim",
+  });
 });
 
 test("checks stored messages as they are, scissors and comment lines included", () => {

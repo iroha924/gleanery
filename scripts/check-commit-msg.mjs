@@ -37,6 +37,15 @@ function commentChar() {
   }
 }
 
+/** Git's commit.cleanup, `default` when unset. */
+function cleanupMode() {
+  try {
+    return execFileSync("git", ["config", "commit.cleanup"], { encoding: "utf8" }).trim() || "default";
+  } catch {
+    return "default";
+  }
+}
+
 /** `git merge` leaves MERGE_HEAD while it waits for the message. */
 function mergeInProgress() {
   try {
@@ -53,6 +62,7 @@ for (const m of messages) {
     merge: m.merge,
     hook: m.hook === true,
     commentChar: commentChar(),
+    cleanup: cleanupMode(),
   });
   if (!problems.length) continue;
   failed++;
