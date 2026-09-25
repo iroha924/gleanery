@@ -21,7 +21,7 @@ and half a year later the same option gets rejected again for the same reason.
 Lines in the form `- Chosen: <option>. Rejected: <option> (<reason>); <option> (<reason>)` are imported as gleanery
 decision records after the merge (server/src/decisions.ts). Lines in any other form stay only as messages.
 Optionally, indent `  - Terms: word, word` under a decision: short search words a later reader might type (synonyms, abbreviations, English
-equivalents). They are indexed for the decision and its options and never shown. A blank `  - Terms:` clears them; deleting the line keeps the old ones.
+equivalents, and a word the owner used for it when that word is fine to keep in this public body). They are indexed for the decision and its options and never shown in search results. A blank `  - Terms:` clears them; deleting the line keeps the old ones.
 -->
 
 ## Verification
