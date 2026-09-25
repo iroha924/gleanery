@@ -127,6 +127,8 @@ for (const src of positionals) {
     results: Result[];
   };
   const { results, ...summary } = s;
+  // Runs from before turns_mean existed: recompute it from the questions, since the rounded turns would skew the guardrail
+  summary.turns_mean ??= results.reduce((a, r) => a + r.turns, 0) / Math.max(results.length, 1);
   if (summary.cases !== CASES_SHA)
     throw new Error(`${src} was measured with a different retrieval.json and cannot be compared`);
   systems.push({ summary, top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })) });

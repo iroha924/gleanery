@@ -182,6 +182,9 @@ async function main() {
   });
   const split = values.split as Split;
   if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
+  // 0 workers would write an empty summary and exit as if it had measured
+  if (!Number.isInteger(Number(values.par)) || Number(values.par) < 1)
+    throw new Error(`--par must be a positive integer (${values.par})`);
   const { dir, summary, results } = await measure({
     name: values.name,
     split,

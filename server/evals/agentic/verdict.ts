@@ -1,4 +1,4 @@
-// Adopt or reject a setup against the base by the rule fixed before measuring (.claude/plans/2026/09/25-agentic-search.md).
+// Adopt or reject a setup against the base by the rule fixed before measuring (the thresholds are listed in .claude/rules/evals.md).
 // A question counts as solved when more than half of the runs put the answer first. The rule is a preset bar, not a statistical test.
 
 export type Run = {

@@ -14,7 +14,7 @@ import { sql } from "kysely";
 import { openReader } from "../src/db.ts";
 import { KINDS } from "../src/knowledge.ts";
 import { searchKnowledge, searchMessages } from "../src/search.ts";
-import { CLAUDE_ENV, fixedDb, sha256File } from "./agentic/run.ts";
+import { CLAUDE_ENV, fixedDb, sourceOf } from "./agentic/run.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** Bump when a prompt or a selection rule changes */
@@ -42,7 +42,7 @@ if (!(Number.isFinite(CAP) && CAP > 0))
   throw new Error(`--budget must be a positive number of USD (${values.budget})`);
 const want = (t: Type) => Math.min(QUOTA[t], Number(values.limit ?? Number.POSITIVE_INFINITY));
 const file = fixedDb();
-const snapshot = sha256File(file);
+const snapshot = sourceOf(file);
 const db = openReader();
 
 /** Deterministic order from the snapshot hash, so the same copy draws the same records. */
@@ -383,6 +383,14 @@ const messages = await fill(
 // Interleave types so even (dev) and odd (holdout) indexes get each type in equal measure
 const cases = shuffled([...knowledge, ...messages], "order");
 const OUT = values.out ?? path.join(HERE, "retrieval.json");
+// A short set written over the frozen one would silently change what every later run measures
+const short = (Object.keys(QUOTA) as Type[]).filter(
+  (t) => cases.filter((c) => c.type === t).length < want(t),
+);
+if (short.length && values.out === undefined)
+  throw new Error(
+    `quotas not met for ${short.join(", ")} (spent $${spent.toFixed(2)}); nothing written. Pass --out to keep a partial set`,
+  );
 fs.writeFileSync(
   OUT,
   `${JSON.stringify(
