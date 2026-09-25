@@ -106,8 +106,15 @@ Do not delete overturned decisions: set `status = 'superseded'` and point to the
 
 Search is ranked word search (FTS5's bm25). The calling AI makes up for semantic closeness by searching again with different words (agentic search).
 
-- `knowledge_fts` (rowid = `knowledge.id`; columns are the heading `h` and body plus reason `b`; `bm25(knowledge_fts, 3, 1)`) and
+- `knowledge_fts` (rowid = `knowledge.id`; columns are the heading `h`, body plus reason `b`, and extra search words `e`; `bm25(knowledge_fts, 3, 1, 1)`) and
   `message_fts` (rowid = `message.seq`; only messages with `indexed = 1`). Both are contentless (`contentless_delete=1`)
+- What `knowledge_fts` holds for a record comes from the view `knowledge_search_text`. The knowledge and knowledge_terms triggers and `db reindex`
+  all insert from it, so change the rule there only
+- `knowledge_terms` holds extra search words per record (synonyms, abbreviations, English equivalents). **They are search only**: no search result,
+  read, CLI output, or dashboard view selects them. They carry the record's `content_hash` from when they were written and are indexed only while
+  it still matches (a record whose text changed stops being found by words written for its old text). Writers: trace (`terms` on an item; a decision's
+  words go to its options), GitHub sync (a `  - Terms: a, b` line under a PR decision; a blank line clears, no line keeps), and the owner's
+  `gleanery db terms import`. All go through `searchTerms()` in `server/src/terms.ts`. docs sync writes none (the product generates no text)
 - `terms()` in `server/src/text.ts` splits words. **`gleanery_terms`, which the DB triggers call on write, and `ftsQuery`, which builds queries,
   go through the same function.** `db-write.ts` registers `gleanery_terms` on each write connection. Writing to knowledge / message from a connection
   without it (such as the `sqlite3` CLI) fails with `no such function` (so the index is never silently incomplete)
