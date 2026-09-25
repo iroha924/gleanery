@@ -112,6 +112,8 @@ export type Measure = {
   /** Only the first n questions of the split (a pilot) */
   limit?: number | undefined;
   budget: Budget;
+  /** A note placed as CLAUDE.md in each question's working directory, loaded at session start like memory (none when undefined) */
+  memo?: string | undefined;
 };
 
 /** Runs one split once and writes <OUT>/<name>/<split>/summary.json. Stops starting questions when the budget runs out (the run is then incomplete). */
@@ -147,6 +149,7 @@ export async function measure(o: Measure) {
           effort: o.effort,
           keyOf,
           db: replayDb,
+          memo: o.memo,
         });
         o.budget.settle(r.cost);
         results.push(r);
@@ -173,6 +176,7 @@ export async function measure(o: Measure) {
     db: sha256File(db),
     source: sourceOf(db),
     bundle: sha256File(o.mcp),
+    ...(o.memo ? { memo: sha256File(o.memo) } : {}),
     complete: results.length === planned && o.limit === undefined,
     ms: Date.now() - t0,
   });
@@ -191,6 +195,7 @@ async function main() {
       par: { type: "string", default: "4" },
       mcp: { type: "string", default: path.join(REPO, "plugin/dist/mcp.js") },
       budget: { type: "string", default: "10" },
+      memo: { type: "string" },
     },
   });
   const split = values.split as Split;
@@ -205,6 +210,7 @@ async function main() {
     effort: values.effort,
     par: Number(values.par),
     mcp: values.mcp,
+    memo: values.memo,
     budget: new Budget(Number(values.budget)),
   });
   console.log(JSON.stringify(summary));
@@ -257,6 +263,7 @@ async function solve(
     effort: string | undefined;
     keyOf: (ref: string) => string | null;
     db: Kysely<DB>;
+    memo: string | undefined;
   },
 ): Promise<Result> {
   const dir = path.join(o.run, `q${i}`);
@@ -264,6 +271,7 @@ async function solve(
   // The working directory is an empty place, neither the repository nor ~/.gleanery. Loading the owner's CLAUDE.md, plugins, and hooks
   // would measure the owner's setup instead of the shipped tools (and the hooks would even run capture).
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
+  if (o.memo) fs.copyFileSync(o.memo, path.join(cwd, "CLAUDE.md"));
   const config = path.join(dir, "mcp.json");
   // Point GLEANERY_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
   const env = { GLEANERY_DB: fixedDb() };
@@ -439,6 +447,8 @@ export function summarize(
     db?: string;
     source?: string;
     bundle?: string;
+    /** Hash of the memo placed as CLAUDE.md, when one was */
+    memo?: string;
     /** false when the budget stopped it early or it was a pilot (such a run is never compared) */
     complete?: boolean;
     ms: number;
