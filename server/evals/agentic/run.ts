@@ -383,7 +383,8 @@ export function fixedDb(live = path.join(os.homedir(), ".gleanery", "gleanery.db
   const file = real(db);
   if (file === real(live))
     throw new Error("GLEANERY_DB points at the live database. Measure a copy made with vacuum into");
-  if ((fs.statSync(`${file}-wal`, { throwIfNoEntry: false })?.size ?? 0) > 0)
+  // SQLite names the WAL after the path it opened (the link on Windows, the target elsewhere), so both are checked
+  if ([db, file].some((f) => (fs.statSync(`${f}-wal`, { throwIfNoEntry: false })?.size ?? 0) > 0))
     throw new Error(
       `${db} has a WAL with pending writes, so it is not a fixed copy. Make one with vacuum into`,
     );

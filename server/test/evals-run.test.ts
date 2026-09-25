@@ -359,3 +359,22 @@ test("the summary keeps the unrounded mean of turns for the guardrail", () => {
   assert.equal(s.turns, 1.3);
   assert.equal(s.turns_mean, 4 / 3);
 });
+
+test("a pending WAL beside the link or beside its target both refuse the copy", () => {
+  const saved = process.env.GLEANERY_DB;
+  const target = path.join(tmp, "copy-target.db");
+  const link = path.join(tmp, "copy-link.db");
+  fs.writeFileSync(target, "x");
+  fs.symlinkSync(target, link);
+  try {
+    process.env.GLEANERY_DB = link;
+    fs.writeFileSync(`${link}-wal`, "pending");
+    assert.throws(() => fixedDb(path.join(tmp, "none.db")), /WAL/);
+    fs.rmSync(`${link}-wal`);
+    fs.writeFileSync(`${target}-wal`, "pending");
+    assert.throws(() => fixedDb(path.join(tmp, "none.db")), /WAL/);
+  } finally {
+    if (saved === undefined) delete process.env.GLEANERY_DB;
+    else process.env.GLEANERY_DB = saved;
+  }
+});
