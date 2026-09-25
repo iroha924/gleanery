@@ -11,6 +11,7 @@ import { constants as C, type DatabaseSync } from "node:sqlite";
 import { dbDir } from "./assets.ts";
 import { dbFile, SCHEMA_REVISION } from "./db.ts";
 import { connectWriter } from "./db-write.ts";
+import { searchTerms } from "./terms.ts";
 import { plural } from "./text.ts";
 import { indent } from "./tui/view.ts";
 
@@ -249,9 +250,7 @@ export function reindex(file: string = dbFile()): void {
   const counts = withOwner(file, (raw) =>
     immediate(raw, () => {
       raw.exec("insert into knowledge_fts (knowledge_fts) values ('delete-all')");
-      raw.exec(`insert into knowledge_fts (rowid, h, b)
-        select id, gleanery_terms(coalesce(heading, '')), gleanery_terms(body || char(10) || coalesce(reason, ''))
-        from knowledge`);
+      raw.exec("insert into knowledge_fts (rowid, h, b, e) select id, h, b, e from knowledge_search_text");
       raw.exec("insert into message_fts (message_fts) values ('delete-all')");
       raw.exec(
         "insert into message_fts (rowid, lexemes) select seq, gleanery_terms(body) from message where indexed = 1",
@@ -266,6 +265,91 @@ export function reindex(file: string = dbFile()): void {
   say(
     `Rebuilt the index: ${plural(counts.knowledge, "knowledge row")}, ${plural(counts.message, "message")}`,
   );
+}
+
+type Draft = Record<string, { terms?: unknown; content_hash?: unknown }>;
+
+/**
+ * Imports search words for existing records once, from a draft the owner reviewed: `{ "<source_key>": { "terms": "a, b", "content_hash": "<hex>" } }`.
+ * Only records of this project whose text is unchanged since the draft (same hash) are written; the rest are listed with the reason.
+ */
+export function importTerms(
+  draft: string,
+  projectKey: string,
+  file: string = dbFile(),
+): { written: number; skipped: { key: string; why: string }[] } {
+  const entries = JSON.parse(fs.readFileSync(draft, "utf8")) as unknown;
+  if (typeof entries !== "object" || entries === null || Array.isArray(entries))
+    throw new Error(`${draft} is not a JSON object of source keys`);
+  const result = withOwner(file, (raw) =>
+    immediate(raw, () => {
+      const project = raw.prepare("select id from project where key = ?").get(projectKey) as
+        | { id: number }
+        | undefined;
+      if (!project) throw new Error(`${projectKey} is not registered with gleanery`);
+      const find = raw.prepare(
+        "select id, content_hash from knowledge where project_id = ? and source_key = ?",
+      );
+      const put = raw.prepare(
+        `insert into knowledge_terms (knowledge_id, terms, content_hash, source, written_at) values (?, ?, ?, 'import', ?)
+         on conflict (knowledge_id) do update set terms = excluded.terms, content_hash = excluded.content_hash,
+           source = excluded.source, written_at = excluded.written_at`,
+      );
+      const now = new Date().toISOString();
+      let written = 0;
+      const skipped: { key: string; why: string }[] = [];
+      for (const [key, e] of Object.entries(entries as Draft)) {
+        const row = find.get(project.id, key) as { id: number; content_hash: Uint8Array } | undefined;
+        if (!row) {
+          skipped.push({ key, why: "not a record of this project" });
+          continue;
+        }
+        if (Buffer.from(row.content_hash).toString("hex") !== e?.content_hash) {
+          skipped.push({ key, why: "the record changed after the draft" });
+          continue;
+        }
+        let terms: string;
+        try {
+          terms = searchTerms(typeof e.terms === "string" ? e.terms : "");
+        } catch (x) {
+          skipped.push({ key, why: x instanceof Error ? x.message : String(x) });
+          continue;
+        }
+        if (!terms) {
+          skipped.push({ key, why: "no terms" });
+          continue;
+        }
+        put.run(row.id, terms, row.content_hash, now);
+        written++;
+      }
+      return { written, skipped };
+    }),
+  );
+  say(`Imported search words for ${plural(result.written, "record")}`);
+  for (const s of result.skipped) say(`skipped ${s.key}: ${s.why}`);
+  return result;
+}
+
+/** The search words of this project's records, for the owner to check (they are never shown in search results or read). */
+export function listTerms(projectKey: string, ref?: string, file: string = dbFile()): void {
+  const rows = withOwner(file, (raw) =>
+    raw
+      .prepare(
+        `select k.id, k.source_key, t.source, t.written_at, t.terms, t.content_hash = k.content_hash as fresh
+         from knowledge_terms t join knowledge k on k.id = t.knowledge_id join project p on p.id = k.project_id
+         where p.key = ? and (? is null or k.id = ?) order by k.id`,
+      )
+      .all(
+        projectKey,
+        ref ? Number(ref.replace(/^k:/, "")) : null,
+        ref ? Number(ref.replace(/^k:/, "")) : null,
+      ),
+  ) as { id: number; source_key: string; source: string; written_at: string; terms: string; fresh: number }[];
+  for (const r of rows)
+    say(
+      `k:${r.id} ${r.source_key} (${r.source}, ${r.written_at}${r.fresh ? "" : ", stale: the record changed"})\n  ${r.terms}`,
+    );
+  say(`${plural(rows.length, "record")} with search words`);
 }
 
 /** Database state for doctor. Everything is read only; no file is modified. */

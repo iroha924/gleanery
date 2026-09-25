@@ -23,7 +23,7 @@ import {
 } from "@stricli/core";
 import { type Kysely, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
-import { dbInit, inspect, migrate, reindex } from "./admin.ts";
+import { dbInit, importTerms, inspect, listTerms, migrate, reindex } from "./admin.ts";
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
 import { dbFile, inTransaction, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
 import type { DB } from "./db-types.ts";
@@ -941,6 +941,46 @@ const dbRoutes = buildRouteMap({
       docs: { brief: "Rebuild the full-text index (run after changing how search splits words)" },
       parameters: {},
       func: () => boxed("gleanery db reindex", () => reindex()),
+    }),
+    terms: buildRouteMap({
+      docs: { brief: "Search words of records (indexed, never shown in search results or read)" },
+      routes: {
+        import: buildCommand({
+          docs: {
+            brief: "Import reviewed search words once, only for records unchanged since the draft",
+          },
+          parameters: {
+            flags: { cwd: CWD },
+            positional: {
+              kind: "tuple",
+              parameters: [{ parse: String, brief: "Draft JSON file", placeholder: "file" }],
+            },
+          },
+          func: (flags: { cwd?: string }, draft: string) =>
+            boxed("gleanery db terms import", () => {
+              importTerms(draft, placeOf(flags.cwd ?? process.cwd()).key);
+            }),
+        }),
+        list: buildCommand({
+          docs: { brief: "Show the search words of this project's records" },
+          parameters: {
+            flags: {
+              cwd: CWD,
+              ref: {
+                kind: "parsed",
+                parse: String,
+                brief: "Only this record (k:<id>)",
+                placeholder: "ref",
+                optional: true,
+              },
+            },
+          },
+          func: (flags: { cwd?: string; ref?: string }) =>
+            boxed("gleanery db terms list", () =>
+              listTerms(placeOf(flags.cwd ?? process.cwd()).key, flags.ref),
+            ),
+        }),
+      },
     }),
   },
 });

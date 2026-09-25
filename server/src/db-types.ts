@@ -95,6 +95,21 @@ export interface KnowledgeFile {
   role: string;
 }
 
+export interface KnowledgeSearchText {
+  b: string | null;
+  e: string | null;
+  h: string | null;
+  id: number | null;
+}
+
+export interface KnowledgeTerms {
+  content_hash: Buffer;
+  knowledge_id: Generated<number>;
+  source: string;
+  terms: string;
+  written_at: string;
+}
+
 export interface Message {
   body: string;
   content_hash: Buffer;
@@ -183,6 +198,8 @@ export interface DB {
   docs_exclude: DocsExclude;
   knowledge: Knowledge;
   knowledge_file: KnowledgeFile;
+  knowledge_search_text: KnowledgeSearchText;
+  knowledge_terms: KnowledgeTerms;
   message: Message;
   message_file: MessageFile;
   person: Person;

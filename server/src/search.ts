@@ -72,7 +72,7 @@ const contains = (cols: string[], needle: string): Expression<SqlBool> =>
 
 /** Top of the full-text index: a subquery returning rowid and rank (smaller bm25 is better). */
 const knowledgeFts = (match: string) =>
-  sql<{ rowid: number; rank: number }>`(select rowid, bm25(knowledge_fts, 3, 1) as rank
+  sql<{ rowid: number; rank: number }>`(select rowid, bm25(knowledge_fts, 3, 1, 1) as rank
     from knowledge_fts where knowledge_fts match ${match})`.as("f");
 const messageFts = (match: string) =>
   sql<{ rowid: number; rank: number }>`(select rowid, bm25(message_fts) as rank

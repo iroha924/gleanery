@@ -11,7 +11,7 @@ import path from "node:path";
 import { constants as C, DatabaseSync } from "node:sqlite";
 
 /** Schema version the MCP server, CLI, and dashboard expect. Keep it equal to `pragma user_version` at the end of db/schema.sql. */
-export const SCHEMA_REVISION = 3;
+export const SCHEMA_REVISION = 4;
 
 /** Connection roles: owner applies the schema, reader only reads, ingest imports, capture records conversations (append only). */
 export type Role = "owner" | "reader" | "ingest" | "capture";
