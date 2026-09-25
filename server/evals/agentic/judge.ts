@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { openReader } from "../../src/db.ts";
 import { CASES_SHA, CLAUDE_ENV, cases, OUT, type Result, type summarize } from "./run.ts";
-import { type Run, verdict } from "./verdict.ts";
+import { type Conditions, ineligible, type Run, verdict } from "./verdict.ts";
 
 type Grade = "direct" | "partial" | "no";
 type Row = {
@@ -44,10 +44,12 @@ const { values, positionals } = parseArgs({
     par: { type: "string", default: "4" },
     // The setup (name without -rN) every other setup of the same split and model is judged against
     base: { type: "string" },
+    // Writes the verdicts as JSON (the experiment command reads it)
+    json: { type: "string" },
   },
 });
 if (positionals.length === 0)
-  throw new Error("pass a run result dir (os.tmpdir()/gleanery-evals/<name>/<split>) or baseline.json");
+  throw new Error(`pass a run result dir (${OUT}/<name>/<split>) or baseline.json`);
 fs.mkdirSync(CACHE, { recursive: true });
 
 const db = openReader();
@@ -307,6 +309,7 @@ for (const [name, ss] of groups) {
   if (seen.length > 1) console.log(`⚠ ${name} runs differ in DB or bundle:\n  ${seen.join("\n  ")}`);
 }
 
+const verdicts: object[] = [];
 if (values.base) {
   const asRun = (s: System): Run => {
     const x = s.summary as Partial<ReturnType<typeof summarize>>;
@@ -319,25 +322,48 @@ if (values.base) {
       errors: s.summary.errors,
     };
   };
+  const x = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).db;
+  const conditions = (s: System): Conditions => {
+    const y = s.summary as Partial<ReturnType<typeof summarize>>;
+    return {
+      cases: s.summary.cases,
+      prompt: y.prompt ?? null,
+      models: (y.resolved_models ?? []).join(","),
+      claude: (y.claude_code ?? []).join(","),
+      effort: y.effort ?? "",
+      db: y.db ?? null,
+      source: y.source ?? null,
+      bundle: y.bundle ?? null,
+      // Runs from before this field count as complete (their question lists were never cut)
+      complete: y.complete ?? true,
+    };
+  };
   const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`);
   for (const [key, ss] of bySplit) {
     const base = ss.filter((s) => configOf(s) === values.base);
     if (base.length === 0) continue;
     for (const [config, setup] of Map.groupBy(ss, configOf)) {
       if (config === values.base) continue;
+      const no = ineligible(base.map(conditions), setup.map(conditions));
+      if (no.length) {
+        console.log(`✗ ineligible ${config} vs ${values.base} (${key}): ${no.join(", ")}`);
+        verdicts.push({ config, split: key, ineligible: no });
+        continue;
+      }
       const v = verdict(base.map(asRun), setup.map(asRun));
+      verdicts.push({ config, split: key, ineligible: [], ...v });
+      const migrated = x(base[0] as System) !== x(setup[0] as System);
       console.log(
-        `${v.adopt ? "✓ adopt" : "✗ keep base"} ${config} vs ${values.base} (${key}, ${setup.length} vs ${base.length} runs): ` +
+        `${v.adopt ? "✓ adopt" : "✗ keep base"} ${config} vs ${values.base} (${key}, ${migrated ? "migrated copy" : "same DB"}, ${setup.length} vs ${base.length} runs): ` +
           `net ${v.net} (gained ${v.gained.map((i) => `q${i}`).join(" ") || "none"} / lost ${v.lost.map((i) => `q${i}`).join(" ") || "none"}), ` +
           `top1 ${v.top1.join(" → ")}, direct ${v.direct.join(" → ")}, turns ${v.turns.join(" → ")}, KiB ${v.toolKib.join(" → ")}` +
           (v.reasons.length ? ` — ${v.reasons.join(", ")}` : ""),
       );
-      const x = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).db;
-      if (new Set([...base, ...setup].map(x)).size > 1)
-        console.log("  ⚠ measured on different DB copies (fine only when the setup needs a migrated copy)");
     }
   }
 }
+
+if (values.json) fs.writeFileSync(values.json, JSON.stringify(verdicts, null, 1));
 
 if (values.out) {
   const version = JSON.parse(

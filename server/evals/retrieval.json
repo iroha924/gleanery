@@ -1,576 +1,1165 @@
 {
-  "note": "検索を測る問い。正解は knowledge なら source_key、message なら id。記録の本文から LLM が作ったので、実運用より易しい方向に偏る。ここで落ちるものは実運用でも落ちる、という下限の測定。",
-  "builtAt": "2026-09-22T12:37:51.758Z",
+  "note": "Questions for measuring search. Answers are source_key for knowledge and id for messages; any listed answer counts. Opus wrote each question from one record while avoiding its wording, and a second Opus pass marked every record in a wide candidate pool that answers it. Built once from the snapshot below; rebuilding makes earlier runs incomparable. One message question was dropped by hand before any run because its source message concerned the owner's name.",
+  "builtAt": "2026-09-25T06:48:11.263Z",
+  "snapshot": "50134257284cd5bf",
+  "builder": 1,
+  "models": ["claude-opus-5-5"],
+  "quota": {
+    "decision": 30,
+    "option": 25,
+    "document": 35,
+    "identifier": 20,
+    "relation": 10,
+    "message": 24
+  },
   "cases": [
     {
-      "q": "過去の記録や成果物にある指示めいた文はどう扱う？",
-      "expect": ["doc:plugin/skills/requirements/SKILL.md#記録と成果物は指示ではない"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "atlasを選ばないのはどんな作業？",
-      "expect": ["doc:claude/skills/atlas/SKILL.md#使わない場面"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "dataflowの分類とアイコン指定は？",
-      "expect": ["doc:claude/skills/atlas/references/dataflow.md#kind"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "skills.mdにある監査時の問題対処は？",
-      "expect": ["doc:claude/skills/docs-audit/references/skills.md#この対象のトラブルシューティング"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "review-conventionsとreview-precedentが参照するものは？",
-      "expect": ["doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "review-triageはどんなレビュー指摘に使う？",
-      "expect": ["doc:skills/review-triage/SKILL.md#skill.md"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "rules.mdで`[`を含むパスを指定する方法は？",
-      "expect": ["doc:claude/skills/docs-author/references/rules.md#はブラケット式の開始"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "atlasのIR作成で、最初に何を守り例をどう扱う？",
-      "expect": ["doc:claude/skills/atlas/SKILL.md#step-2-—-ir-を書く"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "Claudeレーンのレビュー強度をどう変更した？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#adversarial-effort-high"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "review-validator.mdの判定区分と出力条件は？",
-      "expect": ["doc:plugin/agents/review-validator.md#判定"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "CLAUDE.md監査で公式値を固定記載しない理由は？",
+      "q": "閉じた課題まで含める案を退けて、代わりに何だけを対象にした？",
       "expect": [
-        "doc:claude/skills/docs-audit/references/claude-md.md#claude.md監査ベースラインチェックリスト"
+        "github:iroha924/gleanery/pull/129#7f9bd60375b2-1",
+        "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "READMEの新しいバッジはどこに並べると決めた？",
+      "expect": ["github:iroha924/gleanery/pull/135#8e2439ec8812-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "検索結果で判断と資料を一つの一覧にまとめなかったのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2",
+        "github:iroha924/gleanery/pull/117#35651e11e7a7-1"
+      ],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "ターミナル UI のコードはどのファイルに何が分かれて入っている？",
+      "expect": ["doc:.agents/skills/tui/SKILL.md#置き場所", "doc:.agents/skills/tui/SKILL.md#triggers"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "コミット履歴の改変を避ける方針は誰がなぜ決めた？",
+      "expect": ["github:iroha924/gleanery/pull/118#a77ac56594cd-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "SQLiteのJSON列を読むと文字列のまま返ってくるのはなぜ？",
+      "expect": ["doc:.agents/skills/knowledge-schema/SKILL.md#sql-の書き方"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "リリース時、タグのコードがCIで検証済みだと保証する仕組みは？",
+      "expect": ["github:iroha924/gleanery/pull/124#8f51be55a306-1", "doc:README.ja.md#セキュリティ"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "規約レビューで依存ライブラリの機能まで調べるのはどんな場合？",
+      "expect": [
+        "github:iroha924/gleanery/pull/96#fbcfeae6f236-1",
+        "doc:plugin/skills/review/reviewers/conventions.md#conventions.md",
+        "doc:plugin/skills/review/reviewers/conventions.md#step-2-—-diff-を照らす"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": ".claude/rules/の規約探しでワイルドカード展開を避けるのはなぜ？",
+      "expect": [
+        "doc:plugin/skills/review/reviewers/conventions.md#step-1-—-何が明文化されているかを探す",
+        "doc:plugin/skills/review/SKILL.md#規約ファイル"
       ],
       "kind": "document",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "identifier"
     },
     {
-      "q": "AGENTS.mdで委任方式Bが不採用になった理由は？",
-      "expect": ["doc:README.md#設計の判断と実測"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "Codexの隔離環境で外部APIに届かない理由は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#codex-sandbox-no-network"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "権限監査で危険な許可設定を見抜く観点は？",
-      "expect": ["doc:claude/skills/docs-audit/references/permissions.md#過剰な許可"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "skills/code-comments/SKILL.mdではコメント編集をどう扱う？",
-      "expect": ["doc:skills/code-comments/SKILL.md#編集するとき"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "requirementsで避けるべき問題は？",
-      "expect": ["doc:plugin/skills/requirements/SKILL.md#このスキルが防ぐ失敗"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "ルール作成後に行う検証手順は？",
-      "expect": ["doc:claude/skills/docs-author/references/rules.md#作った後"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "deferred-finding.mdで見直しを始める目安は？",
-      "expect": ["doc:.github/ISSUE_TEMPLATE/deferred-finding.md#何が起きたら再評価するか"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "claude-md評価で見落としやすい欠陥は？",
-      "expect": ["doc:claude/skills/docs-audit/evals/how-to-run.md#claude-md"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "architectureで接続線のルートを決めるタイミングは？",
-      "expect": ["doc:claude/skills/atlas/references/architecture.md#関係"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "deep-auditの監査範囲とネットワーク時の扱いは？",
-      "expect": ["doc:.claude/skills/deep-audit/SKILL.md#deep-audit-—-リポジトリ全体の構造監査"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "判断記録で防ぐべき失敗は？",
-      "expect": ["doc:plugin/skills/trace/SKILL.md#このスキルが防ぐ失敗"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "review-adversarial.mdでモデル等を固定する理由は？",
-      "expect": ["doc:plugin/agents/review-adversarial.md#review-adversarial.md"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "Atlasのノード化で除外する内容や粒度の目安は？",
-      "expect": ["doc:claude/skills/atlas/references/skill.md#何をノードにしないか"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "SKILL.mdに記されたAgent変更の契機は？",
-      "expect": ["doc:.agents/skills/plugin-agent-authoring/SKILL.md#triggers"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "review-uiの変更レビューで利用者への影響をどう確かめる？",
+      "q": "脆弱性を見つけた人はどこに知らせる決まりにしたの？",
       "expect": [
-        "doc:.claude/agents/review-ui.md#読む先が有限（変更した画面と規約ファイル）。深さより、利用者に何が起きるかの言い切りで決まる。"
+        "github:iroha924/gleanery/pull/123#a6173565e402-1",
+        "doc:README.ja.md#セキュリティ",
+        "github:iroha924/gleanery/pull/123#a6173565e402-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "承認した人を記録ファイルに残して確かめる案はなぜ見送った？",
+      "expect": ["github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": ".claude/rules/evals.md はどのディレクトリ配下のファイルに適用される？",
+      "expect": ["doc:.claude/rules/evals.md#evals.md"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "方針の選択と、記録済みの未完了作業について何と言った？",
+      "expect": ["e376fdc1-4519-854c-afb5-6d0b2b638a9d"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "worktree で開発する方針を必須ルールにしなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/30#f4e29bb98394-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "テンプレートの説明コメントを消さずに issue を出すと何が困る？",
+      "expect": [
+        "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#deferred-finding.md",
+        "doc:.github/ISSUE_TEMPLATE/bug.md#bug.md",
+        "doc:.github/ISSUE_TEMPLATE/question.md#question.md"
       ],
       "kind": "document",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "document"
     },
     {
-      "q": "investigatorを再削除した根拠は？",
-      "expect": ["doc:README.md#役と規範を、賢さで消えないものだけに絞った（2026-09-21）"],
-      "kind": "document",
-      "source": "knowledge"
-    },
-    {
-      "q": "gleanery.conversation.titleを例外保存先にした経緯は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db"],
+      "q": "別モデル連携の手順をスキル本体から切り分けたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/96#73d9e3a109ba-1"],
       "kind": "decision",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "decision"
     },
     {
-      "q": "本番級DBでSQL検証を入れた配布版は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-parse-green"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "セッション詳細の表示改善とIndexedDBへの値保持は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o2"],
-      "kind": "option",
-      "source": "knowledge"
-    },
-    {
-      "q": "plugin-releaseで公開順を変えない理由は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#publish-before-merge"],
-      "kind": "dead_end",
-      "source": "knowledge"
-    },
-    {
-      "q": "marker.tsxで横並びにする幅調整は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#marker-is-w-full"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "gleanery project add後、検索に反映される条件は？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#gleanery-add-no-backfill"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "npm公開とmain mergeの順序をどう統一した？",
-      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next"],
+      "q": "server/evals/cases.tsで廃止Skillの問いを除く理由は？",
+      "expect": ["github:iroha924/gleanery/pull/122#35381f70e598-1"],
       "kind": "decision",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "identifier"
     },
     {
-      "q": "版比較の基準をmerge-baseに移さなかった理由は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#version-gate-merge-base"],
-      "kind": "dead_end",
-      "source": "knowledge"
-    },
-    {
-      "q": "Codex 0.155.1のagent起動拒否をどう直した？",
-      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#codex-agent-symlink-rejection"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "npm viewで最新版が古く見えた原因は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#npm-view-cdn-cache"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "Claudeレーンの取得と再開設定をどう見直した？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "JSTの日付処理で追加ライブラリを選ばない改善は？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#region-name-triggers-dependency-add"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "Claudeレーン起動時のresume指定の注意点は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume:o2"],
-      "kind": "option",
-      "source": "knowledge"
-    },
-    {
-      "q": "独立レビューで同時に指摘された初版の問題点は何？",
+      "q": "Skill から CLI を実行するとき、PATH 頼みをやめて何でパスを決めた？",
       "expect": [
-        "claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#independent-review-catches-agreed-wording"
+        "github:iroha924/gleanery/pull/27#db58d348439c-1",
+        "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
+        "doc:plugin/skills/trace/SKILL.md#流れ"
       ],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "0.33.29でCLIと画面経路を子プロセスからDB検証する決定は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-child-process"],
       "kind": "decision",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "relation"
     },
     {
-      "q": "MessageScrollerItemでアイコンが欠けない位置調整は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#avatar-negative-margin"],
-      "kind": "finding",
-      "source": "knowledge"
+      "q": "リリース作成の手順を毎回確認されることについて、どうしたいと言っていた？",
+      "expect": ["49eefbfe-3ca2-8d2a-9be7-1c9f1dda936f"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
     },
     {
-      "q": "AGENTS.mdを共通の基準に戻す設計方針は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#shared-core-single-source"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "影響を変えない可逆作業で省略できる手順は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#strength-switch-by-reversibility"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "sql:live のDB検査で守る隔離条件は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#real-db-only-in-sql-live"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "規範設計変更とフック検証の結果は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#norm-layer-tests"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "手動リリースの変更分類と到達確認の手順は？",
-      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified"],
+      "q": "質問をどちらの環境でも普通の文章で出す案はなぜ見送った？",
+      "expect": ["github:iroha924/gleanery/pull/27#aceba6ee56db-1.r1"],
       "kind": "option",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "option"
     },
     {
-      "q": "Codex CLIで承認ゲートを実現できない理由は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#codex-ask-unsupported"],
-      "kind": "finding",
-      "source": "knowledge"
+      "q": "作業の担当者について手順を根拠に何と指摘した？",
+      "expect": ["aa004f05-ff38-8a75-84e0-34b9f3b127d0"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
     },
     {
-      "q": "review-shipping配置とSQL実行検査のリリース方針は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-review-shipping"],
-      "kind": "decision",
-      "source": "knowledge"
+      "q": "リリース時の承認作業と手順の記載場所について何と言った？",
+      "expect": ["474d7005-1935-8774-a08b-0533730aff9c"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
     },
     {
-      "q": "改善後の守り方はAGENTS.mdでどう位置づける？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#guard-norm-placement"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "Claude レーンのレビュー時、Bash権限をどう扱う？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-lane-write-access"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "remark の処理が型検査後の描画で落ちた原因は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#remark-attacher-shape"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "conversation.titleを画面で変更するための専用キーは？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db"],
+      "q": "文言の照合で正規表現をやめて単純な一致比較にしたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/130#83f2571ccd2d-1.r1"],
       "kind": "option",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "option"
     },
     {
-      "q": "0.33.29のSQL検証とGit URL変換の変更点は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#git-insteadof-get-url"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "SIGTERM時にカバレッジを保存する終了処理は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sigterm-drops-coverage"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "NODE_V8_COVERAGEを使うSQL検査の配布版は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#coverage-from-v8"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "0.33.29で全SQLの実行確認を終えた件は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#sql-live-green"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "コマンド実行時の規範を条件ロードできない理由は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#paths-not-on-tool-use"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "レビュー範囲とClaude起動の検査をどう見直した？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#scope-contract-check"],
-      "kind": "dead_end",
-      "source": "knowledge"
-    },
-    {
-      "q": "install.pyでの取り締まりをやめた経緯は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#input-side-import-allowlist"],
-      "kind": "dead_end",
-      "source": "knowledge"
-    },
-    {
-      "q": "REQUIRED_INVARIANTSを外部基準にできない事情は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#invariant-registry-same-commit"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "機械の検査条件は、自前実装に紐づける？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#machine-check-condition-target"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "ルールの判断手順はどこへまとめた？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#norm-priority-shape"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "レビュー体制をどう再編する予定？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-cost-3-rounds"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "0.33.29ではSQL検証とスタック取得をどう扱う？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#promise-all-loses-stack"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "会話が残ってもknowledgeが増えない原因は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-precedent-empty"],
-      "kind": "finding",
-      "source": "knowledge"
-    },
-    {
-      "q": "next公開からlatest昇格までの検査手順は？",
-      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-via-next"],
+      "q": "折り返し行のいちばん浅いインデントで値の列位置を決めないのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/118#c84394f47b5d-1.r2"],
       "kind": "option",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "option"
     },
     {
-      "q": "AGENTS.mdで削る予定の75行はどの課題に回した？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#agents-md-line-budget"],
-      "kind": "other",
-      "source": "knowledge"
+      "q": "ライブラリを一つにまとめて配っても、ライセンス表記は要るのはなぜ？",
+      "expect": ["doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
     },
     {
-      "q": "対象の階層分けとClaudeレーンの始動はどう改める？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#review-scope-to-launcher"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "releaseの手動運用を支えるコマンドは？",
-      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-manual-classified"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "PostgreSQLでSQLを検証し、0.33.29を配布する決定は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#oracle-explain-generic-plan"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "レビュー対象を一括処理しClaudeの再開を防ぐ方法は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#claude-lane-no-resume"],
+      "q": "traceで参照しただけのファイルまで関連付けるのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/32#6f97abd02c06-1.r1"],
       "kind": "option",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "option"
     },
     {
-      "q": "Codexへの依頼範囲をどう絞ると短時間で返った？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#codex-review-broad-scope"],
-      "kind": "dead_end",
-      "source": "knowledge"
-    },
-    {
-      "q": "規範層の条件配送化で、何を守る設計にした？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#threat-model-rewrite-loss"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "0.33.29でSQL検証と未登録データ再送をどうした？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#keep-unregistered-records"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "文章規約の機械検査を見送った理由は？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#prose-rule-machine-check"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "0.33.30公開時、統合前に何を確かめた？",
-      "expect": ["codex:01a0c455-e379-7283-a7dc-2dbc0cd34c63#release-live-registry"],
-      "kind": "other",
-      "source": "knowledge"
-    },
-    {
-      "q": "doctorの指摘数を固定比較しない判断の背景は？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#doctor-count-assertion"],
-      "kind": "dead_end",
-      "source": "knowledge"
-    },
-    {
-      "q": "自前実装と依存追加は何を基準に判断する？",
-      "expect": ["claude-code:5cfe6fae-42a1-4e2c-85e1-c99da76d3adc#diy-vs-dependency-criterion"],
-      "kind": "decision",
-      "source": "knowledge"
-    },
-    {
-      "q": "セッション詳細の表示修正と次回harvestの扱いは？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#session-title-in-db:o4"],
+      "q": "Skillの指示文だけで決定の付け方を守らせる案をやめたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1"],
       "kind": "option",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "option"
     },
     {
-      "q": "HOME未隔離の検証で持ち主の何を送信した？",
-      "expect": ["claude-code:a99ed6a1-cdab-4e9f-8f8b-5fdbef6b9051#live-lane-home-leak"],
-      "kind": "dead_end",
-      "source": "knowledge"
+      "q": "過去の決定と今のコードが矛盾したら、レビューではどう扱う？",
+      "expect": [
+        "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する",
+        "doc:plugin/skills/review/reviewers/precedent.md#何が-finding-になるか"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
     },
     {
-      "q": "install.pyの生成物で未解決参照を出口確認する方針は？",
-      "expect": ["claude-code:c025d666-8efb-4845-a0a2-efd82a488174#guard-at-consumer-boundary"],
+      "q": "コード内の日本語除去の最終確認について何と依頼した？",
+      "expect": ["048a1b72-633f-8308-934a-cd9e3dd61eb7"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "レビューの往復回数を減らし、人に判断を委ねるようにしたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/96#000ee8129d98-1"],
       "kind": "decision",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "decision"
     },
     {
-      "q": "本文中のissueリンクをproject.keyで生成する件は？",
-      "expect": ["claude-code:d6a37ac2-9a92-4836-9838-f6fa7f3c4ce0#issue-ref-from-project-key"],
+      "q": "CodexとClaude向けの指示ファイルで、共通の規則はどう同期させている？",
+      "expect": [
+        "doc:AGENTS.md#agents.md",
+        "doc:CLAUDE.md#claude.md",
+        "github:iroha924/gleanery/pull/118#fde921979df0-1"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "英語化の進め方とメモリへの記載確認について何と頼んだ？",
+      "expect": ["6966810f-3c4c-8c27-bdca-be687d5ced4b"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "ターミナル表示やキー入力を直すとき、どの手順書に従えばいい？",
+      "expect": ["doc:.agents/skills/tui/SKILL.md#triggers", "doc:.agents/skills/tui/SKILL.md#skill.md"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "エラー案内の英訳をコマンドライン側で行わなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "テストでデータベースをモックせず実物を使うことにしたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/117#2a1886bdd9a4-1"],
       "kind": "decision",
-      "source": "knowledge"
+      "source": "knowledge",
+      "type": "decision"
     },
     {
-      "q": "セッション表示の改善点とtraceの改名案は？",
-      "expect": ["133dcea3-e023-875b-98bb-fc047531b916"],
-      "kind": "message",
-      "source": "message"
+      "q": "レビューで参照先の規約や前例が見つからなかったらエラー扱いになる？",
+      "expect": [
+        "doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける",
+        "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
     },
     {
-      "q": "winnowを見た6レーンは最終版で未実行だがどうする？",
-      "expect": ["60389f0e-f0bf-8f02-94e3-06b59782cbba"],
-      "kind": "message",
-      "source": "message"
+      "q": "レビュー観点をサブエージェント定義で配布しないのはなぜ？",
+      "expect": [
+        "doc:.agents/skills/plugin-agent-authoring/SKILL.md#agent定義として配らない",
+        "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
+        "doc:plugin/skills/review/SKILL.md#立て方は両ホストで同じ。本文をプロンプトとして渡す"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
     },
     {
-      "q": "CIを落とした待機処理はどの方針で修正する？",
-      "expect": ["2da80bee-2223-8217-bca1-7e8d97cd45d0"],
-      "kind": "message",
-      "source": "message"
+      "q": "計画ファイルをスキル配下でなく.claude/plans/に置くことにしたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/121#4cbb886b3dc6-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "identifier"
     },
     {
-      "q": "Codexの長時間調査が止まらない場合はどうした？",
-      "expect": ["501c5941-98ab-8931-b90a-ef8eef4d4676"],
+      "q": "UIの表示言語とデータ保存言語の扱いについてどう指示した？",
+      "expect": ["174f7894-6472-8463-9fb8-afa2c5987df1"],
       "kind": "message",
-      "source": "message"
+      "source": "message",
+      "type": "message"
     },
     {
-      "q": "7ファイル・219行のPR確認にCodexを併用する？",
-      "expect": ["15c68d70-15de-8ef1-b79f-9a9e61966f31"],
-      "kind": "message",
-      "source": "message"
+      "q": "多言語対応をやめて表示言語を一つに絞ったのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1",
+        "github:iroha924/gleanery/pull/137#bab18fcbab5e-1"
+      ],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
     },
     {
-      "q": "claude --resumeの表示が1行にならない原因は？",
-      "expect": ["cb6d64f6-e1f8-8613-8725-1404528c141a"],
-      "kind": "message",
-      "source": "message"
+      "q": "PRでレビュー指摘を直さなかった場合、理由はどこに書く？",
+      "expect": [
+        "doc:.github/pull_request_template.md#見送った指摘",
+        "doc:.claude/skills/codex-review/SKILL.md#受け取り方",
+        "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#直さなかった理由"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
     },
     {
-      "q": "検索品質を測る100問の再作成は？",
-      "expect": ["08d7ed25-2953-8507-ba98-5d1340e7ba82"],
-      "kind": "message",
-      "source": "message"
+      "q": "plugin/db の変更が差分に現れないとき、配布前の中身はどう確かめる？",
+      "expect": [
+        "doc:.claude/rules/verification.md#配布物",
+        "doc:AGENTS.md#配布物",
+        "doc:.claude/agents/review-shipping.md#1.-配る物の中身"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
     },
     {
-      "q": "codex-collaboration.mdは常時読み込みから外すより削除でいい？",
-      "expect": ["7ce1b268-6064-87db-a05e-f1f4867b7c80"],
-      "kind": "message",
-      "source": "message"
+      "q": "権限を絞るオプションをスキルと元コマンドの両方に重ねて書くのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/96#6ecf6ce39382-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
     },
     {
-      "q": "日時の表示位置を上から下へ変える要望は？",
-      "expect": ["861d40ab-0bfc-87ce-9a5e-749ff725a616"],
-      "kind": "message",
-      "source": "message"
+      "q": "ダッシュボードの画面を確かめるとき、実際の端末で何を見ればいい？",
+      "expect": [
+        "doc:.claude/agents/review-ui.md#3.-端末の画面（server/src/tui/）",
+        "doc:.agents/skills/tui/SKILL.md#検証"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
     },
     {
-      "q": "children参照時のundefinedエラーは？",
-      "expect": ["955809e6-afa3-8c3c-8bd3-623e53bccfa5"],
+      "q": "SkillからCLIを呼ぶとき bin/gleanery を使わないのはなぜ？",
+      "expect": ["doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "選んだ案の記録先をmemoryとissueのどちらにすると言った？",
+      "expect": ["d87e6b51-bd5f-8dcd-b567-044dffacd7b0"],
       "kind": "message",
-      "source": "message"
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "レビュー用Skillでシェル実行の扱いが食い違ったとき、どちらの記述に揃えた？",
+      "expect": [
+        "github:iroha924/gleanery/pull/127#bf2eac264253-1",
+        "github:iroha924/gleanery/pull/127#bf2eac264253-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "検索で決定事項と文書が混ざる件、文書を外さずにどう対処した？",
+      "expect": [
+        "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
+        "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "push前の検証で--local-env-varsの変数を外すのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
+        "github:iroha924/gleanery/pull/27#e1313fb2dd40-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "リポジトリの履歴を書き換えたら文書の取り込みが止まるのはなぜ？",
+      "expect": ["doc:.agents/skills/knowledge-schema/SKILL.md#文書"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "旧版を使い続けた場合、脆弱性の修正は提供されるのか？",
+      "expect": ["doc:SECURITY.md#supported-versions"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "gleaneryがデータベースに保存するラベルを英語表記に統一したのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/137#54b4f364628e-1",
+        "doc:AGENTS.md#コメント",
+        "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "ユーザーへの問いかけを両環境で普通の文章にせず、どう出し分けた？",
+      "expect": [
+        "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
+        "github:iroha924/gleanery/pull/27#aceba6ee56db-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "参照制約を止めて子レコードを手作業で削除する案を採らなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "ツールを削除したあと、保存されていたデータはどこに残るのか？",
+      "expect": ["doc:README.md#uninstalling", "doc:README.ja.md#アンインストール"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "data.tsで読み込んだ時点に表示用の加工をしなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "引数の最後にある full 指定はどう判定することにした？",
+      "expect": ["github:iroha924/gleanery/pull/96#e0842a2fc55e-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "不具合を報告するとき、使っている環境について何を書けばいい？",
+      "expect": ["doc:.github/ISSUE_TEMPLATE/bug.md#環境"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "Skillを自動で呼ばれないようにするには、両エージェントで何を設定する？",
+      "expect": [
+        "doc:.agents/skills/plugin-release/SKILL.md#plugin-skill",
+        "github:iroha924/gleanery/pull/26#7f8d25878436-1.r1"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "gleanery未登録や判定不能のとき、どう扱えと指示した？",
+      "expect": ["c10c2ecd-d619-8130-b584-87c127a79426"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "追記の要否とレビュー依頼の必要性について何と言った？",
+      "expect": ["7bf94d50-0db2-852a-a1d3-29f766cba2fc"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "規約レビューで一般論ではなく既存ルールに紐付く指摘だけに絞るのはなぜ？",
+      "expect": ["doc:plugin/skills/review/reviewers/conventions.md#conventions.md"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "レビュー時、過去に却下された案と差分を照らし合わせる手順は？",
+      "expect": [
+        "doc:plugin/skills/review/reviewers/precedent.md#step-3-—-方針を意味で引く",
+        "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "過去の判例レビューで検索結果が空のとき、見つからないのか接続失敗かどう見分ける？",
+      "expect": [
+        "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる",
+        "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "TUI用に新しいコマンド名を作らず既存名を流用したのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/115#e45974c9752b-1.r1",
+        "github:iroha924/gleanery/pull/115#e45974c9752b-1"
+      ],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "CLAUDE.mdのルールを確認付きの作成に変える件は、どう修正するよう指示した？",
+      "expect": ["86980700-9dfa-8d9a-aa85-9ea00837ba38"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "配布パッケージを展開して中身を確かめるとき、リポジトリの外に置くのはなぜ？",
+      "expect": ["doc:.claude/agents/review-shipping.md#1.-配る物の中身"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "特殊フォントに頼らず、幅がずれないアイコン記号はどう選んだ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/115#ac5c312368b7-1",
+        "doc:.agents/skills/tui/SKILL.md#アイコン",
+        "github:iroha924/gleanery/pull/115#ac5c312368b7-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "バージョン後退の検知でmain最新との比較を常に行わなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "配布パッケージに dist/dashboard が混入しないよう何を確認している？",
+      "expect": ["github:iroha924/gleanery/pull/116#fe83a7091678-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "データ移行のスクリプトを本番に持ち込まず削除したのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/119#e07077f88c41-1",
+        "github:iroha924/gleanery/pull/119#e07077f88c41-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "レビュー結果を全件まとめて返さず件数だけ先に示すのはなぜ？",
+      "expect": [
+        "doc:plugin/skills/review/reviewers/adversarial.md#出力",
+        "doc:plugin/skills/review/SKILL.md#このスキルが防ぐ失敗",
+        "doc:plugin/skills/review/reviewers/security.md#出力"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "scripts/check- の検査が自分自身を誤って引っかけてしまうのはなぜ？",
+      "expect": ["doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "もう一度追跡し直したとき、sessionize は既存の結果とどう合わせる？",
+      "expect": ["github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "kysely を別の ORM に移行しなかったのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/117#12323d11a5ce-1",
+        "doc:CLAUDE.md#実行境界",
+        "doc:AGENTS.md#db-と接続"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "sqliteのコマンドラインから直接書き込むとエラーになるのはなぜ？",
+      "expect": ["doc:.agents/skills/knowledge-schema/SKILL.md#全文検索の索引"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "DBのバージョン食い違いでも自動記録が止まらないのはなぜ？",
+      "expect": ["doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": ".claude/rules/ui.md が効くのはどのソースを編集するとき？",
+      "expect": ["doc:.claude/rules/ui.md#ui.md"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "レビュー担当に投げる定型の質問、何を足して何を足さないと決めた？",
+      "expect": ["github:iroha924/gleanery/pull/28#bb161fac2449-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "作業ツリーを分けて開発する理由はどのドキュメントに書かれている？",
+      "expect": [
+        "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
+        "github:iroha924/gleanery/pull/30#f4e29bb98394-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "クローズされたイシューを取り込み対象から外したのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "img.shields.io/github/license/iroha924/gleanery のバッジは日本語版READMEのどこ？",
+      "expect": ["doc:README.ja.md#gleanery"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "再レビュー時も差分の一部でなく全部を見る方針にしたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/50#0aae6c28ea83-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "Codex への頼み方の手順は、常に読ませる決まり以外にどこへ置いた？",
+      "expect": ["github:iroha924/gleanery/pull/118#3b826f46d785-1", "doc:CLAUDE.md#review"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "検索方式やモデル選定の方針について何と言っていた？",
+      "expect": ["6a24f447-12fc-8c06-864e-ddca59e3d248", "4336ba05-7b93-8094-ad0b-79a48a2119fd"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "成果物に紛れた指示文への対策、承認記録の検証をやめて何にした？",
+      "expect": [
+        "github:iroha924/gleanery/pull/32#4dca9f552fa6-1",
+        "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "配布時のツール名の分かりやすさと候補名spicaについて何と言った？",
+      "expect": ["4367ef14-9209-8f83-a7ce-ce5d21fb624b"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "gleaneryを点検して問題を報告するとき、何を添える決まり？",
+      "expect": ["doc:AGENTS.md#動き方"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "本文の分類にLLMを使わず定型行の抽出にしたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "評価用に本番とは別の検索サーバーを作らなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "READMEのコマンド一覧を全部載せず一部だけにしたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/125#85ac203ecf88-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "名前案として格言を縮めた造語について何と言った？",
+      "expect": ["f54003c5-10c7-855b-937c-0d36be91feb9", "04f58d61-fe96-8bf3-9f8d-8c90b5682b00"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "レビュー用スキルが指摘した箇所をその場で修正しないのはなぜ？",
+      "expect": ["doc:plugin/skills/review/SKILL.md#直さない"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "検索設定が比較元と食い違ったまま評価を走らせない仕組みは？",
+      "expect": ["github:iroha924/gleanery/pull/114#554de41b305a-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "依存更新を新版の出た直後に上げないため、どんな待機とまとめ方にした？",
+      "expect": [
+        "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1",
+        "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "remuを採用する場合のアプリ名の扱いについて何と言った？",
+      "expect": ["d802d488-c70f-808e-843f-44ead0fd34e0"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "エージェント評価を回したとき手元に会話履歴が溜まるのを防ぐには？",
+      "expect": ["doc:.claude/rules/evals.md#agentic-の-eval"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "会話で使う言語についてメモリにどう残すよう指示した？",
+      "expect": ["29b7a565-3e97-82dd-8e5a-98e00e9fbf07"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "検索しても何も見つからないときはどうすればいい？",
+      "expect": ["doc:README.md#troubleshooting", "doc:README.ja.md#困ったとき"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "分岐元が特定できない場合、何を基準に差分を見るのか？",
+      "expect": [
+        "github:iroha924/gleanery/pull/128#ab2a77298cca-1",
+        "github:iroha924/gleanery/pull/128#ab2a77298cca-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "敵対的レビューの観点だけ他より時間がかかるのはなぜ？",
+      "expect": ["doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "traceの説明文を複数行でなく一行にしたのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/26#6672859e86c6-1",
+        "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "mitos の実行パスを片方の環境だけ書き換えたのはどっち？",
+      "expect": [
+        "github:iroha924/gleanery/pull/26#ed47acd4ed48-1",
+        "github:iroha924/gleanery/pull/26#ed47acd4ed48-1.r1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "relation"
+    },
+    {
+      "q": "CIでripgrepを入れる手順を丸ごと削除したのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/103#639949829e48-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": ".github/workflows/ のリリース処理は脆弱性報告の対象に入る？",
+      "expect": ["doc:SECURITY.md#scope"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "レビュー対象の差分を集めるとき、新しく作ったファイルが漏れるのはなぜ？",
+      "expect": ["doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "同梱した依存ライブラリの許諾条件はどこに書いてある？THIRD_PARTY_NOTICES.md",
+      "expect": [
+        "doc:README.ja.md#ライセンス",
+        "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき",
+        "doc:README.md#license"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "検索結果からドキュメントを初めから外さなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/117#35651e11e7a7-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "eval実行によるレート制限の懸念について開発者は何と言った？",
+      "expect": ["2515bc7c-0a10-8ab6-b545-33e4ccaa32ff"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "レビューで過去の知見検索が空だったとき、失敗か本当に無いかどう見分ける？",
+      "expect": [
+        "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）",
+        "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "作業後のプラグイン再読込は誰が行うと言っていた？",
+      "expect": ["cedf824c-e338-8642-8dc3-2d5540edc143"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "自前で文章を生成するAPI呼び出しをやめたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "Codexがスキルを勝手に呼び出さないようにする設定はどこでしてる？",
+      "expect": [
+        "github:iroha924/gleanery/pull/26#7f8d25878436-1",
+        "doc:.agents/skills/plugin-release/SKILL.md#plugin-skill"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "Codexの見張り役とClaude側ルールの扱いはどう指示した？",
+      "expect": [
+        "230c42ac-bd41-8462-853b-aa5d0b2a8b78",
+        "672ba92c-df92-89e5-82e6-3e514787d7e0",
+        "92b2f857-bac4-8f25-a8f3-f03fc723ffb4"
+      ],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "管理画面をブラウザからターミナル表示に切り替えたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/115#e45974c9752b-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "plugin/skills/review/references/peer-model.mdで相手に書き込ませない方法は？",
+      "expect": ["doc:plugin/skills/review/references/peer-model.md#立てる"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "敵対的レビューの初回返答で判定保留にできる条件と指摘の出し方は？",
+      "expect": [
+        "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目",
+        "doc:plugin/skills/review/reviewers/adversarial.md#出力"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "knipの導入と必須化の進め方はどう決めた？",
+      "expect": ["15013c1b-1873-8680-8065-37b2d7f4f1f2", "1ba02053-f43f-8059-b65e-f3efb705a474"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "脆弱性の連絡先に電子メールを使わなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/123#a6173565e402-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "検索精度を上げるのに手元のベクトル化や並べ替えモデルを使わなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "エージェント本文で.claude/rulesに頼ってはいけない理由は？",
+      "expect": ["doc:.agents/skills/plugin-agent-authoring/SKILL.md#本文の書き方"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "古い判断を取り消したとき、記録にどう書けば検証を通る？",
+      "expect": ["doc:plugin/skills/trace/SKILL.md#check-が弾く規則"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "--settingsで禁止してもレビュアーがファイルを書けてしまうのはなぜ？",
+      "expect": ["doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "cover の警告で成果物らしいパスだけ除外する案を採らなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/27#7d34a86be879-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "PRやイシューを取り込むにはどのサブコマンドを使う？",
+      "expect": ["doc:README.md#commands", "doc:README.ja.md#コマンド"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "案内文の表示幅を標準の計算でなくpanel.tsで見積もるのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/120#491773d9952b-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "#140本文の書き間違い訂正の件について何と尋ねた？",
+      "expect": ["09f56a57-7778-854f-b3f3-419637b49e38"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "PR #117で応答データをどんな形式で返すことにした？",
+      "expect": [
+        "github:iroha924/gleanery/pull/117#4b3eabae03f0-1",
+        "github:iroha924/gleanery/pull/117#35651e11e7a7-1"
+      ],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "配布物の検査で、不要になったものを外すだけで済ませなかったのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/116#fe83a7091678-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "サーバー側のSQL呼び出し検出でqueryも対象に含めたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/101#4f4765dedddf-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "エージェント型検索の参考資料で特に注目していた技術は何と言った？",
+      "expect": ["c20aa35b-f214-8984-a896-c5fdc44c0c10", "9cd1e574-259b-82fb-b5d3-b2bec8379bfb"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "ダッシュボードの見た目やキー操作を変えたいとき、どの手順書を参照すればいい？",
+      "expect": [
+        "doc:.agents/skills/tui/SKILL.md#skill.md",
+        "doc:.agents/skills/tui/SKILL.md#triggers",
+        "doc:AGENTS.md#作業別の-skill（.agents/skills/）"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "変更内容を保存するたびに検証コマンドを走らせるのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/27#ef8cba604e91-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "他人のPRをレビューする際、--restricted などの隔離はまだ使える？",
+      "expect": [
+        "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方",
+        "doc:plugin/skills/review/SKILL.md#塞ぐ手段は無い"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "意地悪な視点でコードレビューするとき、どんな欠陥を重点的に疑う？",
+      "expect": [
+        "doc:plugin/skills/review/reviewers/adversarial.md#何を探すか",
+        "doc:plugin/skills/review/reviewers/adversarial.md#掃き出しモード"
+      ],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "document"
+    },
+    {
+      "q": "評価データを番号の並びだけで紐づける案をやめたのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/114#554de41b305a-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "メンテナ向けの注記をモデルに読ませずに残すにはどこに書く？",
+      "expect": ["github:iroha924/gleanery/pull/118#f637b2538541-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "変更なしで素通りさせる前に後退チェックを走らせるのはなぜ？",
+      "expect": ["github:iroha924/gleanery/pull/126#ab8986b3ed63-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": "noa の名前を mcp と plugin のどちらにするかで何と言った？",
+      "expect": ["b01912bf-cce5-825f-a887-c6af3d18b9fd"],
+      "kind": "message",
+      "source": "message",
+      "type": "message"
+    },
+    {
+      "q": "PR #124 でリリースが失敗した時はどう対応すると決めた？",
+      "expect": ["github:iroha924/gleanery/pull/124#cac608233bd6-1"],
+      "kind": "decision",
+      "source": "knowledge",
+      "type": "decision"
+    },
+    {
+      "q": ".github/ISSUE_TEMPLATE/bug.md で不具合報告に何を書けばいい？",
+      "expect": ["doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと", "doc:.github/ISSUE_TEMPLATE/bug.md#環境"],
+      "kind": "document",
+      "source": "knowledge",
+      "type": "identifier"
+    },
+    {
+      "q": "設計ドキュメントの書き方ルールを常に読む指示ファイルに入れなかったのはなぜ？",
+      "expect": [
+        "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1",
+        "github:iroha924/gleanery/pull/30#a12e5629b835-1"
+      ],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
+    },
+    {
+      "q": "frontmatterで改行入りの説明を解析するライブラリを見送った理由は？",
+      "expect": ["github:iroha924/gleanery/pull/26#6672859e86c6-1.r1"],
+      "kind": "option",
+      "source": "knowledge",
+      "type": "option"
     }
   ]
 }

@@ -65,3 +65,38 @@ export function verdict(base: Run[], setup: Run[]): Verdict {
     reasons.push("more errors");
   return { gained, lost, net, top1, direct, turns, toolKib, adopt: reasons.length === 0, reasons };
 }
+
+/** What must match for two setups to be compared (from each run's summary). */
+export type Conditions = {
+  cases: string;
+  prompt: number | null;
+  models: string;
+  claude: string;
+  effort: string;
+  db: string | null;
+  /** The snapshot the DB copy was made or migrated from */
+  source: string | null;
+  bundle: string | null;
+  /** false for a pilot or a run the budget stopped early */
+  complete: boolean;
+};
+
+/** Why base and setup cannot be compared (empty when they can). A migrated copy compares only with copies of the same source snapshot. */
+export function ineligible(base: Conditions[], setup: Conditions[]): string[] {
+  const out: string[] = [];
+  if (base.length < 3 || setup.length < 3) out.push("fewer than 3 runs");
+  if ([...base, ...setup].some((c) => !c.complete)) out.push("incomplete run");
+  const all = [...base, ...setup];
+  for (const k of ["cases", "prompt", "models", "claude", "effort"] as const)
+    if (new Set(all.map((c) => c[k])).size > 1) out.push(`${k} differ`);
+  for (const [side, cs] of [
+    ["base", base],
+    ["setup", setup],
+  ] as const) {
+    if (new Set(cs.map((c) => c.db)).size > 1) out.push(`${side} runs used different DB copies`);
+    if (new Set(cs.map((c) => c.bundle)).size > 1) out.push(`${side} runs used different bundles`);
+  }
+  if (all.some((c) => c.db === null || c.source === null)) out.push("DB not recorded");
+  else if (new Set(all.map((c) => c.source)).size > 1) out.push("DB copies come from different snapshots");
+  return out;
+}

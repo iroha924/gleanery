@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { openReader } from "../src/db.ts";
 import { type Hit, searchKnowledge, searchMessages, searchSplit } from "../src/search.ts";
-import { retired, SPLITS, type Split, splitStale } from "./cases.ts";
+import { SPLITS, type Split, splitStale } from "./cases.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 type Case = { q: string; expect: string[]; kind: string; source: string };
@@ -30,7 +30,7 @@ if (split !== undefined && !(split in SPLITS))
   throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
 const allCases = (
   JSON.parse(fs.readFileSync(path.join(HERE, "retrieval.json"), "utf8")) as { cases: Case[] }
-).cases.filter((c, i) => !retired(c) && (split === undefined || SPLITS[split](c, i)));
+).cases.filter((c, i) => split === undefined || SPLITS[split](c, i));
 
 const K = 5;
 const db = openReader();

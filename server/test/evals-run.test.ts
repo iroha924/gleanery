@@ -3,9 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { fixedDb, runDir } from "../evals/agentic/run.ts";
+import { Budget, fixedDb, runDir } from "../evals/agentic/run.ts";
 import { callsOf, sessionOf } from "../evals/agentic/session.ts";
-import { type Run, solved, verdict } from "../evals/agentic/verdict.ts";
+import { type Conditions, ineligible, type Run, solved, verdict } from "../evals/agentic/verdict.ts";
 import { framed, type Hit, renderHits, splitJson } from "../src/search.ts";
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-test-")));
@@ -206,4 +206,52 @@ test("the measured DB must be a fixed copy without pending WAL", () => {
     if (saved === undefined) delete process.env.GLEANERY_DB;
     else process.env.GLEANERY_DB = saved;
   }
+});
+
+const cond = (o: Partial<Conditions> = {}): Conditions => ({
+  cases: "c",
+  prompt: 2,
+  models: "claude-sonnet-5",
+  claude: "2.1.282",
+  effort: "default",
+  db: "d1",
+  source: "d1",
+  bundle: "b1",
+  complete: true,
+  ...o,
+});
+const three = (o: Partial<Conditions> = {}) => [cond(o), cond(o), cond(o)];
+
+test("setups compare only on 3+ runs each with matching conditions", () => {
+  assert.deepEqual(ineligible(three(), three({ bundle: "b2" })), []);
+  assert.deepEqual(ineligible(three(), [cond(), cond()]), ["fewer than 3 runs"]);
+  assert.deepEqual(ineligible(three(), [cond(), cond(), cond({ complete: false })]), ["incomplete run"]);
+  assert.deepEqual(ineligible(three(), three({ models: "claude-opus-5-5", prompt: 1 })), [
+    "prompt differ",
+    "models differ",
+  ]);
+  assert.deepEqual(ineligible(three(), [cond(), cond(), cond({ bundle: "b2" })]), [
+    "setup runs used different bundles",
+  ]);
+});
+
+test("a migrated copy compares with copies of the same snapshot only", () => {
+  assert.deepEqual(ineligible(three(), three({ db: "d2", source: "d1" })), []);
+  assert.deepEqual(ineligible(three(), three({ db: "d3", source: "d3" })), [
+    "DB copies come from different snapshots",
+  ]);
+  assert.deepEqual(ineligible(three({ db: null, source: null }), three()), ["DB not recorded"]);
+});
+
+test("the budget reserves each question's cap before it starts, so parallel questions cannot pass the cap", () => {
+  const b = new Budget(1.2);
+  assert.equal(b.reserve(), true);
+  assert.equal(b.reserve(), true);
+  assert.equal(b.reserve(), false);
+  b.settle(0.1);
+  assert.equal(b.reserve(), true);
+  b.settle(0.3);
+  b.settle(0.2);
+  assert.equal(Math.round(b.spent * 10) / 10, 0.6);
+  assert.equal(b.reserve(), true);
 });
