@@ -2,7 +2,7 @@
 // Drafts search words for existing records, for the owner to review and load with `gleanery db terms import`. Not shipped.
 // One record per `claude -p` call, with no tools and no MCP, and the record passed as data. Drafts go outside the repository.
 // Document sections are included: docs sync writes no words, so this import is their only writer. The model and prompt version go to <out>.meta.json.
-//   node scripts/terms-draft.mjs <db> <project key> <out.json> [--par 4] [--budget 20] [--with-parent <out2.json>]
+//   bun run terms:draft -- <db> <project key> <out.json> [--par 4] [--budget 20]
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -28,14 +28,11 @@ const { values, positionals } = parseArgs({
   options: {
     par: { type: "string", default: "4" },
     budget: { type: "string", default: "20" },
-    "with-parent": { type: "string" },
   },
 });
 const [dbFile, projectKey, out] = positionals;
 if (!dbFile || !projectKey || !out)
-  throw new Error(
-    "usage: terms-draft.mjs <db> <project key> <out.json> [--par 4] [--budget 20] [--with-parent <out2.json>]",
-  );
+  throw new Error("usage: terms-draft.mjs <db> <project key> <out.json> [--par 4] [--budget 20]");
 const par = Number(values.par);
 const cap = Number(values.budget);
 if (!Number.isInteger(par) || par < 1) throw new Error(`--par must be a positive integer (${values.par})`);
@@ -46,9 +43,9 @@ const db = new DatabaseSync(dbFile, { readOnly: true });
 const rows = db
   .prepare(
     `select k.source_key key, k.kind, k.status, coalesce(k.heading, '') heading, k.body, coalesce(k.reason, '') reason,
-       hex(k.content_hash) hash, d.source_key parent, coalesce(s.title, '') title
+       hex(k.content_hash) hash, coalesce(s.title, '') title
      from knowledge k join project p on p.id = k.project_id
-       left join knowledge d on d.id = k.decision_id left join source_item s on s.id = k.source_item_id
+       left join source_item s on s.id = k.source_item_id
      where p.key = ?
      order by k.id`,
   )
@@ -61,19 +58,19 @@ const meta = { model: MODEL, prompt: PROMPT_VERSION, db: path.basename(dbFile), 
 fs.writeFileSync(`${out}.meta.json`, JSON.stringify(meta, null, 1));
 let spent = 0;
 
-/** Distinct words in order, cut at `most` and at the import limit of 400 characters */
-function fit(words, most) {
+/** Distinct words in order, cut at the 12 the prompt asks for and at the import limit of 400 characters */
+function fit(words) {
   const kept = [];
   for (const w of words) {
     const t = w.trim();
     if (!t || kept.includes(t)) continue;
-    if (kept.length === most || [...[...kept, t].join(", ")].length > 400) break;
+    if (kept.length === 12 || [...[...kept, t].join(", ")].length > 400) break;
     kept.push(t);
   }
   return kept.join(", ");
 }
 // The model sometimes gives more words than asked for; drafts made before this cut get it too
-for (const e of Object.values(draft)) e.terms = fit(e.terms.split(","), 12);
+for (const e of Object.values(draft)) e.terms = fit(e.terms.split(","));
 fs.writeFileSync(out, JSON.stringify(draft, null, 1));
 
 function claude(text) {
@@ -146,7 +143,7 @@ await Promise.all(
         .filter(Boolean)
         .join("\n");
       const terms = await claude(`${PROMPT}\n\n<record>\n${record}\n</record>`);
-      if (terms) draft[r.key] = { terms: fit(terms.split(","), 12), content_hash: r.hash.toLowerCase() };
+      if (terms) draft[r.key] = { terms: fit(terms.split(",")), content_hash: r.hash.toLowerCase() };
       fs.writeFileSync(out, JSON.stringify(draft, null, 1));
       process.stderr.write(`\r${++done}/${todo.length + done} spent $${spent.toFixed(2)}   `);
     }
@@ -154,20 +151,3 @@ await Promise.all(
 );
 process.stderr.write("\n");
 console.log(`${Object.keys(draft).length} of ${rows.length} records drafted, spent $${spent.toFixed(2)}`);
-
-// Options with their decision's words appended: own words first, then the decision's in their order, until the import limits (16 words, 400 characters)
-if (values["with-parent"]) {
-  const merged = {};
-  for (const r of rows) {
-    const own = draft[r.key];
-    const parent = r.kind === "option" && r.parent ? draft[r.parent] : undefined;
-    if (!own && !parent) continue;
-    const terms = fit([...(own?.terms ?? "").split(","), ...(parent?.terms ?? "").split(",")], 16);
-    merged[r.key] = { terms, content_hash: r.hash.toLowerCase() };
-  }
-  fs.writeFileSync(values["with-parent"], JSON.stringify(merged, null, 1));
-  fs.writeFileSync(
-    `${values["with-parent"]}.meta.json`,
-    JSON.stringify({ ...meta, withParent: true }, null, 1),
-  );
-}
