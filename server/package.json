@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "gleanery の MCP・CLI・自動記録・端末の画面（手元の SQLite）",
+  "description": "gleanery MCP, CLI, capture, and terminal screen (local SQLite)",
   "scripts": {
     "check": "biome check .",
     "fix": "biome check --write .",
