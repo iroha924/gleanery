@@ -94,6 +94,15 @@ test("a broken name map stops instead of being skipped, and places with a remote
     fs.writeFileSync(path.join(home, ".gleanery", "projects.json"), '{"/x": "a",');
     assert.throws(() => nameLocal(r.dir, "notes"), /is not a valid JSON project table/);
     assert.throws(() => identify(r.dir), /is not a valid JSON project table/);
+    for (const invalid of [
+      { relative: "notes" },
+      { "/x": 123 },
+      { "/x": null },
+      { "/x": "INVALID" },
+    ]) {
+      fs.writeFileSync(path.join(home, ".gleanery", "projects.json"), JSON.stringify(invalid));
+      assert.throws(() => identify(r.dir), /is not a valid JSON project table/);
+    }
     fs.rmSync(path.join(home, ".gleanery", "projects.json"));
     const remote = repo("git@github.com:o/r.git");
     try {

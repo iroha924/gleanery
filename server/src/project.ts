@@ -64,7 +64,14 @@ function localMap(): Record<string, string> {
   } catch {
     m = null;
   }
-  if (!m || typeof m !== "object" || Array.isArray(m))
+  if (
+    !m ||
+    typeof m !== "object" ||
+    Array.isArray(m) ||
+    Object.entries(m).some(
+      ([root, name]) => !path.isAbsolute(root) || typeof name !== "string" || !LOCAL_KEY.test(name),
+    )
+  )
     throw new Error(
       `${localFile()} is not a valid JSON project table. Fix or delete it, then name the project again.`,
     );
