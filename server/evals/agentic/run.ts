@@ -235,7 +235,6 @@ async function solve(
     const events = await claude(
       [
         "-p",
-        `${c.q}\n\n${ANSWER}`,
         "--model",
         o.model,
         ...(o.effort ? ["--effort", o.effort] : []),
@@ -260,6 +259,7 @@ async function solve(
         "--no-session-persistence",
       ],
       cwd,
+      `${c.q}\n\n${ANSWER}`,
     );
     fs.writeFileSync(path.join(dir, "trace.jsonl"), events.map((e) => JSON.stringify(e)).join("\n"));
     const last = events.findLast((e) => e.type === "result");
@@ -299,9 +299,11 @@ type Event = { type?: string; [k: string]: unknown };
 // Even with --no-session-persistence, ~/.claude/projects/<cwd>/memory/ is created per cwd (measured: 42 for 42 questions)
 export const CLAUDE_ENV = { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
 
-function claude(args: string[], cwd: string): Promise<Event[]> {
+/** The prompt goes through stdin: as an argument, a question starting with `--` is read as an option. */
+function claude(args: string[], cwd: string, prompt: string): Promise<Event[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", args, { cwd, env: CLAUDE_ENV, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn("claude", args, { cwd, env: CLAUDE_ENV, stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin.end(prompt);
     const timer = setTimeout(() => child.kill("SIGTERM"), 300_000);
     let out = "";
     let err = "";

@@ -59,7 +59,6 @@ function claude(prompt: string): Promise<string> {
       "claude",
       [
         "-p",
-        prompt,
         "--model",
         MODEL,
         "--max-budget-usd",
@@ -76,8 +75,10 @@ function claude(prompt: string): Promise<string> {
         "json",
         "--no-session-persistence",
       ],
-      { cwd, env: CLAUDE_ENV, stdio: ["ignore", "pipe", "ignore"] },
+      { cwd, env: CLAUDE_ENV, stdio: ["pipe", "pipe", "ignore"] },
     );
+    // Through stdin: as an argument, text starting with `--` is read as an option
+    child.stdin.end(prompt);
     const timer = setTimeout(() => child.kill("SIGTERM"), 300_000);
     let out = "";
     child.stdout.on("data", (d) => {

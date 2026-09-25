@@ -173,7 +173,6 @@ function claude(prompt: string): Promise<string> {
       "claude",
       [
         "-p",
-        prompt,
         "--model",
         values.model,
         "--setting-sources",
@@ -188,8 +187,10 @@ function claude(prompt: string): Promise<string> {
         "json",
         "--no-session-persistence",
       ],
-      { cwd: CACHE, env: CLAUDE_ENV, stdio: ["ignore", "pipe", "ignore"] },
+      { cwd: CACHE, env: CLAUDE_ENV, stdio: ["pipe", "pipe", "ignore"] },
     );
+    // Through stdin: as an argument, text starting with `--` is read as an option
+    child.stdin.end(prompt);
     const timer = setTimeout(() => child.kill("SIGTERM"), 300_000);
     let out = "";
     child.stdout.on("data", (d) => {
@@ -328,8 +329,9 @@ if (values.base) {
     return {
       cases: s.summary.cases,
       prompt: y.prompt ?? null,
-      models: (y.resolved_models ?? []).join(","),
-      claude: (y.claude_code ?? []).join(","),
+      // A question that failed before the model started records no model ("不明"); it says nothing about the conditions
+      models: (y.resolved_models ?? []).filter((m) => m !== "不明").join(","),
+      claude: (y.claude_code ?? []).filter((m) => m !== "不明").join(","),
       effort: y.effort ?? "",
       db: y.db ?? null,
       source: y.source ?? null,
