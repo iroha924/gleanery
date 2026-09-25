@@ -8,7 +8,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import process from "node:process";
-import { formerNameLines, hasFormerName } from "./lib/former-name.mjs";
+import { bannedNameLines, hasBannedName } from "./lib/banned-name.mjs";
 
 /** Spellings allowed to remain, with the reason. */
 const ALLOWED = [
@@ -67,7 +67,7 @@ for (const file of tracked) {
 
 for (const file of tracked) {
   if (/mitos/i.test(file)) hits.push(`${file}  old tool name in the file name`);
-  if (hasFormerName(file)) hits.push(`${file}  former product name in the file name`);
+  if (hasBannedName(file)) hits.push(`${file}  banned name in the file name`);
   if (skip.test(file) || /\.(png|jpg|jpeg|gif|webp|ico|woff2?|ttf|zip)$/.test(file)) continue;
   // Lockfiles are text and name the package, so unlike the patterns above this check reads them too
   let body = "";
@@ -76,7 +76,7 @@ for (const file of tracked) {
   } catch {
     continue;
   }
-  for (const n of formerNameLines(body)) hits.push(`${file}:${n}  former product name`);
+  for (const n of bannedNameLines(body)) hits.push(`${file}:${n}  banned name`);
 }
 
 if (hits.length) {
@@ -84,7 +84,7 @@ if (hits.length) {
   console.error(hits.slice(0, 40).join("\n"));
   if (hits.length > 40) console.error(`\n…and ${hits.length - 40} more`);
   console.error(
-    "\nIf there is a reason to keep a pattern hit, add it with the reason to ALLOWED in scripts/check-naming.mjs. The former product name has no exceptions.",
+    "\nIf there is a reason to keep a pattern hit, add it with the reason to ALLOWED in scripts/check-naming.mjs. the banned name has no exceptions.",
   );
   process.exit(1);
 }

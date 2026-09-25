@@ -10,6 +10,7 @@ import { inTransaction } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { decisionHash, RULE } from "./decisions.ts";
 import type { Place } from "./project.ts";
+import { plural } from "./text.ts";
 
 export type Moved = {
   from: string;
@@ -17,7 +18,8 @@ export type Moved = {
   knowledge: number;
   terms: number;
   conversations: number;
-  spooled: number;
+  /** Spool files on the old key, by place: pending, set aside for unregistered projects, rejected */
+  spooled: { pending: number; held: number; rejected: number };
   applied: boolean;
 };
 
@@ -33,10 +35,15 @@ function extracted(key: string): { status: string; parent: string | null } | nul
   return { status: m[2] === "c" ? "chosen" : "rejected", parent: m[1] };
 }
 
-/** Spool files (queued, unregistered, rejected) whose project is `from`. */
-function spoolFiles(from: string): string[] {
-  const out: string[] = [];
-  for (const dir of [spoolDir(), unregisteredDir(), rejectedDir()]) {
+/** Spool files whose project is `from`, by place: pending, set aside for unregistered projects, rejected. */
+function spoolFiles(from: string): Record<keyof Moved["spooled"], string[]> {
+  const out: Record<keyof Moved["spooled"], string[]> = { pending: [], held: [], rejected: [] };
+  const places = [
+    ["pending", spoolDir()],
+    ["held", unregisteredDir()],
+    ["rejected", rejectedDir()],
+  ] as const;
+  for (const [place, dir] of places) {
     let names: string[];
     try {
       names = fs.readdirSync(dir).filter((n) => n.endsWith(".json"));
@@ -48,7 +55,7 @@ function spoolFiles(from: string): string[] {
       const file = path.join(dir, n);
       try {
         if ((JSON.parse(fs.readFileSync(file, "utf8")) as { project?: unknown }).project === from)
-          out.push(file);
+          out[place].push(file);
       } catch {
         // A broken record is left to capture flush, which sets it aside
       }
@@ -72,15 +79,23 @@ function respool(file: string, to: string): void {
  * Spool files are rewritten before the database, holding the spool lock, so a failed run can be run again as is.
  */
 export async function moveProject(db: Kysely<DB>, from: string, to: Place, apply: boolean): Promise<Moved> {
-  if (from === to.key) throw new Error(`The current remote's key is already ${from}. Nothing to move`);
+  if (from === to.key)
+    throw new Error(
+      `Nothing to move: the current remote's key is already ${from}. Point origin at the renamed repository first`,
+    );
   const release = apply ? lock() : () => {};
   if (!release) throw new Error("A capture send holds the spool. Run this again when it finishes");
   try {
     return await inTransaction(db, async (trx) => {
       const project = await trx.selectFrom("project").select("id").where("key", "=", from).executeTakeFirst();
-      if (!project) throw new Error(`No project has the key ${from}`);
+      if (!project)
+        throw new Error(
+          `Nothing to move: no project has the key ${from} (already moved, or a different key? See \`sphica project list\`)`,
+        );
       if (await trx.selectFrom("project").select("id").where("key", "=", to.key).executeTakeFirst())
-        throw new Error(`${to.key} is already registered as another project`);
+        throw new Error(
+          `Nothing to move: ${to.key} is already registered as another project. If it was added after the rename, delete it with \`sphica project forget ${to.key} --yes\` (its records go too), then move again`,
+        );
 
       const oldRepo = repoOf(from);
       const newRepo = repoOf(to.key);
@@ -148,12 +163,12 @@ export async function moveProject(db: Kysely<DB>, from: string, to: Place, apply
       );
       if (unmatched.length)
         throw new Error(
-          `These records have search words but a hash no GitHub sync rule produces, so moving them would drop the words: ${unmatched
+          `Nothing to move: ${plural(unmatched.length, "record")} with search words ${unmatched.length === 1 ? "has" : "have"} a hash no GitHub sync rule produces, so moving would drop their words (${unmatched
             .slice(0, 5)
             .map((r) => r.source_key)
             .join(
               ", ",
-            )}${unmatched.length > 5 ? ` and ${unmatched.length - 5} more` : ""}. Nothing was moved`,
+            )}${unmatched.length > 5 ? ` and ${unmatched.length - 5} more` : ""}). Update Sphica, or report this with the keys`,
         );
       const conversations = github
         ? await trx
@@ -164,6 +179,11 @@ export async function moveProject(db: Kysely<DB>, from: string, to: Place, apply
             .execute()
         : [];
       const spooled = spoolFiles(from);
+      const counts = {
+        pending: spooled.pending.length,
+        held: spooled.held.length,
+        rejected: spooled.rejected.length,
+      };
       const kept = rows.filter(hasWords).length;
       const moved = {
         from,
@@ -172,9 +192,9 @@ export async function moveProject(db: Kysely<DB>, from: string, to: Place, apply
         terms: kept,
         conversations: conversations.length,
       };
-      if (!apply) return { ...moved, spooled: spooled.length, applied: false };
+      if (!apply) return { ...moved, spooled: counts, applied: false };
 
-      for (const file of spooled) respool(file, to.key);
+      for (const file of [...spooled.pending, ...spooled.held, ...spooled.rejected]) respool(file, to.key);
       await trx
         .updateTable("project")
         .set({ key: to.key, name: to.name })
@@ -202,7 +222,7 @@ export async function moveProject(db: Kysely<DB>, from: string, to: Place, apply
             .set({ external_id: `${newRepo}${c.external_id.slice(`${oldRepo}`.length)}` })
             .where("id", "=", c.id)
             .execute();
-      return { ...moved, spooled: spooled.length, applied: true };
+      return { ...moved, spooled: counts, applied: true };
     });
   } finally {
     release();

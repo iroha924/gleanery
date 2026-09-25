@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { hasFormerName } from "./lib/former-name.mjs";
+import { hasBannedName } from "./lib/banned-name.mjs";
 import { tarballProblems, trackedDistribution } from "./lib/tarball.mjs";
 
 const tgz = process.argv[2] && path.resolve(process.argv[2]);
@@ -56,12 +56,12 @@ try {
       .readdirSync(dir, { withFileTypes: true, recursive: true })
       .filter((e) => e.isFile())
       .map((e) => path.join(e.parentPath, e.name));
-  const former = filesIn(pkg).filter(
-    (f) => hasFormerName(path.relative(pkg, f)) || hasFormerName(fs.readFileSync(f, "latin1")),
+  const banned = filesIn(pkg).filter(
+    (f) => hasBannedName(path.relative(pkg, f)) || hasBannedName(fs.readFileSync(f, "latin1")),
   );
-  if (former.length)
+  if (banned.length)
     throw new Error(
-      `the tarball has the former product name in ${former.map((f) => path.relative(pkg, f)).join(", ")}`,
+      `the tarball has the banned name in ${banned.map((f) => path.relative(pkg, f)).join(", ")}`,
     );
   // Web UI assets no longer ship (the UI moved to the terminal). If they remain, bundle forgot to remove them
   if (fs.existsSync(path.join(pkg, "dist", "dashboard")))

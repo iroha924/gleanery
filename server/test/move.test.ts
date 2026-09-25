@@ -159,7 +159,7 @@ test("a move keeps ids, bodies, and search words through a sync under the new na
       knowledge: 7,
       terms: 7,
       conversations: 1,
-      spooled: 3,
+      spooled: { pending: 1, held: 1, rejected: 1 },
       applied: false,
     });
     assert.equal(projectOf(files.queued), FROM, "a check writes nothing");
@@ -198,7 +198,7 @@ test("a move keeps ids, bodies, and search words through a sync under the new na
       0,
     );
 
-    await assert.rejects(moveProject(db.ingest, FROM, TO, true), /No project has the key/);
+    await assert.rejects(moveProject(db.ingest, FROM, TO, true), /Nothing to move: no project has the key/);
   } finally {
     await db.done();
   }
@@ -214,7 +214,10 @@ test("a move stops before writing when a record with search words has a hash the
       "update knowledge_terms set content_hash = zeroblob(32) where knowledge_id = (select min(id) from knowledge where source_key like '%.c')",
     );
     const before = snapshot(db);
-    await assert.rejects(moveProject(db.ingest, FROM, TO, true), /search words.*\.c\b.*Nothing was moved/);
+    await assert.rejects(
+      moveProject(db.ingest, FROM, TO, true),
+      /Nothing to move: 1 record with search words has .*\.c\b.*report this/,
+    );
     assert.deepEqual(snapshot(db), before);
     assert.equal(projectOf(files.queued), FROM, "the spool is untouched too");
   } finally {
@@ -240,7 +243,7 @@ test("a run stopped after rewriting the spool can be run again", async () => {
     const first = JSON.parse(fs.readFileSync(files.queued, "utf8"));
     fs.writeFileSync(files.queued, JSON.stringify({ ...first, project: TO.key }));
     const moved = await moveProject(db.ingest, FROM, TO, true);
-    assert.equal(moved.spooled, 2);
+    assert.deepEqual(moved.spooled, { pending: 0, held: 1, rejected: 1 });
     assert.equal(projectOf(files.queued), TO.key);
     assert.equal(projectOf(files.held), TO.key);
   } finally {

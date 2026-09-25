@@ -729,7 +729,13 @@ const projectRoutes = buildRouteMap({
         },
       },
       func: async (flags: { cwd?: string; from: string; yes?: boolean }) => {
-        const place = placeOf(flags.cwd ?? process.cwd());
+        const cwd = flags.cwd ?? process.cwd();
+        const place = identify(cwd);
+        // A named project has no remote to move to, and naming one here would register the key the move needs
+        if (!place?.key.startsWith("git:"))
+          throw new Error(
+            `${cwd} has no git remote. Point origin at the renamed repository (git remote set-url origin <url>), then move again`,
+          );
         await withDb("ingest", async (db) => {
           const x = await moveProject(db, flags.from, place, flags.yes === true);
           const rows: Block = {
@@ -737,9 +743,11 @@ const projectRoutes = buildRouteMap({
             rows: [
               ["from", inline(x.from)],
               ["to", inline(x.to)],
-              ["GitHub records", `${x.knowledge} (with search words ${x.terms})`],
-              ["GitHub conversations", `${x.conversations}`],
-              ["queued records", `${x.spooled}`],
+              ["knowledge from GitHub", `${x.knowledge} (${x.terms} with search words)`],
+              ["conversations from GitHub", `${x.conversations}`],
+              ["pending", `${x.spooled.pending}`],
+              ["set aside for unregistered projects", `${x.spooled.held}`],
+              ["rejected by the database", `${x.spooled.rejected}`],
             ],
           };
           console.log(

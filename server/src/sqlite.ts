@@ -30,7 +30,7 @@ export const dbFile = (): string => process.env.SPHICA_DB || path.join(os.homedi
 export function requireRuntime(): void {
   const proto = DatabaseSync.prototype as unknown as Record<string, unknown>;
   if (typeof proto.setAuthorizer !== "function" || typeof proto.enableDefensive !== "function")
-    throw new Error(`sphica needs Node 24.15 or later (this is ${process.version}). Upgrade Node.`);
+    throw new Error(`Sphica needs Node 24.15 or later (this is ${process.version}). Upgrade Node.`);
 }
 
 /** Never create a missing database silently (an empty file looks like "no records"). Only `sphica init` creates it. */

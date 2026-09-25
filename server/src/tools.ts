@@ -37,7 +37,7 @@ const reply = (text: string): Reply => ({ text, items: [] });
 const unregistered = (h: Here) =>
   h.place
     ? `This project (${head(h.place.name, 200)}) is not registered with Sphica. Register it with \`sphica project add\`.`
-    : "This location has no git remote or project name, so sphica cannot tell which project it is.";
+    : "This location has no git remote or project name, so Sphica cannot tell which project it is.";
 
 /**
  * A tool failure with its reason. Left thrown, the SDK returns only error.message, which is empty for an AggregateError
