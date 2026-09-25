@@ -156,7 +156,7 @@ test("terms never appear in knowledge results, read, or the rendered hits", asyn
     assert.ok(!text.includes("marker"), text.slice(0, 200));
 });
 
-test("the owner import writes only records unchanged since the draft and says why it skipped the rest", async () => {
+test("the owner import writes only records unchanged since the draft and says why it skipped the rest", async (t) => {
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
@@ -165,6 +165,7 @@ test("the owner import writes only records unchanged since the draft and says wh
   const changed = knowledge(db, p, { source_key: "t#import-changed", body: "変わる記録" });
   const badTerms = knowledge(db, p, { source_key: "t#import-bad-terms", body: "語が読めない記録" });
   knowledge(db, p, { source_key: "t#import-no-hash", body: "下書きに hash が無い記録" });
+  knowledge(db, p, { source_key: "t#import-short-hash", body: "下書きの hash が短い記録" });
   const hexOf = (id: number) =>
     Buffer.from(
       db.owner.prepare("select content_hash from knowledge where id = ?").get(id)?.content_hash as Uint8Array,
@@ -174,6 +175,7 @@ test("the owner import writes only records unchanged since the draft and says wh
     "t#import-changed": { terms: "stalemarkerzz", content_hash: hexOf(changed) },
     "t#import-bad": { terms: "x", content_hash: "00" },
     "t#import-no-hash": { terms: "x" },
+    "t#import-short-hash": { terms: "x", content_hash: "00" },
     "t#import-bad-terms": { terms: "a\u200bb", content_hash: hexOf(badTerms) },
   };
   db.owner
@@ -184,14 +186,18 @@ test("the owner import writes only records unchanged since the draft and says wh
     const file = path.join(dir, "draft.json");
     fs.writeFileSync(file, JSON.stringify(draft));
     const here = { key: "git:github.com/o/r", name: "o/r" };
+    const printed = t.mock.method(console, "log", () => {});
+    const shown = () => printed.mock.calls.map((c) => String(c.arguments[0])).join("\n");
     const r = importTerms(file, here, db.file);
     assert.equal(r.written, 1);
+    assert.match(shown(), /skipped t#import-changed: the record changed after the draft/);
     assert.deepEqual(
       r.skipped.map((s) => [s.key, s.why.split(":")[0]]),
       [
         ["t#import-changed", "the record changed after the draft"],
         ["t#import-bad", "not a record of this project"],
         ["t#import-no-hash", "the draft has no content_hash of 64 hex digits"],
+        ["t#import-short-hash", "the draft has no content_hash of 64 hex digits"],
         ["t#import-bad-terms", "search word has an invisible or control character U+200B"],
       ],
     );
@@ -201,7 +207,9 @@ test("the owner import writes only records unchanged since the draft and says wh
       listTerms(here, `k:${fresh}`, db.file).map((x) => x.id),
       [fresh],
     );
+    printed.mock.resetCalls();
     assert.deepEqual(listTerms(here, `k:${changed}`, db.file), [], "a record without words lists nothing");
+    assert.match(shown(), new RegExp(`k:${changed} has no search words`));
     for (const bad of ["abc", "m:1", "k:1x", ""])
       assert.throws(() => listTerms(here, bad, db.file), /Could not read --ref .*: use k:<id>/);
     assert.throws(() => listTerms(here, "k:99999", db.file), /k:99999 is not a record of o\/r/);
@@ -213,7 +221,13 @@ test("the owner import writes only records unchanged since the draft and says wh
     assert.throws(() => listTerms(none, undefined, db.file), /o\/none is not registered/);
     const other = path.join(dir, "other.json");
     fs.writeFileSync(other, JSON.stringify({ "t#elsewhere": { terms: "x", content_hash: "0".repeat(64) } }));
+    printed.mock.resetCalls();
     assert.throws(() => importTerms(other, here, db.file), /Imported no search words/);
+    assert.match(
+      shown(),
+      /skipped t#elsewhere: not a record of this project/,
+      "the skipped entries are listed before failing",
+    );
     assert.throws(
       () => importTerms(path.join(dir, "missing.json"), here, db.file),
       /Could not read the draft/,
@@ -226,13 +240,20 @@ test("the owner import writes only records unchanged since the draft and says wh
 });
 
 test("the terms commands tell the owner to migrate a database older than this gleanery", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
   const { importTerms, listTerms } = await import("../src/admin.ts");
   const here = { key: "git:github.com/o/r", name: "o/r" };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-terms-"));
+  const draft = path.join(dir, "draft.json");
+  fs.writeFileSync(draft, JSON.stringify({ "t#any": { terms: "x", content_hash: "0".repeat(64) } }));
   db.owner.exec("pragma user_version = 3");
   try {
     assert.throws(() => listTerms(here, undefined, db.file), /gleanery db migrate/);
-    assert.throws(() => importTerms(db.file, here, db.file), /gleanery db migrate|Could not read the draft/);
+    assert.throws(() => importTerms(draft, here, db.file), /gleanery db migrate/);
   } finally {
     db.owner.exec("pragma user_version = 4");
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
