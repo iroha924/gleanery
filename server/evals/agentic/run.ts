@@ -83,6 +83,9 @@ export class Budget {
   private held = 0;
   readonly cap: number;
   constructor(cap: number) {
+    // NaN would make every reservation pass
+    if (!(Number.isFinite(cap) && cap > 0))
+      throw new Error(`--budget must be a positive number of USD (${cap})`);
     this.cap = cap;
   }
   reserve(): boolean {
@@ -375,6 +378,8 @@ export function fixedDb(): string {
   const db = process.env.GLEANERY_DB;
   if (!db)
     throw new Error("Set GLEANERY_DB to a copy of the DB made with vacuum into (the run records its hash)");
+  if (path.resolve(db) === path.join(os.homedir(), ".gleanery", "gleanery.db"))
+    throw new Error("GLEANERY_DB points at the live database. Measure a copy made with vacuum into");
   if ((fs.statSync(`${db}-wal`, { throwIfNoEntry: false })?.size ?? 0) > 0)
     throw new Error(
       `${db} has a WAL with pending writes, so it is not a fixed copy. Make one with vacuum into`,

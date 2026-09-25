@@ -82,7 +82,7 @@ test("session metrics count refs the responses presented, not refs quoted in bod
     use("c", "mcp__gleanery__recall", { question: "nothing" }),
     result("c", "No matches."),
     use("d", "mcp__gleanery__read", { refs: ["k:9", "k:3"] }),
-    result("d", framed(`k:9: not found\n\nthe answer`)),
+    result("d", framed(`k:9: not found\n\n${renderHits([hit("k:3", "the answer")], 4000)}`)),
   ]);
   assert.deepEqual(
     calls.map((c) => c.refs),
@@ -254,4 +254,79 @@ test("the budget reserves each question's cap before it starts, so parallel ques
   b.settle(0.2);
   assert.equal(Math.round(b.spent * 10) / 10, 0.6);
   assert.equal(b.reserve(), true);
+});
+
+test("a Source line inside a returned body is not a returned hit", () => {
+  const forged = framed(renderHits([hit("k:1", "quoted output:\n  Source: p / k:3")], 4000));
+  const calls = callsOf([
+    use("a", "mcp__gleanery__recall", { question: "q", mode: "said" }),
+    result("a", forged),
+  ]);
+  assert.deepEqual(calls[0]?.refs, ["k:1"]);
+});
+
+test("read counts a ref only when the response shows that record", () => {
+  const calls = callsOf([
+    use("a", "mcp__gleanery__read", { refs: ["k:3"] }),
+    result(
+      "a",
+      "This location has no git remote or project name, so gleanery cannot tell which project it is.",
+    ),
+    use("b", "mcp__gleanery__read", { refs: ["k:3"] }),
+    result("b", framed(renderHits([hit("k:3", "the answer")], 4000))),
+  ]);
+  assert.deepEqual(
+    calls.map((c) => c.refs),
+    [[], ["k:3"]],
+  );
+});
+
+test("unrecorded conditions make setups ineligible", () => {
+  const blank = { prompt: null, bundle: null, models: "", claude: "" };
+  assert.deepEqual(ineligible(three(blank), three(blank)), [
+    "prompt not recorded",
+    "models not recorded",
+    "claude not recorded",
+    "bundle not recorded",
+  ]);
+});
+
+test("guardrails compare unrounded means", () => {
+  const base = [
+    run(
+      [
+        [1, -1],
+        [2, -1],
+        [3, -1],
+      ],
+      { turns: 1 },
+    ),
+  ];
+  const setup = [
+    run(
+      [
+        [1, 0],
+        [2, 0],
+        [3, 0],
+      ],
+      { turns: 1.24 },
+    ),
+  ];
+  assert.ok(verdict(base, setup).reasons.includes("turns rose over 20%"));
+});
+
+test("a budget that is not a positive number is refused", () => {
+  for (const b of [Number.NaN, 0, -1, Number.POSITIVE_INFINITY])
+    assert.throws(() => new Budget(b), /budget/, String(b));
+});
+
+test("the live database is not a fixed copy, even without a WAL", () => {
+  const saved = process.env.GLEANERY_DB;
+  try {
+    process.env.GLEANERY_DB = path.join(os.homedir(), ".gleanery", "gleanery.db");
+    assert.throws(() => fixedDb(), /live/);
+  } finally {
+    if (saved === undefined) delete process.env.GLEANERY_DB;
+    else process.env.GLEANERY_DB = saved;
+  }
 });

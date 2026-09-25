@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { SPLITS, type Split } from "../cases.ts";
-import { Budget, measure, OUT, type Result, sha256File } from "./run.ts";
+import { Budget, measure, OUT, type Result, runDir, sha256File } from "./run.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -33,6 +33,9 @@ if (!values.name) throw new Error("--name is required");
 const name = values.name;
 const split = values.split as Split;
 if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
+// The name goes into worktree and bundle paths below, so it passes the run directory check first
+runDir(OUT, name, split);
+const budget = new Budget(Number(values.budget));
 
 /**
  * Bundles the MCP server of a git ref in its own worktree (bundle.mjs rewrites plugin/dist, so the working tree is never touched)
@@ -78,7 +81,6 @@ const log = (entry: object) => {
   fs.appendFileSync(ledger, `${JSON.stringify({ at: new Date().toISOString(), name, ...entry })}\n`);
 };
 
-const budget = new Budget(Number(values.budget));
 const { mcp, commit } = bundle(values.ref);
 const common = {
   split,

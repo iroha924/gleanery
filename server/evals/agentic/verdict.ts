@@ -27,8 +27,8 @@ export type Verdict = {
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1);
 const round = (x: number) => Math.round(x * 10) / 10;
-const meanOrNull = (xs: (number | null)[]) =>
-  xs.some((x) => x === null) ? null : round(mean(xs as number[]));
+const meanOrNull = (xs: (number | null)[]) => (xs.some((x) => x === null) ? null : mean(xs as number[]));
+const shown = (x: number | null) => (x === null ? null : round(x));
 
 export function solved(runs: Run[]): Set<number> {
   const count = new Map<number, number>();
@@ -43,10 +43,8 @@ export function verdict(base: Run[], setup: Run[]): Verdict {
   const gained = [...s].filter((i) => !b.has(i)).sort((x, y) => x - y);
   const lost = [...b].filter((i) => !s.has(i)).sort((x, y) => x - y);
   const net = gained.length - lost.length;
-  const pair = (f: (r: Run) => number): [number, number] => [
-    round(mean(base.map(f))),
-    round(mean(setup.map(f))),
-  ];
+  // Compare unrounded means; round only what is returned for display
+  const pair = (f: (r: Run) => number): [number, number] => [mean(base.map(f)), mean(setup.map(f))];
   const top1 = pair((r) => r.top1);
   const direct = pair((r) => r.direct);
   const turns = pair((r) => r.turns);
@@ -63,7 +61,18 @@ export function verdict(base: Run[], setup: Run[]): Verdict {
     reasons.push("returned bytes rose over 30%");
   if (setup.reduce((a, r) => a + r.errors, 0) > base.reduce((a, r) => a + r.errors, 0))
     reasons.push("more errors");
-  return { gained, lost, net, top1, direct, turns, toolKib, adopt: reasons.length === 0, reasons };
+  const two = (p: [number, number]): [number, number] => [round(p[0]), round(p[1])];
+  return {
+    gained,
+    lost,
+    net,
+    top1: two(top1),
+    direct: two(direct),
+    turns: two(turns),
+    toolKib: [shown(toolKib[0]), shown(toolKib[1])],
+    adopt: reasons.length === 0,
+    reasons,
+  };
 }
 
 /** What must match for two setups to be compared (from each run's summary). */
@@ -89,6 +98,8 @@ export function ineligible(base: Conditions[], setup: Conditions[]): string[] {
   const all = [...base, ...setup];
   for (const k of ["cases", "prompt", "models", "claude", "effort"] as const)
     if (new Set(all.map((c) => c[k])).size > 1) out.push(`${k} differ`);
+  for (const k of ["prompt", "models", "claude", "bundle"] as const)
+    if (all.some((c) => c[k] === null || c[k] === "")) out.push(`${k} not recorded`);
   for (const [side, cs] of [
     ["base", base],
     ["setup", setup],

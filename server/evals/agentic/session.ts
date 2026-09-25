@@ -56,18 +56,29 @@ function recallRefs(text: string): string[] {
       return [];
     }
   }
+  // Each rendered hit ends with its Source line; a Source-like line inside a body is not the last line of a hit
   const source = `  ${WORDS.source}: `;
   return text
-    .split("\n")
+    .split("\n\n")
+    .map((block) => block.split("\n").at(-1) ?? "")
     .filter((l) => l.startsWith(source))
     .map((l) => l.split(" / ").pop()?.trim() ?? "")
     .filter((r) => REF.test(r));
 }
 
-/** Refs read asked for, minus those it reported unreadable or missing. */
+/** Refs read asked for that its response shows: a record's Source line ends with its ref (a work item shows it in its title line). */
 function readRefs(input: Record<string, unknown>, text: string): string[] {
   const asked = Array.isArray(input.refs) ? input.refs.filter((r): r is string => typeof r === "string") : [];
-  return asked.filter((r) => REF.test(r) && !text.includes(`${r}: ${WORDS.missing}`));
+  const lines = text.split("\n");
+  return asked.filter(
+    (r) =>
+      REF.test(r) &&
+      (r.startsWith("w:")
+        ? text.includes(` / ${r})`)
+        : lines.some(
+            (l) => l.trimStart().startsWith(`${WORDS.source}: `) && l.trimEnd().endsWith(` / ${r}`),
+          )),
+  );
 }
 
 /** The gleanery tool calls of a trace in the order they were made, each with its result. */
