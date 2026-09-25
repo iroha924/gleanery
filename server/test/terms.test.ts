@@ -94,7 +94,7 @@ const trace = (terms: unknown): Trace => {
 };
 
 test("trace writes a decision's terms to it and its options, keeps them when omitted, and clears them with an empty list", async () => {
-  await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]));
+  assert.equal((await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]))).terms, 3);
   const ids = (
     db.owner
       .prepare("select id from knowledge where source_key like 'claude-code:terms#d-orm%' order by id")
@@ -116,15 +116,18 @@ test("trace writes a decision's terms to it and its options, keeps them when omi
       ?.written_at;
   const first = writtenAt();
   await new Promise((r) => setTimeout(r, 5));
-  await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]));
+  const again = await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]));
   assert.equal(writtenAt(), first, "the same words do not rewrite the row");
+  assert.deepEqual(again, { written: 0, superseded: 0, terms: 0 });
+  assert.equal((await saveTrace(db.ingest, p, trace(["ORM"]))).terms, 3, "changed words are counted");
+  await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]));
   await saveTrace(db.ingest, p, trace(undefined));
   assert.deepEqual(
     db.owner.prepare("select content_hash from knowledge where id = ?").get(ids[0] as number)?.content_hash,
     before,
   );
   assert.equal((await found("ORM-choice")).length, 2, "omitted keeps them");
-  await saveTrace(db.ingest, p, trace([]));
+  assert.equal((await saveTrace(db.ingest, p, trace([]))).terms, 3, "cleared words are counted");
   assert.deepEqual(await found("ORM-choice"), [], "an empty list clears them");
 });
 
@@ -183,6 +186,7 @@ test("the owner import writes only records unchanged since the draft and says wh
     "t#import-bad": { terms: "x", content_hash: "00" },
     "t#import-no-hash": { terms: "x" },
     "t#import-short-hash": { terms: "x", content_hash: "00" },
+    "t#\u001b[2Jclear": { terms: "x", content_hash: "00" },
     "t#import-bad-terms": { terms: "a\u200bb", content_hash: hexOf(badTerms) },
   };
   db.owner
@@ -198,6 +202,8 @@ test("the owner import writes only records unchanged since the draft and says wh
     const r = importTerms(file, here, db.file);
     assert.equal(r.written, 1);
     assert.match(shown(), /skipped t#import-changed: the record changed after the draft/);
+    assert.match(shown(), /skipped t#clear: not a record/);
+    assert.ok(!shown().includes("\u001b"), "a draft key cannot send terminal sequences");
     assert.deepEqual(
       r.skipped.map((s) => [s.key, s.why.split(":")[0]]),
       [
@@ -205,6 +211,7 @@ test("the owner import writes only records unchanged since the draft and says wh
         ["t#import-bad", "not a record of this project"],
         ["t#import-no-hash", "the draft has no content_hash of 64 hex digits"],
         ["t#import-short-hash", "the draft has no content_hash of 64 hex digits"],
+        ["t#\u001b[2Jclear", "not a record of this project"],
         ["t#import-bad-terms", "search word has an invisible or control character U+200B"],
       ],
     );

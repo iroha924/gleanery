@@ -216,10 +216,10 @@ test("saving a record stores decisions, options, work, and files, and saving the
         },
       }),
     );
-    assert.deepEqual(await saveTrace(db.ingest, p, t), { written: 3, superseded: 0 });
+    assert.deepEqual(await saveTrace(db.ingest, p, t), { written: 3, superseded: 0, terms: 0 });
     assert.deepEqual(
       await saveTrace(db.ingest, p, t),
-      { written: 0, superseded: 0 },
+      { written: 0, superseded: 0, terms: 0 },
       "same content is not rewritten",
     );
     const rows = db.owner

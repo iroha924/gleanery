@@ -127,6 +127,9 @@ export async function measure(o: Measure) {
   fs.rmSync(run, { recursive: true, force: true });
   fs.mkdirSync(run, { recursive: true });
   const keyOf = await keys();
+  // Every question reads this copy, so a memo edited during the run cannot mix two versions under one recorded hash
+  const memo = o.memo ? path.join(run, "memo.md") : undefined;
+  if (o.memo && memo) fs.copyFileSync(o.memo, memo);
   // Replays recorded calls to learn what each response showed. A DB this checkout cannot open leaves every call unconfirmed
   const replayDb = openReader(db);
 
@@ -149,7 +152,7 @@ export async function measure(o: Measure) {
           effort: o.effort,
           keyOf,
           db: replayDb,
-          memo: o.memo,
+          memo,
         });
         o.budget.settle(r.cost);
         results.push(r);
@@ -176,7 +179,7 @@ export async function measure(o: Measure) {
     db: sha256File(db),
     source: sourceOf(db),
     bundle: sha256File(o.mcp),
-    ...(o.memo ? { memo: sha256File(o.memo) } : {}),
+    ...(memo ? { memo: sha256File(memo) } : {}),
     complete: results.length === planned && o.limit === undefined,
     ms: Date.now() - t0,
   });

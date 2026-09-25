@@ -11,6 +11,7 @@ import { constants as C, type DatabaseSync } from "node:sqlite";
 import { dbDir } from "./assets.ts";
 import { dbFile, SCHEMA_REVISION } from "./db.ts";
 import { connectWriter } from "./db-write.ts";
+import { plain } from "./panel.ts";
 import { searchTerms } from "./terms.ts";
 import { plural } from "./text.ts";
 import { indent } from "./tui/view.ts";
@@ -267,6 +268,8 @@ export function reindex(file: string = dbFile()): void {
   );
 }
 
+const oneLine = (s: string) => plain(s).replace(/\n/g, " ");
+
 type Draft = Record<string, { terms?: unknown; content_hash?: unknown }>;
 /** The project a terms command works on: key to look it up, name to show */
 type Named = { key: string; name: string };
@@ -350,7 +353,8 @@ export function importTerms(
       return { written, skipped };
     }),
   );
-  for (const s of result.skipped) say(`skipped ${s.key}: ${s.why}`);
+  // Keys come from the draft file, which is external text
+  for (const s of result.skipped) say(`skipped ${oneLine(s.key)}: ${oneLine(s.why)}`);
   // Nothing written is a failure, not an empty success: the draft is for another project or every record changed
   if (result.written === 0 && result.skipped.length > 0)
     throw new Error(
@@ -391,7 +395,7 @@ export function listTerms(place: Named, ref?: string, file: string = dbFile()): 
   });
   for (const r of rows)
     say(
-      `k:${r.id} ${r.source_key} (${r.source}, written ${r.written_at.slice(0, 10)}${r.fresh ? "" : ", stale: the record changed"})\n  ${r.terms}`,
+      `k:${r.id} ${oneLine(r.source_key)} (${r.source}, written ${r.written_at.slice(0, 10)}${r.fresh ? "" : ", stale: the record changed"})\n  ${r.terms}`,
     );
   say(
     id !== null && rows.length === 0

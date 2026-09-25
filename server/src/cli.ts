@@ -858,7 +858,7 @@ const traceRoutes = buildRouteMap({
             panel(
               "gleanery trace save",
               [],
-              `stored: ${plural(saved.written, "item")} rewritten${saved.superseded ? `, ${plural(saved.superseded, "decision")} superseded` : ""}`,
+              `stored: ${plural(saved.written, "item")} rewritten${saved.superseded ? `, ${plural(saved.superseded, "decision")} superseded` : ""}${saved.terms ? `, search words changed on ${plural(saved.terms, "item")}` : ""}`,
             ),
           );
         });

@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openReader } from "../../src/db.ts";
-import { cases, fixedDb, knowledgeRows, type Result } from "./run.ts";
+import { cases, fixedDb, knowledgeRows, type Result, sha256File } from "./run.ts";
 import { callsOf, replay, type Session, sessionOf } from "./session.ts";
 
 const dirs = process.argv.slice(2);
@@ -16,10 +16,17 @@ const db = openReader(file);
 const byRef = new Map(knowledgeRows(file).map((r) => [`k:${r.id}`, r.source_key]));
 const keyOf = (ref: string) => (ref.startsWith("m:") ? ref.slice(2) : (byRef.get(ref) ?? null));
 
+const dbHash = sha256File(file);
 for (const dir of dirs) {
-  const { results } = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8")) as {
+  const { results, db: used } = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8")) as {
     results: Result[];
+    db?: string;
   };
+  // Refs map to answer keys through this DB, so another copy could render the same text yet map to other keys
+  if (used !== dbHash) {
+    console.log(`${dir}: skipped, the run used DB ${used ?? "not recorded"} and GLEANERY_DB is ${dbHash}`);
+    continue;
+  }
   const why: Record<string, number> = {};
   let calls = 0;
   let matched = 0;

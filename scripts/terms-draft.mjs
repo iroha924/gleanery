@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
+import { searchTerms } from "../server/src/terms.ts";
 
 const MODEL = "claude-sonnet-5";
 /** Bump when the prompt changes (it goes into the draft) */
@@ -64,11 +65,17 @@ let spent = 0;
 const CALL_CAP = 0.5;
 let held = 0;
 
-/** Distinct words in order, cut at the 12 the prompt asks for and at the import limit of 400 characters */
+/** Distinct words the import accepts, in order, cut at the 12 the prompt asks for and at the import limit of 400 characters */
 function fit(words) {
   const kept = [];
   for (const w of words) {
-    const t = w.trim();
+    // The import's own check: a word it would refuse is dropped here, not paid for and then skipped
+    let t;
+    try {
+      t = searchTerms([w]);
+    } catch {
+      continue;
+    }
     if (!t || kept.includes(t)) continue;
     if (kept.length === 12 || [...[...kept, t].join(", ")].length > 400) break;
     kept.push(t);

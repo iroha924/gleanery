@@ -794,6 +794,20 @@ const cut = (s: string, n: number): string => {
   return h.length < s.length ? `${h}${WORDS.more}` : s;
 };
 
+/** Whether renderHit(h, perRow) shows every field whole: a record cut short there does not count as shown. */
+const whole = (h: Hit, perRow: number): boolean =>
+  (
+    [
+      [h.text, perRow],
+      [h.reason, 400],
+      [h.confirmation, 300],
+      [h.downsides.join(" / "), 300],
+      [h.successor, 300],
+    ] as const
+  ).every(([s, n]) => !s || head(s, n).length === s.length);
+const hitShown = (text: string, h: Hit, perRow: number): Shown =>
+  whole(h, perRow) ? itemShown(text, h.ref) : plainShown(text);
+
 /** Renders one hit as a few lines. **Cuts by bytes, not characters** (Japanese is 3 bytes per character and slips past a character limit). */
 function renderHit(h: Hit, perRow = 900): string {
   const t = WORDS;
@@ -824,7 +838,7 @@ export function renderHits(hits: Hit[], budget: number): Shown {
       parts.push(plainShown(omitted(hits.length - i)));
       break;
     }
-    parts.push(itemShown(one, h.ref));
+    parts.push(hitShown(one, h, 900));
     used += sep + bytes(one);
   }
   // With a limit too small for even the omitted line, cut it too.
@@ -1024,7 +1038,7 @@ async function readKnowledge(
     .orderBy("k.id")
     .execute(queryOptions(signal));
   const lines: Shown[] = [
-    itemShown(renderHit(knowledgeHit(k), budget), `k:${id}`),
+    hitShown(renderHit(knowledgeHit(k), budget), knowledgeHit(k), budget),
     ...[
       k.confidence ? `  ${t.confidence}: ${k.confidence}` : null,
       k.refs.length ? `  ${t.refs}: ${k.refs.join(" / ")}` : null,
@@ -1035,7 +1049,7 @@ async function readKnowledge(
     ].flatMap((l) => (l ? [plainShown(l)] : [])),
     ...related.map((x) => {
       const h = knowledgeHit(x);
-      return itemShown(`  - ${renderHit(h, 400).split("\n").join("\n    ")}`, h.ref);
+      return hitShown(`  - ${renderHit(h, 400).split("\n").join("\n    ")}`, h, 400);
     }),
   ];
   return clippedShown(joinShown(lines, "\n"), budget, `k:${id}`);
@@ -1093,7 +1107,7 @@ async function readMessage(
       const mark = m.id === id ? "▶ " : "";
       return joinShown(
         [
-          itemShown(`${mark}${renderHit(h, per)}`, h.ref),
+          hitShown(`${mark}${renderHit(h, per)}`, h, per),
           plainShown(m.paths.length ? `\n  ${WORDS.touched}: ${m.paths.map((p) => p.path).join(" / ")}` : ""),
         ],
         "",

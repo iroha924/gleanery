@@ -308,7 +308,7 @@ export async function saveTrace(
   db: Kysely<DB>,
   projectId: number,
   t: Trace,
-): Promise<{ written: number; superseded: number }> {
+): Promise<{ written: number; superseded: number; terms: number }> {
   const all = rows(t);
   const conversation = conversationId(projectId, t.session.host, t.session.id);
   // Compare times as instants, not strings (with +09:00 and Z mixed, lexical order is not the earliest).
@@ -532,14 +532,20 @@ export async function saveTrace(
       for (const k of keys) termsOf.set(k, v);
     }
     const now = iso(Date.now());
+    // Records whose words changed: a body left as it was is not in `written`, so these are reported apart
+    let terms = 0;
     for (const [k, v] of termsOf) {
       const id = idOf.get(k);
       if (id === undefined) continue;
       if (!v) {
-        await trx.deleteFrom("knowledge_terms").where("knowledge_id", "=", id).execute();
+        const gone = await trx
+          .deleteFrom("knowledge_terms")
+          .where("knowledge_id", "=", id)
+          .executeTakeFirst();
+        terms += Number(gone.numDeletedRows);
         continue;
       }
-      await trx
+      const put = await trx
         .insertInto("knowledge_terms")
         .columns(["knowledge_id", "terms", "content_hash", "source", "written_at"])
         .expression((eb) =>
@@ -572,7 +578,8 @@ export async function saveTrace(
               ]),
             ),
         )
-        .execute();
+        .executeTakeFirst();
+      terms += Number(put.numInsertedOrUpdatedRows ?? 0n);
     }
 
     // Files only for the rows rewritten.
@@ -627,6 +634,6 @@ export async function saveTrace(
           .execute();
       }
     }
-    return { written: written.length, superseded };
+    return { written: written.length, superseded, terms };
   });
 }

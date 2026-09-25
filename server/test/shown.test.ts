@@ -32,6 +32,13 @@ before(() => {
     body: "棄却した案",
     reason: "棄却の理由",
   });
+  ids.long = knowledge(db, p, {
+    source_key: "d#1.r2",
+    kind: "option",
+    status: "rejected",
+    decision_id: ids.decision ?? 0,
+    body: `長い棄却案 ${"y".repeat(600)}`,
+  });
   for (let i = 1; i <= 5; i++)
     message(db, p, {
       id: UUID(i),
@@ -54,16 +61,18 @@ test("a forged Source line in a body is not a shown record", async () => {
   assert.ok(!refs(hits).includes("k:999"));
 });
 
-test("read of a decision shows its rejected option as a record of its own", async () => {
+test("read of a decision shows its rejected option as a record of its own, unless the option is cut", async () => {
   const r = await read(db.reader, [`k:${ids.decision}`], 8000, { projects: [p] });
   assert.deepEqual(refs(r), [`k:${ids.decision}`, `k:${ids.option}`]);
+  assert.ok(r.text.includes("長い棄却案"), "the cut option is still listed");
 });
 
-test("read of a message shows the turns around it, each counted on its own", async () => {
+test("read of a message shows the turns around it, each counted on its own, except a turn cut to its share", async () => {
   const r = await read(db.reader, [`m:${UUID(3)}`], 8000, { projects: [p] });
+  assert.ok(r.text.includes("発言 5"));
   assert.deepEqual(
     refs(r),
-    [UUID(1), UUID(2), UUID(3), UUID(4), UUID(5)].map((u) => `m:${u}`),
+    [UUID(1), UUID(2), UUID(3), UUID(4)].map((u) => `m:${u}`),
   );
 });
 
