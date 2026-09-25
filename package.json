@@ -20,6 +20,7 @@
     "codegen": "node scripts/codegen.mjs",
     "evals:retrieval": "node server/evals/retrieval.ts",
     "evals:build": "node server/evals/build-cases.ts",
+    "evals:features": "node server/evals/features.ts",
     "evals:agentic": "node server/evals/agentic/run.ts",
     "evals:judge": "node server/evals/agentic/judge.ts",
     "evals:experiment": "node server/evals/agentic/experiment.ts",
