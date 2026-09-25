@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { Budget, fixedDb, runDir } from "../evals/agentic/run.ts";
+import { Budget, fixedDb, runDir, summarize } from "../evals/agentic/run.ts";
 import { callsOf, sessionOf } from "../evals/agentic/session.ts";
 import { type Conditions, ineligible, type Run, solved, verdict } from "../evals/agentic/verdict.ts";
 import { framed, type Hit, renderHits, splitJson } from "../src/search.ts";
@@ -329,4 +329,33 @@ test("the live database is not a fixed copy, even without a WAL", () => {
     if (saved === undefined) delete process.env.GLEANERY_DB;
     else process.env.GLEANERY_DB = saved;
   }
+});
+
+test("the live database is refused through a symlink too", () => {
+  const saved = process.env.GLEANERY_DB;
+  const live = path.join(tmp, "live.db");
+  fs.writeFileSync(live, "x");
+  const link = path.join(tmp, "live-link.db");
+  fs.symlinkSync(live, link);
+  try {
+    process.env.GLEANERY_DB = link;
+    assert.throws(() => fixedDb(live), /live/);
+  } finally {
+    if (saved === undefined) delete process.env.GLEANERY_DB;
+    else process.env.GLEANERY_DB = saved;
+  }
+});
+
+test("the summary keeps the unrounded mean of turns for the guardrail", () => {
+  const r = (turns: number) => ({ turns }) as unknown as Parameters<typeof summarize>[0][number];
+  const s = summarize([r(1), r(1), r(2)], {
+    name: "x",
+    split: "dev",
+    model: "m",
+    effort: "e",
+    cases: "c",
+    ms: 0,
+  });
+  assert.equal(s.turns, 1.3);
+  assert.equal(s.turns_mean, 4 / 3);
 });

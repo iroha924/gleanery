@@ -321,7 +321,7 @@ if (values.base) {
       ranks: new Map(s.top.map((t) => [t.i, t.rank])),
       top1: s.summary.top1,
       direct: pct(s.top.filter((t) => t.grade === "direct").length, s.top.length),
-      turns: s.summary.turns,
+      turns: x.turns_mean ?? s.summary.turns,
       toolKib: x.tool_kib ?? null,
       errors: s.summary.errors,
     };

@@ -374,13 +374,16 @@ export function refsOf(text: string): string[] | null {
  * The measured DB. **A live DB changes between runs**, so only a copy is accepted: GLEANERY_DB must be set and have no pending WAL
  * (a copy made with `vacuum into` has none).
  */
-export function fixedDb(): string {
+export function fixedDb(live = path.join(os.homedir(), ".gleanery", "gleanery.db")): string {
   const db = process.env.GLEANERY_DB;
   if (!db)
     throw new Error("Set GLEANERY_DB to a copy of the DB made with vacuum into (the run records its hash)");
-  if (path.resolve(db) === path.join(os.homedir(), ".gleanery", "gleanery.db"))
+  // Resolved through symlinks, so a link to the live database is caught and its WAL is looked up where it really is
+  const real = (p: string) => (fs.existsSync(p) ? fs.realpathSync(p) : path.resolve(p));
+  const file = real(db);
+  if (file === real(live))
     throw new Error("GLEANERY_DB points at the live database. Measure a copy made with vacuum into");
-  if ((fs.statSync(`${db}-wal`, { throwIfNoEntry: false })?.size ?? 0) > 0)
+  if ((fs.statSync(`${file}-wal`, { throwIfNoEntry: false })?.size ?? 0) > 0)
     throw new Error(
       `${db} has a WAL with pending writes, so it is not a fixed copy. Make one with vacuum into`,
     );
@@ -433,6 +436,8 @@ export function summarize(
         (results.reduce((s, r) => s + (r.rank >= 0 ? 1 / (r.rank + 1) : 0), 0) / Math.max(n, 1)) * 1000,
       ) / 1000,
     turns: Math.round((results.reduce((s, r) => s + r.turns, 0) / Math.max(n, 1)) * 10) / 10,
+    // Unrounded, for the guardrail (turns is rounded for display)
+    turns_mean: results.reduce((s, r) => s + r.turns, 0) / Math.max(n, 1),
     cost_usd_list: Math.round(results.reduce((s, r) => s + r.cost, 0) * 100) / 100,
     minutes: Math.round(meta.ms / 6000) / 10,
     errors: results.filter((r) => r.error).length,
