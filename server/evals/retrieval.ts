@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { openReader } from "../src/db.ts";
 import { type Hit, searchKnowledge, searchMessages, searchSplit } from "../src/search.ts";
+import { fixedDb } from "./agentic/run.ts";
 import { SPLITS, type Split, splitStale } from "./cases.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +34,7 @@ const allCases = (
 ).cases.filter((c, i) => split === undefined || SPLITS[split](c, i));
 
 const K = 5;
-const db = openReader();
+const db = openReader(fixedDb());
 
 // Maps a ref (k:12 / m:uuid) to the key used to match answers.
 // **Do not match by id.** Ids change on reimport, which breaks before and after comparisons.

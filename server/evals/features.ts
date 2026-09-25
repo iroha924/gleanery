@@ -12,6 +12,7 @@ import { parseArgs } from "node:util";
 import { openReader } from "../src/db.ts";
 import { KINDS } from "../src/knowledge.ts";
 import { searchKnowledge } from "../src/search.ts";
+import { fixedDb } from "./agentic/run.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 type Feature = "substring" | "phrase" | "prefix" | "regex";
@@ -31,7 +32,7 @@ const cases = (
   JSON.parse(fs.readFileSync(path.join(HERE, "features.json"), "utf8")) as { cases: Case[] }
 ).cases.filter((_, i) => (values.split === "holdout" ? i % 2 === 1 : i % 2 === 0));
 
-const db = openReader();
+const db = openReader(fixedDb());
 const rows = await db
   .selectFrom("knowledge")
   .select(["id", "kind", "status", "heading", "body", "reason"])

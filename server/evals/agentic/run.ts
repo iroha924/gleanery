@@ -146,7 +146,7 @@ export async function measure(o: Measure) {
     model: o.model,
     // Without --effort, the environment variable decides, or else the model default (in 2.1.280, high for Sonnet 5 and medium for Opus 5.5).
     // The project is a temp directory, so the repository's effortLevel setting is not read.
-    // These values are stored in summaries and compared with baseline.json, so they stay as recorded
+    // These values are stored in summaries and compared across runs by judge.ts, so they stay as recorded
     effort:
       o.effort ??
       (process.env.CLAUDE_CODE_EFFORT_LEVEL ? `環境変数 ${process.env.CLAUDE_CODE_EFFORT_LEVEL}` : "既定"),
