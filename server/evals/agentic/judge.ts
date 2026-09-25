@@ -346,6 +346,7 @@ if (values.base) {
       db: y.db ?? null,
       source: y.source ?? null,
       bundle: y.bundle ?? null,
+      memo: y.memo ?? null,
       // Runs from before this field count as complete (their question lists were never cut)
       complete: y.complete ?? true,
       ungraded: s.top.filter((t) => t.key !== null && byKey.has(t.key) && !gradeOf(t.i, t.key)).length,

@@ -36,10 +36,13 @@ if (!dbFile || !projectKey || !out)
 const par = Number(values.par);
 const cap = Number(values.budget);
 if (!Number.isInteger(par) || par < 1) throw new Error(`--par must be a positive integer (${values.par})`);
-if (!(Number.isFinite(cap) && cap > 0))
-  throw new Error(`--budget must be a positive number (${values.budget})`);
+// Each call holds its cap of $0.50 against the budget, so a smaller budget would draft nothing
+if (!(Number.isFinite(cap) && cap >= 0.5))
+  throw new Error(`--budget must be at least 0.5 (${values.budget})`);
 
 const db = new DatabaseSync(dbFile, { readOnly: true });
+if (!db.prepare("select 1 from project where key = ?").get(projectKey))
+  throw new Error(`${projectKey} is not a project in ${dbFile} (see \`gleanery project list\`)`);
 const rows = db
   .prepare(
     `select k.source_key key, k.kind, k.status, coalesce(k.heading, '') heading, k.body, coalesce(k.reason, '') reason,
@@ -57,6 +60,9 @@ const draft = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : {}
 const meta = { model: MODEL, prompt: PROMPT_VERSION, db: path.basename(dbFile), project: projectKey };
 fs.writeFileSync(`${out}.meta.json`, JSON.stringify(meta, null, 1));
 let spent = 0;
+/** Each call's cap, held against the budget while it runs so parallel calls cannot pass the budget together */
+const CALL_CAP = 0.5;
+let held = 0;
 
 /** Distinct words in order, cut at the 12 the prompt asks for and at the import limit of 400 characters */
 function fit(words) {
@@ -83,7 +89,7 @@ function claude(text) {
         "--model",
         MODEL,
         "--max-budget-usd",
-        "0.5",
+        String(CALL_CAP),
         "--max-turns",
         "1",
         "--tools",
@@ -133,7 +139,7 @@ const todo = rows.filter((r) => draft[r.key]?.content_hash !== r.hash.toLowerCas
 let done = 0;
 await Promise.all(
   Array.from({ length: par }, async () => {
-    for (let r = todo.shift(); r && spent < cap; r = todo.shift()) {
+    for (let r = todo.shift(); r && spent + held + CALL_CAP <= cap; r = todo.shift()) {
       const record = [
         `kind: ${r.kind}${r.status ? `/${r.status}` : ""}`,
         r.title ? `source: ${r.title}` : null,
@@ -143,7 +149,10 @@ await Promise.all(
       ]
         .filter(Boolean)
         .join("\n");
-      const terms = await claude(`${PROMPT}\n\n<record>\n${record}\n</record>`);
+      held += CALL_CAP;
+      const terms = await claude(`${PROMPT}\n\n<record>\n${record}\n</record>`).finally(() => {
+        held -= CALL_CAP;
+      });
       if (terms) draft[r.key] = { terms: fit(terms.split(",")), content_hash: r.hash.toLowerCase() };
       fs.writeFileSync(out, JSON.stringify(draft, null, 1));
       process.stderr.write(`\r${++done}/${todo.length + done} spent $${spent.toFixed(2)}   `);

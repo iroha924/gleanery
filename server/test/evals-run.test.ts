@@ -146,6 +146,7 @@ const cond = (o: Partial<Conditions> = {}): Conditions => ({
   db: "d1",
   source: "d1",
   bundle: "b1",
+  memo: null,
   complete: true,
   ungraded: 0,
   ...o,
@@ -154,6 +155,10 @@ const three = (o: Partial<Conditions> = {}) => [cond(o), cond(o), cond(o)];
 
 test("setups compare only on 3+ runs each with matching conditions", () => {
   assert.deepEqual(ineligible(three(), three({ bundle: "b2" })), []);
+  assert.deepEqual(ineligible(three(), three({ memo: "m1" })), [], "base and setup may use different memos");
+  assert.deepEqual(ineligible(three(), [cond({ memo: "m1" }), cond({ memo: "m1" }), cond({ memo: "m2" })]), [
+    "setup runs used different memos",
+  ]);
   assert.deepEqual(ineligible(three(), [cond(), cond()]), ["not exactly 3 runs each"]);
   assert.deepEqual(ineligible(three(), [...three(), cond()]), ["not exactly 3 runs each"]);
   assert.deepEqual(ineligible(three(), three({ ungraded: 1 })), ["the judge left top hits ungraded"]);

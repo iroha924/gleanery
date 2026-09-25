@@ -662,6 +662,14 @@ test("sync writes Terms to the decision and its options, keeps them when the lin
     const [decision, rejected] = ids();
     assert.equal(words(decision as number), "transaction, 書き込みのロック");
     assert.equal(words(rejected as number), "transaction, 書き込みのロック");
+    const writtenAt = () =>
+      db.owner
+        .prepare("select written_at from knowledge_terms where knowledge_id = ?")
+        .get(decision as number)?.written_at;
+    const first = writtenAt();
+    await new Promise((r) => setTimeout(r, 5));
+    await run(`${LINE_B}\n  - Terms: transaction, 書き込みのロック`);
+    assert.equal(writtenAt(), first, "an unchanged Terms line does not rewrite the row");
     await run(LINE_B);
     assert.equal(
       words(decision as number),

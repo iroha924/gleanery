@@ -456,12 +456,22 @@ export async function syncDecisions(
             .where("id", "=", id),
         )
         .onConflict((oc) =>
-          oc.column("knowledge_id").doUpdateSet((eb) => ({
-            terms: eb.ref("excluded.terms"),
-            content_hash: eb.ref("excluded.content_hash"),
-            source: eb.ref("excluded.source"),
-            written_at: eb.ref("excluded.written_at"),
-          })),
+          oc
+            .column("knowledge_id")
+            .doUpdateSet((eb) => ({
+              terms: eb.ref("excluded.terms"),
+              content_hash: eb.ref("excluded.content_hash"),
+              source: eb.ref("excluded.source"),
+              written_at: eb.ref("excluded.written_at"),
+            }))
+            // The same words for the same text keep their row: a rewrite would also delete and reinsert the index row
+            .where((eb) =>
+              eb.or([
+                eb("knowledge_terms.terms", "is not", eb.ref("excluded.terms")),
+                eb("knowledge_terms.content_hash", "is not", eb.ref("excluded.content_hash")),
+                eb("knowledge_terms.source", "is not", eb.ref("excluded.source")),
+              ]),
+            ),
         )
         .execute();
     }

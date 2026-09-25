@@ -111,6 +111,13 @@ test("trace writes a decision's terms to it and its options, keeps them when omi
   const before = db.owner
     .prepare("select content_hash from knowledge where id = ?")
     .get(ids[0] as number)?.content_hash;
+  const writtenAt = () =>
+    db.owner.prepare("select written_at from knowledge_terms where knowledge_id = ?").get(ids[0] as number)
+      ?.written_at;
+  const first = writtenAt();
+  await new Promise((r) => setTimeout(r, 5));
+  await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]));
+  assert.equal(writtenAt(), first, "the same words do not rewrite the row");
   await saveTrace(db.ingest, p, trace(undefined));
   assert.deepEqual(
     db.owner.prepare("select content_hash from knowledge where id = ?").get(ids[0] as number)?.content_hash,
