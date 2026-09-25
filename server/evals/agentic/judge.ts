@@ -329,7 +329,7 @@ if (values.base) {
     return {
       cases: s.summary.cases,
       prompt: y.prompt ?? null,
-      // A question that failed before the model started records no model ("不明"); it says nothing about the conditions
+      // A question that failed before the model started records no model (the unknown marker); it says nothing about the conditions
       models: (y.resolved_models ?? []).filter((m) => m !== "不明").join(","),
       claude: (y.claude_code ?? []).filter((m) => m !== "不明").join(","),
       effort: y.effort ?? "",
