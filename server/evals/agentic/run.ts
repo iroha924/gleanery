@@ -10,9 +10,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { openReader } from "../../src/db.ts";
 import { SPLITS, type Split } from "../cases.ts";
 import { callsOf, type Session, sessionOf } from "./session.ts";
 
@@ -195,16 +195,35 @@ async function main() {
   console.log(`results: ${dir}`);
 }
 
+export type KnowledgeRow = {
+  id: number;
+  source_key: string;
+  kind: string;
+  status: string | null;
+  heading: string | null;
+  body: string;
+  reason: string | null;
+};
+
+/**
+ * Knowledge rows straight from the file, **without the schema version check**: the measured copy may be migrated ahead of this checkout
+ * (a candidate's revision), and the eval only needs ids, keys, and text.
+ */
+export function knowledgeRows(file: string): KnowledgeRow[] {
+  const raw = new DatabaseSync(file, { readOnly: true });
+  try {
+    return raw
+      .prepare("select id, source_key, kind, status, heading, body, reason from knowledge")
+      .all() as KnowledgeRow[];
+  } finally {
+    raw.close();
+  }
+}
+
 /** Maps a ref to the answer key. Never matches by id (ids change on reimport). A message id is its own key. */
 async function keys(): Promise<(ref: string) => string | null> {
-  const db = openReader();
-  try {
-    const rows = await db.selectFrom("knowledge").select(["id", "source_key"]).execute();
-    const byRef = new Map(rows.map((r) => [`k:${r.id}`, r.source_key]));
-    return (ref) => (ref.startsWith("m:") ? ref.slice(2) : (byRef.get(ref) ?? null));
-  } finally {
-    await db.destroy();
-  }
+  const byRef = new Map(knowledgeRows(fixedDb()).map((r) => [`k:${r.id}`, r.source_key]));
+  return (ref) => (ref.startsWith("m:") ? ref.slice(2) : (byRef.get(ref) ?? null));
 }
 
 async function solve(

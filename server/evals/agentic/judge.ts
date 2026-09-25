@@ -9,8 +9,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { openReader } from "../../src/db.ts";
-import { CASES_SHA, CLAUDE_ENV, cases, OUT, type Result, type summarize } from "./run.ts";
+import {
+  CASES_SHA,
+  CLAUDE_ENV,
+  cases,
+  fixedDb,
+  knowledgeRows,
+  OUT,
+  type Result,
+  type summarize,
+} from "./run.ts";
 import { type Conditions, ineligible, type Run, verdict } from "./verdict.ts";
 
 type Grade = "direct" | "partial" | "no";
@@ -52,13 +60,8 @@ if (positionals.length === 0)
   throw new Error(`pass a run result dir (${OUT}/<name>/<split>) or baseline.json`);
 fs.mkdirSync(CACHE, { recursive: true });
 
-const db = openReader();
-const rows = await db
-  .selectFrom("knowledge")
-  .select(["source_key", "kind", "status", "heading", "body", "reason"])
-  .execute();
+const rows = knowledgeRows(fixedDb());
 const counted = rows.length;
-await db.destroy();
 // Part of the judge prompt and the slot hash. Translating it would invalidate cached and baseline grades.
 const text = (r: Row) =>
   `種類: ${r.kind}${r.status ? `/${r.status}` : ""}\n見出し: ${r.heading ?? ""}\n本文: ${r.body.slice(0, 1500)}${r.reason ? `\n理由: ${r.reason.slice(0, 400)}` : ""}`;
