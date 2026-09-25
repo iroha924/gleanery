@@ -127,7 +127,8 @@ function claude(text) {
       fs.rmSync(cwd, { recursive: true, force: true });
       try {
         const j = JSON.parse(o);
-        spent += j.total_cost_usd ?? 0;
+        // A call whose cost is not reported is charged its whole cap, so the budget still holds
+        spent += typeof j.total_cost_usd === "number" ? j.total_cost_usd : CALL_CAP;
         resolve(
           String(j.result ?? "")
             .trim()
@@ -135,6 +136,8 @@ function claude(text) {
             .pop() ?? "",
         );
       } catch {
+        // Output that is not the JSON result still may have been billed
+        spent += CALL_CAP;
         resolve("");
       }
     });
@@ -160,7 +163,9 @@ await Promise.all(
       const terms = await claude(`${PROMPT}\n\n<record>\n${record}\n</record>`).finally(() => {
         held -= CALL_CAP;
       });
-      if (terms) draft[r.key] = { terms: fit(terms.split(",")), content_hash: r.hash.toLowerCase() };
+      // Nothing usable is not recorded, so the next run asks again
+      const kept = fit(terms.split(","));
+      if (kept) draft[r.key] = { terms: kept, content_hash: r.hash.toLowerCase() };
       fs.writeFileSync(out, JSON.stringify(draft, null, 1));
       process.stderr.write(`\r${++done}/${todo.length + done} spent $${spent.toFixed(2)}   `);
     }

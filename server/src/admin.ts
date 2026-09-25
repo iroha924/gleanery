@@ -299,7 +299,7 @@ export function importTerms(
   draft: string,
   place: Named,
   file: string = dbFile(),
-): { written: number; skipped: { key: string; why: string }[] } {
+): { written: number; unchanged: number; skipped: { key: string; why: string }[] } {
   let entries: unknown;
   try {
     entries = JSON.parse(fs.readFileSync(draft, "utf8"));
@@ -317,10 +317,13 @@ export function importTerms(
       const put = raw.prepare(
         `insert into knowledge_terms (knowledge_id, terms, content_hash, source, written_at) values (?, ?, ?, 'import', ?)
          on conflict (knowledge_id) do update set terms = excluded.terms, content_hash = excluded.content_hash,
-           source = excluded.source, written_at = excluded.written_at`,
+           source = excluded.source, written_at = excluded.written_at
+         where terms is not excluded.terms or content_hash is not excluded.content_hash or source is not excluded.source`,
       );
       const now = new Date().toISOString();
       let written = 0;
+      // The same words already stored for the same text: kept as they are (a rewrite would also churn the index row)
+      let unchanged = 0;
       const skipped: { key: string; why: string }[] = [];
       for (const [key, e] of Object.entries(entries as Draft)) {
         const row = find.get(project, key) as { id: number; content_hash: Uint8Array } | undefined;
@@ -347,20 +350,22 @@ export function importTerms(
           skipped.push({ key, why: "no terms" });
           continue;
         }
-        put.run(row.id, terms, row.content_hash, now);
-        written++;
+        if (Number(put.run(row.id, terms, row.content_hash, now).changes) > 0) written++;
+        else unchanged++;
       }
-      return { written, skipped };
+      return { written, unchanged, skipped };
     }),
   );
   // Keys come from the draft file, which is external text
   for (const s of result.skipped) say(`skipped ${oneLine(s.key)}: ${oneLine(s.why)}`);
   // Nothing written is a failure, not an empty success: the draft is for another project or every record changed
-  if (result.written === 0 && result.skipped.length > 0)
+  if (result.written === 0 && result.unchanged === 0 && result.skipped.length > 0)
     throw new Error(
       `Imported no search words: every entry in the draft was skipped (${plural(result.skipped.length, "entry", "entries")})`,
     );
-  say(`Imported search words for ${plural(result.written, "record")}`);
+  say(
+    `Imported search words for ${plural(result.written, "record")}${result.unchanged ? ` (${result.unchanged} already had the same words)` : ""}`,
+  );
   return result;
 }
 

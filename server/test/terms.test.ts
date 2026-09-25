@@ -216,6 +216,14 @@ test("the owner import writes only records unchanged since the draft and says wh
       ],
     );
     assert.deepEqual(await found("importmarkerzz"), [fresh]);
+    const writtenAt = () =>
+      db.owner.prepare("select written_at from knowledge_terms where knowledge_id = ?").get(fresh)
+        ?.written_at;
+    const first = writtenAt();
+    await new Promise((r) => setTimeout(r, 5));
+    const again = importTerms(file, here, db.file);
+    assert.deepEqual([again.written, again.unchanged], [0, 1], "the same draft again changes nothing");
+    assert.equal(writtenAt(), first);
     assert.deepEqual(await found("stalemarkerzz"), []);
     assert.deepEqual(
       listTerms(here, `k:${fresh}`, db.file).map((x) => x.id),
