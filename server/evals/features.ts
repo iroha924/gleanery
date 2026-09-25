@@ -10,7 +10,7 @@ import { parseArgs } from "node:util";
 import { openReader } from "../src/db.ts";
 import { KINDS } from "../src/knowledge.ts";
 import { searchKnowledge } from "../src/search.ts";
-import { fixedDb } from "./agentic/run.ts";
+import { fixedDb, sourceOf } from "./agentic/run.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 type Feature = "substring" | "phrase" | "prefix" | "regex";
@@ -28,11 +28,16 @@ for (const u of values.use ?? []) {
   if (!f || !m || !(f in use)) throw new Error(`--use takes <feature>=<match> (${u})`);
   use[f as Feature] = m;
 }
-const cases = (
-  JSON.parse(fs.readFileSync(path.join(HERE, "features.json"), "utf8")) as { cases: Case[] }
-).cases.filter((_, i) => (values.split === "holdout" ? i % 2 === 1 : i % 2 === 0));
+const { cases: all, snapshot } = JSON.parse(fs.readFileSync(path.join(HERE, "features.json"), "utf8")) as {
+  cases: Case[];
+  snapshot: string;
+};
+const cases = all.filter((_, i) => (values.split === "holdout" ? i % 2 === 1 : i % 2 === 0));
 
-const db = openReader(fixedDb());
+const file = fixedDb();
+if (sourceOf(file) !== snapshot)
+  throw new Error(`${file} does not come from the snapshot ${snapshot} the feature cases were chosen from`);
+const db = openReader(file);
 const rows = await db
   .selectFrom("knowledge")
   .select(["id", "kind", "status", "heading", "body", "reason"])

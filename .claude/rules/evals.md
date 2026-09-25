@@ -13,5 +13,6 @@ paths:
 - Compare averages of 3 runs of the same setup
 - Match the model ID, Claude Code version, and effort across the runs you compare (aliases like `--model sonnet` and the default effort change between versions). The run records them, and the judge warns when they do not match
 - Point `GLEANERY_DB` at a fixed copy made with `vacuum into` (the runner refuses a DB with a pending WAL and records the copy's hash). A migrated copy carries `<db>.json` with the source snapshot hash
+- `--ref` of an experiment runs that commit's build scripts on this machine. Pass only your own commits
 - Run experiments with `bun run evals:experiment` (bundle from a git ref, pilot, 3 runs, judge, verdict, ledger in `~/.cache/gleanery-evals/ledger.jsonl`). Setups whose conditions differ are ineligible, not compared
 - `retrieval.json` and `features.json` are frozen. Rebuild them only when the DB no longer holds their answers, and remeasure the base after a rebuild

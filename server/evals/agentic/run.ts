@@ -398,7 +398,8 @@ export function fixedDb(live = path.join(os.homedir(), ".gleanery", "gleanery.db
  * a plain `vacuum into` copy is its own source.
  */
 export function sourceOf(db: string): string {
-  const side = `${db}.json`;
+  // The sidecar sits beside the real file, not beside a link to it
+  const side = `${fs.realpathSync(db)}.json`;
   if (!fs.existsSync(side)) return sha256File(db);
   const s = (JSON.parse(fs.readFileSync(side, "utf8")) as { source?: unknown }).source;
   if (typeof s !== "string") throw new Error(`${side} has no source snapshot hash`);

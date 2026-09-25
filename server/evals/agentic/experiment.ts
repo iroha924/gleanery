@@ -33,6 +33,8 @@ const split = values.split as Split;
 if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
 // The name goes into worktree and bundle paths below, so it passes the run directory check first
 runDir(OUT, name, split);
+// Repeats are stored as <name>-r2 and <name>-r3, so such a name would overwrite another setup's runs
+if (/-r\d+$/.test(name)) throw new Error(`--name must not end in -r<n> (${name})`);
 const budget = new Budget(Number(values.budget));
 const RUNS = 3;
 const dirsOf = (config: string) =>
@@ -40,7 +42,10 @@ const dirsOf = (config: string) =>
     path.join(OUT, n === 0 ? config : `${config}-r${n + 1}`, split),
   ).filter((d) => fs.existsSync(path.join(d, "summary.json")));
 // A missing base would leave nothing to compare against, while the ledger still recorded a finished experiment
-if (name !== values.base && dirsOf(values.base).length !== RUNS)
+const complete = (d: string) =>
+  (JSON.parse(fs.readFileSync(path.join(d, "summary.json"), "utf8")) as { complete?: boolean }).complete !==
+  false;
+if (name !== values.base && dirsOf(values.base).filter(complete).length !== RUNS)
   throw new Error(`--base ${values.base} has no complete ${RUNS} runs on ${split}. Measure it first`);
 
 /**
@@ -97,7 +102,13 @@ const common = {
   budget,
 };
 
-const pilot = await measure({ ...common, name: `${name}-pilot`, limit: 10 });
+// The pilot always uses dev questions, so a holdout gate shows nothing before its verdict
+const pilot = await measure({
+  ...common,
+  split: split.startsWith("message") ? "message-dev" : "dev",
+  name: `${name}-pilot`,
+  limit: 10,
+});
 const broken = pilot.results.filter((r) => r.error);
 if (broken.length) {
   log({
@@ -140,6 +151,8 @@ if (name !== values.base) {
     { stdio: "inherit" },
   );
   verdicts = JSON.parse(fs.readFileSync(out, "utf8"));
+  if (!Array.isArray(verdicts) || verdicts.length === 0)
+    throw new Error(`no verdict against ${values.base}: its runs and ${name}'s differ in split or model`);
 }
 
 log({
