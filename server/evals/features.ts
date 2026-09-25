@@ -3,6 +3,7 @@
 // The reference is plain JavaScript over heading, body, and reason, so it shares no code with the search it checks.
 //   GLEANERY_DB=<copy> bun run evals:features -- [--split dev|holdout] [--use phrase=phrase --use prefix=prefix --use regex=regex]
 // --use says which recall match value a setup offers for a feature; without it, substring and phrase go to exact and prefix and regex to words.
+// Two values are not match values: quoted sends `"pattern"` and star sends `pattern*`, both in words mode (for setups that read that syntax).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -43,7 +44,12 @@ const live = rows.filter(
     r.status !== "retired" &&
     r.status !== "resolved",
 );
-const flat = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
+// Spaces between two non-ASCII characters carry no meaning in Japanese (`読み取り 専用` is `読み取り専用`)
+const flat = (s: string) =>
+  s
+    .replace(/\s+/g, " ")
+    .replace(/(?<=[^\p{ASCII}]) (?=[^\p{ASCII}])/gu, "")
+    .toLowerCase();
 const texts = live.map((r) => ({
   ref: `k:${r.id}`,
   text: [r.heading ?? "", r.body, r.reason ?? ""].join("\n"),
@@ -68,12 +74,13 @@ for (const c of cases) {
   let got: string[] = [];
   let error = "";
   try {
+    const how = use[c.type];
     const hits = await searchKnowledge(db, {
-      question: c.pattern,
+      question: how === "quoted" ? `"${c.pattern}"` : how === "star" ? `${c.pattern}*` : c.pattern,
       projects: null,
       kinds: [...KINDS],
       // A setup that lacks a match value fails here, which counts as finding nothing
-      match: use[c.type] as "words" | "exact",
+      match: (how === "quoted" || how === "star" ? "words" : how) as "words" | "exact",
       limit: LIMIT,
     });
     got = hits.map((h) => h.ref);
