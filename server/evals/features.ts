@@ -44,7 +44,7 @@ const live = rows.filter(
     r.status !== "retired" &&
     r.status !== "resolved",
 );
-// Spaces between two non-ASCII characters carry no meaning in Japanese (`読み取り 専用` is `読み取り専用`)
+// Spaces between two non-ASCII characters carry no meaning in Japanese text (a spaced phrase equals the unspaced one)
 const flat = (s: string) =>
   s
     .replace(/\s+/g, " ")
