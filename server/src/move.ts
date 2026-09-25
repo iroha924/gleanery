@@ -8,7 +8,7 @@ import type { Kysely } from "kysely";
 import { lock, rejectedDir, spoolDir, unregisteredDir } from "./capture.ts";
 import { inTransaction } from "./db.ts";
 import type { DB } from "./db-types.ts";
-import { decisionHash } from "./decisions.ts";
+import { decisionHash, RULE } from "./decisions.ts";
 import type { Place } from "./project.ts";
 
 export type Moved = {
@@ -118,26 +118,37 @@ export async function moveProject(db: Kysely<DB>, from: string, to: Place, apply
       const swap = (key: string) => `github:${newRepo}/${key.slice(`github:${oldRepo}/`.length)}`;
       const refsOf = (refs: string[]) =>
         refs.map((u) => (u.startsWith(oldUrl) ? newUrl + u.slice(oldUrl.length) : u));
-      const hashOf = (r: (typeof rows)[number], refs: string[], rekey: (k: string) => string) => {
+      const hashOf = (
+        r: (typeof rows)[number],
+        refs: string[],
+        rekey: (k: string) => string,
+        rule = RULE,
+      ) => {
         const x = extracted(r.source_key);
         if (!x || r.heading === null) return null;
-        return decisionHash({
-          kind: r.kind,
-          status: x.status,
-          body: r.body,
-          reason: r.reason,
-          heading: r.heading,
-          refs: JSON.stringify(refs),
-          occurred: r.occurred_at,
-          parent: x.parent === null ? null : rekey(x.parent),
-        });
+        return decisionHash(
+          {
+            kind: r.kind,
+            status: x.status,
+            body: r.body,
+            reason: r.reason,
+            heading: r.heading,
+            refs: JSON.stringify(refs),
+            occurred: r.occurred_at,
+            parent: x.parent === null ? null : rekey(x.parent),
+          },
+          rule,
+        );
       };
+      // A row last synced under an earlier rule gets the current rule's hash, which the next sync then leaves alone
+      const rules = Array.from({ length: RULE }, (_, i) => i + 1);
       const unmatched = rows.filter(
-        (r) => hasWords(r) && !hashOf(r, r.refs, (k) => k)?.equals(r.content_hash),
+        (r) =>
+          hasWords(r) && !rules.some((rule) => hashOf(r, r.refs, (k) => k, rule)?.equals(r.content_hash)),
       );
       if (unmatched.length)
         throw new Error(
-          `These records have search words but a hash the GitHub sync would not produce, so moving them would drop the words: ${unmatched
+          `These records have search words but a hash no GitHub sync rule produces, so moving them would drop the words: ${unmatched
             .slice(0, 5)
             .map((r) => r.source_key)
             .join(

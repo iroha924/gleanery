@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
+import { decisionHash } from "../src/decisions.ts";
 import { type GithubSource, syncGithub } from "../src/github.ts";
 import { moveProject } from "../src/move.ts";
 import { tempDb } from "./temp-db.ts";
@@ -242,6 +243,45 @@ test("a run stopped after rewriting the spool can be run again", async () => {
     assert.equal(moved.spooled, 2);
     assert.equal(projectOf(files.queued), TO.key);
     assert.equal(projectOf(files.held), TO.key);
+  } finally {
+    await db.done();
+  }
+});
+
+test("rows last synced under an earlier rule move with their search words, and the next sync keeps them", async () => {
+  const { db, p } = await setup();
+  try {
+    // The shape of a database last synced before the rule changed: hashes and the words bound to them use rule 1
+    const rows = db.owner
+      .prepare("select id, source_key, kind, body, reason, heading, refs, occurred_at from knowledge")
+      .all() as {
+      id: number;
+      source_key: string;
+      kind: string;
+      body: string;
+      reason: string | null;
+      heading: string;
+      refs: string;
+      occurred_at: string;
+    }[];
+    for (const r of rows) {
+      const m = /^(.*#[0-9a-f]{12}-\d+)(?:\.(c|r\d+))?$/.exec(r.source_key);
+      const status = !m?.[2] ? "accepted" : m[2] === "c" ? "chosen" : "rejected";
+      const old = decisionHash(
+        { ...r, status, occurred: r.occurred_at, parent: m?.[2] ? (m[1] ?? null) : null },
+        1,
+      );
+      db.owner.prepare("update knowledge set content_hash = ? where id = ?").run(old, r.id);
+      db.owner.prepare("update knowledge_terms set content_hash = ? where knowledge_id = ?").run(old, r.id);
+    }
+    const before = snapshot(db);
+    assert.equal(before.words, 7);
+
+    await moveProject(db.ingest, FROM, TO, true);
+    await syncGithub(db.ingest, p, "o/new", github("o/new"));
+    const after = snapshot(db);
+    assert.deepEqual(after.ids, before.ids);
+    assert.equal(after.words, 7, "the words follow the current rule's hash");
   } finally {
     await db.done();
   }
