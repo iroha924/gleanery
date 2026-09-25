@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { openReader } from "../../src/db.ts";
 import { CASES_SHA, CLAUDE_ENV, cases, OUT, type Result, type summarize } from "./run.ts";
+import { type Run, verdict } from "./verdict.ts";
 
 type Grade = "direct" | "partial" | "no";
 type Row = {
@@ -41,6 +42,8 @@ const { values, positionals } = parseArgs({
     out: { type: "string" },
     model: { type: "string", default: "opus" },
     par: { type: "string", default: "4" },
+    // The setup (name without -rN) every other setup of the same split and model is judged against
+    base: { type: "string" },
   },
 });
 if (positionals.length === 0)
@@ -245,6 +248,7 @@ const rowsOut = runs.map((s) => {
     "direct+partial": `${pct(s.top.filter((t) => t.grade === "direct" || t.grade === "partial").length, n)}%`,
     ungraded: s.top.filter((t) => !t.grade).length,
     turns: s.summary.turns,
+    "session recall": `${(s.summary as Partial<ReturnType<typeof summarize>>).session_recall ?? "—"}%`,
   };
 });
 console.table(rowsOut);
@@ -292,6 +296,47 @@ for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary
     console.log(
       `⚠ ${key} runs differ in conditions (the gap may come from the model or effort):\n  ${seen.join("\n  ")}`,
     );
+}
+
+// Runs of one setup must share the DB copy and bundle, or the gap may come from them rather than the setup
+for (const [name, ss] of groups) {
+  const x = (s: System) => s.summary as Partial<ReturnType<typeof summarize>>;
+  const seen = [
+    ...new Set(ss.map((s) => `db ${x(s).db ?? "not recorded"} / bundle ${x(s).bundle ?? "not recorded"}`)),
+  ];
+  if (seen.length > 1) console.log(`⚠ ${name} runs differ in DB or bundle:\n  ${seen.join("\n  ")}`);
+}
+
+if (values.base) {
+  const asRun = (s: System): Run => {
+    const x = s.summary as Partial<ReturnType<typeof summarize>>;
+    return {
+      ranks: new Map(s.top.map((t) => [t.i, t.rank])),
+      top1: s.summary.top1,
+      direct: pct(s.top.filter((t) => t.grade === "direct").length, s.top.length),
+      turns: s.summary.turns,
+      toolKib: x.tool_kib ?? null,
+      errors: s.summary.errors,
+    };
+  };
+  const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`);
+  for (const [key, ss] of bySplit) {
+    const base = ss.filter((s) => configOf(s) === values.base);
+    if (base.length === 0) continue;
+    for (const [config, setup] of Map.groupBy(ss, configOf)) {
+      if (config === values.base) continue;
+      const v = verdict(base.map(asRun), setup.map(asRun));
+      console.log(
+        `${v.adopt ? "✓ adopt" : "✗ keep base"} ${config} vs ${values.base} (${key}, ${setup.length} vs ${base.length} runs): ` +
+          `net ${v.net} (gained ${v.gained.map((i) => `q${i}`).join(" ") || "none"} / lost ${v.lost.map((i) => `q${i}`).join(" ") || "none"}), ` +
+          `top1 ${v.top1.join(" → ")}, direct ${v.direct.join(" → ")}, turns ${v.turns.join(" → ")}, KiB ${v.toolKib.join(" → ")}` +
+          (v.reasons.length ? ` — ${v.reasons.join(", ")}` : ""),
+      );
+      const x = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).db;
+      if (new Set([...base, ...setup].map(x)).size > 1)
+        console.log("  ⚠ measured on different DB copies (fine only when the setup needs a migrated copy)");
+    }
+  }
 }
 
 if (values.out) {

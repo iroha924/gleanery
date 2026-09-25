@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // Gives the shipped plugin/dist/mcp.js to `claude -p` and has it answer the retrieval.json questions (run bun run bundle first).
-// **It uses the real database and the owner's subscription, so it is not part of verify.** Results stay in os.tmpdir()/gleanery-evals/<name>/<split>/.
-//   bun run evals:agentic -- --name base --split dev --model sonnet (name repeats of the same setup base-r2, base-r3)
+// **It uses the owner's data and subscription, so it is not part of verify.** Results stay in os.tmpdir()/gleanery-evals/<name>/<split>/.
+// GLEANERY_DB must point at a fixed copy (`sqlite3 ~/.gleanery/gleanery.db "vacuum into '<file>'"`); its hash is recorded with each run.
+//   GLEANERY_DB=<copy> bun run evals:agentic -- --name base --split dev --model sonnet (name repeats of the same setup base-r2, base-r3)
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -12,7 +13,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { openReader } from "../../src/db.ts";
-import { retired } from "../cases.ts";
+import { retired, SPLITS, type Split } from "../cases.ts";
+import { callsOf, type Session, sessionOf } from "./session.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -32,15 +34,6 @@ export const CASES_SHA = crypto
   .digest("hex")
   .slice(0, 16);
 
-// Numbers are the case indexes in retrieval.json and never change. Tune the tools on dev (even knowledge indexes) and run holdout (odd)
-// only for the gate decision (tuning against it would make the gate measure work in progress). message answers are message ids.
-export const SPLITS = {
-  dev: (c: Case, i: number) => c.source !== "message" && i % 2 === 0 && !retired(c),
-  holdout: (c: Case, i: number) => c.source !== "message" && i % 2 === 1 && !retired(c),
-  message: (c: Case) => c.source === "message" && !retired(c),
-} as const;
-export type Split = keyof typeof SPLITS;
-
 export type Result = {
   i: number;
   q: string;
@@ -55,6 +48,8 @@ export type Result = {
   ms: number;
   /** The model id actually used and the Claude Code version (from the trace init). Aliases (sonnet / opus) change targets */
   resolved: { model: string | null; claude: string | null };
+  /** What the tool calls returned along the way (whether the answer appeared before the final reply) */
+  session: Session;
   error?: string;
 };
 
@@ -99,6 +94,7 @@ async function main() {
   if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
   const mcp = path.join(REPO, "plugin/dist/mcp.js");
   if (!fs.existsSync(mcp)) throw new Error("plugin/dist/mcp.js is missing. Run bun run bundle first");
+  const db = fixedDb();
 
   const run = runDir(OUT, values.name, split);
   fs.rmSync(run, { recursive: true, force: true });
@@ -131,6 +127,8 @@ async function main() {
       values.effort ??
       (process.env.CLAUDE_CODE_EFFORT_LEVEL ? `環境変数 ${process.env.CLAUDE_CODE_EFFORT_LEVEL}` : "既定"),
     cases: CASES_SHA,
+    db: sha256File(db),
+    bundle: sha256File(mcp),
     ms: Date.now() - t0,
   });
   fs.writeFileSync(path.join(run, "summary.json"), JSON.stringify({ ...summary, results }, null, 1));
@@ -173,7 +171,7 @@ async function solve(
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
   const config = path.join(dir, "mcp.json");
   // Point GLEANERY_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
-  const env = process.env.GLEANERY_DB ? { GLEANERY_DB: process.env.GLEANERY_DB } : undefined;
+  const env = { GLEANERY_DB: fixedDb() };
   fs.writeFileSync(
     config,
     JSON.stringify({ mcpServers: { gleanery: { command: "node", args: [o.mcp], env } } }),
@@ -224,6 +222,7 @@ async function solve(
         model: typeof init?.model === "string" ? init.model : null,
         claude: typeof init?.claude_code_version === "string" ? init.claude_code_version : null,
       },
+      session: sessionOf(callsOf(events), o.keyOf, c.expect),
       ...(last === undefined || last.is_error
         ? { error: String(last?.result ?? "no response").slice(0, 200) }
         : refs === null
@@ -289,9 +288,36 @@ export function refsOf(text: string): string[] | null {
   }
 }
 
+/**
+ * The measured DB. **A live DB changes between runs**, so only a copy is accepted: GLEANERY_DB must be set and have no pending WAL
+ * (a copy made with `vacuum into` has none).
+ */
+export function fixedDb(): string {
+  const db = process.env.GLEANERY_DB;
+  if (!db)
+    throw new Error("Set GLEANERY_DB to a copy of the DB made with vacuum into (the run records its hash)");
+  if ((fs.statSync(`${db}-wal`, { throwIfNoEntry: false })?.size ?? 0) > 0)
+    throw new Error(
+      `${db} has a WAL with pending writes, so it is not a fixed copy. Make one with vacuum into`,
+    );
+  return db;
+}
+
+export const sha256File = (file: string): string =>
+  crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 16);
+
 export function summarize(
   results: Result[],
-  meta: { name: string; split: string; model: string; effort: string; cases: string; ms: number },
+  meta: {
+    name: string;
+    split: string;
+    model: string;
+    effort: string;
+    cases: string;
+    db?: string;
+    bundle?: string;
+    ms: number;
+  },
 ) {
   const n = results.length;
   // Stored in summary.json and compared across runs by judge.ts, so the value stays as recorded
@@ -310,9 +336,34 @@ export function summarize(
     cost_usd_list: Math.round(results.reduce((s, r) => s + r.cost, 0) * 100) / 100,
     minutes: Math.round(meta.ms / 6000) / 10,
     errors: results.filter((r) => r.error).length,
+    ...sessionSummary(results.flatMap((r) => (r.session ? [r.session] : []))),
     resolved_models: distinct(results.map((r) => r.resolved?.model ?? null)),
     claude_code: distinct(results.map((r) => r.resolved?.claude ?? null)),
   };
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) await main();
+
+/** Session metrics over the questions. Rates are percentages of questions (or of recall calls for empty_recalls). */
+export function sessionSummary(ss: Session[]) {
+  const n = Math.max(ss.length, 1);
+  const pct = (k: number, of = n) => Math.round((k / Math.max(of, 1)) * 1000) / 10;
+  const mean = (xs: number[]) =>
+    Math.round((xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1)) * 10) / 10;
+  const recalls = ss.reduce((a, s) => a + s.recalls, 0);
+  const usage: Record<string, number> = {};
+  for (const s of ss) for (const [k, v] of Object.entries(s.usage)) usage[k] = (usage[k] ?? 0) + v;
+  return {
+    session_recall: pct(ss.filter((s) => s.exposed !== null).length),
+    first_in_read: pct(ss.filter((s) => s.exposed === "read").length),
+    first_call: mean(ss.flatMap((s) => (s.first === null ? [] : [s.first]))),
+    calls: mean(ss.map((s) => s.calls)),
+    empty_recalls: pct(
+      ss.reduce((a, s) => a + s.empty, 0),
+      recalls,
+    ),
+    tool_errors: ss.reduce((a, s) => a + s.errors, 0),
+    tool_kib: mean(ss.map((s) => s.bytes / 1024)),
+    usage,
+  };
+}
