@@ -29,10 +29,14 @@ test("search terms are normalized and bounded, and unreadable characters are ref
   assert.equal(searchTerms(["ＡＢＣ", "abc"]), "ABC, abc");
   assert.equal(searchTerms([]), "");
   assert.equal(searchTerms(["絵文字‍の結合"]), "絵文字‍の結合");
-  assert.throws(() => searchTerms(["a\u200bb"]), /invisible/);
+  assert.throws(() => searchTerms(["a\u200bb"]), /invisible or control character U\+200B: a<U\+200B>b/);
+  assert.throws(() => searchTerms(["\u200d"]), /only invisible characters/);
   assert.throws(() => searchTerms(["a\u0007b"]), /control/);
   assert.throws(() => searchTerms(["x".repeat(41)]), /longer than 40/);
-  assert.throws(() => searchTerms(Array.from({ length: 17 }, (_, i) => `t${i}`)), /more than 16/);
+  assert.throws(
+    () => searchTerms(Array.from({ length: 17 }, (_, i) => `t${i}`)),
+    /more than 16 search words/,
+  );
   assert.throws(() => searchTerms(Array.from({ length: 16 }, (_, i) => `${"y".repeat(30)}${i}`)), /400/);
 });
 
@@ -160,6 +164,7 @@ test("the owner import writes only records unchanged since the draft and says wh
   const fresh = knowledge(db, p, { source_key: "t#import-fresh", body: "取り込む記録" });
   const changed = knowledge(db, p, { source_key: "t#import-changed", body: "変わる記録" });
   const badTerms = knowledge(db, p, { source_key: "t#import-bad-terms", body: "語が読めない記録" });
+  knowledge(db, p, { source_key: "t#import-no-hash", body: "下書きに hash が無い記録" });
   const hexOf = (id: number) =>
     Buffer.from(
       db.owner.prepare("select content_hash from knowledge where id = ?").get(id)?.content_hash as Uint8Array,
@@ -168,6 +173,7 @@ test("the owner import writes only records unchanged since the draft and says wh
     "t#import-fresh": { terms: "importmarkerzz, 取り込み", content_hash: hexOf(fresh) },
     "t#import-changed": { terms: "stalemarkerzz", content_hash: hexOf(changed) },
     "t#import-bad": { terms: "x", content_hash: "00" },
+    "t#import-no-hash": { terms: "x" },
     "t#import-bad-terms": { terms: "a\u200bb", content_hash: hexOf(badTerms) },
   };
   db.owner
@@ -177,21 +183,56 @@ test("the owner import writes only records unchanged since the draft and says wh
   try {
     const file = path.join(dir, "draft.json");
     fs.writeFileSync(file, JSON.stringify(draft));
-    const r = importTerms(file, "git:github.com/o/r", db.file);
+    const here = { key: "git:github.com/o/r", name: "o/r" };
+    const r = importTerms(file, here, db.file);
     assert.equal(r.written, 1);
     assert.deepEqual(
       r.skipped.map((s) => [s.key, s.why.split(":")[0]]),
       [
         ["t#import-changed", "the record changed after the draft"],
         ["t#import-bad", "not a record of this project"],
-        ["t#import-bad-terms", "search term has a control or invisible character"],
+        ["t#import-no-hash", "the draft has no content_hash of 64 hex digits"],
+        ["t#import-bad-terms", "search word has an invisible or control character U+200B"],
       ],
     );
     assert.deepEqual(await found("importmarkerzz"), [fresh]);
     assert.deepEqual(await found("stalemarkerzz"), []);
-    listTerms("git:github.com/o/r", `k:${fresh}`, db.file);
-    assert.throws(() => importTerms(file, "git:github.com/o/none", db.file), /not registered/);
+    assert.deepEqual(
+      listTerms(here, `k:${fresh}`, db.file).map((x) => x.id),
+      [fresh],
+    );
+    assert.deepEqual(listTerms(here, `k:${changed}`, db.file), [], "a record without words lists nothing");
+    for (const bad of ["abc", "m:1", "k:1x", ""])
+      assert.throws(() => listTerms(here, bad, db.file), /Could not read --ref .*: use k:<id>/);
+    assert.throws(() => listTerms(here, "k:99999", db.file), /k:99999 is not a record of o\/r/);
+    const none = { key: "git:github.com/o/none", name: "o/none" };
+    assert.throws(
+      () => importTerms(file, none, db.file),
+      /o\/none is not registered with gleanery\. Register it/,
+    );
+    assert.throws(() => listTerms(none, undefined, db.file), /o\/none is not registered/);
+    const other = path.join(dir, "other.json");
+    fs.writeFileSync(other, JSON.stringify({ "t#elsewhere": { terms: "x", content_hash: "0".repeat(64) } }));
+    assert.throws(() => importTerms(other, here, db.file), /Imported no search words/);
+    assert.throws(
+      () => importTerms(path.join(dir, "missing.json"), here, db.file),
+      /Could not read the draft/,
+    );
+    fs.writeFileSync(other, "{bad");
+    assert.throws(() => importTerms(other, here, db.file), /Could not read the draft/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the terms commands tell the owner to migrate a database older than this gleanery", async () => {
+  const { importTerms, listTerms } = await import("../src/admin.ts");
+  const here = { key: "git:github.com/o/r", name: "o/r" };
+  db.owner.exec("pragma user_version = 3");
+  try {
+    assert.throws(() => listTerms(here, undefined, db.file), /gleanery db migrate/);
+    assert.throws(() => importTerms(db.file, here, db.file), /gleanery db migrate|Could not read the draft/);
+  } finally {
+    db.owner.exec("pragma user_version = 4");
   }
 });

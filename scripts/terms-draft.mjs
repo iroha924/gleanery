@@ -52,7 +52,7 @@ const rows = db
   .all(projectKey);
 db.close();
 
-// Resumable: records already in the draft are not asked again
+// Resumable: records drafted for their current text are not asked again
 const draft = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : {};
 const meta = { model: MODEL, prompt: PROMPT_VERSION, db: path.basename(dbFile), project: projectKey };
 fs.writeFileSync(`${out}.meta.json`, JSON.stringify(meta, null, 1));
@@ -128,7 +128,8 @@ function claude(text) {
   });
 }
 
-const todo = rows.filter((r) => !draft[r.key]);
+// A record whose text changed since its draft is drafted again (the import would skip the old words)
+const todo = rows.filter((r) => draft[r.key]?.content_hash !== r.hash.toLowerCase());
 let done = 0;
 await Promise.all(
   Array.from({ length: par }, async () => {

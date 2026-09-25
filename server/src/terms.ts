@@ -6,7 +6,7 @@ const MAX_TERM = 40;
 /** Counted in code points, the same unit as SQLite length() in the table CHECK. */
 const MAX_TOTAL = 400;
 // Control characters, and format characters other than the joiners some scripts need to render
-const UNREADABLE = /[\p{Cc}\p{Cf}]/u;
+const UNREADABLE = /[\p{Cc}\p{Cf}]/gu;
 const JOINERS = /[‌‍]/gu;
 
 /**
@@ -19,15 +19,24 @@ export function searchTerms(input: string | string[]): string {
   for (const r of raw) {
     const t = r.normalize("NFKC").replace(/\s+/g, " ").trim();
     if (!t || terms.includes(t)) continue;
-    if (UNREADABLE.test(t.replace(JOINERS, "")))
-      throw new RangeError(`search term has a control or invisible character: ${JSON.stringify(t)}`);
+    const bare = t.replace(JOINERS, "");
+    const bad = bare.match(UNREADABLE)?.[0];
+    // Name the character by code point: printed as is, it stays invisible (or reverses the line)
+    if (bad)
+      throw new RangeError(
+        `search word has an invisible or control character ${codePoint(bad)}: ${visible(t)}`,
+      );
+    if (!bare.trim()) throw new RangeError(`search word has only invisible characters: ${visible(t)}`);
     if ([...t].length > MAX_TERM)
-      throw new RangeError(`search term longer than ${MAX_TERM} characters: ${t}`);
+      throw new RangeError(`search word longer than ${MAX_TERM} characters: ${t}`);
     terms.push(t);
   }
-  if (terms.length > MAX_TERMS) throw new RangeError(`more than ${MAX_TERMS} search terms (${terms.length})`);
+  if (terms.length > MAX_TERMS) throw new RangeError(`more than ${MAX_TERMS} search words (${terms.length})`);
   const joined = terms.join(", ");
   if ([...joined].length > MAX_TOTAL)
-    throw new RangeError(`search terms longer than ${MAX_TOTAL} characters in all`);
+    throw new RangeError(`search words longer than ${MAX_TOTAL} characters in all`);
   return joined;
 }
+
+const codePoint = (c: string) => `U+${(c.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")}`;
+const visible = (t: string) => t.replace(UNREADABLE, (c) => `<${codePoint(c)}>`);

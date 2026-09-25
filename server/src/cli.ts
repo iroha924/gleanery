@@ -958,7 +958,7 @@ const dbRoutes = buildRouteMap({
           },
           func: (flags: { cwd?: string }, draft: string) =>
             boxed("gleanery db terms import", () => {
-              importTerms(draft, placeOf(flags.cwd ?? process.cwd()).key);
+              importTerms(draft, placeOf(flags.cwd ?? process.cwd()));
             }),
         }),
         list: buildCommand({
@@ -976,9 +976,9 @@ const dbRoutes = buildRouteMap({
             },
           },
           func: (flags: { cwd?: string; ref?: string }) =>
-            boxed("gleanery db terms list", () =>
-              listTerms(placeOf(flags.cwd ?? process.cwd()).key, flags.ref),
-            ),
+            boxed("gleanery db terms list", () => {
+              listTerms(placeOf(flags.cwd ?? process.cwd()), flags.ref);
+            }),
         }),
       },
     }),

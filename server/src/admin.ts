@@ -268,6 +268,25 @@ export function reindex(file: string = dbFile()): void {
 }
 
 type Draft = Record<string, { terms?: unknown; content_hash?: unknown }>;
+/** The project a terms command works on: key to look it up, name to show */
+type Named = { key: string; name: string };
+
+/** The terms commands need the knowledge_terms table, which revision 4 added */
+function projectFor(raw: DatabaseSync, place: Named): number {
+  const got = versionOf(raw);
+  if (got < SCHEMA_REVISION)
+    throw new Error(
+      `The database is at revision ${got}, older than this gleanery (${SCHEMA_REVISION}). Run \`gleanery db migrate\` first`,
+    );
+  const project = raw.prepare("select id from project where key = ?").get(place.key) as
+    | { id: number }
+    | undefined;
+  if (!project)
+    throw new Error(
+      `${place.name} is not registered with gleanery. Register it with \`gleanery project add\``,
+    );
+  return project.id;
+}
 
 /**
  * Imports search words for existing records once, from a draft the owner reviewed: `{ "<source_key>": { "terms": "a, b", "content_hash": "<hex>" } }`.
@@ -275,18 +294,20 @@ type Draft = Record<string, { terms?: unknown; content_hash?: unknown }>;
  */
 export function importTerms(
   draft: string,
-  projectKey: string,
+  place: Named,
   file: string = dbFile(),
 ): { written: number; skipped: { key: string; why: string }[] } {
-  const entries = JSON.parse(fs.readFileSync(draft, "utf8")) as unknown;
+  let entries: unknown;
+  try {
+    entries = JSON.parse(fs.readFileSync(draft, "utf8"));
+  } catch (e) {
+    throw new Error(`Could not read the draft ${draft}: ${e instanceof Error ? e.message : e}`);
+  }
   if (typeof entries !== "object" || entries === null || Array.isArray(entries))
-    throw new Error(`${draft} is not a JSON object of source keys`);
+    throw new Error(`Could not read the draft ${draft}: it is not a JSON object of source keys`);
   const result = withOwner(file, (raw) =>
     immediate(raw, () => {
-      const project = raw.prepare("select id from project where key = ?").get(projectKey) as
-        | { id: number }
-        | undefined;
-      if (!project) throw new Error(`${projectKey} is not registered with gleanery`);
+      const project = projectFor(raw, place);
       const find = raw.prepare(
         "select id, content_hash from knowledge where project_id = ? and source_key = ?",
       );
@@ -299,12 +320,16 @@ export function importTerms(
       let written = 0;
       const skipped: { key: string; why: string }[] = [];
       for (const [key, e] of Object.entries(entries as Draft)) {
-        const row = find.get(project.id, key) as { id: number; content_hash: Uint8Array } | undefined;
+        const row = find.get(project, key) as { id: number; content_hash: Uint8Array } | undefined;
         if (!row) {
           skipped.push({ key, why: "not a record of this project" });
           continue;
         }
-        if (Buffer.from(row.content_hash).toString("hex") !== e?.content_hash) {
+        if (typeof e?.content_hash !== "string" || !/^[0-9a-f]{64}$/.test(e.content_hash)) {
+          skipped.push({ key, why: "the draft has no content_hash of 64 hex digits" });
+          continue;
+        }
+        if (Buffer.from(row.content_hash).toString("hex") !== e.content_hash) {
           skipped.push({ key, why: "the record changed after the draft" });
           continue;
         }
@@ -325,31 +350,55 @@ export function importTerms(
       return { written, skipped };
     }),
   );
-  say(`Imported search words for ${plural(result.written, "record")}`);
   for (const s of result.skipped) say(`skipped ${s.key}: ${s.why}`);
+  // Nothing written is a failure, not an empty success: the draft is for another project or every record changed
+  if (result.written === 0 && result.skipped.length > 0)
+    throw new Error(
+      `Imported no search words: every entry in the draft was skipped (${plural(result.skipped.length, "entry", "entries")})`,
+    );
+  say(`Imported search words for ${plural(result.written, "record")}`);
   return result;
 }
 
+type Listed = {
+  id: number;
+  source_key: string;
+  source: string;
+  written_at: string;
+  terms: string;
+  fresh: number;
+};
+
 /** The search words of this project's records, for the owner to check (they are never shown in search results or read). */
-export function listTerms(projectKey: string, ref?: string, file: string = dbFile()): void {
-  const rows = withOwner(file, (raw) =>
-    raw
+export function listTerms(place: Named, ref?: string, file: string = dbFile()): Listed[] {
+  const id = ref === undefined ? null : Number(/^k:(\d+)$/.exec(ref)?.[1] ?? Number.NaN);
+  if (id !== null && !Number.isSafeInteger(id))
+    throw new Error(`Could not read --ref ${JSON.stringify(ref)}: use k:<id>`);
+  const rows = withOwner(file, (raw) => {
+    const project = projectFor(raw, place);
+    if (
+      id !== null &&
+      !raw.prepare("select 1 from knowledge where id = ? and project_id = ?").get(id, project)
+    )
+      throw new Error(`k:${id} is not a record of ${place.name}`);
+    return raw
       .prepare(
         `select k.id, k.source_key, t.source, t.written_at, t.terms, t.content_hash = k.content_hash as fresh
-         from knowledge_terms t join knowledge k on k.id = t.knowledge_id join project p on p.id = k.project_id
-         where p.key = ? and (? is null or k.id = ?) order by k.id`,
+         from knowledge_terms t join knowledge k on k.id = t.knowledge_id
+         where k.project_id = ? and (? is null or k.id = ?) order by k.id`,
       )
-      .all(
-        projectKey,
-        ref ? Number(ref.replace(/^k:/, "")) : null,
-        ref ? Number(ref.replace(/^k:/, "")) : null,
-      ),
-  ) as { id: number; source_key: string; source: string; written_at: string; terms: string; fresh: number }[];
+      .all(project, id, id) as Listed[];
+  });
   for (const r of rows)
     say(
-      `k:${r.id} ${r.source_key} (${r.source}, ${r.written_at}${r.fresh ? "" : ", stale: the record changed"})\n  ${r.terms}`,
+      `k:${r.id} ${r.source_key} (${r.source}, written ${r.written_at.slice(0, 10)}${r.fresh ? "" : ", stale: the record changed"})\n  ${r.terms}`,
     );
-  say(`${plural(rows.length, "record")} with search words`);
+  say(
+    id !== null && rows.length === 0
+      ? `k:${id} has no search words`
+      : `${plural(rows.length, "record")} with search words`,
+  );
+  return rows;
 }
 
 /** Database state for doctor. Everything is read only; no file is modified. */
