@@ -36,6 +36,7 @@
         }
       ],
       "confirmation": "gleanery init applied db/schema.sql, and every DB row in doctor passed",
+      "terms": ["SQLite", "local database", "no server", "offline"],
       "downsides": [
         "requires Node 24.15 or later",
         "records do not carry over to a new machine"

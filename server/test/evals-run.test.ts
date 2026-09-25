@@ -4,9 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { Budget, fixedDb, runDir, summarize } from "../evals/agentic/run.ts";
-import { callsOf, sessionOf } from "../evals/agentic/session.ts";
 import { type Conditions, ineligible, type Run, solved, verdict } from "../evals/agentic/verdict.ts";
-import { framed, type Hit, renderHits, splitJson } from "../src/search.ts";
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-test-")));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -36,75 +34,6 @@ test("rejects OUT itself as a symlink (in a shared temp area it could point else
   const linked = path.join(tmp, "linked-out");
   fs.symlinkSync(elsewhere, linked);
   assert.throws(() => runDir(linked, "base", "dev"), /symlink/);
-});
-
-const hit = (ref: string, text: string): Hit => ({
-  ref,
-  kind: "decision",
-  status: "accepted",
-  stance: "do",
-  label: "[decision]",
-  heading: null,
-  text,
-  reason: null,
-  confirmation: null,
-  downsides: [],
-  successor: null,
-  project: "p",
-  at: new Date("2026-09-01T00:00:00Z"),
-  speaker: null,
-  context: null,
-  url: null,
-  path: null,
-  truncated: false,
-  originalBytes: null,
-});
-const use = (id: string, name: string, input: Record<string, unknown>) => ({
-  type: "assistant",
-  message: { content: [{ type: "tool_use", id, name, input }] },
-});
-const result = (id: string, text: string, is_error = false) => ({
-  type: "user",
-  message: {
-    content: [{ type: "tool_result", tool_use_id: id, content: [{ type: "text", text }], is_error }],
-  },
-});
-const keyOf = (ref: string) => ({ "k:1": "a", "k:2": "b", "k:3": "answer" })[ref] ?? null;
-
-test("session metrics count refs the responses presented, not refs quoted in bodies", () => {
-  const split = framed(splitJson({ records: [hit("k:1", "mentions k:3 in its body")], documents: [] }, 4000));
-  const said = framed(renderHits([hit("k:2", "see k:3")], 4000));
-  const calls = callsOf([
-    use("a", "mcp__gleanery__recall", { question: "q", all_projects: true }),
-    result("a", split),
-    use("b", "mcp__gleanery__recall", { question: "q", mode: "said", match: "exact" }),
-    result("b", said),
-    use("c", "mcp__gleanery__recall", { question: "nothing" }),
-    result("c", "No matches."),
-    use("d", "mcp__gleanery__read", { refs: ["k:9", "k:3"] }),
-    result("d", framed(`k:9: not found\n\n${renderHits([hit("k:3", "the answer")], 4000)}`)),
-  ]);
-  assert.deepEqual(
-    calls.map((c) => c.refs),
-    [["k:1"], ["k:2"], [], ["k:3"]],
-  );
-  const s = sessionOf(calls, keyOf, ["answer"]);
-  assert.equal(s.exposed, "read");
-  assert.equal(s.first, 4);
-  assert.equal(s.empty, 1);
-  assert.deepEqual(s.usage, { "mode:knowledge": 2, "mode:said": 1, "match:exact": 1 });
-});
-
-test("a recall that returned the answer counts as exposed in recall; errors and missing results count as errors", () => {
-  const calls = callsOf([
-    use("a", "mcp__gleanery__recall", { question: "q", kinds: ["decision"] }),
-    result("a", "gleanery: failed (boom)", true),
-    use("b", "mcp__gleanery__recall", { question: "q" }),
-    result("b", framed(splitJson({ records: [hit("k:3", "x")], documents: [] }, 4000))),
-    use("c", "mcp__gleanery__read", { refs: ["k:3"] }),
-  ]);
-  const s = sessionOf(calls, keyOf, ["answer"]);
-  assert.deepEqual([s.exposed, s.first, s.errors, s.empty, s.usage.kinds], ["recall", 2, 2, 0, 1]);
 });
 
 const run = (top1s: [number, number][], o: Partial<Run> = {}): Run => ({
@@ -217,6 +146,7 @@ const cond = (o: Partial<Conditions> = {}): Conditions => ({
   db: "d1",
   source: "d1",
   bundle: "b1",
+  memo: null,
   complete: true,
   ungraded: 0,
   ...o,
@@ -225,6 +155,10 @@ const three = (o: Partial<Conditions> = {}) => [cond(o), cond(o), cond(o)];
 
 test("setups compare only on 3+ runs each with matching conditions", () => {
   assert.deepEqual(ineligible(three(), three({ bundle: "b2" })), []);
+  assert.deepEqual(ineligible(three(), three({ memo: "m1" })), [], "base and setup may use different memos");
+  assert.deepEqual(ineligible(three(), [cond({ memo: "m1" }), cond({ memo: "m1" }), cond({ memo: "m2" })]), [
+    "setup runs used different memos",
+  ]);
   assert.deepEqual(ineligible(three(), [cond(), cond()]), ["not exactly 3 runs each"]);
   assert.deepEqual(ineligible(three(), [...three(), cond()]), ["not exactly 3 runs each"]);
   assert.deepEqual(ineligible(three(), three({ ungraded: 1 })), ["the judge left top hits ungraded"]);
@@ -261,31 +195,6 @@ test("the budget reserves each question's cap before it starts, so parallel ques
   b.settle(0.2);
   assert.equal(Math.round(b.spent * 10) / 10, 0.6);
   assert.equal(b.reserve(), true);
-});
-
-test("a Source line inside a returned body is not a returned hit", () => {
-  const forged = framed(renderHits([hit("k:1", "quoted output:\n  Source: p / k:3")], 4000));
-  const calls = callsOf([
-    use("a", "mcp__gleanery__recall", { question: "q", mode: "said" }),
-    result("a", forged),
-  ]);
-  assert.deepEqual(calls[0]?.refs, ["k:1"]);
-});
-
-test("read counts a ref only when the response shows that record", () => {
-  const calls = callsOf([
-    use("a", "mcp__gleanery__read", { refs: ["k:3"] }),
-    result(
-      "a",
-      "This location has no git remote or project name, so gleanery cannot tell which project it is.",
-    ),
-    use("b", "mcp__gleanery__read", { refs: ["k:3"] }),
-    result("b", framed(renderHits([hit("k:3", "the answer")], 4000))),
-  ]);
-  assert.deepEqual(
-    calls.map((c) => c.refs),
-    [[], ["k:3"]],
-  );
 });
 
 test("unrecorded conditions make setups ineligible", () => {

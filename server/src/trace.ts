@@ -11,6 +11,7 @@ import { z } from "zod";
 import { inTransaction, iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { conversationId, STATUSES } from "./knowledge.ts";
+import { searchTerms } from "./terms.ts";
 import { mask, sha256 } from "./text.ts";
 
 const KEY = /^[a-z0-9][a-z0-9._-]*$/;
@@ -58,6 +59,21 @@ const common = {
     )
     .default([]),
   files: z.array(file).default([]),
+  /**
+   * Extra search words (synonyms, abbreviations, English equivalents), indexed but never shown. Omitted keeps what the record has;
+   * an empty list clears it. A decision's words go to its options too.
+   */
+  terms: z
+    .array(z.string())
+    .optional()
+    .superRefine((v, ctx) => {
+      if (v === undefined) return;
+      try {
+        searchTerms(v);
+      } catch (e) {
+        ctx.addIssue({ code: "custom", message: e instanceof Error ? e.message : String(e) });
+      }
+    }),
 };
 
 const decision = z
@@ -292,7 +308,7 @@ export async function saveTrace(
   db: Kysely<DB>,
   projectId: number,
   t: Trace,
-): Promise<{ written: number; superseded: number }> {
+): Promise<{ written: number; superseded: number; terms: number }> {
   const all = rows(t);
   const conversation = conversationId(projectId, t.session.host, t.session.id);
   // Compare times as instants, not strings (with +09:00 and Z mixed, lexical order is not the earliest).
@@ -506,6 +522,66 @@ export async function saveTrace(
         if (!options.has(o.source_key)) stale.push(o.id);
     for (const part of chunks(stale)) await trx.deleteFrom("knowledge").where("id", "in", part).execute();
 
+    // Extra search words, kept apart from content_hash (so a trace without them never rewrites the record) and tied to the record's current hash.
+    const termsOf = new Map<string, string>();
+    for (const i of t.items) {
+      if (i.terms === undefined) continue;
+      const v = searchTerms(i.terms);
+      const own = sourceKey(t, i.key);
+      const keys = [own, ...(i.kind === "decision" ? i.options.map((_, n) => `${own}:o${n + 1}`) : [])];
+      for (const k of keys) termsOf.set(k, v);
+    }
+    const now = iso(Date.now());
+    // Records whose words changed: a body left as it was is not in `written`, so these are reported apart
+    let terms = 0;
+    for (const [k, v] of termsOf) {
+      const id = idOf.get(k);
+      if (id === undefined) continue;
+      if (!v) {
+        const gone = await trx
+          .deleteFrom("knowledge_terms")
+          .where("knowledge_id", "=", id)
+          .executeTakeFirst();
+        terms += Number(gone.numDeletedRows);
+        continue;
+      }
+      const put = await trx
+        .insertInto("knowledge_terms")
+        .columns(["knowledge_id", "terms", "content_hash", "source", "written_at"])
+        .expression((eb) =>
+          eb
+            .selectFrom("knowledge")
+            .select((s) => [
+              "id",
+              s.val(v).as("terms"),
+              "content_hash",
+              s.val("trace").as("source"),
+              s.val(now).as("written_at"),
+            ])
+            .where("id", "=", id),
+        )
+        .onConflict((oc) =>
+          oc
+            .column("knowledge_id")
+            .doUpdateSet((eb) => ({
+              terms: eb.ref("excluded.terms"),
+              content_hash: eb.ref("excluded.content_hash"),
+              source: eb.ref("excluded.source"),
+              written_at: eb.ref("excluded.written_at"),
+            }))
+            // The same words for the same text keep their row: a rewrite would also delete and reinsert the index row
+            .where((eb) =>
+              eb.or([
+                eb("knowledge_terms.terms", "is not", eb.ref("excluded.terms")),
+                eb("knowledge_terms.content_hash", "is not", eb.ref("excluded.content_hash")),
+                eb("knowledge_terms.source", "is not", eb.ref("excluded.source")),
+              ]),
+            ),
+        )
+        .executeTakeFirst();
+      terms += Number(put.numInsertedOrUpdatedRows ?? 0n);
+    }
+
     // Files only for the rows rewritten.
     for (const part of chunks(written.map((w) => w.id)))
       await trx.deleteFrom("knowledge_file").where("knowledge_id", "in", part).execute();
@@ -558,6 +634,6 @@ export async function saveTrace(
           .execute();
       }
     }
-    return { written: written.length, superseded };
+    return { written: written.length, superseded, terms };
   });
 }

@@ -86,6 +86,8 @@ export type Conditions = {
   /** The snapshot the DB copy was made or migrated from */
   source: string | null;
   bundle: string | null;
+  /** Hash of the memo each run placed as CLAUDE.md (null without one). Base and setup may differ; runs of one side may not */
+  memo: string | null;
   /** false for a pilot or a run the budget stopped early */
   complete: boolean;
   /** Top hits the judge should have graded but did not (a failed grading call) */
@@ -109,6 +111,7 @@ export function ineligible(base: Conditions[], setup: Conditions[], snapshot?: s
   ] as const) {
     if (new Set(cs.map((c) => c.db)).size > 1) out.push(`${side} runs used different DB copies`);
     if (new Set(cs.map((c) => c.bundle)).size > 1) out.push(`${side} runs used different bundles`);
+    if (new Set(cs.map((c) => c.memo)).size > 1) out.push(`${side} runs used different memos`);
   }
   if (all.some((c) => c.ungraded > 0)) out.push("the judge left top hits ungraded");
   if (all.some((c) => c.db === null || c.source === null)) out.push("DB not recorded");

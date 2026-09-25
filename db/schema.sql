@@ -256,20 +256,51 @@ create table knowledge (
 create index knowledge_listing on knowledge (project_id, kind, status, occurred_at desc);
 create index knowledge_work on knowledge (work_item_id) where work_item_id is not null;
 
--- The full-text index. rowid = knowledge.id. Columns are the heading (h) and body plus reason (b). Search uses bm25(knowledge_fts, 3, 1).
+-- Extra search words for a record (synonyms, abbreviations, English equivalents of its words). **Search only**: no search result, read,
+-- CLI output, or dashboard view shows them. content_hash is the record's hash when they were written; they are indexed only while it
+-- still matches, so a record whose text changed stops being found by words written for its old text. source says who wrote them.
+create table knowledge_terms (
+  knowledge_id integer primary key not null references knowledge (id) on delete cascade,
+  terms text not null check (terms <> '' and length(terms) <= 400),
+  content_hash blob not null check (length(content_hash) = 32),
+  source text not null check (source in ('trace', 'pr', 'import')),
+  written_at text not null check (strftime('%Y-%m-%dT%H:%M:%fZ', written_at) is written_at)
+) strict;
+
+-- What the knowledge index holds for each record: heading (h), body plus reason (b), and the extra search words whose hash matches (e).
+-- The triggers and `gleanery db reindex` all insert from here, so the rule lives in one place.
+create view knowledge_search_text as
+select k.id,
+  gleanery_terms(coalesce(k.heading, '')) as h,
+  gleanery_terms(k.body || char(10) || coalesce(k.reason, '')) as b,
+  gleanery_terms(coalesce(t.terms, '')) as e
+from knowledge k
+left join knowledge_terms t on t.knowledge_id = k.id and t.content_hash = k.content_hash;
+
+-- The full-text index. rowid = knowledge.id. Search uses bm25(knowledge_fts, 3, 1, 1).
 -- Trace headings hold the work title, and document section headings hold the path and heading levels.
-create virtual table knowledge_fts using fts5(h, b, content='', contentless_delete=1);
+create virtual table knowledge_fts using fts5(h, b, e, content='', contentless_delete=1);
 create trigger knowledge_fts_ai after insert on knowledge begin
-  insert into knowledge_fts (rowid, h, b)
-  values (new.id, gleanery_terms(coalesce(new.heading, '')), gleanery_terms(new.body || char(10) || coalesce(new.reason, '')));
+  insert into knowledge_fts (rowid, h, b, e) select id, h, b, e from knowledge_search_text where id = new.id;
 end;
 create trigger knowledge_fts_ad after delete on knowledge begin
   delete from knowledge_fts where rowid = old.id;
 end;
-create trigger knowledge_fts_au after update of heading, body, reason on knowledge begin
+create trigger knowledge_fts_au after update of heading, body, reason, content_hash on knowledge begin
   delete from knowledge_fts where rowid = old.id;
-  insert into knowledge_fts (rowid, h, b)
-  values (new.id, gleanery_terms(coalesce(new.heading, '')), gleanery_terms(new.body || char(10) || coalesce(new.reason, '')));
+  insert into knowledge_fts (rowid, h, b, e) select id, h, b, e from knowledge_search_text where id = new.id;
+end;
+create trigger knowledge_terms_ai after insert on knowledge_terms begin
+  delete from knowledge_fts where rowid = new.knowledge_id;
+  insert into knowledge_fts (rowid, h, b, e) select id, h, b, e from knowledge_search_text where id = new.knowledge_id;
+end;
+create trigger knowledge_terms_au after update of terms, content_hash on knowledge_terms begin
+  delete from knowledge_fts where rowid = new.knowledge_id;
+  insert into knowledge_fts (rowid, h, b, e) select id, h, b, e from knowledge_search_text where id = new.knowledge_id;
+end;
+create trigger knowledge_terms_ad after delete on knowledge_terms begin
+  delete from knowledge_fts where rowid = old.knowledge_id;
+  insert into knowledge_fts (rowid, h, b, e) select id, h, b, e from knowledge_search_text where id = old.knowledge_id;
 end;
 
 -- Direct links between decisions and files. applies_to is a constraint shown before editing, and evidence is a file cited as grounds.
@@ -315,4 +346,4 @@ create trigger capture_message_file_insert instead of insert on capture_message_
   on conflict do nothing;
 end;
 
-pragma user_version = 3;
+pragma user_version = 4;

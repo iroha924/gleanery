@@ -25,6 +25,8 @@ const { values } = parseArgs({
     model: { type: "string", default: "sonnet" },
     effort: { type: "string" },
     par: { type: "string", default: "4" },
+    // A memory-like note loaded at session start (run.ts places it as CLAUDE.md)
+    memo: { type: "string" },
   },
 });
 if (!values.name) throw new Error("--name is required");
@@ -103,6 +105,7 @@ const common = {
   par: Number(values.par),
   mcp,
   budget,
+  memo: values.memo,
 };
 
 // The pilot always uses dev questions, so a holdout gate shows nothing before its verdict

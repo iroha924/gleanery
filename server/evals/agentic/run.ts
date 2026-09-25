@@ -12,8 +12,11 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import type { Kysely } from "kysely";
+import { openReader } from "../../src/db.ts";
+import type { DB } from "../../src/db-types.ts";
 import { SPLITS, type Split } from "../cases.ts";
-import { callsOf, type Session, sessionOf } from "./session.ts";
+import { callsOf, replay, type Session, sessionOf } from "./session.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -109,6 +112,8 @@ export type Measure = {
   /** Only the first n questions of the split (a pilot) */
   limit?: number | undefined;
   budget: Budget;
+  /** A note placed as CLAUDE.md in each question's working directory, loaded at session start like memory (none when undefined) */
+  memo?: string | undefined;
 };
 
 /** Runs one split once and writes <OUT>/<name>/<split>/summary.json. Stops starting questions when the budget runs out (the run is then incomplete). */
@@ -122,6 +127,11 @@ export async function measure(o: Measure) {
   fs.rmSync(run, { recursive: true, force: true });
   fs.mkdirSync(run, { recursive: true });
   const keyOf = await keys();
+  // Every question reads this copy, so a memo edited during the run cannot mix two versions under one recorded hash
+  const memo = o.memo ? path.join(run, "memo.md") : undefined;
+  if (o.memo && memo) fs.copyFileSync(o.memo, memo);
+  // Replays recorded calls to learn what each response showed. A DB this checkout cannot open leaves every call unconfirmed
+  const replayDb = openReader(db);
 
   const all = cases.map((c, i) => ({ c, i })).filter(({ c, i }) => SPLITS[o.split](c, i));
   const todo = all.slice(0, o.limit ?? all.length);
@@ -135,7 +145,15 @@ export async function measure(o: Measure) {
           todo.length = 0;
           break;
         }
-        const r = await solve(x.c, x.i, { run, mcp: o.mcp, model: o.model, effort: o.effort, keyOf });
+        const r = await solve(x.c, x.i, {
+          run,
+          mcp: o.mcp,
+          model: o.model,
+          effort: o.effort,
+          keyOf,
+          db: replayDb,
+          memo,
+        });
         o.budget.settle(r.cost);
         results.push(r);
         console.error(
@@ -144,6 +162,7 @@ export async function measure(o: Measure) {
       }
     }),
   );
+  await replayDb.destroy();
   results.sort((a, b) => a.i - b.i);
   const summary = summarize(results, {
     name: o.name,
@@ -160,6 +179,7 @@ export async function measure(o: Measure) {
     db: sha256File(db),
     source: sourceOf(db),
     bundle: sha256File(o.mcp),
+    ...(memo ? { memo: sha256File(memo) } : {}),
     complete: results.length === planned && o.limit === undefined,
     ms: Date.now() - t0,
   });
@@ -178,6 +198,7 @@ async function main() {
       par: { type: "string", default: "4" },
       mcp: { type: "string", default: path.join(REPO, "plugin/dist/mcp.js") },
       budget: { type: "string", default: "10" },
+      memo: { type: "string" },
     },
   });
   const split = values.split as Split;
@@ -192,6 +213,7 @@ async function main() {
     effort: values.effort,
     par: Number(values.par),
     mcp: values.mcp,
+    memo: values.memo,
     budget: new Budget(Number(values.budget)),
   });
   console.log(JSON.stringify(summary));
@@ -243,6 +265,8 @@ async function solve(
     model: string;
     effort: string | undefined;
     keyOf: (ref: string) => string | null;
+    db: Kysely<DB>;
+    memo: string | undefined;
   },
 ): Promise<Result> {
   const dir = path.join(o.run, `q${i}`);
@@ -250,6 +274,7 @@ async function solve(
   // The working directory is an empty place, neither the repository nor ~/.gleanery. Loading the owner's CLAUDE.md, plugins, and hooks
   // would measure the owner's setup instead of the shipped tools (and the hooks would even run capture).
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
+  if (o.memo) fs.copyFileSync(o.memo, path.join(cwd, "CLAUDE.md"));
   const config = path.join(dir, "mcp.json");
   // Point GLEANERY_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
   const env = { GLEANERY_DB: fixedDb() };
@@ -307,7 +332,7 @@ async function solve(
         model: typeof init?.model === "string" ? init.model : null,
         claude: typeof init?.claude_code_version === "string" ? init.claude_code_version : null,
       },
-      session: sessionOf(callsOf(events), o.keyOf, c.expect),
+      session: sessionOf(await replay(callsOf(events), o.db, cwd), o.keyOf, c.expect),
       ...(last === undefined || last.is_error
         ? { error: String(last?.result ?? "no response").slice(0, 200) }
         : refs === null
@@ -425,6 +450,8 @@ export function summarize(
     db?: string;
     source?: string;
     bundle?: string;
+    /** Hash of the memo placed as CLAUDE.md, when one was */
+    memo?: string;
     /** false when the budget stopped it early or it was a pilot (such a run is never compared) */
     complete?: boolean;
     ms: number;
@@ -469,6 +496,14 @@ export function sessionSummary(ss: Session[]) {
   return {
     session_recall: pct(ss.filter((s) => s.exposed !== null).length),
     first_in_read: pct(ss.filter((s) => s.exposed === "read").length),
+    // Where the answer was shown in full at least once (a question can count in several)
+    via_records: pct(ss.filter((s) => s.via.records).length),
+    via_documents: pct(ss.filter((s) => s.via.documents).length),
+    via_hits: pct(ss.filter((s) => s.via.hits).length),
+    via_read: pct(ss.filter((s) => s.via.read).length),
+    // Calls whose replay did not match the recorded response, and the questions that had one
+    unconfirmed_calls: ss.reduce((a, s) => a + s.unconfirmed, 0),
+    unconfirmed_questions: ss.filter((s) => s.unconfirmed > 0).length,
     first_call: mean(ss.flatMap((s) => (s.first === null ? [] : [s.first]))),
     calls: mean(ss.map((s) => s.calls)),
     empty_recalls: pct(

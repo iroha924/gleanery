@@ -6,10 +6,12 @@ import type { Kysely } from "kysely";
 import { Lexer, type Token, type Tokens } from "marked";
 import { iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
+import { searchTerms } from "./terms.ts";
 import { sha256 } from "./text.ts";
 
 type Rejected = { text: string; reason: string | null };
-export type Extracted = { line: string; chosen: string; rejected: Rejected[] };
+/** terms: absent keeps the record's search words, "" clears them, anything else replaces them (a `  - Terms:` line under the decision). */
+export type Extracted = { line: string; chosen: string; rejected: Rejected[]; terms?: string };
 
 /**
  * One PR body format. The English one is the template since #144; the Japanese one is still read so older PRs keep their decisions.
@@ -147,9 +149,38 @@ const nestedItems = (tokens: Token[]): number =>
 /** The number of list items (including nested ones). */
 const count = (t: Tokens.List): number => t.items.reduce((n, item) => n + 1 + nestedItems(item.tokens), 0);
 
+const TERMS = /^[-*+]\s+Terms:(.*)$/;
+
+/**
+ * The only bullet read under a decision: `  - Terms: a, b`. Its raw value, or null when there is none. Any other nested bullet, or a second
+ * Terms line, is refused (two Terms lines leave the record's words as they are).
+ */
+function termsUnder(item: Tokens.ListItem): { terms: string | null; refused: number } {
+  let refused = 0;
+  const found: string[] = [];
+  for (const t of item.tokens) {
+    if (t.type !== "list") {
+      refused += nestedItems(children(t));
+      continue;
+    }
+    for (const sub of (t as Tokens.List).items) {
+      refused += nestedItems(sub.tokens);
+      const m = TERMS.exec((sub.raw.split("\n")[0] ?? "").trim());
+      if (m && !sub.task) found.push(m[1] ?? "");
+      else refused++;
+    }
+  }
+  if (found.length > 1) return { terms: null, refused: refused + found.length };
+  return { terms: found[0] ?? null, refused };
+}
+
 /** The first lines of chosen-option items directly under the section, and the number of rejected bullets. marked (CommonMark) interprets headings, code, HTML, and lists. */
-function sectionItems(body: string): { lines: string[]; refused: number; dialect: Dialect } {
-  const lines: string[] = [];
+function sectionItems(body: string): {
+  lines: { first: string; terms: string | null }[];
+  refused: number;
+  dialect: Dialect;
+} {
+  const lines: { first: string; terms: string | null }[] = [];
   let refused = 0;
   let inside: Dialect | null = null;
   let found: Dialect = DIALECTS[0] as Dialect;
@@ -167,10 +198,14 @@ function sectionItems(body: string): { lines: string[]; refused: number; dialect
       continue;
     }
     for (const item of list.items) {
-      refused += nestedItems(item.tokens);
       const first = (item.raw.split("\n")[0] ?? "").trimEnd();
-      if (item.task || !inside.item.test(first)) refused++;
-      else lines.push(first);
+      if (item.task || !inside.item.test(first)) {
+        refused += 1 + nestedItems(item.tokens);
+        continue;
+      }
+      const under = termsUnder(item);
+      refused += under.refused;
+      lines.push({ first, terms: under.terms });
     }
   }
   return { lines, refused, dialect: found };
@@ -180,10 +215,20 @@ export function extractDecisions(body: string): { decisions: Extracted[]; skippe
   const decisions: Extracted[] = [];
   const { lines, refused, dialect } = sectionItems(body);
   let skipped = refused;
-  for (const line of lines) {
-    const parsed = parse(line, dialect);
-    if (parsed) decisions.push(parsed);
-    else skipped++;
+  for (const { first, terms } of lines) {
+    const parsed = parse(first, dialect);
+    if (!parsed) {
+      skipped++;
+      continue;
+    }
+    if (terms !== null)
+      try {
+        parsed.terms = searchTerms(terms);
+      } catch {
+        // Bad words leave the record's words as they are; the decision itself is still imported
+        skipped++;
+      }
+    decisions.push(parsed);
   }
   return { decisions, skipped };
 }
@@ -274,6 +319,8 @@ export async function syncDecisions(
     ).map((r) => r.external_id),
   );
   const rows: Row[] = [];
+  /** Search words by decision key, from Terms lines (a decision without one keeps its words) */
+  const termsOf = new Map<string, string>();
   let skipped = 0;
   for (const pr of prs) {
     if (!pr.merged || !pr.body || pr.authorId === null || !self.has(String(pr.authorId))) continue;
@@ -288,6 +335,7 @@ export async function syncDecisions(
       seen.set(h, n);
       const key = `github:${repo}/pull/${pr.number}#${h}-${n}`;
       const row = { pr, heading, reason: null, parent: null };
+      if (d.terms !== undefined) termsOf.set(key, d.terms);
       rows.push({ ...row, key, kind: "decision", status: "accepted", body: d.chosen });
       rows.push({ ...row, key: `${key}.c`, kind: "option", status: "chosen", body: d.chosen, parent: key });
       for (const [i, r] of d.rejected.entries())
@@ -376,6 +424,57 @@ export async function syncDecisions(
           .where("source_key", "in", part)
           .execute())
           idOf.set(k.source_key, k.id);
+  }
+  // Search words go to the decision and its options, tied to each record's current hash (kept out of content_hash)
+  const now = iso(Date.now());
+  for (const [decision, terms] of termsOf) {
+    const targets = rows.filter((r) => r.key === decision || r.parent === decision).map((r) => r.key);
+    const ids = await db
+      .selectFrom("knowledge")
+      .select("id")
+      .where("project_id", "=", projectId)
+      .where("source_key", "in", targets)
+      .execute();
+    for (const { id } of ids) {
+      if (!terms) {
+        await db.deleteFrom("knowledge_terms").where("knowledge_id", "=", id).execute();
+        continue;
+      }
+      await db
+        .insertInto("knowledge_terms")
+        .columns(["knowledge_id", "terms", "content_hash", "source", "written_at"])
+        .expression((eb) =>
+          eb
+            .selectFrom("knowledge")
+            .select((s) => [
+              "id",
+              s.val(terms).as("terms"),
+              "content_hash",
+              s.val("pr").as("source"),
+              s.val(now).as("written_at"),
+            ])
+            .where("id", "=", id),
+        )
+        .onConflict((oc) =>
+          oc
+            .column("knowledge_id")
+            .doUpdateSet((eb) => ({
+              terms: eb.ref("excluded.terms"),
+              content_hash: eb.ref("excluded.content_hash"),
+              source: eb.ref("excluded.source"),
+              written_at: eb.ref("excluded.written_at"),
+            }))
+            // The same words for the same text keep their row: a rewrite would also delete and reinsert the index row
+            .where((eb) =>
+              eb.or([
+                eb("knowledge_terms.terms", "is not", eb.ref("excluded.terms")),
+                eb("knowledge_terms.content_hash", "is not", eb.ref("excluded.content_hash")),
+                eb("knowledge_terms.source", "is not", eb.ref("excluded.source")),
+              ]),
+            ),
+        )
+        .execute();
+    }
   }
   const unlinked = self.size === 0 && prs.some((p) => p.merged && p.body);
   return { written, skipped, unlinked };

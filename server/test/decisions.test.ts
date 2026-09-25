@@ -605,3 +605,81 @@ test("escapes inside emphasis do not count as parentheses, and nested lists insi
   );
   assert.equal(got.skipped, 2);
 });
+
+test("a Terms line under a decision is read; blank clears, and misplaced, repeated, or bad lines are counted as skipped", () => {
+  const got = extractDecisions(
+    body(
+      [
+        "- 採った: A。棄却: B（理由）",
+        "  - Terms: alpha, アルファ",
+        "- 採った: C。棄却: D（理由）",
+        "  - Terms:",
+        "- 採った: E。棄却: F（理由）",
+        "  - Terms: one",
+        "  - Terms: two",
+        "- 採った: G。棄却: H（理由）",
+        "  - Terms: a​b",
+        "- 採った: I。棄却: J（理由）",
+        "- Terms: stray",
+      ].join("\n"),
+    ),
+  );
+  assert.deepEqual(
+    got.decisions.map((d) => [d.chosen, d.terms]),
+    [
+      ["A", "alpha, アルファ"],
+      ["C", ""],
+      ["E", undefined],
+      ["G", undefined],
+      ["I", undefined],
+    ],
+  );
+  // Two Terms lines under E, the unreadable one under G, and the top-level stray line
+  assert.equal(got.skipped, 4);
+});
+
+test("sync writes Terms to the decision and its options, keeps them when the line is gone, and clears them on a blank line", async () => {
+  const { db, p, input, self } = setup();
+  try {
+    self();
+    const words = (id: number) =>
+      (
+        db.owner.prepare("select terms from knowledge_terms where knowledge_id = ?").get(id) as
+          | { terms?: string }
+          | undefined
+      )?.terms;
+    const ids = () =>
+      (
+        db.owner
+          .prepare("select id from knowledge where kind <> 'option' or status = 'rejected' order by id")
+          .all() as {
+          id: number;
+        }[]
+      ).map((r) => r.id);
+    const run = (lines: string) =>
+      db.ingest.transaction().execute((trx) => syncDecisions(trx, p, "o/r", input(SECTION(lines))));
+    await run(`${LINE_B}\n  - Terms: transaction, 書き込みのロック`);
+    const [decision, rejected] = ids();
+    assert.equal(words(decision as number), "transaction, 書き込みのロック");
+    assert.equal(words(rejected as number), "transaction, 書き込みのロック");
+    const writtenAt = () =>
+      db.owner
+        .prepare("select written_at from knowledge_terms where knowledge_id = ?")
+        .get(decision as number)?.written_at;
+    const first = writtenAt();
+    await new Promise((r) => setTimeout(r, 5));
+    await run(`${LINE_B}\n  - Terms: transaction, 書き込みのロック`);
+    assert.equal(writtenAt(), first, "an unchanged Terms line does not rewrite the row");
+    await run(LINE_B);
+    assert.equal(
+      words(decision as number),
+      "transaction, 書き込みのロック",
+      "a missing line keeps the words",
+    );
+    await run(`${LINE_B}\n  - Terms:`);
+    assert.equal(words(decision as number), undefined, "a blank line clears them");
+    assert.equal(words(rejected as number), undefined);
+  } finally {
+    await db.done();
+  }
+});

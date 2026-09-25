@@ -117,7 +117,7 @@ test("only requirements and design rows and their descendants go, the rest stays
   const applied = applyMigrations(raw, fs.readdirSync(MIGRATIONS), MIGRATIONS);
   assert.deepEqual(
     applied.map((m) => m.revision),
-    [2, 3],
+    [2, 3, 4],
   );
   assert.equal(Number(one(raw, "pragma user_version")?.user_version), SCHEMA_REVISION);
   assert.equal(Number(one(raw, "pragma foreign_keys")?.foreign_keys), 1);

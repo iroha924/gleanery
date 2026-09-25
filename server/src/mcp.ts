@@ -16,40 +16,17 @@ import { z } from "zod";
 import { openReader } from "./db.ts";
 import { KINDS } from "./knowledge.ts";
 import { ROOT, versionAt } from "./plugin.ts";
-import { identify, type Place, patchPaths, projectId, relativeTo } from "./project.ts";
-import {
-  DAY,
-  framedWithin,
-  hookContext,
-  inFrame,
-  openWork,
-  type PathRule,
-  pathRules,
-  read,
-  renderHits,
-  renderWork,
-  searchKnowledge,
-  searchMessages,
-  searchSplit,
-  splitJson,
-  workDetail,
-} from "./search.ts";
+import { identify, patchPaths, projectId, relativeTo } from "./project.ts";
+import { DAY, framedWithin, hookContext, type PathRule, pathRules } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
-import { ftsQuery, head, reason } from "./text.ts";
+import { head, reason } from "./text.ts";
+import { type Here, type Reply, readTool, recall } from "./tools.ts";
 
 requireRuntime();
 const db = openReader();
 const VERSION = versionAt(ROOT);
 
-/**
- * Response limits in bytes. **Codex truncates a response over about 10,000 tokens on the spot, and JSON arrives broken.**
- * Japanese is 3 bytes and roughly 1 token per character, so even 8 KiB stays around 3,000 tokens. Search results are candidates; read gets the full text.
- */
-const RECALL_BYTES = 4 * 1024;
-const READ_BYTES = 8 * 1024;
 const PATH_BYTES = 2 * 1024;
-
-type Here = { place: Place | null; id: number | null };
 
 // Project ids and the constraint index are reloaded every 5 minutes, so edits do not hit the database each time.
 // Without reloading, a project that was forgotten and registered again would keep being queried with its old id.
@@ -68,17 +45,9 @@ async function here(cwd?: string): Promise<Here> {
   return { place, id };
 }
 
-const unregistered = (h: Here) =>
-  h.place
-    ? `This project (${head(h.place.name, 200)}) is not registered with gleanery. Register it with \`gleanery project add\`.`
-    : "This location has no git remote or project name, so gleanery cannot tell which project it is.";
-
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
-/**
- * Returns a tool failure with its reason. Left thrown, the SDK returns only error.message, which is empty for an AggregateError
- * without a message (reason(), as in the CLI, includes the reasons of inner errors).
- */
-const failed = (e: unknown) => ({ ...text(`gleanery: failed (${head(reason(e), 1000)})`), isError: true });
+/** The tool response: text only (the refs of Shown are for the eval). */
+const send = (r: Reply) => ({ ...text(r.text), ...(r.isError ? { isError: true } : {}) });
 
 const server = new McpServer(
   { name: "gleanery", version: VERSION ?? "unknown" },
@@ -161,82 +130,7 @@ server.registerTool(
     },
     annotations: READ_ONLY,
   },
-  async (a) => {
-    try {
-      const h = await here(a.cwd);
-      if (!a.all_projects && h.id === null) return text(unregistered(h));
-      const projects = a.all_projects ? null : [h.id as number];
-      const limit = a.limit ?? 5;
-      const mode = a.mode ?? "knowledge";
-      const file =
-        a.path && h.place ? (relativeTo(h.place.root, a.path, a.cwd ?? process.cwd()) ?? a.path) : a.path;
-
-      if (mode === "resume") {
-        const works = await openWork(db, projects, 10);
-        if (works.length === 0) return text("No work in progress.");
-        const only =
-          works.length === 1 && works[0] ? await workDetail(db, Number(works[0].ref.slice(2))) : null;
-        if (only) return text(framedWithin(renderWork(only, inFrame(RECALL_BYTES)), RECALL_BYTES));
-        return text(
-          framedWithin(
-            `Work in progress (${works.length === 10 ? "up to " : ""}${works.length}, newest first). Pass the ref of the one to continue to read.\n\n${works
-              .map(
-                (w) =>
-                  `- ${head(w.title, 200)} (${w.project} / ${w.status} / ${w.ref})\n  Now: ${head(w.current, 300)}`,
-              )
-              .join("\n")}`,
-            RECALL_BYTES,
-          ),
-        );
-      }
-      if (mode === "said") {
-        const hits = await searchMessages(db, {
-          question: a.question,
-          projects,
-          who: a.who ?? "me",
-          match: a.match,
-          path: file,
-          since: a.since,
-          until: a.until,
-          limit,
-        });
-        return text(
-          hits.length
-            ? framedWithin(renderHits(hits, inFrame(RECALL_BYTES)), RECALL_BYTES)
-            : "No matching messages.",
-        );
-      }
-      if (!a.question?.trim()) return text("question is required (mode: knowledge / avoid).");
-      const q = {
-        question: a.question,
-        projects,
-        avoid: mode === "avoid",
-        match: a.match,
-        path: file,
-        since: a.since,
-        until: a.until,
-        limit,
-      };
-      if (!a.kinds?.length) {
-        const split = await searchSplit(db, q);
-        if (!split.records.length && !split.documents.length)
-          return text(
-            a.match !== "exact" && ftsQuery(a.question) === null
-              ? "No searchable terms (only hiragana or symbols). Use kanji, katakana, or English words, or search with match: exact."
-              : "No matches. Search again with different words (synonyms, Japanese or English, short words, match: exact).",
-          );
-        return text(framedWithin(splitJson(split, inFrame(RECALL_BYTES)), RECALL_BYTES));
-      }
-      const hits = await searchKnowledge(db, { ...q, kinds: a.kinds });
-      return text(
-        hits.length
-          ? framedWithin(renderHits(hits, inFrame(RECALL_BYTES)), RECALL_BYTES)
-          : "No matches. Search again with different words.",
-      );
-    } catch (e) {
-      return failed(e);
-    }
-  },
+  async (a) => send(await recall(db, a, here, process.cwd())),
 );
 
 server.registerTool(
@@ -256,17 +150,7 @@ server.registerTool(
     },
     annotations: READ_ONLY,
   },
-  // Same scope as recall. Refs to other projects written in records are not readable unless asked for explicitly.
-  async (a) => {
-    try {
-      const h = await here(a.cwd);
-      if (!a.all_projects && h.id === null) return text(unregistered(h));
-      const projects = a.all_projects ? null : [h.id as number];
-      return text(framedWithin(await read(db, a.refs, inFrame(READ_BYTES), { projects }), READ_BYTES));
-    } catch (e) {
-      return failed(e);
-    }
-  },
+  async (a) => send(await readTool(db, a, here)),
 );
 
 // ---- check_path: constraints and debts on a file before editing it ----

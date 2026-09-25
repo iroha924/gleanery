@@ -477,12 +477,12 @@ if (TRAILER !== null) {
   }
 }
 
-// ---- MCP replies quoted in the review Skill match what mcp.ts returns ----
+// ---- MCP replies quoted in the review Skill match what the recall and read tools return ----
 //
 // The review Skill and the precedent reviewer tell "unregistered", "no project", and "no results" apart by quoting MCP replies.
-// If mcp.ts changes a reply, the quote stops matching and every case reads as a failed search.
+// If tools.ts changes a reply, the quote stops matching and every case reads as a failed search.
 {
-  const mcp = read("server/src/mcp.ts");
+  const mcp = read("server/src/tools.ts");
   for (const file of [REVIEW_SKILL, `${AGENT_DIR}/precedent.md`]) {
     const rows = read(file)
       .split("\n")
@@ -499,7 +499,7 @@ if (TRAILER !== null) {
     const said = (q) =>
       new RegExp(`(?<![A-Za-z])${q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z])`).test(mcp);
     for (const q of quotes)
-      if (!said(q)) fail.push(`${file} quotes "${q}", which server/src/mcp.ts does not return`);
+      if (!said(q)) fail.push(`${file} quotes "${q}", which server/src/tools.ts does not return`);
   }
 }
 

@@ -60,6 +60,14 @@ in Codex (gleanery is not on Codex's PATH, and shell scripts do not run on Windo
 in the language of the conversation.** If the owner works in Japanese, write them in Japanese; the owner searches in that language.
 The JSON keys and fixed values (`kind`, `status`, `confidence`, `role`) stay as defined below.
 
+## Search words
+
+Give each item `terms`: up to 12 short words a later reader might type to find it but that the text itself may not contain (synonyms,
+abbreviations, the English for the conversation's words and the reverse, names of the tools or files involved). They are only indexed, never shown,
+so do not repeat the text or add explanations. When the user called this item by a word the text does not use, include that word:
+it is what they will type later. Take only words they used for this item, not a habit guessed from one phrase. A decision's words also go to its options. Leaving `terms` out keeps the words already stored;
+an empty list clears them.
+
 ## What to store
 
 **Only what cannot be recovered from code, tests, AGENTS, or git, and whose absence would make the next decision go wrong.** Do not store
