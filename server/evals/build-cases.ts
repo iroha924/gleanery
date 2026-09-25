@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-// Builds the retrieval questions once from a fixed DB copy and writes retrieval.json. **Commit the result and do not rebuild it
-// casually**: after a rebuild, a before/after gap may come from the questions rather than the search.
-// Opus writes each question from one record, then a second Opus call sees the question with a wide pool of candidates and marks every
-// record that answers it directly. Current search success never selects questions (that would bias the set toward the base).
+// Builds retrieval.json once from a fixed DB copy: Opus writes a question per record, then marks every record in a wide pool that answers it.
+// **Commit the result; do not rebuild casually** (runs on different sets cannot be compared). Current search never selects questions.
 //   GLEANERY_DB=<copy> bun run evals:build -- [--par 4]
 
 import { spawn } from "node:child_process";
@@ -21,7 +19,7 @@ import { CLAUDE_ENV, fixedDb, sha256File } from "./agentic/run.ts";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** Bump when a prompt or a selection rule changes */
 const BUILDER_VERSION = 1;
-const MODEL = "opus";
+const MODEL = "claude-opus-5-5";
 const QUOTA = { decision: 30, option: 25, document: 35, identifier: 20, relation: 10, message: 24 } as const;
 type Type = keyof typeof QUOTA;
 

@@ -5,8 +5,8 @@
   "cases": "a90d2ef94b330930",
   "prompt_version": 1,
   "knowledge": 697,
-  "judge_model": "opus",
-  "judge_resolved": [],
+  "judge_model": "claude-opus-5-5",
+  "judge_resolved": ["claude-opus-5-5"],
   "means": [
     {
       "config": "base",
@@ -24,7 +24,7 @@
       "runs": 3,
       "top1": 72.7,
       "recall5": 78.1,
-      "direct": 68.3
+      "direct": 67.8
     }
   ],
   "runs": [
@@ -73,413 +73,413 @@
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@16c12af688fb"
+          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@69fdead65903"
         },
         {
           "i": 2,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 4,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#a77ac56594cd-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@b71d604cbb9c"
+          "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@3a75239ccf91"
         },
         {
           "i": 6,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/124#8f51be55a306-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@3e0defed0e8d"
+          "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@2b444e864af8"
         },
         {
           "i": 8,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#規約ファイル",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@dad82e7c9aa1"
+          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@f36f23a00f59"
         },
         {
           "i": 10,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@50c2d1efbace"
+          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@6535a67ebb8f"
         },
         {
           "i": 14,
           "rank": -1,
           "key": "doc:AGENTS.md#外へ出す文章",
           "grade": "partial",
-          "slot": "doc:AGENTS.md#外へ出す文章@500c52d6a072"
+          "slot": "doc:AGENTS.md#外へ出す文章@6a758164b751"
         },
         {
           "i": 16,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/122#35381f70e598-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@603fb7e424f4"
+          "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@426d19caa4de"
         },
         {
           "i": 22,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1@1d3fecf4789c"
+          "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1@48b406814f88"
         },
         {
           "i": 24,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@8ead3dc12e55"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@591e3e60084b"
         },
         {
           "i": 26,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@ac333bb79719"
+          "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@358d505f2487"
         },
         {
           "i": 30,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#fde921979df0-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#fde921979df0-1@06c167e2e8a3"
+          "slot": "github:iroha924/gleanery/pull/118#fde921979df0-1@7675ddb8371f"
         },
         {
           "i": 32,
           "rank": -1,
           "key": "doc:.agents/skills/tui/SKILL.md#画面の作法",
           "grade": "partial",
-          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@98d4f0e9d6d2"
+          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@257ea28e66e4"
         },
         {
           "i": 34,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1.r1@240f92ffc667"
+          "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1.r1@3e143f6a51ef"
         },
         {
           "i": 36,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@45ef4ef04716"
+          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@6f3539c32861"
         },
         {
           "i": 40,
           "rank": 0,
           "key": "doc:.github/pull_request_template.md#見送った指摘",
           "grade": "direct",
-          "slot": "doc:.github/pull_request_template.md#見送った指摘@a34a3b940c9f"
+          "slot": "doc:.github/pull_request_template.md#見送った指摘@a3ac2e6c4bfa"
         },
         {
           "i": 42,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@96b613a77c94"
+          "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@099351e07afb"
         },
         {
           "i": 44,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@fd4b8440d00b"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@6af259c74aef"
         },
         {
           "i": 46,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/127#bf2eac264253-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@df101cc22201"
+          "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@91f71efe3abd"
         },
         {
           "i": 48,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@fe45870689e4"
+          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@a0a2324fb68a"
         },
         {
           "i": 50,
           "rank": 0,
           "key": "doc:SECURITY.md#supported-versions",
           "grade": "direct",
-          "slot": "doc:SECURITY.md#supported-versions@438f51a959bd"
+          "slot": "doc:SECURITY.md#supported-versions@ce4e3ef1546b"
         },
         {
           "i": 52,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@b318e32518b1"
+          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@85d19b850606"
         },
         {
           "i": 54,
           "rank": 0,
           "key": "doc:README.ja.md#アンインストール",
           "grade": "direct",
-          "slot": "doc:README.ja.md#アンインストール@91d74719ff0a"
+          "slot": "doc:README.ja.md#アンインストール@d0d67f7b3004"
         },
         {
           "i": 56,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@6091a0ddc85e"
+          "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@a97754e99e13"
         },
         {
           "i": 58,
           "rank": 2,
           "key": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1@5856e52b9900"
+          "slot": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1@178eba97cb21"
         },
         {
           "i": 62,
           "rank": -1,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-2-—-触ったパスを完全一致で引く",
           "grade": "partial",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-2-—-触ったパスを完全一致で引く@d3cc23511534"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-2-—-触ったパスを完全一致で引く@72ac9e6b1f77"
         },
         {
           "i": 64,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@ce223772f00a"
+          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@7077118dd0fb"
         },
         {
           "i": 66,
           "rank": 0,
           "key": "doc:.claude/agents/review-shipping.md#1.-配る物の中身",
           "grade": "direct",
-          "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a8a33798c5da"
+          "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a16b7cce707f"
         },
         {
           "i": 68,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/128#add7d2bd020f-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1@f61339e1060a"
+          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1@696f270da322"
         },
         {
           "i": 70,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/119#e07077f88c41-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@b95a74c7bc3d"
+          "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@7b12a42bc96e"
         },
         {
           "i": 72,
           "rank": 0,
           "key": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及",
           "grade": "direct",
-          "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a84837cc1e7f"
+          "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a584af5d65aa"
         },
         {
           "i": 74,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#12323d11a5ce-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1@45831c95aac0"
+          "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1@46c2481f85ba"
         },
         {
           "i": 76,
           "rank": 0,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン",
           "grade": "direct",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@8afc80b249fc"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@c3cc0188393c"
         },
         {
           "i": 78,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#305024aa6514-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/27#305024aa6514-1@14e6db50b064"
+          "slot": "github:iroha924/gleanery/pull/27#305024aa6514-1@28b2bd3f0787"
         },
         {
           "i": 80,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@16c12af688fb"
+          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@69fdead65903"
         },
         {
           "i": 82,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/28#bb161fac2449-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/28#bb161fac2449-1.r1@417e0f3f28e6"
+          "slot": "github:iroha924/gleanery/pull/28#bb161fac2449-1.r1@10c2cad0902d"
         },
         {
           "i": 88,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@907f782a2cd1"
+          "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@7758540b5b89"
         },
         {
           "i": 90,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/125#85ac203ecf88-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1@9d25044ff017"
+          "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1@bc71468e37e0"
         },
         {
           "i": 92,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#直さない",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#直さない@257a6fdedbbc"
+          "slot": "doc:plugin/skills/review/SKILL.md#直さない@c3b245a58b4c"
         },
         {
           "i": 94,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@b0507ac410c5"
+          "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@2ec7d8f600b5"
         },
         {
           "i": 96,
           "rank": 0,
           "key": "doc:.claude/rules/evals.md#agentic-の-eval",
           "grade": "direct",
-          "slot": "doc:.claude/rules/evals.md#agentic-の-eval@90d54f54c60f"
+          "slot": "doc:.claude/rules/evals.md#agentic-の-eval@e593bb0cf60c"
         },
         {
           "i": 98,
           "rank": 2,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#進め方",
           "grade": "no",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#進め方@3070d874753e"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#進め方@5f5b4571d524"
         },
         {
           "i": 100,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@208bd562e925"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@3194852217fc"
         },
         {
           "i": 102,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@ad92ba7bef46"
+          "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@215331a2de34"
         },
         {
           "i": 104,
           "rank": 0,
           "key": "doc:SECURITY.md#scope",
           "grade": "direct",
-          "slot": "doc:SECURITY.md#scope@f69cf46af410"
+          "slot": "doc:SECURITY.md#scope@e87871d46381"
         },
         {
           "i": 106,
           "rank": 0,
           "key": "doc:README.ja.md#ライセンス",
           "grade": "direct",
-          "slot": "doc:README.ja.md#ライセンス@ba2d1a5894ac"
+          "slot": "doc:README.ja.md#ライセンス@226a875387bb"
         },
         {
           "i": 112,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#7f8d25878436-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@88cf50fdbdec"
+          "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@9d5e8e6d4a4f"
         },
         {
           "i": 114,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@ce223772f00a"
+          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@7077118dd0fb"
         },
         {
           "i": 116,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@e3fb498c7394"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@845d48d51c6b"
         },
         {
           "i": 118,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@7498535c14f0"
+          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@50ea51113754"
         },
         {
           "i": 120,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
           "grade": "no",
-          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@45ef4ef04716"
+          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@6f3539c32861"
         },
         {
           "i": 122,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@93343339dff2"
+          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@21330004d824"
         },
         {
           "i": 124,
           "rank": 0,
           "key": "doc:README.ja.md#コマンド",
           "grade": "direct",
-          "slot": "doc:README.ja.md#コマンド@bfa2f7161320"
+          "slot": "doc:README.ja.md#コマンド@10deb4c7e8be"
         },
         {
           "i": 128,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1",
           "grade": "no",
-          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1@7a0e65569858"
+          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1@cbfe07abe200"
         },
         {
           "i": 132,
           "rank": -1,
           "key": "doc:.github/pull_request_template.md#検証",
           "grade": "no",
-          "slot": "doc:.github/pull_request_template.md#検証@bba160bdd61c"
+          "slot": "doc:.github/pull_request_template.md#検証@70fbcb296474"
         },
         {
           "i": 134,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#何を探すか",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#何を探すか@0ccc99886e83"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#何を探すか@23955eaa5fcd"
         },
         {
           "i": 136,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#f637b2538541-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@09e74934e018"
+          "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@d4bc8ff4641f"
         },
         {
           "i": 140,
           "rank": 0,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと",
           "grade": "direct",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@d2024c3f4f9f"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@2478cda75e5e"
         },
         {
           "i": 142,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@a4c720ccdd11"
+          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@3380d4eda3dc"
         }
       ]
     },
@@ -527,413 +527,413 @@
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@16c12af688fb"
+          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@69fdead65903"
         },
         {
           "i": 2,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 4,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#a77ac56594cd-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@b71d604cbb9c"
+          "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@3a75239ccf91"
         },
         {
           "i": 6,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/124#8f51be55a306-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@3e0defed0e8d"
+          "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@2b444e864af8"
         },
         {
           "i": 8,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/conventions.md#step-1-—-何が明文化されているかを探す",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/conventions.md#step-1-—-何が明文化されているかを探す@9171a1f09f5a"
+          "slot": "doc:plugin/skills/review/reviewers/conventions.md#step-1-—-何が明文化されているかを探す@d47395642f12"
         },
         {
           "i": 10,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@50c2d1efbace"
+          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@6535a67ebb8f"
         },
         {
           "i": 14,
           "rank": -1,
           "key": "doc:AGENTS.md#外へ出す文章",
           "grade": "partial",
-          "slot": "doc:AGENTS.md#外へ出す文章@500c52d6a072"
+          "slot": "doc:AGENTS.md#外へ出す文章@6a758164b751"
         },
         {
           "i": 16,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/122#35381f70e598-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@603fb7e424f4"
+          "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@426d19caa4de"
         },
         {
           "i": 22,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1@1d3fecf4789c"
+          "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1@48b406814f88"
         },
         {
           "i": 24,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@8ead3dc12e55"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@591e3e60084b"
         },
         {
           "i": 26,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@ac333bb79719"
+          "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@358d505f2487"
         },
         {
           "i": 30,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#fde921979df0-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#fde921979df0-1@06c167e2e8a3"
+          "slot": "github:iroha924/gleanery/pull/118#fde921979df0-1@7675ddb8371f"
         },
         {
           "i": 32,
           "rank": -1,
           "key": "doc:.agents/skills/tui/SKILL.md#画面の作法",
           "grade": "partial",
-          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@98d4f0e9d6d2"
+          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@257ea28e66e4"
         },
         {
           "i": 34,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1.r1@240f92ffc667"
+          "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1.r1@3e143f6a51ef"
         },
         {
           "i": 36,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@45ef4ef04716"
+          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@6f3539c32861"
         },
         {
           "i": 40,
           "rank": 0,
           "key": "doc:.github/pull_request_template.md#見送った指摘",
           "grade": "direct",
-          "slot": "doc:.github/pull_request_template.md#見送った指摘@a34a3b940c9f"
+          "slot": "doc:.github/pull_request_template.md#見送った指摘@a3ac2e6c4bfa"
         },
         {
           "i": 42,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@96b613a77c94"
+          "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@099351e07afb"
         },
         {
           "i": 44,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@fd4b8440d00b"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@6af259c74aef"
         },
         {
           "i": 46,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/127#bf2eac264253-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@df101cc22201"
+          "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@91f71efe3abd"
         },
         {
           "i": 48,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@fe45870689e4"
+          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@a0a2324fb68a"
         },
         {
           "i": 50,
           "rank": 0,
           "key": "doc:SECURITY.md#supported-versions",
           "grade": "direct",
-          "slot": "doc:SECURITY.md#supported-versions@438f51a959bd"
+          "slot": "doc:SECURITY.md#supported-versions@ce4e3ef1546b"
         },
         {
           "i": 52,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@b318e32518b1"
+          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@85d19b850606"
         },
         {
           "i": 54,
           "rank": 0,
           "key": "doc:README.md#uninstalling",
           "grade": "direct",
-          "slot": "doc:README.md#uninstalling@a100b0a527d2"
+          "slot": "doc:README.md#uninstalling@31801a35b635"
         },
         {
           "i": 56,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@6091a0ddc85e"
+          "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@a97754e99e13"
         },
         {
           "i": 58,
           "rank": 2,
           "key": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1@5856e52b9900"
+          "slot": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1@178eba97cb21"
         },
         {
           "i": 62,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-3-—-方針を意味で引く",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-3-—-方針を意味で引く@6483d44ae2e9"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-3-—-方針を意味で引く@86ee13ef5454"
         },
         {
           "i": 64,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@ce223772f00a"
+          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@7077118dd0fb"
         },
         {
           "i": 66,
           "rank": 0,
           "key": "doc:.claude/agents/review-shipping.md#1.-配る物の中身",
           "grade": "direct",
-          "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a8a33798c5da"
+          "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a16b7cce707f"
         },
         {
           "i": 68,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/128#add7d2bd020f-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1@f61339e1060a"
+          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1@696f270da322"
         },
         {
           "i": 70,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/119#e07077f88c41-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@b95a74c7bc3d"
+          "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@7b12a42bc96e"
         },
         {
           "i": 72,
           "rank": 0,
           "key": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及",
           "grade": "direct",
-          "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a84837cc1e7f"
+          "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a584af5d65aa"
         },
         {
           "i": 74,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/117#12323d11a5ce-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1.r1@340822f05065"
+          "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1.r1@8fa22752fe66"
         },
         {
           "i": 76,
           "rank": 0,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン",
           "grade": "direct",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@8afc80b249fc"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@c3cc0188393c"
         },
         {
           "i": 78,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/96#0a598660c5a8-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/96#0a598660c5a8-1@ee73b6a79ab3"
+          "slot": "github:iroha924/gleanery/pull/96#0a598660c5a8-1@e97929391528"
         },
         {
           "i": 80,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@16c12af688fb"
+          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@69fdead65903"
         },
         {
           "i": 82,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/50#0aae6c28ea83-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/50#0aae6c28ea83-1@d8a4bfe17ef5"
+          "slot": "github:iroha924/gleanery/pull/50#0aae6c28ea83-1@5b7891be4718"
         },
         {
           "i": 88,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@907f782a2cd1"
+          "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@7758540b5b89"
         },
         {
           "i": 90,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/125#85ac203ecf88-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1@9d25044ff017"
+          "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1@bc71468e37e0"
         },
         {
           "i": 92,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#直さない",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#直さない@257a6fdedbbc"
+          "slot": "doc:plugin/skills/review/SKILL.md#直さない@c3b245a58b4c"
         },
         {
           "i": 94,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@b0507ac410c5"
+          "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@2ec7d8f600b5"
         },
         {
           "i": 96,
           "rank": 0,
           "key": "doc:.claude/rules/evals.md#agentic-の-eval",
           "grade": "direct",
-          "slot": "doc:.claude/rules/evals.md#agentic-の-eval@90d54f54c60f"
+          "slot": "doc:.claude/rules/evals.md#agentic-の-eval@e593bb0cf60c"
         },
         {
           "i": 98,
           "rank": 0,
           "key": "doc:README.ja.md#困ったとき",
           "grade": "direct",
-          "slot": "doc:README.ja.md#困ったとき@daf6c043e5b1"
+          "slot": "doc:README.ja.md#困ったとき@6e08599f1ad8"
         },
         {
           "i": 100,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@208bd562e925"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@3194852217fc"
         },
         {
           "i": 102,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@ad92ba7bef46"
+          "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@215331a2de34"
         },
         {
           "i": 104,
           "rank": 0,
           "key": "doc:SECURITY.md#scope",
           "grade": "direct",
-          "slot": "doc:SECURITY.md#scope@f69cf46af410"
+          "slot": "doc:SECURITY.md#scope@e87871d46381"
         },
         {
           "i": 106,
           "rank": 0,
           "key": "doc:README.ja.md#ライセンス",
           "grade": "direct",
-          "slot": "doc:README.ja.md#ライセンス@ba2d1a5894ac"
+          "slot": "doc:README.ja.md#ライセンス@226a875387bb"
         },
         {
           "i": 112,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#7f8d25878436-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@88cf50fdbdec"
+          "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@9d5e8e6d4a4f"
         },
         {
           "i": 114,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@ce223772f00a"
+          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@7077118dd0fb"
         },
         {
           "i": 116,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@e3fb498c7394"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@845d48d51c6b"
         },
         {
           "i": 118,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@7498535c14f0"
+          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@50ea51113754"
         },
         {
           "i": 120,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
           "grade": "no",
-          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@45ef4ef04716"
+          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@6f3539c32861"
         },
         {
           "i": 122,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@93343339dff2"
+          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@21330004d824"
         },
         {
           "i": 124,
           "rank": 0,
           "key": "doc:README.ja.md#コマンド",
           "grade": "direct",
-          "slot": "doc:README.ja.md#コマンド@bfa2f7161320"
+          "slot": "doc:README.ja.md#コマンド@10deb4c7e8be"
         },
         {
           "i": 128,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/116#fe83a7091678-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@c887683a7a06"
+          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@8caaa0d7ba46"
         },
         {
           "i": 132,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
           "grade": "no",
-          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@fe45870689e4"
+          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@a0a2324fb68a"
         },
         {
           "i": 134,
           "rank": -1,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#出力",
           "grade": "no",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#出力@4a0b36487e73"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#出力@d0321bf8382a"
         },
         {
           "i": 136,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#f637b2538541-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@09e74934e018"
+          "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@d4bc8ff4641f"
         },
         {
           "i": 140,
           "rank": 0,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと",
           "grade": "direct",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@d2024c3f4f9f"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@2478cda75e5e"
         },
         {
           "i": 142,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@a4c720ccdd11"
+          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@3380d4eda3dc"
         }
       ]
     },
@@ -982,413 +982,413 @@
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@16c12af688fb"
+          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@69fdead65903"
         },
         {
           "i": 2,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 4,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#a77ac56594cd-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@b71d604cbb9c"
+          "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@3a75239ccf91"
         },
         {
           "i": 6,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/124#8f51be55a306-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@3e0defed0e8d"
+          "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@2b444e864af8"
         },
         {
           "i": 8,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#規約ファイル",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@dad82e7c9aa1"
+          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@f36f23a00f59"
         },
         {
           "i": 10,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@50c2d1efbace"
+          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@6535a67ebb8f"
         },
         {
           "i": 14,
           "rank": -1,
           "key": "doc:AGENTS.md#外へ出す文章",
           "grade": "partial",
-          "slot": "doc:AGENTS.md#外へ出す文章@500c52d6a072"
+          "slot": "doc:AGENTS.md#外へ出す文章@6a758164b751"
         },
         {
           "i": 16,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/122#35381f70e598-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@603fb7e424f4"
+          "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@426d19caa4de"
         },
         {
           "i": 22,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1@1d3fecf4789c"
+          "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1@48b406814f88"
         },
         {
           "i": 24,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@8ead3dc12e55"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@591e3e60084b"
         },
         {
           "i": 26,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@ac333bb79719"
+          "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@358d505f2487"
         },
         {
           "i": 30,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#fde921979df0-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#fde921979df0-1@06c167e2e8a3"
+          "slot": "github:iroha924/gleanery/pull/118#fde921979df0-1@7675ddb8371f"
         },
         {
           "i": 32,
           "rank": -1,
           "key": "doc:.agents/skills/tui/SKILL.md#画面の作法",
           "grade": "partial",
-          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@98d4f0e9d6d2"
+          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@257ea28e66e4"
         },
         {
           "i": 34,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1@684bf66ec590"
+          "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1@12c0f3411f08"
         },
         {
           "i": 36,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@45ef4ef04716"
+          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@6f3539c32861"
         },
         {
           "i": 40,
           "rank": 0,
           "key": "doc:.github/pull_request_template.md#見送った指摘",
           "grade": "direct",
-          "slot": "doc:.github/pull_request_template.md#見送った指摘@a34a3b940c9f"
+          "slot": "doc:.github/pull_request_template.md#見送った指摘@a3ac2e6c4bfa"
         },
         {
           "i": 42,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@96b613a77c94"
+          "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@099351e07afb"
         },
         {
           "i": 44,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@fd4b8440d00b"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@6af259c74aef"
         },
         {
           "i": 46,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/127#bf2eac264253-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@df101cc22201"
+          "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@91f71efe3abd"
         },
         {
           "i": 48,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@fe45870689e4"
+          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@a0a2324fb68a"
         },
         {
           "i": 50,
           "rank": 0,
           "key": "doc:SECURITY.md#supported-versions",
           "grade": "direct",
-          "slot": "doc:SECURITY.md#supported-versions@438f51a959bd"
+          "slot": "doc:SECURITY.md#supported-versions@ce4e3ef1546b"
         },
         {
           "i": 52,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@b318e32518b1"
+          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@85d19b850606"
         },
         {
           "i": 54,
           "rank": 0,
           "key": "doc:README.ja.md#アンインストール",
           "grade": "direct",
-          "slot": "doc:README.ja.md#アンインストール@91d74719ff0a"
+          "slot": "doc:README.ja.md#アンインストール@d0d67f7b3004"
         },
         {
           "i": 56,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@6091a0ddc85e"
+          "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@a97754e99e13"
         },
         {
           "i": 58,
           "rank": 2,
           "key": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1@5856e52b9900"
+          "slot": "github:iroha924/gleanery/pull/27#6949dfa4cbc1-1@178eba97cb21"
         },
         {
           "i": 62,
           "rank": -1,
           "key": "doc:plugin/skills/review/SKILL.md#skill.md",
           "grade": "partial",
-          "slot": "doc:plugin/skills/review/SKILL.md#skill.md@6a974ee21c64"
+          "slot": "doc:plugin/skills/review/SKILL.md#skill.md@1ab93fa27fe3"
         },
         {
           "i": 64,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@ce223772f00a"
+          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@7077118dd0fb"
         },
         {
           "i": 66,
           "rank": 0,
           "key": "doc:.claude/agents/review-shipping.md#1.-配る物の中身",
           "grade": "direct",
-          "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a8a33798c5da"
+          "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a16b7cce707f"
         },
         {
           "i": 68,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/128#add7d2bd020f-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1@f61339e1060a"
+          "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1@696f270da322"
         },
         {
           "i": 70,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/119#e07077f88c41-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@b95a74c7bc3d"
+          "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@7b12a42bc96e"
         },
         {
           "i": 72,
           "rank": 0,
           "key": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及",
           "grade": "direct",
-          "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a84837cc1e7f"
+          "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a584af5d65aa"
         },
         {
           "i": 74,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/117#12323d11a5ce-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1.r1@340822f05065"
+          "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1.r1@8fa22752fe66"
         },
         {
           "i": 76,
           "rank": 0,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン",
           "grade": "direct",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@8afc80b249fc"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@c3cc0188393c"
         },
         {
           "i": 78,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#305024aa6514-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/27#305024aa6514-1@14e6db50b064"
+          "slot": "github:iroha924/gleanery/pull/27#305024aa6514-1@28b2bd3f0787"
         },
         {
           "i": 80,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@16c12af688fb"
+          "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@69fdead65903"
         },
         {
           "i": 82,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/28#bb161fac2449-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/28#bb161fac2449-1.r1@417e0f3f28e6"
+          "slot": "github:iroha924/gleanery/pull/28#bb161fac2449-1.r1@10c2cad0902d"
         },
         {
           "i": 88,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@907f782a2cd1"
+          "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@7758540b5b89"
         },
         {
           "i": 90,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/125#85ac203ecf88-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1.r1@f6122636f39d"
+          "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1.r1@bc403c9de7b6"
         },
         {
           "i": 92,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#直さない",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#直さない@257a6fdedbbc"
+          "slot": "doc:plugin/skills/review/SKILL.md#直さない@c3b245a58b4c"
         },
         {
           "i": 94,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@b0507ac410c5"
+          "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@2ec7d8f600b5"
         },
         {
           "i": 96,
           "rank": 0,
           "key": "doc:.claude/rules/evals.md#agentic-の-eval",
           "grade": "direct",
-          "slot": "doc:.claude/rules/evals.md#agentic-の-eval@90d54f54c60f"
+          "slot": "doc:.claude/rules/evals.md#agentic-の-eval@e593bb0cf60c"
         },
         {
           "i": 98,
           "rank": 0,
           "key": "doc:README.ja.md#困ったとき",
           "grade": "direct",
-          "slot": "doc:README.ja.md#困ったとき@daf6c043e5b1"
+          "slot": "doc:README.ja.md#困ったとき@6e08599f1ad8"
         },
         {
           "i": 100,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@208bd562e925"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@3194852217fc"
         },
         {
           "i": 102,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@ad92ba7bef46"
+          "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@215331a2de34"
         },
         {
           "i": 104,
           "rank": 0,
           "key": "doc:SECURITY.md#scope",
           "grade": "direct",
-          "slot": "doc:SECURITY.md#scope@f69cf46af410"
+          "slot": "doc:SECURITY.md#scope@e87871d46381"
         },
         {
           "i": 106,
           "rank": 0,
           "key": "doc:README.ja.md#ライセンス",
           "grade": "direct",
-          "slot": "doc:README.ja.md#ライセンス@ba2d1a5894ac"
+          "slot": "doc:README.ja.md#ライセンス@226a875387bb"
         },
         {
           "i": 112,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#7f8d25878436-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@88cf50fdbdec"
+          "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@9d5e8e6d4a4f"
         },
         {
           "i": 114,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@ce223772f00a"
+          "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@7077118dd0fb"
         },
         {
           "i": 116,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@e3fb498c7394"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@845d48d51c6b"
         },
         {
           "i": 118,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@7498535c14f0"
+          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@50ea51113754"
         },
         {
           "i": 120,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
           "grade": "no",
-          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@45ef4ef04716"
+          "slot": "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1@6f3539c32861"
         },
         {
           "i": 122,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@93343339dff2"
+          "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@21330004d824"
         },
         {
           "i": 124,
           "rank": 0,
           "key": "doc:README.ja.md#コマンド",
           "grade": "direct",
-          "slot": "doc:README.ja.md#コマンド@bfa2f7161320"
+          "slot": "doc:README.ja.md#コマンド@10deb4c7e8be"
         },
         {
           "i": 128,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/116#fe83a7091678-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@c887683a7a06"
+          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@8caaa0d7ba46"
         },
         {
           "i": 132,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
           "grade": "no",
-          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@fe45870689e4"
+          "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@a0a2324fb68a"
         },
         {
           "i": 134,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/adversarial.md#掃き出しモード",
           "grade": "partial",
-          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#掃き出しモード@561929fd386b"
+          "slot": "doc:plugin/skills/review/reviewers/adversarial.md#掃き出しモード@e3bdd36c80ec"
         },
         {
           "i": 136,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#f637b2538541-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@09e74934e018"
+          "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@d4bc8ff4641f"
         },
         {
           "i": 140,
           "rank": 0,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと",
           "grade": "direct",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@d2024c3f4f9f"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@2478cda75e5e"
         },
         {
           "i": 142,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@a4c720ccdd11"
+          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@3380d4eda3dc"
         }
       ]
     },
@@ -1437,427 +1437,427 @@
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/135#8e2439ec8812-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@0bd50b143954"
+          "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@3ecc79f29005"
         },
         {
           "i": 3,
           "rank": -1,
           "key": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力",
           "grade": "partial",
-          "slot": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力@787c9a63cbf4"
+          "slot": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力@f542183a9240"
         },
         {
           "i": 5,
           "rank": -1,
           "key": "doc:.claude/rules/verification.md#sqlite-の返り値",
           "grade": "no",
-          "slot": "doc:.claude/rules/verification.md#sqlite-の返り値@b0b145d646d8"
+          "slot": "doc:.claude/rules/verification.md#sqlite-の返り値@ae0da38a0511"
         },
         {
           "i": 7,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8434d0f60b8f"
+          "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8c7f14720766"
         },
         {
           "i": 9,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#a6173565e402-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@50c36c3a8b50"
+          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@68189d4a09e8"
         },
         {
           "i": 11,
           "rank": 0,
           "key": "doc:.claude/rules/evals.md#evals.md",
           "grade": "direct",
-          "slot": "doc:.claude/rules/evals.md#evals.md@5c399124de1e"
+          "slot": "doc:.claude/rules/evals.md#evals.md@a224d2fe9cf5"
         },
         {
           "i": 13,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@703f08d107c3"
+          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@5e972c9813af"
         },
         {
           "i": 15,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@a4d798e92dac"
+          "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@1633a7f8f2bb"
         },
         {
           "i": 17,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@fd4b8440d00b"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@6af259c74aef"
         },
         {
           "i": 19,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@b318e32518b1"
+          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@85d19b850606"
         },
         {
           "i": 23,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/118#c84394f47b5d-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1@df28a845e924"
+          "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1@2c503f636ffd"
         },
         {
           "i": 25,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/32#6f97abd02c06-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1@386ff4dc041d"
+          "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1@98f9c3976076"
         },
         {
           "i": 27,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@01681557e45c"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@274de3cc5ef6"
         },
         {
           "i": 29,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#000ee8129d98-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@393780daf55e"
+          "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@8e792a21537e"
         },
         {
           "i": 33,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/137#728d3365f9b6-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1@fd9d4834c650"
+          "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1@29ccf91e720f"
         },
         {
           "i": 35,
           "rank": -1,
           "key": "doc:plugin/skills/review/SKILL.md#規約ファイル",
-          "grade": "partial",
-          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@dad82e7c9aa1"
+          "grade": "direct",
+          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@f36f23a00f59"
         },
         {
           "i": 37,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1@81ddbae560dd"
+          "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1@97f7a57f922f"
         },
         {
           "i": 39,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@b78c3edada95"
+          "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@4f53669da594"
         },
         {
           "i": 41,
           "rank": 0,
           "key": "doc:.claude/rules/verification.md#配布物",
           "grade": "direct",
-          "slot": "doc:.claude/rules/verification.md#配布物@b3d77d65e9ae"
+          "slot": "doc:.claude/rules/verification.md#配布物@c343905b1780"
         },
         {
           "i": 43,
           "rank": 0,
           "key": "doc:.agents/skills/tui/SKILL.md#検証",
           "grade": "direct",
-          "slot": "doc:.agents/skills/tui/SKILL.md#検証@d2393f98e6ba"
+          "slot": "doc:.agents/skills/tui/SKILL.md#検証@331f5848ec87"
         },
         {
           "i": 47,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 49,
           "rank": 0,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#文書",
           "grade": "direct",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@2afbfae9a549"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@31532a099510"
         },
         {
           "i": 51,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/137#54b4f364628e-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1@4e2e4e928553"
+          "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1@aef69baf7a50"
         },
         {
           "i": 53,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@6abf776f389b"
+          "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@4107a7b200ce"
         },
         {
           "i": 55,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@fc0644936bd8"
+          "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@7c690e043128"
         },
         {
           "i": 57,
           "rank": 0,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#環境",
           "grade": "direct",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@04a09d038160"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@2ce3bd383c56"
         },
         {
           "i": 61,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md",
-          "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@8772522f2429"
+          "grade": "partial",
+          "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@ccc4d42af1c9"
         },
         {
           "i": 63,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@8da20814a479"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@81fedee2caf0"
         },
         {
           "i": 67,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#ac5c312368b7-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@dba5de6f0f40"
+          "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@b4edc3f4bc4e"
         },
         {
           "i": 69,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/116#fe83a7091678-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@c887683a7a06"
+          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@8caaa0d7ba46"
         },
         {
           "i": 71,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#このスキルが防ぐ失敗",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#このスキルが防ぐ失敗@35321a653b3a"
+          "slot": "doc:plugin/skills/review/SKILL.md#このスキルが防ぐ失敗@33a94910cf3d"
         },
         {
           "i": 73,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@9941df060c7a"
+          "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@12324244c78b"
         },
         {
           "i": 75,
           "rank": -1,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割",
           "grade": "partial",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割@89dbd6495e46"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割@5134cdd369d4"
         },
         {
           "i": 77,
           "rank": 0,
           "key": "doc:.claude/rules/ui.md#ui.md",
           "grade": "direct",
-          "slot": "doc:.claude/rules/ui.md#ui.md@f9b0e765cd1d"
+          "slot": "doc:.claude/rules/ui.md#ui.md@b9a91cda8807"
         },
         {
           "i": 79,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@703f08d107c3"
+          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@5e972c9813af"
         },
         {
           "i": 81,
           "rank": 0,
           "key": "doc:README.ja.md#gleanery",
           "grade": "direct",
-          "slot": "doc:README.ja.md#gleanery@9ab863393366"
+          "slot": "doc:README.ja.md#gleanery@ae70287b84fc"
         },
         {
           "i": 83,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#3b826f46d785-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@849487162f6f"
+          "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@f068bc8f622a"
         },
         {
           "i": 85,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@734525cb9572"
+          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@a99f220361d7"
         },
         {
           "i": 87,
           "rank": -1,
           "key": "doc:SECURITY.md#reporting-a-vulnerability",
           "grade": "partial",
-          "slot": "doc:SECURITY.md#reporting-a-vulnerability@e52db96abb96"
+          "slot": "doc:SECURITY.md#reporting-a-vulnerability@1689ec794fe8"
         },
         {
           "i": 89,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7d9c37d27448"
+          "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7f8057f33e62"
         },
         {
           "i": 93,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#554de41b305a-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@ee592af3a8d6"
+          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@1c715b87f120"
         },
         {
           "i": 99,
           "rank": -1,
           "key": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める",
           "grade": "partial",
-          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@a657ec1ade38"
+          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@0a1c05ab6965"
         },
         {
           "i": 101,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@e482997ecc36"
+          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@794922dd702b"
         },
         {
           "i": 103,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/103#639949829e48-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@093ae1bec610"
+          "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@bbcb7b8ceb8e"
         },
         {
           "i": 105,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@a657ec1ade38"
+          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@0a1c05ab6965"
         },
         {
           "i": 107,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1@c81fea140f18"
+          "slot": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1@179e7de666f5"
         },
         {
           "i": 109,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@8da20814a479"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@81fedee2caf0"
         },
         {
           "i": 111,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@cf0ce34c697e"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@946f5566929e"
         },
         {
           "i": 115,
           "rank": -1,
           "key": "doc:plugin/skills/review/references/peer-model.md#codex-のレーンは-15-分前後かかる。途中で殺さない",
-          "grade": "direct",
-          "slot": "doc:plugin/skills/review/references/peer-model.md#codex-のレーンは-15-分前後かかる。途中で殺さない@76d5d9a1738e"
+          "grade": "partial",
+          "slot": "doc:plugin/skills/review/references/peer-model.md#codex-のレーンは-15-分前後かかる。途中で殺さない@43615bc4818d"
         },
         {
           "i": 119,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@bae6143a4838"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@d62a04df70cb"
         },
         {
           "i": 121,
           "rank": -1,
           "key": "doc:plugin/skills/trace/SKILL.md#何を残すか",
           "grade": "partial",
-          "slot": "doc:plugin/skills/trace/SKILL.md#何を残すか@fa7666bd4c2a"
+          "slot": "doc:plugin/skills/trace/SKILL.md#何を残すか@7cfe9f84502c"
         },
         {
           "i": 123,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@0bc96f991e13"
+          "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@4064fc65680f"
         },
         {
           "i": 125,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/120#491773d9952b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1@595418148e5c"
+          "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1@4f3d5ca1189d"
         },
         {
           "i": 127,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2@dcc995aff4dd"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2@5ac83411a284"
         },
         {
           "i": 129,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/101#4f4765dedddf-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@b24465fc81b5"
+          "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@1669ab697f61"
         },
         {
           "i": 131,
           "rank": 0,
           "key": "doc:.agents/skills/tui/SKILL.md#skill.md",
           "grade": "direct",
-          "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@e08dcf0a8aaa"
+          "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@155546da71db"
         },
         {
           "i": 133,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@23c830a33c31"
+          "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@626a1dd92399"
         },
         {
           "i": 135,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1@5f9f42b86aa2"
+          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1@f8c62b2ceb81"
         },
         {
           "i": 137,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@542174b9bcd7"
+          "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@ec8ab78506b3"
         },
         {
           "i": 139,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/124#cac608233bd6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@a7fa63656606"
+          "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@1fe0cf720822"
         },
         {
           "i": 141,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@d349cbb0164c"
+          "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@6f89187548b3"
         }
       ]
     },
@@ -1907,427 +1907,427 @@
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/135#8e2439ec8812-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@0bd50b143954"
+          "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@3ecc79f29005"
         },
         {
           "i": 3,
           "rank": -1,
           "key": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力",
           "grade": "partial",
-          "slot": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力@787c9a63cbf4"
+          "slot": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力@f542183a9240"
         },
         {
           "i": 5,
           "rank": -1,
           "key": "doc:.claude/rules/verification.md#sqlite-の返り値",
           "grade": "no",
-          "slot": "doc:.claude/rules/verification.md#sqlite-の返り値@b0b145d646d8"
+          "slot": "doc:.claude/rules/verification.md#sqlite-の返り値@ae0da38a0511"
         },
         {
           "i": 7,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8434d0f60b8f"
+          "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8c7f14720766"
         },
         {
           "i": 9,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#a6173565e402-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@50c36c3a8b50"
+          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@68189d4a09e8"
         },
         {
           "i": 11,
           "rank": 0,
           "key": "doc:.claude/rules/evals.md#evals.md",
           "grade": "direct",
-          "slot": "doc:.claude/rules/evals.md#evals.md@5c399124de1e"
+          "slot": "doc:.claude/rules/evals.md#evals.md@a224d2fe9cf5"
         },
         {
           "i": 13,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@703f08d107c3"
+          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@5e972c9813af"
         },
         {
           "i": 15,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@a4d798e92dac"
+          "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@1633a7f8f2bb"
         },
         {
           "i": 17,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@fd4b8440d00b"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@6af259c74aef"
         },
         {
           "i": 19,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@b318e32518b1"
+          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@85d19b850606"
         },
         {
           "i": 23,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/118#c84394f47b5d-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1@df28a845e924"
+          "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1@2c503f636ffd"
         },
         {
           "i": 25,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/32#6f97abd02c06-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1@386ff4dc041d"
+          "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1@98f9c3976076"
         },
         {
           "i": 27,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@01681557e45c"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@274de3cc5ef6"
         },
         {
           "i": 29,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#000ee8129d98-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@393780daf55e"
+          "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@8e792a21537e"
         },
         {
           "i": 33,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1@4541e6f46a2a"
+          "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1@bdd092a31c5d"
         },
         {
           "i": 35,
           "rank": -1,
           "key": "doc:plugin/skills/review/SKILL.md#規約ファイル",
-          "grade": "partial",
-          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@dad82e7c9aa1"
+          "grade": "direct",
+          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@f36f23a00f59"
         },
         {
           "i": 37,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1@81ddbae560dd"
+          "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1@97f7a57f922f"
         },
         {
           "i": 39,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@b78c3edada95"
+          "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@4f53669da594"
         },
         {
           "i": 41,
           "rank": 0,
           "key": "doc:.claude/rules/verification.md#配布物",
           "grade": "direct",
-          "slot": "doc:.claude/rules/verification.md#配布物@b3d77d65e9ae"
+          "slot": "doc:.claude/rules/verification.md#配布物@c343905b1780"
         },
         {
           "i": 43,
           "rank": 0,
           "key": "doc:.agents/skills/tui/SKILL.md#検証",
           "grade": "direct",
-          "slot": "doc:.agents/skills/tui/SKILL.md#検証@d2393f98e6ba"
+          "slot": "doc:.agents/skills/tui/SKILL.md#検証@331f5848ec87"
         },
         {
           "i": 47,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 49,
           "rank": 0,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#文書",
           "grade": "direct",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@2afbfae9a549"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@31532a099510"
         },
         {
           "i": 51,
           "rank": 4,
           "key": "github:iroha924/gleanery/pull/137#54b4f364628e-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1.r1@18006261460f"
+          "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1.r1@eeed358795b3"
         },
         {
           "i": 53,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@6abf776f389b"
+          "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@4107a7b200ce"
         },
         {
           "i": 55,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@fc0644936bd8"
+          "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@7c690e043128"
         },
         {
           "i": 57,
           "rank": 0,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#環境",
           "grade": "direct",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@04a09d038160"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@2ce3bd383c56"
         },
         {
           "i": 61,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md",
-          "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@8772522f2429"
+          "grade": "partial",
+          "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@ccc4d42af1c9"
         },
         {
           "i": 63,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）@8b8fb8d13f87"
+          "slot": "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）@9d3e9eb403e7"
         },
         {
           "i": 67,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#ac5c312368b7-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@dba5de6f0f40"
+          "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@b4edc3f4bc4e"
         },
         {
           "i": 69,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/116#fe83a7091678-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@c887683a7a06"
+          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@8caaa0d7ba46"
         },
         {
           "i": 71,
           "rank": 1,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#1-応答目",
           "grade": "partial",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#1-応答目@7979a1d42dd9"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#1-応答目@abd56fe8de79"
         },
         {
           "i": 73,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@9941df060c7a"
+          "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@12324244c78b"
         },
         {
           "i": 75,
           "rank": -1,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割",
           "grade": "partial",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割@89dbd6495e46"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割@5134cdd369d4"
         },
         {
           "i": 77,
           "rank": 0,
           "key": "doc:.claude/rules/ui.md#ui.md",
           "grade": "direct",
-          "slot": "doc:.claude/rules/ui.md#ui.md@f9b0e765cd1d"
+          "slot": "doc:.claude/rules/ui.md#ui.md@b9a91cda8807"
         },
         {
           "i": 79,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@703f08d107c3"
+          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@5e972c9813af"
         },
         {
           "i": 81,
           "rank": 0,
           "key": "doc:README.ja.md#gleanery",
           "grade": "direct",
-          "slot": "doc:README.ja.md#gleanery@9ab863393366"
+          "slot": "doc:README.ja.md#gleanery@ae70287b84fc"
         },
         {
           "i": 83,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#3b826f46d785-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@849487162f6f"
+          "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@f068bc8f622a"
         },
         {
           "i": 85,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@734525cb9572"
+          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@a99f220361d7"
         },
         {
           "i": 87,
           "rank": -1,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#環境",
           "grade": "partial",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@04a09d038160"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@2ce3bd383c56"
         },
         {
           "i": 89,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7d9c37d27448"
+          "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7f8057f33e62"
         },
         {
           "i": 93,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#554de41b305a-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@ee592af3a8d6"
+          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@1c715b87f120"
         },
         {
           "i": 99,
           "rank": -1,
           "key": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める",
           "grade": "partial",
-          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@a657ec1ade38"
+          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@0a1c05ab6965"
         },
         {
           "i": 101,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@e482997ecc36"
+          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@794922dd702b"
         },
         {
           "i": 103,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/103#639949829e48-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@093ae1bec610"
+          "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@bbcb7b8ceb8e"
         },
         {
           "i": 105,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@a657ec1ade38"
+          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@0a1c05ab6965"
         },
         {
           "i": 107,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1@c81fea140f18"
+          "slot": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1@179e7de666f5"
         },
         {
           "i": 109,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@8da20814a479"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@81fedee2caf0"
         },
         {
           "i": 111,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@cf0ce34c697e"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@946f5566929e"
         },
         {
           "i": 115,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/121#0edd62e1a86f-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/121#0edd62e1a86f-1@d8c947c195ff"
+          "slot": "github:iroha924/gleanery/pull/121#0edd62e1a86f-1@217974f668a5"
         },
         {
           "i": 119,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@bae6143a4838"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@d62a04df70cb"
         },
         {
           "i": 121,
           "rank": -1,
           "key": "doc:plugin/skills/trace/SKILL.md#何を残すか",
           "grade": "partial",
-          "slot": "doc:plugin/skills/trace/SKILL.md#何を残すか@fa7666bd4c2a"
+          "slot": "doc:plugin/skills/trace/SKILL.md#何を残すか@7cfe9f84502c"
         },
         {
           "i": 123,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@0bc96f991e13"
+          "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@4064fc65680f"
         },
         {
           "i": 125,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/120#491773d9952b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1@595418148e5c"
+          "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1@4f3d5ca1189d"
         },
         {
           "i": 127,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 129,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/101#4f4765dedddf-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@b24465fc81b5"
+          "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@1669ab697f61"
         },
         {
           "i": 131,
           "rank": 0,
           "key": "doc:.agents/skills/tui/SKILL.md#skill.md",
           "grade": "direct",
-          "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@e08dcf0a8aaa"
+          "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@155546da71db"
         },
         {
           "i": 133,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@23c830a33c31"
+          "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@626a1dd92399"
         },
         {
           "i": 135,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/114#dead42b6de90-1.r1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/114#dead42b6de90-1.r1@8e442843bd3a"
+          "slot": "github:iroha924/gleanery/pull/114#dead42b6de90-1.r1@44ccf8aa1a1d"
         },
         {
           "i": 137,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@542174b9bcd7"
+          "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@ec8ab78506b3"
         },
         {
           "i": 139,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/124#cac608233bd6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@a7fa63656606"
+          "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@1fe0cf720822"
         },
         {
           "i": 141,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@d349cbb0164c"
+          "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@6f89187548b3"
         }
       ]
     },
@@ -2377,427 +2377,427 @@
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/135#8e2439ec8812-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@0bd50b143954"
+          "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@3ecc79f29005"
         },
         {
           "i": 3,
           "rank": -1,
           "key": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力",
           "grade": "partial",
-          "slot": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力@787c9a63cbf4"
+          "slot": "doc:.claude/rules/ui.md#端末の画面と-cli-の出力@f542183a9240"
         },
         {
           "i": 5,
           "rank": -1,
           "key": "doc:.claude/rules/verification.md#sqlite-の返り値",
           "grade": "no",
-          "slot": "doc:.claude/rules/verification.md#sqlite-の返り値@b0b145d646d8"
+          "slot": "doc:.claude/rules/verification.md#sqlite-の返り値@ae0da38a0511"
         },
         {
           "i": 7,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8434d0f60b8f"
+          "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8c7f14720766"
         },
         {
           "i": 9,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/123#a6173565e402-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@50c36c3a8b50"
+          "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@68189d4a09e8"
         },
         {
           "i": 11,
           "rank": 0,
           "key": "doc:.claude/rules/evals.md#evals.md",
           "grade": "direct",
-          "slot": "doc:.claude/rules/evals.md#evals.md@5c399124de1e"
+          "slot": "doc:.claude/rules/evals.md#evals.md@a224d2fe9cf5"
         },
         {
           "i": 13,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@703f08d107c3"
+          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@5e972c9813af"
         },
         {
           "i": 15,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@a4d798e92dac"
+          "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@1633a7f8f2bb"
         },
         {
           "i": 17,
           "rank": 0,
           "key": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
           "grade": "direct",
-          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@fd4b8440d00b"
+          "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@6af259c74aef"
         },
         {
           "i": 19,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@b318e32518b1"
+          "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@85d19b850606"
         },
         {
           "i": 23,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/118#c84394f47b5d-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1@df28a845e924"
+          "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1@2c503f636ffd"
         },
         {
           "i": 25,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/32#6f97abd02c06-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1@386ff4dc041d"
+          "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1@98f9c3976076"
         },
         {
           "i": 27,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@01681557e45c"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@274de3cc5ef6"
         },
         {
           "i": 29,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/96#000ee8129d98-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@393780daf55e"
+          "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@8e792a21537e"
         },
         {
           "i": 33,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1@4541e6f46a2a"
+          "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1@bdd092a31c5d"
         },
         {
           "i": 35,
           "rank": -1,
           "key": "doc:plugin/skills/review/SKILL.md#規約ファイル",
-          "grade": "partial",
-          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@dad82e7c9aa1"
+          "grade": "direct",
+          "slot": "doc:plugin/skills/review/SKILL.md#規約ファイル@f36f23a00f59"
         },
         {
           "i": 37,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1@81ddbae560dd"
+          "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1@97f7a57f922f"
         },
         {
           "i": 39,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@b78c3edada95"
+          "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@4f53669da594"
         },
         {
           "i": 41,
           "rank": 0,
           "key": "doc:.claude/rules/verification.md#配布物",
           "grade": "direct",
-          "slot": "doc:.claude/rules/verification.md#配布物@b3d77d65e9ae"
+          "slot": "doc:.claude/rules/verification.md#配布物@c343905b1780"
         },
         {
           "i": 43,
           "rank": 0,
           "key": "doc:.claude/agents/review-ui.md#3.-端末の画面（server/src/tui/）",
           "grade": "direct",
-          "slot": "doc:.claude/agents/review-ui.md#3.-端末の画面（server/src/tui/）@e88d91b2f524"
+          "slot": "doc:.claude/agents/review-ui.md#3.-端末の画面（server/src/tui/）@811f56517db7"
         },
         {
           "i": 47,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 49,
           "rank": 0,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#文書",
           "grade": "direct",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@2afbfae9a549"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@31532a099510"
         },
         {
           "i": 51,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/137#54b4f364628e-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1@4e2e4e928553"
+          "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1@aef69baf7a50"
         },
         {
           "i": 53,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@6abf776f389b"
+          "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@4107a7b200ce"
         },
         {
           "i": 55,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@fc0644936bd8"
+          "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@7c690e043128"
         },
         {
           "i": 57,
           "rank": 0,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#環境",
           "grade": "direct",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@04a09d038160"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@2ce3bd383c56"
         },
         {
           "i": 61,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md",
-          "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@8772522f2429"
+          "grade": "partial",
+          "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@ccc4d42af1c9"
         },
         {
           "i": 63,
           "rank": -1,
           "key": "doc:.agents/skills/tui/SKILL.md#画面の作法",
           "grade": "no",
-          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@98d4f0e9d6d2"
+          "slot": "doc:.agents/skills/tui/SKILL.md#画面の作法@257ea28e66e4"
         },
         {
           "i": 67,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/115#ac5c312368b7-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@dba5de6f0f40"
+          "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@b4edc3f4bc4e"
         },
         {
           "i": 69,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/116#fe83a7091678-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@c887683a7a06"
+          "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@8caaa0d7ba46"
         },
         {
           "i": 71,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#このスキルが防ぐ失敗",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#このスキルが防ぐ失敗@35321a653b3a"
+          "slot": "doc:plugin/skills/review/SKILL.md#このスキルが防ぐ失敗@33a94910cf3d"
         },
         {
           "i": 73,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@9941df060c7a"
+          "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@12324244c78b"
         },
         {
           "i": 75,
           "rank": -1,
           "key": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割",
           "grade": "partial",
-          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割@89dbd6495e46"
+          "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#接続の役割@5134cdd369d4"
         },
         {
           "i": 77,
           "rank": 0,
           "key": "doc:.claude/rules/ui.md#ui.md",
           "grade": "direct",
-          "slot": "doc:.claude/rules/ui.md#ui.md@f9b0e765cd1d"
+          "slot": "doc:.claude/rules/ui.md#ui.md@b9a91cda8807"
         },
         {
           "i": 79,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@703f08d107c3"
+          "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@5e972c9813af"
         },
         {
           "i": 81,
           "rank": 0,
           "key": "doc:README.ja.md#gleanery",
           "grade": "direct",
-          "slot": "doc:README.ja.md#gleanery@9ab863393366"
+          "slot": "doc:README.ja.md#gleanery@ae70287b84fc"
         },
         {
           "i": 83,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/118#3b826f46d785-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@849487162f6f"
+          "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@f068bc8f622a"
         },
         {
           "i": 85,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@734525cb9572"
+          "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@a99f220361d7"
         },
         {
           "i": 87,
           "rank": -1,
           "key": "doc:.github/ISSUE_TEMPLATE/bug.md#環境",
           "grade": "partial",
-          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@04a09d038160"
+          "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@2ce3bd383c56"
         },
         {
           "i": 89,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7d9c37d27448"
+          "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7f8057f33e62"
         },
         {
           "i": 93,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#554de41b305a-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@ee592af3a8d6"
+          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@1c715b87f120"
         },
         {
           "i": 99,
           "rank": -1,
           "key": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める",
           "grade": "partial",
-          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@a657ec1ade38"
+          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@0a1c05ab6965"
         },
         {
           "i": 101,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@e482997ecc36"
+          "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@794922dd702b"
         },
         {
           "i": 103,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/103#639949829e48-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@093ae1bec610"
+          "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@bbcb7b8ceb8e"
         },
         {
           "i": 105,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@a657ec1ade38"
+          "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@0a1c05ab6965"
         },
         {
           "i": 107,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1@c81fea140f18"
+          "slot": "github:iroha924/gleanery/pull/27#598fc6ce4c7b-1.r1@179e7de666f5"
         },
         {
           "i": 109,
           "rank": 0,
           "key": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@8da20814a479"
+          "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@81fedee2caf0"
         },
         {
           "i": 111,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@cf0ce34c697e"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@946f5566929e"
         },
         {
           "i": 115,
           "rank": -1,
           "key": "github:iroha924/gleanery/pull/121#0edd62e1a86f-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/121#0edd62e1a86f-1@d8c947c195ff"
+          "slot": "github:iroha924/gleanery/pull/121#0edd62e1a86f-1@217974f668a5"
         },
         {
           "i": 119,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@bae6143a4838"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@d62a04df70cb"
         },
         {
           "i": 121,
           "rank": 0,
           "key": "doc:plugin/skills/trace/SKILL.md#check-が弾く規則",
           "grade": "direct",
-          "slot": "doc:plugin/skills/trace/SKILL.md#check-が弾く規則@cb9e9275e9a0"
+          "slot": "doc:plugin/skills/trace/SKILL.md#check-が弾く規則@b42ac01d5765"
         },
         {
           "i": 123,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@0bc96f991e13"
+          "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@4064fc65680f"
         },
         {
           "i": 125,
           "rank": 1,
           "key": "github:iroha924/gleanery/pull/120#491773d9952b-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1@595418148e5c"
+          "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1@4f3d5ca1189d"
         },
         {
           "i": 127,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+          "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
         },
         {
           "i": 129,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/101#4f4765dedddf-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@b24465fc81b5"
+          "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@1669ab697f61"
         },
         {
           "i": 131,
           "rank": 0,
           "key": "doc:.agents/skills/tui/SKILL.md#skill.md",
           "grade": "direct",
-          "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@e08dcf0a8aaa"
+          "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@155546da71db"
         },
         {
           "i": 133,
           "rank": 0,
           "key": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方",
           "grade": "direct",
-          "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@23c830a33c31"
+          "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@626a1dd92399"
         },
         {
           "i": 135,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1@5f9f42b86aa2"
+          "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1@f8c62b2ceb81"
         },
         {
           "i": 137,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1",
           "grade": "partial",
-          "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@542174b9bcd7"
+          "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@ec8ab78506b3"
         },
         {
           "i": 139,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/124#cac608233bd6-1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@a7fa63656606"
+          "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@1fe0cf720822"
         },
         {
           "i": 141,
           "rank": 0,
           "key": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1",
           "grade": "direct",
-          "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@d349cbb0164c"
+          "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@6f89187548b3"
         }
       ]
     }
@@ -2807,721 +2807,721 @@
       "i": 0,
       "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1@b44a00569b4e"
+      "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1@f7652f12c3ec"
     },
     {
       "i": 1,
       "key": "github:iroha924/gleanery/pull/135#8e2439ec8812-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@0bd50b143954"
+      "slot": "github:iroha924/gleanery/pull/135#8e2439ec8812-1@3ecc79f29005"
     },
     {
       "i": 2,
       "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2@dcc995aff4dd"
+      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2@5ac83411a284"
     },
     {
       "i": 3,
       "key": "doc:.agents/skills/tui/SKILL.md#置き場所",
       "grade": "direct",
-      "slot": "doc:.agents/skills/tui/SKILL.md#置き場所@682502c076d9"
+      "slot": "doc:.agents/skills/tui/SKILL.md#置き場所@27eb23ba93e3"
     },
     {
       "i": 4,
       "key": "github:iroha924/gleanery/pull/118#a77ac56594cd-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@b71d604cbb9c"
+      "slot": "github:iroha924/gleanery/pull/118#a77ac56594cd-1@3a75239ccf91"
     },
     {
       "i": 5,
       "key": "doc:.agents/skills/knowledge-schema/SKILL.md#sql-の書き方",
       "grade": "direct",
-      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#sql-の書き方@c0efd5a7d497"
+      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#sql-の書き方@eaeca8d190f6"
     },
     {
       "i": 6,
       "key": "github:iroha924/gleanery/pull/124#8f51be55a306-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@3e0defed0e8d"
+      "slot": "github:iroha924/gleanery/pull/124#8f51be55a306-1@2b444e864af8"
     },
     {
       "i": 7,
       "key": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8434d0f60b8f"
+      "slot": "github:iroha924/gleanery/pull/96#fbcfeae6f236-1@8c7f14720766"
     },
     {
       "i": 8,
       "key": "doc:plugin/skills/review/reviewers/conventions.md#step-1-—-何が明文化されているかを探す",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/conventions.md#step-1-—-何が明文化されているかを探す@9171a1f09f5a"
+      "slot": "doc:plugin/skills/review/reviewers/conventions.md#step-1-—-何が明文化されているかを探す@d47395642f12"
     },
     {
       "i": 9,
       "key": "github:iroha924/gleanery/pull/123#a6173565e402-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@50c36c3a8b50"
+      "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1@68189d4a09e8"
     },
     {
       "i": 10,
       "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@50c2d1efbace"
+      "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1@6535a67ebb8f"
     },
     {
       "i": 11,
       "key": "doc:.claude/rules/evals.md#evals.md",
       "grade": "direct",
-      "slot": "doc:.claude/rules/evals.md#evals.md@5c399124de1e"
+      "slot": "doc:.claude/rules/evals.md#evals.md@a224d2fe9cf5"
     },
     {
       "i": 13,
       "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1.r1@a37dfc1e996c"
+      "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1.r1@0a315137beac"
     },
     {
       "i": 14,
       "key": "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#deferred-finding.md",
       "grade": "direct",
-      "slot": "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#deferred-finding.md@0b7ca58181b1"
+      "slot": "doc:.github/ISSUE_TEMPLATE/deferred-finding.md#deferred-finding.md@7cd3d772547a"
     },
     {
       "i": 15,
       "key": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@a4d798e92dac"
+      "slot": "github:iroha924/gleanery/pull/96#73d9e3a109ba-1@1633a7f8f2bb"
     },
     {
       "i": 16,
       "key": "github:iroha924/gleanery/pull/122#35381f70e598-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@603fb7e424f4"
+      "slot": "github:iroha924/gleanery/pull/122#35381f70e598-1@426d19caa4de"
     },
     {
       "i": 17,
       "key": "github:iroha924/gleanery/pull/27#db58d348439c-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/27#db58d348439c-1@f1137a4cd9d5"
+      "slot": "github:iroha924/gleanery/pull/27#db58d348439c-1@810c68a70486"
     },
     {
       "i": 19,
       "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1.r1@910e3cfcc743"
+      "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1.r1@166f80729d3c"
     },
     {
       "i": 22,
       "key": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1.r1@42dbdec71725"
+      "slot": "github:iroha924/gleanery/pull/130#83f2571ccd2d-1.r1@4c5f195a7afe"
     },
     {
       "i": 23,
       "key": "github:iroha924/gleanery/pull/118#c84394f47b5d-1.r2",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1.r2@5a20df0326cd"
+      "slot": "github:iroha924/gleanery/pull/118#c84394f47b5d-1.r2@f8b6611fb457"
     },
     {
       "i": 24,
       "key": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき",
       "grade": "direct",
-      "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@8ead3dc12e55"
+      "slot": "doc:.agents/skills/plugin-release/SKILL.md#依存を足すとき@591e3e60084b"
     },
     {
       "i": 25,
       "key": "github:iroha924/gleanery/pull/32#6f97abd02c06-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1.r1@7ea1713e83f2"
+      "slot": "github:iroha924/gleanery/pull/32#6f97abd02c06-1.r1@73cd1f19632e"
     },
     {
       "i": 26,
       "key": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@ac333bb79719"
+      "slot": "github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1@358d505f2487"
     },
     {
       "i": 27,
       "key": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@01681557e45c"
+      "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-4-—-判定する@274de3cc5ef6"
     },
     {
       "i": 29,
       "key": "github:iroha924/gleanery/pull/96#000ee8129d98-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@393780daf55e"
+      "slot": "github:iroha924/gleanery/pull/96#000ee8129d98-1@8e792a21537e"
     },
     {
       "i": 30,
       "key": "doc:AGENTS.md#agents.md",
       "grade": "direct",
-      "slot": "doc:AGENTS.md#agents.md@e58445292f49"
+      "slot": "doc:AGENTS.md#agents.md@fa839ee7357f"
     },
     {
       "i": 32,
       "key": "doc:.agents/skills/tui/SKILL.md#triggers",
       "grade": "direct",
-      "slot": "doc:.agents/skills/tui/SKILL.md#triggers@0b4d746db4bd"
+      "slot": "doc:.agents/skills/tui/SKILL.md#triggers@472876d4a92d"
     },
     {
       "i": 33,
       "key": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1@4541e6f46a2a"
+      "slot": "github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1@bdd092a31c5d"
     },
     {
       "i": 34,
       "key": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1@684bf66ec590"
+      "slot": "github:iroha924/gleanery/pull/117#2a1886bdd9a4-1@12c0f3411f08"
     },
     {
       "i": 35,
       "key": "doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける@e560e4bfc2da"
+      "slot": "doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける@39de979fbcaa"
     },
     {
       "i": 36,
       "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#agent定義として配らない",
       "grade": "direct",
-      "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#agent定義として配らない@28f657bb9846"
+      "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#agent定義として配らない@88568b3ed52e"
     },
     {
       "i": 37,
       "key": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1.r1@6c4e59a43a75"
+      "slot": "github:iroha924/gleanery/pull/121#4cbb886b3dc6-1.r1@a235cd040421"
     },
     {
       "i": 39,
       "key": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@b78c3edada95"
+      "slot": "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1@4f53669da594"
     },
     {
       "i": 40,
       "key": "doc:.github/pull_request_template.md#見送った指摘",
       "grade": "direct",
-      "slot": "doc:.github/pull_request_template.md#見送った指摘@a34a3b940c9f"
+      "slot": "doc:.github/pull_request_template.md#見送った指摘@a3ac2e6c4bfa"
     },
     {
       "i": 41,
       "key": "doc:.claude/rules/verification.md#配布物",
       "grade": "direct",
-      "slot": "doc:.claude/rules/verification.md#配布物@b3d77d65e9ae"
+      "slot": "doc:.claude/rules/verification.md#配布物@c343905b1780"
     },
     {
       "i": 42,
       "key": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@96b613a77c94"
+      "slot": "github:iroha924/gleanery/pull/96#6ecf6ce39382-1@099351e07afb"
     },
     {
       "i": 43,
       "key": "doc:.claude/agents/review-ui.md#3.-端末の画面（server/src/tui/）",
       "grade": "direct",
-      "slot": "doc:.claude/agents/review-ui.md#3.-端末の画面（server/src/tui/）@e88d91b2f524"
+      "slot": "doc:.claude/agents/review-ui.md#3.-端末の画面（server/src/tui/）@811f56517db7"
     },
     {
       "i": 44,
       "key": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
       "grade": "direct",
-      "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@fd4b8440d00b"
+      "slot": "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路@6af259c74aef"
     },
     {
       "i": 46,
       "key": "github:iroha924/gleanery/pull/127#bf2eac264253-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@df101cc22201"
+      "slot": "github:iroha924/gleanery/pull/127#bf2eac264253-1@91f71efe3abd"
     },
     {
       "i": 47,
       "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@8cb618b9c38b"
+      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1@17b35e62387d"
     },
     {
       "i": 48,
       "key": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@fe45870689e4"
+      "slot": "github:iroha924/gleanery/pull/27#e1313fb2dd40-1@a0a2324fb68a"
     },
     {
       "i": 49,
       "key": "doc:.agents/skills/knowledge-schema/SKILL.md#文書",
       "grade": "direct",
-      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@2afbfae9a549"
+      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#文書@31532a099510"
     },
     {
       "i": 50,
       "key": "doc:SECURITY.md#supported-versions",
       "grade": "direct",
-      "slot": "doc:SECURITY.md#supported-versions@438f51a959bd"
+      "slot": "doc:SECURITY.md#supported-versions@ce4e3ef1546b"
     },
     {
       "i": 51,
       "key": "github:iroha924/gleanery/pull/137#54b4f364628e-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1@4e2e4e928553"
+      "slot": "github:iroha924/gleanery/pull/137#54b4f364628e-1@aef69baf7a50"
     },
     {
       "i": 52,
       "key": "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@b318e32518b1"
+      "slot": "github:iroha924/gleanery/pull/27#aceba6ee56db-1@85d19b850606"
     },
     {
       "i": 53,
       "key": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@6abf776f389b"
+      "slot": "github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1@4107a7b200ce"
     },
     {
       "i": 54,
       "key": "doc:README.md#uninstalling",
       "grade": "direct",
-      "slot": "doc:README.md#uninstalling@a100b0a527d2"
+      "slot": "doc:README.md#uninstalling@31801a35b635"
     },
     {
       "i": 55,
       "key": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@fc0644936bd8"
+      "slot": "github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1@7c690e043128"
     },
     {
       "i": 56,
       "key": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@6091a0ddc85e"
+      "slot": "github:iroha924/gleanery/pull/96#e0842a2fc55e-1@a97754e99e13"
     },
     {
       "i": 57,
       "key": "doc:.github/ISSUE_TEMPLATE/bug.md#環境",
       "grade": "direct",
-      "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@04a09d038160"
+      "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#環境@2ce3bd383c56"
     },
     {
       "i": 58,
       "key": "doc:.agents/skills/plugin-release/SKILL.md#plugin-skill",
       "grade": "direct",
-      "slot": "doc:.agents/skills/plugin-release/SKILL.md#plugin-skill@c5081e3a0a20"
+      "slot": "doc:.agents/skills/plugin-release/SKILL.md#plugin-skill@cec2a44fa072"
     },
     {
       "i": 61,
       "key": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md",
-      "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@8772522f2429"
+      "grade": "partial",
+      "slot": "doc:plugin/skills/review/reviewers/conventions.md#conventions.md@ccc4d42af1c9"
     },
     {
       "i": 62,
       "key": "doc:plugin/skills/review/reviewers/precedent.md#step-3-—-方針を意味で引く",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-3-—-方針を意味で引く@6483d44ae2e9"
+      "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-3-—-方針を意味で引く@86ee13ef5454"
     },
     {
       "i": 63,
       "key": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@8da20814a479"
+      "slot": "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる@81fedee2caf0"
     },
     {
       "i": 64,
       "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1.r1@2c7aa3e2a064"
+      "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1.r1@5088687ea158"
     },
     {
       "i": 66,
       "key": "doc:.claude/agents/review-shipping.md#1.-配る物の中身",
       "grade": "direct",
-      "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a8a33798c5da"
+      "slot": "doc:.claude/agents/review-shipping.md#1.-配る物の中身@a16b7cce707f"
     },
     {
       "i": 67,
       "key": "github:iroha924/gleanery/pull/115#ac5c312368b7-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@dba5de6f0f40"
+      "slot": "github:iroha924/gleanery/pull/115#ac5c312368b7-1@b4edc3f4bc4e"
     },
     {
       "i": 68,
       "key": "github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1@7a0e65569858"
+      "slot": "github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1@cbfe07abe200"
     },
     {
       "i": 69,
       "key": "github:iroha924/gleanery/pull/116#fe83a7091678-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@c887683a7a06"
+      "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1@8caaa0d7ba46"
     },
     {
       "i": 70,
       "key": "github:iroha924/gleanery/pull/119#e07077f88c41-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@b95a74c7bc3d"
+      "slot": "github:iroha924/gleanery/pull/119#e07077f88c41-1@7b12a42bc96e"
     },
     {
       "i": 71,
       "key": "doc:plugin/skills/review/reviewers/adversarial.md#出力",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#出力@4a0b36487e73"
+      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#出力@d0321bf8382a"
     },
     {
       "i": 72,
       "key": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及",
       "grade": "direct",
-      "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a84837cc1e7f"
+      "slot": "doc:.claude/agents/review-shipping.md#3.-検査スクリプトの自己言及@a584af5d65aa"
     },
     {
       "i": 73,
       "key": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@9941df060c7a"
+      "slot": "github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1@12324244c78b"
     },
     {
       "i": 74,
       "key": "github:iroha924/gleanery/pull/117#12323d11a5ce-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1@45831c95aac0"
+      "slot": "github:iroha924/gleanery/pull/117#12323d11a5ce-1@46c2481f85ba"
     },
     {
       "i": 75,
       "key": "doc:.agents/skills/knowledge-schema/SKILL.md#全文検索の索引",
       "grade": "direct",
-      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#全文検索の索引@4e4bf42e617d"
+      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#全文検索の索引@a82e7122e58a"
     },
     {
       "i": 76,
       "key": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン",
       "grade": "direct",
-      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@8afc80b249fc"
+      "slot": "doc:.agents/skills/knowledge-schema/SKILL.md#正本とバージョン@c3cc0188393c"
     },
     {
       "i": 77,
       "key": "doc:.claude/rules/ui.md#ui.md",
       "grade": "direct",
-      "slot": "doc:.claude/rules/ui.md#ui.md@f9b0e765cd1d"
+      "slot": "doc:.claude/rules/ui.md#ui.md@b9a91cda8807"
     },
     {
       "i": 78,
       "key": "github:iroha924/gleanery/pull/28#bb161fac2449-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/28#bb161fac2449-1@a3624a81ec1a"
+      "slot": "github:iroha924/gleanery/pull/28#bb161fac2449-1@afa6a68bc5ed"
     },
     {
       "i": 79,
       "key": "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@703f08d107c3"
+      "slot": "github:iroha924/gleanery/pull/30#f4e29bb98394-1@5e972c9813af"
     },
     {
       "i": 80,
       "key": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@16c12af688fb"
+      "slot": "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1@69fdead65903"
     },
     {
       "i": 81,
       "key": "doc:README.ja.md#gleanery",
       "grade": "direct",
-      "slot": "doc:README.ja.md#gleanery@9ab863393366"
+      "slot": "doc:README.ja.md#gleanery@ae70287b84fc"
     },
     {
       "i": 82,
       "key": "github:iroha924/gleanery/pull/50#0aae6c28ea83-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/50#0aae6c28ea83-1@d8a4bfe17ef5"
+      "slot": "github:iroha924/gleanery/pull/50#0aae6c28ea83-1@5b7891be4718"
     },
     {
       "i": 83,
       "key": "github:iroha924/gleanery/pull/118#3b826f46d785-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@849487162f6f"
+      "slot": "github:iroha924/gleanery/pull/118#3b826f46d785-1@f068bc8f622a"
     },
     {
       "i": 85,
       "key": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@734525cb9572"
+      "slot": "github:iroha924/gleanery/pull/32#4dca9f552fa6-1@a99f220361d7"
     },
     {
       "i": 87,
       "key": "doc:AGENTS.md#動き方",
       "grade": "direct",
-      "slot": "doc:AGENTS.md#動き方@2be95f3a2312"
+      "slot": "doc:AGENTS.md#動き方@6096eb62eaca"
     },
     {
       "i": 88,
       "key": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@907f782a2cd1"
+      "slot": "github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1@7758540b5b89"
     },
     {
       "i": 89,
       "key": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7d9c37d27448"
+      "slot": "github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1@7f8057f33e62"
     },
     {
       "i": 90,
       "key": "github:iroha924/gleanery/pull/125#85ac203ecf88-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1@9d25044ff017"
+      "slot": "github:iroha924/gleanery/pull/125#85ac203ecf88-1@bc71468e37e0"
     },
     {
       "i": 92,
       "key": "doc:plugin/skills/review/SKILL.md#直さない",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/SKILL.md#直さない@257a6fdedbbc"
+      "slot": "doc:plugin/skills/review/SKILL.md#直さない@c3b245a58b4c"
     },
     {
       "i": 93,
       "key": "github:iroha924/gleanery/pull/114#554de41b305a-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@ee592af3a8d6"
+      "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1@1c715b87f120"
     },
     {
       "i": 94,
       "key": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@b0507ac410c5"
+      "slot": "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1@2ec7d8f600b5"
     },
     {
       "i": 96,
       "key": "doc:.claude/rules/evals.md#agentic-の-eval",
       "grade": "direct",
-      "slot": "doc:.claude/rules/evals.md#agentic-の-eval@90d54f54c60f"
+      "slot": "doc:.claude/rules/evals.md#agentic-の-eval@e593bb0cf60c"
     },
     {
       "i": 98,
       "key": "doc:README.md#troubleshooting",
       "grade": "direct",
-      "slot": "doc:README.md#troubleshooting@63161b843980"
+      "slot": "doc:README.md#troubleshooting@a3e2111c2ee5"
     },
     {
       "i": 99,
       "key": "github:iroha924/gleanery/pull/128#ab2a77298cca-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/128#ab2a77298cca-1@772a9e4875d7"
+      "slot": "github:iroha924/gleanery/pull/128#ab2a77298cca-1@d2c14cf1f46f"
     },
     {
       "i": 100,
       "key": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@208bd562e925"
+      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#adversarial.md@3194852217fc"
     },
     {
       "i": 101,
       "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@e482997ecc36"
+      "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1@794922dd702b"
     },
     {
       "i": 102,
       "key": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@ad92ba7bef46"
+      "slot": "github:iroha924/gleanery/pull/26#ed47acd4ed48-1@215331a2de34"
     },
     {
       "i": 103,
       "key": "github:iroha924/gleanery/pull/103#639949829e48-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@093ae1bec610"
+      "slot": "github:iroha924/gleanery/pull/103#639949829e48-1@bbcb7b8ceb8e"
     },
     {
       "i": 104,
       "key": "doc:SECURITY.md#scope",
       "grade": "direct",
-      "slot": "doc:SECURITY.md#scope@f69cf46af410"
+      "slot": "doc:SECURITY.md#scope@e87871d46381"
     },
     {
       "i": 105,
       "key": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@a657ec1ade38"
+      "slot": "doc:plugin/skills/review/SKILL.md#step-1-—-範囲を決める@0a1c05ab6965"
     },
     {
       "i": 106,
       "key": "doc:README.ja.md#ライセンス",
       "grade": "direct",
-      "slot": "doc:README.ja.md#ライセンス@ba2d1a5894ac"
+      "slot": "doc:README.ja.md#ライセンス@226a875387bb"
     },
     {
       "i": 107,
       "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r1@77c790507fb6"
+      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r1@5256d7c24814"
     },
     {
       "i": 109,
       "key": "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）@8b8fb8d13f87"
+      "slot": "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）@9d3e9eb403e7"
     },
     {
       "i": 111,
       "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@cf0ce34c697e"
+      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4@946f5566929e"
     },
     {
       "i": 112,
       "key": "github:iroha924/gleanery/pull/26#7f8d25878436-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@88cf50fdbdec"
+      "slot": "github:iroha924/gleanery/pull/26#7f8d25878436-1@9d5e8e6d4a4f"
     },
     {
       "i": 114,
       "key": "github:iroha924/gleanery/pull/115#e45974c9752b-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@ce223772f00a"
+      "slot": "github:iroha924/gleanery/pull/115#e45974c9752b-1@7077118dd0fb"
     },
     {
       "i": 115,
       "key": "doc:plugin/skills/review/references/peer-model.md#立てる",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/references/peer-model.md#立てる@04b0277286a8"
+      "slot": "doc:plugin/skills/review/references/peer-model.md#立てる@b4b43a5904d9"
     },
     {
       "i": 116,
       "key": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@e3fb498c7394"
+      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#1-応答目@845d48d51c6b"
     },
     {
       "i": 118,
       "key": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@7498535c14f0"
+      "slot": "github:iroha924/gleanery/pull/123#a6173565e402-1.r1@50ea51113754"
     },
     {
       "i": 119,
       "key": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@bae6143a4838"
+      "slot": "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3@d62a04df70cb"
     },
     {
       "i": 120,
       "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#本文の書き方",
       "grade": "direct",
-      "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#本文の書き方@d98ebe31e61c"
+      "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#本文の書き方@9611b32931dd"
     },
     {
       "i": 121,
       "key": "doc:plugin/skills/trace/SKILL.md#check-が弾く規則",
       "grade": "direct",
-      "slot": "doc:plugin/skills/trace/SKILL.md#check-が弾く規則@cb9e9275e9a0"
+      "slot": "doc:plugin/skills/trace/SKILL.md#check-が弾く規則@b42ac01d5765"
     },
     {
       "i": 122,
       "key": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools",
       "grade": "direct",
-      "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@93343339dff2"
+      "slot": "doc:.agents/skills/plugin-agent-authoring/SKILL.md#レビュアーへ渡すtools@21330004d824"
     },
     {
       "i": 123,
       "key": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@0bc96f991e13"
+      "slot": "github:iroha924/gleanery/pull/27#7d34a86be879-1.r1@4064fc65680f"
     },
     {
       "i": 124,
       "key": "doc:README.md#commands",
       "grade": "direct",
-      "slot": "doc:README.md#commands@6d385f57e08d"
+      "slot": "doc:README.md#commands@2bc93dbe6f7c"
     },
     {
       "i": 125,
       "key": "github:iroha924/gleanery/pull/120#491773d9952b-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1.r1@72dc3c85300a"
+      "slot": "github:iroha924/gleanery/pull/120#491773d9952b-1.r1@4a4dac45963d"
     },
     {
       "i": 127,
       "key": "github:iroha924/gleanery/pull/117#4b3eabae03f0-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/117#4b3eabae03f0-1@a85be6dfd3cc"
+      "slot": "github:iroha924/gleanery/pull/117#4b3eabae03f0-1@17b9e6c47297"
     },
     {
       "i": 128,
       "key": "github:iroha924/gleanery/pull/116#fe83a7091678-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1.r1@672706add5e4"
+      "slot": "github:iroha924/gleanery/pull/116#fe83a7091678-1.r1@7f361149838f"
     },
     {
       "i": 129,
       "key": "github:iroha924/gleanery/pull/101#4f4765dedddf-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@b24465fc81b5"
+      "slot": "github:iroha924/gleanery/pull/101#4f4765dedddf-1@1669ab697f61"
     },
     {
       "i": 131,
       "key": "doc:.agents/skills/tui/SKILL.md#skill.md",
       "grade": "direct",
-      "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@e08dcf0a8aaa"
+      "slot": "doc:.agents/skills/tui/SKILL.md#skill.md@155546da71db"
     },
     {
       "i": 132,
       "key": "github:iroha924/gleanery/pull/27#ef8cba604e91-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/27#ef8cba604e91-1@e524bc0f77b2"
+      "slot": "github:iroha924/gleanery/pull/27#ef8cba604e91-1@51dd8c6b880e"
     },
     {
       "i": 133,
       "key": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@23c830a33c31"
+      "slot": "doc:plugin/skills/review/SKILL.md#2-つの起動の仕方@626a1dd92399"
     },
     {
       "i": 134,
       "key": "doc:plugin/skills/review/reviewers/adversarial.md#何を探すか",
       "grade": "direct",
-      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#何を探すか@0ccc99886e83"
+      "slot": "doc:plugin/skills/review/reviewers/adversarial.md#何を探すか@23955eaa5fcd"
     },
     {
       "i": 135,
       "key": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1@5f9f42b86aa2"
+      "slot": "github:iroha924/gleanery/pull/114#554de41b305a-1.r1@f8c62b2ceb81"
     },
     {
       "i": 136,
       "key": "github:iroha924/gleanery/pull/118#f637b2538541-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@09e74934e018"
+      "slot": "github:iroha924/gleanery/pull/118#f637b2538541-1@d4bc8ff4641f"
     },
     {
       "i": 137,
       "key": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1",
       "grade": "partial",
-      "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@542174b9bcd7"
+      "slot": "github:iroha924/gleanery/pull/126#ab8986b3ed63-1@ec8ab78506b3"
     },
     {
       "i": 139,
       "key": "github:iroha924/gleanery/pull/124#cac608233bd6-1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@a7fa63656606"
+      "slot": "github:iroha924/gleanery/pull/124#cac608233bd6-1@1fe0cf720822"
     },
     {
       "i": 140,
       "key": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと",
       "grade": "direct",
-      "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@d2024c3f4f9f"
+      "slot": "doc:.github/ISSUE_TEMPLATE/bug.md#起きたこと@2478cda75e5e"
     },
     {
       "i": 141,
       "key": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@d349cbb0164c"
+      "slot": "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1@6f89187548b3"
     },
     {
       "i": 142,
       "key": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1",
       "grade": "direct",
-      "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@a4c720ccdd11"
+      "slot": "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1@3380d4eda3dc"
     }
   ]
 }

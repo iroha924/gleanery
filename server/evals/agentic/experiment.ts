@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-// One experiment of the search evaluation loop: bundle a candidate from its git ref, run a split 3 times, grade with the judge, apply the
-// preset adoption rule, and append the outcome to <OUT>/ledger.jsonl. A 10-question pilot runs first and stops the experiment on errors.
-//   GLEANERY_DB=<copy> bun run evals:experiment -- --name k1 --ref <git ref> [--base base] [--split dev] [--runs 3] [--budget 10]
-// Measure the base the same way first (--name base); later experiments reuse its runs while the conditions match.
+// One experiment: bundle a git ref, pilot 10 questions, run a split 3 times, judge, apply the adoption rule, append to <OUT>/ledger.jsonl.
+// Measure the base first (--name base); later experiments reuse its runs. Steps: .claude/rules/evals.md
+//   GLEANERY_DB=<copy> bun run evals:experiment -- --name k1 --ref <git ref> [--base base] [--split dev] [--budget 10]
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -22,7 +21,6 @@ const { values } = parseArgs({
     ref: { type: "string", default: "HEAD" },
     base: { type: "string", default: "base" },
     split: { type: "string", default: "dev" },
-    runs: { type: "string", default: "3" },
     budget: { type: "string", default: "10" },
     model: { type: "string", default: "sonnet" },
     effort: { type: "string" },
@@ -36,6 +34,14 @@ if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SP
 // The name goes into worktree and bundle paths below, so it passes the run directory check first
 runDir(OUT, name, split);
 const budget = new Budget(Number(values.budget));
+const RUNS = 3;
+const dirsOf = (config: string) =>
+  Array.from({ length: RUNS }, (_, n) =>
+    path.join(OUT, n === 0 ? config : `${config}-r${n + 1}`, split),
+  ).filter((d) => fs.existsSync(path.join(d, "summary.json")));
+// A missing base would leave nothing to compare against, while the ledger still recorded a finished experiment
+if (name !== values.base && dirsOf(values.base).length !== RUNS)
+  throw new Error(`--base ${values.base} has no complete ${RUNS} runs on ${split}. Measure it first`);
 
 /**
  * Bundles the MCP server of a git ref in its own worktree (bundle.mjs rewrites plugin/dist, so the working tree is never touched)
@@ -104,7 +110,7 @@ if (broken.length) {
 }
 
 const runs: Awaited<ReturnType<typeof measure>>[] = [];
-for (let n = 1; n <= Number(values.runs); n++) {
+for (let n = 1; n <= RUNS; n++) {
   const run = await measure({ ...common, name: n === 1 ? name : `${name}-r${n}` });
   runs.push(run);
   if (!run.summary.complete) break;
@@ -119,10 +125,6 @@ for (const run of runs)
 
 let verdicts: unknown = null;
 if (name !== values.base) {
-  const dirsOf = (config: string) =>
-    Array.from({ length: Number(values.runs) }, (_, n) =>
-      path.join(OUT, n === 0 ? config : `${config}-r${n + 1}`, split),
-    ).filter((d) => fs.existsSync(path.join(d, "summary.json")));
   const out = path.join(OUT, name, `verdict-${split}.json`);
   execFileSync(
     "node",

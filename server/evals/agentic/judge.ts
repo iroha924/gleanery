@@ -17,6 +17,7 @@ import {
   knowledgeRows,
   OUT,
   type Result,
+  SNAPSHOT,
   type summarize,
 } from "./run.ts";
 import { type Conditions, ineligible, type Run, verdict } from "./verdict.ts";
@@ -48,7 +49,8 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     out: { type: "string" },
-    model: { type: "string", default: "opus" },
+    // A model id, not an alias: cached grades are keyed by it, and an alias would mix grades of two models
+    model: { type: "string", default: "claude-opus-5-5" },
     par: { type: "string", default: "4" },
     // The setup (name without -rN) every other setup of the same split and model is judged against
     base: { type: "string" },
@@ -341,6 +343,7 @@ if (values.base) {
       bundle: y.bundle ?? null,
       // Runs from before this field count as complete (their question lists were never cut)
       complete: y.complete ?? true,
+      ungraded: s.top.filter((t) => t.key !== null && byKey.has(t.key) && !gradeOf(t.i, t.key)).length,
     };
   };
   const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`);
@@ -349,7 +352,7 @@ if (values.base) {
     if (base.length === 0) continue;
     for (const [config, setup] of Map.groupBy(ss, configOf)) {
       if (config === values.base) continue;
-      const no = ineligible(base.map(conditions), setup.map(conditions));
+      const no = ineligible(base.map(conditions), setup.map(conditions), SNAPSHOT);
       if (no.length) {
         console.log(`✗ ineligible ${config} vs ${values.base} (${key}): ${no.join(", ")}`);
         verdicts.push({ config, split: key, ineligible: no });

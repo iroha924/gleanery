@@ -88,12 +88,15 @@ export type Conditions = {
   bundle: string | null;
   /** false for a pilot or a run the budget stopped early */
   complete: boolean;
+  /** Top hits the judge should have graded but did not (a failed grading call) */
+  ungraded: number;
 };
 
 /** Why base and setup cannot be compared (empty when they can). A migrated copy compares only with copies of the same source snapshot. */
-export function ineligible(base: Conditions[], setup: Conditions[]): string[] {
+export function ineligible(base: Conditions[], setup: Conditions[], snapshot?: string): string[] {
   const out: string[] = [];
-  if (base.length < 3 || setup.length < 3) out.push("fewer than 3 runs");
+  // The solved rule is "2 of 3"; other counts would change it
+  if (base.length !== 3 || setup.length !== 3) out.push("not exactly 3 runs each");
   if ([...base, ...setup].some((c) => !c.complete)) out.push("incomplete run");
   const all = [...base, ...setup];
   for (const k of ["cases", "prompt", "models", "claude", "effort"] as const)
@@ -107,7 +110,10 @@ export function ineligible(base: Conditions[], setup: Conditions[]): string[] {
     if (new Set(cs.map((c) => c.db)).size > 1) out.push(`${side} runs used different DB copies`);
     if (new Set(cs.map((c) => c.bundle)).size > 1) out.push(`${side} runs used different bundles`);
   }
+  if (all.some((c) => c.ungraded > 0)) out.push("the judge left top hits ungraded");
   if (all.some((c) => c.db === null || c.source === null)) out.push("DB not recorded");
+  else if (snapshot !== undefined && all.some((c) => c.source !== snapshot))
+    out.push("DB copies do not come from the question set's snapshot");
   else if (new Set(all.map((c) => c.source)).size > 1) out.push("DB copies come from different snapshots");
   return out;
 }

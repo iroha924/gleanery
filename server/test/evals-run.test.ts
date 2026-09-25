@@ -218,13 +218,20 @@ const cond = (o: Partial<Conditions> = {}): Conditions => ({
   source: "d1",
   bundle: "b1",
   complete: true,
+  ungraded: 0,
   ...o,
 });
 const three = (o: Partial<Conditions> = {}) => [cond(o), cond(o), cond(o)];
 
 test("setups compare only on 3+ runs each with matching conditions", () => {
   assert.deepEqual(ineligible(three(), three({ bundle: "b2" })), []);
-  assert.deepEqual(ineligible(three(), [cond(), cond()]), ["fewer than 3 runs"]);
+  assert.deepEqual(ineligible(three(), [cond(), cond()]), ["not exactly 3 runs each"]);
+  assert.deepEqual(ineligible(three(), [...three(), cond()]), ["not exactly 3 runs each"]);
+  assert.deepEqual(ineligible(three(), three({ ungraded: 1 })), ["the judge left top hits ungraded"]);
+  assert.deepEqual(ineligible(three(), three(), "d1"), []);
+  assert.deepEqual(ineligible(three(), three(), "other"), [
+    "DB copies do not come from the question set's snapshot",
+  ]);
   assert.deepEqual(ineligible(three(), [cond(), cond(), cond({ complete: false })]), ["incomplete run"]);
   assert.deepEqual(ineligible(three(), three({ models: "claude-opus-5-5", prompt: 1 })), [
     "prompt differ",

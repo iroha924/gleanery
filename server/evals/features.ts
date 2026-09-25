@@ -1,9 +1,7 @@
 #!/usr/bin/env node
-// Checks the exact-match features (substring, phrase, prefix, regex) of features.json against a reference scan of the measured DB.
-// The reference is plain JavaScript over heading, body, and reason, so it shares no code with the search it checks.
-//   GLEANERY_DB=<copy> bun run evals:features -- [--split dev|holdout] [--use phrase=phrase --use prefix=prefix --use regex=regex]
-// --use says which recall match value a setup offers for a feature; without it, substring and phrase go to exact and prefix and regex to words.
-// Two values are not match values: quoted sends `"pattern"` and star sends `pattern*`, both in words mode (for setups that read that syntax).
+// Checks the exact-match features of features.json against a plain JavaScript scan of the measured DB (it shares no code with search).
+// --use <feature>=<match value>; quoted and star send `"pattern"` or `pattern*` in words mode. Defaults: exact for substring and phrase, words otherwise.
+//   GLEANERY_DB=<copy> bun run evals:features -- [--split dev|holdout] [--use phrase=phrase]
 
 import fs from "node:fs";
 import path from "node:path";
@@ -22,6 +20,8 @@ const LIMIT = 10;
 const { values } = parseArgs({
   options: { split: { type: "string", default: "dev" }, use: { type: "string", multiple: true } },
 });
+if (values.split !== "dev" && values.split !== "holdout")
+  throw new Error(`--split must be dev or holdout (${values.split})`);
 const use: Record<Feature, string> = { substring: "exact", phrase: "exact", prefix: "words", regex: "words" };
 for (const u of values.use ?? []) {
   const [f, m] = u.split("=");

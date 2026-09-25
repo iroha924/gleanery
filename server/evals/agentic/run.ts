@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
-// Gives the shipped plugin/dist/mcp.js to `claude -p` and has it answer the retrieval.json questions (run bun run bundle first).
-// **It uses the owner's data and subscription, so it is not part of verify.** Results stay in <OUT>/<name>/<split>/.
-// GLEANERY_DB must point at a fixed copy (`sqlite3 ~/.gleanery/gleanery.db "vacuum into '<file>'"`); its hash is recorded with each run.
-//   GLEANERY_DB=<copy> bun run evals:agentic -- --name base --split dev --model sonnet (name repeats of the same setup base-r2, base-r3)
+// Has `claude -p` answer the retrieval.json questions through a bundled MCP server. **It uses the owner's subscription; not part of verify.**
+// GLEANERY_DB is a fixed `vacuum into` copy of the question set's snapshot. Results go to <OUT>/<name>/<split>/.
+//   GLEANERY_DB=<copy> bun run evals:agentic -- --name base --split dev --model sonnet (repeats of one setup: base-r2, base-r3)
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -23,7 +22,7 @@ export const OUT = process.env.GLEANERY_EVALS_OUT || path.join(os.homedir(), ".c
 
 export type Case = { q: string; expect: string[]; kind: string; source: string };
 const CASES = fs.readFileSync(path.join(HERE, "../retrieval.json"), "utf8");
-export const { cases } = JSON.parse(CASES) as { cases: Case[] };
+export const { cases, snapshot: SNAPSHOT } = JSON.parse(CASES) as { cases: Case[]; snapshot: string };
 /** Fingerprint of the question set. Rebuilding retrieval.json reshuffles the splits, so different sets are never compared. */
 export const CASES_SHA = crypto.createHash("sha256").update(CASES).digest("hex").slice(0, 16);
 
@@ -116,6 +115,9 @@ export type Measure = {
 export async function measure(o: Measure) {
   if (!fs.existsSync(o.mcp)) throw new Error(`${o.mcp} is missing. Run bun run bundle first`);
   const db = fixedDb();
+  // Answer keys exist only in the snapshot the questions were built from (or a copy migrated from it)
+  if (sourceOf(db) !== SNAPSHOT)
+    throw new Error(`${db} does not come from the question set's snapshot ${SNAPSHOT} (retrieval.json)`);
   const run = runDir(OUT, o.name, o.split);
   fs.rmSync(run, { recursive: true, force: true });
   fs.mkdirSync(run, { recursive: true });
