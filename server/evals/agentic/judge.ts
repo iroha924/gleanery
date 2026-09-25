@@ -129,6 +129,9 @@ for (const src of positionals) {
   const { results, ...summary } = s;
   // Runs from before turns_mean existed: recompute it from the questions, since the rounded turns would skew the guardrail
   summary.turns_mean ??= results.reduce((a, r) => a + r.turns, 0) / Math.max(results.length, 1);
+  if (results.every((r) => r.session))
+    summary.tool_kib_mean ??=
+      results.reduce((a, r) => a + r.session.bytes / 1024, 0) / Math.max(results.length, 1);
   if (summary.cases !== CASES_SHA)
     throw new Error(`${src} was measured with a different retrieval.json and cannot be compared`);
   systems.push({ summary, top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })) });
@@ -326,7 +329,7 @@ if (values.base) {
       top1: s.summary.top1,
       direct: pct(s.top.filter((t) => t.grade === "direct").length, s.top.length),
       turns: x.turns_mean ?? s.summary.turns,
-      toolKib: x.tool_kib ?? null,
+      toolKib: x.tool_kib_mean ?? x.tool_kib ?? null,
       errors: s.summary.errors,
     };
   };

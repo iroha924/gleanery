@@ -40,6 +40,8 @@ const CAP = Number(values.budget);
 if (!Number.isInteger(PAR) || PAR < 1) throw new Error(`--par must be a positive integer (${values.par})`);
 if (!(Number.isFinite(CAP) && CAP > 0))
   throw new Error(`--budget must be a positive number of USD (${values.budget})`);
+// A pilot (--limit) must not replace the frozen set, which the completeness check below would accept at the lowered quotas
+if (values.limit !== undefined && values.out === undefined) throw new Error("--limit needs --out");
 const want = (t: Type) => Math.min(QUOTA[t], Number(values.limit ?? Number.POSITIVE_INFINITY));
 const file = fixedDb();
 const snapshot = sourceOf(file);

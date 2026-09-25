@@ -33,6 +33,9 @@ const split = values.split as Split;
 if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
 // The name goes into worktree and bundle paths below, so it passes the run directory check first
 runDir(OUT, name, split);
+runDir(OUT, values.base, split);
+if (!Number.isInteger(Number(values.par)) || Number(values.par) < 1)
+  throw new Error(`--par must be a positive integer (${values.par})`);
 // Repeats are stored as <name>-r2 and <name>-r3, so such a name would overwrite another setup's runs
 if (/-r\d+$/.test(name)) throw new Error(`--name must not end in -r<n> (${name})`);
 const budget = new Budget(Number(values.budget));

@@ -24,14 +24,13 @@ import { SPLITS, type Split, splitStale } from "./cases.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 type Case = { q: string; expect: string[]; kind: string; source: string };
-// --split dev / holdout / message-dev / message-holdout takes the same questions as the agentic eval (tune on dev, keep holdout for the gate). Without it, all.
-const { values } = parseArgs({ options: { split: { type: "string" } } });
-const split = values.split as Split | undefined;
-if (split !== undefined && !(split in SPLITS))
-  throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
+// --split takes the same questions as the agentic eval. It defaults to dev, so holdout questions are read only when asked for (the gate)
+const { values } = parseArgs({ options: { split: { type: "string", default: "dev" } } });
+const split = values.split as Split;
+if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
 const allCases = (
   JSON.parse(fs.readFileSync(path.join(HERE, "retrieval.json"), "utf8")) as { cases: Case[] }
-).cases.filter((c, i) => split === undefined || SPLITS[split](c, i));
+).cases.filter((c, i) => SPLITS[split](c, i));
 
 const K = 5;
 const db = openReader(fixedDb());

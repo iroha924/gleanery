@@ -393,7 +393,8 @@ export function fixedDb(live = path.join(os.homedir(), ".gleanery", "gleanery.db
     throw new Error(
       `${db} has a WAL with pending writes, so it is not a fixed copy. Make one with vacuum into`,
     );
-  return db;
+  // Absolute, because question runs start in temporary working directories
+  return path.resolve(db);
 }
 
 /**
@@ -476,6 +477,8 @@ export function sessionSummary(ss: Session[]) {
     ),
     tool_errors: ss.reduce((a, s) => a + s.errors, 0),
     tool_kib: mean(ss.map((s) => s.bytes / 1024)),
+    // Unrounded, for the guardrail (tool_kib is rounded for display)
+    tool_kib_mean: ss.reduce((a, s) => a + s.bytes / 1024, 0) / Math.max(ss.length, 1),
     usage,
   };
 }
