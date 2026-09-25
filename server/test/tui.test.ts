@@ -460,12 +460,12 @@ async function frameAt(columns: number, rows: number, data: Data): Promise<strin
 
 test("the top box stays 3 lines on a narrow terminal and the screen fits the terminal height", async () => {
   const many = fake({
-    here: { project: 1, name: "iroha924/gleanery" },
+    here: { project: 1, name: "iroha924/sphica" },
     projects: async () => [
       {
         id: 1,
-        key: "git:github.com/iroha924/gleanery",
-        name: "iroha924/gleanery",
+        key: "git:github.com/iroha924/sphica",
+        name: "iroha924/sphica",
         sessions: 1,
         knowledge: 1,
         connectors: [],

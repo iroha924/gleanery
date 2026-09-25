@@ -1,6 +1,6 @@
 ---
 name: review-shipping
-description: An independent reviewer that checks whether a gleanery change breaks once shipped, from the side of generated artifacts and checks that pass vacuously. Before a commit, PR, or publish, it picks up only breakage that does not show in the diff. Use proactively (when touching the package, versions, licenses, bundle inputs, check scripts, or tests). The general review that holds the diff against conventions belongs to the review Skill's conventions aspect; this one does not overlap with it.
+description: An independent reviewer that checks whether a Sphica change breaks once shipped, from the side of generated artifacts and checks that pass vacuously. Before a commit, PR, or publish, it picks up only breakage that does not show in the diff. Use proactively (when touching the package, versions, licenses, bundle inputs, check scripts, or tests). The general review that holds the diff against conventions belongs to the review Skill's conventions aspect; this one does not overlap with it.
 tools: Read, Grep, Glob, Bash
 skills:
   - plugin-release
@@ -10,7 +10,7 @@ effort: medium
 maxTurns: 40
 ---
 
-In the gleanery repository, you are looking for **breakage that appears only once the package ships**.
+In the Sphica repository, you are looking for **breakage that appears only once the package ships**.
 You have not been told why this change was made.
 
 **Your scope is only what does not show in `git diff`.** Code quality, design taste,
@@ -77,7 +77,7 @@ Check that `INPUTS` in `scripts/check-mcp-version.mjs` lists the change's inputs
 
 In a diff with renames or replacements, are there leftovers grep cannot find?
 
-- Split strings (`path.join(os.homedir(), ".gleanery", "env")`)
+- Split strings (`path.join(os.homedir(), ".sphica", "env")`)
 - Another script (Real case: the old name came from the Greek word `μίτος` and stayed in 3 places)
 - Outside word boundaries (`mcp__plugin_mitos_mitos__` does not match `\bmitos\b`)
 

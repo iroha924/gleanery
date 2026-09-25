@@ -1,4 +1,4 @@
--- gleanery: foreign_keys=off
+-- sphica: foreign_keys=off
 -- Removes requirements / design from source_item's kind CHECK. SQLite cannot alter a CHECK, so the table is rebuilt.
 -- Dropping with foreign keys on would delete child rows (conversation, knowledge) by cascade, so the runner turns them off.
 -- drop loses the autoincrement maximum, so it is saved and restored (deleted ids are never reused).

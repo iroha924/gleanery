@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Replays the recall / read calls of saved runs on the DB they used, reports how many replays matched the recorded responses, and
 // recounts where each answer was shown. Mismatched calls are unconfirmed and reported apart. Writes <run dir>/replay.json.
-//   GLEANERY_DB=<the runs' DB copy> bun run evals:replay -- <run dir> ...
+//   SPHICA_DB=<the runs' DB copy> bun run evals:replay -- <run dir> ...
 
 import fs from "node:fs";
 import path from "node:path";
@@ -24,7 +24,7 @@ for (const dir of dirs) {
   };
   // Refs map to answer keys through this DB, so another copy could render the same text yet map to other keys
   if (used !== dbHash) {
-    console.log(`${dir}: skipped, the run used DB ${used ?? "not recorded"} and GLEANERY_DB is ${dbHash}`);
+    console.log(`${dir}: skipped, the run used DB ${used ?? "not recorded"} and SPHICA_DB is ${dbHash}`);
     continue;
   }
   const why: Record<string, number> = {};

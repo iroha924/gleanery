@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Checks the exact-match features of features.json against a plain JavaScript scan of the measured DB (it shares no code with search).
 // --use <feature>=<match value>; quoted and star send `"pattern"` or `pattern*` in words mode. Defaults: exact for substring and phrase, words otherwise.
-//   GLEANERY_DB=<copy> bun run evals:features -- [--split dev|holdout] [--use phrase=phrase]
+//   SPHICA_DB=<copy> bun run evals:features -- [--split dev|holdout] [--use phrase=phrase]
 
 import fs from "node:fs";
 import path from "node:path";

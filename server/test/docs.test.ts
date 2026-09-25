@@ -158,13 +158,13 @@ test("ignores uncommitted edits in the working tree and reads only committed tex
 });
 
 // Keep drafts left in the old requirements and design folder out of search. A broken manifest does not stop the sync.
-test("never imports .gleanery/ at any depth, and checks fast-forward by ancestry", async () => {
+test("never imports .sphica/ at any depth, and checks fast-forward by ancestry", async () => {
   await withRepo((repo, git) => {
-    put(repo, ".gleanery/project.json", JSON.stringify({ schema: "gleanery/project/1" }));
-    put(repo, ".gleanery/changes/a/change.json", "{");
-    put(repo, ".gleanery/changes/a/requirements.md", "# 要件\n下書き\n");
-    put(repo, "sub/.gleanery/changes/x/design.md", "# 入れ子\n下書き\n");
-    put(repo, "docs/gleanery.md", "# 名前が似ているだけ\n本文\n");
+    put(repo, ".sphica/project.json", JSON.stringify({ schema: "sphica/project/1" }));
+    put(repo, ".sphica/changes/a/change.json", "{");
+    put(repo, ".sphica/changes/a/requirements.md", "# 要件\n下書き\n");
+    put(repo, "sub/.sphica/changes/x/design.md", "# 入れ子\n下書き\n");
+    put(repo, "docs/sphica.md", "# 名前が似ているだけ\n本文\n");
     put(repo, "README.md", "# 読んで\n本文\n");
     git("add", "-A");
     git("commit", "-qm", "a");
@@ -173,7 +173,7 @@ test("never imports .gleanery/ at any depth, and checks fast-forward by ancestry
       collectDocs(repo, first)
         .docs.map((d) => d.path)
         .sort(),
-      ["README.md", "docs/gleanery.md"],
+      ["README.md", "docs/sphica.md"],
     );
     put(repo, "README.md", "# x\n");
     git("add", "-A");

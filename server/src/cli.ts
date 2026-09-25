@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// The gleanery CLI. Imports, trace, and directory writes use the ingest connection; searches use the reader connection (sqlite.ts, db-write.ts).
+// The sphica CLI. Imports, trace, and directory writes use the ingest connection; searches use the reader connection (sqlite.ts, db-write.ts).
 //
 // Argument parsing is left to @stricli/core. **Each command declares the flags and positional arguments it accepts**, so
-// another command's flag (`gleanery doctor --yes`) or an extra positional argument (`gleanery project list garbage`)
+// another command's flag (`sphica doctor --yes`) or an extra positional argument (`sphica project list garbage`)
 // fails at parse time. Usage text is built from these declarations and never written separately.
 
 import fs from "node:fs";
@@ -31,6 +31,7 @@ import { openWriter } from "./db-write.ts";
 import { syncDocs } from "./docs.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
+import { moveProject } from "./move.ts";
 import { kindColor } from "./palette.ts";
 import { inline, type Mark, mark, pad, plain, width } from "./panel.ts";
 import { observe, packageVersionAt, ROOT, report, UPDATE_NOTE } from "./plugin.ts";
@@ -75,7 +76,7 @@ import {
  * Heading of the error box. **Built only from the route name routing chose** (never from the typed arguments).
  * It is decided before argument parsing, so even a misspelled flag reports the subcommand.
  */
-let heading = "gleanery";
+let heading = "sphica";
 
 /** The block printed on failure. The body is indented, so newlines smuggled into arguments cannot forge a closing line at column 0 (tui/view.ts). */
 const failed = (body: string): string => failure(heading, plain(body));
@@ -138,7 +139,7 @@ function placeOf(cwd: string): Place {
   const place = identify(cwd);
   if (!place) {
     throw new Error(
-      `${cwd} has no git remote and no name. Name it with \`gleanery project add --name <name>\``,
+      `${cwd} has no git remote and no name. Name it with \`sphica project add --name <name>\``,
     );
   }
   return place;
@@ -147,9 +148,7 @@ function placeOf(cwd: string): Place {
 async function registered(db: Kysely<DB>, place: Place): Promise<number> {
   const id = await projectId(db, place.key);
   if (id === null)
-    throw new Error(
-      `${place.name} is not registered with gleanery. Register it with \`gleanery project add\``,
-    );
+    throw new Error(`${place.name} is not registered with Sphica. Register it with \`sphica project add\``);
   return id;
 }
 
@@ -345,7 +344,7 @@ async function doctor(cwd: string): Promise<void> {
     count(m, label);
     console.log(indent(`  ${mark(m)} ${pad(label, 26)}${text}`));
   };
-  console.log(title("gleanery doctor"));
+  console.log(title("sphica doctor"));
   // Print before the database. Version drift should be visible regardless of the database.
   const plugin = report(observe(identify(cwd)?.root ?? cwd));
   issues.push(...plugin.issues);
@@ -364,7 +363,7 @@ async function doctor(cwd: string): Promise<void> {
   const file = dbFile();
   let usable = false;
   if (!runtime) say("none", "DB", "cannot check until Node is upgraded");
-  else if (!fs.existsSync(file)) say("fail", "DB", `missing (${file}). Create it with gleanery init`);
+  else if (!fs.existsSync(file)) say("fail", "DB", `missing (${file}). Create it with sphica init`);
   else {
     try {
       const x = inspect(file);
@@ -375,14 +374,14 @@ async function doctor(cwd: string): Promise<void> {
         "Schema version",
         usable
           ? `revision ${x.revision}`
-          : `revision ${x.revision}, this gleanery expects ${SCHEMA_REVISION} (${x.revision < SCHEMA_REVISION ? "run gleanery db migrate" : "update gleanery"})`,
+          : `revision ${x.revision}, this Sphica expects ${SCHEMA_REVISION} (${x.revision < SCHEMA_REVISION ? "run sphica db migrate" : "update sphica"})`,
       );
       const broken = Object.entries(x.fts).filter(([, v]) => v !== null);
       say(
         broken.length ? "fail" : "ok",
         "Full-text index",
         broken.length
-          ? `broken: ${broken.map(([k, v]) => `${k} (${plain(v ?? "")})`).join(" / ")}. Rebuild it with gleanery db reindex`
+          ? `broken: ${broken.map(([k, v]) => `${k} (${plain(v ?? "")})`).join(" / ")}. Rebuild it with sphica db reindex`
           : "healthy",
       );
     } catch (e) {
@@ -414,7 +413,7 @@ async function doctor(cwd: string): Promise<void> {
         const label = (x: (typeof rows)[number]) => `${inline(x.name)} ${x.provider ?? "not synced"}`;
         const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
         for (const x of rows) {
-          // Imports run only when gleanery harvest is run. Gaps are normal, so only failures count as things to fix.
+          // Imports run only when sphica harvest is run. Gaps are normal, so only failures count as things to fix.
           const m: Mark = x.last_error ? "fail" : x.provider === null || !x.last_success_at ? "none" : "ok";
           count(m, `project ${label(x)}`);
           const where = found.get(x.key) ? "" : " (not on this machine)";
@@ -509,7 +508,7 @@ const excludeRoutes = buildRouteMap({
             .execute();
           console.log(
             document(
-              "gleanery project exclude add",
+              "sphica project exclude add",
               inline(place.name),
               [
                 {
@@ -544,7 +543,7 @@ const excludeRoutes = buildRouteMap({
             .execute();
           console.log(
             document(
-              "gleanery project exclude list",
+              "sphica project exclude list",
               inline(place.name),
               rows.length
                 ? [
@@ -597,7 +596,7 @@ const excludeRoutes = buildRouteMap({
             .executeTakeFirst();
           console.log(
             document(
-              "gleanery project exclude remove",
+              "sphica project exclude remove",
               inline(place.name),
               [{ kind: "fields", rows: [["path", inline(rel)]] }],
               Number(gone.numDeletedRows)
@@ -640,7 +639,7 @@ const projectRoutes = buildRouteMap({
             .executeTakeFirst();
           console.log(
             document(
-              "gleanery project add",
+              "sphica project add",
               undefined,
               [
                 {
@@ -694,7 +693,7 @@ const projectRoutes = buildRouteMap({
           });
           console.log(
             document(
-              "gleanery project list",
+              "sphica project list",
               undefined,
               cards.length
                 ? [{ kind: "cards", items: cards }]
@@ -702,7 +701,7 @@ const projectRoutes = buildRouteMap({
                     {
                       kind: "note",
                       tone: "info",
-                      text: "No registered projects. Register one with gleanery project add",
+                      text: "No registered projects. Register one with sphica project add",
                     },
                   ],
               cards.length ? plural(cards.length, "project") : "none registered",
@@ -712,6 +711,57 @@ const projectRoutes = buildRouteMap({
       },
     }),
     exclude: excludeRoutes,
+    move: buildCommand({
+      docs: {
+        brief:
+          "Move a project to its current remote after the repository was renamed (without --yes it only checks)",
+      },
+      parameters: {
+        flags: {
+          cwd: CWD,
+          from: {
+            kind: "parsed",
+            parse: String,
+            brief: "The project's key before the rename",
+            placeholder: "key",
+          },
+          yes: { kind: "boolean", brief: "Really move", optional: true },
+        },
+      },
+      func: async (flags: { cwd?: string; from: string; yes?: boolean }) => {
+        const place = placeOf(flags.cwd ?? process.cwd());
+        await withDb("ingest", async (db) => {
+          const x = await moveProject(db, flags.from, place, flags.yes === true);
+          const rows: Block = {
+            kind: "fields",
+            rows: [
+              ["from", inline(x.from)],
+              ["to", inline(x.to)],
+              ["GitHub records", `${x.knowledge} (with search words ${x.terms})`],
+              ["GitHub conversations", `${x.conversations}`],
+              ["queued records", `${x.spooled}`],
+            ],
+          };
+          console.log(
+            document(
+              "sphica project move",
+              undefined,
+              x.applied
+                ? [rows]
+                : [
+                    rows,
+                    {
+                      kind: "note",
+                      tone: "warning",
+                      text: "Add --yes to move. Stop recording sessions first",
+                    },
+                  ],
+              x.applied ? `${mark("ok")} moved` : `${mark("none")} nothing moved`,
+            ),
+          );
+        });
+      },
+    }),
     forget: buildCommand({
       docs: { brief: "Delete a project's data (without --yes it only counts)" },
       parameters: {
@@ -759,7 +809,7 @@ const projectRoutes = buildRouteMap({
           if (flags.yes !== true) {
             console.log(
               document(
-                "gleanery project forget",
+                "sphica project forget",
                 undefined,
                 [
                   counts,
@@ -771,7 +821,7 @@ const projectRoutes = buildRouteMap({
             return;
           }
           await db.deleteFrom("project").where("id", "=", p.id).execute();
-          console.log(document("gleanery project forget", undefined, [counts], `${mark("ok")} deleted`));
+          console.log(document("sphica project forget", undefined, [counts], `${mark("ok")} deleted`));
         });
       },
     }),
@@ -812,7 +862,7 @@ const traceRoutes = buildRouteMap({
         if (r.problems.length) {
           console.error(
             panel(
-              "gleanery trace check",
+              "sphica trace check",
               r.problems.map((p) => `${mark("fail")} ${p}`),
               plural(r.problems.length, "problem"),
             ),
@@ -822,7 +872,7 @@ const traceRoutes = buildRouteMap({
         }
         console.log(
           panel(
-            "gleanery trace check",
+            "sphica trace check",
             [],
             `${mark("ok")} valid: ${plural(r.trace?.items.length ?? 0, "item")}`,
           ),
@@ -856,7 +906,7 @@ const traceRoutes = buildRouteMap({
           const saved = await saveTrace(db, id, trace);
           console.log(
             panel(
-              "gleanery trace save",
+              "sphica trace save",
               [],
               `stored: ${plural(saved.written, "item")} rewritten${saved.superseded ? `, ${plural(saved.superseded, "decision")} superseded` : ""}${saved.terms ? `, search words changed on ${plural(saved.terms, "item")}` : ""}`,
             ),
@@ -878,7 +928,7 @@ const captureRoutes = buildRouteMap({
         if (r.busy) {
           console.log(
             panel(
-              "gleanery capture flush",
+              "sphica capture flush",
               [],
               "Another send is running, so nothing was done (the queue empties when it finishes)",
             ),
@@ -887,7 +937,7 @@ const captureRoutes = buildRouteMap({
         }
         console.log(
           document(
-            "gleanery capture flush",
+            "sphica capture flush",
             undefined,
             [
               {
@@ -922,7 +972,7 @@ async function boxed(head: string, fn: () => void | Promise<void>): Promise<void
 }
 
 const dbRoutes = buildRouteMap({
-  docs: { brief: "This machine's database (~/.gleanery/gleanery.db) and schema" },
+  docs: { brief: "This machine's database (~/.sphica/sphica.db) and schema" },
   routes: {
     migrate: buildCommand({
       docs: { brief: "Apply db/migrations newer than the database version" },
@@ -935,12 +985,12 @@ const dbRoutes = buildRouteMap({
           },
         },
       },
-      func: (flags: { yes?: boolean }) => boxed("gleanery db migrate", () => migrate(flags.yes === true)),
+      func: (flags: { yes?: boolean }) => boxed("sphica db migrate", () => migrate(flags.yes === true)),
     }),
     reindex: buildCommand({
       docs: { brief: "Rebuild the full-text index (run after changing how search splits words)" },
       parameters: {},
-      func: () => boxed("gleanery db reindex", () => reindex()),
+      func: () => boxed("sphica db reindex", () => reindex()),
     }),
     terms: buildRouteMap({
       docs: { brief: "Search words of records (indexed, never shown in search results or read)" },
@@ -957,7 +1007,7 @@ const dbRoutes = buildRouteMap({
             },
           },
           func: (flags: { cwd?: string }, draft: string) =>
-            boxed("gleanery db terms import", () => {
+            boxed("sphica db terms import", () => {
               importTerms(draft, placeOf(flags.cwd ?? process.cwd()));
             }),
         }),
@@ -976,7 +1026,7 @@ const dbRoutes = buildRouteMap({
             },
           },
           func: (flags: { cwd?: string; ref?: string }) =>
-            boxed("gleanery db terms list", () => {
+            boxed("sphica db terms list", () => {
               listTerms(placeOf(flags.cwd ?? process.cwd()), flags.ref);
             }),
         }),
@@ -988,8 +1038,7 @@ const dbRoutes = buildRouteMap({
 const root = buildRouteMap({
   docs: {
     brief: "Keep and search past decisions, conversations, and documents",
-    fullDescription:
-      "Database: ~/.gleanery/gleanery.db (created by gleanery init). No credentials are needed",
+    fullDescription: "Database: ~/.sphica/sphica.db (created by sphica init). No credentials are needed",
   },
   routes: {
     project: projectRoutes,
@@ -1015,7 +1064,7 @@ const root = buildRouteMap({
         if (resetDocs && !flags.cwd) throw new Error("--reset-docs works only when --cwd names one project");
         // The log is appended to, so the heading always shows when it ran.
         const startedAt = new Date();
-        console.log(title(`gleanery harvest ${startedAt.toLocaleString("sv-SE")}`));
+        console.log(title(`sphica harvest ${startedAt.toLocaleString("sv-SE")}`));
         await flush().catch((e: unknown) =>
           console.error(indent(`${mark("fail")} failed to send recordings: ${plain(reason(e))}`)),
         );
@@ -1153,7 +1202,7 @@ const root = buildRouteMap({
           if (!process.stdout.isTTY) {
             console.log(
               panel(
-                "gleanery search",
+                "sphica search",
                 hits.length ? [plain(framed(renderHits(hits, 16 * 1024).text))] : [],
                 end,
               ),
@@ -1162,7 +1211,7 @@ const root = buildRouteMap({
           }
           console.log(
             document(
-              "gleanery search",
+              "sphica search",
               `${question ? `"${inline(question)}" · ` : ""}${where}`,
               hits.length
                 ? [
@@ -1219,7 +1268,7 @@ const root = buildRouteMap({
               .execute();
             console.log(
               document(
-                "gleanery who",
+                "sphica who",
                 undefined,
                 [
                   people.length
@@ -1234,7 +1283,7 @@ const root = buildRouteMap({
                     : {
                         kind: "note",
                         tone: "info",
-                        text: "The directory is empty. Add people with gleanery who <name> <handle>...",
+                        text: "The directory is empty. Add people with sphica who <name> <handle>...",
                       },
                   ...(unknown.length
                     ? ([
@@ -1284,7 +1333,7 @@ const root = buildRouteMap({
           );
           console.log(
             panel(
-              "gleanery who",
+              "sphica who",
               missing.length
                 ? [
                     `Handles not imported yet: ${missing.map(inline).join(" / ")} (link them again after a sync)`,
@@ -1302,10 +1351,10 @@ const root = buildRouteMap({
     init: buildCommand({
       docs: {
         brief:
-          "Create this machine's database (~/.gleanery/gleanery.db). An existing one is left alone; safe to run again",
+          "Create this machine's database (~/.sphica/sphica.db). An existing one is left alone; safe to run again",
       },
       parameters: {},
-      func: () => boxed("gleanery init", () => dbInit()),
+      func: () => boxed("sphica init", () => dbInit()),
     }),
     dashboard: buildCommand({
       docs: { brief: "Browse sessions, work, and search in the terminal (read only)" },
@@ -1325,9 +1374,9 @@ const root = buildRouteMap({
       parameters: {},
       func: () => {
         // Measures whether the edit hook helps. After a month, if it rarely shows anything, remove the hook.
-        const log = path.join(os.homedir(), ".gleanery", "advice.jsonl");
+        const log = path.join(os.homedir(), ".sphica", "advice.jsonl");
         if (!fs.existsSync(log)) {
-          console.log(panel("gleanery advice", [], "No records yet (the edit hook has never run)"));
+          console.log(panel("sphica advice", [], "No records yet (the edit hook has never run)"));
           return;
         }
         // Skip lines cut midway (a process stopped while writing). One line does not make the whole unreadable.
@@ -1349,7 +1398,7 @@ const root = buildRouteMap({
         const ratio = shown.length / Math.max(rows.length, 1);
         console.log(
           document(
-            "gleanery advice",
+            "sphica advice",
             since ? `since ${new Date(since).toLocaleString("sv-SE").slice(0, 16)}` : undefined,
             [
               {
@@ -1381,7 +1430,7 @@ const FORMATTING = {
 const app = buildApplication(
   root,
   {
-    name: "gleanery",
+    name: "sphica",
     localization: { text: TEXT },
     // panel.ts decides box and mark colors (only when both stdout and stderr are terminals).
     documentation: { disableAnsiColor: true },

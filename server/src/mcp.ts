@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // MCP server that lets Claude Code and Codex look up past decisions, conversations, and documents. **The database is read only** (the reader connection, sqlite.ts).
-// The only local write is ~/.gleanery/advice.jsonl, where check_path measures how well the hook works.
+// The only local write is ~/.sphica/advice.jsonl, where check_path measures how well the hook works.
 //
 // The calling AI repeats searches with different words (agentic search). This server only returns ranked word search and substring matches.
 // Three tools: recall (search), read (read a reference), and check_path (constraints on a file before editing it).
@@ -50,7 +50,7 @@ const text = (t: string) => ({ content: [{ type: "text" as const, text: t }] });
 const send = (r: Reply) => ({ ...text(r.text), ...(r.isError ? { isError: true } : {}) });
 
 const server = new McpServer(
-  { name: "gleanery", version: VERSION ?? "unknown" },
+  { name: "sphica", version: VERSION ?? "unknown" },
   {
     // Claude Code enables tool search by default, so at startup the model sees only the tool names and this text.
     instructions: [
@@ -160,7 +160,7 @@ server.registerTool(
 // **Never report "no constraints" for something it could not check.** When the database is unreachable, it says so.
 
 const index = new Map<number, { at: number; rules: Map<string, PathRule[]> }>();
-const ADVICE = path.join(os.homedir(), ".gleanery", "advice.jsonl");
+const ADVICE = path.join(os.homedir(), ".sphica", "advice.jsonl");
 
 async function rulesFor(id: number): Promise<Map<string, PathRule[]>> {
   const cur = index.get(id);
@@ -226,7 +226,7 @@ server.registerTool(
       return text(a.hook ? hookContext(found, PATH_BYTES) : framedWithin(found, PATH_BYTES));
     } catch (e) {
       // Never stop the edit (the hook does not decide permissions), but say what was not checked.
-      return reply(`gleanery: could not check the constraints on this file (${head(reason(e), 200)}).`);
+      return reply(`sphica: could not check the constraints on this file (${head(reason(e), 200)}).`);
     }
   },
 );

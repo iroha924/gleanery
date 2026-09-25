@@ -15,7 +15,7 @@ const SCRIPT = path.join(
 );
 
 function repo(): { dir: string; git: (...a: string[]) => string; done: () => void } {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-version-")));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-version-")));
   const git = (...a: string[]) =>
     execFileSync(
       "git",
@@ -32,13 +32,13 @@ function write(dir: string, file: string, body: string) {
 }
 
 function bump(dir: string, version: string) {
-  write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
+  write(dir, "plugin/package.json", JSON.stringify({ name: "sphica", version }));
   // The version lives in source (putting it directly in the entry too makes Claude Code silently prefer plugin.json).
   write(
     dir,
     ".claude-plugin/marketplace.json",
     JSON.stringify({
-      plugins: [{ name: "gleanery", source: { source: "npm", package: "gleanery", version } }],
+      plugins: [{ name: "sphica", source: { source: "npm", package: "sphica", version } }],
     }),
   );
   write(dir, "plugin/.claude-plugin/plugin.json", JSON.stringify({ version }));
@@ -46,7 +46,7 @@ function bump(dir: string, version: string) {
 }
 
 function bumpPackage(dir: string, version: string) {
-  write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
+  write(dir, "plugin/package.json", JSON.stringify({ name: "sphica", version }));
 }
 
 function check(dir: string, ...args: string[]) {
@@ -149,9 +149,7 @@ test("fails a commit that changes only the marketplace source without a version 
       r.dir,
       ".claude-plugin/marketplace.json",
       JSON.stringify({
-        plugins: [
-          { name: "gleanery", source: { source: "npm", package: "gleanery-fork", version: "1.0.0" } },
-        ],
+        plugins: [{ name: "sphica", source: { source: "npm", package: "sphica-fork", version: "1.0.0" } }],
       }),
     );
     r.git("commit", "-qam", "change only the source");

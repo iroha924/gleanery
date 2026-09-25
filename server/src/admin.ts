@@ -1,8 +1,8 @@
-// Looks after this machine's database (~/.gleanery/gleanery.db). The owner runs these locally, with the owner connection (no authorizer).
+// Looks after this machine's database (~/.sphica/sphica.db). The owner runs these locally, with the owner connection (no authorizer).
 //
-//   gleanery init                 creates the database and applies db/schema.sql. Safe to run again (an existing one is left alone)
-//   gleanery db migrate [--yes]   applies db/migrations newer than the database version (user_version)
-//   gleanery db reindex           rebuilds the full-text index (FTS). Run it after changing the rules of terms() in server/src/text.ts
+//   sphica init                 creates the database and applies db/schema.sql. Safe to run again (an existing one is left alone)
+//   sphica db migrate [--yes]   applies db/migrations newer than the database version (user_version)
+//   sphica db reindex           rebuilds the full-text index (FTS). Run it after changing the rules of terms() in server/src/text.ts
 
 import fs from "node:fs";
 import path from "node:path";
@@ -60,11 +60,11 @@ export function dbInit(file: string = dbFile()): void {
     if (got === SCHEMA_REVISION) say(`Already exists: ${file} (revision ${got})`);
     else if (got === 0)
       throw new Error(
-        `${file} is not a gleanery database (no schema). Move it to another name, then run this again.`,
+        `${file} is not a Sphica database (no schema). Move it to another name, then run this again.`,
       );
     else
       say(
-        `Already exists: ${file} (revision ${got}; this gleanery expects ${SCHEMA_REVISION}. Run \`gleanery db migrate\`.)`,
+        `Already exists: ${file} (revision ${got}; this Sphica expects ${SCHEMA_REVISION}. Run \`sphica db migrate\`.)`,
       );
     return;
   }
@@ -92,7 +92,7 @@ export function dbInit(file: string = dbFile()): void {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "EEXIST" || fs.existsSync(file))
         throw new Error(
-          `${file} already exists (another gleanery init created it first). Run this again to check it.`,
+          `${file} already exists (another sphica init created it first). Run this again to check it.`,
         );
       fs.renameSync(tmp, file);
     }
@@ -132,7 +132,7 @@ export function pendingMigrations(files: string[], current: number): { revision:
 }
 
 /**
- * The declaration on a migration's first line. Only `-- gleanery: foreign_keys=off` is accepted; any other `-- gleanery:` throws.
+ * The declaration on a migration's first line. Only `-- sphica: foreign_keys=off` is accepted; any other `-- sphica:` throws.
  * **Misreading it and applying with foreign keys on lets a table rebuild cascade-delete child rows.** Leading spaces also count as a declaration.
  * The authorizer in applyMigrations stops undeclared migrations from dropping tables (not judged from the SQL text).
  */
@@ -140,7 +140,7 @@ function directiveOf(dir: string, m: { file: string }): "foreign_keys=off" | nul
   const lines = fs.readFileSync(path.join(dir, m.file), "utf8").split(/\r?\n/);
   let found: "foreign_keys=off" | null = null;
   for (const [i, line] of lines.entries()) {
-    const d = /^\s*--\s*gleanery:\s*(.*?)\s*$/.exec(line)?.[1];
+    const d = /^\s*--\s*sphica:\s*(.*?)\s*$/.exec(line)?.[1];
     if (d === undefined) continue;
     if (i !== 0 || d !== "foreign_keys=off")
       throw new Error(`Cannot read the declaration on line ${i + 1} of db/migrations/${m.file}: ${d}`);
@@ -151,7 +151,7 @@ function directiveOf(dir: string, m: { file: string }): "foreign_keys=off" | nul
 
 /**
  * Applies migrations newer than the database version and raises user_version per transaction (earlier ones stay if it fails midway, so it can be rerun).
- * Undeclared migrations in a row are applied in one transaction. A migration declaring `-- gleanery: foreign_keys=off` runs alone,
+ * Undeclared migrations in a row are applied in one transaction. A migration declaring `-- sphica: foreign_keys=off` runs alone,
  * turning foreign keys off outside the transaction, checks foreign_key_check is empty before commit, and turns them back on (they cannot switch inside a transaction).
  */
 export function applyMigrations(
@@ -254,7 +254,7 @@ export function reindex(file: string = dbFile()): void {
       raw.exec("insert into knowledge_fts (rowid, h, b, e) select id, h, b, e from knowledge_search_text");
       raw.exec("insert into message_fts (message_fts) values ('delete-all')");
       raw.exec(
-        "insert into message_fts (rowid, lexemes) select seq, gleanery_terms(body) from message where indexed = 1",
+        "insert into message_fts (rowid, lexemes) select seq, sphica_terms(body) from message where indexed = 1",
       );
       const n = (sql: string) => (raw.prepare(sql).get() as { n: number }).n;
       return {
@@ -279,15 +279,13 @@ function projectFor(raw: DatabaseSync, place: Named): number {
   const got = versionOf(raw);
   if (got < SCHEMA_REVISION)
     throw new Error(
-      `The database is at revision ${got}, older than this gleanery (${SCHEMA_REVISION}). Run \`gleanery db migrate\` first`,
+      `The database is at revision ${got}, older than this Sphica (${SCHEMA_REVISION}). Run \`sphica db migrate\` first`,
     );
   const project = raw.prepare("select id from project where key = ?").get(place.key) as
     | { id: number }
     | undefined;
   if (!project)
-    throw new Error(
-      `${place.name} is not registered with gleanery. Register it with \`gleanery project add\``,
-    );
+    throw new Error(`${place.name} is not registered with Sphica. Register it with \`sphica project add\``);
   return project.id;
 }
 

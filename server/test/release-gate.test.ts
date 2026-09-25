@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { gateProblems } from "../../scripts/lib/release-gate.mjs";
 
 const COMMIT = "a".repeat(40);
-const REPO = "iroha924/gleanery";
+const REPO = "iroha924/sphica";
 const versions = { package: "1.2.3", claude: "1.2.3", codex: "1.2.3", marketplace: "1.2.3" };
 const pull = {
   state: "open",

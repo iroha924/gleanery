@@ -147,7 +147,7 @@ export function commitOf(root: string, remote: boolean): string {
         "--no-tags",
         "--no-recurse-submodules",
         "origin",
-        "+HEAD:refs/gleanery/docs-head",
+        "+HEAD:refs/sphica/docs-head",
       ]);
     } catch (e) {
       const err = e as { code?: string; stderr?: Buffer };
@@ -159,7 +159,7 @@ export function commitOf(root: string, remote: boolean): string {
         `Could not fetch the remote's default branch (${detail}). Documents stay as of the last sync.`,
       );
     }
-    return git(root, ["rev-parse", "--verify", "refs/gleanery/docs-head^{commit}"]).toString().trim();
+    return git(root, ["rev-parse", "--verify", "refs/sphica/docs-head^{commit}"]).toString().trim();
   }
   try {
     return git(root, ["rev-parse", "--verify", "HEAD^{commit}"]).toString().trim();
@@ -252,7 +252,7 @@ const excluded = (rel: string, ex: Excluded): boolean =>
   ex.files.includes(rel) || ex.directories.some((d) => rel.startsWith(`${d}/`));
 
 /** Where requirements and design docs used to live. Excluded with nested paths so unapproved drafts never reach search. */
-const underGleanery = (rel: string): boolean => /(^|\/)\.gleanery\//.test(rel);
+const underSphica = (rel: string): boolean => /(^|\/)\.sphica\//.test(rel);
 
 export type Doc = {
   path: string;
@@ -306,7 +306,7 @@ export function collectDocs(
   const tree = treeOf(root, commit);
   // **Apply exclusions before reading blobs.** Reading then discarding would load excluded text into memory once.
   const md = [...tree.entries].filter(
-    ([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex) && !underGleanery(rel),
+    ([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex) && !underSphica(rel),
   );
   const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
   const blobs = blobsOf(
@@ -484,7 +484,7 @@ export async function syncDocs(
     throw new Error(
       `The stored commit (${done.refused.slice(0, 8)}) is not a fast-forward to ${opts.remote ? "the remote's default branch" : "HEAD"} (${commit.slice(0, 8)}), ` +
         "so nothing was written (a rollback, force push, or switch to a diverged branch). " +
-        `To match the current state, run \`gleanery harvest --cwd ${root} --reset-docs\``,
+        `To match the current state, run \`sphica harvest --cwd ${root} --reset-docs\``,
     );
   }
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);

@@ -388,7 +388,7 @@ if (values.out) {
   const baseline = {
     note: "Baseline for the PR gate. Top hits are stored by source_key (ids change on reimport). runs[].top[].grade is a blind grade; a missing grade means the question returned no top hit or returned a message (m:), and is not counted as direct. slot fingerprints the graded pair. The gate compares means (averages per setup, split, and model)",
     measured_at: new Date().toLocaleDateString("sv-SE"),
-    gleanery: version,
+    sphica: version,
     cases: CASES_SHA,
     prompt_version: PROMPT_VERSION,
     knowledge: counted,

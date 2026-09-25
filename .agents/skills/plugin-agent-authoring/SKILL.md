@@ -1,11 +1,11 @@
 ---
 name: plugin-agent-authoring
-description: Changes the review aspects the gleanery plugin ships (plugin/skills/review/reviewers/) and how they are launched. Use when adding or fixing an aspect's text, or changing the tools given to reviewers or how they are started. Not for ordinary implementation or for using built-in subagents.
+description: Changes the review aspects the Sphica plugin ships (plugin/skills/review/reviewers/) and how they are launched. Use when adding or fixing an aspect's text, or changing the tools given to reviewers or how they are started. Not for ordinary implementation or for using built-in subagents.
 ---
 
 # Change the review aspects
 
-This Skill is for developing the gleanery repository and does not ship to plugin users. What it changes,
+This Skill is for developing the Sphica repository and does not ship to plugin users. What it changes,
 `plugin/skills/review/reviewers/` and `plugin/skills/review/`, does ship.
 
 ## Triggers
@@ -33,7 +33,7 @@ and a session restart. Do not treat a rewritten file as proof that it arrived.
 
 ## How to write the body
 
-**Make it self-contained.** The plugin cache does not include `AGENTS.md` or `.claude/rules` from the gleanery root,
+**Make it self-contained.** The plugin cache does not include `AGENTS.md` or `.claude/rules` from the Sphica root,
 so do not rely at run time on them or on relative paths to other Skills. Both hosts get the same body, so do not put host-specific text in it either.
 
 Each body has the 2 fixed forms `check-pairs.mjs` checks.

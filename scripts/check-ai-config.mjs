@@ -192,8 +192,8 @@ const releaseOrder = [
   "npx -y npm@11.19.0 stage download <stage-id>",
   "--match-head-commit <head>",
   "git diff --exit-code <head> <merge commit>",
-  "npm pack gleanery@<version> --silent",
-  "npm dist-tag add gleanery@<version> latest",
+  "npm pack sphica@<version> --silent",
+  "npm dist-tag add sphica@<version> latest",
 ];
 let releaseCursor = -1;
 for (const step of releaseOrder) {
@@ -213,8 +213,8 @@ for (const [anchor, owner] of [
   ["npm stage publish <tgz>", "The owner approves the `npm-release` environment"],
   ["stage download <stage-id>", "The owner approves it in npmjs.com's Staged Packages"],
   [
-    "npm dist-tag add gleanery@<version> latest",
-    "The owner runs `npm dist-tag add gleanery@<version> latest` in their own terminal",
+    "npm dist-tag add sphica@<version> latest",
+    "The owner runs `npm dist-tag add sphica@<version> latest` in their own terminal",
   ],
 ]) {
   const step = numberedSteps.find((text) => text.includes(anchor));
@@ -283,8 +283,8 @@ try {
   const marketplace = JSON.parse(read(".claude-plugin/marketplace.json"));
   const entry = marketplace.plugins?.[0];
   const src = entry?.source;
-  if (src?.source !== "npm" || src?.package !== "gleanery") {
-    fail(".claude-plugin/marketplace.json: the source must be the gleanery npm package");
+  if (src?.source !== "npm" || src?.package !== "sphica") {
+    fail(".claude-plugin/marketplace.json: the source must be the sphica npm package");
   } else if (!/^\d+\.\d+\.\d+$/.test(src.version ?? "")) {
     // A range or latest would make the same commit resolve to different tarballs over time.
     fail(`.claude-plugin/marketplace.json: version must be exact (got: ${src.version})`);
@@ -332,16 +332,16 @@ for (const name of pluginSkills) {
     );
   }
 
-  // gleanery is not on Codex's PATH (exit 127 observed). **Start the JS in the package directly, without a shell script.**
+  // Sphica is not on Codex's PATH (exit 127 observed). **Start the JS in the package directly, without a shell script.**
   // npm `bin` has no contract to be on PATH inside a plugin, and POSIX shells do not run on Windows.
-  if (/\}\/bin\/gleanery|\.\.\/\.\.\/bin\/gleanery/m.test(source)) {
-    fail(`${relative}: do not use bin/gleanery. Call it as node "\${CLAUDE_PLUGIN_ROOT}/dist/cli.js"`);
+  if (/\}\/bin\/sphica|\.\.\/\.\.\/bin\/sphica/m.test(source)) {
+    fail(`${relative}: do not use bin/sphica. Call it as node "\${CLAUDE_PLUGIN_ROOT}/dist/cli.js"`);
   }
-  if (/Bash\(gleanery |^gleanery /m.test(source)) {
-    fail(`${relative}: bare gleanery is not on Codex's PATH. Start dist/cli.js in the package directly`);
+  if (/Bash\(sphica |^sphica /m.test(source)) {
+    fail(`${relative}: bare sphica is not on Codex's PATH. Start dist/cli.js in the package directly`);
   }
   if (/dist\/cli\.js/.test(source) && !source.includes("../../dist/cli.js")) {
-    fail(`${relative}: calls the gleanery CLI but has no ../../dist/cli.js for Codex`);
+    fail(`${relative}: calls the sphica CLI but has no ../../dist/cli.js for Codex`);
   }
 }
 
@@ -394,7 +394,7 @@ for (const relative of agentEntries) {
 const GONE = [
   /pgvector/i,
   /VOYAGE_API_KEY/,
-  /GLEANERY_DB_URL/,
+  /SPHICA_DB_URL/,
   /docker compose/i,
   /halfvec/i,
   /tsvector/i,

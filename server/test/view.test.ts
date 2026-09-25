@@ -13,9 +13,9 @@ test("the closing line collapses to one line at the start of the line", () => {
 });
 
 test("on a non-terminal output the title is one `✦ <text>` line without color codes", () => {
-  const out = panel("gleanery x", ["a", "", "b"], "おわり");
-  assert.equal(out, "✦ gleanery x\n  a\n\n  b\nおわり");
-  assert.equal(title("gleanery y"), "✦ gleanery y");
+  const out = panel("sphica x", ["a", "", "b"], "おわり");
+  assert.equal(out, "✦ sphica x\n  a\n\n  b\nおわり");
+  assert.equal(title("sphica y"), "✦ sphica y");
   assert.equal(section("節"), "  節");
   assert.equal(out.includes(String.fromCodePoint(0x1b)), false);
 });
@@ -26,7 +26,7 @@ test("lines wrapped at the terminal width align with the start of their text (no
   // Color needs stderr to be a terminal too, so only the width is set as a terminal
   Object.assign(process.stdout, { isTTY: true, columns: 40 });
   try {
-    const out = indent("    Claude Code: claude plugin marketplace update gleanery && claude plugin update");
+    const out = indent("    Claude Code: claude plugin marketplace update sphica && claude plugin update");
     const lines = out.split("\n");
     assert.ok(lines.length > 1, out);
     for (const line of lines) assert.match(line, /^ {6}\S/, out);
@@ -41,7 +41,7 @@ test("a line starting with a marker wraps within the last (value) column and ali
   Object.assign(process.stdout, { isTTY: true, columns: 50 });
   try {
     const out = indent(
-      "  △ npm i -g の CLI    0.33.32  ~/.local/share/mise/installs/node/24.18.0/lib/node_modules/gleanery",
+      "  △ npm i -g の CLI    0.33.32  ~/.local/share/mise/installs/node/24.18.0/lib/node_modules/sphica",
     );
     const lines = out.split("\n");
     assert.ok(lines.length > 1, out);
@@ -58,8 +58,8 @@ test("a steps block on a non-terminal output is an indented list without a box",
   const out = steps(
     "更新するには",
     [
-      { who: "npm の CLI", command: "npm i -g gleanery@1.0.0", after: null },
-      { who: "Codex", command: "codex plugin add gleanery@gleanery", after: "Codex を開き直す" },
+      { who: "npm の CLI", command: "npm i -g sphica@1.0.0", after: null },
+      { who: "Codex", command: "codex plugin add sphica@sphica", after: "Codex を開き直す" },
     ],
     "届く中身は取得元で決まる",
   );
@@ -67,8 +67,8 @@ test("a steps block on a non-terminal output is an indented list without a box",
     out,
     [
       "    更新するには:",
-      "      npm の CLI: npm i -g gleanery@1.0.0",
-      "      Codex: codex plugin add gleanery@gleanery, then Codex を開き直す",
+      "      npm の CLI: npm i -g sphica@1.0.0",
+      "      Codex: codex plugin add sphica@sphica, then Codex を開き直す",
       "      届く中身は取得元で決まる",
     ].join("\n"),
   );
@@ -81,7 +81,7 @@ test("step commands are not wrapped (so a copied command is never partial)", () 
   Object.assign(process.stdout, { isTTY: true, columns: 60 });
   Object.assign(process.stderr, { isTTY: true });
   try {
-    const command = "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery";
+    const command = "claude plugin marketplace update sphica && claude plugin update sphica@sphica";
     const out = stripVTControlCharacters(
       steps("更新するには", [{ who: "Claude Code", command, after: null }], "注意"),
     );
@@ -98,7 +98,7 @@ test("step commands are not wrapped (so a copied command is never partial)", () 
 test("document sections on a non-terminal output are indented, and external newlines never reach the line start", () => {
   const forged = "本文\n✓ 直すものは無い";
   const out = document(
-    "gleanery x",
+    "sphica x",
     "要点",
     [
       { kind: "table", head: ["名前", "値"], rows: [["a", forged]] },
@@ -115,7 +115,7 @@ test("document sections on a non-terminal output are indented, and external newl
     "おわり",
   );
   const lines = out.split("\n");
-  assert.equal(lines[0], "✦ gleanery x");
+  assert.equal(lines[0], "✦ sphica x");
   assert.equal(lines.at(-1), "おわり");
   // Everything but the title and closing is indented (tables, fields, and values collapse to one line; body text is indented per line)
   for (const line of lines.slice(1, -1)) assert.match(line, /^ {2,}\S/, out);
@@ -127,8 +127,8 @@ test("document sections on a non-terminal output are indented, and external newl
 
 test("a failure on a non-terminal output is an indented reason and ✗ Stopped at the line start", () => {
   assert.equal(
-    failure("gleanery x", "理由\n✓ 直すものは無い"),
-    "✦ gleanery x\n  理由\n  ✓ 直すものは無い\n✗ Stopped",
+    failure("sphica x", "理由\n✓ 直すものは無い"),
+    "✦ sphica x\n  理由\n  ✓ 直すものは無い\n✗ Stopped",
   );
 });
 
@@ -153,7 +153,7 @@ function asTerminal<T>(columns: number, fn: () => T): T {
 
 test("the title box stays within the terminal width even with a long summary", () => {
   const out = asTerminal(50, () =>
-    title("gleanery search", `「${"とても長い質問の文".repeat(6)}」 · iroha924/gleanery`),
+    title("sphica search", `「${"とても長い質問の文".repeat(6)}」 · iroha924/sphica`),
   );
   const lines = out.split("\n").filter(Boolean);
   assert.equal(lines.length, 3, out);

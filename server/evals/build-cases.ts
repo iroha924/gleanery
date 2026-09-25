@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Builds retrieval.json once from a fixed DB copy: Opus writes a question per record, then marks every record in a wide pool that answers it.
 // **Commit the result; do not rebuild casually** (runs on different sets cannot be compared). Current search never selects questions.
-//   GLEANERY_DB=<copy> bun run evals:build -- [--par 4]
+//   SPHICA_DB=<copy> bun run evals:build -- [--par 4]
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -64,7 +64,7 @@ const models = new Set<string>();
 let spent = 0;
 
 function claude(prompt: string): Promise<string> {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-evals-cwd-"));
   return new Promise<string>((resolve, reject) => {
     const child = spawn(
       "claude",

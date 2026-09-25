@@ -1,6 +1,6 @@
 ---
 name: knowledge-schema
-description: Changes gleanery's DB schema (db/schema.sql and db/migrations, SQLite), connection roles and authorizers, the full-text search index (FTS5), knowledge kinds and statuses, and how ingestion sources write. Use when touching tables, columns, CHECKs, views, triggers, permissions, or a new import path, and when applying a migration to an existing DB. Not for changes only to the terminal screen.
+description: Changes Sphica's DB schema (db/schema.sql and db/migrations, SQLite), connection roles and authorizers, the full-text search index (FTS5), knowledge kinds and statuses, and how ingestion sources write. Use when touching tables, columns, CHECKs, views, triggers, permissions, or a new import path, and when applying a migration to an existing DB. Not for changes only to the terminal screen.
 ---
 
 # Change the knowledge schema
@@ -8,9 +8,9 @@ description: Changes gleanery's DB schema (db/schema.sql and db/migrations, SQLi
 ## Triggers
 
 - Changing tables, columns, CHECKs, indexes, views, or triggers in `db/schema.sql`
-- Adding a step to `db/migrations`, or applying `gleanery db migrate` to an existing DB
+- Adding a step to `db/migrations`, or applying `sphica db migrate` to an existing DB
 - Changing connection roles (the authorizers in `server/src/sqlite.ts` and `server/src/db-write.ts`)
-- Changing the full-text search index (FTS5, `gleanery_terms`, `terms()` in `server/src/text.ts`)
+- Changing the full-text search index (FTS5, `sphica_terms`, `terms()` in `server/src/text.ts`)
 - Changing `knowledge` kinds, statuses, or stance, `message` speakers, `conversation` origins, or `message_file` actions
 - Adding an ingestion source, or changing how GitHub sync, docs sync, capture, or trace write
 
@@ -21,9 +21,9 @@ description: Changes gleanery's DB schema (db/schema.sql and db/migrations, SQLi
 
 ## Source of truth and versions
 
-The DB is a single `node:sqlite` file (`~/.gleanery/gleanery.db`). The only source of truth is `db/schema.sql`, which describes only the current shape.
+The DB is a single `node:sqlite` file (`~/.sphica/sphica.db`). The only source of truth is `db/schema.sql`, which describes only the current shape.
 Do not add a Prisma or Drizzle schema as a second source (Drizzle was rejected: it cannot express FTS5 virtual tables and triggers).
-`gleanery init` creates a new DB by applying schema.sql to a temporary file and renaming it (safe to run any number of times).
+`sphica init` creates a new DB by applying schema.sql to a temporary file and renaming it (safe to run any number of times).
 
 The version is kept in `pragma user_version`. Keep `pragma user_version = N` at the end of schema.sql and `SCHEMA_REVISION` in `server/src/sqlite.ts`
 at the same number. The reader and ingest connections compare them on open and stop if they differ.
@@ -31,11 +31,11 @@ at the same number. The reader and ingest connections compare them on open and s
 It keeps writing at the old version, and records the DB rejects go to `rejected/`.
 
 `db/migrations/NNNN_<name>.sql` is the step that moves an existing DB from revision N-1 to N; it is not a source of truth.
-`gleanery db migrate` (`applyMigrations` in `server/src/admin.ts`, owner) applies migrations newer than the DB's version in number order and
+`sphica db migrate` (`applyMigrations` in `server/src/admin.ts`, owner) applies migrations newer than the DB's version in number order and
 raises `user_version` **per transaction**. If it fails midway, the earlier transactions stay, and running it again continues from there.
 
 - Migrations without a declaration are applied together, as one transaction (`begin immediate`) for each run of them
-- A migration that drops or rebuilds a table (`ALTER TABLE`, including adding a column) declares `-- gleanery: foreign_keys=off` on line 1. In a migration without it, the runner's authorizer rejects drops and ALTER. It runs in its own transaction, with foreign keys turned off outside it,
+- A migration that drops or rebuilds a table (`ALTER TABLE`, including adding a column) declares `-- sphica: foreign_keys=off` on line 1. In a migration without it, the runner's authorizer rejects drops and ALTER. It runs in its own transaction, with foreign keys turned off outside it,
   checks that `pragma foreign_key_check` is empty before commit, and turns them back on afterwards. **Forget the declaration, and a drop with foreign keys on
   deletes child rows by cascade.** An unknown declaration, or a declaration anywhere but line 1, stops before anything is applied
 - Delete rows first, in a migration without the declaration (with foreign keys on, cascade and set null clean up descendants according to their current meaning).
@@ -114,12 +114,12 @@ Search is ranked word search (FTS5's bm25). The calling AI makes up for semantic
   read, CLI output, or dashboard view selects them. They carry the record's `content_hash` from when they were written and are indexed only while
   it still matches (a record whose text changed stops being found by words written for its old text). Writers: trace (`terms` on an item; a decision's
   words go to its options), GitHub sync (a `  - Terms: a, b` line under a PR decision; a blank line clears, no line keeps), and the owner's
-  `gleanery db terms import`. All go through `searchTerms()` in `server/src/terms.ts`. docs sync writes none (the product generates no text):
+  `sphica db terms import`. All go through `searchTerms()` in `server/src/terms.ts`. docs sync writes none (the product generates no text):
   document sections get words only from the owner's import, and a section whose text changed needs a new draft and import
-- `terms()` in `server/src/text.ts` splits words. **`gleanery_terms`, which the DB triggers call on write, and `ftsQuery`, which builds queries,
-  go through the same function.** `db-write.ts` registers `gleanery_terms` on each write connection. Writing to knowledge / message from a connection
+- `terms()` in `server/src/text.ts` splits words. **`sphica_terms`, which the DB triggers call on write, and `ftsQuery`, which builds queries,
+  go through the same function.** `db-write.ts` registers `sphica_terms` on each write connection. Writing to knowledge / message from a connection
   without it (such as the `sqlite3` CLI) fails with `no such function` (so the index is never silently incomplete)
-- **Change the rules of `terms()`, and the existing index stays old.** A PR that changes them writes `gleanery db reindex` into the release steps
+- **Change the rules of `terms()`, and the existing index stays old.** A PR that changes them writes `sphica db reindex` into the release steps
 - `message.seq` is an explicit `integer primary key` (an implicit rowid can be renumbered by VACUUM)
 - Always wrap query words in `"…"` and double any `"` inside (`ftsQuery`). Unwrapped, `AND`, `NEAR`, `:`, and `-` become operators
 
@@ -136,18 +136,18 @@ After adding a kind or status, handle these interfaces in the same change.
 - The filters in `server/src/search.ts`, and which way the `stance` expression sorts the new value
 - The input schema and descriptions in `server/src/mcp.ts` (`kinds` of `recall`)
 - The record contract in `plugin/skills/trace/SKILL.md`, and the checks in `server/src/trace.ts`
-- The display and search of `gleanery dashboard` (`server/src/tui/`)
+- The display and search of `sphica dashboard` (`server/src/tui/`)
 - If the pair can be listed, add it to `scripts/check-pairs.mjs`
 
 ## Connection roles
 
 Processes of the same OS user can rewrite the DB file directly, so this is not an OS permission boundary. What it guards is
-the path where gleanery's code writes by mistake, or because untrusted text talked it into it.
+the path where Sphica's code writes by mistake, or because untrusted text talked it into it.
 
 | Role | How it opens | Authorizer | Interfaces using it |
 |---|---|---|---|
-| owner | Writable | None | `gleanery db *` (`admin.ts`) |
-| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the terminal screen, `gleanery search` |
+| owner | Writable | None | `sphica db *` (`admin.ts`) |
+| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the terminal screen, `sphica search` |
 | ingest | Writable | Rejects DDL, ATTACH, creating virtual tables, and pragmas that write | `harvest`, `trace save`, `who`, `project` |
 | capture | Writable | Only inserts into the 3 views (`capture_*`) and the writes in their triggers. It can read only `project`'s id, key, and name, and `message`'s id | Capture (`capture.ts`) |
 
@@ -155,7 +155,7 @@ the path where gleanery's code writes by mistake, or because untrusted text talk
 - Enable `enableDefensive(true)` on every connection (it stops direct writes to FTS5's shadow tables). node:sqlite's
   default enables it too, but it is explicit so that a change in the default does not turn it off
 - Refer to authorizer actions by their names in `constants`, not by number (there is a record of mixing up `SQLITE_UPDATE` and `SQLITE_DETACH`)
-- The initialization order is fixed: open → defensive and pragmas → `gleanery_terms` → authorizer. After the authorizer, pragmas get rejected
+- The initialization order is fixed: open → defensive and pragmas → `sphica_terms` → authorizer. After the authorizer, pragmas get rejected
 - Columns not in capture's views (`source_item_id`, `identity_id`, `reply_to_id`, `url`) cannot be claimed. It can neither create GitHub conversations
   nor claim someone else's identity. **Do not count rows by affected rows** (an insert into a view reports 0; count by the difference from the ids present before sending)
 - Add to the reader's function allowlist (`READER_FUNCTIONS` in `sqlite.ts`) only when a test fails with `not authorized`
@@ -165,20 +165,20 @@ the path where gleanery's code writes by mistake, or because untrusted text talk
 
 Do not rewrite rows whose `content_hash` matches (a daily sync does not rewrite every row).
 
-Connect a new ingestion source to `gleanery harvest` too. Adding only a manual command does not finish the job.
+Connect a new ingestion source to `sphica harvest` too. Adding only a manual command does not finish the job.
 
 ### Documents
 
 Docs sync (`server/src/docs.ts`) reads the **commit tree** of the remote's default branch. It does not read the working tree.
 It keeps the commit it took in `connector.head_oid`, and takes only commits that fast-forward from it automatically.
 If it is not a fast-forward, it fetches once more; if the branch has moved past the previously taken commit (another sync running at the same time took it first),
-it ends without writing. If not, it treats it as a rewind or force-push, stops without writing, and points to `gleanery harvest --cwd <dir> --reset-docs`.
+it ends without writing. If not, it treats it as a rewind or force-push, stops without writing, and points to `sphica harvest --cwd <dir> --reset-docs`.
 Do not treat a rewind as success: when a leaked document is removed by rewinding, it would silently stay in search.
 When changing the projection rules (how sections are split, what context is prepended), raise the `PROJECTION` constant. The next sync rewrites every document.
 
 - Put `path`s not to ingest in `docs_exclude` (tied to the docs connector), applied before blobs are read. Not all tracked
   Markdown is a document stating facts (audit fixtures, if ingested, would return made-up conventions above the real ones)
-- Do not ingest `.gleanery/` (nested ones included). It used to hold requirements and design docs, and unapproved drafts may remain
+- Do not ingest `.sphica/` (nested ones included). It used to hold requirements and design docs, and unapproved drafts may remain
 - The original text is in `source_item` (`kind` is `document`, the text in `body`); what gets searched is the `document` sections in `knowledge`.
   Joining the sections does not give back the original
 
@@ -191,14 +191,14 @@ a CHECK enforces that `state = 'open'` matches `closed_at is null`.
 
 ## Verification
 
-Tests run SQL on a real SQLite database in a temporary directory (`server/test/temp-db.ts`) and look at the results. Do not touch `~/.gleanery`.
+Tests run SQL on a real SQLite database in a temporary directory (`server/test/temp-db.ts`) and look at the results. Do not touch `~/.sphica`.
 
 - `bun run verify` includes:
   - `sql:reach`: counts with V8 coverage whether each SQL call site in `server/src` (except `LIVE_FILES`) ran against a real SQLite inside tests.
     It lists the sites that did not run, by file:line
   - `sql:live`: runs the CLI and the capture hooks as child processes against a DB in a temporary HOME (every call site in `LIVE_FILES`)
 - `bun run codegen:check`: whether `db-types.ts` matches schema.sql
-- After adding a migration, confirm that `sqlite_schema` matches between a `gleanery init` on an empty DB and a `db migrate` from the previous version (`server/test/migration-artifacts.test.ts` applies it from a fixture of the previous schema)
+- After adding a migration, confirm that `sqlite_schema` matches between a `sphica init` on an empty DB and a `db migrate` from the previous version (`server/test/migration-artifacts.test.ts` applies it from a fixture of the previous schema)
 
 ## Applying to an existing DB
 
@@ -207,10 +207,10 @@ Each PC has its own DB. **You apply to your own PC's DB only; it does not reach 
 When the DB is old and an MCP reply points to `db migrate`, the AI does not read that and apply it. The owner runs it in a terminal.
 
 1. Merge
-2. Take a backup. Stop MCP and capture, then copy `~/.gleanery/gleanery.db` (and `-wal` and `-shm`). If applying causes a problem,
+2. Take a backup. Stop MCP and capture, then copy `~/.sphica/sphica.db` (and `-wal` and `-shm`). If applying causes a problem,
    this is the only way back; **apply without it, and there is no way back**
-3. The owner runs `gleanery db migrate` in a terminal, checks the list to apply, and answers yes
+3. The owner runs `sphica db migrate` in a terminal, checks the list to apply, and answers yes
 4. Update the plugin (`plugin-release`)
-5. Check with `gleanery doctor`
+5. Check with `sphica doctor`
 
 To roll back, replace the DB with the backup from step 2. Capture and trace written after the backup are lost. Roll the code back to the same commit too.

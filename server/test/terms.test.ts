@@ -192,7 +192,7 @@ test("the owner import writes only records unchanged since the draft and says wh
   db.owner
     .prepare("update knowledge set body = '変わった記録', content_hash = ? where id = ?")
     .run(hash(9), changed);
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-terms-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-terms-"));
   try {
     const file = path.join(dir, "draft.json");
     fs.writeFileSync(file, JSON.stringify(draft));
@@ -238,7 +238,7 @@ test("the owner import writes only records unchanged since the draft and says wh
     const none = { key: "git:github.com/o/none", name: "o/none" };
     assert.throws(
       () => importTerms(file, none, db.file),
-      /o\/none is not registered with gleanery\. Register it/,
+      /o\/none is not registered with Sphica\. Register it/,
     );
     assert.throws(() => listTerms(none, undefined, db.file), /o\/none is not registered/);
     const other = path.join(dir, "other.json");
@@ -261,19 +261,19 @@ test("the owner import writes only records unchanged since the draft and says wh
   }
 });
 
-test("the terms commands tell the owner to migrate a database older than this gleanery", async () => {
+test("the terms commands tell the owner to migrate a database older than this Sphica", async () => {
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
   const { importTerms, listTerms } = await import("../src/admin.ts");
   const here = { key: "git:github.com/o/r", name: "o/r" };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-terms-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-terms-"));
   const draft = path.join(dir, "draft.json");
   fs.writeFileSync(draft, JSON.stringify({ "t#any": { terms: "x", content_hash: "0".repeat(64) } }));
   db.owner.exec("pragma user_version = 3");
   try {
-    assert.throws(() => listTerms(here, undefined, db.file), /gleanery db migrate/);
-    assert.throws(() => importTerms(draft, here, db.file), /gleanery db migrate/);
+    assert.throws(() => listTerms(here, undefined, db.file), /sphica db migrate/);
+    assert.throws(() => importTerms(draft, here, db.file), /sphica db migrate/);
   } finally {
     db.owner.exec("pragma user_version = 4");
     fs.rmSync(dir, { recursive: true, force: true });

@@ -28,7 +28,7 @@ so do not write one.
 ## Flow
 
 `$M` is the CLI: `node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js"` in Claude Code, and `node "../../dist/cli.js"` from this Skill's directory
-in Codex (gleanery is not on Codex's PATH, and shell scripts do not run on Windows).
+in Codex (Sphica is not on Codex's PATH, and shell scripts do not run on Windows).
 
 1. **Read the material**: `$M trace context`. It shows this session's conversation, touched files, items already recorded,
    and work in progress with its decision keys. If the conversation is not recorded yet, write from your own context.
@@ -40,11 +40,11 @@ in Codex (gleanery is not on Codex's PATH, and shell scripts do not run on Windo
    rules without touching the database. If it is rejected, fix it before moving on
 4. **Store**: the same form with `$M trace save - <<'TRACE'`. The same key overwrites, and items you did not write stay (it appends).
    Write `session` exactly as context showed it (it stops if it differs from the current session)
-5. **Report**: show the owner what was stored, in the same shape as gleanery's other output (`✦` for the title, Markdown tables, a final `╰─` line).
+5. **Report**: show the owner what was stored, in the same shape as Sphica's other output (`✦` for the title, Markdown tables, a final `╰─` line).
    Copy the closing line's counts exactly as save printed them
 
 ```
-✦ **gleanery trace** · <work title>
+✦ **sphica trace** · <work title>
 
 | kind | key | summary |
 |---|---|---|

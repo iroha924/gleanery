@@ -48,22 +48,22 @@ test("the schema version the code expects equals user_version in db/schema.sql",
 });
 
 test("with a different database version, neither read nor write connections open, and the next step is shown", () => {
-  const old = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-old-")), "old.db");
+  const old = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-old-")), "old.db");
   const raw = new DatabaseSync(old);
   raw.exec(`pragma user_version = ${SCHEMA_REVISION + 1}`);
   raw.close();
-  assert.throws(() => connectReader(old), /Update gleanery/);
+  assert.throws(() => connectReader(old), /Update sphica/);
   assert.throws(() => connectWriter("ingest", old), /revision/);
   const empty = path.join(path.dirname(old), "empty.db");
   new DatabaseSync(empty).close();
-  assert.throws(() => connectReader(empty), /gleanery init/);
+  assert.throws(() => connectReader(empty), /sphica init/);
 });
 
-// An empty file would look like zero records. Only `gleanery init` creates the database.
+// An empty file would look like zero records. Only `sphica init` creates the database.
 test("a missing database is not created, and it stops", () => {
-  const missing = path.join(os.tmpdir(), `gleanery-missing-${process.pid}.db`);
-  assert.throws(() => connectReader(missing), /gleanery init/);
-  assert.throws(() => connectWriter("capture", missing), /gleanery init/);
+  const missing = path.join(os.tmpdir(), `sphica-missing-${process.pid}.db`);
+  assert.throws(() => connectReader(missing), /sphica init/);
+  assert.throws(() => connectWriter("capture", missing), /sphica init/);
   assert.equal(fs.existsSync(missing), false);
 });
 
@@ -227,7 +227,7 @@ test("a connection without the tokenizer function cannot write knowledge or mess
           occurred_at: at("2026-09-12T00:00:00Z"),
           content_hash: hash(),
         }),
-      /no such function: gleanery_terms/,
+      /no such function: sphica_terms/,
     );
   } finally {
     raw.close();

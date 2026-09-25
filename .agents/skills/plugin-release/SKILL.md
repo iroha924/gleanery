@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: Ships changes to gleanery's MCP, CLI (including the terminal screen), capture hooks, or plugin Skills and Agents to npm. Covers bundle entry points and the modules they depend on, matching versions, and confirming delivery to both Claude and Codex. For DB schema or role changes, use knowledge-schema first, then this Skill to ship.
+description: Ships changes to Sphica's MCP, CLI (including the terminal screen), capture hooks, or plugin Skills and Agents to npm. Covers bundle entry points and the modules they depend on, matching versions, and confirming delivery to both Claude and Codex. For DB schema or role changes, use knowledge-schema first, then this Skill to ship.
 ---
 
 # Ship the package
@@ -27,7 +27,7 @@ Claude Code resolves the package with the npm client and unpacks the tarball int
 - The CLI includes Ink, so it is bundled with `scripts/bundle-cli.ts` (`Bun.build`). Ink loads `react-devtools-core` only when `DEV=true`,
   so `ink/build/devtools.js` is replaced with an empty module (without that, it fails at startup in environments with `react-devtools-core`
   in a parent directory)
-- `gleanery init` / `gleanery db migrate` read the bundled `db/schema.sql` (and `db/migrations`, if any). CI checks it by running `init`
+- `sphica init` / `sphica db migrate` read the bundled `db/schema.sql` (and `db/migrations`, if any). CI checks it by running `init`
   in a temporary HOME with the CLI from the unpacked tarball
 - The cache updates only when the version changes. `bun run bundle` or a commit alone does not deliver anything; nothing arrives until publish
 - The CLI reads `dist/cli.js` where it is run, so working in the CLI is no proof that it works in MCP
@@ -42,8 +42,8 @@ When a Skill calls the CLI, it **starts the JS inside the package directly**.
 node "${CLAUDE_PLUGIN_ROOT}/dist/cli.js" <subcommand>
 ```
 
-npm's `bin` is for the `gleanery` command users get from `npm i -g`; **there is no contract that exposes it on the PATH
-inside the plugin**. Depending on a shell script like `${CLAUDE_PLUGIN_ROOT}/bin/gleanery` does not work on Windows, and
+npm's `bin` is for the `sphica` command users get from `npm i -g`; **there is no contract that exposes it on the PATH
+inside the plugin**. Depending on a shell script like `${CLAUDE_PLUGIN_ROOT}/bin/sphica` does not work on Windows, and
 the npm source does not even guarantee it is placed.
 
 ## Adding dependencies
@@ -98,7 +98,7 @@ Once, before the first release, the owner sets these up in the web UI (without t
 - GitHub: the `npm-release` environment (reviewer is the owner, self-approval prevention off, deployments allowed from tags `v*`).
   `prepare` in `release.yml` rejects an environment with no approver
 - GitHub: a ruleset limiting creating, updating, and deleting tags `v*` to the owner
-- npm: trusted publisher (repository `iroha924/gleanery`, workflow `release.yml`, environment `npm-release`,
+- npm: trusted publisher (repository `iroha924/sphica`, workflow `release.yml`, environment `npm-release`,
   staging only, no direct publish), 2FA required, publishing with tokens disallowed
 
 3. Open a PR and pass CI (`check`, `pr-body`) and the Codex review. Keep main merged into the PR branch
@@ -117,11 +117,11 @@ Once, before the first release, the owner sets these up in the web UI (without t
 8. Right before merging, check that the PR's head and base have not moved, and merge with `gh pr merge <PR> --merge --match-head-commit <head>`.
    Confirm with `git diff --exit-code <head> <merge commit>` that the tree did not change. If there is a difference,
    do not promote to `latest`
-9. In a clean temporary directory, run `npm pack gleanery@<version> --silent`, and confirm that the SHA-512 matches step 5 and that the repository's
+9. In a clean temporary directory, run `npm pack sphica@<version> --silent`, and confirm that the SHA-512 matches step 5 and that the repository's
    `node <repository>/scripts/check-tarball.mjs <tgz>` passes. Also check the SBOM attestation with
-   `gh attestation verify <tgz> --repo iroha924/gleanery --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/gleanery/.github/workflows/release.yml`
-10. The owner runs `npm dist-tag add gleanery@<version> latest` in their own terminal. This promotes it (OIDC cannot be used for dist-tags).
-    Claude checks with `npm view gleanery dist-tags --json` that `next` and `latest` both point to `<version>`
+   `gh attestation verify <tgz> --repo iroha924/sphica --predicate-type https://cyclonedx.org/bom --signer-workflow iroha924/sphica/.github/workflows/release.yml`
+10. The owner runs `npm dist-tag add sphica@<version> latest` in their own terminal. This promotes it (OIDC cannot be used for dist-tags).
+    Claude checks with `npm view sphica dist-tags --json` that `next` and `latest` both point to `<version>`
 11. List npm's dist-tags, the remote tag, the global CLI, the marketplace, and the Claude/Codex caches with `bun run release:status`,
     and confirm no step remains. Items it failed to observe show as `unknown`, not `none` or `not found`
 12. Use the PR body's "Release notes" section as is, and
@@ -132,7 +132,7 @@ Once, before the first release, the owner sets these up in the web UI (without t
 **Do not re-tag the same `v<version>`.** The same version cannot be staged or published twice, and provenance's references could no longer be followed.
 
 - Failed before or after staging: the owner rejects the stage in Staged Packages; fix it, bump the version, and ship again with a new tag
-- Could not merge after approval: do not promote to `latest`; the owner runs `npm dist-tag add gleanery@<previous good version> next` in their own terminal to put `next` back,
+- Could not merge after approval: do not promote to `latest`; the owner runs `npm dist-tag add sphica@<previous good version> next` in their own terminal to put `next` back,
   and ship again with a new version
 - Do not rerun the run after `stage` succeeded (a stage of the same version would collide)
 
@@ -140,18 +140,18 @@ So that the marketplace never points to an unpublished version between the merge
 
 ## Confirming it arrived
 
-`gleanery doctor` shows "npm package versions" and "Plugin channel versions" separately.
+`sphica doctor` shows "npm package versions" and "Plugin channel versions" separately.
 
 1. Claude Code: update the marketplace, reinstall, and run `/reload-plugins` in open sessions.
    In sessions without an interactive terminal, MCP stays at the old version until the next session
 2. Codex: likewise, update the marketplace and reopen
-3. **Also run `npm i -g gleanery@<version>`.** The CLI installed with `npm i -g` is a separate path from the plugin cache,
+3. **Also run `npm i -g sphica@<version>`.** The CLI installed with `npm i -g` is a separate path from the plugin cache,
    and host updates do not upgrade it. **In a release that raised the DB revision, forgetting this leaves only the old CLI
    failing with "expects revision N"** (measured: after moving to revision 5, the global CLI stayed at 0.32.0)
-4. In `gleanery doctor`, check that the npm package matches between the repository and the global CLI, that the plugin channel matches between the repository
+4. In `sphica doctor`, check that the npm package matches between the repository and the global CLI, that the plugin channel matches between the repository
    and both hosts' caches, and that no reconnect instruction remains for the running MCP
 5. From a session after the update, call `recall` and check the contents of the changed MCP tools, Skills, and Agents. If capture changed,
-   also check that the session's messages show in `gleanery dashboard`'s sessions, and that the "Recording" line in `gleanery doctor` has nothing
+   also check that the session's messages show in `sphica dashboard`'s sessions, and that the "Recording" line in `sphica doctor` has nothing
    waiting
 
 `plugin/skills/review/reviewers/` also goes through the cache, so saving or restarting a session does not give the new text.
@@ -162,8 +162,8 @@ When changing aspects, read `plugin-agent-authoring` first too.
 - For a Skill that should start only when explicitly called, pair `disable-model-invocation: true` in SKILL.md (Claude Code) with
   `policy.allow_implicit_invocation: false` in the Skill directory's `agents/openai.yaml` (Codex). Codex does not read the former.
   `verify:ai` checks the pair
-- Pre-approval in `allowed-tools` written with `${CLAUDE_PLUGIN_ROOT}` works (on 2026-09-12, `claude -p "/gleanery:<skill>" --plugin-dir <plugin>
-  --permission-mode default --output-format json` returned empty `permission_denials`; the user's settings had no Bash rule allowing gleanery)
-- When checking after delivery, confirm in Codex that the body is read when explicitly started with `$gleanery:<skill>` too
+- Pre-approval in `allowed-tools` written with `${CLAUDE_PLUGIN_ROOT}` works (on 2026-09-12, `claude -p "/sphica:<skill>" --plugin-dir <plugin>
+  --permission-mode default --output-format json` returned empty `permission_denials`; the user's settings had no Bash rule allowing Sphica)
+- When checking after delivery, confirm in Codex that the body is read when explicitly started with `$sphica:<skill>` too
 
 Check the human-facing CLI output and the AI-facing MCP replies separately.

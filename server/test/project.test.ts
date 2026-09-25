@@ -10,11 +10,11 @@ import { identify, localRoots, nameLocal, normalizeRemote, patchPaths, relativeT
 if (process.versions.bun) throw new Error("run these tests with node --test (bun run test)");
 
 test("ssh and https remotes map to the same key", () => {
-  const want = "github.com/iroha924/gleanery";
-  assert.equal(normalizeRemote("git@github.com:iroha924/gleanery.git"), want);
-  assert.equal(normalizeRemote("https://github.com/iroha924/gleanery.git"), want);
-  assert.equal(normalizeRemote("https://github.com/iroha924/gleanery"), want);
-  assert.equal(normalizeRemote("ssh://git@github.com/iroha924/gleanery.git"), want);
+  const want = "github.com/iroha924/sphica";
+  assert.equal(normalizeRemote("git@github.com:iroha924/sphica.git"), want);
+  assert.equal(normalizeRemote("https://github.com/iroha924/sphica.git"), want);
+  assert.equal(normalizeRemote("https://github.com/iroha924/sphica"), want);
+  assert.equal(normalizeRemote("ssh://git@github.com/iroha924/sphica.git"), want);
 });
 
 // The key is stored in plain text. Cutting at the first @ leaves a fragment when the password contains @.
@@ -38,7 +38,7 @@ test("credentials embedded in a remote never reach the key", () => {
 });
 
 function repo(remote: string | null): { dir: string; done: () => void } {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-project-")));
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-project-")));
   const dir = path.join(tmp, "repo");
   fs.mkdirSync(path.join(dir, "a", "b"), { recursive: true });
   execFileSync("git", ["init", "-q", dir], { stdio: "ignore" });
@@ -85,20 +85,20 @@ test("relative paths are from the root, and paths outside it are null", () => {
 
 // Treating it as empty and writing back would erase every other project name.
 test("a broken name map stops instead of being skipped, and places with a remote get no name", () => {
-  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-map-")));
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-map-")));
   const realHome = process.env.HOME;
   process.env.HOME = home;
   const r = repo(null);
   try {
-    fs.mkdirSync(path.join(home, ".gleanery"));
-    fs.writeFileSync(path.join(home, ".gleanery", "projects.json"), '{"/x": "a",');
+    fs.mkdirSync(path.join(home, ".sphica"));
+    fs.writeFileSync(path.join(home, ".sphica", "projects.json"), '{"/x": "a",');
     assert.throws(() => nameLocal(r.dir, "notes"), /is not a valid JSON project table/);
     assert.throws(() => identify(r.dir), /is not a valid JSON project table/);
     for (const invalid of [{ relative: "notes" }, { "/x": 123 }, { "/x": null }, { "/x": "INVALID" }]) {
-      fs.writeFileSync(path.join(home, ".gleanery", "projects.json"), JSON.stringify(invalid));
+      fs.writeFileSync(path.join(home, ".sphica", "projects.json"), JSON.stringify(invalid));
       assert.throws(() => identify(r.dir), /is not a valid JSON project table/);
     }
-    fs.rmSync(path.join(home, ".gleanery", "projects.json"));
+    fs.rmSync(path.join(home, ".sphica", "projects.json"));
     const remote = repo("git@github.com:o/r.git");
     try {
       assert.throws(() => nameLocal(remote.dir, "notes"), /has a git remote/);
@@ -115,7 +115,7 @@ test("a broken name map stops instead of being skipped, and places with a remote
 
 // With two clones of the same remote, the sync would silently pick whichever sorts first.
 test("does not choose when two locations share a key", () => {
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-roots-")));
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-roots-")));
   // Keep this machine's name map out (named projects would mix into found).
   const realHome = process.env.HOME;
   process.env.HOME = tmp;

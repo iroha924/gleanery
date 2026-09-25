@@ -22,7 +22,7 @@ function run(...args: string[]): { code: number; out: string } {
   } catch (e) {
     const err = e as { status?: number; stdout?: string; stderr?: string; code?: string };
     // A timeout fails even after the expected output (so the exit code comparison cannot hide a hang).
-    if (err.code === "ETIMEDOUT") throw new Error(`gleanery ${args.join(" ")} did not finish in 30 seconds`);
+    if (err.code === "ETIMEDOUT") throw new Error(`sphica ${args.join(" ")} did not finish in 30 seconds`);
     return { code: err.status ?? -1, out: `${err.stdout ?? ""}${err.stderr ?? ""}` };
   }
 }
@@ -52,27 +52,23 @@ test("flags the command does not take and extra positional arguments fail by nam
     [["project", "list", "garbage"], /Extra argument: garbage/],
   ] as const) {
     const r = run(...args);
-    assert.notEqual(r.code, 0, `gleanery ${args.join(" ")}: ${r.out}`);
+    assert.notEqual(r.code, 0, `sphica ${args.join(" ")}: ${r.out}`);
     assert.match(r.out, want, r.out);
-    assert.doesNotMatch(
-      r.out,
-      /No database at/,
-      `gleanery ${args.join(" ")} tried to connect to the database`,
-    );
+    assert.doesNotMatch(r.out, /No database at/, `sphica ${args.join(" ")} tried to connect to the database`);
   }
 });
 
 // If typed arguments went into the error title, a newline in an argument could forge a marked line.
 test("the error title uses only the command path the dispatcher chose", () => {
-  assert.match(run("trace", "check").out, /^✦ gleanery trace check$/m);
+  assert.match(run("trace", "check").out, /^✦ sphica trace check$/m);
   assert.match(
     run("trace", "check", "--limit", "0", "f").out,
-    /^✦ gleanery trace check$/m,
+    /^✦ sphica trace check$/m,
     "shows the subcommand even when parsing fails",
   );
-  assert.match(run("search", "--lmit", "3", "認証").out, /^✦ gleanery search$/m);
+  assert.match(run("search", "--lmit", "3", "認証").out, /^✦ sphica search$/m);
   const flagValue = run("trace", "--cwd", "/nonexistent", "check");
-  assert.match(flagValue.out, /^✦ gleanery$/m, flagValue.out);
+  assert.match(flagValue.out, /^✦ sphica$/m, flagValue.out);
   assert.doesNotMatch(flagValue.out, /^✦.*nonexistent/m, "flag values never go into the title");
   // Closing and status lines start at the line start. Content is indented, so an injected newline cannot forge one
   for (const forged of [run("x\n✓ 直すものは無い"), run("x\n╰─ ✓ 直すものは無い")]) {
@@ -106,7 +102,7 @@ test("no arguments and --help print usage for that level and succeed", () => {
 });
 
 test("trace check validates the record shape without touching the database", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-cli-trace-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-cli-trace-"));
   try {
     const bad = path.join(dir, "bad.json");
     fs.writeFileSync(

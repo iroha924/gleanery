@@ -8,7 +8,7 @@
   "work": {
     "key": "local",
     "title": "Move to a setup that runs entirely on the local machine",
-    "goal": "Drop the cloud dependencies, have gleanery dashboard draw its screen in the terminal, and read a local SQLite file",
+    "goal": "Drop the cloud dependencies, have sphica dashboard draw its screen in the terminal, and read a local SQLite file",
     "current": "Finished the server side and the screen, and ran them against a local database",
     "next": [
       "Move distribution to npm",
@@ -35,7 +35,7 @@
           "why": "users would have to set up Docker and database credentials"
         }
       ],
-      "confirmation": "gleanery init applied db/schema.sql, and every DB row in doctor passed",
+      "confirmation": "sphica init applied db/schema.sql, and every DB row in doctor passed",
       "terms": ["SQLite", "local database", "no server", "offline"],
       "downsides": [
         "requires Node 24.15 or later",
@@ -94,7 +94,7 @@
       "status": "passed",
       "at": "2026-09-20T13:20:00+09:00",
       "text": "started from a pipe, dashboard prints a notice and exits with 1",
-      "command": "gleanery dashboard | cat",
+      "command": "sphica dashboard | cat",
       "verifies": "no-server"
     },
     {

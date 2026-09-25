@@ -43,9 +43,9 @@ const dirs = (where) => {
 const packageVersion = read("plugin/package.json").version;
 const claudeManifest = read("plugin/.claude-plugin/plugin.json").version;
 const codexManifest = read("plugin/.codex-plugin/plugin.json").version;
-const marketplace = read(".claude-plugin/marketplace.json").plugins.find((entry) => entry.name === "gleanery")
+const marketplace = read(".claude-plugin/marketplace.json").plugins.find((entry) => entry.name === "sphica")
   ?.source?.version;
-const tagsText = attempt("npm", ["view", "gleanery", "dist-tags", "--json"]);
+const tagsText = attempt("npm", ["view", "sphica", "dist-tags", "--json"]);
 let tags = null;
 try {
   tags = tagsText ? JSON.parse(tagsText) : null;
@@ -53,7 +53,7 @@ try {
   tags = null;
 }
 // Listing stages needs an npm login and npm 11.19.0 (the release job's; older npm has no stage). If it cannot be read, report unknown
-const stagedText = attempt("npx", ["-y", "npm@11.19.0", "stage", "list", "gleanery", "--json"]);
+const stagedText = attempt("npx", ["-y", "npm@11.19.0", "stage", "list", "sphica", "--json"]);
 let staged = null;
 try {
   staged = stagedText ? JSON.parse(stagedText) : null;
@@ -63,7 +63,7 @@ try {
 const remoteTags = attempt("git", ["ls-remote", "--tags", "origin"]);
 const globalRoot = attempt("npm", ["root", "-g"]);
 const globalPackage = globalRoot
-  ? manifestVersion(path.join(globalRoot, "gleanery"), "package.json")
+  ? manifestVersion(path.join(globalRoot, "sphica"), "package.json")
   : { status: "unknown", version: null };
 const claudeText = attempt("claude", ["plugin", "list", "--json"]);
 let claudeCache = null;
@@ -72,7 +72,7 @@ try {
   const plugins = claudeText ? JSON.parse(claudeText) : [];
   claudeObserved = claudeText !== null;
   claudeCache =
-    plugins.find((entry) => entry.id?.startsWith("gleanery@") && entry.scope === "user")?.version ?? null;
+    plugins.find((entry) => entry.id?.startsWith("sphica@") && entry.scope === "user")?.version ?? null;
 } catch {
   claudeCache = null;
 }
@@ -83,13 +83,13 @@ let codexInvalid = false;
 const markets = dirs(codexRoot);
 if (markets === null) codexObserved = false;
 for (const market of markets ?? []) {
-  const versions = dirs(path.join(codexRoot, market.name, "gleanery"));
+  const versions = dirs(path.join(codexRoot, market.name, "sphica"));
   if (versions === null) {
     codexObserved = false;
     continue;
   }
   for (const version of versions) {
-    const cache = path.join(codexRoot, market.name, "gleanery", version.name);
+    const cache = path.join(codexRoot, market.name, "sphica", version.name);
     const actual = manifestVersion(cache, path.join(".codex-plugin", "plugin.json"));
     if (actual.status === "ok") codexCaches.push(actual.version);
     else if (actual.status === "unknown") codexObserved = false;

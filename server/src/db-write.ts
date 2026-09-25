@@ -96,7 +96,7 @@ function captureAuthorizer(
     if (triggerOrView !== null || fts) return C.SQLITE_OK;
     return CAPTURE_READS[table]?.has(p2 ?? "") ? C.SQLITE_OK : C.SQLITE_DENY;
   }
-  if (action === C.SQLITE_FUNCTION) return p2 === "gleanery_terms" ? C.SQLITE_OK : C.SQLITE_DENY;
+  if (action === C.SQLITE_FUNCTION) return p2 === "sphica_terms" ? C.SQLITE_OK : C.SQLITE_DENY;
   if (action === C.SQLITE_PRAGMA) return readsDataVersion(p1, p2) ? C.SQLITE_OK : C.SQLITE_DENY;
   if (action === C.SQLITE_SELECT || action === C.SQLITE_TRANSACTION || action === C.SQLITE_SAVEPOINT)
     return C.SQLITE_OK;
@@ -110,7 +110,7 @@ function ingestAuthorizer(action: number, p1: string | null, p2: string | null):
 }
 
 /**
- * Opens a writing connection. Only owner's `gleanery init` passes `create` (a missing database is never created silently).
+ * Opens a writing connection. Only owner's `sphica init` passes `create` (a missing database is never created silently).
  * **The tokenizer function is always registered.** A connection without it writing to knowledge / message would fail the FTS trigger
  * with no such function (the index is never silently incomplete; fail-closed).
  */
@@ -122,7 +122,7 @@ export function connectWriter(role: WriteRole, file: string = dbFile(), create =
     // Only ingest checks the version. owner is the one handling versions, and capture keeps writing from older plugins
     // (checking would stop all recording between upgrading the database and the plugin; rejected rows go to rejected/).
     prepare(raw, role === "ingest");
-    raw.function("gleanery_terms", { deterministic: true }, (text) => terms(String(text ?? "")).join(" "));
+    raw.function("sphica_terms", { deterministic: true }, (text) => terms(String(text ?? "")).join(" "));
   } catch (e) {
     raw.close();
     throw e;

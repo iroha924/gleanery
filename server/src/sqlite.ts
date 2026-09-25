@@ -2,7 +2,7 @@
 // The modules are split so that interfaces reading untrusted text (MCP, the dashboard, search) cannot reach a
 // writing connection, and scripts/check-architecture.mjs enforces the import direction.
 //
-// This guards against gleanery's own code writing by mistake or because untrusted text told it to. It is not an
+// This guards against sphica's own code writing by mistake or because untrusted text told it to. It is not an
 // OS permission boundary (a process running as the same OS user can rewrite the database file directly).
 
 import fs from "node:fs";
@@ -11,17 +11,16 @@ import path from "node:path";
 import { constants as C, DatabaseSync } from "node:sqlite";
 
 /** Schema version the MCP server, CLI, and dashboard expect. Keep it equal to `pragma user_version` at the end of db/schema.sql. */
-export const SCHEMA_REVISION = 4;
+export const SCHEMA_REVISION = 5;
 
 /** Connection roles: owner applies the schema, reader only reads, ingest imports, capture records conversations (append only). */
 export type Role = "owner" | "reader" | "ingest" | "capture";
 
 /**
- * The database file. `GLEANERY_DB` exists only for tests (the same purpose as pointing a child process's HOME at a
+ * The database file. `SPHICA_DB` exists only for tests (the same purpose as pointing a child process's HOME at a
  * temporary directory). It is not documented in the README.
  */
-export const dbFile = (): string =>
-  process.env.GLEANERY_DB || path.join(os.homedir(), ".gleanery", "gleanery.db");
+export const dbFile = (): string => process.env.SPHICA_DB || path.join(os.homedir(), ".sphica", "sphica.db");
 
 /**
  * Whether Node has the APIs the permission boundary needs. **Never continue in a weaker state.** npm may only warn
@@ -31,12 +30,12 @@ export const dbFile = (): string =>
 export function requireRuntime(): void {
   const proto = DatabaseSync.prototype as unknown as Record<string, unknown>;
   if (typeof proto.setAuthorizer !== "function" || typeof proto.enableDefensive !== "function")
-    throw new Error(`gleanery needs Node 24.15 or later (this is ${process.version}). Upgrade Node.`);
+    throw new Error(`sphica needs Node 24.15 or later (this is ${process.version}). Upgrade Node.`);
 }
 
-/** Never create a missing database silently (an empty file looks like "no records"). Only `gleanery init` creates it. */
+/** Never create a missing database silently (an empty file looks like "no records"). Only `sphica init` creates it. */
 export function requireFile(file: string): void {
-  if (!fs.existsSync(file)) throw new Error(`No database at ${file}. Create it with \`gleanery init\`.`);
+  if (!fs.existsSync(file)) throw new Error(`No database at ${file}. Create it with \`sphica init\`.`);
 }
 
 /**
@@ -54,10 +53,10 @@ export function prepare(raw: DatabaseSync, checkVersion: boolean): void {
   const got = (raw.prepare("pragma user_version").get() as { user_version: number } | undefined)
     ?.user_version;
   if (got === SCHEMA_REVISION) return;
-  if (!got) throw new Error("The database has no gleanery schema. Create it with `gleanery init`.");
+  if (!got) throw new Error("The database has no sphica schema. Create it with `sphica init`.");
   throw new Error(
-    `The database schema is revision ${got}, but this gleanery expects revision ${SCHEMA_REVISION}. ` +
-      (got < SCHEMA_REVISION ? "Run `gleanery db migrate`." : "Update gleanery."),
+    `The database schema is revision ${got}, but this Sphica expects revision ${SCHEMA_REVISION}. ` +
+      (got < SCHEMA_REVISION ? "Run `sphica db migrate`." : "Update sphica."),
   );
 }
 
@@ -84,7 +83,7 @@ export const SHADOW = /^(knowledge|message)_fts_(data|idx|docsize|config)$/;
 
 /**
  * A read-only connection. It opens with `readOnly`, so SQLite rejects writes, and the authorizer stops DDL, ATTACH,
- * virtual table creation, and functions not on the list. `gleanery_terms` is not registered (FTS search does not need
+ * virtual table creation, and functions not on the list. `sphica_terms` is not registered (FTS search does not need
  * the tokenizer function).
  */
 export function connectReader(file: string = dbFile()): DatabaseSync {

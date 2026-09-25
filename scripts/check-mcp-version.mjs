@@ -36,7 +36,7 @@ const PACKAGE = "plugin/package.json";
 const PLUGIN_MANIFESTS = {
   // **The version lives in source.** Putting it directly in the entry too makes Claude Code use plugin.json without warning
   // and silently ignore the marketplace value (official plugin-marketplaces docs). Keep it in one place.
-  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.source?.version,
+  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "sphica")?.source?.version,
   "plugin/.claude-plugin/plugin.json": (j) => j.version,
   "plugin/.codex-plugin/plugin.json": (j) => j.version,
 };
@@ -152,11 +152,11 @@ console.error(
   [
     `${changed.length} plugin channel inputs changed, but the npm package and plugin versions were not bumped together (for example ${changed[0]}).`,
     "",
-    "  A plugin installed from the marketplace (GitHub) runs from a copy at <cache>/gleanery/gleanery/<version>/ in both Claude Code and Codex.",
+    "  A plugin installed from the marketplace (GitHub) runs from a copy at <cache>/sphica/sphica/<version>/ in both Claude Code and Codex.",
     "  The copy is made only when the version changes, so as is, the change never reaches sessions.",
     "",
     "  Bump the npm package and the 3 plugin channel manifests to the same new version.",
-    '  After it reaches the marketplace source, run the update steps under "Plugin channel versions" in `gleanery doctor` and restart sessions.',
+    '  After it reaches the marketplace source, run the update steps under "Plugin channel versions" in `sphica doctor` and restart sessions.',
   ].join("\n"),
 );
 process.exit(1);

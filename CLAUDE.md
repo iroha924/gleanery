@@ -3,7 +3,7 @@ For maintainers. Claude Code does not read AGENTS.md when CLAUDE.md exists, and 
 Rules copied to both are tied by the invariant at the end of the line. When you change one, fix the line with the same name in AGENTS.md too (verify:ai compares the sets of names).
 -->
 
-# gleanery
+# Sphica
 
 ## command
 
@@ -16,12 +16,12 @@ bun run bundle            # build the MCP, CLI, and capture artifacts
 bun run cli -- dashboard  # the terminal screen. It needs a TTY, so run it only in the foreground
 ```
 
-Start troubleshooting with `gleanery doctor`.
+Start troubleshooting with `sphica doctor`.
 
 ## Runtime boundaries
 
 - `db/schema.sql` is the only source of truth for the DB. Do not add an ORM schema as a second source <!-- invariant: schema-single-source -->
-- MCP and the terminal screen use the reader connection, ingestion and trace use ingest, capture uses capture, and `gleanery db *` uses owner. <!-- invariant: connection-roles -->
+- MCP and the terminal screen use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
   Write connections live only in `server/src/db-write.ts` (`bun run architecture` checks it)
 - Interfaces that read untrusted text (PR and issue bodies, recorded conversations) get no write access <!-- invariant: untrusted-no-write -->
 - No server that listens <!-- invariant: no-listen -->
@@ -31,7 +31,7 @@ Start troubleshooting with `gleanery doctor`.
 
 - Check the CLI and dashboard separately from MCP. One working does not mean the other works <!-- invariant: exits-separate -->
 - When you change a value, category, or decision, find every reference with `rg` and fix the paired interface too. Add pairs you can list to a check <!-- invariant: rg-pairs -->
-- Connect a new ingestion source to `gleanery harvest` too <!-- invariant: harvest -->
+- Connect a new ingestion source to `sphica harvest` too <!-- invariant: harvest -->
 - A change that goes into the package bumps npm and the 3 plugin manifests to the same version, in the same branch (PR) <!-- invariant: version-sync -->
 - Validate external input at the system boundary. Do not write credentials to tracked files, command arguments, or logs <!-- invariant: boundary-validation -->
 - What we ship runs on Windows too. Do not depend on a POSIX shell, `0600`, a fixed `/tmp`, or execFile of `.cmd` <!-- invariant: windows -->

@@ -1,9 +1,9 @@
 {
-  "name": "gleanery-server",
+  "name": "sphica-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "gleanery MCP, CLI, capture, and terminal screen (local SQLite)",
+  "description": "sphica MCP, CLI, capture, and terminal screen (local SQLite)",
   "scripts": {
     "check": "biome check .",
     "fix": "biome check --write .",

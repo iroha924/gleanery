@@ -16,8 +16,8 @@
     {
       "q": "閉じた課題まで含める案を退けて、代わりに何だけを対象にした？",
       "expect": [
-        "github:iroha924/gleanery/pull/129#7f9bd60375b2-1",
-        "github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1"
+        "github:iroha924/sphica/pull/129#7f9bd60375b2-1",
+        "github:iroha924/sphica/pull/129#7f9bd60375b2-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -25,7 +25,7 @@
     },
     {
       "q": "READMEの新しいバッジはどこに並べると決めた？",
-      "expect": ["github:iroha924/gleanery/pull/135#8e2439ec8812-1"],
+      "expect": ["github:iroha924/sphica/pull/135#8e2439ec8812-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -33,8 +33,8 @@
     {
       "q": "検索結果で判断と資料を一つの一覧にまとめなかったのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2",
-        "github:iroha924/gleanery/pull/117#35651e11e7a7-1"
+        "github:iroha924/sphica/pull/117#35651e11e7a7-1.r2",
+        "github:iroha924/sphica/pull/117#35651e11e7a7-1"
       ],
       "kind": "option",
       "source": "knowledge",
@@ -49,7 +49,7 @@
     },
     {
       "q": "コミット履歴の改変を避ける方針は誰がなぜ決めた？",
-      "expect": ["github:iroha924/gleanery/pull/118#a77ac56594cd-1"],
+      "expect": ["github:iroha924/sphica/pull/118#a77ac56594cd-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -63,7 +63,7 @@
     },
     {
       "q": "リリース時、タグのコードがCIで検証済みだと保証する仕組みは？",
-      "expect": ["github:iroha924/gleanery/pull/124#8f51be55a306-1", "doc:README.ja.md#セキュリティ"],
+      "expect": ["github:iroha924/sphica/pull/124#8f51be55a306-1", "doc:README.ja.md#セキュリティ"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -71,7 +71,7 @@
     {
       "q": "規約レビューで依存ライブラリの機能まで調べるのはどんな場合？",
       "expect": [
-        "github:iroha924/gleanery/pull/96#fbcfeae6f236-1",
+        "github:iroha924/sphica/pull/96#fbcfeae6f236-1",
         "doc:plugin/skills/review/reviewers/conventions.md#conventions.md",
         "doc:plugin/skills/review/reviewers/conventions.md#step-2-—-diff-を照らす"
       ],
@@ -92,9 +92,9 @@
     {
       "q": "脆弱性を見つけた人はどこに知らせる決まりにしたの？",
       "expect": [
-        "github:iroha924/gleanery/pull/123#a6173565e402-1",
+        "github:iroha924/sphica/pull/123#a6173565e402-1",
         "doc:README.ja.md#セキュリティ",
-        "github:iroha924/gleanery/pull/123#a6173565e402-1.r1"
+        "github:iroha924/sphica/pull/123#a6173565e402-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -102,7 +102,7 @@
     },
     {
       "q": "承認した人を記録ファイルに残して確かめる案はなぜ見送った？",
-      "expect": ["github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/32#4dca9f552fa6-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -123,7 +123,7 @@
     },
     {
       "q": "worktree で開発する方針を必須ルールにしなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/30#f4e29bb98394-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/30#f4e29bb98394-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -141,14 +141,14 @@
     },
     {
       "q": "別モデル連携の手順をスキル本体から切り分けたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/96#73d9e3a109ba-1"],
+      "expect": ["github:iroha924/sphica/pull/96#73d9e3a109ba-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
     },
     {
       "q": "server/evals/cases.tsで廃止Skillの問いを除く理由は？",
-      "expect": ["github:iroha924/gleanery/pull/122#35381f70e598-1"],
+      "expect": ["github:iroha924/sphica/pull/122#35381f70e598-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "identifier"
@@ -156,7 +156,7 @@
     {
       "q": "Skill から CLI を実行するとき、PATH 頼みをやめて何でパスを決めた？",
       "expect": [
-        "github:iroha924/gleanery/pull/27#db58d348439c-1",
+        "github:iroha924/sphica/pull/27#db58d348439c-1",
         "doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路",
         "doc:plugin/skills/trace/SKILL.md#流れ"
       ],
@@ -173,7 +173,7 @@
     },
     {
       "q": "質問をどちらの環境でも普通の文章で出す案はなぜ見送った？",
-      "expect": ["github:iroha924/gleanery/pull/27#aceba6ee56db-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/27#aceba6ee56db-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -194,14 +194,14 @@
     },
     {
       "q": "文言の照合で正規表現をやめて単純な一致比較にしたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/130#83f2571ccd2d-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/130#83f2571ccd2d-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "折り返し行のいちばん浅いインデントで値の列位置を決めないのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/118#c84394f47b5d-1.r2"],
+      "expect": ["github:iroha924/sphica/pull/118#c84394f47b5d-1.r2"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -215,14 +215,14 @@
     },
     {
       "q": "traceで参照しただけのファイルまで関連付けるのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/32#6f97abd02c06-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/32#6f97abd02c06-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "Skillの指示文だけで決定の付け方を守らせる案をやめたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/28#2d4d5804ef0c-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/28#2d4d5804ef0c-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -246,7 +246,7 @@
     },
     {
       "q": "レビューの往復回数を減らし、人に判断を委ねるようにしたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/96#000ee8129d98-1"],
+      "expect": ["github:iroha924/sphica/pull/96#000ee8129d98-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -256,7 +256,7 @@
       "expect": [
         "doc:AGENTS.md#agents.md",
         "doc:CLAUDE.md#claude.md",
-        "github:iroha924/gleanery/pull/118#fde921979df0-1"
+        "github:iroha924/sphica/pull/118#fde921979df0-1"
       ],
       "kind": "document",
       "source": "knowledge",
@@ -278,14 +278,14 @@
     },
     {
       "q": "エラー案内の英訳をコマンドライン側で行わなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/137#728d3365f9b6-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/137#728d3365f9b6-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "テストでデータベースをモックせず実物を使うことにしたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/117#2a1886bdd9a4-1"],
+      "expect": ["github:iroha924/sphica/pull/117#2a1886bdd9a4-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -294,7 +294,7 @@
       "q": "レビューで参照先の規約や前例が見つからなかったらエラー扱いになる？",
       "expect": [
         "doc:plugin/skills/review/SKILL.md#step-2-—-読む先を見つける",
-        "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）"
+        "doc:plugin/skills/review/SKILL.md#過去の判断（sphica-のナレッジ）"
       ],
       "kind": "document",
       "source": "knowledge",
@@ -304,7 +304,7 @@
       "q": "レビュー観点をサブエージェント定義で配布しないのはなぜ？",
       "expect": [
         "doc:.agents/skills/plugin-agent-authoring/SKILL.md#agent定義として配らない",
-        "github:iroha924/gleanery/pull/98#a51d91fa0d7e-1",
+        "github:iroha924/sphica/pull/98#a51d91fa0d7e-1",
         "doc:plugin/skills/review/SKILL.md#立て方は両ホストで同じ。本文をプロンプトとして渡す"
       ],
       "kind": "document",
@@ -313,7 +313,7 @@
     },
     {
       "q": "計画ファイルをスキル配下でなく.claude/plans/に置くことにしたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/121#4cbb886b3dc6-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/121#4cbb886b3dc6-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "identifier"
@@ -328,8 +328,8 @@
     {
       "q": "多言語対応をやめて表示言語を一つに絞ったのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1",
-        "github:iroha924/gleanery/pull/137#bab18fcbab5e-1"
+        "github:iroha924/sphica/pull/137#bab18fcbab5e-1.r1",
+        "github:iroha924/sphica/pull/137#bab18fcbab5e-1"
       ],
       "kind": "option",
       "source": "knowledge",
@@ -359,7 +359,7 @@
     },
     {
       "q": "権限を絞るオプションをスキルと元コマンドの両方に重ねて書くのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/96#6ecf6ce39382-1"],
+      "expect": ["github:iroha924/sphica/pull/96#6ecf6ce39382-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -375,7 +375,7 @@
       "type": "document"
     },
     {
-      "q": "SkillからCLIを呼ぶとき bin/gleanery を使わないのはなぜ？",
+      "q": "SkillからCLIを呼ぶとき bin/sphica を使わないのはなぜ？",
       "expect": ["doc:.agents/skills/plugin-release/SKILL.md#skillからの起動経路"],
       "kind": "document",
       "source": "knowledge",
@@ -391,8 +391,8 @@
     {
       "q": "レビュー用Skillでシェル実行の扱いが食い違ったとき、どちらの記述に揃えた？",
       "expect": [
-        "github:iroha924/gleanery/pull/127#bf2eac264253-1",
-        "github:iroha924/gleanery/pull/127#bf2eac264253-1.r1"
+        "github:iroha924/sphica/pull/127#bf2eac264253-1",
+        "github:iroha924/sphica/pull/127#bf2eac264253-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -401,8 +401,8 @@
     {
       "q": "検索で決定事項と文書が混ざる件、文書を外さずにどう対処した？",
       "expect": [
-        "github:iroha924/gleanery/pull/117#35651e11e7a7-1",
-        "github:iroha924/gleanery/pull/117#35651e11e7a7-1.r2"
+        "github:iroha924/sphica/pull/117#35651e11e7a7-1",
+        "github:iroha924/sphica/pull/117#35651e11e7a7-1.r2"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -411,8 +411,8 @@
     {
       "q": "push前の検証で--local-env-varsの変数を外すのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/27#e1313fb2dd40-1",
-        "github:iroha924/gleanery/pull/27#e1313fb2dd40-1.r1"
+        "github:iroha924/sphica/pull/27#e1313fb2dd40-1",
+        "github:iroha924/sphica/pull/27#e1313fb2dd40-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -433,11 +433,11 @@
       "type": "document"
     },
     {
-      "q": "gleaneryがデータベースに保存するラベルを英語表記に統一したのはなぜ？",
+      "q": "sphicaがデータベースに保存するラベルを英語表記に統一したのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/137#54b4f364628e-1",
+        "github:iroha924/sphica/pull/137#54b4f364628e-1",
         "doc:AGENTS.md#コメント",
-        "github:iroha924/gleanery/pull/137#bab18fcbab5e-1.r1"
+        "github:iroha924/sphica/pull/137#bab18fcbab5e-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -446,8 +446,8 @@
     {
       "q": "ユーザーへの問いかけを両環境で普通の文章にせず、どう出し分けた？",
       "expect": [
-        "github:iroha924/gleanery/pull/27#aceba6ee56db-1",
-        "github:iroha924/gleanery/pull/27#aceba6ee56db-1.r1"
+        "github:iroha924/sphica/pull/27#aceba6ee56db-1",
+        "github:iroha924/sphica/pull/27#aceba6ee56db-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -455,7 +455,7 @@
     },
     {
       "q": "参照制約を止めて子レコードを手作業で削除する案を採らなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/122#f99b548f1c44-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/122#f99b548f1c44-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -469,14 +469,14 @@
     },
     {
       "q": "data.tsで読み込んだ時点に表示用の加工をしなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/126#859bc3b818fd-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/126#859bc3b818fd-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "identifier"
     },
     {
       "q": "引数の最後にある full 指定はどう判定することにした？",
-      "expect": ["github:iroha924/gleanery/pull/96#e0842a2fc55e-1"],
+      "expect": ["github:iroha924/sphica/pull/96#e0842a2fc55e-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -492,14 +492,14 @@
       "q": "Skillを自動で呼ばれないようにするには、両エージェントで何を設定する？",
       "expect": [
         "doc:.agents/skills/plugin-release/SKILL.md#plugin-skill",
-        "github:iroha924/gleanery/pull/26#7f8d25878436-1.r1"
+        "github:iroha924/sphica/pull/26#7f8d25878436-1.r1"
       ],
       "kind": "document",
       "source": "knowledge",
       "type": "document"
     },
     {
-      "q": "gleanery未登録や判定不能のとき、どう扱えと指示した？",
+      "q": "sphica未登録や判定不能のとき、どう扱えと指示した？",
       "expect": ["c10c2ecd-d619-8130-b584-87c127a79426"],
       "kind": "message",
       "source": "message",
@@ -533,7 +533,7 @@
       "q": "過去の判例レビューで検索結果が空のとき、見つからないのか接続失敗かどう見分ける？",
       "expect": [
         "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる",
-        "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）"
+        "doc:plugin/skills/review/SKILL.md#過去の判断（sphica-のナレッジ）"
       ],
       "kind": "document",
       "source": "knowledge",
@@ -542,8 +542,8 @@
     {
       "q": "TUI用に新しいコマンド名を作らず既存名を流用したのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/115#e45974c9752b-1.r1",
-        "github:iroha924/gleanery/pull/115#e45974c9752b-1"
+        "github:iroha924/sphica/pull/115#e45974c9752b-1.r1",
+        "github:iroha924/sphica/pull/115#e45974c9752b-1"
       ],
       "kind": "option",
       "source": "knowledge",
@@ -566,9 +566,9 @@
     {
       "q": "特殊フォントに頼らず、幅がずれないアイコン記号はどう選んだ？",
       "expect": [
-        "github:iroha924/gleanery/pull/115#ac5c312368b7-1",
+        "github:iroha924/sphica/pull/115#ac5c312368b7-1",
         "doc:.agents/skills/tui/SKILL.md#アイコン",
-        "github:iroha924/gleanery/pull/115#ac5c312368b7-1.r1"
+        "github:iroha924/sphica/pull/115#ac5c312368b7-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -576,14 +576,14 @@
     },
     {
       "q": "バージョン後退の検知でmain最新との比較を常に行わなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/128#add7d2bd020f-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/128#add7d2bd020f-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "配布パッケージに dist/dashboard が混入しないよう何を確認している？",
-      "expect": ["github:iroha924/gleanery/pull/116#fe83a7091678-1"],
+      "expect": ["github:iroha924/sphica/pull/116#fe83a7091678-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "identifier"
@@ -591,8 +591,8 @@
     {
       "q": "データ移行のスクリプトを本番に持ち込まず削除したのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/119#e07077f88c41-1",
-        "github:iroha924/gleanery/pull/119#e07077f88c41-1.r1"
+        "github:iroha924/sphica/pull/119#e07077f88c41-1",
+        "github:iroha924/sphica/pull/119#e07077f88c41-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -618,7 +618,7 @@
     },
     {
       "q": "もう一度追跡し直したとき、sessionize は既存の結果とどう合わせる？",
-      "expect": ["github:iroha924/gleanery/pull/27#c3cc36aa6c7f-1"],
+      "expect": ["github:iroha924/sphica/pull/27#c3cc36aa6c7f-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -626,7 +626,7 @@
     {
       "q": "kysely を別の ORM に移行しなかったのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/117#12323d11a5ce-1",
+        "github:iroha924/sphica/pull/117#12323d11a5ce-1",
         "doc:CLAUDE.md#実行境界",
         "doc:AGENTS.md#db-と接続"
       ],
@@ -657,7 +657,7 @@
     },
     {
       "q": "レビュー担当に投げる定型の質問、何を足して何を足さないと決めた？",
-      "expect": ["github:iroha924/gleanery/pull/28#bb161fac2449-1"],
+      "expect": ["github:iroha924/sphica/pull/28#bb161fac2449-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -665,8 +665,8 @@
     {
       "q": "作業ツリーを分けて開発する理由はどのドキュメントに書かれている？",
       "expect": [
-        "github:iroha924/gleanery/pull/30#f4e29bb98394-1",
-        "github:iroha924/gleanery/pull/30#f4e29bb98394-1.r1"
+        "github:iroha924/sphica/pull/30#f4e29bb98394-1",
+        "github:iroha924/sphica/pull/30#f4e29bb98394-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -674,28 +674,28 @@
     },
     {
       "q": "クローズされたイシューを取り込み対象から外したのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/129#7f9bd60375b2-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/129#7f9bd60375b2-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
-      "q": "img.shields.io/github/license/iroha924/gleanery のバッジは日本語版READMEのどこ？",
-      "expect": ["doc:README.ja.md#gleanery"],
+      "q": "img.shields.io/github/license/iroha924/sphica のバッジは日本語版READMEのどこ？",
+      "expect": ["doc:README.ja.md#sphica"],
       "kind": "document",
       "source": "knowledge",
       "type": "identifier"
     },
     {
       "q": "再レビュー時も差分の一部でなく全部を見る方針にしたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/50#0aae6c28ea83-1"],
+      "expect": ["github:iroha924/sphica/pull/50#0aae6c28ea83-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
     },
     {
       "q": "Codex への頼み方の手順は、常に読ませる決まり以外にどこへ置いた？",
-      "expect": ["github:iroha924/gleanery/pull/118#3b826f46d785-1", "doc:CLAUDE.md#review"],
+      "expect": ["github:iroha924/sphica/pull/118#3b826f46d785-1", "doc:CLAUDE.md#review"],
       "kind": "decision",
       "source": "knowledge",
       "type": "relation"
@@ -710,8 +710,8 @@
     {
       "q": "成果物に紛れた指示文への対策、承認記録の検証をやめて何にした？",
       "expect": [
-        "github:iroha924/gleanery/pull/32#4dca9f552fa6-1",
-        "github:iroha924/gleanery/pull/32#4dca9f552fa6-1.r1"
+        "github:iroha924/sphica/pull/32#4dca9f552fa6-1",
+        "github:iroha924/sphica/pull/32#4dca9f552fa6-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -725,7 +725,7 @@
       "type": "message"
     },
     {
-      "q": "gleaneryを点検して問題を報告するとき、何を添える決まり？",
+      "q": "sphicaを点検して問題を報告するとき、何を添える決まり？",
       "expect": ["doc:AGENTS.md#動き方"],
       "kind": "document",
       "source": "knowledge",
@@ -733,21 +733,21 @@
     },
     {
       "q": "本文の分類にLLMを使わず定型行の抽出にしたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/129#043167b2e9c3-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/129#043167b2e9c3-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "評価用に本番とは別の検索サーバーを作らなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/114#465a6ba433d9-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/114#465a6ba433d9-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "READMEのコマンド一覧を全部載せず一部だけにしたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/125#85ac203ecf88-1"],
+      "expect": ["github:iroha924/sphica/pull/125#85ac203ecf88-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -768,7 +768,7 @@
     },
     {
       "q": "検索設定が比較元と食い違ったまま評価を走らせない仕組みは？",
-      "expect": ["github:iroha924/gleanery/pull/114#554de41b305a-1"],
+      "expect": ["github:iroha924/sphica/pull/114#554de41b305a-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -776,8 +776,8 @@
     {
       "q": "依存更新を新版の出た直後に上げないため、どんな待機とまとめ方にした？",
       "expect": [
-        "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1",
-        "github:iroha924/gleanery/pull/123#8b0c6bcc9e9d-1.r1"
+        "github:iroha924/sphica/pull/123#8b0c6bcc9e9d-1",
+        "github:iroha924/sphica/pull/123#8b0c6bcc9e9d-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -814,8 +814,8 @@
     {
       "q": "分岐元が特定できない場合、何を基準に差分を見るのか？",
       "expect": [
-        "github:iroha924/gleanery/pull/128#ab2a77298cca-1",
-        "github:iroha924/gleanery/pull/128#ab2a77298cca-1.r1"
+        "github:iroha924/sphica/pull/128#ab2a77298cca-1",
+        "github:iroha924/sphica/pull/128#ab2a77298cca-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -831,8 +831,8 @@
     {
       "q": "traceの説明文を複数行でなく一行にしたのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/26#6672859e86c6-1",
-        "github:iroha924/gleanery/pull/26#6672859e86c6-1.r1"
+        "github:iroha924/sphica/pull/26#6672859e86c6-1",
+        "github:iroha924/sphica/pull/26#6672859e86c6-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -841,8 +841,8 @@
     {
       "q": "mitos の実行パスを片方の環境だけ書き換えたのはどっち？",
       "expect": [
-        "github:iroha924/gleanery/pull/26#ed47acd4ed48-1",
-        "github:iroha924/gleanery/pull/26#ed47acd4ed48-1.r1"
+        "github:iroha924/sphica/pull/26#ed47acd4ed48-1",
+        "github:iroha924/sphica/pull/26#ed47acd4ed48-1.r1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -850,7 +850,7 @@
     },
     {
       "q": "CIでripgrepを入れる手順を丸ごと削除したのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/103#639949829e48-1"],
+      "expect": ["github:iroha924/sphica/pull/103#639949829e48-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -882,7 +882,7 @@
     },
     {
       "q": "検索結果からドキュメントを初めから外さなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/117#35651e11e7a7-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/117#35651e11e7a7-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -897,7 +897,7 @@
     {
       "q": "レビューで過去の知見検索が空だったとき、失敗か本当に無いかどう見分ける？",
       "expect": [
-        "doc:plugin/skills/review/SKILL.md#過去の判断（gleanery-のナレッジ）",
+        "doc:plugin/skills/review/SKILL.md#過去の判断（sphica-のナレッジ）",
         "doc:plugin/skills/review/reviewers/precedent.md#step-1-—-ナレッジに届くかを先に確かめる"
       ],
       "kind": "document",
@@ -913,7 +913,7 @@
     },
     {
       "q": "自前で文章を生成するAPI呼び出しをやめたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/117#35651e11e7a7-1.r4"],
+      "expect": ["github:iroha924/sphica/pull/117#35651e11e7a7-1.r4"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -921,7 +921,7 @@
     {
       "q": "Codexがスキルを勝手に呼び出さないようにする設定はどこでしてる？",
       "expect": [
-        "github:iroha924/gleanery/pull/26#7f8d25878436-1",
+        "github:iroha924/sphica/pull/26#7f8d25878436-1",
         "doc:.agents/skills/plugin-release/SKILL.md#plugin-skill"
       ],
       "kind": "decision",
@@ -941,7 +941,7 @@
     },
     {
       "q": "管理画面をブラウザからターミナル表示に切り替えたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/115#e45974c9752b-1"],
+      "expect": ["github:iroha924/sphica/pull/115#e45974c9752b-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -972,14 +972,14 @@
     },
     {
       "q": "脆弱性の連絡先に電子メールを使わなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/123#a6173565e402-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/123#a6173565e402-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "検索精度を上げるのに手元のベクトル化や並べ替えモデルを使わなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/117#35651e11e7a7-1.r3"],
+      "expect": ["github:iroha924/sphica/pull/117#35651e11e7a7-1.r3"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -1007,7 +1007,7 @@
     },
     {
       "q": "cover の警告で成果物らしいパスだけ除外する案を採らなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/27#7d34a86be879-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/27#7d34a86be879-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
@@ -1021,7 +1021,7 @@
     },
     {
       "q": "案内文の表示幅を標準の計算でなくpanel.tsで見積もるのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/120#491773d9952b-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/120#491773d9952b-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "identifier"
@@ -1036,8 +1036,8 @@
     {
       "q": "PR #117で応答データをどんな形式で返すことにした？",
       "expect": [
-        "github:iroha924/gleanery/pull/117#4b3eabae03f0-1",
-        "github:iroha924/gleanery/pull/117#35651e11e7a7-1"
+        "github:iroha924/sphica/pull/117#4b3eabae03f0-1",
+        "github:iroha924/sphica/pull/117#35651e11e7a7-1"
       ],
       "kind": "decision",
       "source": "knowledge",
@@ -1045,14 +1045,14 @@
     },
     {
       "q": "配布物の検査で、不要になったものを外すだけで済ませなかったのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/116#fe83a7091678-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/116#fe83a7091678-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "サーバー側のSQL呼び出し検出でqueryも対象に含めたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/101#4f4765dedddf-1"],
+      "expect": ["github:iroha924/sphica/pull/101#4f4765dedddf-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -1077,7 +1077,7 @@
     },
     {
       "q": "変更内容を保存するたびに検証コマンドを走らせるのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/27#ef8cba604e91-1"],
+      "expect": ["github:iroha924/sphica/pull/27#ef8cba604e91-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -1104,21 +1104,21 @@
     },
     {
       "q": "評価データを番号の並びだけで紐づける案をやめたのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/114#554de41b305a-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/114#554de41b305a-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"
     },
     {
       "q": "メンテナ向けの注記をモデルに読ませずに残すにはどこに書く？",
-      "expect": ["github:iroha924/gleanery/pull/118#f637b2538541-1"],
+      "expect": ["github:iroha924/sphica/pull/118#f637b2538541-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
     },
     {
       "q": "変更なしで素通りさせる前に後退チェックを走らせるのはなぜ？",
-      "expect": ["github:iroha924/gleanery/pull/126#ab8986b3ed63-1"],
+      "expect": ["github:iroha924/sphica/pull/126#ab8986b3ed63-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -1132,7 +1132,7 @@
     },
     {
       "q": "PR #124 でリリースが失敗した時はどう対応すると決めた？",
-      "expect": ["github:iroha924/gleanery/pull/124#cac608233bd6-1"],
+      "expect": ["github:iroha924/sphica/pull/124#cac608233bd6-1"],
       "kind": "decision",
       "source": "knowledge",
       "type": "decision"
@@ -1147,8 +1147,8 @@
     {
       "q": "設計ドキュメントの書き方ルールを常に読む指示ファイルに入れなかったのはなぜ？",
       "expect": [
-        "github:iroha924/gleanery/pull/30#a12e5629b835-1.r1",
-        "github:iroha924/gleanery/pull/30#a12e5629b835-1"
+        "github:iroha924/sphica/pull/30#a12e5629b835-1.r1",
+        "github:iroha924/sphica/pull/30#a12e5629b835-1"
       ],
       "kind": "option",
       "source": "knowledge",
@@ -1156,7 +1156,7 @@
     },
     {
       "q": "frontmatterで改行入りの説明を解析するライブラリを見送った理由は？",
-      "expect": ["github:iroha924/gleanery/pull/26#6672859e86c6-1.r1"],
+      "expect": ["github:iroha924/sphica/pull/26#6672859e86c6-1.r1"],
       "kind": "option",
       "source": "knowledge",
       "type": "option"

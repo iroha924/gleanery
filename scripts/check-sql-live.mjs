@@ -53,7 +53,7 @@ await withTempDir(async (dir) => {
       );
     }
     // Second round. There are fewer messages and issues than before, so the branches that delete removed messages and issues run here.
-    const again = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "2" });
+    const again = runCli(["harvest", "--cwd", repo], dir, covDir, { SPHICA_FAKE_GH_ROUND: "2" });
     if (!/GitHub: /.test(again.out))
       failures.push(`the second harvest did not go through GitHub\n${again.out.slice(0, 400)}`);
     if (!/(?:PRs and issues|PR or issue) \([^)]*(?<!\d)1 removed\)/.test(again.out))
@@ -151,7 +151,7 @@ await withTempDir(async (dir) => {
       strangerAs,
     );
     const strayed = runCli(["capture", "flush"], dir, covDir, strangerAs);
-    const kept = path.join(dir, ".gleanery", "spool", "unregistered");
+    const kept = path.join(dir, ".sphica", "spool", "unregistered");
     const left = fs.existsSync(kept) ? fs.readdirSync(kept).filter((f) => f.endsWith(".json")) : [];
     if (left.length === 0) {
       failures.push(
@@ -201,7 +201,7 @@ await withTempDir(async (dir) => {
     };
     const esc = "\u001b[2J\u001b]0;pwn\u0007\r";
     // After linking with who --me, decisions are written from the owner's merged PR bodies (the fake gh marks the PR merged only in the hostile round)
-    const decided = runCli(["harvest", "--cwd", repo], dir, covDir, { GLEANERY_FAKE_GH_ROUND: "hostile" });
+    const decided = runCli(["harvest", "--cwd", repo], dir, covDir, { SPHICA_FAKE_GH_ROUND: "hostile" });
     if (!/PR decisions: [1-9]/.test(decided.out))
       failures.push(`harvest does not report PR decisions\n${decided.out.slice(0, 600)}`);
     clean("who (third-party handle)", runCli(["who"], dir, covDir), "someone");

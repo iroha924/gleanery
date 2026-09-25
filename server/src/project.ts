@@ -1,7 +1,7 @@
 // Identifies projects.
 //
 // The key is the normalized git remote (`git:github.com/owner/repo`), so it is the same on every machine.
-// Only projects without a remote are mapped to `local:<name>` through a per-machine table (~/.gleanery/projects.json).
+// Only projects without a remote are mapped to `local:<name>` through a per-machine table (~/.sphica/projects.json).
 // Local paths are not stored in the database. They differ per machine, and each machine finds them under ~/Projects when syncing.
 
 import { execFileSync } from "node:child_process";
@@ -14,7 +14,7 @@ import type { DB } from "./db-types.ts";
 export type Place = { key: string; root: string; name: string };
 
 // Resolve the location on every call (so tests that replace HOME never touch the real table).
-const localFile = (): string => path.join(os.homedir(), ".gleanery", "projects.json");
+const localFile = (): string => path.join(os.homedir(), ".sphica", "projects.json");
 const LOCAL_KEY = /^[a-z0-9][a-z0-9._-]*$/;
 
 /**
@@ -112,14 +112,14 @@ export function nameLocal(dir: string, name: string): Place {
   const root = rootOf(dir);
   const m = localMap();
   m[root] = name;
-  // **Create the directory first.** `gleanery init` creates ~/.gleanery/, but a user may name a project before that.
+  // **Create the directory first.** `sphica init` creates ~/.sphica/, but a user may name a project before that.
   // Writing without it fails with ENOENT, and the project cannot be named.
   fs.mkdirSync(path.dirname(localFile()), { recursive: true, mode: 0o700 });
   fs.writeFileSync(localFile(), `${JSON.stringify(m, null, 2)}\n`);
   return { key: `local:${name}`, root, name };
 }
 
-/** The project id, or null (only `gleanery project add` creates one). */
+/** The project id, or null (only `sphica project add` creates one). */
 export async function projectId(db: Kysely<DB>, key: string): Promise<number | null> {
   const r = await db.selectFrom("project").select("id").where("key", "=", key).executeTakeFirst();
   return r?.id ?? null;
@@ -173,7 +173,7 @@ export type Connector = { id: number; headOid: string | null; snapshotAt: string
 /**
  * The source row, created when missing. **Call inside a transaction (inTransaction, which takes the write lock first)**
  * so syncs of the same source commit one at a time.
- * Sync results and the last snapshot are written here (`gleanery doctor` and the dashboard show the last sync).
+ * Sync results and the last snapshot are written here (`sphica doctor` and the dashboard show the last sync).
  */
 export async function connectorOf(
   db: Kysely<DB>,

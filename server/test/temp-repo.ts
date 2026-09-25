@@ -10,7 +10,7 @@ import path from "node:path";
 export async function withRepo(
   fn: (repo: string, git: (...a: string[]) => string) => void | Promise<void>,
 ): Promise<void> {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-docs-")));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-docs-")));
   try {
     const repo = path.join(dir, "repo");
     execFileSync("git", ["init", "-q", repo], { stdio: "ignore" });

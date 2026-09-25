@@ -4,7 +4,7 @@
 // what keeps the next decision from going wrong — decisions and rejected options, constraints, non-goals, dead ends, findings,
 // intentional debt, verifications, questions — plus where work stands, read when continuing it.
 //
-// Shape validation lives here only; `gleanery trace check` and `gleanery trace save` go through the same function.
+// Shape validation lives here only; `sphica trace check` and `sphica trace save` go through the same function.
 
 import { type Kysely, type SqlBool, sql } from "kysely";
 import { z } from "zod";
@@ -16,7 +16,7 @@ import { mask, sha256 } from "./text.ts";
 
 const KEY = /^[a-z0-9][a-z0-9._-]*$/;
 const key = z.string().regex(KEY, "use a meaningful word of lowercase letters, digits, and . _ - only");
-/** A decision in another session is `<host>:<session id>#<key>`. `gleanery trace context` prints this form. */
+/** A decision in another session is `<host>:<session id>#<key>`. `sphica trace context` prints this form. */
 const ref = z
   .string()
   .regex(/^([a-z-]+:[^#\s]+#)?[a-z0-9][a-z0-9._-]*$/, "a key, or <host>:<session id>#<key>");

@@ -42,7 +42,7 @@ export function kyselyOn(connect: () => DatabaseSync): Kysely<DB> {
   });
 }
 
-/** A read-only connection, used by MCP, the dashboard, and `gleanery search`. */
+/** A read-only connection, used by MCP, the dashboard, and `sphica search`. */
 export function openReader(file: string = dbFile()): Kysely<DB> {
   return kyselyOn(() => connectReader(file));
 }

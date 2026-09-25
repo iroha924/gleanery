@@ -1,6 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "gleanery",
+  "name": "sphica",
   "description": "Recall past decisions and conversations while you develop.",
   "owner": {
     "name": "iroha924",
@@ -8,12 +8,12 @@
   },
   "plugins": [
     {
-      "name": "gleanery",
+      "name": "sphica",
       "description": "Records Claude Code and Codex sessions on your machine and recalls past decisions, rejected options, constraints, and what was said.",
       "source": {
         "source": "npm",
-        "package": "gleanery",
-        "version": "0.41.0"
+        "package": "sphica",
+        "version": "0.1.0"
       },
       "author": {
         "name": "iroha924",

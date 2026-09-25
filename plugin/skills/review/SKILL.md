@@ -69,10 +69,10 @@ as a reason to drop the other.
 And **neither layer stops a reviewer from reading someone else's `AGENTS.md` as binding rules.**
 
 ```bash
-/gleanery:review              # commits beyond upstream + uncommitted changes
-/gleanery:review 42           # PR #42
-/gleanery:review main...feat  # ref range
-/gleanery:review 42 full      # raise the aspects to 5 (default 3)
+/sphica:review              # commits beyond upstream + uncommitted changes
+/sphica:review 42           # PR #42
+/sphica:review main...feat  # ref range
+/sphica:review 42 full      # raise the aspects to 5 (default 3)
 ```
 
 **The only arguments are the range and a trailing `full`.** Split on whitespace, and **only when the last word exactly equals `full`**
@@ -139,7 +139,7 @@ Passing rules whose `paths:` do not match **makes reviewers produce findings fro
 If nothing is found, report "no written rules". **Do not invent rules to pass on.**
 Layer 5 and "patterns the surrounding code already follows" remain, so the review is still not empty.
 
-### Past decisions (gleanery knowledge)
+### Past decisions (Sphica knowledge)
 
 **Do not read 0 results as "none".** "Searched and found nothing", "could not reach the database", and
 "the project is not registered" all look like 0 results if left alone. Tell them apart by the `recall` response.
@@ -147,7 +147,7 @@ Layer 5 and "patterns the surrounding code already follows" remain, so the revie
 | State | How to tell | Ledger value |
 |---|---|---|
 | MCP does not connect / the database is unreachable | The tool call fails | **`unable`** + reason |
-| Connected, but the project is not registered | Returns "is not registered with gleanery" | **`unable`** + "this repository is not registered with gleanery (`gleanery project add`)" |
+| Connected, but the project is not registered | Returns "is not registered with Sphica" | **`unable`** + "this repository is not registered with Sphica (`sphica project add`)" |
 | The location given is not a project | Returns "cannot tell which project it is" | **`unable`** + "the repository root was not passed as `cwd`" |
 | Registered, and the search found 0 | Returns "No matches" or "No matching messages" | **`ran`**. Treat it as a grounded negative |
 
@@ -165,7 +165,7 @@ expand this table. Listing aspects separately lets a new aspect land in only one
 | `full` | `adversarial` / `security` / `conventions` / `cleanup` / `precedent` |
 
 **The default is `standard`.** It covers the 3 aspects that map directly to the fix criteria (the 4 in Step 7's continuation). What the 2 aspects added by `full` catch
-(unwritten reimplementations, one-off abstractions, premature sharing, fixes that are too shallow, past decisions kept only in gleanery)
+(unwritten reimplementations, one-off abstractions, premature sharing, fixes that are too shallow, past decisions kept only in Sphica)
 can be missed by `standard`. **The default is kept light knowing this.**
 
 | Aspect | Body | Tools given |
@@ -174,7 +174,7 @@ can be missed by `standard`. **The default is kept light knowing this.**
 | Security | `reviewers/security.md` | `Read` `Grep` `Glob` `Bash` |
 | Written conventions | `reviewers/conventions.md` | `Read` `Grep` `Glob` |
 | Redundancy | `reviewers/cleanup.md` | `Read` `Grep` `Glob` |
-| Past decisions | `reviewers/precedent.md` | `Read` `Grep` `Glob` + the gleanery MCP |
+| Past decisions | `reviewers/precedent.md` | `Read` `Grep` `Glob` + the Sphica MCP |
 
 The validator is `reviewers/validator.md` (`Read` `Grep` `Glob` `Bash`). It is not an aspect, so it is not in the mode's launch plan; Step 6 starts it only when a candidate needs it.
 
@@ -435,12 +435,12 @@ as **"changes that were not reviewed"**.
 
 ### Format
 
-Shape the reply like gleanery's other output: `✦` for the title, states use marks (`✓` ran / `△` cut short / `✗` unable / `○` not run),
+Shape the reply like Sphica's other output: `✦` for the title, states use marks (`✓` ran / `△` cut short / `✗` unable / `○` not run),
 and a final `╰─` line. Write tables in Markdown (Claude Code draws borders and column widths to fit the screen).
 State marks appear only in this legend and in the state cells of the ledger table in the example below. Write cells as "mark state (note)", and put no marks inside notes (marks written anywhere else leave old marks behind when the marks change).
 
 ```
-✦ **gleanery review** · origin/main...HEAD · standard · aspects 3/5 × models 2 · round 1/2
+✦ **sphica review** · origin/main...HEAD · standard · aspects 3/5 × models 2 · round 1/2
 
 | Aspect (body given) | Claude | Codex |
 |---|---|---|

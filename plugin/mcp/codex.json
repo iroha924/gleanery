@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "gleanery": {
+    "sphica": {
       "command": "node",
       "args": ["./dist/mcp.js"],
       "cwd": "."

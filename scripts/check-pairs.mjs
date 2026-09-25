@@ -4,7 +4,7 @@
 // Fixing only one interface goes unnoticed, because the other still works.
 //
 // **Only pairs that can be listed as sets are handled.** Whether prose matches cannot be judged through wording
-// differences, so those copies are removed instead of compared (the README has no CLI list and points to `gleanery --help`). Pairs that are not sets
+// differences, so those copies are removed instead of compared (the README has no CLI list and points to `sphica --help`). Pairs that are not sets
 // (the same check at each stage of a path, the same data built in different shapes by two interfaces) are not caught here. A section in AGENTS.md covers them.
 
 import fs from "node:fs";
@@ -219,7 +219,7 @@ if (Object.keys(LEDGER).every((k) => marks[k])) {
 // **Read the directory.** Listing names would let a new definition fall outside the check silently (measured: review-validator was missed).
 const AGENT_DIR = "plugin/skills/review/reviewers";
 // The minimum set, aligned with the surfaces listed under the core principles of `~/.claude/rules/ai-agent-security.md`. Each definition
-// must include it and may add more, so a reviewer can add sources only it has (review-precedent adds gleanery records,
+// must include it and may add more, so a reviewer can add sources only it has (review-precedent adds Sphica records,
 // and review-validator adds the claims it is given).
 const UNTRUSTED_MIN = [
   "PR bodies",

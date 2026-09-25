@@ -17,7 +17,7 @@ const MIGRATIONS = path.join(ROOT, "db", "migrations");
 const R1 = fs.readFileSync(path.join(import.meta.dirname, "fixtures", "schema-r1.sql"), "utf8");
 
 function r1Db(): { raw: DatabaseSync; file: string } {
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-r1-")), "gleanery.db");
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-r1-")), "sphica.db");
   const raw = connectWriter("owner", file, true);
   raw.exec(R1);
   return { raw, file };
@@ -81,10 +81,10 @@ test("only requirements and design rows and their descendants go, the rest stays
   );
   const doc = source(raw, docs, "document", { path: "docs/a.md", body: "本文" });
   const req = source(raw, docs, "requirements", {
-    path: ".gleanery/changes/x/requirements.md",
+    path: ".sphica/changes/x/requirements.md",
     body: "要件",
   });
-  const des = source(raw, docs, "design", { path: ".gleanery/changes/x/design.md", body: "設計" });
+  const des = source(raw, docs, "design", { path: ".sphica/changes/x/design.md", body: "設計" });
   const pr = source(raw, gh, "pull_request", { state: "open" });
   const keepDoc = section(raw, p, doc, "keepword");
   const reqSec = section(raw, p, req, "reqword");
@@ -109,7 +109,7 @@ test("only requirements and design rows and their descendants go, the rest stays
     .run(body, Buffer.byteLength(body), at("2026-09-02T00:00:00Z"), hash());
   raw
     .prepare(
-      "insert into message_file (message_id, path, action) values ('m-1', '.gleanery/changes/x/requirements.md', 'read')",
+      "insert into message_file (message_id, path, action) values ('m-1', '.sphica/changes/x/requirements.md', 'read')",
     )
     .run();
   const seqBefore = Number(one(raw, "select seq from sqlite_sequence where name = 'source_item'")?.seq);
@@ -117,7 +117,7 @@ test("only requirements and design rows and their descendants go, the rest stays
   const applied = applyMigrations(raw, fs.readdirSync(MIGRATIONS), MIGRATIONS);
   assert.deepEqual(
     applied.map((m) => m.revision),
-    [2, 3, 4],
+    [2, 3, 4, 5],
   );
   assert.equal(Number(one(raw, "pragma user_version")?.user_version), SCHEMA_REVISION);
   assert.equal(Number(one(raw, "pragma foreign_keys")?.foreign_keys), 1);
@@ -164,21 +164,22 @@ test("only requirements and design rows and their descendants go, the rest stays
 
   // The schema equals that of a new database, apart from SQL comments (SQLite stores comments inside CREATE statements,
   // and databases created from the r1 schema keep its Japanese comments)
-  const fresh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-fresh-")), "gleanery.db");
+  const fresh = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-fresh-")), "sphica.db");
   dbInit(fresh);
-  const schemaOf = (db: DatabaseSync) =>
-    (
-      db
-        .prepare(
-          "select type, name, tbl_name, sql from sqlite_schema where name not like 'sqlite_%' order by type, name",
-        )
-        .all() as { type: string; name: string; tbl_name: string; sql: string | null }[]
-    ).map((r) => ({ ...r, sql: r.sql === null ? null : sqlShape(r.sql) }));
   const freshRaw = connectWriter("owner", fresh);
   assert.deepEqual(schemaOf(raw), schemaOf(freshRaw));
   freshRaw.close();
   raw.close();
 });
+
+const schemaOf = (db: DatabaseSync) =>
+  (
+    db
+      .prepare(
+        "select type, name, tbl_name, sql from sqlite_schema where name not like 'sqlite_%' order by type, name",
+      )
+      .all() as { type: string; name: string; tbl_name: string; sql: string | null }[]
+  ).map((r) => ({ ...r, sql: r.sql === null ? null : sqlShape(r.sql) }));
 
 /**
  * SQL without comments and with whitespace collapsed, for comparing schema text. Quoted spans ('…', "…", `…`, […]) stay byte for byte,
@@ -249,8 +250,8 @@ test("deleted ids are not reused even when no source_item remains", () => {
   const docs = Number(
     one(raw, "insert into connector (project_id, provider) values (?, 'docs') returning id", p)?.id,
   );
-  source(raw, docs, "requirements", { path: ".gleanery/changes/x/requirements.md", body: "要件" });
-  const last = source(raw, docs, "design", { path: ".gleanery/changes/x/design.md", body: "設計" });
+  source(raw, docs, "requirements", { path: ".sphica/changes/x/requirements.md", body: "要件" });
+  const last = source(raw, docs, "design", { path: ".sphica/changes/x/design.md", body: "設計" });
   applyMigrations(raw, fs.readdirSync(MIGRATIONS), MIGRATIONS);
   assert.equal(count(raw, "select count(*) as n from source_item"), 0);
   const next = source(raw, docs, "document", { path: "docs/a.md", body: "本文" });
@@ -264,6 +265,63 @@ test("0003, which rebuilds tables, declares foreign keys off", () => {
   assert.ok(file, "0003 exists");
   assert.equal(
     fs.readFileSync(path.join(MIGRATIONS, file), "utf8").split("\n")[0],
-    "-- gleanery: foreign_keys=off",
+    "-- sphica: foreign_keys=off",
   );
+});
+
+// A revision 4 database whose triggers and view call the tokenizer under another name. 0005 must replace them without
+// that name being registered, keep the index, and leave the schema of a new database.
+test("0005 moves the tokenizer calls to sphica_terms without the old function and keeps the index", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-r4-"));
+  const file = path.join(dir, "sphica.db");
+  dbInit(file);
+  let raw = connectWriter("owner", file);
+  const legacy = raw
+    .prepare("select type, name, sql from sqlite_schema where sql like '%sphica_terms(%'")
+    .all() as { type: string; name: string; sql: string }[];
+  assert.deepEqual(legacy.map((r) => r.name).sort(), [
+    "knowledge_search_text",
+    "message_fts_ai",
+    "message_fts_au",
+  ]);
+  for (const r of legacy) raw.exec(`drop ${r.type} ${r.name}`);
+  for (const r of legacy) raw.exec(r.sql.replaceAll("sphica_terms(", "legacy_terms("));
+  raw.function("legacy_terms", { deterministic: true }, (text) => String(text ?? "").toLowerCase());
+  raw.exec("pragma user_version = 4");
+  const p = Number(
+    one(raw, "insert into project (key, name) values ('git:github.com/o/r', 'o/r') returning id")?.id,
+  );
+  const docs = Number(
+    one(raw, "insert into connector (project_id, provider) values (?, 'docs') returning id", p)?.id,
+  );
+  const keep = section(raw, p, source(raw, docs, "document", { path: "docs/a.md", body: "本文" }), "oldword");
+  raw.close();
+
+  raw = connectWriter("owner", file);
+  assert.throws(
+    () => section(raw, p, source(raw, docs, "document", { path: "docs/b.md", body: "本文" }), "early"),
+    /no such function: legacy_terms/,
+    "before 0005 a write without the old function fails",
+  );
+  const applied = applyMigrations(raw, fs.readdirSync(MIGRATIONS), MIGRATIONS);
+  assert.deepEqual(
+    applied.map((m) => m.revision),
+    [5],
+  );
+  assert.deepEqual(matches(raw, "oldword"), [keep], "rows indexed before 0005 are still found");
+  const added = section(
+    raw,
+    p,
+    source(raw, docs, "document", { path: "docs/c.md", body: "本文" }),
+    "newword",
+  );
+  assert.deepEqual(matches(raw, "newword"), [added]);
+  assert.equal(count(raw, "select count(*) as n from sqlite_schema where sql like '%legacy_terms%'"), 0);
+
+  const fresh = path.join(dir, "fresh.db");
+  dbInit(fresh);
+  const freshRaw = connectWriter("owner", fresh);
+  assert.deepEqual(schemaOf(raw), schemaOf(freshRaw));
+  freshRaw.close();
+  raw.close();
 });

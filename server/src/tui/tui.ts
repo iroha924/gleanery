@@ -1,4 +1,4 @@
-// `gleanery dashboard` (the terminal screen, moved from the web screen). CLI output is also drawn with Ink, so Ink is bundled into cli.js.
+// `sphica dashboard` (the terminal screen, moved from the web screen). CLI output is also drawn with Ink, so Ink is bundled into cli.js.
 
 import { ThemeProvider } from "@inkjs/ui";
 import { render } from "ink";
@@ -13,7 +13,7 @@ export async function runTui(cwd: string): Promise<void> {
   // Do not start where the screen cannot be drawn (pipes, CI). The CLI has separate read-only listings
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     console.error(
-      "gleanery dashboard runs only in a terminal. To look up records, use `gleanery search <terms>`.",
+      "sphica dashboard runs only in a terminal. To look up records, use `sphica search <terms>`.",
     );
     process.exitCode = 1;
     return;
@@ -22,9 +22,7 @@ export async function runTui(cwd: string): Promise<void> {
   try {
     live = await liveData(cwd);
   } catch (e) {
-    throw new Error(
-      `Could not open the database (${reason(e)}). Check the DB section of \`gleanery doctor\`.`,
-    );
+    throw new Error(`Could not open the database (${reason(e)}). Check the DB section of \`sphica doctor\`.`);
   }
   const { data, close } = live;
   try {

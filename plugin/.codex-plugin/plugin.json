@@ -1,13 +1,13 @@
 {
-  "name": "gleanery",
-  "version": "0.41.0",
+  "name": "sphica",
+  "version": "0.1.0",
   "description": "Records conversations automatically and recalls past decisions, rejected options, constraints, and what was said.",
   "author": {
     "name": "iroha924",
     "email": "shunichi@hir4ta.com"
   },
-  "homepage": "https://github.com/iroha924/gleanery",
-  "repository": "https://github.com/iroha924/gleanery",
+  "homepage": "https://github.com/iroha924/sphica",
+  "repository": "https://github.com/iroha924/sphica",
   "skills": "./skills/",
   "hooks": "./hooks/codex.json",
   "mcpServers": "./mcp/codex.json"

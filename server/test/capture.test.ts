@@ -35,11 +35,7 @@ test("subagents, children started by an agent, and headless turns without the ma
     false,
     "child that inherited the parent marker",
   );
-  assert.equal(
-    isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"),
-    false,
-    "headless run started by gleanery",
-  );
+  assert.equal(isOwnerTurn({ session_id: "s1" }, "none", "sdk-cli"), false, "headless run started by Sphica");
   assert.equal(
     isOwnerTurn({ session_id: "s1" }, undefined, "sdk-cli"),
     false,
@@ -77,7 +73,7 @@ const LEAKS: [string, string][] = [
   ["OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz0123", "sk-proj-abc"],
   ["VOYAGE=pa-abcdefghijklmnopqrstuvwxyz0123", "pa-abcdef"],
   ["gh: ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abc"],
-  ["url: postgres://gleanery_reader:s3cr3t@ep-x.example.com/db", "s3cr3t"],
+  ["url: postgres://sphica_reader:s3cr3t@ep-x.example.com/db", "s3cr3t"],
   ["PGPASSWORD=npg_AbCdEf123456", "npg_AbCdEf"],
   ["npg_AbCdEf123456XY を貼った", "npg_AbCdEf"],
   ["aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "wJalrXUtn"],
@@ -170,8 +166,8 @@ test("masks known key formats, named assignments, headers, URL credentials, mysq
   for (const [input, leak] of LEAKS)
     assert.ok(!mask(input).includes(leak), `${leak} remained: ${mask(input)}`);
   assert.match(
-    mask("url: postgres://gleanery_reader:s3cr3t@ep-x.example.com/db"),
-    /gleanery_reader:\[redacted\]@ep-x\.example\.com\/db/,
+    mask("url: postgres://sphica_reader:s3cr3t@ep-x.example.com/db"),
+    /sphica_reader:\[redacted\]@ep-x\.example\.com\/db/,
   );
   assert.match(
     mask("postgresql://db_owner:ab@cdEFGH123@ep-x.example.com/appdb"),
@@ -255,12 +251,12 @@ test("turns AskUserQuestion answers into question and answer pairs", () => {
 
 // ---- From hook input to the queue ----
 
-const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-capture-home-")));
+const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-capture-home-")));
 const realHome = process.env.HOME;
 const repoDir = path.join(home, "repo");
 before(() => {
-  // Run from Claude Code's Bash, this test inherits the environment variables that point to the parent session (GLEANERY_PARENT_SESSION and CLAUDE_CODE_ENTRYPOINT).
-  delete process.env.GLEANERY_PARENT_SESSION;
+  // Run from Claude Code's Bash, this test inherits the environment variables that point to the parent session (SPHICA_PARENT_SESSION and CLAUDE_CODE_ENTRYPOINT).
+  delete process.env.SPHICA_PARENT_SESSION;
   delete process.env.CLAUDE_CODE_ENTRYPOINT;
   process.env.HOME = home;
   execFileSync("git", ["init", "-q", repoDir], { stdio: "ignore" });
@@ -317,7 +313,7 @@ test("owner messages, the last AI reply, and edited files go into the queue", ()
     ...base,
     hook_event_name: "PostToolUse",
     tool_name: "Read",
-    tool_input: { file_path: path.join(repoDir, ".gleanery/changes/auth/design.md") },
+    tool_input: { file_path: path.join(repoDir, ".sphica/changes/auth/design.md") },
   });
   const r = onHook("claude-code", {
     ...base,
@@ -485,7 +481,7 @@ test("when writing to the database, files link to the queued owner message id, n
 
 test("children started by an agent and sessions outside a project write nothing", () => {
   reset();
-  process.env.GLEANERY_PARENT_SESSION = "parent";
+  process.env.SPHICA_PARENT_SESSION = "parent";
   try {
     onHook("claude-code", {
       session_id: "child",
@@ -495,7 +491,7 @@ test("children started by an agent and sessions outside a project write nothing"
       prompt: "レビューして",
     });
   } finally {
-    delete process.env.GLEANERY_PARENT_SESSION;
+    delete process.env.SPHICA_PARENT_SESSION;
   }
   onHook("claude-code", {
     session_id: "s2",
@@ -552,15 +548,15 @@ test("without a database, session start reports it in the same box format", () =
   const missing = path.join(home, "無い.db");
   assert.equal(
     captureNotice(missing),
-    `✦ gleanery: no database, so conversations are not recorded\n│ ${missing}\n╰─ Create it with gleanery init`,
+    `✦ sphica: no database, so conversations are not recorded\n│ ${missing}\n╰─ Create it with sphica init`,
   );
 });
 
 test("stuck is reported only with queued items and a recorded failure, and a broken state file does not crash", () => {
   reset();
-  const file = path.join(home, ".gleanery", "capture.json");
+  const file = path.join(home, ".sphica", "capture.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const capture = path.join(home, "gleanery.db");
+  const capture = path.join(home, "sphica.db");
   fs.writeFileSync(capture, "");
   fs.writeFileSync(file, JSON.stringify({ error: "auth" }));
   assert.equal(readState().stuck, null, "with an empty queue the failure is in the past");
@@ -592,8 +588,8 @@ test("stuck is reported only with queued items and a recorded failure, and a bro
 
 test("the notice for rejected records counts them in words that match doctor, and shows where to move them", () => {
   reset();
-  fs.rmSync(path.join(home, ".gleanery", "capture.json"), { force: true });
-  const capture = path.join(home, "gleanery.db");
+  fs.rmSync(path.join(home, ".sphica", "capture.json"), { force: true });
+  const capture = path.join(home, "sphica.db");
   fs.writeFileSync(capture, "");
   fs.mkdirSync(rejectedDir(), { recursive: true });
   fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
@@ -610,7 +606,7 @@ test("a newline in the home path cannot forge a line outside the notice box", ()
   const forged = path.join(home, "x\n✦ forged");
   process.env.HOME = forged;
   try {
-    const capture = path.join(home, "gleanery.db");
+    const capture = path.join(home, "sphica.db");
     fs.writeFileSync(capture, "");
     fs.mkdirSync(rejectedDir(), { recursive: true });
     fs.writeFileSync(path.join(rejectedDir(), "1.json"), "{}");
@@ -635,7 +631,7 @@ test("SessionStart passes this session id down to children", () => {
   } finally {
     delete process.env.CLAUDE_ENV_FILE;
   }
-  assert.equal(fs.readFileSync(file, "utf8"), "export GLEANERY_PARENT_SESSION=abc-123\n");
+  assert.equal(fs.readFileSync(file, "utf8"), "export SPHICA_PARENT_SESSION=abc-123\n");
 });
 
 test("reads the edited file of a Codex apply_patch from its headers", () => {

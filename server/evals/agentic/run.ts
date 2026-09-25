@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 // Has `claude -p` answer the retrieval.json questions through a bundled MCP server. **It uses the owner's subscription; not part of verify.**
-// GLEANERY_DB is a fixed `vacuum into` copy of the question set's snapshot. Results go to <OUT>/<name>/<split>/.
-//   GLEANERY_DB=<copy> bun run evals:agentic -- --name base --split dev --model sonnet (repeats of one setup: base-r2, base-r3)
+// SPHICA_DB is a fixed `vacuum into` copy of the question set's snapshot. Results go to <OUT>/<name>/<split>/.
+//   SPHICA_DB=<copy> bun run evals:agentic -- --name base --split dev --model sonnet (repeats of one setup: base-r2, base-r3)
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -20,8 +20,8 @@ import { callsOf, replay, type Session, sessionOf } from "./session.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
-/** Outside the repository and ~/.gleanery, and kept across reboots (the ledger decides the next experiment from past runs) */
-export const OUT = process.env.GLEANERY_EVALS_OUT || path.join(os.homedir(), ".cache", "gleanery-evals");
+/** Outside the repository and ~/.sphica, and kept across reboots (the ledger decides the next experiment from past runs) */
+export const OUT = process.env.SPHICA_EVALS_OUT || path.join(os.homedir(), ".cache", "sphica-evals");
 
 export type Case = { q: string; expect: string[]; kind: string; source: string };
 const CASES = fs.readFileSync(path.join(HERE, "../retrieval.json"), "utf8");
@@ -52,7 +52,7 @@ export type Result = {
 // all_projects is needed because each question runs in an empty directory that belongs to no project.
 export const ANSWER_VERSION = 2;
 const ANSWER = [
-  "gleanery の recall と read には all_projects: true を付ける。",
+  "sphica の recall と read には all_projects: true を付ける。",
   '最後の行に {"refs":["k:1","k:2"]} の形の JSON だけを出す（問いに最も直接答える記録を関連の高い順に最大 5 件）。',
 ].join("\n");
 /** Caps per question, so a looping agent cannot run up the owner's usage */
@@ -271,16 +271,16 @@ async function solve(
 ): Promise<Result> {
   const dir = path.join(o.run, `q${i}`);
   fs.mkdirSync(dir);
-  // The working directory is an empty place, neither the repository nor ~/.gleanery. Loading the owner's CLAUDE.md, plugins, and hooks
+  // The working directory is an empty place, neither the repository nor ~/.sphica. Loading the owner's CLAUDE.md, plugins, and hooks
   // would measure the owner's setup instead of the shipped tools (and the hooks would even run capture).
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-cwd-"));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-evals-cwd-"));
   if (o.memo) fs.copyFileSync(o.memo, path.join(cwd, "CLAUDE.md"));
   const config = path.join(dir, "mcp.json");
-  // Point GLEANERY_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
-  const env = { GLEANERY_DB: fixedDb() };
+  // Point SPHICA_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
+  const env = { SPHICA_DB: fixedDb() };
   fs.writeFileSync(
     config,
-    JSON.stringify({ mcpServers: { gleanery: { command: "node", args: [o.mcp], env } } }),
+    JSON.stringify({ mcpServers: { sphica: { command: "node", args: [o.mcp], env } } }),
   );
   const t0 = Date.now();
   try {
@@ -302,7 +302,7 @@ async function solve(
         "--tools",
         "",
         "--allowedTools",
-        "mcp__gleanery__recall,mcp__gleanery__read",
+        "mcp__sphica__recall,mcp__sphica__read",
         // stream-json prints each tool call on its own line. json keeps only the last reply, so misses cannot be traced
         "--output-format",
         "stream-json",
@@ -401,18 +401,18 @@ export function refsOf(text: string): string[] | null {
 }
 
 /**
- * The measured DB. **A live DB changes between runs**, so only a copy is accepted: GLEANERY_DB must be set and have no pending WAL
+ * The measured DB. **A live DB changes between runs**, so only a copy is accepted: SPHICA_DB must be set and have no pending WAL
  * (a copy made with `vacuum into` has none).
  */
-export function fixedDb(live = path.join(os.homedir(), ".gleanery", "gleanery.db")): string {
-  const db = process.env.GLEANERY_DB;
+export function fixedDb(live = path.join(os.homedir(), ".sphica", "sphica.db")): string {
+  const db = process.env.SPHICA_DB;
   if (!db)
-    throw new Error("Set GLEANERY_DB to a copy of the DB made with vacuum into (the run records its hash)");
+    throw new Error("Set SPHICA_DB to a copy of the DB made with vacuum into (the run records its hash)");
   // Resolved through symlinks, so a link to the live database is caught and its WAL is looked up where it really is
   const real = (p: string) => (fs.existsSync(p) ? fs.realpathSync(p) : path.resolve(p));
   const file = real(db);
   if (file === real(live))
-    throw new Error("GLEANERY_DB points at the live database. Measure a copy made with vacuum into");
+    throw new Error("SPHICA_DB points at the live database. Measure a copy made with vacuum into");
   // SQLite names the WAL after the path it opened (the link on Windows, the target elsewhere), so both are checked
   if ([db, file].some((f) => (fs.statSync(`${f}-wal`, { throwIfNoEntry: false })?.size ?? 0) > 0))
     throw new Error(
