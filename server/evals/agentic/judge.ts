@@ -9,8 +9,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { openReader } from "../../src/db.ts";
-import { CASES_SHA, CLAUDE_ENV, cases, OUT, type Result, type summarize } from "./run.ts";
+import {
+  CASES_SHA,
+  CLAUDE_ENV,
+  cases,
+  fixedDb,
+  knowledgeRows,
+  OUT,
+  type Result,
+  SNAPSHOT,
+  type summarize,
+} from "./run.ts";
+import { type Conditions, ineligible, type Run, verdict } from "./verdict.ts";
 
 type Grade = "direct" | "partial" | "no";
 type Row = {
@@ -39,21 +49,21 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
     out: { type: "string" },
-    model: { type: "string", default: "opus" },
+    // A model id, not an alias: cached grades are keyed by it, and an alias would mix grades of two models
+    model: { type: "string", default: "claude-opus-5-5" },
     par: { type: "string", default: "4" },
+    // The setup (name without -rN) every other setup of the same split and model is judged against
+    base: { type: "string" },
+    // Writes the verdicts as JSON (the experiment command reads it)
+    json: { type: "string" },
   },
 });
 if (positionals.length === 0)
-  throw new Error("pass a run result dir (os.tmpdir()/gleanery-evals/<name>/<split>) or baseline.json");
+  throw new Error(`pass a run result dir (${OUT}/<name>/<split>) or baseline.json`);
 fs.mkdirSync(CACHE, { recursive: true });
 
-const db = openReader();
-const rows = await db
-  .selectFrom("knowledge")
-  .select(["source_key", "kind", "status", "heading", "body", "reason"])
-  .execute();
+const rows = knowledgeRows(fixedDb());
 const counted = rows.length;
-await db.destroy();
 // Part of the judge prompt and the slot hash. Translating it would invalidate cached and baseline grades.
 const text = (r: Row) =>
   `種類: ${r.kind}${r.status ? `/${r.status}` : ""}\n見出し: ${r.heading ?? ""}\n本文: ${r.body.slice(0, 1500)}${r.reason ? `\n理由: ${r.reason.slice(0, 400)}` : ""}`;
@@ -117,6 +127,11 @@ for (const src of positionals) {
     results: Result[];
   };
   const { results, ...summary } = s;
+  // Runs from before turns_mean existed: recompute it from the questions, since the rounded turns would skew the guardrail
+  summary.turns_mean ??= results.reduce((a, r) => a + r.turns, 0) / Math.max(results.length, 1);
+  if (results.every((r) => r.session))
+    summary.tool_kib_mean ??=
+      results.reduce((a, r) => a + r.session.bytes / 1024, 0) / Math.max(results.length, 1);
   if (summary.cases !== CASES_SHA)
     throw new Error(`${src} was measured with a different retrieval.json and cannot be compared`);
   systems.push({ summary, top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })) });
@@ -168,7 +183,6 @@ function claude(prompt: string): Promise<string> {
       "claude",
       [
         "-p",
-        prompt,
         "--model",
         values.model,
         "--setting-sources",
@@ -183,8 +197,10 @@ function claude(prompt: string): Promise<string> {
         "json",
         "--no-session-persistence",
       ],
-      { cwd: CACHE, env: CLAUDE_ENV, stdio: ["ignore", "pipe", "ignore"] },
+      { cwd: CACHE, env: CLAUDE_ENV, stdio: ["pipe", "pipe", "ignore"] },
     );
+    // Through stdin: as an argument, text starting with `--` is read as an option
+    child.stdin.end(prompt);
     const timer = setTimeout(() => child.kill("SIGTERM"), 300_000);
     let out = "";
     child.stdout.on("data", (d) => {
@@ -245,6 +261,7 @@ const rowsOut = runs.map((s) => {
     "direct+partial": `${pct(s.top.filter((t) => t.grade === "direct" || t.grade === "partial").length, n)}%`,
     ungraded: s.top.filter((t) => !t.grade).length,
     turns: s.summary.turns,
+    "session recall": `${(s.summary as Partial<ReturnType<typeof summarize>>).session_recall ?? "—"}%`,
   };
 });
 console.table(rowsOut);
@@ -293,6 +310,73 @@ for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary
       `⚠ ${key} runs differ in conditions (the gap may come from the model or effort):\n  ${seen.join("\n  ")}`,
     );
 }
+
+// Runs of one setup must share the DB copy and bundle, or the gap may come from them rather than the setup
+for (const [name, ss] of groups) {
+  const x = (s: System) => s.summary as Partial<ReturnType<typeof summarize>>;
+  const seen = [
+    ...new Set(ss.map((s) => `db ${x(s).db ?? "not recorded"} / bundle ${x(s).bundle ?? "not recorded"}`)),
+  ];
+  if (seen.length > 1) console.log(`⚠ ${name} runs differ in DB or bundle:\n  ${seen.join("\n  ")}`);
+}
+
+const verdicts: object[] = [];
+if (values.base) {
+  const asRun = (s: System): Run => {
+    const x = s.summary as Partial<ReturnType<typeof summarize>>;
+    return {
+      ranks: new Map(s.top.map((t) => [t.i, t.rank])),
+      top1: s.summary.top1,
+      direct: pct(s.top.filter((t) => t.grade === "direct").length, s.top.length),
+      turns: x.turns_mean ?? s.summary.turns,
+      toolKib: x.tool_kib_mean ?? x.tool_kib ?? null,
+      errors: s.summary.errors,
+    };
+  };
+  const x = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).db;
+  const conditions = (s: System): Conditions => {
+    const y = s.summary as Partial<ReturnType<typeof summarize>>;
+    return {
+      cases: s.summary.cases,
+      prompt: y.prompt ?? null,
+      // A question that failed before the model started records no model (the unknown marker); it says nothing about the conditions
+      models: (y.resolved_models ?? []).filter((m) => m !== "不明").join(","),
+      claude: (y.claude_code ?? []).filter((m) => m !== "不明").join(","),
+      effort: y.effort ?? "",
+      db: y.db ?? null,
+      source: y.source ?? null,
+      bundle: y.bundle ?? null,
+      // Runs from before this field count as complete (their question lists were never cut)
+      complete: y.complete ?? true,
+      ungraded: s.top.filter((t) => t.key !== null && byKey.has(t.key) && !gradeOf(t.i, t.key)).length,
+    };
+  };
+  const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`);
+  for (const [key, ss] of bySplit) {
+    const base = ss.filter((s) => configOf(s) === values.base);
+    if (base.length === 0) continue;
+    for (const [config, setup] of Map.groupBy(ss, configOf)) {
+      if (config === values.base) continue;
+      const no = ineligible(base.map(conditions), setup.map(conditions), SNAPSHOT);
+      if (no.length) {
+        console.log(`✗ ineligible ${config} vs ${values.base} (${key}): ${no.join(", ")}`);
+        verdicts.push({ config, split: key, ineligible: no });
+        continue;
+      }
+      const v = verdict(base.map(asRun), setup.map(asRun));
+      verdicts.push({ config, split: key, ineligible: [], ...v });
+      const migrated = x(base[0] as System) !== x(setup[0] as System);
+      console.log(
+        `${v.adopt ? "✓ adopt" : "✗ keep base"} ${config} vs ${values.base} (${key}, ${migrated ? "migrated copy" : "same DB"}, ${setup.length} vs ${base.length} runs): ` +
+          `net ${v.net} (gained ${v.gained.map((i) => `q${i}`).join(" ") || "none"} / lost ${v.lost.map((i) => `q${i}`).join(" ") || "none"}), ` +
+          `top1 ${v.top1.join(" → ")}, direct ${v.direct.join(" → ")}, turns ${v.turns.join(" → ")}, KiB ${v.toolKib.join(" → ")}` +
+          (v.reasons.length ? ` — ${v.reasons.join(", ")}` : ""),
+      );
+    }
+  }
+}
+
+if (values.json) fs.writeFileSync(values.json, JSON.stringify(verdicts, null, 1));
 
 if (values.out) {
   const version = JSON.parse(

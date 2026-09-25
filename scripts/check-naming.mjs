@@ -21,6 +21,12 @@ const ALLOWED = [
     file: ".claude/agents/review-shipping.md",
     pattern: /μίτος|mcp__plugin_mitos_mitos__/,
   },
+  {
+    // A frozen eval question about a stored decision that names the old tool. Rewording it would change the measured question set.
+    file: "server/evals/retrieval.json",
+    // english-exempt: the stored question text is Japanese
+    pattern: /"q": "mitos の実行パス/,
+  },
 ];
 
 const OLD = [
