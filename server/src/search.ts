@@ -692,6 +692,54 @@ export async function directory(db: Kysely<DB>, signal?: AbortSignal): Promise<P
 // ---- Shapes passed to readers ----
 
 /**
+ * Rendered text with the records it shows in full: each item's ref and the byte offset where it ends. Cutting keeps a prefix, so an item
+ * counts as shown only while its end is inside what remains. **The eval reads refs from here, never by parsing the text** (a body can
+ * contain a forged Source line).
+ */
+export type Shown = {
+  text: string;
+  items: { ref: string; end: number; field?: "records" | "documents" }[];
+};
+
+const plainShown = (text: string): Shown => ({ text, items: [] });
+const itemShown = (text: string, ref: string): Shown => ({ text, items: [{ ref, end: bytes(text) }] });
+
+/** Joins parts with a separator, moving each part's item offsets. */
+function joinShown(parts: Shown[], sep: string): Shown {
+  let text = "";
+  const items: Shown["items"] = [];
+  for (const [i, p] of parts.entries()) {
+    if (i > 0) text += sep;
+    const at = bytes(text);
+    items.push(...p.items.map((x) => ({ ...x, end: x.end + at })));
+    text += p.text;
+  }
+  return { text, items };
+}
+
+/** Keeps the first n bytes of text (a prefix of what was shown) and the items that end inside it. */
+function withinShown(s: Shown, text: string): Shown {
+  const n = bytes(text);
+  return { text, items: s.items.filter((x) => x.end <= n) };
+}
+
+/** visible() per stretch between item ends, which equals visible() on the whole text (it works character by character). */
+function visibleShown(s: Shown): Shown {
+  const buf = Buffer.from(s.text, "utf8");
+  const cuts = [...new Set(s.items.map((x) => x.end))].sort((a, b) => a - b);
+  let text = "";
+  let from = 0;
+  const moved = new Map<number, number>();
+  for (const at of cuts) {
+    text += visible(buf.subarray(from, at).toString("utf8"));
+    moved.set(at, bytes(text));
+    from = at;
+  }
+  text += visible(buf.subarray(from).toString("utf8"));
+  return { text, items: s.items.map((x) => ({ ...x, end: moved.get(x.end) ?? x.end })) };
+}
+
+/**
  * Frames text from the database as a quotation. **The frame tag changes on every call.** With a fixed tag,
  * one line in the body with the closing tag would close the frame and the rest would read as instructions. Bodies include PR comments that anyone can write.
  * Invisible characters are dropped (visible). This is not done at import (clean) so it also covers rows already in the database and trace
@@ -705,7 +753,18 @@ export function framed(body: string): string {
 /** Cuts the body to fit budget with the frame, then frames it. Code building the body allocates with inFrame(budget). */
 export const inFrame = (budget: number): number => budget - bytes(framed(""));
 export const framedWithin = (body: string, budget: number): string =>
-  framed(clipped(visible(body), inFrame(budget), WORDS.thisResponse));
+  framedShown(plainShown(body), budget).text;
+
+/** framedWithin for rendered records: the items that survive the cut, moved past the opening tag. */
+export function framedShown(body: Shown, budget: number): Shown {
+  const inner = clippedShown(visibleShown(body), inFrame(budget), WORDS.thisResponse);
+  const n = crypto.randomBytes(6).toString("hex");
+  const open = WORDS.frameOpen(n);
+  return {
+    text: `${open}${inner.text}${WORDS.frameClose(n)}`,
+    items: inner.items.map((x) => ({ ...x, end: x.end + bytes(open) })),
+  };
+}
 
 /** Output of the edit hook (PreToolUse additionalContext). */
 export function hookContext(body: string, budget: number): string {
@@ -752,24 +811,25 @@ function renderHit(h: Hit, perRow = 900): string {
 }
 
 /** Renders hits within the overall limit. */
-export function renderHits(hits: Hit[], budget: number): string {
+export function renderHits(hits: Hit[], budget: number): Shown {
   const omitted = WORDS.omitted;
   // The omitted line and separators count toward the limit.
   const reserve = bytes(omitted(hits.length)) + 2;
-  const parts: string[] = [];
+  const parts: Shown[] = [];
   let used = 0;
   for (const [i, h] of hits.entries()) {
     const one = renderHit(h, 900);
     const sep = parts.length ? 2 : 0;
     if (used + sep + bytes(one) + (i < hits.length - 1 ? reserve : 0) > budget) {
-      parts.push(omitted(hits.length - i));
+      parts.push(plainShown(omitted(hits.length - i)));
       break;
     }
-    parts.push(one);
+    parts.push(itemShown(one, h.ref));
     used += sep + bytes(one);
   }
   // With a limit too small for even the omitted line, cut it too.
-  return head(parts.join("\n\n"), budget);
+  const all = joinShown(parts, "\n\n");
+  return withinShown(all, head(all.text, budget));
 }
 
 /** One split entry. Only the start of the text (it is a candidate; read the whole with read). */
@@ -783,7 +843,7 @@ const snippet = (t: string): string => {
  * Serializes split to JSON. **Only as many entries as fit in the limit (bytes).** JSON cut midway arrives broken
  * (Codex truncates responses over about 10,000 tokens). The count that did not fit goes in `omitted`.
  */
-export function splitJson(split: Split, budget: number): string {
+export function splitJson(split: Split, budget: number): Shown {
   const records = split.records.map((h) => ({
     ref: h.ref,
     kind: h.kind,
@@ -819,31 +879,49 @@ export function splitJson(split: Split, budget: number): string {
       out.omitted++;
     }
   }
-  return JSON.stringify(out);
+  const text = JSON.stringify(out);
+  // Whole entries only: the JSON is never cut midway (a cut JSON would reach no one)
+  const refsIn = (key: "records" | "documents") =>
+    (out[key] as { ref: string }[]).map((x) => ({ ref: x.ref, end: bytes(text), field: key }));
+  return { text, items: [...refsIn("records"), ...refsIn("documents")] };
 }
 
-export function renderWork(w: WorkDetail, budget: number): string {
+export function renderWork(w: WorkDetail, budget: number): Shown {
   const t = WORDS;
   // Title, goal, and status have no length limit. Cut them at half the budget and give the rest to questions and paths.
-  const lines = clipped(
-    [
-      `## ${w.title}${t.paren(`${w.project} / ${w.status} / ${t.updated(dateOf(w.updatedAt))} / ${w.ref}`)}`,
-      `${t.goal}: ${w.goal}`,
-      `${t.current}: ${w.current}`,
-      w.next.length ? `${t.next}:\n${w.next.map((n) => `  - ${n}`).join("\n")}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n"),
+  const title = `## ${w.title}${t.paren(`${w.project} / ${w.status} / ${t.updated(dateOf(w.updatedAt))} / ${w.ref}`)}`;
+  const lines = clippedShown(
+    joinShown(
+      [
+        itemShown(title, w.ref),
+        plainShown(
+          [
+            `${t.goal}: ${w.goal}`,
+            `${t.current}: ${w.current}`,
+            w.next.length ? `${t.next}:\n${w.next.map((n) => `  - ${n}`).join("\n")}` : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        ),
+      ],
+      "\n",
+    ),
     Math.floor(budget / 2),
     w.ref,
   );
-  const share = Math.floor((budget - bytes(lines)) / 2);
-  const section = (title: string, hits: Hit[]) => {
+  const share = Math.floor((budget - bytes(lines.text)) / 2);
+  const section = (title: string, hits: Hit[]): Shown => {
     const heading = `\n\n### ${title}\n\n`;
-    return hits.length ? `${heading}${renderHits(hits, Math.max(share - bytes(heading), 0))}` : "";
+    return hits.length
+      ? joinShown([plainShown(heading), renderHits(hits, Math.max(share - bytes(heading), 0))], "")
+      : plainShown("");
   };
   // Cut the leftovers of the allocation, and small limits where headings alone exceed it, at the end.
-  return clipped(`${lines}${section(t.questions, w.questions)}${section(t.walls, w.walls)}`, budget, w.ref);
+  return clippedShown(
+    joinShown([lines, section(t.questions, w.questions), section(t.walls, w.walls)], ""),
+    budget,
+    w.ref,
+  );
 }
 
 /** The line for a reference that points nowhere (deleted, or outside the selected project). The dashboard compares with it to show a failure */
@@ -864,44 +942,48 @@ export async function read(
   refs: string[],
   budget: number,
   opts: { projects?: Scope; around?: number; signal?: AbortSignal } = {},
-): Promise<string> {
+): Promise<Shown> {
   // Blank lines between references count toward the limit.
   const each = Math.floor((budget - 2 * Math.max(refs.length - 1, 0)) / Math.max(refs.length, 1));
   const scope = opts.projects ?? null;
-  const out: string[] = [];
+  const out: Shown[] = [];
   for (const ref of refs) {
     const id = ref.slice(2);
-    let text: string;
+    let one: Shown;
     if (!REF.test(ref)) {
       // Copying the given string as is could exceed the limit by its length.
       const shown = head(ref, 40);
-      text = `${shown}${shown === ref ? "" : "…"}: ${WORDS.badRef}`;
-    } else if (ref.startsWith("k:")) text = await readKnowledge(db, Number(id), each, scope, opts.signal);
+      one = plainShown(`${shown}${shown === ref ? "" : "…"}: ${WORDS.badRef}`);
+    } else if (ref.startsWith("k:")) one = await readKnowledge(db, Number(id), each, scope, opts.signal);
     else if (ref.startsWith("m:"))
-      text = await readMessage(db, id, each, opts.around ?? 3, scope, opts.signal);
-    else if (ref.startsWith("s:")) text = await readSource(db, Number(id), each, scope, opts.signal);
+      one = await readMessage(db, id, each, opts.around ?? 3, scope, opts.signal);
+    else if (ref.startsWith("s:")) one = await readSource(db, Number(id), each, scope, opts.signal);
     else {
       const w = await workDetail(db, Number(id), scope, opts.signal);
-      text = w ? renderWork(w, each) : missing(ref);
+      one = w ? renderWork(w, each) : plainShown(missing(ref));
     }
     // Titles and headings are written outside the body's allocation, so cut to the limit at the end.
-    out.push(clipped(text, each, head(ref, 40)));
+    out.push(clippedShown(one, each, head(ref, 40)));
   }
-  return out.join("\n\n");
+  return joinShown(out, "\n\n");
 }
 
 /** The note added when the whole text exceeds the limit. **Say that it was cut.** Cutting silently reads as if nothing followed. */
-const clipped = (text: string, budget: number, ref: string): string => {
-  if (bytes(text) <= budget) return text;
+const clipped = (text: string, budget: number, ref: string): string =>
+  clippedShown(plainShown(text), budget, ref).text;
+
+function clippedShown(s: Shown, budget: number, ref: string): Shown {
+  const text = s.text;
+  if (bytes(text) <= budget) return s;
   // With a limit too small for the note, cut without it.
   const note = (shown: number) =>
     WORDS.clipped(ref, shown.toLocaleString("en-US"), bytes(text).toLocaleString("en-US"));
   // The note counts toward the limit. What was shown never exceeds the whole, so estimate with the whole's digits.
   const room = budget - bytes(note(bytes(text)));
-  if (room <= 0) return head(text, budget);
+  if (room <= 0) return withinShown(s, head(text, budget));
   const h = head(text, room);
-  return `${h}${note(bytes(h))}`;
-};
+  return { text: `${h}${note(bytes(h))}`, items: withinShown(s, h).items };
+}
 
 async function readKnowledge(
   db: Kysely<DB>,
@@ -909,7 +991,7 @@ async function readKnowledge(
   budget: number,
   projects: Scope,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<Shown> {
   const t = WORDS;
   let q = knowledgeBase(db)
     .leftJoin("conversation as c", "c.id", "k.conversation_id")
@@ -931,7 +1013,7 @@ async function readKnowledge(
     .where("k.id", "=", id);
   if (projects) q = q.where("k.project_id", "in", projects);
   const k = await q.executeTakeFirst(queryOptions(signal));
-  if (!k) return missing(`k:${id}`);
+  if (!k) return plainShown(missing(`k:${id}`));
   // Filter with the same scope as the main row. Rows belonging to a decision are reachable by id, so filtering only one side would mix
   // text from outside the selected project into the response as options and verifications (ids are sequential and guessable).
   let r = knowledgeBase(db).where(sql<SqlBool>`(k.decision_id = ${id} or k.id = ${k.decision_id})`);
@@ -941,17 +1023,22 @@ async function readKnowledge(
     .orderBy("k.occurred_at")
     .orderBy("k.id")
     .execute(queryOptions(signal));
-  const lines = [
-    renderHit(knowledgeHit(k), budget),
-    k.confidence ? `  ${t.confidence}: ${k.confidence}` : null,
-    k.refs.length ? `  ${t.refs}: ${k.refs.join(" / ")}` : null,
-    k.files.length
-      ? `  ${t.files}: ${k.files.map((f) => `${f.path}${f.line_start ? `:${f.line_start}` : ""}${t.paren(f.role === "applies_to" ? t.appliesTo : t.evidence)}`).join(" / ")}`
-      : null,
-    k.origin && k.session ? `  ${t.session}: ${k.origin} ${k.session}` : null,
-    ...related.map((x) => `  - ${renderHit(knowledgeHit(x), 400).split("\n").join("\n    ")}`),
+  const lines: Shown[] = [
+    itemShown(renderHit(knowledgeHit(k), budget), `k:${id}`),
+    ...[
+      k.confidence ? `  ${t.confidence}: ${k.confidence}` : null,
+      k.refs.length ? `  ${t.refs}: ${k.refs.join(" / ")}` : null,
+      k.files.length
+        ? `  ${t.files}: ${k.files.map((f) => `${f.path}${f.line_start ? `:${f.line_start}` : ""}${t.paren(f.role === "applies_to" ? t.appliesTo : t.evidence)}`).join(" / ")}`
+        : null,
+      k.origin && k.session ? `  ${t.session}: ${k.origin} ${k.session}` : null,
+    ].flatMap((l) => (l ? [plainShown(l)] : [])),
+    ...related.map((x) => {
+      const h = knowledgeHit(x);
+      return itemShown(`  - ${renderHit(h, 400).split("\n").join("\n    ")}`, h.ref);
+    }),
   ];
-  return clipped(lines.filter(Boolean).join("\n"), budget, `k:${id}`);
+  return clippedShown(joinShown(lines, "\n"), budget, `k:${id}`);
 }
 
 async function readMessage(
@@ -961,7 +1048,7 @@ async function readMessage(
   around: number,
   projects: Scope,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<Shown> {
   let q = db
     .selectFrom("message as m")
     .innerJoin("conversation as c", "c.id", "m.conversation_id")
@@ -969,7 +1056,7 @@ async function readMessage(
     .where("m.id", "=", id);
   if (projects) q = q.where("c.project_id", "in", projects);
   const t = await q.executeTakeFirst(queryOptions(signal));
-  if (!t) return missing(`m:${id}`);
+  if (!t) return plainShown(missing(`m:${id}`));
   // Read the turns around it too. AI responses (not indexed) appear here — they show what "that's fine" referred to.
   // Ordered by (sent_at, seq), so the target message is not dropped by the neighbor limit even when messages share a time.
   const withPaths = messageBase(db)
@@ -1000,13 +1087,20 @@ async function readMessage(
   ]);
   const rows = [...before.reverse(), ...after];
   const per = Math.floor(budget / Math.max(rows.length, 1));
-  return rows
-    .map((m) => {
+  return joinShown(
+    rows.map((m) => {
       const h = messageHit(m);
       const mark = m.id === id ? "▶ " : "";
-      return `${mark}${renderHit(h, per)}${m.paths.length ? `\n  ${WORDS.touched}: ${m.paths.map((p) => p.path).join(" / ")}` : ""}`;
-    })
-    .join("\n\n");
+      return joinShown(
+        [
+          itemShown(`${mark}${renderHit(h, per)}`, h.ref),
+          plainShown(m.paths.length ? `\n  ${WORDS.touched}: ${m.paths.map((p) => p.path).join(" / ")}` : ""),
+        ],
+        "",
+      );
+    }),
+    "\n\n",
+  );
 }
 
 async function readSource(
@@ -1015,7 +1109,7 @@ async function readSource(
   budget: number,
   projects: Scope,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<Shown> {
   const t = WORDS;
   let q = db
     .selectFrom("source_item as s")
@@ -1038,11 +1132,17 @@ async function readSource(
     .where("s.id", "=", id);
   if (projects) q = q.where("cn.project_id", "in", projects);
   const s = await q.executeTakeFirst(queryOptions(signal));
-  if (!s) return missing(`s:${id}`);
+  if (!s) return plainShown(missing(`s:${id}`));
   const updated = dateOf(s.source_updated_at === null ? null : new Date(s.source_updated_at));
   if (s.body !== null) {
-    const head = `${labelOf({ kind: "document", status: null, path: s.path })}${t.gap}${s.title}\n  ${t.source}: ${s.project} / ${s.path} / ${updated}\n\n`;
-    return `${head}${clipped(s.body, Math.max(budget - bytes(head), 0), `s:${id}`)}`;
+    const head = `${labelOf({ kind: "document", status: null, path: s.path })}${t.gap}${s.title}\n  ${t.source}: ${s.project} / ${s.path} / ${updated}`;
+    return joinShown(
+      [
+        itemShown(head, `s:${id}`),
+        plainShown(clipped(s.body, Math.max(budget - bytes(head) - 2, 0), `s:${id}`)),
+      ],
+      "\n\n",
+    );
   }
   const first = s.conversation
     ? await db
@@ -1052,11 +1152,15 @@ async function readSource(
         .where("external_id", "=", "body")
         .executeTakeFirst(queryOptions(signal))
     : undefined;
-  return [
+  const title = [
     `[${s.kind === "pull_request" ? "PR" : "issue"}] #${s.external_id} ${s.title} (${s.state})`,
     `  ${t.source}: ${s.project} / ${t.updated(updated)} / ${s.url}`,
-    first ? `\n${clipped(first.body, budget - 400, `s:${id}`)}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  ].join("\n");
+  return joinShown(
+    [
+      itemShown(title, `s:${id}`),
+      ...(first ? [plainShown(`\n${clipped(first.body, budget - 400, `s:${id}`)}`)] : []),
+    ],
+    "\n",
+  );
 }

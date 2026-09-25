@@ -12,8 +12,11 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import type { Kysely } from "kysely";
+import { openReader } from "../../src/db.ts";
+import type { DB } from "../../src/db-types.ts";
 import { SPLITS, type Split } from "../cases.ts";
-import { callsOf, type Session, sessionOf } from "./session.ts";
+import { callsOf, replay, type Session, sessionOf } from "./session.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -122,6 +125,8 @@ export async function measure(o: Measure) {
   fs.rmSync(run, { recursive: true, force: true });
   fs.mkdirSync(run, { recursive: true });
   const keyOf = await keys();
+  // Replays recorded calls to learn what each response showed. A DB this checkout cannot open leaves every call unconfirmed
+  const replayDb = openReader(db);
 
   const all = cases.map((c, i) => ({ c, i })).filter(({ c, i }) => SPLITS[o.split](c, i));
   const todo = all.slice(0, o.limit ?? all.length);
@@ -135,7 +140,14 @@ export async function measure(o: Measure) {
           todo.length = 0;
           break;
         }
-        const r = await solve(x.c, x.i, { run, mcp: o.mcp, model: o.model, effort: o.effort, keyOf });
+        const r = await solve(x.c, x.i, {
+          run,
+          mcp: o.mcp,
+          model: o.model,
+          effort: o.effort,
+          keyOf,
+          db: replayDb,
+        });
         o.budget.settle(r.cost);
         results.push(r);
         console.error(
@@ -144,6 +156,7 @@ export async function measure(o: Measure) {
       }
     }),
   );
+  await replayDb.destroy();
   results.sort((a, b) => a.i - b.i);
   const summary = summarize(results, {
     name: o.name,
@@ -243,6 +256,7 @@ async function solve(
     model: string;
     effort: string | undefined;
     keyOf: (ref: string) => string | null;
+    db: Kysely<DB>;
   },
 ): Promise<Result> {
   const dir = path.join(o.run, `q${i}`);
@@ -307,7 +321,7 @@ async function solve(
         model: typeof init?.model === "string" ? init.model : null,
         claude: typeof init?.claude_code_version === "string" ? init.claude_code_version : null,
       },
-      session: sessionOf(callsOf(events), o.keyOf, c.expect),
+      session: sessionOf(await replay(callsOf(events), o.db, cwd), o.keyOf, c.expect),
       ...(last === undefined || last.is_error
         ? { error: String(last?.result ?? "no response").slice(0, 200) }
         : refs === null
@@ -469,6 +483,14 @@ export function sessionSummary(ss: Session[]) {
   return {
     session_recall: pct(ss.filter((s) => s.exposed !== null).length),
     first_in_read: pct(ss.filter((s) => s.exposed === "read").length),
+    // Where the answer was shown in full at least once (a question can count in several)
+    via_records: pct(ss.filter((s) => s.via.records).length),
+    via_documents: pct(ss.filter((s) => s.via.documents).length),
+    via_hits: pct(ss.filter((s) => s.via.hits).length),
+    via_read: pct(ss.filter((s) => s.via.read).length),
+    // Calls whose replay did not match the recorded response, and the questions that had one
+    unconfirmed_calls: ss.reduce((a, s) => a + s.unconfirmed, 0),
+    unconfirmed_questions: ss.filter((s) => s.unconfirmed > 0).length,
     first_call: mean(ss.flatMap((s) => (s.first === null ? [] : [s.first]))),
     calls: mean(ss.map((s) => s.calls)),
     empty_recalls: pct(

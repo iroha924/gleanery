@@ -325,7 +325,7 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
       workKeys.length
         ? `\n# Work in progress (the same key in work.key updates it)\n\n${workKeys.map((w) => `- ${w.source_key}: ${w.title} (${w.status})`).join("\n")}`
         : "\n# Work in progress\n\nNone.",
-      detail ? `\n${renderWork(detail, 6000)}` : null,
+      detail ? `\n${renderWork(detail, 6000).text}` : null,
       decisions.length
         ? `\n# Decisions of work in progress (to supersede one, put its key in supersedes)\n\n${decisions.map((d) => `- ${d.source_key} (${d.status}) ${head(d.body, 200)}`).join("\n")}`
         : null,
@@ -1112,7 +1112,11 @@ const root = buildRouteMap({
           // Terminals are read by people, so results are items with the label as a Badge
           if (!process.stdout.isTTY) {
             console.log(
-              panel("gleanery search", hits.length ? [plain(framed(renderHits(hits, 16 * 1024)))] : [], end),
+              panel(
+                "gleanery search",
+                hits.length ? [plain(framed(renderHits(hits, 16 * 1024).text))] : [],
+                end,
+              ),
             );
             return;
           }

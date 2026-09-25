@@ -68,7 +68,7 @@ export async function liveData(cwd: string): Promise<{ data: Data; close: () => 
       return [...records, ...documents];
     },
     read: async (ref, p) => {
-      const text = await read(db, [ref], READ_BYTES, { projects: scope(p) });
+      const text = (await read(db, [ref], READ_BYTES, { projects: scope(p) })).text;
       return text === missing(ref) ? null : text;
     },
   };
