@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Drafts search words for existing records, for the owner to review and load with `gleanery db terms import`. Not shipped.
 // One record per `claude -p` call, with no tools and no MCP, and the record passed as data. Drafts go outside the repository.
-// Document sections get none (they come from docs sync). The model and prompt version go to <out>.meta.json, not the DB.
+// Document sections are included: docs sync writes no words, so this import is their only writer. The model and prompt version go to <out>.meta.json.
 //   node scripts/terms-draft.mjs <db> <project key> <out.json> [--par 4] [--budget 20] [--with-parent <out2.json>]
 
 import { spawn } from "node:child_process";
@@ -49,7 +49,7 @@ const rows = db
        hex(k.content_hash) hash, d.source_key parent, coalesce(s.title, '') title
      from knowledge k join project p on p.id = k.project_id
        left join knowledge d on d.id = k.decision_id left join source_item s on s.id = k.source_item_id
-     where p.key = ? and k.kind <> 'document'
+     where p.key = ?
      order by k.id`,
   )
   .all(projectKey);

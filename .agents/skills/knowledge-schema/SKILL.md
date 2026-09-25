@@ -114,7 +114,8 @@ Search is ranked word search (FTS5's bm25). The calling AI makes up for semantic
   read, CLI output, or dashboard view selects them. They carry the record's `content_hash` from when they were written and are indexed only while
   it still matches (a record whose text changed stops being found by words written for its old text). Writers: trace (`terms` on an item; a decision's
   words go to its options), GitHub sync (a `  - Terms: a, b` line under a PR decision; a blank line clears, no line keeps), and the owner's
-  `gleanery db terms import`. All go through `searchTerms()` in `server/src/terms.ts`. docs sync writes none (the product generates no text)
+  `gleanery db terms import`. All go through `searchTerms()` in `server/src/terms.ts`. docs sync writes none (the product generates no text):
+  document sections get words only from the owner's import, and a section whose text changed needs a new draft and import
 - `terms()` in `server/src/text.ts` splits words. **`gleanery_terms`, which the DB triggers call on write, and `ftsQuery`, which builds queries,
   go through the same function.** `db-write.ts` registers `gleanery_terms` on each write connection. Writing to knowledge / message from a connection
   without it (such as the `sqlite3` CLI) fails with `no such function` (so the index is never silently incomplete)
