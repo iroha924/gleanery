@@ -62,7 +62,6 @@ bun run bundle      # build the MCP, CLI, and capture artifacts
 ### CLI output
 
 - Print CLI output with the parts in `server/src/cli/view.ts` (Clack in a terminal, indented text in pipes). Only the heading and the closing line start a line, so text from outside cannot forge lines <!-- invariant: view-parts -->
-- Write hex colors only in `server/src/palette.ts` <!-- invariant: palette -->
 
 ### Comments
 

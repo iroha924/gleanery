@@ -37,7 +37,6 @@ Start troubleshooting with `sphica doctor`.
 - What we ship runs on Windows too. Do not depend on a POSIX shell, `0600`, a fixed `/tmp`, or execFile of `.cmd` <!-- invariant: windows -->
 - Write strings and comments in new or changed code, and commit messages, in English. Translate existing Japanese text into English stage by stage, and do not translate records users saved (`bun run english` checks the English-only files) <!-- invariant: english-code -->
 - Print CLI output with the parts in `server/src/cli/view.ts` (Clack in a terminal, indented text in pipes). Only the heading and the closing line start a line, so text from outside cannot forge lines <!-- invariant: view-parts -->
-- Write hex colors only in `server/src/palette.ts` <!-- invariant: palette -->
 
 ## Skills by task
 

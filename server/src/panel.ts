@@ -2,9 +2,7 @@
 // CLI output is drawn with Clack (server/src/cli/view.ts). The hook does not load Clack, so strings are built here.
 // MCP results and trace context, which only AIs read, use neither shape.
 
-import { stripVTControlCharacters } from "node:util";
-import chalk from "chalk";
-import { PALETTE } from "./palette.ts";
+import { stripVTControlCharacters, styleText } from "node:util";
 import { visible } from "./text.ts";
 
 /** ok is good, warn needs a look, fail is broken, none is information (missing, unknown, or just waiting). Glyphs are written only in MARKS. */
@@ -12,25 +10,25 @@ export type Mark = "ok" | "warn" | "fail" | "none";
 
 // The review Skill ledger writes the same glyphs (a Skill cannot read this file). scripts/check-pairs.mjs compares them.
 const MARKS = {
-  ok: ["✓", PALETTE.sage],
-  warn: ["△", PALETTE.ochre],
-  fail: ["✗", PALETTE.failure],
-  none: ["○", PALETTE.taupe],
+  ok: ["✓", "green"],
+  warn: ["△", "yellow"],
+  fail: ["✗", "red"],
+  none: ["○", "gray"],
 } as const;
 
 /**
  * Color only when both stdout and stderr are terminals (if either goes to a file or pipe, neither gets color).
- * When both are terminals, chalk handles NO_COLOR, FORCE_COLOR=0, TERM=dumb, and the terminal's color depth (reducing the earth tones to fit).
+ * When both are terminals, styleText handles NO_COLOR, FORCE_COLOR=0, and TERM=dumb. The named colors match the ones Clack draws.
  */
 const colored = () => Boolean(process.stdout.isTTY && process.stderr.isTTY);
 
-export const mark = (m: Mark): string => (colored() ? chalk.hex(MARKS[m][1])(MARKS[m][0]) : MARKS[m][0]);
+export const mark = (m: Mark): string => (colored() ? styleText(MARKS[m][1], MARKS[m][0]) : MARKS[m][0]);
 
 /** Dims skippable details (such as paths). Same color conditions as mark */
-export const faint = (text: string): string => (colored() ? chalk.dim(text) : text);
+export const faint = (text: string): string => (colored() ? styleText("dim", text) : text);
 
-/** Shows the reason to fix something in ochre. Same color conditions as mark */
-export const caution = (text: string): string => (colored() ? chalk.hex(PALETTE.ochre)(text) : text);
+/** Shows the reason to fix something in yellow, like the warn mark. Same color conditions as mark */
+export const caution = (text: string): string => (colored() ? styleText("yellow", text) : text);
 
 const title = (text: string): string => `✦ ${text}`;
 
