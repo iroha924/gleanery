@@ -15,7 +15,7 @@ import { mark, plain } from "../panel.ts";
 const colored = () => Boolean(process.stdout.isTTY && process.stderr.isTTY) && !process.env.NO_COLOR;
 
 /** Wrap at the terminal width in a terminal. Never wrap in pipes (a path or URL cut midway cannot be rejoined by the reader) */
-const columns = () => (process.stdout.isTTY ? Math.max(40, process.stdout.columns ?? 100) : 10_000);
+const columns = () => (process.stdout.isTTY ? Math.max(10, process.stdout.columns || 100) : 10_000);
 
 /** What Clack writes, as one string. The trailing newline is dropped because console.log adds it back */
 function capture(draw: (output: Writable) => void): string {
@@ -91,9 +91,9 @@ function content(lines: string[], spacing = 0): string {
  * In pipes it is the text alone on one line (the summary goes to the closing line; an AI reads it).
  */
 export function title(text: string, meta?: string): string {
-  const t = oneLine(text);
-  if (!colored()) return t;
-  // The inverted heading adds a space on each side
+  if (!colored()) return oneLine(text);
+  // The inverted heading adds a space on each side; a heading wider than the terminal is cut
+  const t = cut(oneLine(text), columns() - GUIDE - 2);
   const room = columns() - GUIDE - stringWidth(t) - 2;
   const extra = meta && room > 8 ? `  ${cut(oneLine(meta), room - 2)}` : "";
   return capture((output) =>

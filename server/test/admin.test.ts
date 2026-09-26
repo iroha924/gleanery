@@ -225,6 +225,33 @@ test("the migrate confirmation answers no when its input closes", async () => {
   assert.equal(await Promise.race([answer, timeout]), false);
 });
 
+test("the migrate confirmation answers no when its input ended before it asked", async () => {
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => {} });
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+  output.resume();
+  input.resume();
+  input.end();
+  await new Promise((done) => input.once("end", done));
+  const timeout = new Promise<string>((done) => setTimeout(() => done("still waiting"), 2000).unref());
+  assert.equal(await Promise.race([askToApply(input, output), timeout]), false);
+});
+
+// Without a terminal nobody can answer, so the default question refuses before asking (the test runner's stdin is not a terminal)
+test("db migrate without --yes outside a terminal stops before asking", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "sphica.db");
+  await quiet(() => dbInit(file));
+  const migrations = path.join(dir, "migrations");
+  writeMigrations(migrations, ["create table note (a text) strict;\n"]);
+  const timeout = new Promise<string>((done) => setTimeout(() => done("still waiting"), 2000).unref());
+  const outcome = quiet(() => migrate(false, file, migrations)).then(
+    () => "no error",
+    (e: Error) => e.message,
+  );
+  assert.match(await Promise.race([outcome, timeout]), /Add --yes/);
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+});
+
 /** Writes migrations numbered from current + 1 into dir. */
 function writeMigrations(dir: string, bodies: string[]): string[] {
   fs.mkdirSync(dir, { recursive: true });

@@ -212,7 +212,9 @@ export const askToApply = async (
   input: NodeJS.ReadableStream = process.stdin,
   output: NodeJS.WritableStream = process.stdout,
 ): Promise<boolean> => {
-  // Clack does not settle when its input ends, so a closed input cancels the question
+  // Clack does not settle when its input ends, so a closed input cancels the question (also one that ended before asking)
+  const stream = input as Readable;
+  if (stream.readableEnded || stream.destroyed) return false;
   const closed = new AbortController();
   const stop = () => closed.abort();
   input.once("end", stop);
@@ -255,7 +257,7 @@ export async function migrate(
   say(`Current revision: ${current}`);
   say(`To apply: ${todo.map((m) => m.file).join(" / ")}`);
   if (!yes) {
-    if (ask === askToApply && !process.stdin.isTTY)
+    if (ask === defaultAsk && !process.stdin.isTTY)
       throw new Error("Add --yes when not running in a terminal");
     if (!(await ask())) return "cancelled";
   }
