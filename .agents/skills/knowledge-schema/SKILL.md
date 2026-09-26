@@ -135,7 +135,6 @@ After adding a kind or status, handle these interfaces in the same change.
 - The filters in `server/src/search.ts`, and which way the `stance` expression sorts the new value
 - The input schema and descriptions in `server/src/mcp.ts` (`kinds` of `recall`)
 - The record contract in `plugin/skills/trace/SKILL.md`, and the checks in `server/src/trace.ts`
-- How `sphica search` shows it (`server/src/cli.ts`)
 - If the pair can be listed, add it to `scripts/check-pairs.mjs`
 
 ## Connection roles
@@ -146,7 +145,7 @@ the path where Sphica's code writes by mistake, or because untrusted text talked
 | Role | How it opens | Authorizer | Interfaces using it |
 |---|---|---|---|
 | owner | Writable | None | `sphica db *` (`admin.ts`) |
-| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, `sphica search` |
+| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the CLI's read-only commands (`doctor`, `project list`) |
 | ingest | Writable | Rejects DDL, ATTACH, creating virtual tables, and pragmas that write | `harvest`, `trace save`, `who`, `project` |
 | capture | Writable | Only inserts into the 3 views (`capture_*`) and the writes in their triggers. It can read only `project`'s id, key, and name, and `message`'s id | Capture (`capture.ts`) |
 

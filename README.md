@@ -187,7 +187,6 @@ Run `sphica doctor` first. It shows which part is out of date or not working. Co
 | `sphica doctor` | Check versions, the database, and recording |
 | `sphica project add` | Register the current repository as a project |
 | `sphica harvest` | Import GitHub pull requests, issues, and Markdown docs |
-| `sphica search <words>` | Search from the terminal |
 
 Run `sphica --help` for the full list and `sphica <command> --help` for each command's options.
 

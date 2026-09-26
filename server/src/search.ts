@@ -321,7 +321,7 @@ export const WORDS = {
   badRef: "unreadable reference (k: / s: / w: take a number, m: takes a uuid)",
   clipped: (ref: string, shown: string, total: string) =>
     `\n\n(${ref}: showing ${shown} of ${total} bytes because of the length limit. ` +
-    "Search for words in the rest with an exact match: recall match: exact in MCP, sphica search --exact in the CLI)",
+    "Search for words in the rest with an exact match: recall match: exact)",
   thisResponse: "this response",
   confidence: "Confidence",
   refs: "Evidence",
@@ -949,7 +949,7 @@ const REF = /^(?:[ksw]:\d{1,15}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 /**
  * Reads references: `k:` knowledge, `m:` a message with its neighbors, `s:` a source (document text, PR, issue), `w:` work.
- * With projects, references outside them read as missing (MCP and the CLI never read outside the selected project).
+ * With projects, references outside them read as missing (MCP never reads outside the selected project).
  */
 export async function read(
   db: Kysely<DB>,

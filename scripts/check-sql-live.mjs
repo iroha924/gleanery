@@ -30,7 +30,7 @@ await withTempDir(async (dir) => {
   {
     note("init", runCli(["init"], dir, covDir));
 
-    // ---- CLI: create, import, search, then delete, in that order ----
+    // ---- CLI: create, import, then delete, in that order ----
     // The repo has a remote, so no --name (the CLI would refuse it). The key becomes git:github.com/example/live.
     note("project add", runCli(["project", "add", "--cwd", repo], dir, covDir));
     note("project list", runCli(["project", "list"], dir, covDir));
@@ -111,12 +111,6 @@ await withTempDir(async (dir) => {
     );
     note("trace save (empty items)", runCli(["trace", "save", empty], dir, covDir, asSession("live-2")));
 
-    // english-exempt: Japanese record fixture sent through the real CLI and hook
-    note("search", runCli(["search", "--cwd", repo, "実", "DB"], dir, covDir));
-    // english-exempt: Japanese record fixture sent through the real CLI and hook
-    note("search --avoid", runCli(["search", "--avoid", "--cwd", repo, "偽"], dir, covDir));
-    // english-exempt: Japanese record fixture sent through the real CLI and hook
-    note("search --said", runCli(["search", "--said", "me", "--cwd", repo, "実"], dir, covDir));
     // Capture. Queue through the hook, then flush. Flushing an empty queue returns 0 and never runs the write SQL.
     const turn = { session_id: "live-1", prompt_id: "p1", cwd: repo };
     const hook = (extra) => runHook({ ...turn, ...extra }, dir, covDir, asSession("live-1"));
@@ -220,13 +214,6 @@ await withTempDir(async (dir) => {
       failures.push(
         `trace context does not head the owner's messages with "## Owner"\n${context.out.slice(0, 400)}`,
       );
-    clean(
-      "search --said",
-      // english-exempt: Japanese record fixture sent through the real CLI and hook
-      runCli(["search", "--said", "me", "--cwd", repo, "制御列"], dir, covDir),
-      // english-exempt: Japanese record fixture sent through the real CLI and hook
-      "を含む発言",
-    );
     const evil = makeRepo(dir, `https://github.com/example/ev${esc}il.git`, "evil\u001b[2Jdir");
     clean(
       "project add (remote and directory name)",
@@ -234,8 +221,6 @@ await withTempDir(async (dir) => {
       "evil",
     );
     clean("project list", runCli(["project", "list"], dir, covDir), "example/ev");
-    // english-exempt: Japanese record fixture sent through the real CLI and hook
-    clean("search (project name)", runCli(["search", "--cwd", evil, "本文"], dir, covDir), "example/ev");
     // The doctor exit code depends on the local plugin state, so it is not checked (same reason as above)
     clean("doctor", runCli(["doctor"], dir, covDir), "example/ev", { status: false });
 

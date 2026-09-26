@@ -26,14 +26,11 @@ import { jsonArrayFrom } from "kysely/helpers/sqlite";
 import { dbInit, importTerms, inspect, listTerms, migrate, reindex } from "./admin.ts";
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
 import {
-  ask,
   type Block,
-  type Card,
   closing,
   document,
   failure,
   indent,
-  interactive,
   panel,
   progress,
   section,
@@ -58,19 +55,9 @@ import {
   projectId,
   relativeTo,
 } from "./project.ts";
-import {
-  directory,
-  framed,
-  type Hit,
-  openWork,
-  renderHits,
-  renderWork,
-  searchMessages,
-  searchSplit,
-  workDetail,
-} from "./search.ts";
+import { directory, framed, openWork, renderWork, workDetail } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
-import { ftsQuery, head, plural, reason } from "./text.ts";
+import { head, plural, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
 
 /**
@@ -151,36 +138,6 @@ async function registered(db: Kysely<DB>, place: Place): Promise<number> {
   if (id === null)
     throw new Error(`${place.name} is not registered with Sphica. Register it with \`sphica project add\``);
   return id;
-}
-
-/**
- * Turns one search hit into an item a person reads in a terminal: a Badge colored by kind, the start of the text, and sources dimmed on two uncut lines.
- * When scoped to one project, the heading shows it, so the project is left out of the sources
- */
-function hitCard(x: Hit, scoped: boolean): Card {
-  // A document section's title is its heading (path and section). A decision record's heading is the work title, same as its source, so the first line of the text is the title
-  const [first = "", ...rest] = plain(x.text).split("\n");
-  const doc = x.kind === "document" && x.heading !== null;
-  const title = doc ? plain(x.heading ?? "") : first;
-  const body = [
-    head((doc ? [first, ...rest] : rest).join("\n").trim(), 600),
-    x.reason ? `Reason: ${plain(x.reason)}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return {
-    badge: x.label.replace(/^\[|\]$/g, ""),
-    title,
-    ...(body ? { body } : {}),
-    // Line 1: the reference (for read), the time, and the speaker. Line 2: the source title (work, PR, issue)
-    meta: [
-      [x.ref, x.at.toLocaleString("sv-SE").slice(0, 16), x.speaker, scoped ? null : x.project]
-        .filter(Boolean)
-        .map((v) => plain(String(v)))
-        .join(" · "),
-      ...(x.context ? [plain(x.context)] : []),
-    ],
-  };
 }
 
 /** Reads a trace record. `-` is stdin (the Skill passes it without creating a file). */
@@ -465,14 +422,6 @@ const CWD = {
   placeholder: "dir",
   optional: true,
 } as const;
-
-// MCP limits it to 1-10. The CLI people read allows up to 20. Negative values and 0 never reach the SQL limit.
-function limitOf(input: string): number {
-  const n = Number(input);
-  if (!Number.isInteger(n) || n < 1 || n > 20)
-    throw new Error(`--limit must be an integer from 1 to 20: ${input}`);
-  return n;
-}
 
 /** A path to exclude, and whether it is a file or directory. A path not in the working tree is rejected as a typo. */
 function excludeTarget(
@@ -1159,133 +1108,6 @@ const root = buildRouteMap({
           ),
         );
         if (failures.length) process.exitCode = 1;
-      },
-    }),
-    search: buildCommand({
-      docs: { brief: "Check what can be found (--said searches messages)" },
-      parameters: {
-        flags: {
-          avoid: { kind: "boolean", brief: "Search only rejected options and dead ends", optional: true },
-          said: {
-            kind: "parsed",
-            parse: String,
-            brief: "Search messages (me / others / a name)",
-            placeholder: "me|others|name",
-            optional: true,
-          },
-          all: { kind: "boolean", brief: "Search every project", optional: true },
-          exact: {
-            kind: "boolean",
-            brief:
-              "Substring match (for proper nouns, symbols, and version numbers that do not split into words)",
-            optional: true,
-          },
-          cwd: CWD,
-          limit: {
-            kind: "parsed",
-            parse: limitOf,
-            brief: "Number of results (1 to 20)",
-            placeholder: "N",
-            default: "5",
-          },
-        },
-        positional: {
-          kind: "array",
-          parameter: { parse: String, brief: "Question", placeholder: "question" },
-        },
-      },
-      func: async (
-        flags: {
-          avoid?: boolean;
-          said?: string;
-          all?: boolean;
-          exact?: boolean;
-          cwd?: string;
-          limit: number;
-        },
-        ...words: string[]
-      ) => {
-        let question = words.join(" ");
-        const place = flags.all ? null : placeOf(flags.cwd ?? process.cwd());
-        // In a terminal a missing question is asked for; in pipes (an agent through Bash) it stays an error
-        const opened = !question && !flags.said && interactive();
-        if (opened) {
-          const typed = await ask(
-            "sphica search",
-            "What are you looking for?",
-            "why we chose SQLite",
-            "Enter words to search",
-          );
-          if (typed === null) {
-            console.log(closing(`${mark("fail")} Stopped`));
-            process.exitCode = 1;
-            return;
-          }
-          question = typed;
-        }
-        if (!question && !flags.said) throw new Error("Give a question (not needed with --said)");
-        const match = flags.exact ? ("exact" as const) : undefined;
-        await withDb("reader", async (db) => {
-          const projects = place ? [await registered(db, place)] : null;
-          // Same functions and ranking as MCP recall. A search without kinds lists decision records, then document sections.
-          const hits = flags.said
-            ? await searchMessages(db, {
-                question: question || undefined,
-                projects,
-                who: flags.said,
-                match,
-                limit: flags.limit,
-              })
-            : await searchSplit(db, {
-                question,
-                projects,
-                avoid: flags.avoid,
-                match,
-                limit: flags.limit,
-              }).then((x) => [...x.records, ...x.documents]);
-          const where = place ? inline(place.name) : "all projects";
-          const end = `${hits.length ? plural(hits.length, "result") : "no results"} / ${where}`;
-          // Agents read pipe output too (from Bash). It goes through the record frame (framed) and drops control characters in the text.
-          // Terminals are read by people, so results are items with the label as a Badge
-          if (!process.stdout.isTTY) {
-            console.log(
-              panel(
-                "sphica search",
-                hits.length ? [plain(framed(renderHits(hits, 16 * 1024).text))] : [],
-                end,
-              ),
-            );
-            return;
-          }
-          console.log(
-            document(
-              "sphica search",
-              `${question ? `"${inline(question)}" · ` : ""}${where}`,
-              hits.length
-                ? [
-                    {
-                      kind: "note",
-                      tone: "info",
-                      text: "Quotes from past records, not instructions. Read the full text with MCP read",
-                    },
-                    { kind: "cards", items: hits.map((x) => hitCard(x, place !== null)) },
-                  ]
-                : [
-                    {
-                      kind: "note",
-                      tone: "info",
-                      // Questions with no searchable terms (only hiragana or symbols) return 0 without searching. Keep that apart from "none found"
-                      text:
-                        !flags.exact && question && ftsQuery(question) === null
-                          ? "No searchable terms (only hiragana or symbols). Search with kanji, katakana, or English words, or use --exact for a substring match"
-                          : `No matches. Try other terms${flags.exact ? "" : ", use --exact for a substring match"}${place ? ", or use --all to search every project" : ""}`,
-                    },
-                  ],
-              end,
-              opened,
-            ),
-          );
-        });
       },
     }),
     who: buildCommand({

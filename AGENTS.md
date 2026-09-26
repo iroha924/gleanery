@@ -30,7 +30,7 @@ bun run bundle      # build the MCP, CLI, and capture artifacts
 ### DB and connections
 
 - `db/schema.sql` is the only source of truth for the DB. Do not add an ORM schema as a second source <!-- invariant: schema-single-source -->
-- MCP and `sphica search` use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
+- MCP and the CLI's read-only commands use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
   Instead: take write connections from the factories in `server/src/db-write.ts`. Do not import them from reading interfaces (`bun run architecture`)
 - Interfaces that read untrusted text (PR and issue bodies, recorded conversations) get no write access <!-- invariant: untrusted-no-write -->
 - No server that listens <!-- invariant: no-listen -->

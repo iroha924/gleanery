@@ -187,7 +187,6 @@ codex plugin remove sphica@sphica
 | `sphica doctor` | バージョン・DB・記録を確かめる |
 | `sphica project add` | いまのリポジトリをプロジェクトとして登録する |
 | `sphica harvest` | GitHub の PR・issue と Markdown の文書を取り込む |
-| `sphica search <語>` | 端末から検索する |
 
 全部の一覧は `sphica --help`、各コマンドのオプションは `sphica <コマンド> --help` で見られます。
 

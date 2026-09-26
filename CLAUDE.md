@@ -21,7 +21,7 @@ Start troubleshooting with `sphica doctor`.
 ## Runtime boundaries
 
 - `db/schema.sql` is the only source of truth for the DB. Do not add an ORM schema as a second source <!-- invariant: schema-single-source -->
-- MCP and `sphica search` use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
+- MCP and the CLI's read-only commands use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
   Write connections live only in `server/src/db-write.ts` (`bun run architecture` checks it)
 - Interfaces that read untrusted text (PR and issue bodies, recorded conversations) get no write access <!-- invariant: untrusted-no-write -->
 - No server that listens <!-- invariant: no-listen -->

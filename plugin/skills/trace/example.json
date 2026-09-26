@@ -60,7 +60,7 @@
           "why": "it would mean keeping Host checks and CSRF checks forever"
         }
       ],
-      "confirmation": "sphica search found the records with no port open",
+      "confirmation": "recall found the records with no port open",
       "downsides": [
         "no screen for browsing records; lookups go through search"
       ]
@@ -93,8 +93,8 @@
       "kind": "verification",
       "status": "passed",
       "at": "2026-09-20T13:20:00+09:00",
-      "text": "sphica search returns the stored decision and nothing listens on a port",
-      "command": "sphica search \"local database\"",
+      "text": "sphica doctor reads the database and nothing listens on a port",
+      "command": "sphica doctor",
       "verifies": "no-server"
     },
     {

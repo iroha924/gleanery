@@ -400,6 +400,7 @@ const GONE = [
   /tsvector/i,
   /db:roles/,
   /sphica dashboard/,
+  /sphica search/,
   /\bInk\b/,
   /server\/src\/tui/,
 ];

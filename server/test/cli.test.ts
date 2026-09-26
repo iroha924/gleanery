@@ -27,19 +27,20 @@ function run(...args: string[]): { code: number; out: string } {
   }
 }
 
-// A parser that skips unknown arguments succeeds on --avod without filtering,
-// which inverts the answer to "was this rejected before?".
+// A parser that skips unknown arguments would run the command as if the misspelled flag were not there.
 test("unknown flags and commands fail before connecting to the database", () => {
   for (const bad of ["--avod", "--limitt", "--all-scopes"]) {
-    const r = run("search", "認証", bad);
+    const r = run("project", "list", bad);
     assert.notEqual(r.code, 0);
     assert.match(r.out, new RegExp(`Unknown flag: ${bad}`), `${bad}: ${r.out}`);
     assert.doesNotMatch(r.out, /No database at/, "tried to connect to the database");
   }
-  // The terminal screen is gone; the old command name must fail like any unknown one
-  const gone = run("dashboard");
-  assert.notEqual(gone.code, 0);
-  assert.match(gone.out, /Unknown command: dashboard/, gone.out);
+  // Removed commands (the terminal screen, and search, which MCP recall covers) fail like any unknown one
+  for (const name of ["dashboard", "search"]) {
+    const gone = run(name);
+    assert.notEqual(gone.code, 0);
+    assert.match(gone.out, new RegExp(`Unknown command: ${name}`), gone.out);
+  }
   const r = run("frobnicate");
   assert.notEqual(r.code, 0);
   assert.match(r.out, /Unknown command: frobnicate/);
@@ -70,7 +71,7 @@ test("the error title uses only the command path the dispatcher chose", () => {
     /^sphica trace check$/m,
     "shows the subcommand even when parsing fails",
   );
-  assert.match(run("search", "--lmit", "3", "認証").out, /^sphica search$/m);
+  assert.match(run("harvest", "--lmit", "3").out, /^sphica harvest$/m);
   const flagValue = run("trace", "--cwd", "/nonexistent", "check");
   assert.match(flagValue.out, /^sphica$/m, flagValue.out);
   assert.doesNotMatch(flagValue.out, /^sphica.*nonexistent/m, "flag values never go into the title");
@@ -79,18 +80,6 @@ test("the error title uses only the command path the dispatcher chose", () => {
     assert.doesNotMatch(forged.out, /^(?:╰─ )?✓ 直すものは無い$/m, forged.out);
     assert.match(forged.out, /^✗ Stopped$/m, forged.out);
   }
-});
-
-test("--limit accepts only integers from 1 to 20", () => {
-  for (const v of ["abc", "0", "21", "1.5", "-1"]) {
-    const r = run("search", "認証", `--limit=${v}`);
-    assert.match(r.out, /--limit must be an integer from 1 to 20/, `${v}: ${r.out}`);
-  }
-  assert.match(
-    run("search", "認証", "--limit", "abc").out,
-    /--limit must be/,
-    "also parses the --name value form",
-  );
 });
 
 test("no arguments and --help print usage for that level and succeed", () => {
