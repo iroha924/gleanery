@@ -219,3 +219,29 @@ test("Codex tool calls replay like Claude's, and any other finished tool item is
   // Codex reports no refusal before running, so even a failed item of another tool counts
   assert.equal(sessionOf(await replay(codexCallsOf(shell), db.reader, CWD), keyOf, []).disallowed, 1);
 });
+
+test("Codex's resource listings count as showing nothing only when they list nothing", () => {
+  const item = (tool: string, text: string) => ({
+    type: "item.completed",
+    item: {
+      type: "mcp_tool_call",
+      server: "codex",
+      tool,
+      arguments: {},
+      result: { content: [{ type: "text", text }] },
+      error: null,
+      status: "completed",
+    },
+  });
+  const count = (e: ReturnType<typeof item>) =>
+    sessionOf(
+      codexCallsOf([e]).map((c) => ({ ...c, matched: false, items: [] })),
+      keyOf,
+      [],
+    ).disallowed;
+  assert.equal(count(item("list_mcp_resources", '{"resources":[]}')), 0);
+  assert.equal(count(item("list_mcp_resource_templates", '{"resourceTemplates":[]}')), 0);
+  assert.equal(count(item("list_mcp_resources", '{"resources":[{"uri":"file:///x"}]}')), 1);
+  // What it can read is not established, so it never counts as showing nothing
+  assert.equal(count(item("read_mcp_resource", "")), 1);
+});

@@ -13,6 +13,7 @@ import {
   CASES_SHA,
   CLAUDE_ENV,
   cases,
+  DISALLOWED,
   fixedDb,
   knowledgeRows,
   OUT,
@@ -20,7 +21,7 @@ import {
   SNAPSHOT,
   type summarize,
 } from "./run.ts";
-import { callsOf } from "./session.ts";
+import { callsOf, codexCallsOf, disallowedOf } from "./session.ts";
 import { type Conditions, ineligible, type Run, verdict } from "./verdict.ts";
 
 type Grade = "direct" | "partial" | "no";
@@ -37,7 +38,12 @@ type Top = { i: number; rank: number; key: string | null; grade?: Grade; slot?: 
  * violations: questions with a call to another tool not refused before running, or a call whose replay did not match, counted from
  * the run's saved traces. null when no trace could be read (a run loaded from baseline.json without the count): it cannot be compared
  */
-type System = { summary: ReturnType<typeof summarize>; top: Top[]; violations?: number | null };
+type System = {
+  summary: ReturnType<typeof summarize>;
+  top: Top[];
+  violations?: number | null;
+  errors?: number;
+};
 type Baseline = {
   cases: string;
   runs: System[];
@@ -142,28 +148,34 @@ for (const src of positionals) {
   systems.push({
     summary,
     top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })),
-    violations: violationsOf(src, results),
+    ...recount(src, summary.host ?? "claude", results),
   });
 }
 const questions = [...new Set(systems.flatMap((s) => s.top.map((t) => t.i)))].sort((a, b) => a - b);
 
 /**
- * Runs from before `disallowed` was recorded (all Claude) are recounted from their traces. A question whose trace is missing counts as
- * a violation, so a run is never cleared without its traces.
+ * Recounts, from each question's saved trace, the questions that used another tool (the rule in session.ts, so a later, narrower rule
+ * also applies to saved runs) and the question errors that follow. A missing trace counts as a violation, so no run is cleared
+ * without its traces. Unconfirmed calls come from the replay made when the run was measured.
  */
-function violationsOf(dir: string, results: Result[]): number {
-  return results.filter((r) => {
-    if (r.session.unconfirmed > 0) return true;
-    if (r.session.disallowed !== undefined) return r.session.disallowed > 0;
+function recount(dir: string, host: string, results: Result[]): { violations: number; errors: number } {
+  let violations = 0;
+  let errors = 0;
+  for (const r of results) {
     const trace = path.join(dir, `q${r.i}`, "trace.jsonl");
-    if (!fs.existsSync(trace)) return true;
-    const events = fs
-      .readFileSync(trace, "utf8")
-      .split("\n")
-      .filter((l) => l.trim())
-      .map((l) => JSON.parse(l) as { type?: string; [k: string]: unknown });
-    return callsOf(events).some((c) => c.tool === "other" && !c.rejected);
-  }).length;
+    const events = fs.existsSync(trace)
+      ? fs
+          .readFileSync(trace, "utf8")
+          .split("\n")
+          .filter((l) => l.trim())
+          .map((l) => JSON.parse(l) as { type?: string; [k: string]: unknown })
+      : null;
+    const used =
+      events === null ? 1 : disallowedOf(host === "codex" ? codexCallsOf(events) : callsOf(events));
+    if (r.session.unconfirmed > 0 || used > 0) violations++;
+    if (used > 0 || (r.error !== undefined && r.error !== DISALLOWED)) errors++;
+  }
+  return { violations, errors };
 }
 
 const hostOf = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).host ?? "claude";
@@ -361,7 +373,7 @@ if (values.base) {
       direct: pct(s.top.filter((t) => t.grade === "direct").length, s.top.length),
       turns: x.turns_mean ?? s.summary.turns,
       toolKib: x.tool_kib_mean ?? x.tool_kib ?? null,
-      errors: s.summary.errors,
+      errors: s.errors ?? s.summary.errors,
     };
   };
   const x = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).db;

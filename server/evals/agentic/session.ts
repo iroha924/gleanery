@@ -34,6 +34,14 @@ export type Call = {
   error: boolean;
   /** The trace shows the call was refused before it ran (a permission refusal, or MCP input validation), so it showed nothing */
   rejected: boolean;
+  /** A Codex built-in that listed the configured MCP servers' resources and got an empty list: it showed nothing */
+  inert?: boolean;
+};
+
+/** Codex built-ins allowed only with exactly this empty result. sphica exposes no resources, so a nonempty one is not sphica's */
+const EMPTY_LISTS: Record<string, string> = {
+  list_mcp_resources: '{"resources":[]}',
+  list_mcp_resource_templates: '{"resourceTemplates":[]}',
 };
 
 /** MCP rejects arguments that fail the tool's schema before the handler runs, with this code */
@@ -126,6 +134,12 @@ export function codexCallsOf(events: Event[]): Call[] {
       error,
       // Only input validation proves a refusal before running here; Codex reports other refusals like any failure
       rejected: sphica && error && text.startsWith(INVALID_PARAMS),
+      inert:
+        it.type === "mcp_tool_call" &&
+        it.server === "codex" &&
+        !error &&
+        EMPTY_LISTS[String(it.tool)] === text &&
+        (it.arguments === undefined || JSON.stringify(it.arguments) === "{}"),
     });
   }
   return calls;
@@ -210,6 +224,8 @@ export type Session = {
   disallowed: number;
   /** Calls refused before running (they showed nothing) */
   rejected: number;
+  /** Codex built-ins that listed no MCP resources (they showed nothing) */
+  inert?: number;
   /** Matched recall calls that showed no record */
   empty: number;
   bytes: number;
@@ -265,8 +281,9 @@ export function sessionOf(
     reads: calls.filter((c) => c.tool === "read").length,
     errors: calls.filter((c) => c.error).length,
     unconfirmed: calls.filter((c) => c.tool !== "other" && !c.matched).length,
-    disallowed: calls.filter((c) => c.tool === "other" && !c.rejected).length,
+    disallowed: disallowedOf(calls),
     rejected: calls.filter((c) => c.rejected).length,
+    inert: calls.filter((c) => c.inert).length,
     // resume lists work items, which carry no result refs
     empty: calls.filter(
       (c) =>
@@ -280,3 +297,7 @@ export function sessionOf(
     usage,
   };
 }
+
+/** Calls to anything but sphica's recall and read that showed something, or may have: neither refused before running nor an empty resource list */
+export const disallowedOf = (calls: Call[]) =>
+  calls.filter((c) => c.tool === "other" && !c.rejected && !c.inert).length;

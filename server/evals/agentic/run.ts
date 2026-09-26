@@ -317,6 +317,9 @@ async function keys(): Promise<(ref: string) => string | null> {
   return (ref) => (ref.startsWith("m:") ? ref.slice(2) : (byRef.get(ref) ?? null));
 }
 
+/** The error of a question that used another tool. judge.ts recounts it from the trace, so a narrower rule applies to saved runs too */
+export const DISALLOWED = "used a tool other than sphica recall and read";
+
 type Asked = {
   run: string;
   host: Host;
@@ -374,7 +377,7 @@ async function solve(c: Case, i: number, o: Asked): Promise<Result> {
       ...(a.error
         ? { error: a.error.slice(0, 200) }
         : session.disallowed > 0
-          ? { error: "used a tool other than sphica recall and read" }
+          ? { error: DISALLOWED }
           : refs === null
             ? { error: "cannot parse the final refs JSON (a format failure, not a search miss)" }
             : {}),
