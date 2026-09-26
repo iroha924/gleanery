@@ -359,6 +359,19 @@ test("sphica init refuses a bad --name and --sync without a project before creat
   }
 });
 
+// A mistyped --cwd must not pass for a finished setup, and with --name it would register a directory that does not exist
+test("sphica init refuses a --cwd that is not a directory before creating anything", () => {
+  const file = path.join(tmp(), "file.txt");
+  fs.writeFileSync(file, "");
+  for (const cwd of [path.join(tmp(), "missing"), file]) {
+    const home = tmp();
+    const r = cli(home, "init", "--cwd", cwd, "--name", "notes");
+    assert.notEqual(r.code, 0, `${cwd}: ${r.out}`);
+    assert.match(r.out, /is not a directory/, r.out);
+    assert.equal(fs.existsSync(path.join(home, ".sphica", "sphica.db")), false, cwd);
+  }
+});
+
 test("sphica init --sync imports the project's documents", () => {
   const home = tmp();
   const repo = repoAt(tmp());

@@ -892,6 +892,8 @@ const captureRoutes = buildRouteMap({
  */
 async function init(flags: { cwd?: string; name?: string; sync?: boolean }): Promise<void> {
   const cwd = flags.cwd ?? process.cwd();
+  if (!fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory())
+    throw new Error(`${cwd} is not a directory`);
   const found = identify(cwd);
   if (flags.name !== undefined) {
     checkLocalName(flags.name);
