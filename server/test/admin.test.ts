@@ -350,8 +350,8 @@ test("sphica init --name in a subdirectory of the named place changes nothing", 
   assert.deepEqual(projectKeys(home), ["local:notes"]);
 });
 
-test("sphica init refuses a bad --name and --sync without a project before creating anything", () => {
-  for (const args of [["--name", "Bad Name"], ["--sync"]]) {
+test("sphica init refuses a bad --name before creating anything", () => {
+  for (const args of [["--name", "Bad Name"]]) {
     const home = tmp();
     const r = cli(home, "init", "--cwd", tmp(), ...args);
     assert.notEqual(r.code, 0, `${args.join(" ")}: ${r.out}`);
@@ -372,20 +372,6 @@ test("sphica init refuses a --cwd that is not a directory before creating anythi
   }
 });
 
-test("sphica init --sync imports the project's documents", () => {
-  const home = tmp();
-  const repo = repoAt(tmp());
-  const r = cli(home, "init", "--cwd", repo, "--name", "notes", "--sync");
-  assert.equal(r.code, 0, r.out);
-  const n = (
-    new DatabaseSync(path.join(home, ".sphica", "sphica.db"), { readOnly: true })
-      .prepare("select count(*) as n from source_item")
-      .get() as { n: number }
-  ).n;
-  assert.ok(n > 0, r.out);
-});
-
-// Recording that cannot be sent needs the exact command to send it again, since capture is hidden from usage
 test("doctor names the command that sends stuck recordings", () => {
   const home = tmp();
   cli(home, "init");
@@ -537,4 +523,59 @@ insert into child (id, parent_id) values (1, 1);`);
     SCHEMA_REVISION + 1,
   );
   raw.close();
+});
+
+// Before asking, db migrate shows what the migrations would remove (measured on a copy), and afterwards what they removed.
+test("db migrate shows the rows it would remove before asking, leaving the database untouched, and what it removed", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "sphica.db");
+  await quiet(() => dbInit(file));
+  const w = connectWriter("owner", file);
+  w.exec("insert into project (key, name) values ('git:a/b', 'a/b'), ('git:c/d', 'c/d'), ('git:e/f', 'e/f')");
+  w.close();
+  const migrations = path.join(dir, "migrations");
+  writeMigrations(migrations, ["delete from project where key <> 'git:a/b';\n"]);
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (s: string) => lines.push(String(s));
+  let seen = "";
+  try {
+    const outcome = await migrate(false, file, migrations, async () => {
+      seen = lines.join("\n");
+      assert.equal(inspect(file).revision, SCHEMA_REVISION, "the preview does not touch the database");
+      return true;
+    });
+    assert.equal(outcome, "applied");
+  } finally {
+    console.log = log;
+  }
+  assert.match(seen, /Would remove: project 2 rows \(3 → 1\)/);
+  assert.match(lines.join("\n"), /Removed: project 2 rows \(3 → 1\)/);
+  // Only the database and its journal remain: the preview copy is gone
+  assert.deepEqual(leftovers(dir), []);
+});
+
+/** Files beside the database other than itself, its journal, and the migrations */
+const leftovers = (dir: string) =>
+  fs.readdirSync(dir).filter((f) => !/^sphica\.db(-wal|-shm)?$/.test(f) && f !== "migrations");
+
+test("a migration that fails in the preview stops before asking and leaves no copy behind", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "sphica.db");
+  await quiet(() => dbInit(file));
+  const migrations = path.join(dir, "migrations");
+  writeMigrations(migrations, ["insert into no_such_table values (1);\n"]);
+  let asked = false;
+  await assert.rejects(
+    quiet(() =>
+      migrate(false, file, migrations, async () => {
+        asked = true;
+        return true;
+      }),
+    ),
+    /no such table/,
+  );
+  assert.equal(asked, false);
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+  assert.deepEqual(leftovers(dir), []);
 });

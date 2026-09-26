@@ -37,8 +37,9 @@ const same = (a, b) => [...a].sort().join() === [...b].sort().join();
 // Adding only to the database leaves search labels empty; adding only to the code makes import and capture fail the CHECK
 // (a real case: files that were Read were sent as action 'read', the CHECK allowed only edit / review, and capture stopped).
 const schema = read("db/schema.sql");
+// A table rebuilt by a migration is written with its name quoted (`create table "knowledge"`)
 const knowledgeTable = schema.slice(
-  schema.indexOf("create table knowledge ("),
+  schema.search(/create table "?knowledge"? \(/),
   schema.indexOf("create index knowledge_listing"),
 );
 const PAIRS = [

@@ -18,7 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { openReader } from "../src/db.ts";
-import { type Hit, searchKnowledge, searchMessages, searchSplit } from "../src/search.ts";
+import { type Hit, searchKnowledge, searchMessages } from "../src/search.ts";
 import { fixedDb } from "./agentic/run.ts";
 import { SPLITS, type Split, splitStale } from "./cases.ts";
 
@@ -38,19 +38,17 @@ const db = openReader(fixedDb());
 // Maps a ref (k:12 / m:uuid) to the key used to match answers.
 // **Do not match by id.** Ids change on reimport, which breaks before and after comparisons.
 const keyOf = new Map<string, string>();
-// **Source is tracked as a metric.** Every run reports whether sections of one file or records of one work item fill the top,
+// **Source is tracked as a metric.** Every run reports whether records of one work item or pull request fill the top,
 // alongside top1 and recall (a one-off local measurement is something nobody can reproduce later).
 const originOf = new Map<string, string>();
 for (const r of await db
   .selectFrom("knowledge as k")
-  .leftJoin("source_item as s", "s.id", "k.source_item_id")
-  .select(["k.id", "k.source_key", "k.work_item_id", "s.path"])
+  .select(["k.id", "k.source_key", "k.work_item_id"])
   .execute()) {
   keyOf.set(`k:${r.id}`, r.source_key);
   originOf.set(
     `k:${r.id}`,
-    r.path ??
-      (r.work_item_id !== null ? `work:${r.work_item_id}` : (r.source_key.split("#")[0] ?? `k:${r.id}`)),
+    r.work_item_id !== null ? `work:${r.work_item_id}` : (r.source_key.split("#")[0] ?? `k:${r.id}`),
   );
 }
 for (const r of await db.selectFrom("message").select("id").execute()) keyOf.set(`m:${r.id}`, r.id);
@@ -64,15 +62,10 @@ const rank = (hits: Hit[], expect: string[]): number =>
 
 type Strategy = (c: Case) => Promise<Hit[]>;
 
-// The same functions and order as MCP recall (without kinds, decision records come before document sections).
+// The same functions and order as MCP recall.
 const strategies: Record<string, Strategy> = {
-  "shipped: one-shot search (knowledge)": async (c) => {
-    if (c.source === "message") return [];
-    if (c.kind === "document")
-      return searchKnowledge(db, { question: c.q, projects: null, kinds: ["document"], limit: K });
-    const { records, documents } = await searchSplit(db, { question: c.q, projects: null, limit: K });
-    return [...records, ...documents];
-  },
+  "shipped: one-shot search (knowledge)": async (c) =>
+    c.source === "message" ? [] : searchKnowledge(db, { question: c.q, projects: null, limit: K }),
   "shipped: one-shot search (messages)": (c) =>
     c.source === "message"
       ? searchMessages(db, { question: c.q, projects: null, limit: K })

@@ -1,248 +1,193 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { collect, type GithubSource, isFiller, speakerOf } from "../src/github.ts";
+import { type Get, isFiller, LIMITS, parts, readPull, repoOf } from "../src/github.ts";
 
-const user = (login: string, id = login.length) => ({ id, login });
-
-const source: GithubSource = {
-  pulls: async () => [
-    {
-      number: 12,
-      title: "取り込みを作り直す",
-      body: "gh の 1 経路にする",
-      user: user("alice", 1),
-      state: "closed",
-      merged_at: "2026-09-11T02:00:00Z",
-      closed_at: "2026-09-11T02:00:00Z",
-      created_at: "2026-09-10T02:00:00Z",
-      updated_at: "2026-09-11T02:00:00Z",
-      html_url: "https://github.com/acme/app/pull/12",
-    },
-    {
-      number: 13,
-      title: "chore(release): 1.2.0",
-      body: "リリース",
-      user: user("release-bot[bot]", 9),
-      state: "closed",
-      merged_at: "2026-09-12T02:00:00Z",
-      closed_at: "2026-09-12T02:00:00Z",
-      created_at: "2026-09-12T01:00:00Z",
-      updated_at: "2026-09-12T02:00:00Z",
-      html_url: "https://github.com/acme/app/pull/13",
-    },
-  ],
-  issues: async () => [
-    // The issues endpoint also returns PRs
-    {
-      number: 12,
-      title: "取り込みを作り直す",
-      body: "x",
-      user: user("alice", 1),
-      state: "closed",
-      closed_at: "",
-      created_at: "",
-      updated_at: "",
-      html_url: "",
-      pull_request: {},
-    },
-    {
-      number: 20,
-      title: "設計",
-      body: "決めたこと",
-      user: user("bob", 2),
-      state: "open",
-      closed_at: null,
-      created_at: "2026-09-01T00:00:00Z",
-      updated_at: "2026-09-02T00:00:00Z",
-      html_url: "https://github.com/acme/app/issues/20",
-    },
-    {
-      number: 21,
-      title: "週次レポート",
-      body: "自動",
-      user: user("report[bot]", 8),
-      state: "open",
-      closed_at: null,
-      created_at: "2026-09-01T00:00:00Z",
-      updated_at: "2026-09-01T00:00:00Z",
-      html_url: "",
-    },
-  ],
-  reviewComments: async () => [
-    {
-      id: 30,
-      user: user("bob", 2),
-      body: "LGTM",
-      path: "a.ts",
-      line: 3,
-      created_at: "2026-09-11T00:00:00Z",
-      html_url: "",
-      pull_request_url: "https://api.github.com/repos/acme/app/pulls/12",
-    },
-    {
-      id: 31,
-      in_reply_to_id: 30,
-      user: user("alice", 1),
-      body: "再試行で重複しない",
-      path: "a.ts",
-      line: 3,
-      created_at: "2026-09-11T00:10:00Z",
-      html_url: "u31",
-      pull_request_url: "https://api.github.com/repos/acme/app/pulls/12",
-    },
-    {
-      id: 32,
-      user: user("coderabbitai[bot]", 7),
-      body: "null を返しうる",
-      path: "b.ts",
-      line: 9,
-      start_line: 7,
-      created_at: "2026-09-11T00:20:00Z",
-      html_url: "u32",
-      pull_request_url: "https://api.github.com/repos/acme/app/pulls/12",
-    },
-  ],
-  issueComments: async () => [
-    {
-      id: 40,
-      user: user("dependabot[bot]", 5),
-      body: "Preview: https://x",
-      created_at: "2026-09-11T00:00:00Z",
-      html_url: "",
-      issue_url: "https://api.github.com/repos/acme/app/issues/12",
-    },
-    {
-      id: 41,
-      user: user("alice", 1),
-      body: "これは DBT 側で",
-      created_at: "2026-09-02T00:00:00Z",
-      html_url: "u41",
-      issue_url: "https://api.github.com/repos/acme/app/issues/20",
-    },
-  ],
+const pull = {
+  id: 9001,
+  number: 12,
+  title: "Keep one SQLite file",
+  body: "We drop Postgres.",
+  html_url: "https://github.com/o/r/pull/12",
+  state: "closed",
+  merged_at: "2026-09-12T00:00:00Z",
+  created_at: "2026-09-10T00:00:00Z",
+  user: { login: "owner" },
+  commits: 2,
+  changed_files: 3,
 };
 
-test("syncs PRs and issues to their current state and drops bot-made issues and automated notices", async () => {
-  const got = await collect(source);
-  assert.deepEqual(
-    got.items.map((i) => [i.number, i.kind, i.state]),
-    [
-      [12, "pull_request", "merged"],
-      [13, "pull_request", "merged"],
-      [20, "issue", "open"],
-    ],
-    "keeps release PRs and leaves out bot report issues",
-  );
-  const said12 = got.said.get(12) ?? [];
-  assert.deepEqual(
-    said12.map((s) => [s.externalId, s.speaker, s.replyTo]),
-    [
-      ["body", "person", null],
-      // LGTM is filler and gets dropped, and the reply stays as a message without a parent
-      ["r:31", "person", null],
-      ["r:32", "assistant", null],
-    ],
-  );
-  assert.deepEqual(said12[2]?.file, { path: "b.ts", line: 9, startLine: 7 });
-  assert.equal(
-    got.said.get(13)?.[0]?.speaker,
-    "bot",
-    "the release PR body is kept as a bot message (not indexed)",
-  );
-  assert.deepEqual(
-    (got.said.get(20) ?? []).map((s) => s.externalId),
-    ["body", "c:41"],
-  );
-});
-
-// Drop NUL from GitHub text. In the old setup, a single one failed the whole sync transaction every day.
-test("drops NUL from GitHub titles, handles, URLs, and paths, and keeps merge and close times", async () => {
-  const nul = "\u0000";
-  const got = await collect({
-    pulls: async () => [
+/** A fake GitHub: each path returns its fixture; list paths return arrays. */
+function fake(over: Record<string, unknown> = {}): { get: Get; paths: string[] } {
+  const paths: string[] = [];
+  const data: Record<string, unknown> = {
+    "pulls/12": pull,
+    "issues/12/comments": [
+      { id: 1, body: "LGTM", user: { login: "a" }, created_at: "2026-09-10T02:00:00Z", html_url: "u1" },
       {
-        number: 1,
-        title: `題${nul}`,
-        body: "本文",
-        user: { id: 1, login: `al${nul}ice` },
-        state: "closed",
-        merged_at: null,
-        closed_at: "2026-09-03T00:00:00Z",
-        created_at: "2026-09-01T00:00:00Z",
-        updated_at: "2026-09-05T00:00:00Z",
-        html_url: `https://x/${nul}1`,
+        id: 2,
+        body: "Why not Postgres?",
+        user: { login: "a" },
+        created_at: "2026-09-10T01:00:00Z",
+        html_url: "u2",
       },
     ],
-    issues: async () => [],
-    reviewComments: async () => [
+    "pulls/12/reviews": [
       {
-        id: 5,
-        user: { id: 2, login: "bob" },
-        body: "ここは直す",
-        path: `a${nul}.ts`,
-        line: 3,
-        created_at: "2026-09-02T00:00:00Z",
-        html_url: `https://x/${nul}r5`,
-        pull_request_url: "https://api/x/pulls/1",
+        id: 3,
+        body: "",
+        user: { login: "b" },
+        state: "CHANGES_REQUESTED",
+        submitted_at: "2026-09-10T03:00:00Z",
+        html_url: "u3",
       },
     ],
-    issueComments: async () => [],
-  });
-  const all = JSON.stringify(got.items) + JSON.stringify([...got.said.values()]);
-  assert.ok(!all.includes("\\u0000"), all);
-  assert.equal(
-    got.items[0]?.closedAt,
-    "2026-09-03T00:00:00Z",
-    "a PR closed without merging has its close time",
-  );
-  assert.equal(got.items[0]?.state, "closed");
-});
+    "pulls/12/comments": [
+      {
+        id: 4,
+        body: "This path breaks on Windows",
+        user: { login: "b" },
+        created_at: "2026-09-10T03:00:01Z",
+        html_url: "u4",
+        path: "src/db.ts",
+        line: 7,
+      },
+    ],
+    "pulls/12/commits": [
+      {
+        sha: "abcdef0123456789",
+        commit: { message: "fix: use path.join", author: { date: "2026-09-10T04:00:00Z" } },
+      },
+    ],
+    "issues/12/timeline": [
+      {
+        event: "cross-referenced",
+        created_at: "2026-09-10T05:00:00Z",
+        source: { issue: { number: 3, title: "Windows paths" } },
+      },
+      { event: "labeled", created_at: "2026-09-10T05:00:01Z" },
+    ],
+    ...over,
+  };
+  return {
+    paths,
+    get: async (path) => {
+      paths.push(path);
+      const key = path.split("?")[0] ?? path;
+      if (!(key in data)) throw new Error(`unexpected ${path}`);
+      return data[key];
+    },
+  };
+}
 
-// When items are added during pagination, a PR or comment at the boundary shows up on two pages.
-test("merges the same PR and comment that appear on two pages", async () => {
-  const pr = {
-    number: 5,
-    title: "t",
-    body: "本文",
-    user: { id: 1, login: "alice" },
-    state: "open",
-    merged_at: null,
-    closed_at: null,
-    created_at: "2026-09-01T00:00:00Z",
-    updated_at: "2026-09-01T00:00:00Z",
-    html_url: "https://x/5",
-  };
-  const comment = {
-    id: 9,
-    user: { id: 2, login: "bob" },
-    body: "ここを直す",
-    created_at: "2026-09-02T00:00:00Z",
-    html_url: "https://x/5#c9",
-    issue_url: "https://api/x/issues/5",
-  };
-  const got = await collect({
-    pulls: async () => [pr, pr],
-    issues: async () => [],
-    reviewComments: async () => [],
-    issueComments: async () => [comment, comment],
+test("reads the pull request whole, in time order, without filler", async () => {
+  const f = fake();
+  const { pr, text } = await readPull("o/r", 12, f.get);
+  assert.deepEqual(pr, {
+    number: 12,
+    githubId: 9001,
+    title: "Keep one SQLite file",
+    url: pull.html_url,
+    state: "merged",
   });
+  assert.match(text, /^# #12: Keep one SQLite file/);
+  assert.match(text, /We drop Postgres\./);
+  assert.doesNotMatch(text, /LGTM/);
+  const order = [
+    "Why not Postgres?",
+    "CHANGES_REQUESTED",
+    "src/db.ts:7",
+    "fix: use path.join",
+    "issue #3 (Windows paths)",
+  ];
+  const at = order.map((s) => text.indexOf(s));
+  assert.ok(
+    at.every((x) => x > 0),
+    text,
+  );
   assert.deepEqual(
-    (got.said.get(5) ?? []).map((s) => s.externalId),
-    ["body", "c:9"],
+    [...at].sort((a, b) => a - b),
+    at,
+    text,
   );
+  assert.doesNotMatch(text, /labeled/);
+  // Every list is read in full (all pages)
+  assert.ok(f.paths.filter((p) => p !== "pulls/12").every((p) => p.includes("per_page=100")));
 });
 
-test("the speaker kind is decided by name", () => {
-  assert.equal(speakerOf("alice"), "person");
-  assert.equal(speakerOf("gemini-code-assist[bot]"), "assistant");
-  assert.equal(speakerOf("Copilot"), "assistant");
-  assert.equal(speakerOf("dependabot[bot]"), "bot");
+// GitHub lists stop at these sizes, so a larger pull request would be harvested from part of it
+test("refuses a pull request it cannot read whole", async () => {
+  const f = fake({ "pulls/12": { ...pull, commits: LIMITS.commits + 1 } });
+  await assert.rejects(readPull("o/r", 12, f.get), /cannot be read whole/);
+  assert.deepEqual(f.paths, ["pulls/12"], "stops before reading the lists");
+  // The file list is never read, so a pull request changing many files is read as usual
+  assert.match(
+    (await readPull("o/r", 12, fake({ "pulls/12": { ...pull, changed_files: 5000 } }).get)).text,
+    /We drop Postgres/,
+  );
+  const huge = fake({ "pulls/12": { ...pull, body: "x".repeat(LIMITS.bytes) } });
+  await assert.rejects(readPull("o/r", 12, huge.get), /cannot be read whole/);
 });
 
-// Do not drop by length alone. A short Japanese reply of 10 characters can still carry meaning.
+test("reports an open pull request and one closed without merging", async () => {
+  const state = async (over: object) =>
+    (await readPull("o/r", 12, fake({ "pulls/12": { ...pull, ...over } }).get)).pr.state;
+  assert.equal(await state({ merged_at: null }), "closed");
+  assert.equal(await state({ merged_at: null, state: "open" }), "open");
+});
+
+test("harvest reads only GitHub repositories", () => {
+  assert.equal(repoOf("git:github.com/o/r"), "o/r");
+  assert.equal(repoOf("git:gitlab.com/o/r"), null);
+  assert.equal(repoOf("local:notes"), null);
+});
+
 test("drops only filler replies", () => {
   assert.equal(isFiller("LGTM!"), true);
   assert.equal(isFiller("了解です。"), true);
   assert.equal(isFiller("![img](https://x)"), true);
   assert.equal(isFiller("これは DBT 側で"), false);
+});
+
+test("splits long text into parts at line ends, each within the limit, losing nothing", () => {
+  const lines = Array.from({ length: 50 }, (_, i) => `${i}: ${"あ".repeat(30)}`);
+  const text = lines.join("\n");
+  const ps = parts(text, 400);
+  assert.ok(ps.length > 1);
+  assert.ok(ps.every((p) => Buffer.byteLength(p) <= 400));
+  assert.equal(ps.join("\n"), text);
+  // A single line longer than the limit is cut without breaking a character
+  const long = parts("い".repeat(300), 100);
+  assert.ok(long.every((p) => Buffer.byteLength(p) <= 100 && !p.includes("�")));
+  assert.equal(long.join(""), "い".repeat(300));
+  assert.deepEqual(parts("short", 400), ["short"]);
+});
+
+// A bare "fixed" reply or a link to the fix can be the only sign that a finding was handled
+test("keeps replies that say something was fixed, and links", () => {
+  assert.equal(isFiller("修正しました"), false);
+  assert.equal(isFiller("対応しました。"), false);
+  assert.equal(isFiller("[reason](https://example.com/review)"), false);
+});
+
+// A reference from another repository must not read as this repository's issue of the same number
+test("names the repository of a cross-reference from another repository", async () => {
+  const f = fake({
+    "issues/12/timeline": [
+      {
+        event: "cross-referenced",
+        created_at: "2026-09-10T05:00:00Z",
+        source: {
+          issue: { number: 3, title: "Elsewhere", repository_url: "https://api.github.com/repos/other/repo" },
+        },
+      },
+      {
+        event: "cross-referenced",
+        created_at: "2026-09-10T05:00:01Z",
+        source: { issue: { number: 4, title: "Here", repository_url: "https://api.github.com/repos/o/r" } },
+      },
+    ],
+  });
+  const { text } = await readPull("o/r", 12, f.get);
+  assert.match(text, /issue other\/repo#3 \(Elsewhere\) referred to this/);
+  assert.match(text, /issue #4 \(Here\) referred to this/);
 });

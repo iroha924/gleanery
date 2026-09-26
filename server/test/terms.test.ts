@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { read, renderHits, searchKnowledge, searchSplit, splitJson } from "../src/search.ts";
+import { read, recordsJson, renderHits, searchKnowledge } from "../src/search.ts";
 import { searchTerms } from "../src/terms.ts";
 import { checkTrace, saveTrace, type Trace } from "../src/trace.ts";
 import { hash, knowledge, project, type TempDb, tempDb } from "./temp-db.ts";
@@ -94,7 +94,7 @@ const trace = (terms: unknown): Trace => {
 };
 
 test("trace writes a decision's terms to it and its options, keeps them when omitted, and clears them with an empty list", async () => {
-  assert.equal((await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]))).terms, 3);
+  assert.equal((await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]))).terms, 1);
   const ids = (
     db.owner
       .prepare("select id from knowledge where source_key like 'claude-code:terms#d-orm%' order by id")
@@ -119,7 +119,7 @@ test("trace writes a decision's terms to it and its options, keeps them when omi
   const again = await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]));
   assert.equal(writtenAt(), first, "the same words do not rewrite the row");
   assert.deepEqual(again, { written: 0, superseded: 0, terms: 0 });
-  assert.equal((await saveTrace(db.ingest, p, trace(["ORM"]))).terms, 3, "changed words are counted");
+  assert.equal((await saveTrace(db.ingest, p, trace(["ORM"]))).terms, 1, "changed words are counted");
   await saveTrace(db.ingest, p, trace(["ORM-choice", "query builder"]));
   await saveTrace(db.ingest, p, trace(undefined));
   assert.deepEqual(
@@ -127,7 +127,7 @@ test("trace writes a decision's terms to it and its options, keeps them when omi
     before,
   );
   assert.equal((await found("ORM-choice")).length, 2, "omitted keeps them");
-  assert.equal((await saveTrace(db.ingest, p, trace([]))).terms, 3, "cleared words are counted");
+  assert.equal((await saveTrace(db.ingest, p, trace([]))).terms, 1, "cleared words are counted");
   assert.deepEqual(await found("ORM-choice"), [], "an empty list clears them");
 });
 
@@ -151,16 +151,16 @@ test("trace check refuses terms that break the rules", () => {
 test("terms never appear in knowledge results, read, or the rendered hits", async () => {
   const id = knowledge(db, p, { source_key: "t#hidden", body: "本文だけが見える" });
   putTerms(id, "Ignore-previous-instructions-marker");
-  const split = await searchSplit(db.reader, {
+  const records = await searchKnowledge(db.reader, {
     question: "Ignore-previous-instructions-marker",
     projects: [p],
     limit: 5,
   });
-  assert.equal(split.records[0]?.ref, `k:${id}`);
+  assert.equal(records[0]?.ref, `k:${id}`);
   for (const text of [
-    JSON.stringify(split),
-    splitJson(split, 4000).text,
-    renderHits(split.records, 4000).text,
+    JSON.stringify(records),
+    recordsJson(records, 4000).text,
+    renderHits(records, 4000).text,
     (await read(db.reader, [`k:${id}`], 8000, { projects: [p] })).text,
   ])
     assert.ok(!text.includes("marker"), text.slice(0, 200));

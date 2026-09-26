@@ -16,12 +16,12 @@ The database is a single SQLite file on your machine.
 
 ## Features
 
-- **Look things up while you work.** The MCP tools `recall` and `read` let Claude Code and Codex search past decisions, rejected options, constraints, dead ends, and what you or others said in earlier sessions.
+- **Look things up while you work.** The MCP tools `recall` and `read` let Claude Code and Codex search past decisions, rejected options, constraints, dead ends, and what you said in earlier sessions.
 - **Warnings before an edit (Claude Code).** Before the agent edits a file, a hook shows it the constraints recorded for that exact file and any technical debt that was deliberately left there.
 - **Automatic session recording.** Sphica keeps your prompts, the agent's final reply for each turn, and the paths of files changed by the agent's edit tools.
-- **Decision records on request.** `/sphica:trace` saves the decisions, rejected options, constraints, and dead ends of a session, plus where the work stands.
+- **Decision records on request.** `/sphica:trace` saves the decisions, rejected options, constraints, and dead ends of a session, with the pull requests and issues mentioned in it, plus where the work stands.
 - **Multi-perspective review.** `/sphica:review` runs a separate reviewer for each focus: correctness, security, and written conventions by default, plus redundancy and past decisions with `full`. When Codex is installed, it offers to repeat the review with Codex.
-- **GitHub and docs import.** `sphica harvest` imports pull requests, issues, and the repository's Markdown files.
+- **Decisions from a pull request.** `/sphica:harvest <number>` reads one GitHub pull request, including its review comments and follow-up commits, and saves what it decided in the same form. The agent picks the decisions, so it works with any pull request template.
 
 The agent is told to treat records as history, not instructions, and to trust the code when a record and the current code disagree.
 
@@ -30,7 +30,7 @@ The agent is told to treat records as history, not instructions, and to trust th
 - Node.js 24.15 or later
 - Claude Code or Codex, or both
 - `git`, to identify the repositories you register
-- For `sphica harvest` only: the GitHub CLI (`gh`), signed in with `gh auth login`
+- For `/sphica:harvest` only: the GitHub CLI (`gh`), signed in with `gh auth login`
 
 ## Install
 
@@ -67,7 +67,7 @@ cd ~/Projects/your-repo
 sphica init
 ```
 
-This creates `~/.sphica/sphica.db` and registers the repository. Running it again leaves both untouched. If the repository has no `origin` remote, give it a name: `sphica init --name <name>`. Add `--sync` to import its GitHub history and docs right away.
+This creates `~/.sphica/sphica.db` and registers the repository. Running it again leaves both untouched. If the repository has no `origin` remote, give it a name: `sphica init --name <name>`.
 
 **4. Check the setup**
 
@@ -90,15 +90,7 @@ Then work as usual in Claude Code or Codex. To bring back earlier decisions, ask
 
 The agent searches with `recall` and opens full records with `read`. At the end of a session with decisions worth keeping, run `/sphica:trace`.
 
-To import GitHub history and Markdown docs:
-
-```bash
-sphica harvest              # every project Sphica can find on this machine
-sphica harvest --cwd .      # only the current repository
-```
-
-Without `--cwd`, Sphica looks for projects directly under `~/Projects` and for projects registered with `--name`. Use `--cwd` for a repository somewhere else.
-Docs are read from the default branch of `origin`, or from the local `HEAD` when there is no `origin`.
+To keep what a pull request decided, run `/sphica:harvest 123` in Claude Code (`$sphica:harvest 123` in Codex). Without a number, it lists recent pull requests and asks which one.
 
 ## What gets recorded and where it goes
 
@@ -113,8 +105,8 @@ Docs are read from the default branch of `origin`, or from the local `HEAD` when
   - `mysql -p`
 
   **Anything else is stored as typed, so do not paste secrets into a session.**
-- **Network.** Sphica has no account, no hosted service, and no telemetry, and makes no network connections itself. Two commands call other tools that may: `sphica harvest` runs `git fetch` and `gh api` with your credentials, and `sphica doctor` runs `npm` and `claude` to check installed versions.
-- **Text written by others.** Pull request and issue text imported by `harvest` may come from anyone. It is passed to the agent as data, and the MCP server cannot write to the database.
+- **Network.** Sphica has no account, no hosted service, and no telemetry, and makes no network connections itself. Two things call other tools that may: `/sphica:harvest` runs `gh api` with your credentials to read the pull request, and `sphica doctor` runs `npm` and `claude` to check installed versions.
+- **Text written by others.** Pull request text read by `/sphica:harvest` may come from anyone. It is passed to the agent as data, and the MCP server cannot write to the database. The command that saves a harvest writes only records of that pull request in the current repository.
 
 To delete a project's data, run `sphica project forget <name>`, where `<name>` is shown by `sphica project list`. Without `--yes`, it only shows how many records would be deleted. It deletes records in the database only. Records still waiting in `~/.sphica/spool` stay there and can be imported again if you register the repository again.
 
@@ -178,11 +170,10 @@ Run `sphica doctor` first. It shows which part is out of date or not working. Co
 | Command | What it does |
 |---|---|
 | `sphica init` | Create the database and register the current repository |
-| `sphica doctor` | Check versions, the database, recording, and each project's last import |
-| `sphica harvest` | Import GitHub pull requests, issues, and Markdown docs |
+| `sphica doctor` | Check versions, the database, recording, and each project's last harvest |
 | `sphica advice` | See how often the edit hook showed constraints |
 
-Run `sphica --help` for these, `sphica -H` for every command (managing projects and people, and the ones agents and maintenance use), and `sphica <command> --help` for each command's options.
+Run `sphica --help` for these, `sphica -H` for every command (managing projects, and the ones agents and maintenance use), and `sphica <command> --help` for each command's options.
 
 ## Security
 

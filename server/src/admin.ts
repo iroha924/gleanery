@@ -4,6 +4,7 @@
 //   sphica db migrate [--yes]   applies db/migrations newer than the database version (user_version)
 //   sphica db reindex           rebuilds the full-text index (FTS). Run it after changing the rules of terms() in server/src/text.ts
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { constants as C, type DatabaseSync } from "node:sqlite";
@@ -234,6 +235,47 @@ export const askToApply = async (
   }
 };
 
+/** Row counts of the ordinary tables (not FTS5 or SQLite's own). */
+function rowCounts(raw: DatabaseSync): Map<string, number> {
+  const tables = raw
+    .prepare(
+      "select name from sqlite_schema where type = 'table' and name not like 'sqlite\\_%' escape '\\' and sql not like 'create virtual%' and name not like '%\\_fts\\_%' escape '\\'",
+    )
+    .all() as { name: string }[];
+  return new Map(
+    tables.map((t) => [
+      t.name,
+      (raw.prepare(`select count(*) as n from "${t.name}"`).get() as { n: number }).n,
+    ]),
+  );
+}
+
+/** Tables that lost rows, as "table N rows (before → after)". A dropped table counts as 0 after. */
+function removed(before: Map<string, number>, after: Map<string, number>): string[] {
+  return [...before].flatMap(([t, n]) => {
+    const now = after.get(t) ?? 0;
+    return now < n ? [`${t} ${plural(n - now, "row")} (${n} → ${now})`] : [];
+  });
+}
+
+/**
+ * Applies the pending migrations to a copy beside the database and returns what they would remove. The copy is deleted afterwards,
+ * whether or not it applied.
+ */
+function preview(file: string, files: string[], dir: string): string[] {
+  const copy = `${file}.preview-${crypto.randomBytes(6).toString("hex")}`;
+  try {
+    withOwner(file, (raw) => raw.prepare("vacuum into ?").run(copy));
+    return withOwner(copy, (raw) => {
+      const before = rowCounts(raw);
+      applyMigrations(raw, files, dir);
+      return removed(before, rowCounts(raw));
+    });
+  } finally {
+    for (const f of [copy, `${copy}-wal`, `${copy}-shm`]) fs.rmSync(f, { force: true });
+  }
+}
+
 /**
  * Applies migrations newer than the database version. See applyMigrations for how.
  * **Lists them for confirmation before applying.** Without a terminal it cannot ask, so `--yes` is required.
@@ -256,13 +298,20 @@ export async function migrate(
   say(`DB: ${file}`);
   say(`Current revision: ${current}`);
   say(`To apply: ${todo.map((m) => m.file).join(" / ")}`);
+  const loses = preview(file, files, dir);
+  say(loses.length ? `Would remove: ${loses.join(" / ")}` : "Would remove: nothing");
   if (!yes) {
     if (ask === defaultAsk && !process.stdin.isTTY)
       throw new Error("Add --yes when not running in a terminal");
     if (!(await ask())) return "cancelled";
   }
-  const applied = withOwner(file, (raw) => applyMigrations(raw, files, dir));
+  const { applied, lost } = withOwner(file, (raw) => {
+    const before = rowCounts(raw);
+    const applied = applyMigrations(raw, files, dir);
+    return { applied, lost: removed(before, rowCounts(raw)) };
+  });
   say(`Applied: ${applied.map((m) => m.file).join(" / ") || "none"}`);
+  say(lost.length ? `Removed: ${lost.join(" / ")}` : "Removed: nothing");
   say(`${file} is at revision ${withOwner(file, versionOf)}`);
   return "applied";
 }

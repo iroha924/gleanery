@@ -21,6 +21,15 @@ const note = (what, r) => {
   return r;
 };
 
+/** Issues a draft through the CLI (in the temp HOME) and returns its id and file, as a Skill would. */
+const issue = (kind, dir, covDir) => {
+  const r = note(`${kind} draft`, runCli([kind, "draft"], dir, covDir));
+  const id = /^ {2}id: (\S+)$/m.exec(r.out)?.[1];
+  const file = /^ {2}file: (.+)$/m.exec(r.out)?.[1];
+  if (!id || !file) throw new Error(`${kind} draft printed no id or file\n${r.out}`);
+  return { id, file };
+};
+
 await withTempDir(async (dir) => {
   const covDir = path.join(dir, "coverage");
   fs.mkdirSync(covDir, { recursive: true });
@@ -31,48 +40,73 @@ await withTempDir(async (dir) => {
     // Outside any repository, so init only creates the database (from the repository root it would register this checkout too)
     note("init", runCli(["init", "--cwd", dir], dir, covDir));
 
-    // ---- CLI: create, import, then delete, in that order ----
+    // ---- CLI: create, harvest, then delete, in that order ----
     // The repo has a remote, so no --name (the CLI would refuse it). The key becomes git:github.com/example/live.
     note("init (register)", runCli(["init", "--cwd", repo], dir, covDir));
     note("project list", runCli(["project", "list"], dir, covDir));
-    // Document exclusions. add creates the connector, list reads with a join, and remove filters with a subquery.
-    note("exclude add", runCli(["project", "exclude", "add", "--cwd", repo, "docs"], dir, covDir));
-    const excluded = note("exclude list", runCli(["project", "exclude", "list", "--cwd", repo], dir, covDir));
-    if (!/^\s+docs\s+directory$/m.test(excluded.out))
-      failures.push(`exclude list does not show the added path\n${excluded.out.slice(0, 400)}`);
-    note("exclude remove", runCli(["project", "exclude", "remove", "--cwd", repo, "docs"], dir, covDir));
-    // **harvest only half succeeds here.** The project key comes from the remote spelling, so
-    // a GitHub URL makes the document sync fetch the real remote, which is unreachable locally
-    // (rewriting it locally with insteadOf also changes what `git remote get-url` returns, so the key stops being github).
-    // Rather than ignoring this, check by the output text that the GitHub side succeeds and only the document side fails.
-    const harvest = runCli(["harvest", "--cwd", repo], dir, covDir);
-    if (!/GitHub: /.test(harvest.out))
-      failures.push(`the GitHub side of harvest did not run\n${harvest.out.slice(0, 600)}`);
-    if (!/Could not fetch the remote's default branch/.test(harvest.out)) {
+    // ---- harvest: list and read open no write connection; save writes only the named pull request ----
+    const listed = note("harvest list", runCli(["harvest", "list"], dir, covDir, { cwd: repo }));
+    if (!/#1\b/.test(listed.out)) failures.push(`harvest list does not show #1\n${listed.out.slice(0, 400)}`);
+    const read = note("harvest read", runCli(["harvest", "read", "1"], dir, covDir, { cwd: repo }));
+    if (
+      !/docs\/design\.md:3/.test(read.out) ||
+      /Already harvested/.test(read.out) ||
+      !/version [0-9a-f]{12}$/m.test(read.out)
+    )
       failures.push(
-        `the document side of harvest fetched a remote that should be unreachable locally\n${harvest.out.slice(0, 600)}`,
+        `harvest read did not print the review comment, or showed items before any save\n${read.out.slice(0, 600)}`,
       );
-    }
-    // Second round. There are fewer messages and issues than before, so the branches that delete removed messages and issues run here.
-    const again = runCli(["harvest", "--cwd", repo], dir, covDir, { SPHICA_FAKE_GH_ROUND: "2" });
-    if (!/GitHub: /.test(again.out))
-      failures.push(`the second harvest did not go through GitHub\n${again.out.slice(0, 400)}`);
-    if (!/(?:PRs and issues|PR or issue) \([^)]*(?<!\d)1 removed\)/.test(again.out))
-      failures.push(`the second harvest did not delete the removed issue\n${again.out.slice(0, 400)}`);
-    if (!/1 PR or issue \(1 rewritten/.test(again.out) || !/\d+ messages? \(0 rewritten/.test(again.out))
+    const version = /version ([0-9a-f]{12})$/m.exec(read.out)?.[1] ?? "000000000000";
+    const harvestRecord = issue("harvest", dir, covDir);
+    fs.writeFileSync(
+      harvestRecord.file,
+      JSON.stringify({
+        schema: "harvest/1",
+        pr: 1,
+        version,
+        items: [
+          {
+            key: "real-db",
+            kind: "finding",
+            at: "2026-09-01T03:00:00Z",
+            // english-exempt: Japanese record fixture sent through the real CLI and hook
+            text: "権限は実 DB でしか見えない",
+            refs: ["url:https://example.invalid/1#r11"],
+            terms: ["authorizer"],
+          },
+        ],
+      }),
+    );
+    note("harvest check", runCli(["harvest", "check", harvestRecord.id], dir, covDir, { cwd: repo }));
+    // The pull request changed after it was read (the hostile round returns another body): save refuses and writes nothing
+    const changed = runCli(["harvest", "save", harvestRecord.id], dir, covDir, {
+      cwd: repo,
+      SPHICA_FAKE_GH_ROUND: "hostile",
+    });
+    if (changed.status === 0 || !/changed since it was read/.test(changed.out))
       failures.push(
-        `the second harvest rewrote messages of a PR whose title alone changed\n${again.out.slice(0, 400)}`,
+        `harvest save accepted a record of a pull request that changed since\n${changed.out.slice(0, 400)}`,
       );
-
-    note("who (list)", runCli(["who"], dir, covDir));
-    // english-exempt: Japanese record fixture sent through the real CLI and hook
-    note("who (link)", runCli(["who", "--me", "私", "someone"], dir, covDir));
+    const saved = note(
+      "harvest save",
+      runCli(["harvest", "save", harvestRecord.id], dir, covDir, { cwd: repo }),
+    );
+    if (!/stored #1: 1 item rewritten/.test(saved.out))
+      failures.push(`harvest save did not store #1\n${saved.out.slice(0, 400)}`);
+    if (fs.existsSync(path.dirname(harvestRecord.file)))
+      failures.push(`harvest save left its draft behind: ${harvestRecord.file}`);
+    const reread = note(
+      "harvest read (after save)",
+      runCli(["harvest", "read", "1"], dir, covDir, { cwd: repo }),
+    );
+    if (!/Already harvested from #1[\s\S]*- real-db \(finding\)/.test(reread.out))
+      failures.push(`harvest read does not list the items saved before\n${reread.out.slice(0, 600)}`);
 
     // trace commands write to the cwd project and require the record's session to match the current host session.
     const asSession = (id) => ({ cwd: repo, CLAUDE_CODE_SESSION_ID: id });
-    const trace = path.join(dir, "trace.json");
+    const trace = issue("trace", dir, covDir);
     fs.writeFileSync(
-      trace,
+      trace.file,
       JSON.stringify({
         schema: "trace/1",
         session: { host: "claude-code", id: "live-1" },
@@ -100,17 +134,19 @@ await withTempDir(async (dir) => {
         ],
       }),
     );
-    note("trace check", runCli(["trace", "check", trace], dir, covDir, { cwd: repo }));
+    note("trace check", runCli(["trace", "check", trace.id], dir, covDir, { cwd: repo }));
     // context reads the session's messages and existing decisions before a record is written. This is the only place its read SQL runs.
     note("trace context", runCli(["trace", "context"], dir, covDir, asSession("live-1")));
-    note("trace save", runCli(["trace", "save", trace], dir, covDir, asSession("live-1")));
+    note("trace save", runCli(["trace", "save", trace.id], dir, covDir, asSession("live-1")));
+    if (fs.existsSync(path.dirname(trace.file)))
+      failures.push(`trace save left its draft behind: ${trace.file}`);
     // Run the set-taking branches with an empty set too. A bug once passed an empty array to in and produced `in ()`.
-    const empty = path.join(dir, "empty.json");
+    const empty = issue("trace", dir, covDir);
     fs.writeFileSync(
-      empty,
+      empty.file,
       JSON.stringify({ schema: "trace/1", session: { host: "claude-code", id: "live-2" }, items: [] }),
     );
-    note("trace save (empty items)", runCli(["trace", "save", empty], dir, covDir, asSession("live-2")));
+    note("trace save (empty items)", runCli(["trace", "save", empty.id], dir, covDir, asSession("live-2")));
 
     // Capture. Queue through the hook, then flush. Flushing an empty queue returns 0 and never runs the write SQL.
     const turn = { session_id: "live-1", prompt_id: "p1", cwd: repo };
@@ -180,7 +216,7 @@ await withTempDir(async (dir) => {
     }
 
     // ---- Control sequences from external text never reach the terminal ----
-    // PR and issue bodies and titles, handles, conversations, remote spellings, and directory names are decided by third parties or outside factors.
+    // PR bodies and titles, handles, conversations, remote spellings, and directory names are decided by third parties or outside factors.
     // First confirm that the injected value reached the output (reach), then check for no ESC, BEL, or CR (no color on a pipe)
     const controlled = (out) => ["\u001b", "\u0007", "\r"].some((c) => out.includes(c));
     const clean = (what, r, reach, { status = true } = {}) => {
@@ -195,19 +231,24 @@ await withTempDir(async (dir) => {
         );
     };
     const esc = "\u001b[2J\u001b]0;pwn\u0007\r";
-    // After linking with who --me, decisions are written from the owner's merged PR bodies (the fake gh marks the PR merged only in the hostile round)
-    const decided = runCli(["harvest", "--cwd", repo], dir, covDir, { SPHICA_FAKE_GH_ROUND: "hostile" });
-    if (!/PR decisions: [1-9]/.test(decided.out))
-      failures.push(`harvest does not report PR decisions\n${decided.out.slice(0, 600)}`);
-    clean("who (third-party handle)", runCli(["who"], dir, covDir), "someone");
-    // english-exempt: Japanese record fixture sent through the real CLI and hook
-    clean("who (link)", runCli(["who", "--me", "私", `someone${esc}`], dir, covDir), "someone");
+    const hostile = { cwd: repo, SPHICA_FAKE_GH_ROUND: "hostile" };
+    clean("harvest list (third-party title)", runCli(["harvest", "list"], dir, covDir, hostile), " PR");
+    clean(
+      "harvest read (third-party text)",
+      runCli(["harvest", "read", "1"], dir, covDir, hostile),
+      "@someone",
+    );
     // english-exempt: Japanese record fixture sent through the real CLI and hook
     hook({ hook_event_name: "UserPromptSubmit", prompt: `制御列${esc}を含む発言` });
     // english-exempt: Japanese record fixture sent through the real CLI and hook
     hook({ hook_event_name: "Stop", last_assistant_message: `応答${esc}` });
     note("capture flush (control sequences)", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
+    // A long message is cut in context, and the cut says so and names the message to read the rest from
+    hook({ hook_event_name: "UserPromptSubmit", prompt: `long ${"x".repeat(5000)}` });
+    note("capture flush (long message)", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
     const context = runCli(["trace", "context"], dir, covDir, asSession("live-1"));
+    if (!/\(cut: 4000 of 5005 bytes shown; read m:[0-9a-f-]{36} for the rest\)/.test(context.out))
+      failures.push(`trace context does not mark the cut long message\n${context.out.slice(-600)}`);
     // english-exempt: Japanese record fixture sent through the real CLI and hook
     clean("trace context", context, "を含む発言");
     // The agent reads trace context, so the owner's messages are headed "Owner", never "You" (which would read as the agent).

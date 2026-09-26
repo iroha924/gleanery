@@ -1,35 +1,22 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import {
-  directory,
   diversify,
   framed,
   framedWithin,
   type Hit,
   hookContext,
-  listItems,
   openWork,
   pathRules,
   read,
+  recordsJson,
   renderHits,
   renderWork,
   searchKnowledge,
   searchMessages,
-  searchSplit,
   speakerLabel,
-  splitJson,
 } from "../src/search.ts";
-import {
-  at,
-  documentSection,
-  hash,
-  insert,
-  knowledge,
-  message,
-  project,
-  type TempDb,
-  tempDb,
-} from "./temp-db.ts";
+import { at, harvested, insert, knowledge, message, project, type TempDb, tempDb } from "./temp-db.ts";
 
 const hit = (over: Partial<Hit> = {}): Hit => ({
   ref: "k:1",
@@ -48,7 +35,6 @@ const hit = (over: Partial<Hit> = {}): Hit => ({
   speaker: null,
   context: "作り直し",
   url: null,
-  path: null,
   truncated: false,
   originalBytes: null,
   ...over,
@@ -139,28 +125,9 @@ test("the per-source cap scales with limit", () => {
   assert.equal(got.indexOf("b0"), 4, "b0 comes after the 4 hits from a");
 });
 
-test("the speaker label tells the owner, a named person, and the AI apart", () => {
-  assert.equal(
-    speakerLabel({ speaker_kind: "self", handle: null, display_name: null, is_self: null }),
-    "Owner",
-  );
-  assert.equal(
-    speakerLabel({ speaker_kind: "person", handle: "iroha924", display_name: "平田", is_self: 1 }),
-    "Owner",
-  );
-  assert.equal(
-    speakerLabel({ speaker_kind: "person", handle: "reviewer-a", display_name: "◯◯さん", is_self: 0 }),
-    "◯◯さん (@reviewer-a)",
-  );
-  assert.equal(
-    speakerLabel({
-      speaker_kind: "assistant",
-      handle: "coderabbitai[bot]",
-      display_name: null,
-      is_self: null,
-    }),
-    "AI (@coderabbitai[bot])",
-  );
+test("the speaker label tells the owner and the AI apart", () => {
+  assert.equal(speakerLabel("self"), "Owner");
+  assert.equal(speakerLabel("assistant"), "AI");
 });
 
 // ---- Search a real SQLite database ----
@@ -199,17 +166,6 @@ before(() => {
   ids.sqlLive = knowledge(db, p1, { source_key: "s1#live", body: "実 DB へ繋ぐのは sql:live の 1 本だけ" });
   ids.version = knowledge(db, p1, { source_key: "s1#ver", body: "Node v24.15.0 以上に上げた" });
   ids.json = knowledge(db, p1, { source_key: "s1#json", body: "[1] 本文が括弧で始まる記録", reason: "[]" });
-  ids.doc = documentSection(db, p1, {
-    path: "docs/auth.md",
-    heading: "docs/auth.md > 認証",
-    body: "認証の設計の文書",
-  });
-  for (let i = 0; i < 6; i++)
-    documentSection(db, p1, {
-      path: `docs/d${i}.md`,
-      heading: `docs/d${i}.md > 認証 ${i}`,
-      body: `認証の節 ${i}`,
-    });
   message(db, p1, { id: UUID(1), body: "認証は OAuth にしようと思う", sent: "2026-09-10T00:00:00Z" });
   message(db, p1, { id: UUID(2), body: "AI の長い応答で認証の話をする", speaker: "assistant", indexed: 0 });
   message(db, p1, { id: UUID(3), body: "同じ時刻の発言 3", sent: "2026-09-11T00:00:00Z" });
@@ -220,11 +176,10 @@ after(() => db.done());
 
 const refs = (hits: Hit[]) => hits.map((h) => h.ref);
 
-// Documents push decisions out (measured: including them dropped top1 from 80% to 35%). Overturned decisions are not answers.
-test("a search without kinds leaves out documents, and avoid finds only paths not to take", async () => {
+// Overturned decisions are not answers, so a normal search leaves them to avoid.
+test("a search without kinds finds records of every kind, and avoid finds only paths not to take", async () => {
   const hits = await searchKnowledge(db.reader, { question: "認証", projects: [p1], limit: 10 });
   assert.ok(refs(hits).includes(`k:${ids.auth}`));
-  assert.ok(!refs(hits).includes(`k:${ids.doc}`), "documents only when asked for");
   assert.ok(!refs(hits).includes(`k:${ids.other}`), "no other projects");
   const avoid = await searchKnowledge(db.reader, {
     question: "認証",
@@ -271,15 +226,6 @@ test("exact match finds version numbers that do not split into words, newest fir
   assert.deepEqual(refs(msgs), [`m:${UUID(1)}`]);
 });
 
-test("split returns decision records and document sections in separate fields, with documents up to half of limit", async () => {
-  const s = await searchSplit(db.reader, { question: "認証", projects: [p1], limit: 4 });
-  assert.ok(s.records.length > 0 && s.records.every((h) => h.kind !== "document"));
-  assert.equal(s.documents.length, 2);
-  assert.ok(s.documents.every((h) => h.kind === "document" && h.path?.startsWith("docs/")));
-  const avoid = await searchSplit(db.reader, { question: "認証", projects: [p1], avoid: true, limit: 4 });
-  assert.deepEqual(avoid.documents, [], "documents are never paths not to take");
-});
-
 // The default parsing reads every string wrapped in `[` or `{` as JSON, which could garble a body.
 test("a body that starts with a bracket comes back as a string, and only array columns are parsed", async () => {
   const [h] = await searchKnowledge(db.reader, { question: "括弧で始まる", projects: [p1], limit: 1 });
@@ -292,68 +238,16 @@ test("a body that starts with a bracket comes back as a string, and only array c
 
 // AI replies in coding sessions are not indexed, because they push out the answers to "what did I say?".
 test("message search looks only at indexed messages", async () => {
-  const hits = await searchMessages(db.reader, { question: "認証", projects: [p1], who: "me", limit: 5 });
+  const hits = await searchMessages(db.reader, { question: "認証", projects: [p1], limit: 5 });
   assert.deepEqual(refs(hits), [`m:${UUID(1)}`]);
   const recent = await searchMessages(db.reader, { projects: [p1], limit: 2 });
   assert.equal(recent[0]?.at.toISOString(), "2026-09-11T00:00:00.000Z", "newest first without a question");
 });
 
-test("the owner's messages include those from the owner's GitHub account", async () => {
-  const self = insert(db, "person", { display_name: "平田", is_self: 1 });
-  const who = insert(db, "person_identity", {
-    person_id: self,
-    provider: "github",
-    external_id: "1",
-    handle: "iroha924",
-  });
-  const connector = insert(db, "connector", { project_id: p1, provider: "github" });
-  const item = insert(db, "source_item", {
-    connector_id: connector,
-    external_id: "7",
-    kind: "issue",
-    title: "題",
-    state: "open",
-    content_hash: hash(),
-  });
-  insert(db, "conversation", {
-    id: "gh-7",
-    project_id: p1,
-    source_item_id: item,
-    origin: "github",
-    external_id: "o/r#7",
-    started_at: at("2026-09-01T00:00:00Z"),
-  });
-  insert(db, "message", {
-    id: UUID(9),
-    conversation_id: "gh-7",
-    external_id: "body",
-    speaker_kind: "person",
-    identity_id: who,
-    body: "GitHub で書いた認証の話",
-    original_bytes: Buffer.byteLength("GitHub で書いた認証の話"),
-    sent_at: at("2026-09-09T00:00:00Z"),
-    content_hash: hash(),
-    indexed: 1,
-  });
-  const mine = await searchMessages(db.reader, { question: "認証", projects: [p1], who: "me", limit: 5 });
-  assert.ok(refs(mine).includes(`m:${UUID(9)}`));
-  const sessions = await searchMessages(db.reader, {
-    question: "認証",
-    projects: [p1],
-    who: "me",
-    sessionsOnly: true,
-    limit: 5,
-  });
-  assert.ok(!refs(sessions).includes(`m:${UUID(9)}`), "session search leaves out GitHub conversations");
-  assert.deepEqual((await directory(db.reader)).find((x) => x.isSelf)?.handles, ["iroha924"]);
-});
-
 test("an aborted search does not start a database query", async () => {
   const controller = new AbortController();
   controller.abort();
-  await assert.rejects(directory(db.reader, controller.signal), /aborted/i);
   await assert.rejects(openWork(db.reader, [p1], 3, controller.signal), /aborted/i);
-  await assert.rejects(listItems(db.reader, { projects: [p1], limit: 5 }, controller.signal), /aborted/i);
   await assert.rejects(
     read(db.reader, ["k:1"], 4096, { projects: [p1], signal: controller.signal }),
     /aborted/i,
@@ -367,7 +261,6 @@ test("a date that is not on the calendar stops before the query", async () => {
       RangeError,
     );
     await assert.rejects(searchMessages(db.reader, { projects: [p1], until: bad, limit: 5 }), RangeError);
-    await assert.rejects(listItems(db.reader, { projects: [p1], since: bad, limit: 5 }), RangeError);
   }
 });
 
@@ -425,18 +318,15 @@ test("surrounding messages are cut by time and order, and the target stays even 
 });
 
 // Codex truncates a response over about 10,000 tokens on the spot, so the JSON arrives broken.
-test("split JSON and read output fit the limit, and truncated JSON still parses", async () => {
+test("records JSON and read output fit the limit, and truncated JSON still parses", async () => {
   const long = "認証".repeat(20_000);
   const big = knowledge(db, p1, { source_key: "s1#big", body: long });
-  const many = {
-    records: Array.from({ length: 10 }, () => ({ ...hitOf(big), text: long })),
-    documents: Array.from({ length: 5 }, () => ({ ...hitOf(big), kind: "document", text: long })),
-  };
-  const json = splitJson(many, 4096).text;
+  const many = Array.from({ length: 10 }, () => ({ ...hitOf(big), text: long }));
+  const json = recordsJson(many, 4096).text;
   assert.ok(Buffer.byteLength(json) <= 4096, `${Buffer.byteLength(json)} bytes`);
-  const parsed = JSON.parse(json) as { records: unknown[]; documents: unknown[]; omitted: number };
-  assert.equal(parsed.records.length + parsed.documents.length + parsed.omitted, 15);
-  assert.ok(parsed.documents.length > 0, "documents also fit in the limit");
+  const parsed = JSON.parse(json) as { records: unknown[]; omitted: number };
+  assert.equal(parsed.records.length + parsed.omitted, 10);
+  assert.ok(parsed.records.length > 0);
   const out = (await read(db.reader, [`k:${big}`], 8192, { projects: [p1] })).text;
   assert.ok(Buffer.byteLength(out) <= 8192, `${Buffer.byteLength(out)} bytes`);
   assert.match(out, /because of the length limit/);
@@ -468,13 +358,12 @@ test("read and resume fit the limit even with long work titles and unreadable re
   assert.ok(Buffer.byteLength(full) <= 4096, `${Buffer.byteLength(full)} bytes`);
   const hits = renderHits(many, 1000).text;
   assert.ok(Buffer.byteLength(hits) <= 1000, `${Buffer.byteLength(hits)} bytes`);
-  // The source title (the document path) also fits in the limit
-  const doc = documentSection(db, p1, { path: `docs/${"長".repeat(3000)}.md`, heading: "h", body: "本文" });
-  const source = db.owner.prepare("select source_item_id as s from knowledge where id = ?").get(doc)?.s;
-  const src = (await read(db.reader, [`s:${source}`], 8192, { projects: [p1] })).text;
-  assert.ok(Buffer.byteLength(src) <= 8192, `${Buffer.byteLength(src)} bytes`);
+  // A harvested record's heading (the pull request title) also fits in the limit
+  const pr = harvested(db, p1, { number: 90, key: "long", title: "長".repeat(3000), body: "本文" });
+  const one = (await read(db.reader, [`k:${pr}`], 8192, { projects: [p1] })).text;
+  assert.ok(Buffer.byteLength(one) <= 8192, `${Buffer.byteLength(one)} bytes`);
   // However many refs there are, they fit in the limit including separators
-  const two = (await read(db.reader, [`k:${doc}`, `s:${source}`], 8192, { projects: [p1] })).text;
+  const two = (await read(db.reader, [`k:${pr}`, `k:${ids.auth}`], 8192, { projects: [p1] })).text;
   assert.ok(Buffer.byteLength(two) <= 8192, `${Buffer.byteLength(two)} bytes`);
 });
 
@@ -508,15 +397,12 @@ test("exact match finds a full-width body with the same spelling", async () => {
 const hitOf = (id: number): Hit => hit({ ref: `k:${id}`, kind: "finding", stance: "neutral" });
 
 // The JSON grows when the omitted count gains a digit. Raising the count after checking the length goes over the limit, gets cut before the frame, and breaks the JSON.
-test("split JSON fits the limit even when the omitted count gains a digit", () => {
+test("records JSON fits the limit even when the omitted count gains a digit", () => {
   const budget = 3836;
   for (let n = 3600; n < 3760; n++) {
     const first = { ...hitOf(1), heading: "a".repeat(n) };
-    const json = splitJson(
-      {
-        records: [first, ...Array.from({ length: 9 }, () => ({ ...hitOf(2), text: "b".repeat(400) }))],
-        documents: [{ ...hitOf(3), kind: "document", text: "c" }],
-      },
+    const json = recordsJson(
+      [first, ...Array.from({ length: 9 }, () => ({ ...hitOf(2), text: "b".repeat(400) }))],
       budget,
     ).text;
     assert.ok(Buffer.byteLength(json) <= budget, `headings ${n}: ${Buffer.byteLength(json)} bytes`);
@@ -568,68 +454,6 @@ test("output for the edit hook keeps the end when the whole text fits", () => {
       });
       if (Buffer.byteLength(whole) <= 2048) assert.match(context, /END/, `${lines}/${xs}`);
     }
-});
-
-// Filtering "PRs merged last week" by creation date drops those created earlier and merged last week.
-test("PRs and issues filter by merge or close date when asked about those, and by creation date otherwise", async () => {
-  const connector = insert(db, "connector", { project_id: p2, provider: "github" });
-  insert(db, "source_item", {
-    connector_id: connector,
-    external_id: "1",
-    kind: "pull_request",
-    title: "前に作って先週マージ",
-    state: "merged",
-    source_created_at: at("2026-08-01T00:00:00Z"),
-    closed_at: at("2026-09-05T00:00:00Z"),
-    content_hash: hash(),
-  });
-  const merged = await listItems(db.reader, {
-    projects: [p2],
-    state: "merged",
-    since: "2026-09-01",
-    limit: 5,
-  });
-  assert.deepEqual(
-    merged.rows.map((r) => r.title),
-    ["前に作って先週マージ"],
-  );
-  assert.equal(merged.total, 1);
-  const created = await listItems(db.reader, { projects: [p2], since: "2026-09-01", limit: 5 });
-  assert.equal(created.total, 0);
-});
-
-test("the PR author filter matches a handle or name, and me or 私 means you", async () => {
-  const selfRow = db.owner.prepare("select id from person where is_self = 1").get() as
-    | { id: number }
-    | undefined;
-  const self = selfRow?.id ?? insert(db, "person", { display_name: "owner", is_self: 1 });
-  const other = insert(db, "person", { display_name: "Someone", is_self: 0 });
-  const identity = (person: number, id: string, handle: string) =>
-    insert(db, "person_identity", { person_id: person, provider: "github", external_id: id, handle });
-  const existing = db.owner
-    .prepare("select id from connector where project_id = ? and provider = 'github'")
-    .get(p2) as { id: number } | undefined;
-  const connector = existing?.id ?? insert(db, "connector", { project_id: p2, provider: "github" });
-  const pr = (id: string, title: string, author: number) =>
-    insert(db, "source_item", {
-      connector_id: connector,
-      external_id: id,
-      kind: "pull_request",
-      title,
-      state: "open",
-      author_identity_id: author,
-      source_created_at: at("2026-09-02T00:00:00Z"),
-      content_hash: hash(),
-    });
-  pr("41", "mine", identity(self, "41", "owner-handle"));
-  pr("42", "theirs", identity(other, "42", "someone-else"));
-  const titles = async (author: string) =>
-    (await listItems(db.reader, { projects: [p2], author, limit: 5 })).rows.map((r) => r.title);
-  assert.deepEqual(await titles("me"), ["mine"]);
-  assert.deepEqual(await titles("私"), ["mine"]);
-  assert.deepEqual(await titles("SOMEONE-ELSE"), ["theirs"], "handles match without case");
-  assert.deepEqual(await titles("Someone"), ["theirs"], "display names match");
-  assert.deepEqual(await titles("nobody"), []);
 });
 
 test("work status reads with its blocking questions and paths not to take", async () => {
@@ -696,29 +520,23 @@ test("constraints shown before an edit are only active constraints and debts on 
   );
 });
 
-test("a source ref reads the original text for a document and the first message for a PR", async () => {
-  const doc = (
-    await read(
-      db.reader,
-      [`s:${db.owner.prepare("select id from source_item where external_id = 'docs/auth.md'").get()?.id}`],
-      8192,
-      {
-        projects: [p1],
-      },
-    )
-  ).text;
-  assert.match(doc, /\[document\] docs\/auth.md/);
-  assert.match(doc, /認証の設計の文書/);
-  const pr = (
-    await read(
-      db.reader,
-      [`s:${db.owner.prepare("select id from source_item where kind = 'issue'").get()?.id}`],
-      8192,
-      {
-        projects: [p1],
-      },
-    )
-  ).text;
-  assert.match(pr, /\[issue\] #7 題 \(open\)/);
-  assert.match(pr, /GitHub で書いた認証の話/);
+// refs are indexed for word search; an exact search for the reference itself must find the record too
+test("exact match finds a record by a reference only its refs carry", async () => {
+  const p = project(db, "git:github.com/o/refs-only");
+  const id = knowledge(db, p, {
+    source_key: "claude-code:r#d",
+    kind: "finding",
+    body: "Retry twice",
+    refs: '["pr:#4821"]',
+  });
+  const exact = await searchKnowledge(db.reader, {
+    question: "pr:#4821",
+    projects: [p],
+    match: "exact",
+    limit: 5,
+  });
+  assert.deepEqual(
+    exact.map((h) => h.ref),
+    [`k:${id}`],
+  );
 });

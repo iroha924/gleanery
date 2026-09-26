@@ -17,7 +17,6 @@ export const KINDS = [
   "debt",
   "verification",
   "question",
-  "document",
 ] as const;
 export type Kind = (typeof KINDS)[number];
 
@@ -31,28 +30,24 @@ export const STATUSES = {
   question: ["open", "blocking", "resolved"],
   dead_end: null,
   finding: null,
-  document: null,
 } as const satisfies Record<Kind, readonly [string, ...string[]] | null>;
 
-// self is you, assistant is AI (the last response of a coding session and AI reviewers), bot is automated notices without reasoning.
+// self is what the owner typed, assistant is the AI's last response in a coding session.
 /** @public Read as text by scripts/check-pairs.mjs. */
-export const SPEAKERS = ["self", "person", "assistant", "bot"] as const;
-export type SpeakerKind = (typeof SPEAKERS)[number];
+export const SPEAKERS = ["self", "assistant"] as const;
 
 /** @public Read as text by scripts/check-pairs.mjs. */
-export const ORIGINS = ["claude-code", "codex", "github"] as const;
+export const ORIGINS = ["claude-code", "codex"] as const;
 export type Origin = (typeof ORIGINS)[number];
 
-// edit is an edit, review is a file named in a review. read records requirements or design docs read earlier and is no longer written.
+// edit is an edit. read records requirements or design docs read earlier and is no longer written.
 /** @public Read as text by scripts/check-pairs.mjs. */
-export const FILE_ACTIONS = ["edit", "read", "review"] as const;
+export const FILE_ACTIONS = ["edit", "read"] as const;
 export type FileAction = (typeof FILE_ACTIONS)[number];
 
-// Kinds with statuses have a label per status; kinds without have one label (the type catches omissions). Document labels depend on location.
+// Kinds with statuses have a label per status; kinds without have one label (the type catches omissions).
 type Labels = {
-  [K in Exclude<Kind, "document">]: (typeof STATUSES)[K] extends readonly (infer S extends string)[]
-    ? Record<S, string>
-    : string;
+  [K in Kind]: (typeof STATUSES)[K] extends readonly (infer S extends string)[] ? Record<S, string> : string;
 };
 const LABEL: Labels = {
   decision: {
@@ -71,27 +66,19 @@ const LABEL: Labels = {
   question: { open: "[open question]", blocking: "[blocking question]", resolved: "[resolved question]" },
 };
 
-/** Document labels come from the location. ADRs carry different weight from explanatory docs. */
-function documentLabel(path: string | null | undefined): string {
-  const adr = !!path && (/(^|\/)adrs?\//i.test(path) || /(^|\/)\d{4}-[^/]+\.mdx?$/.test(path));
-  return adr ? "[decision record]" : "[document]";
-}
-
-export function labelOf(k: { kind: string; status: string | null; path?: string | null }): string {
-  if (k.kind === "document") return documentLabel(k.path);
+export function labelOf(k: { kind: string; status: string | null }): string {
   const l = (LABEL as Record<string, string | Record<string, string>>)[k.kind];
   return typeof l === "string" ? l : ((k.status && l?.[k.status]) ?? "");
 }
 
 /**
- * Whether a message is searchable. AI responses in coding sessions are stored to read nearby turns but are not indexed,
+ * Whether a message is searchable. AI responses are stored to read nearby turns but are not indexed,
  * because long AI responses would crowd out candidates for "what did I say?".
  */
-export const indexesMessage = (origin: string, speakerKind: string): boolean =>
-  speakerKind !== "bot" && !(origin !== "github" && speakerKind === "assistant");
+export const indexesMessage = (speakerKind: string): boolean => speakerKind === "self";
 
 /**
- * The conversation id. GitHub sync, trace, and recording use the same rule, so whichever writes first creates the same row.
+ * The conversation id. trace and recording use the same rule, so whichever writes first creates the same row.
  * A session that moved between projects (to another repository midway) becomes a separate conversation per project.
  */
 export const conversationId = (projectId: number, origin: Origin, externalId: string): string =>

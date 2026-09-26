@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Drafts search words for existing records, for the owner to review and load with `sphica db terms import`. Not shipped.
 // One record per `claude -p` call, with no tools and no MCP, and the record passed as data. Drafts go outside the repository.
-// Document sections are included: docs sync writes no words, so this import is their only writer. The model and prompt version go to <out>.meta.json.
+// The model and prompt version go to <out>.meta.json.
 //   bun run terms:draft -- <db> <project key> <out.json> [--par 4] [--budget 20] [--keys <file of source keys, one per line>]
 
 import { spawn } from "node:child_process";
@@ -50,15 +50,15 @@ if (!db.prepare("select 1 from project where key = ?").get(projectKey))
 const rows = db
   .prepare(
     `select k.source_key key, k.kind, k.status, coalesce(k.heading, '') heading, k.body, coalesce(k.reason, '') reason,
-       hex(k.content_hash) hash, coalesce(s.title, '') title
+       hex(k.content_hash) hash, coalesce(r.title, '') title
      from knowledge k join project p on p.id = k.project_id
-       left join source_item s on s.id = k.source_item_id
+       left join pull_request r on r.id = k.pull_request_id
      where p.key = ?
      order by k.id`,
   )
   .all(projectKey);
 db.close();
-// Only the listed records, for redrafting the sections whose text changed. A listed key missing from the project stops the draft
+// Only the listed records, for redrafting the records whose text changed. A listed key missing from the project stops the draft
 const only = values.keys
   ? new Set(
       fs
