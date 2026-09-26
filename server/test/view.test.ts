@@ -155,7 +155,7 @@ function asTerminal<T>(columns: number, fn: () => T): T {
 test("in a terminal the title opens the Clack frame on one line, even with newlines in it", () => {
   const out = asTerminal(60, () => title("sphica search\n└  ✓ done", "要点\n✓ 直すものは無い"));
   const lines = stripVTControlCharacters(out).split("\n").filter(Boolean);
-  assert.match(lines[0] ?? "", /^┌ {2}sphica search └ {2}✓ done {2}要点 ✓ 直すものは無い$/, out);
+  assert.match(lines[0] ?? "", /^┌ {3}sphica search └ {2}✓ done {3}要点 ✓ 直すものは無い$/, out);
   for (const line of lines.slice(1)) assert.match(line, /^│/, out);
 });
 
@@ -188,7 +188,7 @@ test("in a terminal outside text cannot open, close, or mark a line of the docum
 test("in a terminal a failure closes the frame with Stopped", () => {
   const out = asTerminal(60, () => failure("sphica x", "理由\n└  ✓ done"));
   const lines = stripVTControlCharacters(out).split("\n").filter(Boolean);
-  assert.match(lines[0] ?? "", /^┌ {2}sphica x$/, out);
+  assert.match(lines[0] ?? "", /^┌ {3}sphica x $/, out);
   assert.match(lines.at(-1) ?? "", /^└ {2}Stopped$/, out);
   for (const line of lines.slice(1, -1)) assert.match(line, /^[│■▲]/u, line);
 });

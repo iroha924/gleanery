@@ -26,13 +26,16 @@ import { jsonArrayFrom } from "kysely/helpers/sqlite";
 import { dbInit, importTerms, inspect, listTerms, migrate, reindex } from "./admin.ts";
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
 import {
+  ask,
   type Block,
   type Card,
   closing,
   document,
   failure,
   indent,
+  interactive,
   panel,
+  progress,
   section,
   steps,
   title,
@@ -190,10 +193,17 @@ const githubRepo = (key: string): string | null =>
  * Syncs one project. **GitHub and documents are independent**, so one failing does not stop the other.
  * Failures are stored in the source's last_error (doctor shows it) and thrown together at the end.
  */
-async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = false): Promise<string[]> {
+async function syncOne(
+  db: Kysely<DB>,
+  id: number,
+  place: Place,
+  resetDocs = false,
+  onStep: (what: string) => void = () => {},
+): Promise<string[]> {
   const out: string[] = [];
   const failures: string[] = [];
   const one = async (provider: "github" | "docs", label: string, fn: () => Promise<string>) => {
+    onStep(`reading ${label}`);
     try {
       out.push(`${label}: ${await fn()}`);
     } catch (e) {
@@ -1101,14 +1111,20 @@ const root = buildRouteMap({
                 );
                 continue;
               }
+              const step = progress(`${inline(p.name)}: syncing`);
               try {
                 const place = { key: p.key, root, name: p.name };
-                for (const line of await syncOne(db, p.id, place, resetDocs)) {
+                const lines = await syncOne(db, p.id, place, resetDocs, (what) =>
+                  step.message(`${inline(p.name)}: ${what}`),
+                );
+                step.done(`${inline(p.name)}: synced`);
+                for (const line of lines) {
                   console.log(indent(`${mark("ok")} ${inline(p.name)} / ${inline(line)}`));
                 }
                 done++;
               } catch (e) {
                 // One failure does not stop the rest. Failures go to the exit code (visible in launchd LastExitStatus).
+                step.fail(`${inline(p.name)}: failed`);
                 failures.push(inline(p.name));
                 const lines = plain(reason(e)).split("\n");
                 console.error(
@@ -1183,9 +1199,25 @@ const root = buildRouteMap({
         },
         ...words: string[]
       ) => {
-        const question = words.join(" ");
-        if (!question && !flags.said) throw new Error("Give a question (not needed with --said)");
+        let question = words.join(" ");
         const place = flags.all ? null : placeOf(flags.cwd ?? process.cwd());
+        // In a terminal a missing question is asked for; in pipes (an agent through Bash) it stays an error
+        const opened = !question && !flags.said && interactive();
+        if (opened) {
+          const typed = await ask(
+            "sphica search",
+            "What are you looking for?",
+            "why we chose SQLite",
+            "Enter words to search",
+          );
+          if (typed === null) {
+            console.log(closing(`${mark("fail")} Stopped`));
+            process.exitCode = 1;
+            return;
+          }
+          question = typed;
+        }
+        if (!question && !flags.said) throw new Error("Give a question (not needed with --said)");
         const match = flags.exact ? ("exact" as const) : undefined;
         await withDb("reader", async (db) => {
           const projects = place ? [await registered(db, place)] : null;
@@ -1244,6 +1276,7 @@ const root = buildRouteMap({
                     },
                   ],
               end,
+              opened,
             ),
           );
         });

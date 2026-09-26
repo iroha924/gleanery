@@ -9,7 +9,8 @@
 // Only rows whose content hash changed are written.
 // Every string from GitHub goes through clean() (a single NUL fails the whole transaction and stops the daily sync).
 
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import type { Kysely } from "kysely";
 import { inTransaction, iso } from "./db.ts";
 import type { DB } from "./db-types.ts";
@@ -76,20 +77,21 @@ export type GithubSource = {
   issueComments: () => Promise<IssueComment[]>;
 };
 
-function gh(repo: string, endpoint: string): unknown[] {
-  const out = execFileSync("gh", ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"], {
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  return (JSON.parse(out) as unknown[][]).flat();
+// Asynchronous so the event loop keeps running while gh pages through the API (the harvest spinner draws meanwhile).
+async function gh(repo: string, endpoint: string): Promise<unknown[]> {
+  const { stdout } = await promisify(execFile)(
+    "gh",
+    ["api", `repos/${repo}/${endpoint}`, "--paginate", "--slurp"],
+    { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
+  );
+  return (JSON.parse(stdout) as unknown[][]).flat();
 }
 
 const cliSource = (repo: string): GithubSource => ({
-  pulls: async () => gh(repo, "pulls?state=all&per_page=100") as Pull[],
-  issues: async () => gh(repo, "issues?state=all&per_page=100") as RawIssue[],
-  reviewComments: async () => gh(repo, "pulls/comments?per_page=100") as ReviewComment[],
-  issueComments: async () => gh(repo, "issues/comments?per_page=100") as IssueComment[],
+  pulls: async () => (await gh(repo, "pulls?state=all&per_page=100")) as Pull[],
+  issues: async () => (await gh(repo, "issues?state=all&per_page=100")) as RawIssue[],
+  reviewComments: async () => (await gh(repo, "pulls/comments?per_page=100")) as ReviewComment[],
+  issueComments: async () => (await gh(repo, "issues/comments?per_page=100")) as IssueComment[],
 });
 
 // AI reviews have substance, so they are kept. Only automated notices without reasoning are dropped (Terraform plans, deploy URLs,

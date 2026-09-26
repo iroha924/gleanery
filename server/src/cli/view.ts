@@ -6,7 +6,7 @@
 
 import { Writable } from "node:stream";
 import { styleText } from "node:util";
-import { box, cancel, intro, log, outro } from "@clack/prompts";
+import { box, cancel, intro, isCancel, log, outro, spinner, text } from "@clack/prompts";
 import stringWidth from "fast-string-width";
 import { wrapAnsi } from "fast-wrap-ansi";
 import { mark, plain } from "../panel.ts";
@@ -95,7 +95,46 @@ export function title(text: string, meta?: string): string {
   if (!colored()) return t;
   const room = columns() - GUIDE - stringWidth(t);
   const extra = meta && room > 8 ? `  ${cut(oneLine(meta), room - 2)}` : "";
-  return capture((output) => intro(`${bold(t)}${extra ? dim(extra) : ""}`, { output }));
+  return capture((output) =>
+    intro(`${styleText(["inverse", "bold"], ` ${t} `)}${extra ? dim(extra) : ""}`, { output }),
+  );
+}
+
+/** Whether a person is at the terminal to answer a prompt (both streams are terminals and stdin can be read) */
+export const interactive = () => colored() && Boolean(process.stdin.isTTY);
+
+/**
+ * Opens the frame with the heading and asks for one line in the terminal. null when cancelled (Esc, Ctrl-C).
+ * Callers pass opened to document so the frame is not opened twice
+ */
+export async function ask(
+  head: string,
+  message: string,
+  placeholder: string,
+  empty: string,
+): Promise<string | null> {
+  console.log(title(head));
+  const answer = await text({ message, placeholder, validate: (v) => (v?.trim() ? undefined : empty) });
+  return isCancel(answer) ? null : answer.trim();
+}
+
+/**
+ * A spinner for one slow step in a terminal; message updates the text while it runs. In pipes (the harvest log) nothing is drawn,
+ * and callers print their result lines as before. It only moves while the step awaits (gh runs asynchronously; git and SQLite block)
+ */
+export function progress(label: string): {
+  message(text: string): void;
+  done(text: string): void;
+  fail(text: string): void;
+} {
+  if (!colored()) return { message() {}, done() {}, fail() {} };
+  const s = spinner();
+  s.start(oneLine(label));
+  return {
+    message: (t) => s.message(oneLine(t)),
+    done: (t) => s.stop(oneLine(t)),
+    fail: (t) => s.error(oneLine(t)),
+  };
 }
 
 /** A section heading. A Clack step in a terminal, an indented line in pipes (after a blank line with gap) */
@@ -138,8 +177,16 @@ export type Block =
   | { kind: "note"; tone: "info" | "warning" | "error" | "success"; text: string };
 
 /** A document of heading, sections, and closing. Terminals put a bare guide line between sections */
-export function document(head: string, meta: string | undefined, blocks: Block[], end: string): string {
-  return [title(head, meta), ...blocks.map(drawBlock), closing(end)].filter((x) => x !== "").join("\n");
+export function document(
+  head: string,
+  meta: string | undefined,
+  blocks: Block[],
+  end: string,
+  opened = false,
+): string {
+  return [opened && colored() ? "" : title(head, meta), ...blocks.map(drawBlock), closing(end)]
+    .filter((x) => x !== "")
+    .join("\n");
 }
 
 /** A failure document. Terminals show the reason as a Clack error and close with Stopped; pipes print the indented reason and `✗ Stopped` */
@@ -197,7 +244,11 @@ function drawBlock(b: Block): string {
     case "cards": {
       // The badge leads the title, and the body and sources sit 2 columns deeper (so a body line cannot pass for a status line)
       const items = b.items.map((c) => {
-        const badge = c.badge ? `[${cell(c.badge)}] ` : "";
+        const badge = c.badge
+          ? fancy
+            ? `${styleText("inverse", ` ${cell(c.badge)} `)} `
+            : `[${cell(c.badge)}] `
+          : "";
         return [
           fancy ? `${badge}${bold(cell(c.title))}` : `${badge}${cell(c.title)}`,
           ...(c.body
