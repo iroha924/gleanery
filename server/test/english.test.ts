@@ -66,11 +66,9 @@ test("the English text for the CLI has no Japanese", async () => {
   const statuses = STATUSES as unknown as Record<string, readonly string[] | null>;
   for (const kind of KINDS)
     for (const status of statuses[kind] ?? [null]) {
-      for (const path of [null, "docs/adr/0001-x.md", "README.md"]) {
-        const label = labelOf({ kind, status, path });
-        assert.ok(label, `${kind} ${status}`);
-        assert.doesNotMatch(label, JAPANESE, `${kind} ${status}`);
-      }
+      const label = labelOf({ kind, status });
+      assert.ok(label, `${kind} ${status}`);
+      assert.doesNotMatch(label, JAPANESE, `${kind} ${status}`);
     }
 });
 

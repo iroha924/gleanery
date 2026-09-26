@@ -18,7 +18,6 @@
     "fast-string-width": "3.0.2",
     "fast-wrap-ansi": "0.2.2",
     "kysely": "0.29.6",
-    "marked": "18.0.14",
     "zod": "^4.6.5"
   },
   "devDependencies": {

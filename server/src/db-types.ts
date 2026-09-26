@@ -38,30 +38,13 @@ export interface CaptureMessageFile {
   path: string | null;
 }
 
-export interface Connector {
-  head_oid: string | null;
-  id: Generated<number>;
-  last_error: string | null;
-  last_success_at: string | null;
-  project_id: number;
-  provider: string;
-  snapshot_at: string | null;
-}
-
 export interface Conversation {
   branch: string | null;
   external_id: string;
   id: string;
   origin: string;
   project_id: number;
-  source_item_id: number | null;
   started_at: string;
-}
-
-export interface DocsExclude {
-  connector_id: number;
-  kind: string;
-  path: string;
 }
 
 export interface Knowledge {
@@ -78,9 +61,9 @@ export interface Knowledge {
   kind: string;
   occurred_at: string;
   project_id: number;
+  pull_request_id: number | null;
   reason: string | null;
   refs: ColumnType<string[], string | undefined, string>;
-  source_item_id: number | null;
   source_key: string;
   status: string | null;
   superseded_by_id: number | null;
@@ -116,16 +99,13 @@ export interface Message {
   conversation_id: string;
   external_id: string;
   id: string;
-  identity_id: number | null;
   indexed: number;
   original_bytes: number;
-  reply_to_id: string | null;
   sent_at: string;
   seq: Generated<number>;
   speaker_kind: string;
   truncated: Generated<number>;
   turn_id: string | null;
-  url: string | null;
 }
 
 export interface MessageFile {
@@ -136,20 +116,6 @@ export interface MessageFile {
   path: string;
 }
 
-export interface Person {
-  display_name: string;
-  id: Generated<number>;
-  is_self: Generated<number>;
-}
-
-export interface PersonIdentity {
-  external_id: string;
-  handle: string;
-  id: Generated<number>;
-  person_id: number | null;
-  provider: string;
-}
-
 export interface Project {
   created_at: Generated<string>;
   id: Generated<number>;
@@ -157,21 +123,13 @@ export interface Project {
   name: string;
 }
 
-export interface SourceItem {
-  author_identity_id: number | null;
-  body: string | null;
-  closed_at: string | null;
-  connector_id: number;
-  content_hash: Buffer;
-  external_id: string;
+export interface PullRequest {
+  github_id: number | null;
+  harvested_at: string | null;
   id: Generated<number>;
-  kind: string;
-  metadata: ColumnType<Record<string, unknown>, string | undefined, string>;
-  path: string | null;
-  source_created_at: string | null;
-  source_updated_at: string | null;
-  state: string | null;
-  synced_at: Generated<string>;
+  number: number;
+  project_id: number;
+  state: string;
   title: string;
   url: string | null;
 }
@@ -193,18 +151,14 @@ export interface DB {
   capture_conversation: CaptureConversation;
   capture_message: CaptureMessage;
   capture_message_file: CaptureMessageFile;
-  connector: Connector;
   conversation: Conversation;
-  docs_exclude: DocsExclude;
   knowledge: Knowledge;
   knowledge_file: KnowledgeFile;
   knowledge_search_text: KnowledgeSearchText;
   knowledge_terms: KnowledgeTerms;
   message: Message;
   message_file: MessageFile;
-  person: Person;
-  person_identity: PersonIdentity;
   project: Project;
-  source_item: SourceItem;
+  pull_request: PullRequest;
   work_item: WorkItem;
 }

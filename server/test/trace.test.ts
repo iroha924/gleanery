@@ -1,8 +1,22 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
-import { checkTrace, rows, saveTrace, type Trace } from "../src/trace.ts";
+import { searchKnowledge } from "../src/search.ts";
+import {
+  checkHarvest,
+  checkTrace,
+  type Harvest,
+  type PullRequest,
+  rows,
+  saveHarvest,
+  saveTrace,
+  sessionKeys,
+  type Trace,
+} from "../src/trace.ts";
 import { project, tempDb } from "./temp-db.ts";
+
+/** A trace record's rows, keyed the way saveTrace keys them */
+const traceRows = (t: Trace) => rows(t.items, sessionKeys(t));
 
 const at = "2026-09-13T10:00:00+09:00";
 const base = (items: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -41,7 +55,7 @@ test("a valid record turns decision options into option rows and makes keys uniq
     }),
   );
   assert.deepEqual(r.problems, []);
-  const out = rows(r.trace as Trace);
+  const out = traceRows(r.trace as Trace);
   assert.deepEqual(
     out.map((x) => [x.key, x.kind, x.status, x.parent]),
     [
@@ -54,11 +68,9 @@ test("a valid record turns decision options into option rows and makes keys uniq
 });
 
 // A decision is worth its rejected options. A decision without rejection reasons invites the same options again.
-test("rejects decisions without rejected options, reasons, or a way to confirm", () => {
-  assert.match(
-    problems(base([decision({ options: [{ text: "FTS5", chosen: true }] })])),
-    /rejected option with its reason/,
-  );
+// A decision made without alternatives is saved as is; asking for a rejected option would make one up.
+test("accepts a decision without alternatives, and rejects missing reasons or a way to confirm", () => {
+  assert.equal(problems(base([decision({ options: [{ text: "FTS5", chosen: true }] })])), "");
   assert.match(
     problems(
       base([
@@ -131,7 +143,7 @@ test("superseded requires another decision in this record to overturn it", () =>
     ]),
   );
   assert.deepEqual(ok.problems, []);
-  const out = rows(ok.trace as Trace);
+  const out = traceRows(ok.trace as Trace);
   const old = out.find((x) => x.key === "claude-code:s1#d-fts5");
   assert.equal(old?.supersededBy, "claude-code:s1#d-like");
   // The chosen option of an overturned decision is not returned as chosen.
@@ -167,7 +179,7 @@ test("refs must have a kind prefix, and keys pasted in text are masked before st
     ]),
   );
   assert.deepEqual(r.problems, []);
-  const out = JSON.stringify(rows(r.trace as Trace));
+  const out = JSON.stringify(traceRows(r.trace as Trace));
   assert.ok(!out.includes("npg_AbCdEf"), out);
 });
 
@@ -216,7 +228,7 @@ test("saving a record stores decisions, options, work, and files, and saving the
         },
       }),
     );
-    assert.deepEqual(await saveTrace(db.ingest, p, t), { written: 3, superseded: 0, terms: 0 });
+    assert.deepEqual(await saveTrace(db.ingest, p, t), { written: 1, superseded: 0, terms: 0 });
     assert.deepEqual(
       await saveTrace(db.ingest, p, t),
       { written: 0, superseded: 0, terms: 0 },
@@ -351,4 +363,121 @@ test("a record pointing to a decision outside this project stops without writing
 test("the trace Skill sample passes the record check", () => {
   const example = new URL("../../plugin/skills/trace/example.json", import.meta.url);
   assert.deepEqual(checkTrace(JSON.parse(fs.readFileSync(example, "utf8"))).problems, []);
+});
+
+// ---- harvest: one pull request's decisions ----
+
+const PR: PullRequest = {
+  number: 12,
+  githubId: 9001,
+  title: "Keep SQLite",
+  url: "https://github.com/o/r/pull/12",
+  state: "merged",
+};
+const harvest = (items: unknown[], pr = 12): Harvest => {
+  const r = checkHarvest({ schema: "harvest/1", pr, items });
+  assert.deepEqual(r.problems, []);
+  return r.harvest as Harvest;
+};
+const found = (db: ReturnType<typeof tempDb>, sql: string, ...args: (string | number)[]) =>
+  db.owner
+    .prepare(sql)
+    .all(...args)
+    .map((r) => ({ ...r }));
+
+test("harvest stores one pull request's items under it, keeps earlier items a rerun leaves out, and never touches trace rows", async () => {
+  const db = tempDb();
+  try {
+    const p = project(db);
+    await saveTrace(db.ingest, p, valid(base([decision()])));
+    const traceRow = found(
+      db,
+      "select id, content_hash, status from knowledge where source_key = 'claude-code:s1#d-fts5'",
+    );
+    const first = await saveHarvest(
+      db.ingest,
+      p,
+      PR,
+      harvest([
+        decision({ key: "sqlite", confirmation: undefined, refs: ["issue:#4821"] }),
+        { key: "windows", kind: "finding", at, text: "Paths break on Windows", terms: ["Windows path"] },
+      ]),
+    );
+    // Counted per item: the decision and its two options are one
+    assert.deepEqual([first.written, first.terms, first.kept], [2, 1, []]);
+    const rowsOf = () =>
+      found(
+        db,
+        "select source_key, conversation_id, pull_request_id, heading from knowledge where pull_request_id is not null order by source_key",
+      );
+    const pr = found(
+      db,
+      "select id, number, github_id, harvested_at is not null as saved from pull_request",
+    )[0];
+    assert.deepEqual(pr, { id: pr?.id, number: 12, github_id: 9001, saved: 1 });
+    assert.deepEqual(
+      rowsOf().map((r) => r.source_key),
+      ["pr:12#sqlite", "pr:12#sqlite:o1", "pr:12#sqlite:o2", "pr:12#windows"],
+    );
+    assert.ok(rowsOf().every((r) => r.conversation_id === null && r.heading === "PR #12: Keep SQLite"));
+    assert.deepEqual(found(db, "select source from knowledge_terms"), [{ source: "harvest" }]);
+    // Only the refs carry the issue number, so the search finds the decision through them
+    const hits = await searchKnowledge(db.reader, { question: "4821", projects: [p], limit: 5 });
+    assert.deepEqual(
+      hits.map((h) => [h.kind, h.context]),
+      [["decision", "PR #12: Keep SQLite"]],
+    );
+    // A rerun without one item keeps it and says so
+    const again = await saveHarvest(
+      db.ingest,
+      p,
+      PR,
+      harvest([decision({ key: "sqlite", confirmation: undefined })]),
+    );
+    assert.deepEqual(again.kept, ["pr:12#windows"]);
+    assert.equal(rowsOf().length, 4);
+    assert.deepEqual(
+      found(db, "select id, content_hash, status from knowledge where source_key = 'claude-code:s1#d-fts5'"),
+      traceRow,
+    );
+  } finally {
+    await db.done();
+  }
+});
+
+// After `project move` points the project at another repository, #12 can be a different pull request. Refuse rather than mix them.
+test("harvest refuses a number that now names a different pull request, and a record for another number", async () => {
+  const db = tempDb();
+  try {
+    const p = project(db);
+    await saveHarvest(db.ingest, p, PR, harvest([{ key: "f", kind: "finding", at, text: "a" }]));
+    await assert.rejects(
+      saveHarvest(
+        db.ingest,
+        p,
+        { ...PR, githubId: 7 },
+        harvest([{ key: "g", kind: "finding", at, text: "b" }]),
+      ),
+      /different pull request/,
+    );
+    await assert.rejects(saveHarvest(db.ingest, p, PR, harvest([], 13)), /record is for #13/);
+    assert.deepEqual(found(db, "select source_key from knowledge"), [{ source_key: "pr:12#f" }]);
+  } finally {
+    await db.done();
+  }
+});
+
+test("a harvest record keeps its references inside itself and needs no confirmation", () => {
+  const r = checkHarvest({
+    schema: "harvest/1",
+    pr: 12,
+    items: [
+      decision({ key: "a", confirmation: undefined, supersedes: "claude-code:s1#d-fts5" }),
+      { key: "v", kind: "verification", status: "passed", at, text: "ran", verifies: "pr:11#x" },
+    ],
+  });
+  assert.match(r.problems.join("\n"), /items\.0\.supersedes: .*outside this record/);
+  assert.match(r.problems.join("\n"), /items\.1\.verifies: .*outside this record/);
+  assert.doesNotMatch(r.problems.join("\n"), /confirmation/);
+  assert.match(checkHarvest({ schema: "harvest/1", pr: 0, items: [] }).problems.join("\n"), /pr/);
 });

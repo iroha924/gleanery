@@ -63,8 +63,7 @@ export const plain = (s: string): string =>
 
 /**
  * Text kept on one line (such as names). External text goes through plain, and newlines and tabs become one space. Other spaces (such as ideographic spaces)
- * stay as stored. For a name without newlines, tabs, control characters, or invisible characters that visible drops, copying the display into --said or
- * sphica who matches the stored name.
+ * stay as stored, so a name without newlines, tabs, control characters, or invisible characters that visible drops can be copied back as typed.
  */
 export const inline = (s: string): string => plain(s).replace(/[\n\t]+/g, " ");
 

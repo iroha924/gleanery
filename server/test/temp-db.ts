@@ -93,39 +93,31 @@ export function knowledge(
   });
 }
 
-/** Inserts one document section, also creating the docs connector and source_item. */
-export function documentSection(
+/** Inserts one harvested record for pull request `number`, creating the pull_request row if needed. */
+export function harvested(
   db: TempDb,
   projectId: number,
-  v: { path: string; heading: string; body: string; key?: string },
+  v: Values & { number: number; key: string; body: string; title?: string },
 ): number {
-  db.owner
-    .prepare("insert into connector (project_id, provider) values (?, 'docs') on conflict do nothing")
-    .run(projectId);
-  const connector = Number(
-    db.owner.prepare("select id from connector where project_id = ? and provider = 'docs'").get(projectId)
-      ?.id,
-  );
+  const { number, key, title = `PR ${v.number}`, ...rest } = v;
   db.owner
     .prepare(
-      `insert into source_item (connector_id, external_id, kind, title, path, body, content_hash)
-       values (?, ?, 'document', ?, ?, ?, ?) on conflict do nothing`,
+      "insert into pull_request (project_id, number, title, state) values (?, ?, ?, 'merged') on conflict do nothing",
     )
-    .run(connector, v.path, v.path, v.path, v.body, hash());
-  const source = Number(
-    db.owner
-      .prepare("select id from source_item where connector_id = ? and external_id = ?")
-      .get(connector, v.path)?.id,
+    .run(projectId, number, title);
+  const pr = Number(
+    db.owner.prepare("select id from pull_request where project_id = ? and number = ?").get(projectId, number)
+      ?.id,
   );
   return insert(db, "knowledge", {
     project_id: projectId,
-    source_item_id: source,
-    kind: "document",
-    source_key: v.key ?? `${v.path}#${v.heading}`,
-    heading: v.heading,
-    body: v.body,
+    pull_request_id: pr,
+    kind: "finding",
+    source_key: `pr:${number}#${key}`,
+    heading: `PR #${number}: ${title}`,
     occurred_at: at("2026-09-10T00:00:00Z"),
     content_hash: hash(),
+    ...rest,
   });
 }
 

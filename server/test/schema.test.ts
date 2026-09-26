@@ -8,7 +8,7 @@ import { at, hash, insert, type TempDb, tempDb } from "./temp-db.ts";
 let db: TempDb;
 let p: number;
 let conversation: string;
-let connector: number;
+let pr: number;
 before(() => {
   db = tempDb();
   p = insert(db, "project", { key: "git:github.com/o/r", name: "o/r" });
@@ -20,7 +20,7 @@ before(() => {
     external_id: "s",
     started_at: at("2026-09-01T00:00:00Z"),
   });
-  connector = insert(db, "connector", { project_id: p, provider: "github" });
+  pr = insert(db, "pull_request", { project_id: p, number: 1, title: "題", state: "merged" });
 });
 after(() => db.done());
 
@@ -35,13 +35,6 @@ const rejects = (
     `${table} ${JSON.stringify(v, (_k, x) => (Buffer.isBuffer(x) ? "<hash>" : x))}`,
   );
 
-const item = (v: Record<string, string | number | Buffer | null>) => ({
-  connector_id: connector,
-  external_id: String(Math.random()),
-  title: "題",
-  content_hash: hash(),
-  ...v,
-});
 const fact = (v: Record<string, string | number | Buffer | null>) => ({
   project_id: p,
   conversation_id: conversation,
@@ -53,16 +46,26 @@ const fact = (v: Record<string, string | number | Buffer | null>) => ({
   ...v,
 });
 
-test("source items keep the shape of their kind", () => {
-  insert(db, "source_item", item({ kind: "document", path: "a.md", body: "本文" }));
-  rejects("source_item", item({ kind: "pull_request", state: "open", path: "a.md" }));
-  rejects("source_item", item({ kind: "pull_request" }));
-  rejects("source_item", item({ kind: "issue", state: "open", closed_at: at("2026-09-01T00:00:00Z") }));
-  rejects("source_item", item({ kind: "document", path: "a.md", body: "b", content_hash: Buffer.alloc(31) }));
-  rejects("source_item", item({ kind: "document", path: "../a.md", body: "b" }));
-  rejects("source_item", item({ kind: "document", path: "/a.md", body: "b" }));
-  rejects("source_item", item({ kind: "document", path: "a/../b.md", body: "b" }));
-  rejects("source_item", item({ kind: "document", path: "a.md", body: "b", metadata: "[]" }));
+test("pull requests keep a positive number, one row per number, and a known state", () => {
+  rejects("pull_request", { project_id: p, number: 0, title: "題", state: "open" });
+  rejects("pull_request", { project_id: p, number: 2, title: "題", state: "draft" });
+  rejects("pull_request", { project_id: p, number: 2, title: "", state: "open" });
+  rejects("pull_request", { project_id: p, number: 1, title: "題", state: "open" }, /UNIQUE/);
+  rejects("pull_request", {
+    project_id: p,
+    number: 3,
+    title: "題",
+    state: "open",
+    harvested_at: "2026-09-01T00:00:00Z",
+  });
+});
+
+// A record comes from the session trace read or the pull request harvest read, never both and never neither.
+test("knowledge has exactly one provenance, and document sections are gone", () => {
+  insert(db, "knowledge", fact({ conversation_id: null, pull_request_id: pr }));
+  rejects("knowledge", fact({ pull_request_id: pr }));
+  rejects("knowledge", fact({ conversation_id: null }));
+  rejects("knowledge", fact({ kind: "document", heading: "h" }));
 });
 
 test("knowledge enforces kind and status pairs, option parents, and successors, and stance follows kind and status", () => {
@@ -143,12 +146,6 @@ test("project keys accept only the defined forms", () => {
     if (ok) insert(db, "project", { key, name: key });
     else rejects("project", { key, name: key });
   }
-});
-
-test("excluded paths reject trailing slashes and control characters", () => {
-  for (const path of ["a/", "a\u0001b", "a\u007fb", "a\u001fb", "..", "../a"])
-    rejects("docs_exclude", { connector_id: connector, kind: "file", path });
-  insert(db, "docs_exclude", { connector_id: connector, kind: "file", path: "..config/a.md" });
 });
 
 // VACUUM can renumber implicit rowids. The FTS rowid is tied to the explicit seq.

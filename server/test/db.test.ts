@@ -188,7 +188,7 @@ test("the capture connection cannot touch base tables, knowledge, others' messag
     attempt(capture, "insert into capture_message (id, identity_id) values ('x', 1)") ?? "",
     /has no column named identity_id/,
   );
-  // GitHub conversations cannot be created (source_item_id is not in the view, so CHECK rejects it)
+  // Only Claude Code and Codex conversations can be created (the origin CHECK rejects anything else)
   assert.match(
     attempt(
       capture,

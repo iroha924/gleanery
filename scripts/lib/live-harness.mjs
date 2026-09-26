@@ -38,21 +38,15 @@ const GH_TEXT = {
   // english-exempt: Japanese record fixture sent through the real CLI
   reviewComment: "ここは実 DB で確かめたい",
   // english-exempt: Japanese record fixture sent through the real CLI
-  issueComment: "偽の db では権限が見えない",
-  // english-exempt: Japanese record fixture sent through the real CLI
-  renamedTitle: "題を変えた PR",
+  comment: "偽の db では権限が見えない",
   // english-exempt: Japanese record fixture sent through the real CLI
   prTitle: "はじめの PR",
   // english-exempt: Japanese record fixture sent through the real CLI
   body: "本文",
-  // english-exempt: a Japanese decision under the English template headings, as owners often write them
-  decisions: "\n\n## Decisions\n\n- Chosen: 実 DB。Rejected: 偽の db（権限が見えない）",
-  // english-exempt: Japanese record fixture sent through the real CLI
-  issueTitle: "はじめの issue",
 };
 
 /**
- * Installs a fake `gh`. `syncGithub` starts gh internally, so without it 14 sites are unreachable.
+ * Installs a fake `gh` answering the REST paths the harvest commands read (`gh api repos/<repo>/<path>`).
  * It never reaches the real GitHub. It returns fixed JSON made for the checks.
  */
 export function fakeGh(dir) {
@@ -62,40 +56,29 @@ export function fakeGh(dir) {
   fs.writeFileSync(
     gh,
     `#!/usr/bin/env node
-// A fake for the checks. It never goes out. gh gets --slurp, so return an array of pages.
-// Check comments first. \`pulls/comments\` also matches \`/pulls\`, so in the other order a PR would come back
-// instead of review comments, and it would fail without pull_request_url.
+// A fake for the checks. It never goes out. With --slurp, gh returns an array of pages.
 const T = ${JSON.stringify(GH_TEXT)};
-const args = process.argv.slice(2).join(" ");
-const out = (v) => process.stdout.write(JSON.stringify([v]));
-// The second round returns fewer messages and issues. The branches that delete removed ones only run when counts drop.
-const round2 = process.env.SPHICA_FAKE_GH_ROUND === "2";
+const argv = process.argv.slice(2);
+const where = (argv[1] ?? "").replace(/^repos\\/[^/]+\\/[^/]+\\//, "").split("?")[0];
+const send = (v) => process.stdout.write(JSON.stringify(argv.includes("--slurp") ? [v] : v));
 // Mix terminal control sequences into fields third parties can write (to check that output drops them)
 const evil = process.env.SPHICA_FAKE_GH_ROUND === "hostile" ? "\\u001b[2J\\u001b]0;pwn\\u0007\\r" : "";
-const person = { id: 1, login: \`someone\${evil}\` };
-if (args.includes("pulls/comments")) {
-  if (round2) { out([]); process.exit(0); }
-  out([{ id: 11, pull_request_url: "https://api.github.com/repos/example/live/pulls/1", user: person,
-         body: T.reviewComment, created_at: "2026-09-02T00:00:00Z",
-         html_url: "https://example.invalid/1#r11", path: "docs/design.md", line: 3 }]);
-} else if (args.includes("issues/comments")) {
-  if (round2) { out([]); process.exit(0); }
-  out([{ id: 12, issue_url: "https://api.github.com/repos/example/live/issues/2", user: person,
-         body: T.issueComment, created_at: "2026-09-03T00:00:00Z",
-         html_url: "https://example.invalid/2#c12" }]);
-} else if (args.includes("pulls?")) {
-  // The second round changes only the title. A title is not message content, so messages are not rewritten.
-  out([{ number: 1, title: round2 ? T.renamedTitle : \`\${T.prTitle}\${evil}\`, body: \`\${T.body}\${evil}\${T.decisions}\`, state: evil ? "closed" : "open", user: person,
-         created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-02T00:00:00Z",
-         html_url: "https://example.invalid/1", merged_at: evil ? "2026-09-02T01:00:00Z" : null, closed_at: evil ? "2026-09-02T01:00:00Z" : null }]);
-} else if (args.includes("issues?")) {
-  if (round2) { out([]); process.exit(0); }
-  out([{ number: 2, title: T.issueTitle, body: T.body, state: "closed", user: person,
-         created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-03T00:00:00Z",
-         html_url: "https://example.invalid/2", closed_at: "2026-09-03T00:00:00Z" }]);
-} else {
-  out([]);
-}
+const user = { login: \`someone\${evil}\` };
+const pull = { id: 101, number: 1, title: \`\${T.prTitle}\${evil}\`, body: \`\${T.body}\${evil}\`, html_url: "https://example.invalid/1",
+  state: "closed", merged_at: "2026-09-02T01:00:00Z", created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-02T01:00:00Z",
+  user, commits: 1, changed_files: 1 };
+const at = (d) => \`2026-09-01T0\${d}:00:00Z\`;
+const answers = {
+  pulls: [pull],
+  "pulls/1": pull,
+  "issues/1/comments": [{ id: 12, body: \`\${T.comment}\${evil}\`, user, created_at: at(1), html_url: "https://example.invalid/1#c12" }],
+  "pulls/1/reviews": [{ id: 13, body: "", user, state: "APPROVED", submitted_at: at(2), html_url: "https://example.invalid/1#r13" }],
+  "pulls/1/comments": [{ id: 11, body: T.reviewComment, user, created_at: at(3), html_url: "https://example.invalid/1#r11", path: "docs/design.md", line: 3 }],
+  "pulls/1/commits": [{ sha: "0123456789abcdef", commit: { message: "fix: check on the real database", author: { date: at(4) } } }],
+  "issues/1/timeline": [],
+};
+if (!(where in answers)) { process.stderr.write(\`fake gh: no answer for \${argv[1]}\\n\`); process.exit(1); }
+send(answers[where]);
 `,
     { mode: 0o755 },
   );

@@ -45,7 +45,7 @@ export const unregisteredDir = (): string => path.join(spoolDir(), "unregistered
 const HOLD_DAYS = 30;
 const HOLD_MAX = 1000;
 
-type Host = Exclude<Origin, "github">;
+type Host = Origin;
 
 export type Spooled =
   | {
@@ -550,7 +550,7 @@ export async function write(
             original_bytes: x.m.originalBytes,
             sent_at: iso(x.m.at),
             content_hash: sha256(x.m.body),
-            indexed: indexesMessage(x.m.host, x.m.speaker) ? 1 : 0,
+            indexed: indexesMessage(x.m.speaker) ? 1 : 0,
           })),
         )
         .execute();

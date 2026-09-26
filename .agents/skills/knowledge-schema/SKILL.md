@@ -12,7 +12,7 @@ description: Changes Sphica's DB schema (db/schema.sql and db/migrations, SQLite
 - Changing connection roles (the authorizers in `server/src/sqlite.ts` and `server/src/db-write.ts`)
 - Changing the full-text search index (FTS5, `sphica_terms`, `terms()` in `server/src/text.ts`)
 - Changing `knowledge` kinds, statuses, or stance, `message` speakers, `conversation` origins, or `message_file` actions
-- Adding an ingestion source, or changing how GitHub sync, docs sync, capture, or trace write
+- Adding an ingestion source, or changing how capture, trace, or harvest write
 
 ## Does not trigger
 
@@ -88,17 +88,20 @@ do not run other queries in parallel inside a transaction. There is no `select .
 
 | Boundary | Tables | Writers |
 |---|---|---|
-| Projects and people | `project`, `person`, `person_identity` | CLI (project, who), GitHub sync |
-| Current state of ingestion sources | `connector`, `docs_exclude`, `source_item` | GitHub sync, docs sync, CLI (project exclude) |
-| Verbatim conversations | `conversation`, `message`, `message_file` | Capture (capture's 3 views), GitHub sync |
-| Searchable knowledge | `knowledge`, `knowledge_file` | trace, docs sync, GitHub sync (lines of the "Decisions" section in the owner's merged PRs; it also reads the old Japanese heading of that section. `server/src/decisions.ts`) |
+| Projects | `project` | CLI (init, project) |
+| Verbatim conversations | `conversation`, `message`, `message_file` | Capture (capture's 3 views) |
+| Searchable knowledge | `knowledge`, `knowledge_file` | trace (from a session), harvest (from one pull request) |
+| Where knowledge came from | `conversation` (trace), `pull_request` (harvest) | trace, harvest save |
 | Where work stands | `work_item` | trace |
+
+A knowledge row comes from exactly one of a session (`conversation_id`) or a harvested pull request (`pull_request_id`); a CHECK enforces it.
+harvest keys are `pr:<number>#<item key>` with no repository in them, so `harvest save` compares GitHub's id for the pull request with
+`pull_request.github_id` and refuses a number that now names another pull request (after `project move`).
 
 Do not add tables per use. Knowledge is the single `knowledge` table: its kind is `kind`, and whether it is a path not to take is
 the generated column `stance` (`do` / `dont` / `neutral`). Do not let an LLM guess the stance.
 Do not mix conversations into decision search (knowledge / avoid). Mixed in, work logs push decisions out.
 
-Delete the rows of ingestion-source items confirmed gone by a complete listing. Do not keep `deleted_at` or tombstones.
 Do not delete overturned decisions: set `status = 'superseded'` and point to the successor with `superseded_by_id` (deleted ones get proposed again).
 
 ## Full-text search index
@@ -111,10 +114,9 @@ Search is ranked word search (FTS5's bm25). The calling AI makes up for semantic
   all insert from it, so change the rule there only
 - `knowledge_terms` holds extra search words per record (synonyms, abbreviations, English equivalents). **They are search only**: no search result,
   read, or CLI output selects them. They carry the record's `content_hash` from when they were written and are indexed only while
-  it still matches (a record whose text changed stops being found by words written for its old text). Writers: trace (`terms` on an item; a decision's
-  words go to its options), GitHub sync (a `  - Terms: a, b` line under a PR decision; a blank line clears, no line keeps), and the owner's
-  `sphica db terms import`. All go through `searchTerms()` in `server/src/terms.ts`. docs sync writes none (the product generates no text):
-  document sections get words only from the owner's import, and a section whose text changed needs a new draft and import
+  it still matches (a record whose text changed stops being found by words written for its old text). Writers: trace and harvest (`terms` on an item; a decision's
+  words go to its options) and the owner's `sphica db terms import`. All go through `searchTerms()` in `server/src/terms.ts`
+- The extra-words column `e` also holds the record's `refs`, so a pull request or issue number (`pr:#12`, `issue:#3`) finds the records that name it
 - `terms()` in `server/src/text.ts` splits words. **`sphica_terms`, which the DB triggers call on write, and `ftsQuery`, which builds queries,
   go through the same function.** `db-write.ts` registers `sphica_terms` on each write connection. Writing to knowledge / message from a connection
   without it (such as the `sqlite3` CLI) fails with `no such function` (so the index is never silently incomplete)
@@ -145,8 +147,8 @@ the path where Sphica's code writes by mistake, or because untrusted text talked
 | Role | How it opens | Authorizer | Interfaces using it |
 |---|---|---|---|
 | owner | Writable | None | `sphica db *` and the database check in `doctor` (`admin.ts`) |
-| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the CLI's listings (`project list`, `who`, the projects in `doctor`) |
-| ingest | Writable | Rejects DDL, ATTACH, creating virtual tables, and pragmas that write | `harvest`, `trace save`, `who`, `project` |
+| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the CLI's listings (`project list`, `trace context`, `harvest read`, the projects in `doctor`) |
+| ingest | Writable | Rejects DDL, ATTACH, creating virtual tables, and pragmas that write | `trace save`, `harvest save`, `init`, `project` |
 | capture | Writable | Only inserts into the 3 views (`capture_*`) and the writes in their triggers. It can read only `project`'s id, key, and name, and `message`'s id | Capture (`capture.ts`) |
 
 - Write connections live only in `server/src/db-write.ts`. `bun run architecture` checks they cannot be reached from the MCP entry
@@ -154,38 +156,17 @@ the path where Sphica's code writes by mistake, or because untrusted text talked
   default enables it too, but it is explicit so that a change in the default does not turn it off
 - Refer to authorizer actions by their names in `constants`, not by number (there is a record of mixing up `SQLITE_UPDATE` and `SQLITE_DETACH`)
 - The initialization order is fixed: open → defensive and pragmas → `sphica_terms` → authorizer. After the authorizer, pragmas get rejected
-- Columns not in capture's views (`source_item_id`, `identity_id`, `reply_to_id`, `url`) cannot be claimed. It can neither create GitHub conversations
-  nor claim someone else's identity. **Do not count rows by affected rows** (an insert into a view reports 0; count by the difference from the ids present before sending)
+- Capture writes only the columns its views expose. **Do not count rows by affected rows** (an insert into a view reports 0; count by the difference from the ids present before sending)
 - Add to the reader's function allowlist (`READER_FUNCTIONS` in `sqlite.ts`) only when a test fails with `not authorized`
 - Do not judge permissions by reading code alone. `server/test/db.test.ts` checks each role's forbidden operations on real connections
 
 ## Writes
 
-Do not rewrite rows whose `content_hash` matches (a daily sync does not rewrite every row).
+Do not rewrite rows whose `content_hash` matches (a rerun does not rewrite every row).
 
-Connect a new ingestion source to `sphica harvest` too. Adding only a manual command does not finish the job.
-
-### Documents
-
-Docs sync (`server/src/docs.ts`) reads the **commit tree** of the remote's default branch. It does not read the working tree.
-It keeps the commit it took in `connector.head_oid`, and takes only commits that fast-forward from it automatically.
-If it is not a fast-forward, it fetches once more; if the branch has moved past the previously taken commit (another sync running at the same time took it first),
-it ends without writing. If not, it treats it as a rewind or force-push, stops without writing, and points to `sphica harvest --cwd <dir> --reset-docs`.
-Do not treat a rewind as success: when a leaked document is removed by rewinding, it would silently stay in search.
-When changing the projection rules (how sections are split, what context is prepended), raise the `PROJECTION` constant. The next sync rewrites every document.
-
-- Put `path`s not to ingest in `docs_exclude` (tied to the docs connector), applied before blobs are read. Not all tracked
-  Markdown is a document stating facts (audit fixtures, if ingested, would return made-up conventions above the real ones)
-- Do not ingest `.sphica/` (nested ones included). It used to hold requirements and design docs, and unapproved drafts may remain
-- The original text is in `source_item` (`kind` is `document`, the text in `body`); what gets searched is the `document` sections in `knowledge`.
-  Joining the sections does not give back the original
-
-### GitHub
-
-GitHub sync (`server/src/github.ts`) fetches everything each time with `gh api`. It keeps the time it started fetching in `connector.snapshot_at`,
-and a fetch started before that does not write even if it commits late.
-`source_item.closed_at` is the merge time for a PR (the close time if it closed without merging) and the close time for an issue;
-a CHECK enforces that `state = 'open'` matches `closed_at is null`.
+An ingestion source writes through a checked record (`trace save`, `harvest save`) or through capture, never through a bulk import.
+The text it reads (pull requests, conversations) was written by others, so the command that reads it opens no write connection, and the save
+command decides the project and pull request itself instead of trusting the record.
 
 ## Verification
 

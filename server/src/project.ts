@@ -83,7 +83,7 @@ const rootOf = (dir: string): string =>
   git(path.resolve(dir), "rev-parse", "--show-toplevel") || path.resolve(dir);
 
 /**
- * The project dir belongs to, or null (nothing is recorded or synced).
+ * The project dir belongs to, or null (nothing is recorded).
  * **The root is the repository's top level**, so relative paths keep the same base when called from a subdirectory.
  */
 export function identify(dir: string): Place | null {
@@ -136,7 +136,7 @@ export async function projectId(db: Kysely<DB>, key: string): Promise<number | n
 
 /**
  * Finds registered projects on this machine. Looks only directly under ~/Projects and at named projects.
- * **When two places share a key, neither is chosen.** Never sync silently into whichever copy sorts first.
+ * **When two places share a key, neither is chosen.** Never report whichever copy sorts first as the project.
  */
 export function localRoots(roots = [path.join(os.homedir(), "Projects")]): {
   found: Map<string, string>;
@@ -175,33 +175,6 @@ export function relativeTo(root: string, file: string, cwd = root): string | nul
   // A name like `..config` is inside the root. Only `..` itself or paths starting with `../` leave it.
   if (!rel || rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
   return rel.split(path.sep).join("/");
-}
-
-export type Connector = { id: number; headOid: string | null; snapshotAt: string | null };
-
-/**
- * The source row, created when missing. **Call inside a transaction (inTransaction, which takes the write lock first)**
- * so syncs of the same source commit one at a time.
- * Sync results and the last snapshot are written here (`sphica doctor` shows the last sync).
- */
-export async function connectorOf(
-  db: Kysely<DB>,
-  projectId: number,
-  provider: "github" | "docs",
-): Promise<Connector> {
-  await db
-    .insertInto("connector")
-    .values({ project_id: projectId, provider })
-    .onConflict((oc) => oc.columns(["project_id", "provider"]).doNothing())
-    .execute();
-  const row = await db
-    .selectFrom("connector")
-    .select(["id", "head_oid", "snapshot_at"])
-    .where("project_id", "=", projectId)
-    .where("provider", "=", provider)
-    .executeTakeFirst();
-  if (!row) throw new Error(`Could not create the source: ${provider}`);
-  return { id: row.id, headOid: row.head_oid, snapshotAt: row.snapshot_at };
 }
 
 /** Codex apply_patch names the edited file in the patch header. Only the four header forms are read (not the body). */

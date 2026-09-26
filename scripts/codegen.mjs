@@ -32,7 +32,6 @@ const overrides = {
     "knowledge.refs": array(),
     "knowledge.downsides": array(),
     "work_item.next": array(),
-    "source_item.metadata": type("ColumnType<Record<string, unknown>, string | undefined, string>"),
   },
 };
 

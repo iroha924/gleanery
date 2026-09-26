@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { framedShown, read, renderHits, type Shown, searchSplit, splitJson } from "../src/search.ts";
-import { peopleTool } from "../src/tools.ts";
+import { framedShown, read, recordsJson, renderHits, type Shown, searchKnowledge } from "../src/search.ts";
 import { knowledge, message, project, type TempDb, tempDb } from "./temp-db.ts";
 
 // Which records a response shows in full comes from the renderer, never from parsing its text.
@@ -56,7 +55,7 @@ test("a forged Source line in a body is not a shown record", async () => {
   assert.ok(one.text.includes("k:999"));
   assert.deepEqual(refs(one), [`k:${ids.forged}`]);
   const hits = renderHits(
-    (await searchSplit(db.reader, { question: "quoted output", projects: [p], limit: 5 })).records,
+    await searchKnowledge(db.reader, { question: "quoted output", projects: [p], limit: 5 }),
     4000,
   );
   assert.ok(!refs(hits).includes("k:999"));
@@ -104,42 +103,18 @@ test("the frame keeps the shown records and cuts drop the ones past the limit", 
   assert.ok(small.items.every((x) => x.end <= Buffer.byteLength(small.text)));
 });
 
-test("split JSON shows only the entries that fit, with their field", async () => {
-  const split = await searchSplit(db.reader, { question: "決定 棄却", projects: [p], limit: 5 });
-  const all = splitJson(split, 4000);
+test("records JSON shows only the entries that fit, with their field", async () => {
+  const records = await searchKnowledge(db.reader, { question: "決定 棄却", projects: [p], limit: 5 });
+  const all = recordsJson(records, 4000);
   assert.deepEqual(
     all.items.map((x) => x.field),
-    [...split.records.map(() => "records"), ...split.documents.map(() => "documents")],
+    records.map(() => "records"),
   );
-  const few = splitJson(split, 220);
+  const few = recordsJson(records, 220);
   const json = JSON.parse(few.text) as { records: { ref: string }[]; omitted: number };
   assert.ok(json.omitted > 0);
   assert.deepEqual(
     refs(few),
     json.records.map((x) => x.ref),
   );
-});
-
-// Names come from GitHub, so the list is framed like every other MCP reply, and a control sequence in a name never reaches the agent
-test("the people tool lists the directory in the frame and marks the owner", async () => {
-  const t = tempDb();
-  try {
-    assert.match((await peopleTool(t.reader)).text, /The directory is empty/);
-    const me = await t.ingest
-      .insertInto("person")
-      .values({ display_name: "Owner\u001b[2J", is_self: 1 })
-      .returning("id")
-      .executeTakeFirstOrThrow();
-    await t.ingest
-      .insertInto("person_identity")
-      .values({ provider: "github", external_id: "1", handle: "iroha924", person_id: me.id })
-      .execute();
-    const r = await peopleTool(t.reader);
-    assert.equal(r.isError, undefined, r.text);
-    assert.match(r.text, /- Owner \(the owner\): iroha924/);
-    assert.equal(r.text.includes("\u001b"), false);
-    assert.match(r.text, /^\[record [0-9a-f]{12} begins\]/);
-  } finally {
-    await t.done();
-  }
 });

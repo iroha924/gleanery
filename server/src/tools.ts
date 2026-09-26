@@ -4,22 +4,19 @@
 import type { Kysely } from "kysely";
 import type { DB } from "./db-types.ts";
 import type { KINDS } from "./knowledge.ts";
-import { inline } from "./panel.ts";
 import { type Place, relativeTo } from "./project.ts";
 import {
-  directory,
   framedShown,
   inFrame,
   openWork,
   read,
+  recordsJson,
   renderHits,
   renderWork,
   type Scope,
   type Shown,
   searchKnowledge,
   searchMessages,
-  searchSplit,
-  splitJson,
   workDetail,
 } from "./search.ts";
 import { ftsQuery, head, reason } from "./text.ts";
@@ -53,7 +50,6 @@ const failed = (e: unknown): Reply => ({
 export type RecallArgs = {
   question?: string | undefined;
   mode?: "knowledge" | "avoid" | "said" | "resume" | undefined;
-  who?: string | undefined;
   kinds?: (typeof KINDS)[number][] | undefined;
   match?: "words" | "exact" | undefined;
   path?: string | undefined;
@@ -101,7 +97,6 @@ export async function recall(
       const hits = await searchMessages(db, {
         question: a.question,
         projects,
-        who: a.who ?? "me",
         match: a.match,
         path: file,
         since: a.since,
@@ -124,14 +119,14 @@ export async function recall(
       limit,
     };
     if (!a.kinds?.length) {
-      const split = await searchSplit(db, q);
-      if (!split.records.length && !split.documents.length)
+      const records = await searchKnowledge(db, q);
+      if (!records.length)
         return reply(
           a.match !== "exact" && ftsQuery(a.question) === null
             ? "No searchable terms (only hiragana or symbols). Use kanji, katakana, or English words, or search with match: exact."
             : "No matches. Search again with different words (synonyms, Japanese or English, short words, match: exact).",
         );
-      return framedShown(splitJson(split, inFrame(RECALL_BYTES)), RECALL_BYTES);
+      return framedShown(recordsJson(records, inFrame(RECALL_BYTES)), RECALL_BYTES);
     }
     const hits = await searchKnowledge(db, { ...q, kinds: a.kinds });
     return hits.length
@@ -155,24 +150,6 @@ export async function readTool(
     if (!a.all_projects && h.id === null) return reply(unregistered(h));
     const projects: Scope = a.all_projects ? null : [h.id as number];
     return framedShown(await read(db, a.refs, inFrame(READ_BYTES), { projects }), READ_BYTES);
-  } catch (e) {
-    return failed(e);
-  }
-}
-
-/** The people tool: everyone in the directory with their GitHub handles (shared by every project). Names come from GitHub, so they go in the frame */
-export async function peopleTool(db: Kysely<DB>): Promise<Reply> {
-  try {
-    const people = await directory(db);
-    const body = people.length
-      ? people
-          .map(
-            (p) =>
-              `- ${inline(p.display)}${p.isSelf ? " (the owner)" : ""}: ${p.handles.map(inline).join(", ") || "no handles"}`,
-          )
-          .join("\n")
-      : "The directory is empty. The owner links people with `sphica who <name> <handle>...`.";
-    return framedShown({ text: body, items: [] }, READ_BYTES);
   } catch (e) {
     return failed(e);
   }

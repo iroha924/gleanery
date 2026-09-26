@@ -32,36 +32,33 @@ import {
   failure,
   indent,
   panel,
-  progress,
   section,
   steps,
   stopped,
   title,
 } from "./cli/view.ts";
-import { dbFile, inTransaction, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
+import { dbFile, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { openWriter } from "./db-write.ts";
-import { syncDocs } from "./docs.ts";
-import { syncGithub } from "./github.ts";
+import { type DraftKind, draftId, newDraft, readDraft, removeDraft } from "./draft.ts";
+import { parts, pullRequest, readPull, recentPulls, repoOf } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { moveProject } from "./move.ts";
 import { inline, type Mark, mark, pad, plain, width } from "./panel.ts";
 import { observe, packageVersionAt, ROOT, report, UPDATE_NOTE } from "./plugin.ts";
 import {
   checkLocalName,
-  connectorOf,
   identify,
   localRoots,
   nameLocal,
   type Place,
   projectId,
-  relativeTo,
   repositoryRoot,
 } from "./project.ts";
-import { directory, framed, openWork, renderWork, workDetail } from "./search.ts";
+import { framed, openWork, renderWork, workDetail } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
-import { head, plural, reason } from "./text.ts";
-import { checkTrace, saveTrace } from "./trace.ts";
+import { bytes, head, plural, reason, sha256 } from "./text.ts";
+import { checkHarvest, checkTrace, saveHarvest, saveTrace } from "./trace.ts";
 
 /**
  * Heading of the error box. **Built only from the route name routing chose** (never from the typed arguments).
@@ -141,49 +138,31 @@ async function registered(db: Kysely<DB>, place: Place): Promise<number> {
   return id;
 }
 
-/** Reads a trace record. `-` is stdin (the Skill passes it without creating a file). */
-const readTrace = (file: string): unknown => JSON.parse(fs.readFileSync(file === "-" ? 0 : file, "utf8"));
+/** The draft id a Skill passes to check and save (see draft.ts). */
+const DRAFT = { parse: draftId, brief: "The id draft printed", placeholder: "id" } as const;
 
-const githubRepo = (key: string): string | null =>
-  key.match(/^git:github\.com\/([^/]+\/[^/]+)$/)?.[1] ?? null;
+/** Prints where the agent writes the record. */
+function draftCommand(kind: DraftKind) {
+  return buildCommand({
+    docs: { brief: `Issue a draft: the file to write a ${kind} record to, and its id for check and save` },
+    parameters: {},
+    func: () => {
+      const d = newDraft(kind);
+      console.log(
+        panel(
+          `sphica ${kind} draft`,
+          [`id: ${d.id}`, `file: ${d.file}`],
+          `write the record to the file, then run ${kind} check ${d.id}`,
+        ),
+      );
+    },
+  });
+}
 
-/**
- * Syncs one project. **GitHub and documents are independent**, so one failing does not stop the other.
- * Failures are stored in the source's last_error (doctor shows it) and thrown together at the end.
- */
-async function syncOne(
-  db: Kysely<DB>,
-  id: number,
-  place: Place,
-  resetDocs = false,
-  onStep: (what: string) => void = () => {},
-): Promise<string[]> {
-  const out: string[] = [];
-  const failures: string[] = [];
-  const one = async (provider: "github" | "docs", label: string, fn: () => Promise<string>) => {
-    onStep(`reading ${label}`);
-    try {
-      out.push(`${label}: ${await fn()}`);
-    } catch (e) {
-      const message = reason(e);
-      await db
-        .updateTable("connector")
-        .set({ last_error: message.slice(0, 500) })
-        .where("project_id", "=", id)
-        .where("provider", "=", provider)
-        .execute()
-        .catch(() => {});
-      failures.push(`${place.name} ${provider}: ${message}`);
-    }
-  };
-  const repo = githubRepo(place.key);
-  if (repo) await one("github", "GitHub", () => syncGithub(db, id, repo));
-  if (fs.existsSync(path.join(place.root, ".git")))
-    await one("docs", "Docs", () =>
-      syncDocs(db, id, place.root, { remote: place.key.startsWith("git:"), reset: resetDocs }),
-    );
-  if (failures.length) throw new Error([...out, ...failures].join("\n  "));
-  return out;
+/** The closing line of save, and whether the draft could be removed (a failed removal must not read as a failed save). */
+function saved(line: string, id: string): string {
+  const left = removeDraft(id);
+  return left ? `${line}. Saved; draft cleanup failed (${left}), do not save again` : line;
 }
 
 type Host = "claude-code" | "codex";
@@ -225,6 +204,7 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
     const messages = await db
       .selectFrom("message as m")
       .select((eb) => [
+        "m.id",
         "m.speaker_kind",
         "m.body",
         "m.sent_at",
@@ -272,11 +252,18 @@ async function traceContext(cwd: string, host?: Host): Promise<string> {
       .execute();
     // The owner's messages are shown longer and AI responses only in brief (decisions are in the owner's messages; AI responses surround them).
     // The agent reads this, so the owner is "Owner", never "You".
-    const said = messages.map(
-      (m) =>
+    const said = messages.map((m) => {
+      const shown = head(m.body, m.speaker_kind === "self" ? 4000 : 800);
+      // Say where a long message was cut, so the rest can still be read (read m:<id> over MCP)
+      const cut =
+        shown.length < m.body.length
+          ? `\n(cut: ${bytes(shown)} of ${bytes(m.body)} bytes shown; read m:${m.id} for the rest)`
+          : "";
+      return (
         `## ${m.speaker_kind === "self" ? "Owner" : "AI"} (${m.sent_at})${m.truncated ? " (partly saved)" : ""}\n` +
-        `${head(m.body, m.speaker_kind === "self" ? 4000 : 800)}${m.paths.length ? `\nFiles touched after this message: ${m.paths.map((p) => p.path).join(" / ")}` : ""}`,
-    );
+        `${shown}${cut}${m.paths.length ? `\nFiles touched after this message: ${m.paths.map((p) => p.path).join(" / ")}` : ""}`
+      );
+    });
     const edited = [...new Set(messages.flatMap((m) => m.paths.map((p) => p.path)))];
     return [
       `session: ${session.host} ${session.id} (project ${place.name})`,
@@ -370,26 +357,31 @@ async function doctor(cwd: string): Promise<void> {
         const { found } = localRoots();
         const rows = await db
           .selectFrom("project as p")
-          .leftJoin("connector as cn", "cn.project_id", "p.id")
-          .select(["p.key", "p.name", "cn.provider", "cn.last_success_at", "cn.last_error"])
+          .select((eb) => [
+            "p.key",
+            "p.name",
+            eb
+              .selectFrom("knowledge as k")
+              .select((k) => k.fn.countAll<number>().as("n"))
+              .whereRef("k.project_id", "=", "p.id")
+              .as("records"),
+            eb
+              .selectFrom("pull_request as r")
+              .select((r) => r.fn.max("r.harvested_at").as("at"))
+              .whereRef("r.project_id", "=", "p.id")
+              .as("harvested"),
+          ])
           .orderBy("p.name")
-          .orderBy("cn.provider")
           .execute();
         if (rows.length) console.log(section("Projects", true));
-        const label = (x: (typeof rows)[number]) => `${inline(x.name)} ${x.provider ?? "not synced"}`;
-        const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
+        const column = Math.max(...rows.map((x) => width(inline(x.name)))) + 2;
         for (const x of rows) {
-          // Imports run only when sphica harvest is run. Gaps are normal, so only failures count as things to fix.
-          const m: Mark = x.last_error ? "fail" : x.provider === null || !x.last_success_at ? "none" : "ok";
-          count(m, `project ${label(x)}`);
           const where = found.get(x.key) ? "" : " (not on this machine)";
           console.log(
             indent(
-              `  ${mark(m)} ${pad(label(x), column)}${
-                x.last_success_at
-                  ? `last import ${new Date(x.last_success_at).toLocaleString("sv-SE")}`
-                  : "not imported yet"
-              }${x.last_error ? ` / failed: ${plain(x.last_error)}` : ""}${where}`,
+              `  ${mark("none")} ${pad(inline(x.name), column)}${plural(Number(x.records ?? 0), "record")}${
+                x.harvested ? ` / last harvest ${new Date(x.harvested).toLocaleString("sv-SE")}` : ""
+              }${where}`,
             ),
           );
         }
@@ -424,163 +416,19 @@ const CWD = {
   optional: true,
 } as const;
 
-/** A path to exclude, and whether it is a file or directory. A path not in the working tree is rejected as a typo. */
-function excludeTarget(
-  cwd: string,
-  target: string,
-): { place: Place; kind: "file" | "directory"; rel: string } {
-  const place = placeOf(cwd);
-  const rel = relativeTo(place.root, target, cwd);
-  if (!rel) throw new Error(`${target} is not inside ${place.name} (${place.root})`);
-  // Symlinks are not followed. In the commit tree they are one entry and are not read as text even when they point to a directory.
-  const st = fs.lstatSync(path.join(place.root, rel), { throwIfNoEntry: false });
-  if (!st) throw new Error(`${rel} is not in the working tree`);
-  return { place, kind: st.isDirectory() ? "directory" : "file", rel };
-}
-
-const excludeRoutes = buildRouteMap({
-  docs: {
-    brief: "Paths the document sync does not import",
-    fullDescription:
-      "Not every tracked Markdown file states facts (audit fixtures, fill-in templates). Excluded files and their sections are removed on the next sync.",
-  },
-  routes: {
-    add: buildCommand({
-      docs: { brief: "Exclude a path (file or directory)" },
-      parameters: {
-        flags: { cwd: CWD },
-        positional: {
-          kind: "tuple",
-          parameters: [{ parse: String, brief: "Path to exclude", placeholder: "path" }],
-        },
-      },
-      func: async (flags: { cwd?: string }, target: string) => {
-        const { place, kind, rel } = excludeTarget(flags.cwd ?? process.cwd(), target);
-        await withDb("ingest", async (db) => {
-          const id = await registered(db, place);
-          const connector = await connectorOf(db, id, "docs");
-          await db
-            .insertInto("docs_exclude")
-            .values({ connector_id: connector.id, kind, path: rel })
-            .onConflict((oc) => oc.doNothing())
-            .execute();
-          console.log(
-            document(
-              "sphica project exclude add",
-              inline(place.name),
-              [
-                {
-                  kind: "fields",
-                  rows: [
-                    ["path", inline(rel)],
-                    ["type", kind],
-                  ],
-                },
-              ],
-              `${mark("ok")} not imported from the next sync`,
-            ),
-          );
-        });
-      },
-    }),
-    list: buildCommand({
-      docs: { brief: "Paths excluded in the project" },
-      parameters: { flags: { cwd: CWD } },
-      func: async (flags: { cwd?: string }) => {
-        const place = placeOf(flags.cwd ?? process.cwd());
-        await withDb("reader", async (db) => {
-          const id = await registered(db, place);
-          const rows = await db
-            .selectFrom("docs_exclude as x")
-            .innerJoin("connector as c", (j) =>
-              j.onRef("c.id", "=", "x.connector_id").on("c.provider", "=", "docs"),
-            )
-            .select(["x.kind", "x.path"])
-            .where("c.project_id", "=", id)
-            .orderBy("x.path")
-            .execute();
-          console.log(
-            document(
-              "sphica project exclude list",
-              inline(place.name),
-              rows.length
-                ? [
-                    {
-                      kind: "table",
-                      head: ["path", "type"],
-                      rows: rows.map((r) => [plain(r.path), r.kind]),
-                    },
-                  ]
-                : [
-                    {
-                      kind: "note",
-                      tone: "info",
-                      text: "No excluded paths (every document is imported)",
-                    },
-                  ],
-              rows.length ? `${plural(rows.length, "path")} excluded` : "none excluded",
-            ),
-          );
-        });
-      },
-    }),
-    remove: buildCommand({
-      docs: { brief: "Stop excluding a path (it is imported again on the next sync)" },
-      parameters: {
-        flags: { cwd: CWD },
-        positional: {
-          kind: "tuple",
-          parameters: [{ parse: String, brief: "Path to include again", placeholder: "path" }],
-        },
-      },
-      func: async (flags: { cwd?: string }, target: string) => {
-        const cwd = flags.cwd ?? process.cwd();
-        const place = placeOf(cwd);
-        // Removing does not check the working tree. Even if the path is gone after excluding it, the setting can still be removed.
-        const rel = relativeTo(place.root, target, cwd);
-        if (!rel) throw new Error(`${target} is not inside ${place.name} (${place.root})`);
-        await withDb("ingest", async (db) => {
-          const id = await registered(db, place);
-          const gone = await db
-            .deleteFrom("docs_exclude")
-            .where("path", "=", rel)
-            .where("connector_id", "in", (eb) =>
-              eb
-                .selectFrom("connector")
-                .select("id")
-                .where("project_id", "=", id)
-                .where("provider", "=", "docs"),
-            )
-            .executeTakeFirst();
-          console.log(
-            document(
-              "sphica project exclude remove",
-              inline(place.name),
-              [{ kind: "fields", rows: [["path", inline(rel)]] }],
-              Number(gone.numDeletedRows)
-                ? `${mark("ok")} imported again from the next sync`
-                : `${mark("none")} was not excluded`,
-            ),
-          );
-        });
-      },
-    }),
-  },
-});
-
 const projectRoutes = buildRouteMap({
-  docs: { brief: "List, exclude, move, and remove recorded projects (sphica init registers one)" },
+  docs: { brief: "List, move, and remove recorded projects (sphica init registers one)" },
   routes: {
     list: buildCommand({
-      docs: { brief: "Registered projects and their last sync" },
+      docs: { brief: "Registered projects and their last harvest" },
       parameters: {},
       func: async () => {
         const { found, ambiguous } = localRoots();
         await withDb("reader", async (db) => {
           const listed = await db
             .selectFrom("project as p")
-            .leftJoin("connector as cn", "cn.project_id", "p.id")
-            .select(["p.key", "p.name", (eb) => eb.fn.max("cn.last_success_at").as("last")])
+            .leftJoin("pull_request as r", "r.project_id", "p.id")
+            .select(["p.key", "p.name", (eb) => eb.fn.max("r.harvested_at").as("last")])
             .groupBy("p.id")
             .orderBy("p.name")
             .execute();
@@ -592,7 +440,7 @@ const projectRoutes = buildRouteMap({
                 ? `~${root.slice(home.length)}`
                 : root
               : ambiguous.has(x.key)
-                ? "multiple locations (not synced)"
+                ? "multiple locations"
                 : "not on this machine";
             return {
               title: inline(x.name),
@@ -600,8 +448,8 @@ const projectRoutes = buildRouteMap({
               meta: [
                 inline(x.key),
                 x.last
-                  ? `last sync ${new Date(x.last).toLocaleString("sv-SE").slice(0, 16)}`
-                  : "not synced yet",
+                  ? `last harvest ${new Date(x.last).toLocaleString("sv-SE").slice(0, 16)}`
+                  : "nothing harvested yet",
               ],
             };
           });
@@ -624,7 +472,6 @@ const projectRoutes = buildRouteMap({
         });
       },
     }),
-    exclude: excludeRoutes,
     move: buildCommand({
       docs: {
         brief:
@@ -657,8 +504,7 @@ const projectRoutes = buildRouteMap({
             rows: [
               ["from", inline(x.from)],
               ["to", inline(x.to)],
-              ["knowledge from GitHub", `${x.knowledge} (${x.terms} with search words)`],
-              ["conversations from GitHub", `${x.conversations}`],
+              ["harvested pull requests", `${x.pullRequests}`],
               ["pending", `${x.spooled.pending}`],
               ["set aside for unregistered projects", `${x.spooled.held}`],
               ["rejected by the database", `${x.spooled.rejected}`],
@@ -712,8 +558,7 @@ const projectRoutes = buildRouteMap({
               sql<number>`(select count(*) from message m
                 join conversation c on c.id = m.conversation_id where c.project_id = ${p.id})`.as("messages"),
               sql<number>`(select count(*) from knowledge where project_id = ${p.id})`.as("knowledge"),
-              sql<number>`(select count(*) from source_item s
-                join connector cn on cn.id = s.connector_id where cn.project_id = ${p.id})`.as("items"),
+              sql<number>`(select count(*) from pull_request where project_id = ${p.id})`.as("pullRequests"),
             ])
             .where("id", "=", p.id)
             .executeTakeFirst();
@@ -725,7 +570,7 @@ const projectRoutes = buildRouteMap({
               ["conversations", `${x?.conversations}`],
               ["messages", `${x?.messages}`],
               ["knowledge", `${x?.knowledge}`],
-              ["source items", `${x?.items}`],
+              ["harvested pull requests", `${x?.pullRequests}`],
             ],
           };
           if (flags.yes !== true) {
@@ -769,18 +614,12 @@ const traceRoutes = buildRouteMap({
         console.log(plain(framed(await traceContext(process.cwd(), flags.host))));
       },
     }),
+    draft: draftCommand("trace"),
     check: buildCommand({
       docs: { brief: "Validate a trace record (does not touch the database)" },
-      parameters: {
-        positional: {
-          kind: "tuple",
-          parameters: [
-            { parse: String, brief: "The trace record (- for stdin)", placeholder: "trace.json|-" },
-          ],
-        },
-      },
-      func: (_flags: Record<never, never>, file: string) => {
-        const r = checkTrace(readTrace(file));
+      parameters: { positional: { kind: "tuple", parameters: [DRAFT] } },
+      func: (_flags: Record<never, never>, id: string) => {
+        const r = checkTrace(readDraft(id, "trace"));
         if (r.problems.length) {
           console.error(
             panel(
@@ -802,17 +641,10 @@ const traceRoutes = buildRouteMap({
       },
     }),
     save: buildCommand({
-      docs: { brief: "Store a trace record (the same key overwrites)" },
-      parameters: {
-        positional: {
-          kind: "tuple",
-          parameters: [
-            { parse: String, brief: "The trace record (- for stdin)", placeholder: "trace.json|-" },
-          ],
-        },
-      },
-      func: async (_flags: Record<never, never>, file: string) => {
-        const r = checkTrace(readTrace(file));
+      docs: { brief: "Store a trace record (the same key overwrites) and remove its draft" },
+      parameters: { positional: { kind: "tuple", parameters: [DRAFT] } },
+      func: async (_flags: Record<never, never>, draft: string) => {
+        const r = checkTrace(readDraft(draft, "trace"));
         if (!r.trace)
           throw new Error(`The record is not valid:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
         const trace = r.trace;
@@ -825,12 +657,15 @@ const traceRoutes = buildRouteMap({
         const place = placeOf(process.cwd());
         await withDb("ingest", async (db) => {
           const id = await registered(db, place);
-          const saved = await saveTrace(db, id, trace);
+          const done = await saveTrace(db, id, trace);
           console.log(
             panel(
               "sphica trace save",
               [],
-              `stored: ${plural(saved.written, "item")} rewritten${saved.superseded ? `, ${plural(saved.superseded, "decision")} superseded` : ""}${saved.terms ? `, search words changed on ${plural(saved.terms, "item")}` : ""}`,
+              saved(
+                `stored: ${plural(done.written, "item")} rewritten${done.superseded ? `, ${plural(done.superseded, "decision")} superseded` : ""}${done.terms ? `, search words changed on ${plural(done.terms, "item")}` : ""}`,
+                draft,
+              ),
             ),
           );
         });
@@ -888,9 +723,9 @@ const captureRoutes = buildRouteMap({
 
 /**
  * First-time setup: the database, then the project dir belongs to (a repository without a remote needs --name). Safe to run again.
- * A bad --name, a name that differs from the one already given, and --sync with no project stop before anything is written.
+ * A bad --name and a name that differs from the one already given stop before anything is written.
  */
-async function init(flags: { cwd?: string; name?: string; sync?: boolean }): Promise<void> {
+async function init(flags: { cwd?: string; name?: string }): Promise<void> {
   const cwd = flags.cwd ?? process.cwd();
   if (!fs.statSync(cwd, { throwIfNoEntry: false })?.isDirectory())
     throw new Error(`${cwd} is not a directory`);
@@ -906,8 +741,6 @@ async function init(flags: { cwd?: string; name?: string; sync?: boolean }): Pro
         `${found.root} is already named ${found.name}. Its records stay under that name, so keep it`,
       );
   }
-  if (flags.sync && !found && flags.name === undefined)
-    throw new Error(`${cwd} is not a registered or named project, so there is nothing to sync`);
   await boxed("sphica init", async () => {
     dbInit();
     // A place already under this name (the named directory or one below it) is used as is, so the name table never gains a second place
@@ -932,19 +765,6 @@ async function init(flags: { cwd?: string; name?: string; sync?: boolean }): Pro
           `${mark(added ? "ok" : "none")} ${inline(place.name)} ${added ? "registered" : "already registered"} (${inline(place.key)}, ${inline(place.root)})`,
         ),
       );
-      if (!flags.sync) return;
-      const id = await registered(db, place);
-      const step = progress(`${inline(place.name)}: syncing`);
-      try {
-        const lines = await syncOne(db, id, place, false, (what) =>
-          step.message(`${inline(place.name)}: ${what}`),
-        );
-        step.done(`${inline(place.name)}: synced`);
-        for (const line of lines) console.log(indent(`${mark("ok")} ${inline(line)}`));
-      } catch (e) {
-        step.fail(`${inline(place.name)}: failed`);
-        throw e;
-      }
     });
   });
 }
@@ -1036,214 +856,179 @@ const dbRoutes = buildRouteMap({
   },
 });
 
-const root = buildRouteMap({
-  docs: {
-    brief: "Keep and search past decisions, conversations, and documents",
-    fullDescription: "Database: ~/.sphica/sphica.db (created by sphica init). No credentials are needed",
-    // Usage shows only what people type. The rest are run by the trace Skill, the capture hooks, maintenance, or on doctor's advice; -H lists them
-    hideRoute: { project: true, who: true, trace: true, capture: true, db: true },
-  },
+/** The GitHub repository of the project at cwd (harvest reads only GitHub). */
+function repositoryOf(place: Place): string {
+  const repo = repoOf(place.key);
+  if (!repo) throw new Error(`${place.name} has no GitHub remote, so there is no pull request to harvest`);
+  return repo;
+}
+
+const PR = { parse: prNumber, brief: "The pull request number", placeholder: "number" } as const;
+function prNumber(input: string): number {
+  const n = Number(input.replace(/^#/, ""));
+  if (!Number.isInteger(n) || n < 1) throw new Error(`Not a pull request number: ${input}`);
+  return n;
+}
+function partNumber(input: string): number {
+  const n = Number(input);
+  if (!Number.isInteger(n) || n < 1) throw new Error(`Not a part number: ${input}`);
+  return n;
+}
+
+/**
+ * Run by the harvest Skill. list and read open no database; read prints someone else's text inside the record frame.
+ * save is the only write, and it stores only knowledge of the named pull request of the project at cwd (trace.ts saveHarvest).
+ */
+const harvestRoutes = buildRouteMap({
+  docs: { brief: "Read a pull request and store what it decided (run by the harvest Skill)" },
   routes: {
-    project: projectRoutes,
-    harvest: buildCommand({
-      docs: {
-        brief: "Sync GitHub and documents for the projects on this machine",
-        fullDescription:
-          "Documents come from the remote's default branch and stop when it is not a fast-forward (--reset-docs brings a project to its current state).",
+    list: buildCommand({
+      docs: { brief: "Recent pull requests of this project's repository" },
+      parameters: { flags: { cwd: CWD } },
+      func: async (flags: { cwd?: string }) => {
+        const repo = repositoryOf(placeOf(flags.cwd ?? process.cwd()));
+        const prs = await recentPulls(repo);
+        console.log(
+          document(
+            "sphica harvest list",
+            inline(repo),
+            prs.length
+              ? [
+                  {
+                    kind: "table",
+                    head: ["number", "state", "updated", "title"],
+                    rows: prs.map((x) => [`#${x.number}`, x.state, x.updated.slice(0, 10), inline(x.title)]),
+                  },
+                ]
+              : [{ kind: "note", tone: "info", text: "No pull requests yet" }],
+            plural(prs.length, "pull request"),
+          ),
+        );
       },
+    }),
+    read: buildCommand({
+      docs: { brief: "Print one pull request in time order, inside the record frame, one part at a time" },
       parameters: {
         flags: {
           cwd: CWD,
-          "reset-docs": {
-            kind: "boolean",
-            brief: "Bring the project's documents to its current state (only with --cwd)",
+          part: {
+            kind: "parsed",
+            parse: partNumber,
+            brief: "Which part to print (from 1)",
+            placeholder: "n",
             optional: true,
           },
         },
+        positional: { kind: "tuple", parameters: [PR] },
       },
-      func: async (flags: { cwd?: string; "reset-docs"?: boolean }) => {
-        const resetDocs = flags["reset-docs"] === true;
-        // Resetting only when one project is named (a sync of everything never overwrites every project that cannot be compared).
-        if (resetDocs && !flags.cwd) throw new Error("--reset-docs works only when --cwd names one project");
-        // The log is appended to, so the heading always shows when it ran.
-        const startedAt = new Date();
-        console.log(title(`sphica harvest ${startedAt.toLocaleString("sv-SE")}`));
-        await flush().catch((e: unknown) =>
-          console.error(indent(`${mark("fail")} failed to send recordings: ${plain(reason(e))}`)),
+      func: async (flags: { cwd?: string; part?: number }, n: number) => {
+        const place = placeOf(flags.cwd ?? process.cwd());
+        const { text } = await readPull(repositoryOf(place), n);
+        // Items saved by an earlier harvest of this pull request come first, so a rerun reuses their keys
+        const earlier = await withDb("reader", async (db) =>
+          db
+            .selectFrom("knowledge as k")
+            .innerJoin("pull_request as r", "r.id", "k.pull_request_id")
+            .select(["k.source_key", "k.kind", "k.status", "k.body"])
+            .where("r.project_id", "=", await registered(db, place))
+            .where("r.number", "=", n)
+            .where("k.kind", "<>", "option")
+            .orderBy("k.occurred_at")
+            .orderBy("k.id")
+            .execute(),
         );
-        const failures: string[] = [];
-        let done = 0;
-        try {
-          await withDb("ingest", async (db) => {
-            const only = flags.cwd ? placeOf(flags.cwd) : null;
-            if (only) await registered(db, only);
-            const { found, ambiguous } = localRoots();
-            const projects = await db
-              .selectFrom("project")
-              .select(["id", "key", "name"])
-              .orderBy("name")
-              .execute();
-            for (const p of projects) {
-              if (only && only.key !== p.key) continue;
-              const root = only?.root ?? found.get(p.key);
-              if (!root) {
-                console.log(
-                  indent(
-                    `${mark("none")} ${inline(p.name)}: skipped (${ambiguous.has(p.key) ? "multiple locations on this machine" : "not on this machine"})`,
-                  ),
-                );
-                continue;
-              }
-              const step = progress(`${inline(p.name)}: syncing`);
-              try {
-                const place = { key: p.key, root, name: p.name };
-                const lines = await syncOne(db, p.id, place, resetDocs, (what) =>
-                  step.message(`${inline(p.name)}: ${what}`),
-                );
-                step.done(`${inline(p.name)}: synced`);
-                for (const line of lines) {
-                  console.log(indent(`${mark("ok")} ${inline(p.name)} / ${inline(line)}`));
-                }
-                done++;
-              } catch (e) {
-                // One failure does not stop the rest. Failures go to the exit code (visible in launchd LastExitStatus).
-                step.fail(`${inline(p.name)}: failed`);
-                failures.push(inline(p.name));
-                const lines = plain(reason(e)).split("\n");
-                console.error(
-                  indent(
-                    [
-                      `${mark("fail")} ${inline(p.name)}`,
-                      ...lines.map((l) => (l.trim() ? `  ${l.trim()}` : "")),
-                    ].join("\n"),
-                  ),
-                );
-              }
-            }
-          });
-        } catch (e) {
-          // Even when stopping after the heading was printed, close the box before ending (the log is appended across days).
-          console.error(indent(`${mark("fail")} ${plain(reason(e))}`));
-          console.log(closing(`${mark("fail")} stopped ${new Date().toLocaleString("sv-SE")}`));
+        const saved = earlier.length
+          ? `# Already harvested from #${n} (the same key overwrites; keys left out stay)\n\n${earlier.map((x) => `- ${x.source_key.split("#")[1]} (${x.kind}${x.status ? ` / ${x.status}` : ""}) ${head(x.body, 200)}`).join("\n")}\n\n`
+          : "";
+        const whole = saved + text;
+        const all = parts(whole);
+        const k = flags.part ?? 1;
+        const part = all[k - 1];
+        if (part === undefined)
+          throw new Error(`#${n} has ${plural(all.length, "part")}; there is no part ${k}`);
+        console.log(plain(framed(part)));
+        // Each part is fetched again, so the version shows whether the pull request changed between parts
+        const version = sha256(whole).toString("hex").slice(0, 12);
+        console.log(
+          all.length > k
+            ? `part ${k} of ${all.length}, version ${version}. Read the next with: harvest read ${n} --part ${k + 1}`
+            : `part ${k} of ${all.length} (the last), version ${version}`,
+        );
+      },
+    }),
+    draft: draftCommand("harvest"),
+    check: buildCommand({
+      docs: { brief: "Validate a harvest record (does not touch the database)" },
+      parameters: { positional: { kind: "tuple", parameters: [DRAFT] } },
+      func: (_flags: Record<never, never>, id: string) => {
+        const r = checkHarvest(readDraft(id, "harvest"));
+        if (r.problems.length) {
+          console.error(
+            panel(
+              "sphica harvest check",
+              r.problems.map((p) => `${mark("fail")} ${p}`),
+              plural(r.problems.length, "problem"),
+            ),
+          );
           process.exitCode = 1;
           return;
         }
         console.log(
-          closing(
-            `finished ${new Date().toLocaleString("sv-SE")} / ${Math.round((Date.now() - startedAt.getTime()) / 1000)} s / succeeded ${done}${
-              failures.length ? ` / failed ${failures.join(" / ")}` : ""
-            }`,
+          panel(
+            "sphica harvest check",
+            [],
+            `${mark("ok")} valid: ${plural(r.harvest?.items.length ?? 0, "item")}`,
           ),
         );
-        if (failures.length) process.exitCode = 1;
       },
     }),
-    who: buildCommand({
-      docs: { brief: "Link GitHub handles to people (without arguments, print the directory)" },
-      parameters: {
-        flags: { me: { kind: "boolean", brief: "Mark this person as you", optional: true } },
-        positional: {
-          kind: "array",
-          parameter: {
-            parse: String,
-            brief: "A name, then GitHub handles",
-            placeholder: "name|handle",
-          },
-        },
+    save: buildCommand({
+      docs: {
+        brief:
+          "Store a harvest record for a pull request of this project (the same key overwrites) and remove its draft",
       },
-      func: async (flags: { me?: boolean }, ...args: string[]) => {
-        await withDb(args.length ? "ingest" : "reader", async (db) => {
-          if (args.length === 0) {
-            const people = await directory(db);
-            const unknown = await db
-              .selectFrom("person_identity as i")
-              .leftJoin("message as m", "m.identity_id", "i.id")
-              .select(["i.handle", (eb) => eb.fn.count("m.id").as("n")])
-              .where("i.person_id", "is", null)
-              .groupBy("i.id")
-              .orderBy((eb) => eb.fn.count("m.id"), "desc")
-              .orderBy("i.handle")
-              .limit(20)
-              .execute();
-            console.log(
-              document(
-                "sphica who",
-                undefined,
-                [
-                  people.length
-                    ? {
-                        kind: "table",
-                        head: ["name", "GitHub handles"],
-                        rows: people.map((p) => [
-                          `${p.isSelf ? "→ " : ""}${inline(p.display)}${p.isSelf ? " (you)" : ""}`,
-                          p.handles.map(inline).join(" / "),
-                        ]),
-                      }
-                    : {
-                        kind: "note",
-                        tone: "info",
-                        text: "The directory is empty. Add people with sphica who <name> <handle>...",
-                      },
-                  ...(unknown.length
-                    ? ([
-                        {
-                          kind: "table",
-                          head: ["handles not linked to anyone yet", "messages"],
-                          rows: unknown.map((u) => [inline(u.handle), `${u.n}`]),
-                        },
-                      ] as Block[])
-                    : []),
-                ],
-                people.length ? plural(people.length, "person", "people") : "directory is empty",
-              ),
-            );
-            return;
-          }
-          const [display, ...handles] = args;
-          if (!display || handles.length === 0) throw new Error("Give a name and at least one GitHub handle");
-          // Moving "you" happens in one transaction. Failing midway would leave nobody marked as you.
-          const linked = await inTransaction(db, async (trx) => {
-            if (flags.me)
-              await trx.updateTable("person").set({ is_self: 0 }).where("is_self", "=", 1).execute();
-            const pe = await trx
-              .insertInto("person")
-              .values({ display_name: display, is_self: flags.me === true ? 1 : 0 })
-              .onConflict((oc) =>
-                oc
-                  .column("display_name")
-                  .doUpdateSet({ is_self: sql<number>`max(person.is_self, excluded.is_self)` }),
-              )
-              .returning("id")
-              .executeTakeFirst();
-            return await trx
-              .updateTable("person_identity")
-              .set({ person_id: pe?.id ?? null })
-              .where("provider", "=", "github")
-              .where(
-                (eb) => eb.fn("lower", ["handle"]),
-                "in",
-                handles.map((h) => h.replace(/^@/, "").toLowerCase()),
-              )
-              .returning("handle")
-              .execute();
-          });
-          const missing = handles.filter(
-            (h) => !linked.some((l) => l.handle.toLowerCase() === h.replace(/^@/, "").toLowerCase()),
-          );
+      parameters: { flags: { cwd: CWD }, positional: { kind: "tuple", parameters: [DRAFT] } },
+      func: async (flags: { cwd?: string }, draft: string) => {
+        const r = checkHarvest(readDraft(draft, "harvest"));
+        if (!r.harvest)
+          throw new Error(`The record is not valid:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
+        const record = r.harvest;
+        const place = placeOf(flags.cwd ?? process.cwd());
+        // The pull request is read from GitHub, never taken from the record, before any write
+        const pr = await pullRequest(repositoryOf(place), record.pr);
+        await withDb("ingest", async (db) => {
+          const id = await registered(db, place);
+          const done = await saveHarvest(db, id, pr, record);
           console.log(
             panel(
-              "sphica who",
-              missing.length
+              "sphica harvest save",
+              done.kept.length
                 ? [
-                    `Handles not imported yet: ${missing.map(inline).join(" / ")} (link them again after a sync)`,
+                    `Kept from an earlier harvest (not picked this time): ${done.kept.map(inline).join(" / ")}`,
                   ]
                 : [],
-              `Added to the directory: ${inline(display)}${flags.me ? " (you)" : ""} = ${linked.map((l) => inline(l.handle)).join(" / ") || "(no handles linked)"}`,
+              saved(
+                `stored #${pr.number}: ${plural(done.written, "item")} rewritten${done.superseded ? `, ${plural(done.superseded, "decision")} superseded` : ""}${done.terms ? `, search words changed on ${plural(done.terms, "item")}` : ""}`,
+                draft,
+              ),
             ),
           );
         });
       },
     }),
+  },
+});
+
+const root = buildRouteMap({
+  docs: {
+    brief: "Keep and search past decisions and conversations",
+    fullDescription: "Database: ~/.sphica/sphica.db (created by sphica init). No credentials are needed",
+    // Usage shows only what people type. The rest are run by the trace Skill, the capture hooks, maintenance, or on doctor's advice; -H lists them
+    hideRoute: { project: true, harvest: true, trace: true, capture: true, db: true },
+  },
+  routes: {
+    project: projectRoutes,
+    harvest: harvestRoutes,
     trace: traceRoutes,
     capture: captureRoutes,
     db: dbRoutes,
@@ -1262,19 +1047,14 @@ const root = buildRouteMap({
             placeholder: "name",
             optional: true,
           },
-          sync: {
-            kind: "boolean",
-            brief: "Also import the project's GitHub history and documents now",
-            optional: true,
-          },
         },
       },
-      func: (flags: { cwd?: string; name?: string; sync?: boolean }) => init(flags),
+      func: (flags: { cwd?: string; name?: string }) => init(flags),
     }),
     doctor: buildCommand({
       docs: {
         brief:
-          "npm package and plugin versions, Node, the database and schema, and sync and recording status",
+          "npm package and plugin versions, Node, the database and schema, and harvest and recording status",
       },
       parameters: {},
       func: () => doctor(process.cwd()),

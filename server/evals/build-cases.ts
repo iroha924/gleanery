@@ -20,7 +20,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 /** Bump when a prompt or a selection rule changes */
 const BUILDER_VERSION = 2;
 const MODEL = "claude-opus-5-5";
-const QUOTA = { decision: 30, option: 25, document: 35, identifier: 20, relation: 10, message: 24 } as const;
+const QUOTA = { decision: 30, option: 25, identifier: 20, relation: 10, message: 24 } as const;
 type Type = keyof typeof QUOTA;
 
 type BuiltCase = { q: string; expect: string[]; kind: string; source: string; type: Type };
@@ -119,7 +119,7 @@ type Rec = {
   heading: string | null;
   body: string;
   reason: string | null;
-  source_item_id: number | null;
+  pull_request_id: number | null;
   decision: string | null;
 };
 
@@ -147,7 +147,7 @@ const rows: Rec[] = await db
     "k.heading",
     "k.body",
     "k.reason",
-    "k.source_item_id",
+    "k.pull_request_id",
     "d.body as decision",
   ])
   .execute();
@@ -228,10 +228,10 @@ async function knowledgePool(q: string, r: Rec, ident: string | undefined): Prom
   add(await keysOf(q));
   if (r.heading) add((await keysOf(r.heading)).slice(0, 10));
   if (ident) add((await keysOf(ident, "exact")).slice(0, 10));
-  if (r.source_item_id !== null)
+  if (r.pull_request_id !== null)
     add(
       rows
-        .filter((x) => x.source_item_id === r.source_item_id)
+        .filter((x) => x.pull_request_id === r.pull_request_id)
         .slice(0, 10)
         .map((x) => x.key),
     );
@@ -306,7 +306,7 @@ async function messageCase(m: Msg): Promise<BuiltCase | null> {
     ].join("\n"),
   );
   if (!q) return null;
-  const hits = await searchMessages(db, { question: q, projects: null, who: "me", limit: 15 });
+  const hits = await searchMessages(db, { question: q, projects: null, limit: 15 });
   const same = msgs.filter((x) => x.conversation_id === m.conversation_id).slice(0, 10);
   const ids = [...new Set([m.id, ...hits.map((h) => h.ref.slice(2)), ...same.map((x) => x.id)])];
   const bodyOf = new Map(msgs.map((x) => [x.id, x.body]));
@@ -364,10 +364,6 @@ const knowledge = [
   ...(await pick(
     "option",
     live.filter((r) => r.kind === "option" && r.status === "rejected" && long(r, 20)),
-  )),
-  ...(await pick(
-    "document",
-    live.filter((r) => r.kind === "document" && long(r, 80)),
   )),
   ...(await pick("identifier", live, identOf)),
   ...(await pick(
