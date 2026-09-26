@@ -26,7 +26,7 @@ const ALLOWED = [
     // A frozen eval question about a stored decision that names the old tool. Rewording it would change the measured question set.
     file: "server/evals/retrieval.json",
     // english-exempt: the stored question text is Japanese
-    pattern: /"q": "mitos の実行パス/,
+    pattern: /"q": "スキルからCLIを呼ぶとき、なぜ bin\/mitos のパスを直接指定するの？"/,
   },
 ];
 
