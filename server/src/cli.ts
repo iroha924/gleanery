@@ -35,6 +35,7 @@ import {
   progress,
   section,
   steps,
+  stopped,
   title,
 } from "./cli/view.ts";
 import { dbFile, inTransaction, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
@@ -929,10 +930,18 @@ const captureRoutes = buildRouteMap({
   },
 });
 
-/** Adds a heading and closing to admin.ts output lines. Failures become a block through stricli exceptionWhileRunningCommand */
+/** Adds a heading and closing to admin.ts output lines. A failure closes the heading already printed (not a second block from stricli) */
 async function boxed(head: string, fn: () => unknown): Promise<void> {
   console.log(title(head));
-  if ((await fn()) === "cancelled") {
+  let outcome: unknown;
+  try {
+    outcome = await fn();
+  } catch (e) {
+    console.log(stopped(plain(reason(e))));
+    process.exitCode = 1;
+    return;
+  }
+  if (outcome === "cancelled") {
     console.log(closing(`${mark("fail")} Stopped`));
     process.exitCode = 1;
     return;

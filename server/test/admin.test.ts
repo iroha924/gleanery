@@ -252,6 +252,20 @@ test("db migrate without --yes outside a terminal stops before asking", async ()
   assert.equal(inspect(file).revision, SCHEMA_REVISION);
 });
 
+// A failure inside a boxed command closes the heading it already printed, instead of opening a second one
+test("a boxed command that fails prints its heading once and closes with Stopped", () => {
+  const home = tmp();
+  const r = spawnSync(process.execPath, [CLI, "db", "reindex"], {
+    env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  const out = `${r.stdout}${r.stderr}`;
+  assert.notEqual(r.status, 0, out);
+  assert.equal(out.split("\n").filter((l) => l === "sphica db reindex").length, 1, out);
+  assert.match(out, /^✗ Stopped$/m, out);
+});
+
 /** Writes migrations numbered from current + 1 into dir. */
 function writeMigrations(dir: string, bodies: string[]): string[] {
   fs.mkdirSync(dir, { recursive: true });

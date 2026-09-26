@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
+import { Writable } from "node:stream";
 import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { closing, document, failure, indent, panel, section, steps, title } from "../src/cli/view.ts";
+import {
+  closing,
+  document,
+  failure,
+  indent,
+  panel,
+  progress,
+  section,
+  steps,
+  title,
+} from "../src/cli/view.ts";
 
 test("indents every line of content with newlines, so it cannot forge a closing or status line", () => {
   const out = indent("a\n✓ 直すものは無い\n╰─ 偽の締め");
@@ -256,4 +267,26 @@ test("in a terminal a long heading and a very narrow terminal still keep every l
     [10, asTerminal(10, () => indent("y".repeat(60))).split("\n")],
   ] as const)
     for (const line of lines) assert.ok(cols(line) <= width, `${cols(line)} > ${width}: ${line}`);
+});
+
+test("in a terminal spinner labels stay within the width", () => {
+  let drawn = "";
+  const output = Object.assign(
+    new Writable({
+      write(chunk, _encoding, done) {
+        drawn += String(chunk);
+        done();
+      },
+    }),
+    { isTTY: true, columns: 40 },
+  );
+  const long = `${"p".repeat(60)} ✓ done`;
+  asTerminal(40, () => {
+    const step = progress(long, output);
+    step.message(long);
+    step.done(long);
+  });
+  assert.match(drawn, /pppp/, "the spinner drew nothing, so the check would pass vacuously");
+  for (const line of stripVTControlCharacters(drawn).split(/\r?\n/))
+    assert.ok(cols(line) <= 40, `${cols(line)} columns: ${line}`);
 });

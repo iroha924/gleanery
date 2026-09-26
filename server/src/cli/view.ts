@@ -105,18 +105,23 @@ export function title(text: string, meta?: string): string {
  * A spinner for one slow step in a terminal; message updates the text while it runs. In pipes (the harvest log) nothing is drawn,
  * and callers print their result lines as before. It only moves while the step awaits (gh runs asynchronously; git and SQLite block)
  */
-export function progress(label: string): {
+export function progress(
+  label: string,
+  output: Writable = process.stdout,
+): {
   message(text: string): void;
   done(text: string): void;
   fail(text: string): void;
 } {
   if (!colored()) return { message() {}, done() {}, fail() {} };
-  const s = spinner();
-  s.start(oneLine(label));
+  const s = spinner({ output });
+  // Clack writes these as they are, so they are cut to fit behind the frame symbol (3 columns)
+  const fit = (t: string) => cut(oneLine(t), columns() - GUIDE);
+  s.start(fit(label));
   return {
-    message: (t) => s.message(oneLine(t)),
-    done: (t) => s.stop(oneLine(t)),
-    fail: (t) => s.error(oneLine(t)),
+    message: (t) => s.message(fit(t)),
+    done: (t) => s.stop(fit(t)),
+    fail: (t) => s.error(fit(t)),
   };
 }
 
@@ -168,17 +173,19 @@ export function document(head: string, meta: string | undefined, blocks: Block[]
 
 /** A failure document. Terminals show the reason as a Clack error and close with Stopped; pipes print the indented reason and `✗ Stopped` */
 export function failure(head: string, reason: string): string {
-  if (!colored()) return [title(head), indent(reason), closing(`${mark("fail")} Stopped`)].join("\n");
+  return [title(head), stopped(reason)].join("\n");
+}
+
+/** The reason and the Stopped line that close a frame already opened with title (a failure after output has started) */
+export function stopped(reason: string): string {
+  if (!colored()) return [indent(reason), closing(`${mark("fail")} Stopped`)].join("\n");
   const lines = clean(reason).split("\n");
   const [first = "", ...rest] = lines.flatMap((l) => wrapLine(l, columns() - GUIDE));
-  return [
-    title(head),
-    capture((output) => {
-      log.error(first, { output });
-      if (rest.length) log.message(rest, { output, spacing: 0 });
-      cancel("Stopped", { output });
-    }).replace(/\n+$/, ""),
-  ].join("\n");
+  return capture((output) => {
+    log.error(first, { output });
+    if (rest.length) log.message(rest, { output, spacing: 0 });
+    cancel("Stopped", { output });
+  }).replace(/\n+$/, "");
 }
 
 const cell = (text: string) => oneLine(text).trim();
