@@ -8,7 +8,7 @@
   "work": {
     "key": "local",
     "title": "Move to a setup that runs entirely on the local machine",
-    "goal": "Drop the cloud dependencies, look records up from the CLI and MCP only, and read a local SQLite file",
+    "goal": "Drop the cloud dependencies, look records up through MCP only, and read a local SQLite file",
     "current": "Finished the server side and the CLI, and ran them against a local database",
     "next": [
       "Move distribution to npm",
@@ -47,11 +47,11 @@
       "kind": "decision",
       "status": "accepted",
       "at": "2026-09-20T12:30:00+09:00",
-      "text": "Look records up through the CLI and MCP, with no listening server",
+      "text": "Look records up through MCP (recall and read), with no listening server",
       "context": "A localhost server can be hit from other pages open in a browser. Opening no port is smaller than keeping a boundary to defend",
       "options": [
         {
-          "text": "the CLI and MCP",
+          "text": "MCP tools over stdio",
           "chosen": true
         },
         {
