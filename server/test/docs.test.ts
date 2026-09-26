@@ -328,7 +328,7 @@ test("splits at headings with CRLF and a BOM", () => {
   );
 });
 
-// Sections drop heading-only sections, so joining them does not restore the original. The screen shows the body as read.
+// Sections drop heading-only sections, so joining them does not restore the original. read shows the body as imported.
 test("the original text matches the body, including heading-only sections, code fences, and trailing newlines", () => {
   const body = "# 題\n\n## 見出しだけ\n### 子\n\n```sh\n# コメント\n```\n\n末尾\n\n";
   const [doc] = projectDocs(new Map([["docs/a.md", body]]), new Map());

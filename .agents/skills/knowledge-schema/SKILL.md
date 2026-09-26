@@ -73,7 +73,7 @@ imports and connection function calls in other files. Name variables holding a n
 | Nesting a list of children in one row | `jsonArrayFrom` / `jsonObjectFrom` from `kysely/helpers/sqlite`. Add the column names to `JSON_COLUMNS` in `db.ts` (otherwise they come back as strings) |
 | JSON column values | On read, `ParseJSONResultsPlugin` turns only the `JSON_COLUMNS` columns back into values. **Narrow it by name** (the default check turns even body text starting with `[` or `{` into arrays). On write, pass `JSON.stringify` output |
 | Word search | Join the FTS5 table as a subquery in a `sql` template (`knowledgeFts` in `search.ts`). Build the query with `ftsQuery` in `text.ts` |
-| Times | Strings (ISO 8601, UTC, to the millisecond). Lexical order is time order. Convert with `new Date()` at the boundary to the screen and MCP |
+| Times | Strings (ISO 8601, UTC, to the millisecond). Lexical order is time order. Convert with `new Date()` at the boundary to the CLI and MCP |
 | Booleans | `integer` 0/1. node:sqlite cannot bind booleans |
 | BLOBs | Come back as Buffer on read (the adapter converts from Uint8Array). Compare `content_hash` with `.equals` |
 | Matching against an array | kysely's `in` is fine (SQLite accepts an empty `in ()`) |

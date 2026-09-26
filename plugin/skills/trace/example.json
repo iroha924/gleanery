@@ -89,12 +89,12 @@
       "text": "Dropped pgtyped for typing SQL. It cannot handle search queries whose conditions are built at run time, and its docs state query composition is unsupported"
     },
     {
-      "key": "search-check",
+      "key": "listener-check",
       "kind": "verification",
       "status": "passed",
       "at": "2026-09-20T13:20:00+09:00",
-      "text": "sphica doctor reads the database and nothing listens on a port",
-      "command": "sphica doctor",
+      "text": "no Sphica process listens on a TCP port",
+      "command": "lsof -nP -iTCP -sTCP:LISTEN | grep -i sphica",
       "verifies": "no-server"
     },
     {

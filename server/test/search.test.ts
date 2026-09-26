@@ -127,7 +127,7 @@ test("one source is capped, the dropped hits move to the back, and the count doe
   );
 });
 
-// **The cap scales with limit.** A fixed cap of 2 needs 10 sources to fill the screen list (20 hits). Without that many
+// **The cap scales with limit.** A fixed cap of 2 needs 10 sources to fill 20 hits. Without that many
 // sources, the dropped hits come back and the order ends up close to the original (measured: up to 12 from one source).
 test("the per-source cap scales with limit", () => {
   const rows = Array.from({ length: 12 }, (_, i) => hit({ ref: `a${i}` }));

@@ -20,7 +20,7 @@ export type Hit = {
   ref: string;
   kind: string;
   status: string | null;
-  /** Whether the path may be taken (do) or not (dont). Screens color labels by it. Messages are neutral */
+  /** Whether the path may be taken (do) or not (dont). Messages are neutral */
   stance: "do" | "dont" | "neutral";
   label: string;
   heading: string | null;
@@ -125,7 +125,7 @@ type KnowledgeRow = InferResult<ReturnType<typeof knowledgeBase>>[number];
 
 /**
  * Maximum rows one source may place near the top. **When sections of one file or records of one work item fill it, other angles disappear.**
- * **Scale with `limit`.** A fixed 2 needs 10 sources to fill a 20-row screen list, and without that many
+ * **Scale with `limit`.** A fixed 2 needs 10 sources to fill 20 rows, and without that many
  * the thinned rows come back and the order returns to the original (measured: up to 12 rows from one source).
  */
 const perOrigin = (limit: number): number => Math.max(2, Math.ceil(limit / 5));

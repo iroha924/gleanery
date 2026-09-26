@@ -39,7 +39,7 @@ tar xzf "$out"/*.tgz -C "$out"
 **Put both the tarball and the unpacked directory outside the repository.** Unpacking inside lets a wrongly bundled path still resolve by walking up to the parent,
 so it passes. Do not leave a `.tgz` in `plugin/` (the parent's `git add -A` picks it up).
 
-**`bun run bundle` deletes `plugin/dist` before rebuilding it, and rebuilds the screen too.** All its output is
+**`bun run bundle` deletes `plugin/dist` before rebuilding it.** All its output is
 gitignored, so `git status` shows neither a running bundle nor its output. **This cannot be detected, so
 not overlapping is the caller's responsibility** (do not hand over this review while `bun run verify` is running).
 If you suspect an overlap, count the files in the packed contents and report them without drawing a conclusion.
