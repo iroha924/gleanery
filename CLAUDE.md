@@ -12,6 +12,7 @@ mise trust && mise install  # trust mise.toml and install Node, Bun, and actionl
 bun run setup             # install dependencies and Lefthook from the pinned lockfile
 bun run verify            # lint, types, AI config, boundaries, bundle, tests, SQL reach, CLI child processes. pre-push and CI run the same
 bun run verify:ai         # static checks of CLAUDE.md, AGENTS.md, Skills, and Agents
+bun run fix               # format and apply safe lint fixes with the pinned Biome (`bunx biome` runs an unrelated npm package)
 bun run bundle            # build the MCP, CLI, and capture artifacts
 bun run cli -- dashboard  # the terminal screen. It needs a TTY, so run it only in the foreground
 ```
