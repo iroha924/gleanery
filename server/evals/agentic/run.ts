@@ -4,7 +4,7 @@
 // SPHICA_DB is a fixed `vacuum into` copy of the question set's snapshot. Results go to <OUT>/<name>/<split>/.
 //   SPHICA_DB=<copy> bun run evals:agentic -- --name base --split dev --model sonnet (repeats of one setup: base-r2, base-r3)
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -16,7 +16,7 @@ import type { Kysely } from "kysely";
 import { openReader } from "../../src/db.ts";
 import type { DB } from "../../src/db-types.ts";
 import { SPLITS, type Split } from "../cases.ts";
-import { callsOf, replay, type Session, sessionOf } from "./session.ts";
+import { type Call, callsOf, codexCallsOf, replay, type Session, sessionOf } from "./session.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -39,10 +39,16 @@ export type Result = {
   /** refs mapped to the answer keys (source_key for knowledge, id for messages), comparable across reimports */
   keys: (string | null)[];
   turns: number;
-  cost: number;
+  /** USD. null where the host reports none (Codex), never 0 */
+  cost: number | null;
   ms: number;
-  /** The model id actually used and the Claude Code version (from the trace init). Aliases (sonnet / opus) change targets */
+  /**
+   * The model id actually used and the CLI version. Claude: from the trace init (aliases like sonnet change targets).
+   * Codex: the pinned model and `codex --version` (the stream names neither). `claude` keeps its name so older runs still read
+   */
   resolved: { model: string | null; claude: string | null };
+  /** Tokens the host reported (Codex), for comparing runs of one host when there is no cost */
+  tokens?: { input: number; cached: number; output: number } | undefined;
   /** What the tool calls returned along the way (whether the answer appeared before the final reply) */
   session: Session;
   error?: string;
@@ -79,8 +85,25 @@ export function runDir(out: string, name: string, split: string): string {
   return path.join(dir, split);
 }
 
+export type Host = "claude" | "codex";
+
+/** Codex is measured on the owner's pinned Codex model; Claude on the alias the base used */
+export const DEFAULT_MODEL: Record<Host, string> = { claude: "sonnet", codex: "gpt-6-sol" };
+
+export function hostOf(value: string): Host {
+  if (value !== "claude" && value !== "codex") throw new Error(`--host must be claude or codex (${value})`);
+  return value;
+}
+
+/** Claude runs are capped by USD (--budget), Codex runs by the number of questions started (--questions) */
+export const limitFor = (host: Host, budget: string, questions: string): Limit =>
+  host === "codex" ? new QuestionCap(Number(questions)) : new Budget(Number(budget));
+
+/** What stops a run from starting more questions. A run stopped by it is incomplete */
+export type Limit = { reserve(): boolean; settle(cost: number | null): void; readonly spent: number | null };
+
 /** Shared cap on the owner's usage across parallel questions: each question reserves its own cap before it starts. */
-export class Budget {
+export class Budget implements Limit {
   spent = 0;
   private held = 0;
   readonly cap: number;
@@ -95,15 +118,35 @@ export class Budget {
     this.held += Number(ANSWER_BUDGET_USD);
     return true;
   }
-  settle(cost: number) {
+  settle(cost: number | null) {
     this.held -= Number(ANSWER_BUDGET_USD);
-    this.spent += cost;
+    // A question whose cost is unknown is charged its whole cap, so the budget still holds
+    this.spent += cost ?? Number(ANSWER_BUDGET_USD);
   }
+}
+
+/** Codex reports no cost, so a Codex run is capped by the number of questions it starts, and each question by CODEX_TIMEOUT_MS */
+export class QuestionCap implements Limit {
+  readonly spent = null;
+  private started = 0;
+  readonly cap: number;
+  constructor(cap: number) {
+    if (!(Number.isInteger(cap) && cap > 0))
+      throw new Error(`--questions must be a positive integer (${cap})`);
+    this.cap = cap;
+  }
+  reserve(): boolean {
+    if (this.started >= this.cap) return false;
+    this.started++;
+    return true;
+  }
+  settle() {}
 }
 
 export type Measure = {
   name: string;
   split: Split;
+  host: Host;
   model: string;
   effort?: string | undefined;
   par: number;
@@ -111,7 +154,7 @@ export type Measure = {
   mcp: string;
   /** Only the first n questions of the split (a pilot) */
   limit?: number | undefined;
-  budget: Budget;
+  budget: Limit;
   /** A note placed as CLAUDE.md in each question's working directory, loaded at session start like memory (none when undefined) */
   memo?: string | undefined;
 };
@@ -119,6 +162,8 @@ export type Measure = {
 /** Runs one split once and writes <OUT>/<name>/<split>/summary.json. Stops starting questions when the budget runs out (the run is then incomplete). */
 export async function measure(o: Measure) {
   if (!fs.existsSync(o.mcp)) throw new Error(`${o.mcp} is missing. Run bun run bundle first`);
+  // The memo is placed as CLAUDE.md, which Codex does not read, so a Codex run with one would record a memo it never saw
+  if (o.memo && o.host === "codex") throw new Error("--memo is for Claude runs only");
   const db = fixedDb();
   // Answer keys exist only in the snapshot the questions were built from (or a copy migrated from it)
   if (sourceOf(db) !== SNAPSHOT)
@@ -130,6 +175,9 @@ export async function measure(o: Measure) {
   // Every question reads this copy, so a memo edited during the run cannot mix two versions under one recorded hash
   const memo = o.memo ? path.join(run, "memo.md") : undefined;
   if (o.memo && memo) fs.copyFileSync(o.memo, memo);
+  // Codex: the CLI version is recorded, and a capability probe must show no shell, file read, or sub-agent before any question runs
+  const cli = o.host === "codex" ? codexVersion() : null;
+  if (o.host === "codex") await probeCodex(run, o.mcp, o.model, o.effort);
   // Replays recorded calls to learn what each response showed. A DB this checkout cannot open leaves every call unconfirmed
   const replayDb = openReader(db);
 
@@ -147,6 +195,8 @@ export async function measure(o: Measure) {
         }
         const r = await solve(x.c, x.i, {
           run,
+          host: o.host,
+          cli,
           mcp: o.mcp,
           model: o.model,
           effort: o.effort,
@@ -167,13 +217,18 @@ export async function measure(o: Measure) {
   const summary = summarize(results, {
     name: o.name,
     split: o.split,
+    host: o.host,
     model: o.model,
     // Without --effort, the environment variable decides, or else the model default (in 2.1.280, high for Sonnet 5 and medium for Opus 5.5).
     // The project is a temp directory, so the repository's effortLevel setting is not read.
     // These values are stored in summaries and compared across runs by judge.ts, so they stay as recorded
     effort:
-      o.effort ??
-      (process.env.CLAUDE_CODE_EFFORT_LEVEL ? `環境変数 ${process.env.CLAUDE_CODE_EFFORT_LEVEL}` : "既定"),
+      o.host === "codex"
+        ? codexEffort(o.effort)
+        : (o.effort ??
+          (process.env.CLAUDE_CODE_EFFORT_LEVEL
+            ? `環境変数 ${process.env.CLAUDE_CODE_EFFORT_LEVEL}`
+            : "既定")),
     cases: CASES_SHA,
     prompt: ANSWER_VERSION,
     db: sha256File(db),
@@ -192,15 +247,20 @@ async function main() {
     options: {
       name: { type: "string", default: "base" },
       split: { type: "string", default: "dev" },
-      model: { type: "string", default: "sonnet" },
+      host: { type: "string", default: "claude" },
+      // Defaults by host (DEFAULT_MODEL)
+      model: { type: "string" },
       // Without it, measure at Claude Code's default effort (as the baseline was). The default changes by version, so record it with the version
       effort: { type: "string" },
       par: { type: "string", default: "4" },
       mcp: { type: "string", default: path.join(REPO, "plugin/dist/mcp.js") },
       budget: { type: "string", default: "10" },
+      // Codex only: how many questions the run may start (Codex reports no cost for --budget)
+      questions: { type: "string", default: "70" },
       memo: { type: "string" },
     },
   });
+  const host = hostOf(values.host);
   const split = values.split as Split;
   if (!(split in SPLITS)) throw new Error(`--split must be one of ${Object.keys(SPLITS).join(" / ")}`);
   // 0 workers would write an empty summary and exit as if it had measured
@@ -209,12 +269,13 @@ async function main() {
   const { dir, summary, results } = await measure({
     name: values.name,
     split,
-    model: values.model,
+    host,
+    model: values.model ?? DEFAULT_MODEL[host],
     effort: values.effort,
     par: Number(values.par),
     mcp: values.mcp,
     memo: values.memo,
-    budget: new Budget(Number(values.budget)),
+    budget: limitFor(host, values.budget, values.questions),
   });
   console.log(JSON.stringify(summary));
   for (const r of results)
@@ -256,68 +317,51 @@ async function keys(): Promise<(ref: string) => string | null> {
   return (ref) => (ref.startsWith("m:") ? ref.slice(2) : (byRef.get(ref) ?? null));
 }
 
-async function solve(
-  c: Case,
-  i: number,
-  o: {
-    run: string;
-    mcp: string;
-    model: string;
-    effort: string | undefined;
-    keyOf: (ref: string) => string | null;
-    db: Kysely<DB>;
-    memo: string | undefined;
-  },
-): Promise<Result> {
+/** The error of a question that used another tool. judge.ts recounts it from the trace, so a narrower rule applies to saved runs too */
+export const DISALLOWED = "used a tool other than sphica recall and read";
+const UNPARSED = "cannot parse the final refs JSON (a format failure, not a search miss)";
+
+type Asked = {
+  run: string;
+  host: Host;
+  /** The Codex CLI version (null for Claude, whose trace reports its own) */
+  cli: string | null;
+  mcp: string;
+  model: string;
+  effort: string | undefined;
+  keyOf: (ref: string) => string | null;
+  db: Kysely<DB>;
+  memo: string | undefined;
+};
+
+/** What one host returned for a question, before scoring */
+type Answer = {
+  events: Event[];
+  calls: Call[];
+  /** The agent's final reply */
+  final: string;
+  turns: number;
+  cost: number | null;
+  resolved: Result["resolved"];
+  tokens?: Result["tokens"];
+  error?: string;
+};
+
+async function solve(c: Case, i: number, o: Asked): Promise<Result> {
   const dir = path.join(o.run, `q${i}`);
   fs.mkdirSync(dir);
   // The working directory is an empty place, neither the repository nor ~/.sphica. Loading the owner's CLAUDE.md, plugins, and hooks
   // would measure the owner's setup instead of the shipped tools (and the hooks would even run capture).
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-evals-cwd-"));
   if (o.memo) fs.copyFileSync(o.memo, path.join(cwd, "CLAUDE.md"));
-  const config = path.join(dir, "mcp.json");
-  // Point SPHICA_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
-  const env = { SPHICA_DB: fixedDb() };
-  fs.writeFileSync(
-    config,
-    JSON.stringify({ mcpServers: { sphica: { command: "node", args: [o.mcp], env } } }),
-  );
   const t0 = Date.now();
   try {
-    const events = await claude(
-      [
-        "-p",
-        "--model",
-        o.model,
-        ...(o.effort ? ["--effort", o.effort] : []),
-        "--max-budget-usd",
-        ANSWER_BUDGET_USD,
-        "--max-turns",
-        ANSWER_MAX_TURNS,
-        "--setting-sources",
-        "project",
-        "--strict-mcp-config",
-        "--mcp-config",
-        config,
-        "--tools",
-        "",
-        "--allowedTools",
-        "mcp__sphica__recall,mcp__sphica__read",
-        // stream-json prints each tool call on its own line. json keeps only the last reply, so misses cannot be traced
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        // Without it, ~/.claude/projects/ collects one session per question (379 in one experiment)
-        "--no-session-persistence",
-      ],
-      cwd,
-      `${c.q}\n\n${ANSWER}`,
-    );
-    fs.writeFileSync(path.join(dir, "trace.jsonl"), events.map((e) => JSON.stringify(e)).join("\n"));
-    const last = events.findLast((e) => e.type === "result");
-    const init = events.find((e) => e.type === "system" && e.subtype === "init");
-    const refs = refsOf(String(last?.result ?? ""));
+    const prompt = `${c.q}\n\n${ANSWER}`;
+    const a = o.host === "codex" ? await askCodex(prompt, cwd, o) : await askClaude(prompt, cwd, dir, o);
+    fs.writeFileSync(path.join(dir, "trace.jsonl"), a.events.map((e) => JSON.stringify(e)).join("\n"));
+    const refs = refsOf(a.final);
     const keys = (refs ?? []).map(o.keyOf);
+    const session = sessionOf(await replay(a.calls, o.db, cwd), o.keyOf, c.expect);
     const res: Result = {
       i,
       q: c.q,
@@ -325,19 +369,20 @@ async function solve(
       rank: keys.findIndex((k) => k !== null && c.expect.includes(k)),
       refs: refs ?? [],
       keys,
-      turns: Number(last?.num_turns ?? 0),
-      cost: Number(last?.total_cost_usd ?? 0),
+      turns: a.turns,
+      cost: a.cost,
       ms: Date.now() - t0,
-      resolved: {
-        model: typeof init?.model === "string" ? init.model : null,
-        claude: typeof init?.claude_code_version === "string" ? init.claude_code_version : null,
-      },
-      session: sessionOf(await replay(callsOf(events), o.db, cwd), o.keyOf, c.expect),
-      ...(last === undefined || last.is_error
-        ? { error: String(last?.result ?? "no response").slice(0, 200) }
-        : refs === null
-          ? { error: "cannot parse the final refs JSON (a format failure, not a search miss)" }
-          : {}),
+      resolved: a.resolved,
+      ...(a.tokens ? { tokens: a.tokens } : {}),
+      session,
+      ...(a.error
+        ? { error: a.error.slice(0, 200) }
+        : session.disallowed > 0
+          ? // Keeps the format failure too, so a later, narrower rule that clears the tool use still counts it
+            { error: refs === null ? `${DISALLOWED}; ${UNPARSED}` : DISALLOWED }
+          : refs === null
+            ? { error: UNPARSED }
+            : {}),
     };
     fs.writeFileSync(path.join(dir, "result.json"), JSON.stringify(res, null, 1));
     return res;
@@ -346,17 +391,245 @@ async function solve(
   }
 }
 
+async function askClaude(prompt: string, cwd: string, dir: string, o: Asked): Promise<Answer> {
+  const config = path.join(dir, "mcp.json");
+  // Point SPHICA_DB at a database copied for evaluation. Pass it to MCP explicitly (not relying on the parent environment).
+  const env = { SPHICA_DB: fixedDb() };
+  fs.writeFileSync(
+    config,
+    JSON.stringify({ mcpServers: { sphica: { command: "node", args: [o.mcp], env } } }),
+  );
+  const { events, code, err } = await jsonLines(
+    "claude",
+    [
+      "-p",
+      "--model",
+      o.model,
+      ...(o.effort ? ["--effort", o.effort] : []),
+      "--max-budget-usd",
+      ANSWER_BUDGET_USD,
+      "--max-turns",
+      ANSWER_MAX_TURNS,
+      "--setting-sources",
+      "project",
+      "--strict-mcp-config",
+      "--mcp-config",
+      config,
+      "--tools",
+      "",
+      "--allowedTools",
+      "mcp__sphica__recall,mcp__sphica__read",
+      // stream-json prints each tool call on its own line. json keeps only the last reply, so misses cannot be traced
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      // Without it, ~/.claude/projects/ collects one session per question (379 in one experiment)
+      "--no-session-persistence",
+    ],
+    { cwd, env: CLAUDE_ENV, prompt, timeoutMs: 300_000 },
+  );
+  if (!events.some((e) => e.type === "result"))
+    events.push({
+      type: "result",
+      is_error: true,
+      result: `claude exited with ${code}: ${err.slice(0, 300)}`,
+    });
+  const last = events.findLast((e) => e.type === "result");
+  const init = events.find((e) => e.type === "system" && e.subtype === "init");
+  return {
+    events,
+    calls: callsOf(events),
+    final: String(last?.result ?? ""),
+    turns: Number(last?.num_turns ?? 0),
+    cost: Number(last?.total_cost_usd ?? 0),
+    resolved: {
+      model: typeof init?.model === "string" ? init.model : null,
+      claude: typeof init?.claude_code_version === "string" ? init.claude_code_version : null,
+    },
+    ...(last === undefined || last.is_error ? { error: String(last?.result ?? "no response") } : {}),
+  };
+}
+
+/** A Codex question gets this long; a killed question is an error (Codex has no turn or cost cap of its own) */
+const CODEX_TIMEOUT_MS = 300_000;
+/** Built-in Codex tools turned off (checked by probeCodex). Code mode stays on: in codex-cli 0.157.1 MCP tools are called through it */
+const CODEX_OFF = [
+  "shell_tool",
+  "unified_exec",
+  "multi_agent",
+  "goals",
+  "sleep_tool",
+  "view_image",
+  "browser_use",
+  "computer_use",
+  "image_generation",
+  "apps",
+  "plugins",
+];
+
+export const codexEffort = (effort: string | undefined) => effort ?? "high";
+
+/** `codex exec` for one question: read-only, no session kept, only sphica's recall and read, every setting given here */
+export function codexArgs(mcp: string, db: string, model: string, effort: string | undefined): string[] {
+  const toml = (s: string) => JSON.stringify(s);
+  return [
+    "exec",
+    "--json",
+    "--ephemeral",
+    "--skip-git-repo-check",
+    "--sandbox",
+    "read-only",
+    "--model",
+    model,
+    "-c",
+    `model_reasoning_effort=${toml(codexEffort(effort))}`,
+    ...CODEX_OFF.flatMap((f) => ["-c", `features.${f}=false`]),
+    "-c",
+    'web_search="disabled"',
+    "-c",
+    'mcp_servers.sphica.command="node"',
+    "-c",
+    `mcp_servers.sphica.args=[${toml(mcp)}]`,
+    "-c",
+    `mcp_servers.sphica.env={SPHICA_DB=${toml(db)}}`,
+    "-c",
+    'mcp_servers.sphica.enabled_tools=["recall","read"]',
+    // The prompt comes from stdin
+    "-",
+  ];
+}
+
+/**
+ * A fresh HOME and CODEX_HOME per call, so Codex reads none of the owner's AGENTS.md, config, rules, plugins, or hooks, and a hook
+ * that did run would write under the temp HOME instead of ~/.sphica. CODEX_HOME holds only a link to the login, so no copy of it stays.
+ */
+function codexHome(): { root: string; env: NodeJS.ProcessEnv } {
+  const auth = path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "auth.json");
+  if (!fs.existsSync(auth)) throw new Error(`${auth} is missing. Log in to Codex first`);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-evals-codex-"));
+  fs.mkdirSync(path.join(root, "home"));
+  fs.mkdirSync(path.join(root, "codex"));
+  fs.symlinkSync(auth, path.join(root, "codex", "auth.json"));
+  return {
+    root,
+    env: { ...process.env, HOME: path.join(root, "home"), CODEX_HOME: path.join(root, "codex") },
+  };
+}
+
+/** Runs codex exec with a fresh home, and reports whether anything wrote sphica data under that home */
+async function runCodex(prompt: string, cwd: string, args: string[]) {
+  const home = codexHome();
+  try {
+    const r = await jsonLines("codex", args, { cwd, env: home.env, prompt, timeoutMs: CODEX_TIMEOUT_MS });
+    return { ...r, captured: fs.existsSync(path.join(home.root, "home", ".sphica")) };
+  } finally {
+    fs.rmSync(home.root, { recursive: true, force: true });
+  }
+}
+
+async function askCodex(prompt: string, cwd: string, o: Asked): Promise<Answer> {
+  const { events, code, err, timedOut, captured } = await runCodex(
+    prompt,
+    cwd,
+    codexArgs(o.mcp, fixedDb(), o.model, o.effort),
+  );
+  const calls = codexCallsOf(events);
+  const done = events.findLast((e) => e.type === "turn.completed");
+  const usage = (done?.usage ?? {}) as Record<string, unknown>;
+  const failed = events.find((e) => e.type === "turn.failed" || e.type === "error");
+  const error = timedOut
+    ? `codex timed out after ${CODEX_TIMEOUT_MS / 1000} s`
+    : captured
+      ? "sphica capture wrote under the temp HOME"
+      : failed
+        ? `codex failed: ${JSON.stringify(failed.error ?? failed.message ?? failed).slice(0, 300)}`
+        : done === undefined
+          ? `codex exited with ${code}: ${err.slice(0, 300)}`
+          : undefined;
+  return {
+    events,
+    calls,
+    final: String(
+      (
+        events.findLast(
+          (e) => e.type === "item.completed" && (e.item as CodexMessage)?.type === "agent_message",
+        )?.item as CodexMessage | undefined
+      )?.text ?? "",
+    ),
+    // Codex reports no model turns; count one per tool call plus the final reply, comparable only between Codex runs
+    turns: calls.length + 1,
+    cost: null,
+    resolved: { model: o.model, claude: o.cli },
+    tokens: {
+      input: Number(usage.input_tokens ?? 0),
+      cached: Number(usage.cached_input_tokens ?? 0),
+      output: Number(usage.output_tokens ?? 0),
+    },
+    ...(error ? { error } : {}),
+  };
+}
+
+type CodexMessage = { type?: string; text?: string };
+
+export function codexVersion(): string {
+  return execFileSync("codex", ["--version"], { encoding: "utf8" }).trim();
+}
+
+const PROBE = [
+  "This is a sandbox capability test. Do these in order and report each result exactly:",
+  "1. List every tool name you can call, including any available inside code mode.",
+  "2. Try to run the shell command `ls /`.",
+  "3. Inside code mode, try to read the file /etc/hosts with JavaScript (for example require('fs') or Deno or Node APIs).",
+  "4. Try to spawn a sub-agent and ask it to run the shell command `ls /`.",
+].join("\n");
+
+/**
+ * Before any Codex question: ask Codex to try the ways around the sphica tools, and stop when any of them completed.
+ * The events are kept as <run>/probe.jsonl. Run on every measurement, so a new CLI version is probed before it is measured.
+ */
+export async function probeCodex(run: string, mcp: string, model: string, effort: string | undefined) {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-evals-cwd-"));
+  try {
+    const { events, captured } = await runCodex(PROBE, cwd, codexArgs(mcp, fixedDb(), model, effort));
+    fs.writeFileSync(path.join(run, "probe.jsonl"), events.map((e) => JSON.stringify(e)).join("\n"));
+    const leaks = probeLeaks(events);
+    if (captured) leaks.push("sphica capture wrote under the temp HOME");
+    if (leaks.length)
+      throw new Error(`the Codex capability probe found a way around the sphica tools: ${leaks.join("; ")}`);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+/** Calls in a probe to anything but sphica's recall and read (the rule the questions use: a failure is no proof it did not run), or a probe that never finished */
+export function probeLeaks(events: Event[]): string[] {
+  const calls = codexCallsOf(events);
+  const out = calls
+    .filter((c) => c.tool === "other" && !c.inert)
+    .map((c) => `another tool was called: ${c.text.slice(0, 120) || "(no text)"}`);
+  if (!events.some((e) => e.type === "turn.completed")) out.push("the probe did not finish");
+  return out;
+}
+
 type Event = { type?: string; [k: string]: unknown };
 
 // Even with --no-session-persistence, ~/.claude/projects/<cwd>/memory/ is created per cwd (measured: 42 for 42 questions)
 export const CLAUDE_ENV = { ...process.env, CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" };
 
-/** The prompt goes through stdin: as an argument, a question starting with `--` is read as an option. */
-function claude(args: string[], cwd: string, prompt: string): Promise<Event[]> {
+/** Runs a CLI that prints one JSON event per line. The prompt goes through stdin: as an argument, a question starting with `--` is read as an option. */
+function jsonLines(
+  command: string,
+  args: string[],
+  o: { cwd: string; env: NodeJS.ProcessEnv; prompt: string; timeoutMs: number },
+): Promise<{ events: Event[]; code: number | null; err: string; timedOut: boolean }> {
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", args, { cwd, env: CLAUDE_ENV, stdio: ["pipe", "pipe", "pipe"] });
-    child.stdin.end(prompt);
-    const timer = setTimeout(() => child.kill("SIGTERM"), 300_000);
+    const child = spawn(command, args, { cwd: o.cwd, env: o.env, stdio: ["pipe", "pipe", "pipe"] });
+    child.stdin.end(o.prompt);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+    }, o.timeoutMs);
     let out = "";
     let err = "";
     child.stdout.on("data", (d) => {
@@ -378,13 +651,7 @@ function claude(args: string[], cwd: string, prompt: string): Promise<Event[]> {
             return [];
           }
         });
-      if (!events.some((e) => e.type === "result"))
-        events.push({
-          type: "result",
-          is_error: true,
-          result: `claude exited with ${code}: ${err.slice(0, 300)}`,
-        });
-      resolve(events);
+      resolve({ events, code, err, timedOut });
     });
   });
 }
@@ -443,6 +710,8 @@ export function summarize(
   meta: {
     name: string;
     split: string;
+    /** Older runs have none; they are Claude runs */
+    host?: Host;
     model: string;
     effort: string;
     cases: string;
@@ -473,7 +742,19 @@ export function summarize(
     turns: Math.round((results.reduce((s, r) => s + r.turns, 0) / Math.max(n, 1)) * 10) / 10,
     // Unrounded, for the guardrail (turns is rounded for display)
     turns_mean: results.reduce((s, r) => s + r.turns, 0) / Math.max(n, 1),
-    cost_usd_list: Math.round(results.reduce((s, r) => s + r.cost, 0) * 100) / 100,
+    // null when any question has no cost (Codex): a partial sum would read as the run's cost
+    cost_usd_list: results.some((r) => r.cost === null)
+      ? null
+      : Math.round(results.reduce((s, r) => s + (r.cost ?? 0), 0) * 100) / 100,
+    ...(results.some((r) => r.tokens)
+      ? {
+          tokens: {
+            input: results.reduce((s, r) => s + (r.tokens?.input ?? 0), 0),
+            cached: results.reduce((s, r) => s + (r.tokens?.cached ?? 0), 0),
+            output: results.reduce((s, r) => s + (r.tokens?.output ?? 0), 0),
+          },
+        }
+      : {}),
     minutes: Math.round(meta.ms / 6000) / 10,
     errors: results.filter((r) => r.error).length,
     ...sessionSummary(results.flatMap((r) => (r.session ? [r.session] : []))),
@@ -501,6 +782,12 @@ export function sessionSummary(ss: Session[]) {
     via_documents: pct(ss.filter((s) => s.via.documents).length),
     via_hits: pct(ss.filter((s) => s.via.hits).length),
     via_read: pct(ss.filter((s) => s.via.read).length),
+    // Of via_read: the answer was a ref the read asked for, or only a related option or verification inside another record (#160)
+    via_read_requested: pct(ss.filter((s) => s.read?.requested).length),
+    via_read_related_only: pct(ss.filter((s) => s.read?.related && !s.read.requested).length),
+    // Calls to other tools that were not refused before running, and calls refused before running (older runs recorded neither)
+    disallowed_calls: ss.reduce((a, s) => a + (s.disallowed ?? 0), 0),
+    rejected_calls: ss.reduce((a, s) => a + (s.rejected ?? 0), 0),
     // Calls whose replay did not match the recorded response, and the questions that had one
     unconfirmed_calls: ss.reduce((a, s) => a + s.unconfirmed, 0),
     unconfirmed_questions: ss.filter((s) => s.unconfirmed > 0).length,

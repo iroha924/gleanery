@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { openReader } from "../../src/db.ts";
 import { cases, fixedDb, knowledgeRows, type Result, sha256File } from "./run.ts";
-import { callsOf, replay, type Session, sessionOf } from "./session.ts";
+import { callsOf, codexCallsOf, replay, type Session, sessionOf } from "./session.ts";
 
 const dirs = process.argv.slice(2);
 if (dirs.length === 0) throw new Error("pass run dirs (<OUT>/<name>/<split>)");
@@ -18,9 +18,14 @@ const keyOf = (ref: string) => (ref.startsWith("m:") ? ref.slice(2) : (byRef.get
 
 const dbHash = sha256File(file);
 for (const dir of dirs) {
-  const { results, db: used } = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8")) as {
+  const {
+    results,
+    db: used,
+    host,
+  } = JSON.parse(fs.readFileSync(path.join(dir, "summary.json"), "utf8")) as {
     results: Result[];
     db?: string;
+    host?: string;
   };
   // Refs map to answer keys through this DB, so another copy could render the same text yet map to other keys
   if (used !== dbHash) {
@@ -39,7 +44,12 @@ for (const dir of dirs) {
       .filter((l) => l.trim())
       .map((l) => JSON.parse(l));
     const init = events.find((e) => e.type === "system" && e.subtype === "init");
-    const replayed = await replay(callsOf(events), db, String(init?.cwd ?? ""));
+    // Codex calls carry their cwd in their arguments; its stream has no init event
+    const replayed = await replay(
+      host === "codex" ? codexCallsOf(events) : callsOf(events),
+      db,
+      String(init?.cwd ?? ""),
+    );
     for (const c of replayed) {
       if (c.tool === "other") continue;
       calls++;

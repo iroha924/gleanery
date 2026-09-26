@@ -3,7 +3,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
-import { Budget, fixedDb, runDir, summarize } from "../evals/agentic/run.ts";
+import {
+  Budget,
+  codexArgs,
+  fixedDb,
+  probeLeaks,
+  QuestionCap,
+  runDir,
+  summarize,
+} from "../evals/agentic/run.ts";
 import { type Conditions, ineligible, type Run, solved, verdict } from "../evals/agentic/verdict.ts";
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-evals-test-")));
@@ -147,6 +155,8 @@ const cond = (o: Partial<Conditions> = {}): Conditions => ({
   source: "d1",
   bundle: "b1",
   memo: null,
+  host: "claude",
+  violations: 0,
   complete: true,
   ungraded: 0,
   ...o,
@@ -293,4 +303,93 @@ test("a pending WAL beside the link or beside its target both refuse the copy", 
     if (saved === undefined) delete process.env.SPHICA_DB;
     else process.env.SPHICA_DB = saved;
   }
+});
+
+test("runs of two hosts, or runs whose tool use was not cleared from traces, are never compared", () => {
+  assert.deepEqual(ineligible(three(), three({ host: "codex" })), ["host differ"]);
+  assert.deepEqual(ineligible(three({ violations: null }), three()), [
+    "tool use not counted from the traces",
+  ]);
+  assert.deepEqual(ineligible(three(), [cond(), cond(), cond({ violations: 1 })]), [
+    "a run used another tool or had calls whose replay did not match",
+  ]);
+});
+
+test("a Codex run is capped by the questions it starts, and an unknown Claude cost is charged its whole cap", () => {
+  const cap = new QuestionCap(2);
+  assert.deepEqual([cap.reserve(), cap.reserve(), cap.reserve()], [true, true, false]);
+  assert.equal(cap.spent, null);
+  for (const n of [0, 1.5, Number.NaN]) assert.throws(() => new QuestionCap(n), /--questions/);
+  const b = new Budget(1);
+  assert.equal(b.reserve(), true);
+  b.settle(null);
+  assert.equal(b.spent, 0.5);
+});
+
+test("a run with a question of unknown cost reports no total cost rather than a partial one", () => {
+  const r = {
+    i: 0,
+    q: "q",
+    kind: "k",
+    rank: 0,
+    refs: [],
+    keys: [],
+    turns: 1,
+    ms: 1,
+    resolved: { model: null, claude: null },
+  };
+  const meta = { name: "n", split: "dev", model: "m", effort: "e", cases: "c", ms: 1 };
+  assert.equal(
+    summarize(
+      [
+        { ...r, cost: null },
+        { ...r, cost: 0.1 },
+      ] as never,
+      meta,
+    ).cost_usd_list,
+    null,
+  );
+  assert.equal(summarize([{ ...r, cost: 0.1 }] as never, meta).cost_usd_list, 0.1);
+});
+
+test("a Codex question runs read-only with the shell off and only sphica's recall and read", () => {
+  const args = codexArgs("/b/mcp.js", "/d/copy.db", "gpt-6-sol", undefined);
+  for (const a of [
+    "features.shell_tool=false",
+    "features.unified_exec=false",
+    "features.multi_agent=false",
+    'web_search="disabled"',
+    'mcp_servers.sphica.enabled_tools=["recall","read"]',
+    'mcp_servers.sphica.env={SPHICA_DB="/d/copy.db"}',
+    'model_reasoning_effort="high"',
+  ])
+    assert.ok(args.includes(a), a);
+  assert.deepEqual(args.slice(args.indexOf("--sandbox"), args.indexOf("--sandbox") + 2), [
+    "--sandbox",
+    "read-only",
+  ]);
+  assert.equal(args.at(-1), "-");
+});
+
+test("the Codex probe fails on any other tool that completed, or when it never finished", () => {
+  const done = { type: "turn.completed", usage: {} };
+  const ran = { type: "item.completed", item: { type: "command_execution", status: "completed" } };
+  const refused = { type: "item.completed", item: { type: "command_execution", status: "failed" } };
+  // A failed item is no proof that it did not run (a shell command that exited nonzero fails too)
+  assert.equal(probeLeaks([refused, done]).length, 1);
+  assert.equal(probeLeaks([ran, done]).length, 1);
+  const listed = {
+    type: "item.completed",
+    item: {
+      type: "mcp_tool_call",
+      server: "codex",
+      tool: "list_mcp_resources",
+      arguments: {},
+      status: "completed",
+      result: { content: [{ type: "text", text: '{"resources":[]}' }] },
+    },
+  };
+  assert.deepEqual(probeLeaks([listed, done]), []);
+  assert.deepEqual(probeLeaks([done]), []);
+  assert.ok(probeLeaks([]).includes("the probe did not finish"));
 });

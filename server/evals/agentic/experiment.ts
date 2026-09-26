@@ -2,6 +2,7 @@
 // One experiment: bundle a git ref, pilot 10 questions, run a split 3 times, judge, apply the adoption rule, append to <OUT>/ledger.jsonl.
 // Measure the base first (--name base); later experiments reuse its runs. Steps: .claude/rules/evals.md
 //   SPHICA_DB=<copy> bun run evals:experiment -- --name k1 --ref <git ref> [--base base] [--split dev] [--budget 10]
+//   Codex: add --host codex (and a Codex base, e.g. --base codex-base); --questions caps the questions a run starts instead of --budget
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -9,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { SPLITS, type Split } from "../cases.ts";
-import { Budget, measure, OUT, type Result, runDir, sha256File } from "./run.ts";
+import { DEFAULT_MODEL, hostOf, limitFor, measure, OUT, type Result, runDir, sha256File } from "./run.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "../../..");
@@ -22,7 +23,11 @@ const { values } = parseArgs({
     base: { type: "string", default: "base" },
     split: { type: "string", default: "dev" },
     budget: { type: "string", default: "10" },
-    model: { type: "string", default: "sonnet" },
+    // The pilot's 10 and three runs of up to 61 questions share it
+    questions: { type: "string", default: "200" },
+    host: { type: "string", default: "claude" },
+    // Defaults by host (DEFAULT_MODEL)
+    model: { type: "string" },
     effort: { type: "string" },
     par: { type: "string", default: "4" },
     // A memory-like note loaded at session start (run.ts places it as CLAUDE.md)
@@ -40,7 +45,9 @@ if (!Number.isInteger(Number(values.par)) || Number(values.par) < 1)
   throw new Error(`--par must be a positive integer (${values.par})`);
 // Repeats are stored as <name>-r2 and <name>-r3, so such a name would overwrite another setup's runs
 if (/-r\d+$/.test(name)) throw new Error(`--name must not end in -r<n> (${name})`);
-const budget = new Budget(Number(values.budget));
+const host = hostOf(values.host);
+// One cap across the pilot and the three runs
+const budget = limitFor(host, values.budget, values.questions);
 const RUNS = 3;
 const dirsOf = (config: string) =>
   Array.from({ length: RUNS }, (_, n) =>
@@ -52,6 +59,14 @@ const complete = (d: string) =>
   false;
 if (name !== values.base && dirsOf(values.base).filter(complete).length !== RUNS)
   throw new Error(`--base ${values.base} has no complete ${RUNS} runs on ${split}. Measure it first`);
+// A base of the other host would be paid for in full and then never compared (for Codex, pass --base codex-base or the like)
+if (name !== values.base)
+  for (const d of dirsOf(values.base)) {
+    const h =
+      (JSON.parse(fs.readFileSync(path.join(d, "summary.json"), "utf8")) as { host?: string }).host ??
+      "claude";
+    if (h !== host) throw new Error(`--base ${values.base} was measured on ${h}, not ${host}`);
+  }
 
 /**
  * Bundles the MCP server of a git ref in its own worktree (bundle.mjs rewrites plugin/dist, so the working tree is never touched)
@@ -100,7 +115,8 @@ const log = (entry: object) => {
 const { mcp, commit } = bundle(values.ref);
 const common = {
   split,
-  model: values.model,
+  host,
+  model: values.model ?? DEFAULT_MODEL[host],
   effort: values.effort,
   par: Number(values.par),
   mcp,
@@ -115,13 +131,14 @@ const pilot = await measure({
   name: `${name}-pilot`,
   limit: 10,
 });
-const broken = pilot.results.filter((r) => r.error);
+// A call whose replay did not match makes every later run ineligible, so the pilot stops on it too
+const broken = pilot.results.filter((r) => r.error || r.session.unconfirmed > 0);
 if (broken.length) {
   log({
     commit,
     bundle: sha256File(mcp),
     stopped: "pilot",
-    errors: broken.map((r) => `q${r.i}: ${r.error}`),
+    errors: broken.map((r) => `q${r.i}: ${r.error ?? `${r.session.unconfirmed} unconfirmed calls`}`),
   });
   throw new Error(`pilot failed on ${broken.length} of ${pilot.results.length} questions (see ${pilot.dir})`);
 }
@@ -158,7 +175,9 @@ if (name !== values.base) {
   );
   verdicts = JSON.parse(fs.readFileSync(out, "utf8"));
   if (!Array.isArray(verdicts) || verdicts.length === 0)
-    throw new Error(`no verdict against ${values.base}: its runs and ${name}'s differ in split or model`);
+    throw new Error(
+      `no verdict against ${values.base}: its runs and ${name}'s differ in split, host, or model`,
+    );
 }
 
 log({
@@ -166,8 +185,10 @@ log({
   bundle: sha256File(mcp),
   split,
   runs: runs.map((r) => ({ dir: r.dir, summary: r.summary })),
-  spent: Math.round(budget.spent * 100) / 100,
+  spent: budget.spent === null ? null : Math.round(budget.spent * 100) / 100,
   verdicts,
   misses,
 });
-console.log(`spent $${budget.spent.toFixed(2)} of $${budget.cap}; ledger: ${ledger}`);
+console.log(
+  `${budget.spent === null ? "spent: not reported by Codex" : `spent $${budget.spent.toFixed(2)}`}; ledger: ${ledger}`,
+);

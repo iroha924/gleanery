@@ -13,6 +13,7 @@ import {
   CASES_SHA,
   CLAUDE_ENV,
   cases,
+  DISALLOWED,
   fixedDb,
   knowledgeRows,
   OUT,
@@ -20,6 +21,7 @@ import {
   SNAPSHOT,
   type summarize,
 } from "./run.ts";
+import { callsOf, codexCallsOf, disallowedOf } from "./session.ts";
 import { type Conditions, ineligible, type Run, verdict } from "./verdict.ts";
 
 type Grade = "direct" | "partial" | "no";
@@ -32,7 +34,16 @@ type Row = {
 };
 /** slot fingerprints a graded pair (source_key, judge model, prompt version, body). Any change triggers a new grade */
 type Top = { i: number; rank: number; key: string | null; grade?: Grade; slot?: string };
-type System = { summary: ReturnType<typeof summarize>; top: Top[] };
+/**
+ * violations: questions with a call to another tool not refused before running, or a call whose replay did not match, counted from
+ * the run's saved traces (a missing trace counts as one). null for a run loaded from a baseline.json that has no count: it cannot be compared
+ */
+type System = {
+  summary: ReturnType<typeof summarize>;
+  top: Top[];
+  violations?: number | null;
+  errors?: number;
+};
 type Baseline = {
   cases: string;
   runs: System[];
@@ -52,7 +63,7 @@ const { values, positionals } = parseArgs({
     // A model id, not an alias: cached grades are keyed by it, and an alias would mix grades of two models
     model: { type: "string", default: "claude-opus-5-5" },
     par: { type: "string", default: "4" },
-    // The setup (name without -rN) every other setup of the same split and model is judged against
+    // The setup (name without -rN) every other setup of the same split, host, and model is judged against
     base: { type: "string" },
     // Writes the verdicts as JSON (the experiment command reads it)
     json: { type: "string" },
@@ -134,9 +145,43 @@ for (const src of positionals) {
       results.reduce((a, r) => a + r.session.bytes / 1024, 0) / Math.max(results.length, 1);
   if (summary.cases !== CASES_SHA)
     throw new Error(`${src} was measured with a different retrieval.json and cannot be compared`);
-  systems.push({ summary, top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })) });
+  systems.push({
+    summary,
+    top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })),
+    ...recount(src, summary.host ?? "claude", results),
+  });
 }
 const questions = [...new Set(systems.flatMap((s) => s.top.map((t) => t.i)))].sort((a, b) => a - b);
+
+/**
+ * Recounts, from each question's saved trace, the questions that used another tool (the rule in session.ts, so a later, narrower rule
+ * also applies to saved runs) and the question errors that follow. A missing trace counts as a violation, so no run is cleared
+ * without its traces. Unconfirmed calls come from the replay made when the run was measured.
+ */
+function recount(dir: string, host: string, results: Result[]): { violations: number; errors: number } {
+  let violations = 0;
+  let errors = 0;
+  for (const r of results) {
+    const trace = path.join(dir, `q${r.i}`, "trace.jsonl");
+    const events = fs.existsSync(trace)
+      ? fs
+          .readFileSync(trace, "utf8")
+          .split("\n")
+          .filter((l) => l.trim())
+          .map((l) => JSON.parse(l) as { type?: string; [k: string]: unknown })
+      : null;
+    const calls = events === null ? [] : host === "codex" ? codexCallsOf(events) : callsOf(events);
+    const used = events === null ? 1 : disallowedOf(calls);
+    // A sphica call that never finished has no response to replay, whatever a run saved before it was recognized
+    // A result without session metrics was never replayed, so what it showed is unknown
+    if (!r.session || r.session.unconfirmed > 0 || used > 0 || calls.some((c) => c.unfinished)) violations++;
+    // A question failed only for its tool use is an error only while the tool use still counts
+    if (used > 0 || (r.error !== undefined && r.error !== DISALLOWED)) errors++;
+  }
+  return { violations, errors };
+}
+
+const hostOf = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).host ?? "claude";
 
 async function judge(i: number) {
   const c = cases[i];
@@ -266,17 +311,18 @@ const rowsOut = runs.map((s) => {
 });
 console.table(rowsOut);
 
-// Even the same setup moves 7 of 42 questions per run (measured 2026-09-23). The gate compares means per setup (name without -rN), split, and model
+// Even the same setup moves 7 of 42 questions per run (measured 2026-09-23). The gate compares means per setup (name without -rN), split, host, and model
 const configOf = (s: System) => s.summary.name.replace(/-r\d+$/, "");
 const groups = Map.groupBy(
   runs,
-  (s) => `${origin.get(s)} ${configOf(s)} ${s.summary.split} ${s.summary.model}`,
+  (s) => `${origin.get(s)} ${configOf(s)} ${s.summary.split} ${hostOf(s)} ${s.summary.model}`,
 );
 const mean = (xs: number[]) => Math.round((xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1)) * 10) / 10;
 const means = [...groups].map(([name, ss]) => ({
   name,
   config: ss[0] ? configOf(ss[0]) : "",
   split: ss[0]?.summary.split,
+  host: ss[0] ? hostOf(ss[0]) : "",
   model: ss[0]?.summary.model,
   runs: ss.length,
   top1: mean(ss.map((s) => s.summary.top1)),
@@ -303,7 +349,7 @@ const conditionOf = (s: System) => {
   const x = s.summary as Partial<ReturnType<typeof summarize>>;
   return `model ${(x.resolved_models ?? ["not recorded"]).join(", ")} / Claude Code ${(x.claude_code ?? ["not recorded"]).join(", ")} / effort ${x.effort ?? "not recorded"}`;
 };
-for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`)) {
+for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${hostOf(s)} ${s.summary.model}`)) {
   const seen = [...new Set(ss.map(conditionOf))];
   if (seen.length > 1)
     console.log(
@@ -330,7 +376,7 @@ if (values.base) {
       direct: pct(s.top.filter((t) => t.grade === "direct").length, s.top.length),
       turns: x.turns_mean ?? s.summary.turns,
       toolKib: x.tool_kib_mean ?? x.tool_kib ?? null,
-      errors: s.summary.errors,
+      errors: s.errors ?? s.summary.errors,
     };
   };
   const x = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).db;
@@ -347,12 +393,14 @@ if (values.base) {
       source: y.source ?? null,
       bundle: y.bundle ?? null,
       memo: y.memo ?? null,
+      host: hostOf(s),
+      violations: s.violations ?? null,
       // Runs from before this field count as complete (their question lists were never cut)
       complete: y.complete ?? true,
       ungraded: s.top.filter((t) => t.key !== null && byKey.has(t.key) && !gradeOf(t.i, t.key)).length,
     };
   };
-  const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`);
+  const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${hostOf(s)} ${s.summary.model}`);
   for (const [key, ss] of bySplit) {
     const base = ss.filter((s) => configOf(s) === values.base);
     if (base.length === 0) continue;
