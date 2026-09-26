@@ -38,21 +38,36 @@ export function newDraft(kind: DraftKind, root: string = draftRoot()): { id: str
 
 /** Reads the record of a draft this CLI issued. Links, directories, and oversized files are refused. */
 export function readDraft(id: string, kind: DraftKind, root: string = draftRoot()): unknown {
+  if (fs.lstatSync(root, { throwIfNoEntry: false })?.isSymbolicLink()) throw new Error(`${root} is a link`);
   const dir = path.join(root, draftId(id));
   const d = fs.lstatSync(dir, { throwIfNoEntry: false });
   if (!d?.isDirectory())
     throw new Error(`No draft ${id}. Run draft again and write the record to the path it prints`);
   const file = fileOf(root, id, kind);
-  const f = fs.lstatSync(file, { throwIfNoEntry: false });
-  if (!f) throw new Error(`Draft ${id} has no record yet. Write it to ${file}`);
-  if (!f.isFile()) throw new Error(`${file} is not a regular file`);
-  if (f.size > DRAFT_BYTES)
-    throw new Error(`The record is ${f.size} bytes, over the ${DRAFT_BYTES}-byte limit`);
-  const text = fs.readFileSync(file, "utf8");
+  if (!fs.lstatSync(file, { throwIfNoEntry: false }))
+    throw new Error(`Draft ${id} has no record yet. Write it to ${file}`);
+  // Open once and judge the opened file, so it cannot be swapped for a link or a larger file in between (no O_NOFOLLOW on Windows)
+  let fd: number;
   try {
-    return JSON.parse(text);
+    fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
   } catch (e) {
-    throw new Error(`${file} is not JSON: ${(e as Error).message}`);
+    throw new Error(`${file} is not a regular file (${(e as NodeJS.ErrnoException).code})`);
+  }
+  try {
+    const f = fs.fstatSync(fd);
+    if (!f.isFile() || fs.lstatSync(file).isSymbolicLink()) throw new Error(`${file} is not a regular file`);
+    if (f.size > DRAFT_BYTES)
+      throw new Error(`The record is ${f.size} bytes, over the ${DRAFT_BYTES}-byte limit`);
+    const buf = Buffer.alloc(DRAFT_BYTES + 1);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    if (n > DRAFT_BYTES) throw new Error(`The record is over the ${DRAFT_BYTES}-byte limit`);
+    try {
+      return JSON.parse(buf.subarray(0, n).toString("utf8"));
+    } catch (e) {
+      throw new Error(`${file} is not JSON: ${(e as Error).message}`);
+    }
+  } finally {
+    fs.closeSync(fd);
   }
 }
 

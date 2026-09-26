@@ -43,6 +43,14 @@ test("a draft refuses ids it did not issue, links, directories, oversized files,
     assert.throws(() => readDraft(linked.id, "trace", r), /not a regular file/);
     fs.symlinkSync(outside, path.join(r, "BBBBBBBBBBBB"));
     assert.throws(() => readDraft("BBBBBBBBBBBB", "trace", r), /No draft/);
+    // The drafts directory itself pointing elsewhere is refused too
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-root-"));
+    const d = newDraft("trace", other);
+    fs.writeFileSync(d.file, "{}");
+    const rootLink = path.join(outside, "drafts");
+    fs.symlinkSync(other, rootLink);
+    assert.throws(() => readDraft(d.id, "trace", rootLink), /is a link/);
+    fs.rmSync(other, { recursive: true, force: true });
     const dir = newDraft("trace", r);
     fs.mkdirSync(dir.file);
     assert.throws(() => readDraft(dir.id, "trace", r), /not a regular file/);

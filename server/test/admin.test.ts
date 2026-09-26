@@ -551,8 +551,31 @@ test("db migrate shows the rows it would remove before asking, leaving the datab
   }
   assert.match(seen, /Would remove: project 2 rows \(3 → 1\)/);
   assert.match(lines.join("\n"), /Removed: project 2 rows \(3 → 1\)/);
-  assert.deepEqual(
-    fs.readdirSync(dir).filter((f) => !f.startsWith("sphica.db") && f !== "migrations"),
-    [],
+  // Only the database and its journal remain: the preview copy is gone
+  assert.deepEqual(leftovers(dir), []);
+});
+
+/** Files beside the database other than itself, its journal, and the migrations */
+const leftovers = (dir: string) =>
+  fs.readdirSync(dir).filter((f) => !/^sphica\.db(-wal|-shm)?$/.test(f) && f !== "migrations");
+
+test("a migration that fails in the preview stops before asking and leaves no copy behind", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "sphica.db");
+  await quiet(() => dbInit(file));
+  const migrations = path.join(dir, "migrations");
+  writeMigrations(migrations, ["insert into no_such_table values (1);\n"]);
+  let asked = false;
+  await assert.rejects(
+    quiet(() =>
+      migrate(false, file, migrations, async () => {
+        asked = true;
+        return true;
+      }),
+    ),
+    /no such table/,
   );
+  assert.equal(asked, false);
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+  assert.deepEqual(leftovers(dir), []);
 });
