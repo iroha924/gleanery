@@ -219,3 +219,31 @@ test("a line starting with a colored marker also wraps within the value column",
     for (const line of lines.slice(1)) assert.equal(unguided(line).search(/\S/), column, `${width}: ${out}`);
   }
 });
+
+// The terminal wraps a line longer than its width, and the wrapped part starts at column 0 outside the guide.
+// So no drawn line may be wider than the terminal, whatever the outside text in any part.
+test("in a terminal no line is wider than the terminal, so outside text never reaches column 0", () => {
+  const long = `${"a".repeat(37)}✓ x`;
+  const out = asTerminal(40, () =>
+    document(
+      "sphica x",
+      long,
+      [
+        {
+          kind: "table",
+          head: ["path", "kind"],
+          rows: [
+            [long, "file"],
+            ["b", long],
+          ],
+        },
+        { kind: "fields", rows: [[long, long]] },
+        { kind: "cards", items: [{ badge: "決定", title: long, body: long, meta: [long] }] },
+        { kind: "note", tone: "warning", text: long },
+        { kind: "lines", lines: [long] },
+      ],
+      `✓ done ${long}`,
+    ),
+  );
+  for (const line of out.split("\n")) assert.ok(cols(line) <= 40, `${cols(line)} columns: ${line}`);
+});

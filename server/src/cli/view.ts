@@ -93,7 +93,8 @@ function content(lines: string[], spacing = 0): string {
 export function title(text: string, meta?: string): string {
   const t = oneLine(text);
   if (!colored()) return t;
-  const room = columns() - GUIDE - stringWidth(t);
+  // The inverted heading adds a space on each side
+  const room = columns() - GUIDE - stringWidth(t) - 2;
   const extra = meta && room > 8 ? `  ${cut(oneLine(meta), room - 2)}` : "";
   return capture((output) =>
     intro(`${styleText(["inverse", "bold"], ` ${t} `)}${extra ? dim(extra) : ""}`, { output }),
@@ -135,7 +136,9 @@ export function indent(text: string): string {
 export function closing(text: string): string {
   const t = oneLine(text);
   if (!colored()) return t;
-  return capture((output) => outro(bold(t), { output }));
+  // Wrapped here, not by the terminal, so a continuation starts indented rather than at column 0
+  const lines = wrapAnsi(t, columns() - GUIDE, { hard: true, trim: true }).split("\n");
+  return capture((output) => outro(bold(lines.join(`\n${" ".repeat(GUIDE)}`)), { output }));
 }
 
 /** One block of heading, content, and closing */
@@ -210,7 +213,8 @@ function drawBlock(b: Block): string {
       };
       return capture((output) =>
         log.message(
-          rows.map((r, i) => line(r, i === 0)),
+          // Columns past the terminal width wrap here, behind the guide, instead of at the terminal's column 0
+          rows.flatMap((r, i) => wrapAnsi(line(r, i === 0), room, { hard: true, trim: false }).split("\n")),
           { output, spacing: space },
         ),
       );
@@ -262,7 +266,7 @@ function drawBlock(b: Block): string {
     }
     case "note": {
       if (!fancy) return content([cell(b.text)]);
-      const text = cell(b.text);
+      const text = wrapAnsi(cell(b.text), columns() - GUIDE, { hard: true, trim: true });
       return capture((output) => {
         const say = { info: log.info, warning: log.warn, error: log.error, success: log.success }[b.tone];
         say(text, { output });

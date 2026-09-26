@@ -4,9 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { applyMigrations, dbInit, inspect, migrate, reindex } from "../src/admin.ts";
+import { applyMigrations, askToApply, dbInit, inspect, migrate, reindex } from "../src/admin.ts";
 import { SCHEMA_REVISION } from "../src/db.ts";
 import { connectWriter } from "../src/db-write.ts";
 import { at, hash } from "./temp-db.ts";
@@ -211,6 +212,17 @@ test("db migrate applies new migrations in one transaction and bumps the version
   await quiet(() => migrate(true, file, migrations));
   assert.equal(inspect(file).revision, next);
   assert.equal(tables(), 1);
+});
+
+// A terminal whose input closes mid-question (the other end hung up) must answer no, not wait forever.
+test("the migrate confirmation answers no when its input closes", async () => {
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => {} });
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+  output.resume();
+  const answer = askToApply(input, output);
+  setTimeout(() => input.end(), 50);
+  const timeout = new Promise<string>((done) => setTimeout(() => done("still waiting"), 2000).unref());
+  assert.equal(await Promise.race([answer, timeout]), false);
 });
 
 /** Writes migrations numbered from current + 1 into dir. */

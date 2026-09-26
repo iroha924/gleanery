@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { constants as C, type DatabaseSync } from "node:sqlite";
+import type { Readable, Writable } from "node:stream";
 import { confirm, isCancel } from "@clack/prompts";
 import { dbDir } from "./assets.ts";
 import { indent } from "./cli/view.ts";
@@ -207,20 +208,41 @@ export function applyMigrations(
 export type Migrated = "applied" | "up-to-date" | "cancelled";
 
 /** Asks in the terminal. No is the default, and Esc, Ctrl-C, and a closed stdin all count as no */
-const askToApply = async (): Promise<boolean> => {
-  const answer = await confirm({ message: "Apply these migrations?", initialValue: false });
-  return !isCancel(answer) && answer;
+export const askToApply = async (
+  input: NodeJS.ReadableStream = process.stdin,
+  output: NodeJS.WritableStream = process.stdout,
+): Promise<boolean> => {
+  // Clack does not settle when its input ends, so a closed input cancels the question
+  const closed = new AbortController();
+  const stop = () => closed.abort();
+  input.once("end", stop);
+  input.once("close", stop);
+  try {
+    const answer = await confirm({
+      message: "Apply these migrations?",
+      initialValue: false,
+      input: input as Readable,
+      output: output as Writable,
+      signal: closed.signal,
+    });
+    return !isCancel(answer) && answer;
+  } finally {
+    input.off("end", stop);
+    input.off("close", stop);
+  }
 };
 
 /**
  * Applies migrations newer than the database version. See applyMigrations for how.
  * **Lists them for confirmation before applying.** Without a terminal it cannot ask, so `--yes` is required.
  */
+const defaultAsk = () => askToApply();
+
 export async function migrate(
   yes: boolean,
   file: string = dbFile(),
   dir: string = MIGRATIONS(),
-  ask: () => Promise<boolean> = askToApply,
+  ask: () => Promise<boolean> = defaultAsk,
 ): Promise<Migrated> {
   const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
   const current = withOwner(file, versionOf);
