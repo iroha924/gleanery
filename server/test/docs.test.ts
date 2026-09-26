@@ -13,6 +13,7 @@ import {
   sections,
   syncDocs,
 } from "../src/docs.ts";
+import { sha256 } from "../src/text.ts";
 import { insert, project, type TempDb, tempDb } from "./temp-db.ts";
 import { put, withRepo } from "./temp-repo.ts";
 
@@ -157,23 +158,38 @@ test("ignores uncommitted edits in the working tree and reads only committed tex
   });
 });
 
-// Keep drafts left in the old requirements and design folder out of search. A broken manifest does not stop the sync.
-test("never imports .sphica/ at any depth, and checks fast-forward by ancestry", async () => {
+// Keep drafts left in the old requirements and design folder out of search. The shipped name is held as a hash, so a stand-in
+// directory checks the matching, and the real hash is checked to leave ordinary dot-directories alone.
+test("never imports a draft directory at any depth, and checks fast-forward by ancestry", async () => {
   await withRepo((repo, git) => {
-    put(repo, ".sphica/project.json", JSON.stringify({ schema: "sphica/project/1" }));
-    put(repo, ".sphica/changes/a/change.json", "{");
-    put(repo, ".sphica/changes/a/requirements.md", "# 要件\n下書き\n");
-    put(repo, "sub/.sphica/changes/x/design.md", "# 入れ子\n下書き\n");
-    put(repo, "docs/sphica.md", "# 名前が似ているだけ\n本文\n");
+    put(repo, ".drafts/project.json", "{}");
+    put(repo, ".drafts/changes/a/requirements.md", "# 要件\n下書き\n");
+    put(repo, "sub/.drafts/changes/x/design.md", "# 入れ子\n下書き\n");
+    put(repo, "docs/.drafts.md", "# 名前が似ているだけ\n本文\n");
+    put(repo, ".sphica/notes.md", "# 下書きの場所ではない\n本文\n");
     put(repo, "README.md", "# 読んで\n本文\n");
     git("add", "-A");
     git("commit", "-qm", "a");
     const first = commitOf(repo, false);
-    assert.deepEqual(
-      collectDocs(repo, first)
+    const paths = (dirs?: string[]) =>
+      collectDocs(repo, first, undefined, dirs)
         .docs.map((d) => d.path)
-        .sort(),
-      ["README.md", "docs/sphica.md"],
+        .sort();
+    assert.deepEqual(paths([sha256(".drafts").toString("hex")]), [
+      ".sphica/notes.md",
+      "README.md",
+      "docs/.drafts.md",
+    ]);
+    assert.deepEqual(
+      paths(),
+      [
+        ".drafts/changes/a/requirements.md",
+        ".sphica/notes.md",
+        "README.md",
+        "docs/.drafts.md",
+        "sub/.drafts/changes/x/design.md",
+      ],
+      "the shipped hash matches none of these names",
     );
     put(repo, "README.md", "# x\n");
     git("add", "-A");
