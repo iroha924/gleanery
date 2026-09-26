@@ -56,12 +56,14 @@ await withTempDir(async (dir) => {
       failures.push(
         `harvest read did not print the review comment, or showed items before any save\n${read.out.slice(0, 600)}`,
       );
+    const version = /version ([0-9a-f]{12})$/m.exec(read.out)?.[1] ?? "000000000000";
     const harvestRecord = issue("harvest", dir, covDir);
     fs.writeFileSync(
       harvestRecord.file,
       JSON.stringify({
         schema: "harvest/1",
         pr: 1,
+        version,
         items: [
           {
             key: "real-db",
@@ -76,6 +78,15 @@ await withTempDir(async (dir) => {
       }),
     );
     note("harvest check", runCli(["harvest", "check", harvestRecord.id], dir, covDir, { cwd: repo }));
+    // The pull request changed after it was read (the hostile round returns another body): save refuses and writes nothing
+    const changed = runCli(["harvest", "save", harvestRecord.id], dir, covDir, {
+      cwd: repo,
+      SPHICA_FAKE_GH_ROUND: "hostile",
+    });
+    if (changed.status === 0 || !/changed since it was read/.test(changed.out))
+      failures.push(
+        `harvest save accepted a record of a pull request that changed since\n${changed.out.slice(0, 400)}`,
+      );
     const saved = note(
       "harvest save",
       runCli(["harvest", "save", harvestRecord.id], dir, covDir, { cwd: repo }),

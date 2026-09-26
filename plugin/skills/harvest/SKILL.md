@@ -60,6 +60,7 @@ do not change into the Skill's directory.
 {
   "schema": "harvest/1",
   "pr": 12,
+  "version": "3f9a0c2b71de",
   "items": [
     {
       "key": "sqlite",
@@ -82,7 +83,8 @@ do not change into the Skill's directory.
 Items take the same fields, kinds, and statuses as trace ([../trace/SKILL.md](../trace/SKILL.md), "What to store" and "Rules check enforces"),
 with these differences:
 
-- No `session` and no `work`. `pr` is the pull request number
+- No `session` and no `work`. `pr` is the pull request number, and `version` is the one `harvest read` printed on its last line.
+  save reads the pull request again and refuses the record if it changed since (a new comment, an edited body): read it again
 - `confirmation` is optional (a pull request often does not say how to check a decision; do not make one up)
 - `supersedes` and `verifies` point only at keys in this record. Decisions from sessions and other pull requests are out of reach
 - `at` is when it happened in the pull request (the time on the entry), not now

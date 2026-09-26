@@ -215,6 +215,8 @@ const harvestSchema = z
   .object({
     schema: z.literal("harvest/1"),
     pr: z.number().int().positive(),
+    /** The version harvest read printed; save refuses the record if the pull request changed since */
+    version: z.string().regex(/^[0-9a-f]{12}$/, "copy the version harvest read printed on its last line"),
     items: z.array(item).max(MAX_ITEMS),
   })
   .strict()
@@ -518,7 +520,8 @@ async function writeItems(
   }
 
   // When a decision is rewritten, its options are replaced by the input's. Even with fewer options, old ones are not kept as rejected.
-  const decisionIds = decisions.flatMap((d) => idOf.get(d.key) ?? []);
+  // A key rewritten as another kind loses the options it had as a decision.
+  const decisionIds = all.filter((r) => r.kind !== "option").flatMap((r) => idOf.get(r.key) ?? []);
   const options = new Set(all.filter((r) => r.kind === "option").map((r) => r.key));
   const stale: number[] = [];
   for (const part of chunks(decisionIds))
@@ -786,6 +789,7 @@ export async function saveHarvest(
       .where("kind", "<>", "option")
       .execute();
     const kept = before.map((b) => b.source_key).filter((k) => !now.has(k));
+    const heading = `PR #${pr.number}: ${pr.title}`;
     const done = await writeItems(
       trx,
       {
@@ -794,11 +798,18 @@ export async function saveHarvest(
         conversation: null,
         pullRequest: row.id,
         workId: null,
-        heading: `PR #${pr.number}: ${pr.title}`,
+        heading,
         termsSource: "harvest",
       },
       h.items,
     );
+    // Items this rerun left out carry the pull request's current title too
+    await trx
+      .updateTable("knowledge")
+      .set({ heading })
+      .where("pull_request_id", "=", row.id)
+      .where("heading", "is not", heading)
+      .execute();
     return { ...done, kept };
   });
 }

@@ -184,7 +184,7 @@ test("harvest check validates the record and refuses references outside it, with
       dir,
       "harvest",
       "check",
-      file("ok.json", { schema: "harvest/1", pr: 12, items: [decision({})] }),
+      file("ok.json", { schema: "harvest/1", pr: 12, version: "0123456789ab", items: [decision({})] }),
     );
     assert.equal(ok.code, 0, ok.out);
     const outside = runIn(
@@ -194,6 +194,7 @@ test("harvest check validates the record and refuses references outside it, with
       file("outside.json", {
         schema: "harvest/1",
         pr: 12,
+        version: "0123456789ab",
         items: [decision({ supersedes: "claude-code:s1#old" })],
       }),
     );
@@ -203,7 +204,12 @@ test("harvest check validates the record and refuses references outside it, with
       dir,
       "harvest",
       "check",
-      file("big.json", { schema: "harvest/1", pr: 12, items: [decision({ text: "x".repeat(1024 * 1024) })] }),
+      file("big.json", {
+        schema: "harvest/1",
+        pr: 12,
+        version: "0123456789ab",
+        items: [decision({ text: "x".repeat(1024 * 1024) })],
+      }),
     );
     assert.notEqual(big.code, 0);
     assert.match(big.out, /over the \d+-byte limit/);

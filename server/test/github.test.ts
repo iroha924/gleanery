@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Get, isFiller, LIMITS, parts, pullRequest, readPull, repoOf } from "../src/github.ts";
+import { type Get, isFiller, LIMITS, parts, readPull, repoOf } from "../src/github.ts";
 
 const pull = {
   id: 9001,
@@ -116,25 +116,23 @@ test("reads the pull request whole, in time order, without filler", async () => 
 
 // GitHub lists stop at these sizes, so a larger pull request would be harvested from part of it
 test("refuses a pull request it cannot read whole", async () => {
-  for (const over of [{ commits: LIMITS.commits + 1 }, { changed_files: LIMITS.files + 1 }]) {
-    const f = fake({ "pulls/12": { ...pull, ...over } });
-    await assert.rejects(readPull("o/r", 12, f.get), /cannot be read whole/);
-    assert.deepEqual(f.paths, ["pulls/12"], "stops before reading the lists");
-  }
+  const f = fake({ "pulls/12": { ...pull, commits: LIMITS.commits + 1 } });
+  await assert.rejects(readPull("o/r", 12, f.get), /cannot be read whole/);
+  assert.deepEqual(f.paths, ["pulls/12"], "stops before reading the lists");
+  // The file list is never read, so a pull request changing many files is read as usual
+  assert.match(
+    (await readPull("o/r", 12, fake({ "pulls/12": { ...pull, changed_files: 5000 } }).get)).text,
+    /We drop Postgres/,
+  );
   const huge = fake({ "pulls/12": { ...pull, body: "x".repeat(LIMITS.bytes) } });
   await assert.rejects(readPull("o/r", 12, huge.get), /cannot be read whole/);
 });
 
 test("reports an open pull request and one closed without merging", async () => {
-  assert.equal(
-    (await pullRequest("o/r", 12, fake({ "pulls/12": { ...pull, merged_at: null } }).get)).state,
-    "closed",
-  );
-  assert.equal(
-    (await pullRequest("o/r", 12, fake({ "pulls/12": { ...pull, merged_at: null, state: "open" } }).get))
-      .state,
-    "open",
-  );
+  const state = async (over: object) =>
+    (await readPull("o/r", 12, fake({ "pulls/12": { ...pull, ...over } }).get)).pr.state;
+  assert.equal(await state({ merged_at: null }), "closed");
+  assert.equal(await state({ merged_at: null, state: "open" }), "open");
 });
 
 test("harvest reads only GitHub repositories", () => {

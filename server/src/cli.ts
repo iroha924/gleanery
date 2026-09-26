@@ -41,7 +41,7 @@ import { dbFile, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { openWriter } from "./db-write.ts";
 import { type DraftKind, draftId, newDraft, readDraft, removeDraft } from "./draft.ts";
-import { parts, pullRequest, readPull, recentPulls, repoOf } from "./github.ts";
+import { parts, readPull, recentPulls, repoOf } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { moveProject } from "./move.ts";
 import { inline, type Mark, mark, pad, plain, width } from "./panel.ts";
@@ -58,7 +58,7 @@ import {
 import { framed, openWork, renderWork, workDetail } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
 import { bytes, head, plural, reason, sha256 } from "./text.ts";
-import { checkHarvest, checkTrace, saveHarvest, saveTrace } from "./trace.ts";
+import { checkHarvest, checkTrace, type PullRequest, saveHarvest, saveTrace } from "./trace.ts";
 
 /**
  * Heading of the error box. **Built only from the route name routing chose** (never from the typed arguments).
@@ -863,6 +863,34 @@ function repositoryOf(place: Place): string {
   return repo;
 }
 
+/**
+ * What harvest read prints, and its version: the items an earlier harvest stored (so a rerun reuses their keys), then the pull request.
+ * Each part and save fetch it again, so the version shows whether the pull request changed since it was read.
+ */
+async function material(
+  place: Place,
+  n: number,
+): Promise<{ pr: PullRequest; whole: string; version: string }> {
+  const { pr, text } = await readPull(repositoryOf(place), n);
+  const earlier = await withDb("reader", async (db) =>
+    db
+      .selectFrom("knowledge as k")
+      .innerJoin("pull_request as r", "r.id", "k.pull_request_id")
+      .select(["k.source_key", "k.kind", "k.status", "k.body"])
+      .where("r.project_id", "=", await registered(db, place))
+      .where("r.number", "=", n)
+      .where("k.kind", "<>", "option")
+      .orderBy("k.occurred_at")
+      .orderBy("k.id")
+      .execute(),
+  );
+  const saved = earlier.length
+    ? `# Already harvested from #${n} (the same key overwrites; keys left out stay)\n\n${earlier.map((x) => `- ${x.source_key.split("#")[1]} (${x.kind}${x.status ? ` / ${x.status}` : ""}) ${head(x.body, 200)}`).join("\n")}\n\n`
+    : "";
+  const whole = saved + text;
+  return { pr, whole, version: sha256(whole).toString("hex").slice(0, 12) };
+}
+
 const PR = { parse: prNumber, brief: "The pull request number", placeholder: "number" } as const;
 function prNumber(input: string): number {
   const n = Number(input.replace(/^#/, ""));
@@ -922,33 +950,13 @@ const harvestRoutes = buildRouteMap({
         positional: { kind: "tuple", parameters: [PR] },
       },
       func: async (flags: { cwd?: string; part?: number }, n: number) => {
-        const place = placeOf(flags.cwd ?? process.cwd());
-        const { text } = await readPull(repositoryOf(place), n);
-        // Items saved by an earlier harvest of this pull request come first, so a rerun reuses their keys
-        const earlier = await withDb("reader", async (db) =>
-          db
-            .selectFrom("knowledge as k")
-            .innerJoin("pull_request as r", "r.id", "k.pull_request_id")
-            .select(["k.source_key", "k.kind", "k.status", "k.body"])
-            .where("r.project_id", "=", await registered(db, place))
-            .where("r.number", "=", n)
-            .where("k.kind", "<>", "option")
-            .orderBy("k.occurred_at")
-            .orderBy("k.id")
-            .execute(),
-        );
-        const saved = earlier.length
-          ? `# Already harvested from #${n} (the same key overwrites; keys left out stay)\n\n${earlier.map((x) => `- ${x.source_key.split("#")[1]} (${x.kind}${x.status ? ` / ${x.status}` : ""}) ${head(x.body, 200)}`).join("\n")}\n\n`
-          : "";
-        const whole = saved + text;
+        const { whole, version } = await material(placeOf(flags.cwd ?? process.cwd()), n);
         const all = parts(whole);
         const k = flags.part ?? 1;
         const part = all[k - 1];
         if (part === undefined)
           throw new Error(`#${n} has ${plural(all.length, "part")}; there is no part ${k}`);
         console.log(plain(framed(part)));
-        // Each part is fetched again, so the version shows whether the pull request changed between parts
-        const version = sha256(whole).toString("hex").slice(0, 12);
         console.log(
           all.length > k
             ? `part ${k} of ${all.length}, version ${version}. Read the next with: harvest read ${n} --part ${k + 1}`
@@ -994,8 +1002,12 @@ const harvestRoutes = buildRouteMap({
           throw new Error(`The record is not valid:\n${r.problems.map((p) => `  ${p}`).join("\n")}`);
         const record = r.harvest;
         const place = placeOf(flags.cwd ?? process.cwd());
-        // The pull request is read from GitHub, never taken from the record, before any write
-        const pr = await pullRequest(repositoryOf(place), record.pr);
+        // The pull request is read from GitHub again, never taken from the record, and must be what the record was written from
+        const { pr, version } = await material(place, record.pr);
+        if (version !== record.version)
+          throw new Error(
+            `#${record.pr} changed since it was read (now version ${version}, the record has ${record.version}). Read it again with harvest read ${record.pr}`,
+          );
         await withDb("ingest", async (db) => {
           const id = await registered(db, place);
           const done = await saveHarvest(db, id, pr, record);

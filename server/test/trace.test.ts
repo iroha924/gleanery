@@ -375,7 +375,7 @@ const PR: PullRequest = {
   state: "merged",
 };
 const harvest = (items: unknown[], pr = 12): Harvest => {
-  const r = checkHarvest({ schema: "harvest/1", pr, items });
+  const r = checkHarvest({ schema: "harvest/1", pr, version: "0123456789ab", items });
   assert.deepEqual(r.problems, []);
   return r.harvest as Harvest;
 };
@@ -471,6 +471,7 @@ test("a harvest record keeps its references inside itself and needs no confirmat
   const r = checkHarvest({
     schema: "harvest/1",
     pr: 12,
+    version: "0123456789ab",
     items: [
       decision({ key: "a", confirmation: undefined, supersedes: "claude-code:s1#d-fts5" }),
       { key: "v", kind: "verification", status: "passed", at, text: "ran", verifies: "pr:11#x" },
@@ -479,5 +480,42 @@ test("a harvest record keeps its references inside itself and needs no confirmat
   assert.match(r.problems.join("\n"), /items\.0\.supersedes: .*outside this record/);
   assert.match(r.problems.join("\n"), /items\.1\.verifies: .*outside this record/);
   assert.doesNotMatch(r.problems.join("\n"), /confirmation/);
-  assert.match(checkHarvest({ schema: "harvest/1", pr: 0, items: [] }).problems.join("\n"), /pr/);
+  assert.match(
+    checkHarvest({ schema: "harvest/1", pr: 0, version: "0123456789ab", items: [] }).problems.join("\n"),
+    /pr/,
+  );
+  // Without the version harvest read printed, save could not tell whether the pull request changed since
+  assert.match(checkHarvest({ schema: "harvest/1", pr: 1, items: [] }).problems.join("\n"), /version/);
+});
+
+// A key rewritten as another kind keeps no options of the decision it was, and a renamed pull request renames every record under it
+test("harvest drops the options of a decision rewritten as another kind, and retitles items a rerun leaves out", async () => {
+  const db = tempDb();
+  try {
+    const p = project(db);
+    await saveHarvest(
+      db.ingest,
+      p,
+      PR,
+      harvest([
+        decision({ key: "sqlite", confirmation: undefined }),
+        { key: "kept", kind: "finding", at, text: "k" },
+      ]),
+    );
+    await saveHarvest(
+      db.ingest,
+      p,
+      { ...PR, title: "Keep one SQLite file" },
+      harvest([{ key: "sqlite", kind: "finding", at, text: "now a finding" }]),
+    );
+    assert.deepEqual(found(db, "select source_key, kind from knowledge order by source_key"), [
+      { source_key: "pr:12#kept", kind: "finding" },
+      { source_key: "pr:12#sqlite", kind: "finding" },
+    ]);
+    assert.deepEqual(found(db, "select distinct heading from knowledge"), [
+      { heading: "PR #12: Keep one SQLite file" },
+    ]);
+  } finally {
+    await db.done();
+  }
 });

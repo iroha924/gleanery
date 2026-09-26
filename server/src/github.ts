@@ -10,7 +10,7 @@ import type { PullRequest } from "./trace.ts";
 const run = promisify(execFile);
 
 /** Limits past which a pull request is refused rather than read in part (GitHub's REST lists stop at these, or the text is too large). */
-export const LIMITS = { commits: 250, files: 3000, bytes: 2 * 1024 * 1024, part: 64 * 1024 } as const;
+export const LIMITS = { commits: 250, bytes: 2 * 1024 * 1024, part: 64 * 1024 } as const;
 
 /** `owner/repo` for a project key on github.com, or null (harvest reads only GitHub). */
 export const repoOf = (key: string): string | null =>
@@ -43,7 +43,6 @@ type Pull = {
   created_at: string;
   user: User;
   commits: number;
-  changed_files: number;
 };
 type Comment = { id: number; body: string | null; user: User; created_at: string; html_url: string };
 type Review = {
@@ -76,12 +75,6 @@ const who = (u: User) => `@${u?.login ?? "ghost"}`;
 const stateOf = (p: Pull): PullRequest["state"] =>
   p.merged_at ? "merged" : p.state === "open" ? "open" : "closed";
 
-/** The pull request as GitHub reports it now (what the save command compares and stores). */
-export async function pullRequest(repo: string, number: number, get: Get = gh(repo)): Promise<PullRequest> {
-  const p = (await get(`pulls/${number}`)) as Pull;
-  return { number: p.number, githubId: p.id, title: p.title, url: p.html_url, state: stateOf(p) };
-}
-
 /** Recent pull requests, newest activity first, for choosing one to harvest. */
 export async function recentPulls(
   repo: string,
@@ -107,10 +100,6 @@ export async function readPull(
   if (p.commits > LIMITS.commits)
     throw new Error(
       `#${number} has ${p.commits} commits; GitHub lists only ${LIMITS.commits}, so it cannot be read whole`,
-    );
-  if (p.changed_files > LIMITS.files)
-    throw new Error(
-      `#${number} changes ${p.changed_files} files; GitHub lists only ${LIMITS.files}, so it cannot be read whole`,
     );
   const [comments, reviews, reviewComments, commits, events] = await Promise.all([
     get(`issues/${number}/comments?per_page=100`, true) as Promise<Comment[]>,
