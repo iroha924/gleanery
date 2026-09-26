@@ -519,3 +519,26 @@ test("harvest drops the options of a decision rewritten as another kind, and ret
     await db.done();
   }
 });
+
+// The title comes from GitHub, where anyone who opens a pull request writes it: it is masked like the items' text before it is stored
+test("harvest masks keys in the pull request title before storing it", async () => {
+  const db = tempDb();
+  try {
+    const p = project(db);
+    await saveHarvest(
+      db.ingest,
+      p,
+      { ...PR, title: "Rotate API_KEY=Abc123456789xyz\u0000 now" },
+      harvest([{ key: "f", kind: "finding", at, text: "t" }]),
+    );
+    const [row] = found(
+      db,
+      "select r.title, k.heading from pull_request r join knowledge k on k.pull_request_id = r.id",
+    );
+    assert.doesNotMatch(`${row?.title} ${row?.heading}`, /Abc123456789xyz/);
+    assert.ok(!`${row?.title} ${row?.heading}`.includes("\u0000"));
+    assert.match(String(row?.heading), /^PR #12: Rotate API_KEY=\[redacted\]/);
+  } finally {
+    await db.done();
+  }
+});

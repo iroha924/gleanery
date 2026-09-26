@@ -747,6 +747,8 @@ export async function saveHarvest(
 ): Promise<{ written: number; superseded: number; terms: number; kept: string[] }> {
   if (h.pr !== pr.number)
     throw new Error(`The record is for #${h.pr}, but the pull request read is #${pr.number}`);
+  // Anyone who opens a pull request writes its title, so it is masked like the items' text before it is stored
+  const title = mask(pr.title.replaceAll("\u0000", "")).trim() || `#${pr.number}`;
   return inTransaction(db, async (trx) => {
     const known = await trx
       .selectFrom("pull_request")
@@ -764,7 +766,7 @@ export async function saveHarvest(
         project_id: projectId,
         number: pr.number,
         github_id: pr.githubId,
-        title: pr.title,
+        title,
         url: pr.url,
         state: pr.state,
         harvested_at: iso(Date.now()),
@@ -789,7 +791,7 @@ export async function saveHarvest(
       .where("kind", "<>", "option")
       .execute();
     const kept = before.map((b) => b.source_key).filter((k) => !now.has(k));
-    const heading = `PR #${pr.number}: ${pr.title}`;
+    const heading = `PR #${pr.number}: ${title}`;
     const done = await writeItems(
       trx,
       {
