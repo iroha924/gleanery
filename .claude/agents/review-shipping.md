@@ -49,7 +49,7 @@ If you suspect an overlap, count the files in the packed contents and report the
 - Is anything listed in `package.json`'s `files` missing from the tarball?
 - Does `node dist/cli.js --version` run in the unpacked directory?
 - Is every bundled dependency in `THIRD_PARTY_NOTICES.md`? **Is the listed version the one actually resolved?**
-  (Real case: looking at `server` first listed `react@19.2.8`, while the screen used `19.3.0`)
+  (A nested copy of a package can differ from the one the bundle resolves)
 - Are there no credentials (`.env`, keys, tokens)?
 
 ### 2. Checks that pass vacuously

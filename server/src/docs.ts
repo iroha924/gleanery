@@ -353,7 +353,7 @@ export async function excludedOf(db: Kysely<DB>, projectId: number): Promise<Exc
  * **Only fast-forwards advance automatically.** Otherwise it fetches once more. If the stored commit has moved past the refused one,
  * another concurrent sync stored a newer commit first, so this ends without writing (a commit stored by another machine is not in
  * this clone until fetched). If not, it is a rollback, force push, or switch to a diverged branch, and it cannot tell which is right,
- * so it stops without writing (doctor and the dashboard show it; a leaked document removed by rollback is never kept silently).
+ * so it stops without writing (doctor shows it; a leaked document removed by rollback is never kept silently).
  * Only a person (reset) brings it to the current state.
  */
 export async function syncDocs(

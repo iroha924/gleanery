@@ -64,7 +64,7 @@ const rank = (hits: Hit[], expect: string[]): number =>
 
 type Strategy = (c: Case) => Promise<Hit[]>;
 
-// The same functions and order as `sphica search` and the terminal screen (without kinds, decision records come before document sections).
+// The same functions and order as `sphica search` (without kinds, decision records come before document sections).
 const strategies: Record<string, Strategy> = {
   "shipped: one-shot search (knowledge)": async (c) => {
     if (c.source === "message") return [];

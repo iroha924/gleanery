@@ -14,7 +14,6 @@ bun run verify            # lint, types, AI config, boundaries, bundle, tests, S
 bun run verify:ai         # static checks of CLAUDE.md, AGENTS.md, Skills, and Agents
 bun run fix               # format and apply safe lint fixes with the pinned Biome (`bunx biome` runs an unrelated npm package)
 bun run bundle            # build the MCP, CLI, and capture artifacts
-bun run cli -- dashboard  # the terminal screen. It needs a TTY, so run it only in the foreground
 ```
 
 Start troubleshooting with `sphica doctor`.
@@ -22,7 +21,7 @@ Start troubleshooting with `sphica doctor`.
 ## Runtime boundaries
 
 - `db/schema.sql` is the only source of truth for the DB. Do not add an ORM schema as a second source <!-- invariant: schema-single-source -->
-- MCP and the terminal screen use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
+- MCP and `sphica search` use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
   Write connections live only in `server/src/db-write.ts` (`bun run architecture` checks it)
 - Interfaces that read untrusted text (PR and issue bodies, recorded conversations) get no write access <!-- invariant: untrusted-no-write -->
 - No server that listens <!-- invariant: no-listen -->
@@ -30,19 +29,20 @@ Start troubleshooting with `sphica doctor`.
 
 ## When changing things
 
-- Check the CLI and dashboard separately from MCP. One working does not mean the other works <!-- invariant: exits-separate -->
+- Check the CLI separately from MCP. One working does not mean the other works <!-- invariant: exits-separate -->
 - When you change a value, category, or decision, find every reference with `rg` and fix the paired interface too. Add pairs you can list to a check <!-- invariant: rg-pairs -->
 - Connect a new ingestion source to `sphica harvest` too <!-- invariant: harvest -->
 - A change that goes into the package bumps npm and the 3 plugin manifests to the same version, in the same branch (PR) <!-- invariant: version-sync -->
 - Validate external input at the system boundary. Do not write credentials to tracked files, command arguments, or logs <!-- invariant: boundary-validation -->
 - What we ship runs on Windows too. Do not depend on a POSIX shell, `0600`, a fixed `/tmp`, or execFile of `.cmd` <!-- invariant: windows -->
 - Write strings and comments in new or changed code, and commit messages, in English. Translate existing Japanese text into English stage by stage, and do not translate records users saved (`bun run english` checks the English-only files) <!-- invariant: english-code -->
+- Print CLI output with the parts in `server/src/cli/view.ts` (Clack in a terminal, indented text in pipes). Only the heading and the closing line start a line, so text from outside cannot forge lines <!-- invariant: view-parts -->
+- Write hex colors only in `server/src/palette.ts` <!-- invariant: palette -->
 
 ## Skills by task
 
 Read to the end before implementing.
 
-- Terminal screen and CLI output: `tui`
 - DB schema, connection roles, full-text search index, ingestion: `knowledge-schema`
 - MCP, CLI, capture hooks, plugin distribution: `plugin-release`
 - Shipped review aspects: `plugin-agent-authoring`
@@ -63,7 +63,6 @@ The plan records the implementation plan as agreed; it is not a progress file (d
 Hand it over only after `bun run verify` passes.
 
 - `review-shipping`: before a commit that changes the package, versions, bundle inputs, or check scripts
-- `review-ui`: before a commit that changes `server/src/tui/` or `server/src/palette.ts`
 - Codex: before merging each PR. Ask by following the `codex-review` Skill
 - GitHub's Codex (ChatGPT connector) reviews a PR automatically when it is created. Claude owns watching it and deciding on re-reviews; the owner only looks at finished PRs.
   The summary comment's table (Codex Review Summary) is the source of truth: when the head commit's Code Review is Completed, it is done (👀 in the PR body means running,

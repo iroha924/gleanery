@@ -4,7 +4,7 @@
 // **Bundling into one file does not remove the obligation to include them.** MIT requires the copyright notice and permission notice,
 // and Apache-2.0 section 4 requires a copy of the License and the NOTICE contents, if any. The package ships the following, so they apply.
 //
-//   dist/{cli,mcp,capture}.js  the server's dependencies, bundled (including Ink and React)
+//   dist/{cli,mcp,capture}.js  the server's dependencies, bundled
 //
 // **Do not drop optional dependencies.** Assuming they are not included would miss ones that are bundled.
 // Err toward listing more: only listing too few violates the obligation. Peer dependencies are listed only when resolved in node_modules.
@@ -124,15 +124,6 @@ const noticeText = (dir) => read(path.join(dir, "NOTICE"))?.trim() ?? null;
 const SPARE = path.join(path.dirname(fileURLToPath(import.meta.url)), "licenses");
 const spareText = (spdx) => read(path.join(SPARE, `${spdx}.txt`))?.trim() ?? null;
 
-/**
- * A copy taken from the package's upstream (`scripts/licenses/packages/<name>.txt`).
- * **Used before the template.** A package may simply have left it out of its tarball while upstream has the real one
- * (measured: react-remove-scroll-bar has a LICENSE on GitHub but not in its npm tarball).
- * `/` becomes `__` to make one file name (for @scope/name).
- */
-const upstreamText = (name) =>
-  read(path.join(SPARE, "packages", `${name.replace(/\//g, "__")}.txt`))?.trim() ?? null;
-
 const source = (m) => {
   const r = typeof m?.repository === "string" ? m.repository : m?.repository?.url;
   return (
@@ -149,8 +140,7 @@ const entries = [...seen]
   .map(({ dir, name }) => {
     const m = manifestAt(dir);
     const spdx = typeof m?.license === "string" ? m.license : (m?.license?.type ?? "unknown");
-    const up = upstreamText(name);
-    const own = licenseText(dir) ?? (up ? { text: up, from: "upstream" } : null);
+    const own = licenseText(dir);
     const spare = own ? null : spareText(spdx);
     return {
       name,
@@ -182,15 +172,9 @@ for (const e of entries) {
   if (e.source) out.push(`Source: ${e.source}`);
   out.push("");
   if (e.notice) out.push("NOTICE:", "", "```", e.notice, "```", "");
-  if (e.from === "upstream") {
-    out.push(
-      "_This package does not include its license text. The copy from its upstream repository is included._",
-      "",
-    );
-  }
   if (e.from === `${e.spdx} template`) {
     out.push(
-      `_Neither this package nor its upstream ships a license text with a copyright notice (declared as ${e.spdx}). ` +
+      `_This package ships no license text with a copyright notice (declared as ${e.spdx}). ` +
         `The ${e.spdx} template is included. Copyright belongs to the rights holder at the source above._`,
       "",
     );

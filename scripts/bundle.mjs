@@ -19,11 +19,9 @@ const run = (cmd, args) => execFileSync(cmd, args, { cwd: root, stdio: "inherit"
 // so mangled class names fall back to stricli's default text.
 fs.rmSync(dist, { recursive: true, force: true });
 fs.mkdirSync(dist, { recursive: true });
-for (const entry of ["mcp", "capture"]) {
+for (const entry of ["mcp", "capture", "cli"]) {
   run("bun", ["build", `server/src/${entry}.ts`, "--target=node", "--outfile", `plugin/dist/${entry}.js`]);
 }
-// The CLI includes Ink and needs a plugin that replaces its development imports, so it is bundled by a Bun.build script.
-run("bun", ["scripts/bundle-cli.ts"]);
 
 // The plugin cache has no repository, so ship the schema (and migrations, if any).
 const db = path.join(root, "plugin", "db");

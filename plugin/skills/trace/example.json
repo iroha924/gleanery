@@ -8,8 +8,8 @@
   "work": {
     "key": "local",
     "title": "Move to a setup that runs entirely on the local machine",
-    "goal": "Drop the cloud dependencies, have sphica dashboard draw its screen in the terminal, and read a local SQLite file",
-    "current": "Finished the server side and the screen, and ran them against a local database",
+    "goal": "Drop the cloud dependencies, look records up from the CLI and MCP only, and read a local SQLite file",
+    "current": "Finished the server side and the CLI, and ran them against a local database",
     "next": [
       "Move distribution to npm",
       "Human: confirm before deleting the old environment"
@@ -47,11 +47,11 @@
       "kind": "decision",
       "status": "accepted",
       "at": "2026-09-20T12:30:00+09:00",
-      "text": "Draw the screen in the terminal, with no listening server",
+      "text": "Look records up through the CLI and MCP, with no listening server",
       "context": "A localhost server can be hit from other pages open in a browser. Opening no port is smaller than keeping a boundary to defend",
       "options": [
         {
-          "text": "a terminal screen",
+          "text": "the CLI and MCP",
           "chosen": true
         },
         {
@@ -60,9 +60,9 @@
           "why": "it would mean keeping Host checks and CSRF checks forever"
         }
       ],
-      "confirmation": "started from outside a terminal, it prints a notice and exits with 1",
+      "confirmation": "sphica search found the records with no port open",
       "downsides": [
-        "images and tables are limited by what the terminal can render"
+        "no screen for browsing records; lookups go through search"
       ]
     },
     {
@@ -89,12 +89,12 @@
       "text": "Dropped pgtyped for typing SQL. It cannot handle search queries whose conditions are built at run time, and its docs state query composition is unsupported"
     },
     {
-      "key": "tty-check",
+      "key": "search-check",
       "kind": "verification",
       "status": "passed",
       "at": "2026-09-20T13:20:00+09:00",
-      "text": "started from a pipe, dashboard prints a notice and exits with 1",
-      "command": "sphica dashboard | cat",
+      "text": "sphica search returns the stored decision and nothing listens on a port",
+      "command": "sphica search \"local database\"",
       "verifies": "no-server"
     },
     {
@@ -102,7 +102,7 @@
       "kind": "question",
       "status": "blocking",
       "at": "2026-09-20T13:30:00+09:00",
-      "text": "Do key input and box lines on the terminal screen hold up on Windows? (No real machine; CI can only check the drawn strings)"
+      "text": "Does the CLI's terminal output hold up on Windows? (No real machine; CI can only check the printed strings)"
     }
   ]
 }

@@ -7,7 +7,7 @@ const notices = `# Third-party software included
 
 | package | version | license |
 |---|---|---|
-| @inkjs/ui | 2.0.0 | MIT |
+| @clack/prompts | 1.8.1 | MIT |
 | ajv | 8.20.0 | MIT |
 | ajv | 8.20.0 | MIT |
 | zod | 4.6.5 | MIT |
@@ -23,7 +23,7 @@ test("passes when every bundled package is in the SBOM (scoped names included)",
     sbomProblems(
       notices,
       bom([
-        { group: "@inkjs", name: "ui", version: "2.0.0" },
+        { group: "@clack", name: "prompts", version: "1.8.1" },
         { name: "ajv", version: "8.20.0" },
         { name: "zod", version: "4.6.5" },
       ]),
@@ -41,7 +41,7 @@ test("fails when a bundled package is missing from the SBOM or has a different v
     ]),
   );
   assert.deepEqual(got, [
-    "SBOM is missing @inkjs/ui 2.0.0",
+    "SBOM is missing @clack/prompts 1.8.1",
     "SBOM is missing zod 4.6.5",
     "SBOM lists zod 4.6.4, which is not bundled",
   ]);
@@ -56,7 +56,7 @@ test("fails when the SBOM lists a package that is not bundled (a mismatched scop
   const got = sbomProblems(
     notices,
     bom([
-      { group: "@inkjs", name: "ui", version: "2.0.0" },
+      { group: "@clack", name: "prompts", version: "1.8.1" },
       { name: "ajv", version: "8.20.0" },
       { name: "zod", version: "4.6.5" },
       { name: "typescript", version: "7.0.2" },
@@ -66,17 +66,17 @@ test("fails when the SBOM lists a package that is not bundled (a mismatched scop
 });
 
 test("fails on a malformed row in the notices table instead of leaving it out of the comparison", () => {
-  const broken = `${notices}| react | 19.3.0 (patched) | MIT |\n| ink | | MIT |\n`;
+  const broken = `${notices}| chalk | 5.6.2 (patched) | MIT |\n| marked | | MIT |\n`;
   const got = sbomProblems(
     broken,
     bom([
-      { group: "@inkjs", name: "ui", version: "2.0.0" },
+      { group: "@clack", name: "prompts", version: "1.8.1" },
       { name: "ajv", version: "8.20.0" },
       { name: "zod", version: "4.6.5" },
     ]),
   );
   assert.deepEqual(got, [
-    "cannot read a THIRD_PARTY_NOTICES.md table row: | react | 19.3.0 (patched) | MIT |",
-    "cannot read a THIRD_PARTY_NOTICES.md table row: | ink | | MIT |",
+    "cannot read a THIRD_PARTY_NOTICES.md table row: | chalk | 5.6.2 (patched) | MIT |",
+    "cannot read a THIRD_PARTY_NOTICES.md table row: | marked | | MIT |",
   ]);
 });

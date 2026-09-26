@@ -30,7 +30,7 @@ bun run bundle      # build the MCP, CLI, and capture artifacts
 ### DB and connections
 
 - `db/schema.sql` is the only source of truth for the DB. Do not add an ORM schema as a second source <!-- invariant: schema-single-source -->
-- MCP and the terminal screen use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
+- MCP and `sphica search` use the reader connection, ingestion and trace use ingest, capture uses capture, and `sphica db *` uses owner. <!-- invariant: connection-roles -->
   Instead: take write connections from the factories in `server/src/db-write.ts`. Do not import them from reading interfaces (`bun run architecture`)
 - Interfaces that read untrusted text (PR and issue bodies, recorded conversations) get no write access <!-- invariant: untrusted-no-write -->
 - No server that listens <!-- invariant: no-listen -->
@@ -38,7 +38,7 @@ bun run bundle      # build the MCP, CLI, and capture artifacts
 
 ### Paired changes
 
-- Check the CLI and dashboard separately from MCP. One working does not mean the other works <!-- invariant: exits-separate -->
+- Check the CLI separately from MCP. One working does not mean the other works <!-- invariant: exits-separate -->
 - When a value, category, or decision changes, is the paired interface fixed too? Add pairs you can list to a check <!-- invariant: rg-pairs -->
 - Is a new ingestion source connected to `sphica harvest` too? <!-- invariant: harvest -->
 
@@ -59,11 +59,10 @@ bun run bundle      # build the MCP, CLI, and capture artifacts
 - Do not connect to external APIs. Pass without credentials <!-- invariant: no-external-api -->
 - SQLite return values differ from their types. BLOBs are Uint8Array, rows are objects without a prototype, and `returning rowid` needs `as rowid` <!-- invariant: sqlite-values -->
 
-### Terminal screen and CLI output
+### CLI output
 
-- Write with `createElement`, not JSX (Node cannot read JSX) <!-- invariant: create-element -->
-- Refer to colors by name from `server/src/palette.ts` and symbols from `server/src/tui/icons.ts`. Do not write hex values or symbols directly <!-- invariant: palette-icons -->
-- Print CLI output with the parts in `server/src/tui/view.ts`. Text from outside must not be able to forge lines <!-- invariant: view-parts -->
+- Print CLI output with the parts in `server/src/cli/view.ts` (Clack in a terminal, indented text in pipes). Only the heading and the closing line start a line, so text from outside cannot forge lines <!-- invariant: view-parts -->
+- Write hex colors only in `server/src/palette.ts` <!-- invariant: palette -->
 
 ### Comments
 
@@ -74,7 +73,6 @@ bun run bundle      # build the MCP, CLI, and capture artifacts
 
 Read to the end before implementing or reviewing.
 
-- Terminal screen and CLI output: `tui`
 - DB schema, connection roles, full-text search index, ingestion: `knowledge-schema`
 - MCP, CLI, capture hooks, plugin distribution: `plugin-release`
 - Shipped review aspects: `plugin-agent-authoring`

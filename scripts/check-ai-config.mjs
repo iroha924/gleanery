@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const developmentSkills = ["knowledge-schema", "tui", "plugin-agent-authoring", "plugin-release"];
+const developmentSkills = ["knowledge-schema", "plugin-agent-authoring", "plugin-release"];
 
 function fail(message) {
   failures.push(message);
@@ -85,7 +85,7 @@ if (!agents.includes("join the value of `rN` in `Skill roots` with the rest exac
 const CODEX_LIMIT = 32 * 1024;
 // The allowance for the owner's ~/.codex/AGENTS.md: measured 18,638 bytes (2026-09-20) plus 1 KiB of growth.
 // **Raising it shrinks the repository's margin.** When space runs out, move long procedures into Skills.
-// There is no nested AGENTS.md (dashboard/AGENTS.md went with the web UI). If one is added, add it here too.
+// There is no nested AGENTS.md. If one is added, add it here too.
 const USER_RESERVE = 19 * 1024;
 if (bytes > CODEX_LIMIT - USER_RESERVE) {
   fail(
@@ -106,7 +106,7 @@ if (claudeLines >= 100)
     `CLAUDE.md: ${claudeLines} lines. Keep it under 100 by moving procedures to Skills and file-specific rules to rules with paths`,
   );
 // Codex cannot use Claude Code features (rules, reviewers, Claude-only Skills). Mentioning them makes it look for things that do not exist or start another AI instead.
-for (const word of [".claude/rules", ".claude/agents", "review-shipping", "review-ui", "docs-author"])
+for (const word of [".claude/rules", ".claude/agents", "review-shipping", "docs-author"])
   if (agents.includes(word))
     fail(`AGENTS.md: mentions a Claude Code feature (${word}) that Codex cannot use`);
 
@@ -389,7 +389,7 @@ for (const relative of agentEntries) {
   }
 }
 
-// Checks that premises removed in the rebuild (PostgreSQL, Docker, embeddings, keys) have not returned to documents AIs read. If they return, AIs
+// Checks that removed premises (the old storage and keys, the terminal screen) have not returned to documents AIs read. If they return, AIs
 // point to commands and keys that no longer exist. Documents that mention the old setup should call it the old setup and avoid these spellings.
 const GONE = [
   /pgvector/i,
@@ -399,6 +399,9 @@ const GONE = [
   /halfvec/i,
   /tsvector/i,
   /db:roles/,
+  /sphica dashboard/,
+  /\bInk\b/,
+  /server\/src\/tui/,
 ];
 const docs = [
   "AGENTS.md",

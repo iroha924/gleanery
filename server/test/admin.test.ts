@@ -136,8 +136,27 @@ test("db reindex rebuilds the full-text index and passes the doctor check", asyn
 test("db migrate does nothing when there are no migrations to apply", async () => {
   const file = path.join(tmp(), "sphica.db");
   await quiet(() => dbInit(file));
-  await quiet(() => migrate(true, file));
+  assert.equal(await quiet(() => migrate(true, file)), "up-to-date");
   assert.equal(inspect(file).revision, SCHEMA_REVISION);
+});
+
+// Declining (No, Esc, or EOF all come back as false) applies nothing and says so, so the command cannot close with "done".
+test("db migrate applies nothing and reports cancelled when the confirmation is declined", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "sphica.db");
+  await quiet(() => dbInit(file));
+  const migrations = path.join(dir, "migrations");
+  writeMigrations(migrations, ["create table note (a text) strict;\n"]);
+  let asked = 0;
+  const decline = async () => {
+    asked++;
+    return false;
+  };
+  assert.equal(await quiet(() => migrate(false, file, migrations, decline)), "cancelled");
+  assert.equal(asked, 1);
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+  assert.equal(await quiet(() => migrate(false, file, migrations, async () => true)), "applied");
+  assert.equal(inspect(file).revision, SCHEMA_REVISION + 1);
 });
 
 // The path taken by the shipped CLI. HOME points to a temp directory so the owner's ~/.sphica is untouched.

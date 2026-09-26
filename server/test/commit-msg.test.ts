@@ -17,7 +17,7 @@ const SCISSORS = "------------------------ >8 ------------------------";
 
 test("accepts one Conventional Commits line in English", () => {
   ok("feat: add a check\n");
-  ok("fix(tui)!: keep the selected row visible");
+  ok("fix(cli)!: keep the closing line at the line start");
 });
 
 test("in the hook, ignores the editor template and the verbose diff, with the configured comment character", () => {
@@ -51,7 +51,7 @@ test("rejects bodies, other shapes, Japanese, and long subjects", () => {
   bad("feat: add a check\n\nMore detail", /one-line subject/);
   bad("Add a check", /start with <type>/);
   bad("feature: add a check", /start with <type>/);
-  bad("feat(TUI): add a check", /start with <type>/);
+  bad("feat(CLI): add a check", /start with <type>/);
   bad("feat: 検査を足す", /English/);
   bad(`feat: ${"x".repeat(100)}`, /within 100 characters/);
 });

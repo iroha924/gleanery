@@ -56,7 +56,7 @@ test("an exemption needs a reason", () => {
 });
 
 // search.ts and knowledge.ts keep Japanese for MCP, so check-english reads only their comments. The English side is checked here.
-test("the English text for the CLI and dashboard has no Japanese", async () => {
+test("the English text for the CLI has no Japanese", async () => {
   const { JAPANESE } = await import("../../scripts/lib/english.mjs");
   const { WORDS } = await import("../src/search.ts");
   const { KINDS, STATUSES, labelOf } = await import("../src/knowledge.ts");

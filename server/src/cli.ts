@@ -25,6 +25,19 @@ import { type Kysely, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
 import { dbInit, importTerms, inspect, listTerms, migrate, reindex } from "./admin.ts";
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
+import {
+  type Block,
+  banner,
+  type Card,
+  closing,
+  document,
+  failure,
+  indent,
+  panel,
+  section,
+  steps,
+  title,
+} from "./cli/view.ts";
 import { dbFile, inTransaction, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { openWriter } from "./db-write.ts";
@@ -32,7 +45,6 @@ import { syncDocs } from "./docs.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { moveProject } from "./move.ts";
-import { kindColor } from "./palette.ts";
 import { inline, type Mark, mark, pad, plain, width } from "./panel.ts";
 import { observe, packageVersionAt, ROOT, report, UPDATE_NOTE } from "./plugin.ts";
 import {
@@ -58,19 +70,6 @@ import {
 import { requireRuntime } from "./sqlite.ts";
 import { ftsQuery, head, plural, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
-import { runTui } from "./tui/tui.ts";
-import {
-  type Block,
-  type Card,
-  closing,
-  document,
-  failure,
-  indent,
-  panel,
-  section,
-  steps,
-  title,
-} from "./tui/view.ts";
 
 /**
  * Heading of the error box. **Built only from the route name routing chose** (never from the typed arguments).
@@ -78,7 +77,7 @@ import {
  */
 let heading = "sphica";
 
-/** The block printed on failure. The body is indented, so newlines smuggled into arguments cannot forge a closing line at column 0 (tui/view.ts). */
+/** The block printed on failure. The body is indented, so newlines smuggled into arguments cannot forge a closing line at column 0 (cli/view.ts). */
 const failed = (body: string): string => failure(heading, plain(body));
 
 /** Messages for argument parsing failures. Names what is wrong for each kind of stricli error. */
@@ -168,7 +167,7 @@ function hitCard(x: Hit, scoped: boolean): Card {
     .filter(Boolean)
     .join("\n");
   return {
-    badge: { text: x.label.replace(/^\[|\]$/g, ""), color: kindColor(x.kind, x.status) },
+    badge: x.label.replace(/^\[|\]$/g, ""),
     title,
     ...(body ? { body } : {}),
     // Line 1: the reference (for read), the time, and the speaker. Line 2: the source title (work, PR, issue)
@@ -190,7 +189,7 @@ const githubRepo = (key: string): string | null =>
 
 /**
  * Syncs one project. **GitHub and documents are independent**, so one failing does not stop the other.
- * Failures are stored in the source's last_error (doctor and the dashboard show it) and thrown together at the end.
+ * Failures are stored in the source's last_error (doctor shows it) and thrown together at the end.
  */
 async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = false): Promise<string[]> {
   const out: string[] = [];
@@ -351,7 +350,7 @@ async function doctor(cwd: string): Promise<void> {
   // Lines at column 0 are section headings; indented lines are their contents (the shape plugin.ts report builds)
   for (const line of plugin.lines) console.log(/^\S/.test(line) ? section(line) : indent(line));
   if (plugin.updates.length) console.log(steps("To update", plugin.updates, UPDATE_NOTE));
-  console.log(`\n${section("DB")}`);
+  console.log(section("DB", true));
   let runtime = true;
   try {
     requireRuntime();
@@ -409,7 +408,7 @@ async function doctor(cwd: string): Promise<void> {
           .orderBy("p.name")
           .orderBy("cn.provider")
           .execute();
-        if (rows.length) console.log(`\n${section("Projects")}`);
+        if (rows.length) console.log(section("Projects", true));
         const label = (x: (typeof rows)[number]) => `${inline(x.name)} ${x.provider ?? "not synced"}`;
         const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
         for (const x of rows) {
@@ -973,9 +972,13 @@ const captureRoutes = buildRouteMap({
 });
 
 /** Adds a heading and closing to admin.ts output lines. Failures become a block through stricli exceptionWhileRunningCommand */
-async function boxed(head: string, fn: () => void | Promise<void>): Promise<void> {
+async function boxed(head: string, fn: () => unknown): Promise<void> {
   console.log(title(head));
-  await fn();
+  if ((await fn()) === "cancelled") {
+    console.log(closing(`${mark("fail")} Stopped`));
+    process.exitCode = 1;
+    return;
+  }
   console.log(closing(`${mark("ok")} done`));
 }
 
@@ -1364,11 +1367,6 @@ const root = buildRouteMap({
       parameters: {},
       func: () => boxed("sphica init", () => dbInit()),
     }),
-    dashboard: buildCommand({
-      docs: { brief: "Browse sessions, work, and search in the terminal (read only)" },
-      parameters: {},
-      func: () => runTui(process.cwd()),
-    }),
     doctor: buildCommand({
       docs: {
         brief:
@@ -1466,6 +1464,7 @@ const app = buildApplication(
   },
 );
 
+process.stdout.write(banner());
 await run(app, process.argv.slice(2), {
   process,
   forCommand: ({ prefix }: CommandInfo) => {

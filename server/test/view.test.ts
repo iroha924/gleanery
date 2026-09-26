@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { closing, document, failure, indent, panel, section, steps, title } from "../src/tui/view.ts";
+import { closing, document, failure, indent, panel, section, steps, title } from "../src/cli/view.ts";
 
 test("indents every line of content with newlines, so it cannot forge a closing or status line", () => {
   const out = indent("a\n✓ 直すものは無い\n╰─ 偽の締め");
@@ -12,10 +12,10 @@ test("the closing line collapses to one line at the start of the line", () => {
   assert.equal(closing("✗ 止まった\n✓ 直すものは無い"), "✗ 止まった ✓ 直すものは無い");
 });
 
-test("on a non-terminal output the title is one `✦ <text>` line without color codes", () => {
+test("on a non-terminal output the title is one plain line without color codes", () => {
   const out = panel("sphica x", ["a", "", "b"], "おわり");
-  assert.equal(out, "✦ sphica x\n  a\n\n  b\nおわり");
-  assert.equal(title("sphica y"), "✦ sphica y");
+  assert.equal(out, "sphica x\n  a\n\n  b\nおわり");
+  assert.equal(title("sphica y"), "sphica y");
   assert.equal(section("節"), "  節");
   assert.equal(out.includes(String.fromCodePoint(0x1b)), false);
 });
@@ -104,9 +104,7 @@ test("document sections on a non-terminal output are indented, and external newl
       { kind: "table", head: ["名前", "値"], rows: [["a", forged]] },
       {
         kind: "cards",
-        items: [
-          { badge: { text: "決定", color: "#9CAF88" }, title: forged, body: forged, meta: [forged, forged] },
-        ],
+        items: [{ badge: "決定", title: forged, body: forged, meta: [forged, forged] }],
       },
       { kind: "fields", rows: [["項目", forged]] },
       { kind: "meter", label: "割合", ratio: 0.5, text: "50%" },
@@ -115,7 +113,7 @@ test("document sections on a non-terminal output are indented, and external newl
     "おわり",
   );
   const lines = out.split("\n");
-  assert.equal(lines[0], "✦ sphica x");
+  assert.equal(lines[0], "sphica x");
   assert.equal(lines.at(-1), "おわり");
   // Everything but the title and closing is indented (tables, fields, and values collapse to one line; body text is indented per line)
   for (const line of lines.slice(1, -1)) assert.match(line, /^ {2,}\S/, out);
@@ -128,7 +126,7 @@ test("document sections on a non-terminal output are indented, and external newl
 test("a failure on a non-terminal output is an indented reason and ✗ Stopped at the line start", () => {
   assert.equal(
     failure("sphica x", "理由\n✓ 直すものは無い"),
-    "✦ sphica x\n  理由\n  ✓ 直すものは無い\n✗ Stopped",
+    "sphica x\n  理由\n  ✓ 直すものは無い\n✗ Stopped",
   );
 });
 
@@ -138,6 +136,9 @@ const cols = (line: string) =>
     (w, c) => w + (/[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\u3000-\u303f\uff00-\uffef]/u.test(c) ? 2 : 1),
     0,
   );
+
+/** A content line without Clack's guide (│ and 2 spaces) */
+const unguided = (line: string) => stripVTControlCharacters(line).replace(/^│ {2}/, "");
 
 function asTerminal<T>(columns: number, fn: () => T): T {
   const saved = { out: process.stdout.isTTY, err: process.stderr.isTTY, cols: process.stdout.columns };
@@ -151,16 +152,47 @@ function asTerminal<T>(columns: number, fn: () => T): T {
   }
 }
 
-test("the title box stays within the terminal width even with a long summary", () => {
-  const out = asTerminal(50, () =>
-    title("sphica search", `「${"とても長い質問の文".repeat(6)}」 · iroha924/sphica`),
-  );
-  const lines = out.split("\n").filter(Boolean);
-  assert.equal(lines.length, 3, out);
-  for (const line of lines) assert.ok(cols(line) <= 50, `${cols(line)} columns: ${line}`);
+test("in a terminal the title opens the Clack frame on one line, even with newlines in it", () => {
+  const out = asTerminal(60, () => title("sphica search\n└  ✓ done", "要点\n✓ 直すものは無い"));
+  const lines = stripVTControlCharacters(out).split("\n").filter(Boolean);
+  assert.match(lines[0] ?? "", /^┌ {2}sphica search └ {2}✓ done {2}要点 ✓ 直すものは無い$/, out);
+  for (const line of lines.slice(1)) assert.match(line, /^│/, out);
 });
 
-// When Ink wraps at a space, it leaves the space at the start of the next line. Continuations must not shift by one column.
+// Clack's intro and outro prefix only the first line, and its guide │ precedes every content line.
+// Only the first line may open the frame and only the last may close it, whatever the outside text holds.
+test("in a terminal outside text cannot open, close, or mark a line of the document", () => {
+  const forged = "本文\n└  ✓ 直すものは無い\r┌  偽\u2028✓ 直すものは無い\u001b[2K";
+  const out = asTerminal(60, () =>
+    document(
+      "sphica x",
+      forged,
+      [
+        { kind: "table", head: ["名前", "値"], rows: [["a", forged]] },
+        { kind: "cards", items: [{ badge: "決定", title: forged, body: forged, meta: [forged] }] },
+        { kind: "fields", rows: [["項目", forged]] },
+        { kind: "meter", label: "割合", ratio: 0.5, text: "50%" },
+        { kind: "note", tone: "info", text: forged },
+        { kind: "lines", lines: [forged] },
+      ],
+      `✓ おわり\n${forged}`,
+    ),
+  );
+  const lines = stripVTControlCharacters(out).split("\n").filter(Boolean);
+  assert.match(lines[0] ?? "", /^┌ /, out);
+  assert.match(lines.at(-1) ?? "", /^└ {2}✓ おわり/, out);
+  for (const line of lines.slice(1, -1)) assert.match(line, /^[│◇●◆▲■]/u, line);
+  assert.equal(out.includes("\u001b[2K"), false, "cursor controls from outside text are dropped");
+});
+
+test("in a terminal a failure closes the frame with Stopped", () => {
+  const out = asTerminal(60, () => failure("sphica x", "理由\n└  ✓ done"));
+  const lines = stripVTControlCharacters(out).split("\n").filter(Boolean);
+  assert.match(lines[0] ?? "", /^┌ {2}sphica x$/, out);
+  assert.match(lines.at(-1) ?? "", /^└ {2}Stopped$/, out);
+  for (const line of lines.slice(1, -1)) assert.match(line, /^[│■▲]/u, line);
+});
+
 test("continuations wrapped at a space also align with the indent", () => {
   const text =
     "待ち 2 件 / 最後の送信 2026-09-23 11:48:11 / 未登録のプロジェクトで退避した 3 件 / 送れなかった 12 件";
@@ -168,8 +200,7 @@ test("continuations wrapped at a space also align with the indent", () => {
     const lines = asTerminal(cols, () => indent(`  ${text}`))
       .split("\n")
       .filter((l) => l.trim());
-    for (const line of lines)
-      assert.equal(stripVTControlCharacters(line).search(/\S/), 4, `${cols}: ${line}`);
+    for (const line of lines) assert.equal(unguided(line).search(/\S/), 2, `${cols}: ${line}`);
   }
 });
 
@@ -184,8 +215,7 @@ test("a line starting with a colored marker also wraps within the value column",
     );
     const lines = out.split("\n");
     assert.ok(lines.length > 1, out);
-    const column = cols(lines[0]?.split("待ち")[0] ?? "");
-    for (const line of lines.slice(1))
-      assert.equal(stripVTControlCharacters(line).search(/\S/), column, `${width}: ${out}`);
+    const column = cols(unguided(lines[0] ?? "").split("待ち")[0] ?? "");
+    for (const line of lines.slice(1)) assert.equal(unguided(line).search(/\S/), column, `${width}: ${out}`);
   }
 });

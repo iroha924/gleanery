@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Checks that interfaces reading untrusted text (MCP, the terminal screen) have no write connection (server/src/db-write.ts).
+// Checks that interfaces reading untrusted text (MCP) have no write connection (server/src/db-write.ts).
 //
 // **Connection roles are separated by import direction.** If imports from a reader entry reach db-write.ts, text it reads
 // could steer it into writing (the execution boundary in CLAUDE.md and AGENTS.md). Neither types nor the authorizer stop this: once a write
@@ -11,7 +11,7 @@ import url from "node:url";
 
 const root = path.join(path.dirname(url.fileURLToPath(import.meta.url)), "..");
 /** Read-only interfaces. No module reachable from these may import the write connection. */
-const READERS = ["server/src/mcp.ts", "server/src/tui/tui.ts"];
+const READERS = ["server/src/mcp.ts"];
 const WRITER = "server/src/db-write.ts";
 
 // Four forms: `import x from`, `export ... from`, side-effect-only `import "..."`, and `import(...)`.

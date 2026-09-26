@@ -33,5 +33,5 @@ Out of scope. Please report these to their own projects:
 
 Sphica keeps its records in a local SQLite file (`~/.sphica/sphica.db`), with recordings that are not yet written and a few helper files elsewhere under `~/.sphica/`. It does not run a network server.
 Pull request and issue text imported by `sphica harvest`, as well as recorded conversations, may have been written by someone else.
-Sphica treats that text as data. The MCP server and the terminal dashboard open the database read-only.
+Sphica treats that text as data. The MCP server and `sphica search` open the database read-only.
 A way to make Sphica write through those read-only paths, or to make recorded text act as instructions, is in scope.

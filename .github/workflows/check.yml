@@ -84,8 +84,8 @@ jobs:
           node ../scripts/check-tarball.mjs "$tgz"
 
   # **What ships must run on Windows too** (AGENTS.md). Development of this repository assumes macOS / Linux, so verify does not run here;
-  # it checks only that the bundled tarball starts without node_modules and can create a database with node:sqlite. Key input and box lines on the terminal screen
-  # show only on a real machine (CI cannot check them).
+  # it checks only that the bundled tarball starts without node_modules and can create a database with node:sqlite. How the CLI draws in a terminal
+  # shows only on a real machine (CI cannot check it).
   windows:
     runs-on: windows-latest
     defaults:

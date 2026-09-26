@@ -4,7 +4,7 @@
 
 - For a change that goes into the package, run `bun run release:plan -- --base <previous release commit>` before editing the version, and handle it by the kind it reports <!-- invariant: release-plan -->
   - `none`: no release
-  - `plugin`: a change that goes into the package (MCP, CLI, terminal screen, hooks, plugin Skills and Agents, shared modules). Bump npm and the 3 plugin manifests to the same version
+  - `plugin`: a change that goes into the package (MCP, CLI, hooks, plugin Skills and Agents, shared modules). Bump npm and the 3 plugin manifests to the same version
 - The only thing published to npm is the tarball `.github/workflows/release.yml` stages from the `v<version>` tag on the PR head. Do not run `npm publish` locally. Stage approval, the merge, and promotion to latest follow the `plugin-release` Skill's steps, run by hand
 - Before each release step, reopen the `plugin-release` Skill and run its commands exactly as written. The owner approves the `npm-release` environment, approves npm Staged Packages, and runs `npm dist-tag add`. Claude does not click or run these in the owner's place <!-- invariant: release-owner-steps -->
 

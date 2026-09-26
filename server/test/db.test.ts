@@ -67,7 +67,7 @@ test("a missing database is not created, and it stops", () => {
   assert.equal(fs.existsSync(missing), false);
 });
 
-test("the MCP and terminal screen connection can read but not write", async () => {
+test("the MCP and search connection can read but not write", async () => {
   const r = openReader(db.file);
   try {
     assert.equal((await r.selectFrom("message").select("body").execute())[0]?.body, "持ち主の秘密の本文");

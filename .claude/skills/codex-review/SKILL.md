@@ -1,6 +1,6 @@
 ---
 name: codex-review
-description: Asks Codex (codex exec) to review or investigate a Sphica diff. Use before merging a PR, when checking a decision that primary sources cannot settle against another model, and when looking back at a change that landed. Covers receiving Codex's findings and fixing them. Not for launching Claude Code's reviewers (review-shipping, review-ui).
+description: Asks Codex (codex exec) to review or investigate a Sphica diff. Use before merging a PR, when checking a decision that primary sources cannot settle against another model, and when looking back at a change that landed. Covers receiving Codex's findings and fixing them. Not for launching Claude Code's reviewer (review-shipping).
 ---
 
 # Ask Codex for reviews and investigations
@@ -13,7 +13,7 @@ description: Asks Codex (codex exec) to review or investigate a Sphica diff. Use
 
 ## Does not trigger
 
-- Launching Claude Code's reviewers (`review-shipping`, `review-ui`)
+- Launching Claude Code's reviewer (`review-shipping`)
 - Handing implementation to Codex
 
 ## How to ask

@@ -17,16 +17,6 @@ const rulesDirectory = path.join(root, ".claude", "rules");
 
 /** Real files each rule must load for, and real files it must not. **List only paths that exist.** */
 const EXPECTED = {
-  "ui.md": {
-    match: ["server/src/tui/app.ts", "server/src/tui/view.ts", "server/src/palette.ts"],
-    notMatch: [
-      "server/src/cli.ts",
-      "server/src/search.ts",
-      "scripts/bundle.mjs",
-      "db/schema.sql",
-      "AGENTS.md",
-    ],
-  },
   "evals.md": {
     match: ["server/evals/agentic/run.ts", "server/evals/agentic/judge.ts"],
     notMatch: ["server/src/search.ts", "server/test/search.test.ts", "AGENTS.md"],
@@ -34,7 +24,7 @@ const EXPECTED = {
   "comments.md": {
     match: [
       "server/src/db.ts",
-      "server/src/tui/app.ts",
+      "server/src/cli/view.ts",
       "scripts/bundle.mjs",
       "lefthook.yml",
       "db/schema.sql",

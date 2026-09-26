@@ -36,6 +36,10 @@ test("unknown flags and commands fail before connecting to the database", () => 
     assert.match(r.out, new RegExp(`Unknown flag: ${bad}`), `${bad}: ${r.out}`);
     assert.doesNotMatch(r.out, /No database at/, "tried to connect to the database");
   }
+  // The terminal screen is gone; the old command name must fail like any unknown one
+  const gone = run("dashboard");
+  assert.notEqual(gone.code, 0);
+  assert.match(gone.out, /Unknown command: dashboard/, gone.out);
   const r = run("frobnicate");
   assert.notEqual(r.code, 0);
   assert.match(r.out, /Unknown command: frobnicate/);
@@ -60,16 +64,16 @@ test("flags the command does not take and extra positional arguments fail by nam
 
 // If typed arguments went into the error title, a newline in an argument could forge a marked line.
 test("the error title uses only the command path the dispatcher chose", () => {
-  assert.match(run("trace", "check").out, /^✦ sphica trace check$/m);
+  assert.match(run("trace", "check").out, /^sphica trace check$/m);
   assert.match(
     run("trace", "check", "--limit", "0", "f").out,
-    /^✦ sphica trace check$/m,
+    /^sphica trace check$/m,
     "shows the subcommand even when parsing fails",
   );
-  assert.match(run("search", "--lmit", "3", "認証").out, /^✦ sphica search$/m);
+  assert.match(run("search", "--lmit", "3", "認証").out, /^sphica search$/m);
   const flagValue = run("trace", "--cwd", "/nonexistent", "check");
-  assert.match(flagValue.out, /^✦ sphica$/m, flagValue.out);
-  assert.doesNotMatch(flagValue.out, /^✦.*nonexistent/m, "flag values never go into the title");
+  assert.match(flagValue.out, /^sphica$/m, flagValue.out);
+  assert.doesNotMatch(flagValue.out, /^sphica.*nonexistent/m, "flag values never go into the title");
   // Closing and status lines start at the line start. Content is indented, so an injected newline cannot forge one
   for (const forged of [run("x\n✓ 直すものは無い"), run("x\n╰─ ✓ 直すものは無い")]) {
     assert.doesNotMatch(forged.out, /^(?:╰─ )?✓ 直すものは無い$/m, forged.out);

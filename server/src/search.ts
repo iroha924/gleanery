@@ -1,4 +1,4 @@
-// Search. MCP, the CLI, and the dashboard use the same functions.
+// Search. MCP and the CLI use the same functions.
 //
 // **Search is left to the calling AI (agentic search).** This returns ranked word search (FTS5 bm25) and substring matches only,
 // with no semantic similarity, paraphrasing, or reranking. The AI varies its terms, searches again, and checks candidates with read (see the MCP description).
@@ -186,7 +186,7 @@ function knowledgeFilters(q: KnowledgeQuery): Expression<SqlBool>[] {
   if (q.avoid) w.push(sql<SqlBool>`k.stance = 'dont'`);
   else {
     // Normal search returns only knowledge in effect now. Superseded decisions and past options come from avoid (to stop re-proposals).
-    // Retired constraints and resolved questions appear in no search (read them with read or the dashboard's session detail). Why
+    // Retired constraints and resolved questions appear in no search (read them with read). Why
     // they were retired and the answers are kept as a decision or finding (the trace Skill). Chosen options repeat the decision, so only the decision is returned.
     w.push(sql<SqlBool>`not (k.kind = 'decision' and k.status = 'superseded')`);
     w.push(sql<SqlBool>`not (k.kind = 'option' and k.status in ('chosen', 'was_chosen'))`);
@@ -292,7 +292,7 @@ const messageBase = (db: Kysely<DB>) =>
 
 type MessageRow = InferResult<ReturnType<typeof messageBase>>[number];
 
-/** Words for the text built for people and agents. MCP, the CLI, and the dashboard share them. */
+/** Words for the text built for people and agents. MCP and the CLI share them. */
 export const WORDS = {
   self: "Owner",
   unknown: "unknown",
@@ -453,8 +453,8 @@ export type WorkDetail = Work & {
   walls: Hit[];
 };
 
-/** Shared work projection. */
-export const workBase = (db: Kysely<DB>) =>
+/** Work projection. */
+const workBase = (db: Kysely<DB>) =>
   db
     .selectFrom("work_item as w")
     .innerJoin("project as p", "p.id", "w.project_id")
@@ -469,7 +469,7 @@ export const workBase = (db: Kysely<DB>) =>
       "w.updated_at",
     ]);
 
-export const toWork = (w: InferResult<ReturnType<typeof workBase>>[number]): Work => ({
+const toWork = (w: InferResult<ReturnType<typeof workBase>>[number]): Work => ({
   ref: `w:${w.id}`,
   project: w.project,
   title: w.title,
@@ -938,8 +938,8 @@ export function renderWork(w: WorkDetail, budget: number): Shown {
   );
 }
 
-/** The line for a reference that points nowhere (deleted, or outside the selected project). The dashboard compares with it to show a failure */
-export const missing = (ref: string): string => `${ref}: ${WORDS.missing}`;
+/** The line for a reference that points nowhere (deleted, or outside the selected project) */
+const missing = (ref: string): string => `${ref}: ${WORDS.missing}`;
 
 /**
  * The reference format. k: / s: / w: are sequence numbers, m: is a uuid. **Check the format here; never read a database error as a bad reference.**
@@ -949,7 +949,7 @@ const REF = /^(?:[ksw]:\d{1,15}|m:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 
 /**
  * Reads references: `k:` knowledge, `m:` a message with its neighbors, `s:` a source (document text, PR, issue), `w:` work.
- * With projects, references outside them read as missing (MCP and the dashboard never read outside the selected project).
+ * With projects, references outside them read as missing (MCP and the CLI never read outside the selected project).
  */
 export async function read(
   db: Kysely<DB>,
