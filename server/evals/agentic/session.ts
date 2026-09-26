@@ -32,7 +32,12 @@ export type Call = {
   blocks: string[];
   bytes: number;
   error: boolean;
+  /** The trace shows the call was refused before it ran (a permission refusal, or MCP input validation), so it showed nothing */
+  rejected: boolean;
 };
+
+/** MCP rejects arguments that fail the tool's schema before the handler runs, with this code */
+const INVALID_PARAMS = "MCP error -32602:";
 
 const blocksOf = (e: Event): Block[] => {
   const content = (e.message as { content?: unknown } | undefined)?.content;
@@ -42,10 +47,19 @@ const blocksOf = (e: Event): Block[] => {
 /** The sphica tool calls of a trace in the order they were made, each with its recorded result. */
 export function callsOf(events: Event[]): Call[] {
   const results = new Map<string, Block>();
-  for (const e of events)
-    if (e.type === "user")
+  // Claude Code marks a call it refused before running it twice: a permission_denied event and non_execution_kind on the result
+  const denied = new Set<string>();
+  const refused = new Set<string>();
+  for (const e of events) {
+    if (e.type === "system" && e.subtype === "permission_denied" && typeof e.tool_use_id === "string")
+      denied.add(e.tool_use_id);
+    if (e.type === "user") {
       for (const b of blocksOf(e))
         if (b.type === "tool_result" && b.tool_use_id) results.set(b.tool_use_id, b);
+      for (const m of Array.isArray(e.tool_result_meta) ? e.tool_result_meta : [])
+        if (m?.non_execution_kind === "user-rejected" && typeof m.id === "string") refused.add(m.id);
+    }
+  }
   const calls: Call[] = [];
   for (const e of events) {
     if (e.type !== "assistant") continue;
@@ -67,8 +81,52 @@ export function callsOf(events: Event[]): Call[] {
         blocks: parts.map((p) => String(p.type)),
         bytes: Buffer.byteLength(text, "utf8"),
         error: r === undefined || r.is_error === true,
+        rejected:
+          r?.is_error === true &&
+          ((denied.has(b.id) && refused.has(b.id)) ||
+            (b.name !== undefined && text.startsWith(INVALID_PARAMS))),
       });
     }
+  }
+  return calls;
+}
+
+type CodexItem = {
+  type?: string;
+  server?: string;
+  tool?: string;
+  arguments?: unknown;
+  result?: { content?: unknown } | null;
+  error?: unknown;
+  status?: string;
+};
+
+/**
+ * The tool calls of a `codex exec --json` stream, in the order they finished. Every finished item other than the agent's messages
+ * and reasoning is a call; only sphica's recall and read count as sphica tools.
+ */
+export function codexCallsOf(events: Event[]): Call[] {
+  const calls: Call[] = [];
+  for (const e of events) {
+    if (e.type !== "item.completed") continue;
+    const it = (e.item ?? {}) as CodexItem;
+    if (it.type === "agent_message" || it.type === "reasoning") continue;
+    const content = it.result?.content;
+    const parts: Block[] = Array.isArray(content) ? (content as Block[]) : [];
+    const text = parts.map((p) => (typeof p.text === "string" ? p.text : "")).join("");
+    const sphica = it.type === "mcp_tool_call" && it.server === "sphica";
+    const error = it.status !== "completed" || (it.error !== null && it.error !== undefined);
+    calls.push({
+      tool: sphica && it.tool === "recall" ? "recall" : sphica && it.tool === "read" ? "read" : "other",
+      input:
+        it.arguments && typeof it.arguments === "object" ? (it.arguments as Record<string, unknown>) : {},
+      text,
+      blocks: parts.map((p) => String(p.type)),
+      bytes: Buffer.byteLength(text, "utf8"),
+      error,
+      // Only input validation proves a refusal before running here; Codex reports other refusals like any failure
+      rejected: sphica && error && text.startsWith(INVALID_PARAMS),
+    });
   }
   return calls;
 }
@@ -102,6 +160,11 @@ export async function replay(calls: Call[], db: Kysely<DB>, cwd: string): Promis
   for (const c of calls) {
     if (c.tool === "other") {
       out.push({ ...c, matched: false, why: "not a sphica tool", items: [] });
+      continue;
+    }
+    // Refused before the handler ran, so there is nothing to replay: it showed no record
+    if (c.rejected) {
+      out.push({ ...c, matched: true, items: [] });
       continue;
     }
     let r: Reply;
@@ -143,6 +206,10 @@ export type Session = {
   errors: number;
   /** Calls whose replay did not match the recorded response: what they showed is unknown */
   unconfirmed: number;
+  /** Calls to anything but sphica's recall and read that the trace does not show were refused before running. Any makes the run ineligible */
+  disallowed: number;
+  /** Calls refused before running (they showed nothing) */
+  rejected: number;
   /** Matched recall calls that showed no record */
   empty: number;
   bytes: number;
@@ -152,6 +219,8 @@ export type Session = {
   first: number | null;
   /** Where the answer was shown in full at least once: recall's records or documents field, recall's rendered hits, or read */
   via: { records: boolean; documents: boolean; hits: boolean; read: boolean };
+  /** For read: the answer was a ref the read asked for, or only a related option or verification shown inside another record */
+  read: { requested: boolean; related: boolean };
   /** How the recall arguments were used: mode:<m>, match:<m>, and the other argument names given */
   usage: Record<string, number>;
 };
@@ -168,6 +237,7 @@ export function sessionOf(
     usage[k] = (usage[k] ?? 0) + 1;
   };
   const via = { records: false, documents: false, hits: false, read: false };
+  const read = { requested: false, related: false };
   let exposed: Session["exposed"] = null;
   let first: number | null = null;
   for (const [i, c] of calls.entries()) {
@@ -179,8 +249,11 @@ export function sessionOf(
     if (c.tool === "other") continue;
     const hits = c.items.filter((x) => expect.includes(keyOf(x.ref) ?? ""));
     if (hits.length === 0) continue;
-    if (c.tool === "read") via.read = true;
-    else for (const x of hits) via[x.field ?? "hits"] = true;
+    if (c.tool === "read") {
+      via.read = true;
+      const asked = new Set(Array.isArray(c.input.refs) ? c.input.refs.map(String) : []);
+      for (const x of hits) read[asked.has(x.ref) ? "requested" : "related"] = true;
+    } else for (const x of hits) via[x.field ?? "hits"] = true;
     if (exposed === null) {
       exposed = c.tool;
       first = i + 1;
@@ -192,6 +265,8 @@ export function sessionOf(
     reads: calls.filter((c) => c.tool === "read").length,
     errors: calls.filter((c) => c.error).length,
     unconfirmed: calls.filter((c) => c.tool !== "other" && !c.matched).length,
+    disallowed: calls.filter((c) => c.tool === "other" && !c.rejected).length,
+    rejected: calls.filter((c) => c.rejected).length,
     // resume lists work items, which carry no result refs
     empty: calls.filter(
       (c) =>
@@ -201,6 +276,7 @@ export function sessionOf(
     exposed,
     first,
     via,
+    read,
     usage,
   };
 }

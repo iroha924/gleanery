@@ -11,7 +11,8 @@
     "server": {
       "entry": ["src/capture.ts", "test/*.test.ts"],
       "project": ["src/**/*.{ts,tsx}", "test/**/*.ts", "evals/**/*.ts"],
-      "ignoreDependencies": ["js-tokens", "kysely-codegen", "lefthook"]
+      "ignoreDependencies": ["js-tokens", "kysely-codegen", "lefthook"],
+      "ignoreBinaries": ["codex"]
     }
   },
   "ignoreIssues": {

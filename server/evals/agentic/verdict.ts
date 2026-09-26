@@ -88,6 +88,10 @@ export type Conditions = {
   bundle: string | null;
   /** Hash of the memo each run placed as CLAUDE.md (null without one). Base and setup may differ; runs of one side may not */
   memo: string | null;
+  /** claude or codex. Results of two hosts are never compared or averaged */
+  host: string;
+  /** Questions that used another tool or had an unconfirmed call, counted from the traces (null: not counted) */
+  violations: number | null;
   /** false for a pilot or a run the budget stopped early */
   complete: boolean;
   /** Top hits the judge should have graded but did not (a failed grading call) */
@@ -101,7 +105,7 @@ export function ineligible(base: Conditions[], setup: Conditions[], snapshot?: s
   if (base.length !== 3 || setup.length !== 3) out.push("not exactly 3 runs each");
   if ([...base, ...setup].some((c) => !c.complete)) out.push("incomplete run");
   const all = [...base, ...setup];
-  for (const k of ["cases", "prompt", "models", "claude", "effort"] as const)
+  for (const k of ["host", "cases", "prompt", "models", "claude", "effort"] as const)
     if (new Set(all.map((c) => c[k])).size > 1) out.push(`${k} differ`);
   for (const k of ["prompt", "models", "claude", "bundle"] as const)
     if (all.some((c) => c[k] === null || c[k] === "")) out.push(`${k} not recorded`);
@@ -114,6 +118,10 @@ export function ineligible(base: Conditions[], setup: Conditions[], snapshot?: s
     if (new Set(cs.map((c) => c.memo)).size > 1) out.push(`${side} runs used different memos`);
   }
   if (all.some((c) => c.ungraded > 0)) out.push("the judge left top hits ungraded");
+  // A run whose answers may have come from outside sphica's recall and read measures something else, however few such questions it has
+  if (all.some((c) => c.violations === null)) out.push("tool use not counted from the traces");
+  else if (all.some((c) => (c.violations ?? 0) > 0))
+    out.push("a run used another tool or had calls whose replay did not match");
   if (all.some((c) => c.db === null || c.source === null)) out.push("DB not recorded");
   else if (snapshot !== undefined && all.some((c) => c.source !== snapshot))
     out.push("DB copies do not come from the question set's snapshot");

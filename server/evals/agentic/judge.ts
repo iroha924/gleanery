@@ -20,6 +20,7 @@ import {
   SNAPSHOT,
   type summarize,
 } from "./run.ts";
+import { callsOf } from "./session.ts";
 import { type Conditions, ineligible, type Run, verdict } from "./verdict.ts";
 
 type Grade = "direct" | "partial" | "no";
@@ -32,7 +33,11 @@ type Row = {
 };
 /** slot fingerprints a graded pair (source_key, judge model, prompt version, body). Any change triggers a new grade */
 type Top = { i: number; rank: number; key: string | null; grade?: Grade; slot?: string };
-type System = { summary: ReturnType<typeof summarize>; top: Top[] };
+/**
+ * violations: questions with a call to another tool not refused before running, or a call whose replay did not match, counted from
+ * the run's saved traces. null when no trace could be read (a run loaded from baseline.json without the count): it cannot be compared
+ */
+type System = { summary: ReturnType<typeof summarize>; top: Top[]; violations?: number | null };
 type Baseline = {
   cases: string;
   runs: System[];
@@ -134,9 +139,34 @@ for (const src of positionals) {
       results.reduce((a, r) => a + r.session.bytes / 1024, 0) / Math.max(results.length, 1);
   if (summary.cases !== CASES_SHA)
     throw new Error(`${src} was measured with a different retrieval.json and cannot be compared`);
-  systems.push({ summary, top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })) });
+  systems.push({
+    summary,
+    top: results.map((r) => ({ i: r.i, rank: r.rank, key: r.keys[0] ?? null })),
+    violations: violationsOf(src, results),
+  });
 }
 const questions = [...new Set(systems.flatMap((s) => s.top.map((t) => t.i)))].sort((a, b) => a - b);
+
+/**
+ * Runs from before `disallowed` was recorded (all Claude) are recounted from their traces. A question whose trace is missing counts as
+ * a violation, so a run is never cleared without its traces.
+ */
+function violationsOf(dir: string, results: Result[]): number {
+  return results.filter((r) => {
+    if (r.session.unconfirmed > 0) return true;
+    if (r.session.disallowed !== undefined) return r.session.disallowed > 0;
+    const trace = path.join(dir, `q${r.i}`, "trace.jsonl");
+    if (!fs.existsSync(trace)) return true;
+    const events = fs
+      .readFileSync(trace, "utf8")
+      .split("\n")
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l) as { type?: string; [k: string]: unknown });
+    return callsOf(events).some((c) => c.tool === "other" && !c.rejected);
+  }).length;
+}
+
+const hostOf = (s: System) => (s.summary as Partial<ReturnType<typeof summarize>>).host ?? "claude";
 
 async function judge(i: number) {
   const c = cases[i];
@@ -270,13 +300,14 @@ console.table(rowsOut);
 const configOf = (s: System) => s.summary.name.replace(/-r\d+$/, "");
 const groups = Map.groupBy(
   runs,
-  (s) => `${origin.get(s)} ${configOf(s)} ${s.summary.split} ${s.summary.model}`,
+  (s) => `${origin.get(s)} ${configOf(s)} ${s.summary.split} ${hostOf(s)} ${s.summary.model}`,
 );
 const mean = (xs: number[]) => Math.round((xs.reduce((a, b) => a + b, 0) / Math.max(xs.length, 1)) * 10) / 10;
 const means = [...groups].map(([name, ss]) => ({
   name,
   config: ss[0] ? configOf(ss[0]) : "",
   split: ss[0]?.summary.split,
+  host: ss[0] ? hostOf(ss[0]) : "",
   model: ss[0]?.summary.model,
   runs: ss.length,
   top1: mean(ss.map((s) => s.summary.top1)),
@@ -303,7 +334,7 @@ const conditionOf = (s: System) => {
   const x = s.summary as Partial<ReturnType<typeof summarize>>;
   return `model ${(x.resolved_models ?? ["not recorded"]).join(", ")} / Claude Code ${(x.claude_code ?? ["not recorded"]).join(", ")} / effort ${x.effort ?? "not recorded"}`;
 };
-for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`)) {
+for (const [key, ss] of Map.groupBy(runs, (s) => `${s.summary.split} ${hostOf(s)} ${s.summary.model}`)) {
   const seen = [...new Set(ss.map(conditionOf))];
   if (seen.length > 1)
     console.log(
@@ -347,12 +378,14 @@ if (values.base) {
       source: y.source ?? null,
       bundle: y.bundle ?? null,
       memo: y.memo ?? null,
+      host: hostOf(s),
+      violations: s.violations ?? null,
       // Runs from before this field count as complete (their question lists were never cut)
       complete: y.complete ?? true,
       ungraded: s.top.filter((t) => t.key !== null && byKey.has(t.key) && !gradeOf(t.i, t.key)).length,
     };
   };
-  const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${s.summary.model}`);
+  const bySplit = Map.groupBy(runs, (s) => `${s.summary.split} ${hostOf(s)} ${s.summary.model}`);
   for (const [key, ss] of bySplit) {
     const base = ss.filter((s) => configOf(s) === values.base);
     if (base.length === 0) continue;
