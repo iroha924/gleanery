@@ -105,6 +105,21 @@ test("no arguments and --help print usage for that level and succeed", () => {
   assert.match(run("project", "--help").out, /^ {2}forget {2}/m);
 });
 
+// Commands only agents, hooks, or the maintainer run stay out of usage; -H still lists them, and they still run
+test("usage hides commands people do not type, and -H shows them", () => {
+  const usage = run("--help").out;
+  for (const name of ["trace", "capture", "advice"])
+    assert.doesNotMatch(usage, new RegExp(`^ {2}${name} {2}`, "m"), name);
+  const db = run("db", "--help").out;
+  for (const name of ["reindex", "terms"]) assert.doesNotMatch(db, new RegExp(`^ {2}${name} {2}`, "m"), name);
+  assert.match(db, /^ {2}migrate {2}/m);
+  const all = run("-H").out;
+  for (const name of ["trace", "capture", "advice"])
+    assert.match(all, new RegExp(`^ {2}${name} {2}`, "m"), name);
+  assert.match(run("db", "-H").out, /^ {2}reindex {2}/m);
+  assert.equal(run("trace", "--help").code, 0);
+});
+
 test("trace check validates the record shape without touching the database", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-cli-trace-"));
   try {

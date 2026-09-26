@@ -992,7 +992,11 @@ async function boxed(head: string, fn: () => unknown): Promise<void> {
 }
 
 const dbRoutes = buildRouteMap({
-  docs: { brief: "This machine's database (~/.sphica/sphica.db) and schema" },
+  docs: {
+    brief: "This machine's database (~/.sphica/sphica.db) and schema",
+    // Maintainer steps (a release that changes search terms, reviewing search words). -H lists them
+    hideRoute: { reindex: true, terms: true },
+  },
   routes: {
     migrate: buildCommand({
       docs: { brief: "Apply db/migrations newer than the database version" },
@@ -1059,6 +1063,8 @@ const root = buildRouteMap({
   docs: {
     brief: "Keep and search past decisions, conversations, and documents",
     fullDescription: "Database: ~/.sphica/sphica.db (created by sphica init). No credentials are needed",
+    // Run by the trace Skill, the capture hooks, or the maintainer, not typed by people. They still run, and -H lists them
+    hideRoute: { trace: true, capture: true, advice: true },
   },
   routes: {
     project: projectRoutes,
