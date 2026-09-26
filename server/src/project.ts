@@ -101,10 +101,19 @@ export function identify(dir: string): Place | null {
   }
 }
 
-/** Names a project without a remote on this machine. */
-export function nameLocal(dir: string, name: string): Place {
+/** Rejects a name a project without a remote cannot take (before anything is written) */
+export function checkLocalName(name: string): void {
   if (!LOCAL_KEY.test(name))
     throw new Error(`Use only lowercase letters, digits, and . _ - in the name: ${name}`);
+}
+
+/** The top of the git repository dir is in, or null outside git */
+export const repositoryRoot = (dir: string): string | null =>
+  git(path.resolve(dir), "rev-parse", "--show-toplevel") || null;
+
+/** Names a project without a remote on this machine. */
+export function nameLocal(dir: string, name: string): Place {
+  checkLocalName(name);
   // With a remote, the key comes from the remote and the named key is never looked up (the entry would be unreachable).
   const place = identify(dir);
   if (place?.key.startsWith("git:"))
@@ -119,7 +128,7 @@ export function nameLocal(dir: string, name: string): Place {
   return { key: `local:${name}`, root, name };
 }
 
-/** The project id, or null (only `sphica project add` creates one). */
+/** The project id, or null (only `sphica init` creates one). */
 export async function projectId(db: Kysely<DB>, key: string): Promise<number | null> {
   const r = await db.selectFrom("project").select("id").where("key", "=", key).executeTakeFirst();
   return r?.id ?? null;

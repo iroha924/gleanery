@@ -119,7 +119,8 @@ jobs:
           node "$out/package/dist/cli.js" --help > /dev/null
           # On Windows, os.homedir() reads USERPROFILE.
           home="$(mktemp -d)"
-          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" init
+          # --cwd outside the checkout, so init only creates the database and registers nothing
+          HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" init --cwd "$home"
           test -f "$home/.sphica/sphica.db"
           # doctor can return 1 depending on plugin install state (this runner has no plugin). Check only the DB rows.
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" doctor > doctor.out || true

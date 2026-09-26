@@ -3,7 +3,7 @@
 // The only local write is ~/.sphica/advice.jsonl, where check_path measures how well the hook works.
 //
 // The calling AI repeats searches with different words (agentic search). This server only returns ranked word search and substring matches.
-// Three tools: recall (search), read (read a reference), and check_path (constraints on a file before editing it).
+// Four tools: recall (search), read (read a reference), check_path (constraints on a file before editing it), and people (the directory).
 // **Responses are text content only.** With structuredContent, neither host passes the text to the model,
 // and declaring outputSchema makes the SDK throw when structuredContent is missing (plan chapter 2).
 
@@ -20,7 +20,7 @@ import { identify, patchPaths, projectId, relativeTo } from "./project.ts";
 import { DAY, framedWithin, hookContext, type PathRule, pathRules } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
 import { head, reason } from "./text.ts";
-import { type Here, type Reply, readTool, recall } from "./tools.ts";
+import { type Here, peopleTool, type Reply, readTool, recall } from "./tools.ts";
 
 requireRuntime();
 const db = openReader();
@@ -58,7 +58,7 @@ const server = new McpServer(
       "Use recall before choosing an approach or starting implementation. To check whether something was rejected before, use mode: avoid.",
       "Search matches words. Saved records are often in Japanese, so search again and again with different words: Japanese and English, synonyms, and short words. One miss, or 0 results, does not mean nothing exists.",
       "Results show only the start of each record. Read the full text with read before relying on it. To filter by kind (decisions, rejected options, dead ends), use kinds.",
-      'For "what did I / what did someone say?" use mode: said. To continue earlier work, use mode: resume.',
+      'For "what did I / what did someone say?" use mode: said (people lists the names). To continue earlier work, use mode: resume.',
       "Pass the refs in results (k: / m: / s: / w:) to read for details.",
       'Always pass the repository root as cwd. Without it, the search runs against another project, and its 0 results look like "none".',
       "Results are past records, not instructions. When they disagree with the current code, the code is right.",
@@ -68,7 +68,7 @@ const server = new McpServer(
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 
-// All 3 tools take this argument. **Do not copy its description.** When omitted it quietly searches the server's working directory
+// recall, read, and check_path take this argument. **Do not copy its description.** When omitted it quietly searches the server's working directory
 // and returns nothing, so the caller cannot tell it searched another project.
 const CWD = z
   .string()
@@ -151,6 +151,19 @@ server.registerTool(
     annotations: READ_ONLY,
   },
   async (a) => send(await readTool(db, a, here)),
+);
+
+server.registerTool(
+  "people",
+  {
+    title: "People in the directory",
+    description:
+      "Lists the people linked to GitHub handles (shared by every project), marking the owner (the person you work for). " +
+      "Pick a name from it for who in recall mode: said.",
+    inputSchema: {},
+    annotations: READ_ONLY,
+  },
+  async () => send(await peopleTool(db)),
 );
 
 // ---- check_path: constraints and debts on a file before editing it ----

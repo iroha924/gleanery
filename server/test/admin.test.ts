@@ -171,9 +171,9 @@ test("sphica init creates the database in .sphica under HOME", () => {
   assert.equal(inspect(path.join(home, ".sphica", "sphica.db")).revision, SCHEMA_REVISION);
 });
 
-// No aliases for old names. The old `sphica db init`, and the old `sphica init --cwd` and `sphica check` that created the requirements folder, fail.
+// No aliases for old names. The old `sphica db init` and `sphica check` fail. (`sphica init --cwd <dir>` is valid again: it registers dir.)
 test("old command forms are rejected and create no database", () => {
-  for (const args of [["db", "init"], ["init", "--cwd", "."], ["check"]]) {
+  for (const args of [["db", "init"], ["check"]]) {
     const home = tmp();
     const r = spawnSync(process.execPath, [CLI, ...args], {
       env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home },
@@ -264,6 +264,139 @@ test("a boxed command that fails prints its heading once and closes with Stopped
   assert.notEqual(r.status, 0, out);
   assert.equal(out.split("\n").filter((l) => l === "sphica db reindex").length, 1, out);
   assert.match(out, /^✗ Stopped$/m, out);
+});
+
+/** Runs the CLI with HOME set to home; the repo helpers below make the places init looks at. */
+function cli(home: string, ...args: string[]) {
+  const r = spawnSync(process.execPath, [CLI, ...args], {
+    env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home },
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  return { code: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+/** A git repository with one commit, and an origin remote when given one */
+function repoAt(dir: string, origin?: string): string {
+  const repo = path.join(dir, "repo");
+  const git = (...a: string[]) => execFileSync("git", ["-C", repo, ...a], { stdio: "ignore" });
+  fs.mkdirSync(repo, { recursive: true });
+  git("init", "-q");
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "t");
+  fs.writeFileSync(path.join(repo, "README.md"), "# Design\n\nWe keep one SQLite file.\n");
+  git("add", ".");
+  git("commit", "-qm", "first");
+  if (origin) git("remote", "add", "origin", origin);
+  return repo;
+}
+
+const projectKeys = (home: string): string[] =>
+  (
+    new DatabaseSync(path.join(home, ".sphica", "sphica.db"), { readOnly: true })
+      .prepare("select key from project order by key")
+      .all() as { key: string }[]
+  ).map((r) => r.key);
+
+test("sphica init in a repository with a remote creates the database and registers it once", () => {
+  const home = tmp();
+  const repo = repoAt(tmp(), "https://github.com/example/proj.git");
+  const first = cli(home, "init", "--cwd", repo);
+  assert.equal(first.code, 0, first.out);
+  assert.match(first.out, /registered/, first.out);
+  assert.deepEqual(projectKeys(home), ["git:github.com/example/proj"]);
+  const again = cli(home, "init", "--cwd", repo);
+  assert.equal(again.code, 0, again.out);
+  assert.match(again.out, /already registered/, again.out);
+  assert.deepEqual(projectKeys(home), ["git:github.com/example/proj"]);
+});
+
+test("sphica init outside a repository only creates the database", () => {
+  const home = tmp();
+  const r = cli(home, "init", "--cwd", tmp());
+  assert.equal(r.code, 0, r.out);
+  assert.deepEqual(projectKeys(home), []);
+});
+
+test("sphica init in a repository without a remote asks for --name and registers nothing", () => {
+  const home = tmp();
+  const repo = repoAt(tmp());
+  const r = cli(home, "init", "--cwd", repo);
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /sphica init --name <name>/, r.out);
+  assert.deepEqual(projectKeys(home), []);
+  const named = cli(home, "init", "--cwd", repo, "--name", "notes");
+  assert.equal(named.code, 0, named.out);
+  assert.deepEqual(projectKeys(home), ["local:notes"]);
+  // A different name for the same place is refused, not silently swapped (records stay under the first key)
+  const renamed = cli(home, "init", "--cwd", repo, "--name", "other");
+  assert.notEqual(renamed.code, 0, renamed.out);
+  assert.match(renamed.out, /notes/, renamed.out);
+  assert.deepEqual(projectKeys(home), ["local:notes"]);
+});
+
+// A subdirectory of a named place belongs to it already. Writing the name again for the subdirectory would give the key two places,
+// and harvest skips a project with two places on one machine
+test("sphica init --name in a subdirectory of the named place changes nothing", () => {
+  const home = tmp();
+  const place = fs.realpathSync(tmp());
+  fs.mkdirSync(path.join(place, "sub"));
+  assert.equal(cli(home, "init", "--cwd", place, "--name", "notes").code, 0);
+  const table = path.join(home, ".sphica", "projects.json");
+  const before = fs.readFileSync(table, "utf8");
+  const r = cli(home, "init", "--cwd", path.join(place, "sub"), "--name", "notes");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(fs.readFileSync(table, "utf8"), before);
+  assert.deepEqual(projectKeys(home), ["local:notes"]);
+});
+
+test("sphica init refuses a bad --name and --sync without a project before creating anything", () => {
+  for (const args of [["--name", "Bad Name"], ["--sync"]]) {
+    const home = tmp();
+    const r = cli(home, "init", "--cwd", tmp(), ...args);
+    assert.notEqual(r.code, 0, `${args.join(" ")}: ${r.out}`);
+    assert.equal(fs.existsSync(path.join(home, ".sphica", "sphica.db")), false, args.join(" "));
+  }
+});
+
+// A mistyped --cwd must not pass for a finished setup, and with --name it would register a directory that does not exist
+test("sphica init refuses a --cwd that is not a directory before creating anything", () => {
+  const file = path.join(tmp(), "file.txt");
+  fs.writeFileSync(file, "");
+  for (const cwd of [path.join(tmp(), "missing"), file]) {
+    const home = tmp();
+    const r = cli(home, "init", "--cwd", cwd, "--name", "notes");
+    assert.notEqual(r.code, 0, `${cwd}: ${r.out}`);
+    assert.match(r.out, /is not a directory/, r.out);
+    assert.equal(fs.existsSync(path.join(home, ".sphica", "sphica.db")), false, cwd);
+  }
+});
+
+test("sphica init --sync imports the project's documents", () => {
+  const home = tmp();
+  const repo = repoAt(tmp());
+  const r = cli(home, "init", "--cwd", repo, "--name", "notes", "--sync");
+  assert.equal(r.code, 0, r.out);
+  const n = (
+    new DatabaseSync(path.join(home, ".sphica", "sphica.db"), { readOnly: true })
+      .prepare("select count(*) as n from source_item")
+      .get() as { n: number }
+  ).n;
+  assert.ok(n > 0, r.out);
+});
+
+// Recording that cannot be sent needs the exact command to send it again, since capture is hidden from usage
+test("doctor names the command that sends stuck recordings", () => {
+  const home = tmp();
+  cli(home, "init");
+  fs.mkdirSync(path.join(home, ".sphica", "spool"), { recursive: true });
+  fs.writeFileSync(path.join(home, ".sphica", "spool", "1.json"), "{}");
+  fs.writeFileSync(
+    path.join(home, ".sphica", "capture.json"),
+    JSON.stringify({ error: "database is locked" }),
+  );
+  const r = cli(home, "doctor");
+  assert.match(r.out, /sphica capture flush/, r.out);
 });
 
 /** Writes migrations numbered from current + 1 into dir. */

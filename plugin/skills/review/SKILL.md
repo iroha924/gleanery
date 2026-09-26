@@ -147,7 +147,7 @@ Layer 5 and "patterns the surrounding code already follows" remain, so the revie
 | State | How to tell | Ledger value |
 |---|---|---|
 | MCP does not connect / the database is unreachable | The tool call fails | **`unable`** + reason |
-| Connected, but the project is not registered | Returns "is not registered with Sphica" | **`unable`** + "this repository is not registered with Sphica (`sphica project add`)" |
+| Connected, but the project is not registered | Returns "is not registered with Sphica" | **`unable`** + "this repository is not registered with Sphica (`sphica init`)" |
 | The location given is not a project | Returns "cannot tell which project it is" | **`unable`** + "the repository root was not passed as `cwd`" |
 | Registered, and the search found 0 | Returns "No matches" or "No matching messages" | **`ran`**. Treat it as a grounded negative |
 
