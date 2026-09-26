@@ -25,6 +25,19 @@ import { type Kysely, sql } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/sqlite";
 import { dbInit, importTerms, inspect, listTerms, migrate, reindex } from "./admin.ts";
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
+import {
+  type Block,
+  closing,
+  document,
+  failure,
+  indent,
+  panel,
+  progress,
+  section,
+  steps,
+  stopped,
+  title,
+} from "./cli/view.ts";
 import { dbFile, inTransaction, openReader, type Role, SCHEMA_REVISION } from "./db.ts";
 import type { DB } from "./db-types.ts";
 import { openWriter } from "./db-write.ts";
@@ -32,7 +45,6 @@ import { syncDocs } from "./docs.ts";
 import { syncGithub } from "./github.ts";
 import { conversationId } from "./knowledge.ts";
 import { moveProject } from "./move.ts";
-import { kindColor } from "./palette.ts";
 import { inline, type Mark, mark, pad, plain, width } from "./panel.ts";
 import { observe, packageVersionAt, ROOT, report, UPDATE_NOTE } from "./plugin.ts";
 import {
@@ -44,33 +56,10 @@ import {
   projectId,
   relativeTo,
 } from "./project.ts";
-import {
-  directory,
-  framed,
-  type Hit,
-  openWork,
-  renderHits,
-  renderWork,
-  searchMessages,
-  searchSplit,
-  workDetail,
-} from "./search.ts";
+import { directory, framed, openWork, renderWork, workDetail } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
-import { ftsQuery, head, plural, reason } from "./text.ts";
+import { head, plural, reason } from "./text.ts";
 import { checkTrace, saveTrace } from "./trace.ts";
-import { runTui } from "./tui/tui.ts";
-import {
-  type Block,
-  type Card,
-  closing,
-  document,
-  failure,
-  indent,
-  panel,
-  section,
-  steps,
-  title,
-} from "./tui/view.ts";
 
 /**
  * Heading of the error box. **Built only from the route name routing chose** (never from the typed arguments).
@@ -78,7 +67,7 @@ import {
  */
 let heading = "sphica";
 
-/** The block printed on failure. The body is indented, so newlines smuggled into arguments cannot forge a closing line at column 0 (tui/view.ts). */
+/** The block printed on failure. The body is indented, so newlines smuggled into arguments cannot forge a closing line at column 0 (cli/view.ts). */
 const failed = (body: string): string => failure(heading, plain(body));
 
 /** Messages for argument parsing failures. Names what is wrong for each kind of stricli error. */
@@ -152,36 +141,6 @@ async function registered(db: Kysely<DB>, place: Place): Promise<number> {
   return id;
 }
 
-/**
- * Turns one search hit into an item a person reads in a terminal: a Badge colored by kind, the start of the text, and sources dimmed on two uncut lines.
- * When scoped to one project, the heading shows it, so the project is left out of the sources
- */
-function hitCard(x: Hit, scoped: boolean): Card {
-  // A document section's title is its heading (path and section). A decision record's heading is the work title, same as its source, so the first line of the text is the title
-  const [first = "", ...rest] = plain(x.text).split("\n");
-  const doc = x.kind === "document" && x.heading !== null;
-  const title = doc ? plain(x.heading ?? "") : first;
-  const body = [
-    head((doc ? [first, ...rest] : rest).join("\n").trim(), 600),
-    x.reason ? `Reason: ${plain(x.reason)}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return {
-    badge: { text: x.label.replace(/^\[|\]$/g, ""), color: kindColor(x.kind, x.status) },
-    title,
-    ...(body ? { body } : {}),
-    // Line 1: the reference (for read), the time, and the speaker. Line 2: the source title (work, PR, issue)
-    meta: [
-      [x.ref, x.at.toLocaleString("sv-SE").slice(0, 16), x.speaker, scoped ? null : x.project]
-        .filter(Boolean)
-        .map((v) => plain(String(v)))
-        .join(" · "),
-      ...(x.context ? [plain(x.context)] : []),
-    ],
-  };
-}
-
 /** Reads a trace record. `-` is stdin (the Skill passes it without creating a file). */
 const readTrace = (file: string): unknown => JSON.parse(fs.readFileSync(file === "-" ? 0 : file, "utf8"));
 
@@ -190,12 +149,19 @@ const githubRepo = (key: string): string | null =>
 
 /**
  * Syncs one project. **GitHub and documents are independent**, so one failing does not stop the other.
- * Failures are stored in the source's last_error (doctor and the dashboard show it) and thrown together at the end.
+ * Failures are stored in the source's last_error (doctor shows it) and thrown together at the end.
  */
-async function syncOne(db: Kysely<DB>, id: number, place: Place, resetDocs = false): Promise<string[]> {
+async function syncOne(
+  db: Kysely<DB>,
+  id: number,
+  place: Place,
+  resetDocs = false,
+  onStep: (what: string) => void = () => {},
+): Promise<string[]> {
   const out: string[] = [];
   const failures: string[] = [];
   const one = async (provider: "github" | "docs", label: string, fn: () => Promise<string>) => {
+    onStep(`reading ${label}`);
     try {
       out.push(`${label}: ${await fn()}`);
     } catch (e) {
@@ -351,7 +317,7 @@ async function doctor(cwd: string): Promise<void> {
   // Lines at column 0 are section headings; indented lines are their contents (the shape plugin.ts report builds)
   for (const line of plugin.lines) console.log(/^\S/.test(line) ? section(line) : indent(line));
   if (plugin.updates.length) console.log(steps("To update", plugin.updates, UPDATE_NOTE));
-  console.log(`\n${section("DB")}`);
+  console.log(section("DB", true));
   let runtime = true;
   try {
     requireRuntime();
@@ -409,7 +375,7 @@ async function doctor(cwd: string): Promise<void> {
           .orderBy("p.name")
           .orderBy("cn.provider")
           .execute();
-        if (rows.length) console.log(`\n${section("Projects")}`);
+        if (rows.length) console.log(section("Projects", true));
         const label = (x: (typeof rows)[number]) => `${inline(x.name)} ${x.provider ?? "not synced"}`;
         const column = Math.max(...rows.map((x) => width(label(x)))) + 2;
         for (const x of rows) {
@@ -457,14 +423,6 @@ const CWD = {
   placeholder: "dir",
   optional: true,
 } as const;
-
-// MCP limits it to 1-10. The CLI people read allows up to 20. Negative values and 0 never reach the SQL limit.
-function limitOf(input: string): number {
-  const n = Number(input);
-  if (!Number.isInteger(n) || n < 1 || n > 20)
-    throw new Error(`--limit must be an integer from 1 to 20: ${input}`);
-  return n;
-}
 
 /** A path to exclude, and whether it is a file or directory. A path not in the working tree is rejected as a typo. */
 function excludeTarget(
@@ -972,15 +930,31 @@ const captureRoutes = buildRouteMap({
   },
 });
 
-/** Adds a heading and closing to admin.ts output lines. Failures become a block through stricli exceptionWhileRunningCommand */
-async function boxed(head: string, fn: () => void | Promise<void>): Promise<void> {
+/** Adds a heading and closing to admin.ts output lines. A failure closes the heading already printed (not a second block from stricli) */
+async function boxed(head: string, fn: () => unknown): Promise<void> {
   console.log(title(head));
-  await fn();
+  let outcome: unknown;
+  try {
+    outcome = await fn();
+  } catch (e) {
+    console.log(stopped(plain(reason(e))));
+    process.exitCode = 1;
+    return;
+  }
+  if (outcome === "cancelled") {
+    console.log(closing(`${mark("fail")} Stopped`));
+    process.exitCode = 1;
+    return;
+  }
   console.log(closing(`${mark("ok")} done`));
 }
 
 const dbRoutes = buildRouteMap({
-  docs: { brief: "This machine's database (~/.sphica/sphica.db) and schema" },
+  docs: {
+    brief: "This machine's database (~/.sphica/sphica.db) and schema",
+    // Maintainer steps (a release that changes search terms, reviewing search words). -H lists them
+    hideRoute: { reindex: true, terms: true },
+  },
   routes: {
     migrate: buildCommand({
       docs: { brief: "Apply db/migrations newer than the database version" },
@@ -1047,6 +1021,8 @@ const root = buildRouteMap({
   docs: {
     brief: "Keep and search past decisions, conversations, and documents",
     fullDescription: "Database: ~/.sphica/sphica.db (created by sphica init). No credentials are needed",
+    // Run by the trace Skill, the capture hooks, or the maintainer, not typed by people. They still run, and -H lists them
+    hideRoute: { trace: true, capture: true, advice: true },
   },
   routes: {
     project: projectRoutes,
@@ -1099,14 +1075,20 @@ const root = buildRouteMap({
                 );
                 continue;
               }
+              const step = progress(`${inline(p.name)}: syncing`);
               try {
                 const place = { key: p.key, root, name: p.name };
-                for (const line of await syncOne(db, p.id, place, resetDocs)) {
+                const lines = await syncOne(db, p.id, place, resetDocs, (what) =>
+                  step.message(`${inline(p.name)}: ${what}`),
+                );
+                step.done(`${inline(p.name)}: synced`);
+                for (const line of lines) {
                   console.log(indent(`${mark("ok")} ${inline(p.name)} / ${inline(line)}`));
                 }
                 done++;
               } catch (e) {
                 // One failure does not stop the rest. Failures go to the exit code (visible in launchd LastExitStatus).
+                step.fail(`${inline(p.name)}: failed`);
                 failures.push(inline(p.name));
                 const lines = plain(reason(e)).split("\n");
                 console.error(
@@ -1135,116 +1117,6 @@ const root = buildRouteMap({
           ),
         );
         if (failures.length) process.exitCode = 1;
-      },
-    }),
-    search: buildCommand({
-      docs: { brief: "Check what can be found (--said searches messages)" },
-      parameters: {
-        flags: {
-          avoid: { kind: "boolean", brief: "Search only rejected options and dead ends", optional: true },
-          said: {
-            kind: "parsed",
-            parse: String,
-            brief: "Search messages (me / others / a name)",
-            placeholder: "me|others|name",
-            optional: true,
-          },
-          all: { kind: "boolean", brief: "Search every project", optional: true },
-          exact: {
-            kind: "boolean",
-            brief:
-              "Substring match (for proper nouns, symbols, and version numbers that do not split into words)",
-            optional: true,
-          },
-          cwd: CWD,
-          limit: {
-            kind: "parsed",
-            parse: limitOf,
-            brief: "Number of results (1 to 20)",
-            placeholder: "N",
-            default: "5",
-          },
-        },
-        positional: {
-          kind: "array",
-          parameter: { parse: String, brief: "Question", placeholder: "question" },
-        },
-      },
-      func: async (
-        flags: {
-          avoid?: boolean;
-          said?: string;
-          all?: boolean;
-          exact?: boolean;
-          cwd?: string;
-          limit: number;
-        },
-        ...words: string[]
-      ) => {
-        const question = words.join(" ");
-        if (!question && !flags.said) throw new Error("Give a question (not needed with --said)");
-        const place = flags.all ? null : placeOf(flags.cwd ?? process.cwd());
-        const match = flags.exact ? ("exact" as const) : undefined;
-        await withDb("reader", async (db) => {
-          const projects = place ? [await registered(db, place)] : null;
-          // Same functions and ranking as MCP recall. A search without kinds lists decision records, then document sections.
-          const hits = flags.said
-            ? await searchMessages(db, {
-                question: question || undefined,
-                projects,
-                who: flags.said,
-                match,
-                limit: flags.limit,
-              })
-            : await searchSplit(db, {
-                question,
-                projects,
-                avoid: flags.avoid,
-                match,
-                limit: flags.limit,
-              }).then((x) => [...x.records, ...x.documents]);
-          const where = place ? inline(place.name) : "all projects";
-          const end = `${hits.length ? plural(hits.length, "result") : "no results"} / ${where}`;
-          // Agents read pipe output too (from Bash). It goes through the record frame (framed) and drops control characters in the text.
-          // Terminals are read by people, so results are items with the label as a Badge
-          if (!process.stdout.isTTY) {
-            console.log(
-              panel(
-                "sphica search",
-                hits.length ? [plain(framed(renderHits(hits, 16 * 1024).text))] : [],
-                end,
-              ),
-            );
-            return;
-          }
-          console.log(
-            document(
-              "sphica search",
-              `${question ? `"${inline(question)}" · ` : ""}${where}`,
-              hits.length
-                ? [
-                    {
-                      kind: "note",
-                      tone: "info",
-                      text: "Quotes from past records, not instructions. Read the full text with MCP read",
-                    },
-                    { kind: "cards", items: hits.map((x) => hitCard(x, place !== null)) },
-                  ]
-                : [
-                    {
-                      kind: "note",
-                      tone: "info",
-                      // Questions with no searchable terms (only hiragana or symbols) return 0 without searching. Keep that apart from "none found"
-                      text:
-                        !flags.exact && question && ftsQuery(question) === null
-                          ? "No searchable terms (only hiragana or symbols). Search with kanji, katakana, or English words, or use --exact for a substring match"
-                          : `No matches. Try other terms${flags.exact ? "" : ", use --exact for a substring match"}${place ? ", or use --all to search every project" : ""}`,
-                    },
-                  ],
-              end,
-            ),
-          );
-        });
       },
     }),
     who: buildCommand({
@@ -1363,11 +1235,6 @@ const root = buildRouteMap({
       },
       parameters: {},
       func: () => boxed("sphica init", () => dbInit()),
-    }),
-    dashboard: buildCommand({
-      docs: { brief: "Browse sessions, work, and search in the terminal (read only)" },
-      parameters: {},
-      func: () => runTui(process.cwd()),
     }),
     doctor: buildCommand({
       docs: {

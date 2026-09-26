@@ -39,7 +39,7 @@ tar xzf "$out"/*.tgz -C "$out"
 **Put both the tarball and the unpacked directory outside the repository.** Unpacking inside lets a wrongly bundled path still resolve by walking up to the parent,
 so it passes. Do not leave a `.tgz` in `plugin/` (the parent's `git add -A` picks it up).
 
-**`bun run bundle` deletes `plugin/dist` before rebuilding it, and rebuilds the screen too.** All its output is
+**`bun run bundle` deletes `plugin/dist` before rebuilding it.** All its output is
 gitignored, so `git status` shows neither a running bundle nor its output. **This cannot be detected, so
 not overlapping is the caller's responsibility** (do not hand over this review while `bun run verify` is running).
 If you suspect an overlap, count the files in the packed contents and report them without drawing a conclusion.
@@ -49,7 +49,7 @@ If you suspect an overlap, count the files in the packed contents and report the
 - Is anything listed in `package.json`'s `files` missing from the tarball?
 - Does `node dist/cli.js --version` run in the unpacked directory?
 - Is every bundled dependency in `THIRD_PARTY_NOTICES.md`? **Is the listed version the one actually resolved?**
-  (Real case: looking at `server` first listed `react@19.2.8`, while the screen used `19.3.0`)
+  (A nested copy of a package can differ from the one the bundle resolves)
 - Are there no credentials (`.env`, keys, tokens)?
 
 ### 2. Checks that pass vacuously

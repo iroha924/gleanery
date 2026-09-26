@@ -6,7 +6,6 @@ export const EXACT_PACKAGE_INPUTS = new Set([
   "server/bun.lock",
   "server/tsconfig.json",
   "scripts/bundle.mjs",
-  "scripts/bundle-cli.ts",
   "scripts/third-party-notices.mjs",
   // Changing the source (such as the npm package name) changes what users install
   ".claude-plugin/marketplace.json",

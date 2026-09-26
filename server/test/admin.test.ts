@@ -4,9 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { PassThrough } from "node:stream";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { applyMigrations, dbInit, inspect, migrate, reindex } from "../src/admin.ts";
+import { applyMigrations, askToApply, dbInit, inspect, migrate, reindex } from "../src/admin.ts";
 import { SCHEMA_REVISION } from "../src/db.ts";
 import { connectWriter } from "../src/db-write.ts";
 import { at, hash } from "./temp-db.ts";
@@ -136,8 +137,27 @@ test("db reindex rebuilds the full-text index and passes the doctor check", asyn
 test("db migrate does nothing when there are no migrations to apply", async () => {
   const file = path.join(tmp(), "sphica.db");
   await quiet(() => dbInit(file));
-  await quiet(() => migrate(true, file));
+  assert.equal(await quiet(() => migrate(true, file)), "up-to-date");
   assert.equal(inspect(file).revision, SCHEMA_REVISION);
+});
+
+// Declining (No, Esc, or EOF all come back as false) applies nothing and says so, so the command cannot close with "done".
+test("db migrate applies nothing and reports cancelled when the confirmation is declined", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "sphica.db");
+  await quiet(() => dbInit(file));
+  const migrations = path.join(dir, "migrations");
+  writeMigrations(migrations, ["create table note (a text) strict;\n"]);
+  let asked = 0;
+  const decline = async () => {
+    asked++;
+    return false;
+  };
+  assert.equal(await quiet(() => migrate(false, file, migrations, decline)), "cancelled");
+  assert.equal(asked, 1);
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+  assert.equal(await quiet(() => migrate(false, file, migrations, async () => true)), "applied");
+  assert.equal(inspect(file).revision, SCHEMA_REVISION + 1);
 });
 
 // The path taken by the shipped CLI. HOME points to a temp directory so the owner's ~/.sphica is untouched.
@@ -192,6 +212,58 @@ test("db migrate applies new migrations in one transaction and bumps the version
   await quiet(() => migrate(true, file, migrations));
   assert.equal(inspect(file).revision, next);
   assert.equal(tables(), 1);
+});
+
+// A terminal whose input closes mid-question (the other end hung up) must answer no, not wait forever.
+test("the migrate confirmation answers no when its input closes", async () => {
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => {} });
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+  output.resume();
+  const answer = askToApply(input, output);
+  setTimeout(() => input.end(), 50);
+  const timeout = new Promise<string>((done) => setTimeout(() => done("still waiting"), 2000).unref());
+  assert.equal(await Promise.race([answer, timeout]), false);
+});
+
+test("the migrate confirmation answers no when its input ended before it asked", async () => {
+  const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => {} });
+  const output = Object.assign(new PassThrough(), { isTTY: true, columns: 80 });
+  output.resume();
+  input.resume();
+  input.end();
+  await new Promise((done) => input.once("end", done));
+  const timeout = new Promise<string>((done) => setTimeout(() => done("still waiting"), 2000).unref());
+  assert.equal(await Promise.race([askToApply(input, output), timeout]), false);
+});
+
+// Without a terminal nobody can answer, so the default question refuses before asking (the test runner's stdin is not a terminal)
+test("db migrate without --yes outside a terminal stops before asking", async () => {
+  const dir = tmp();
+  const file = path.join(dir, "sphica.db");
+  await quiet(() => dbInit(file));
+  const migrations = path.join(dir, "migrations");
+  writeMigrations(migrations, ["create table note (a text) strict;\n"]);
+  const timeout = new Promise<string>((done) => setTimeout(() => done("still waiting"), 2000).unref());
+  const outcome = quiet(() => migrate(false, file, migrations)).then(
+    () => "no error",
+    (e: Error) => e.message,
+  );
+  assert.match(await Promise.race([outcome, timeout]), /Add --yes/);
+  assert.equal(inspect(file).revision, SCHEMA_REVISION);
+});
+
+// A failure inside a boxed command closes the heading it already printed, instead of opening a second one
+test("a boxed command that fails prints its heading once and closes with Stopped", () => {
+  const home = tmp();
+  const r = spawnSync(process.execPath, [CLI, "db", "reindex"], {
+    env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  const out = `${r.stdout}${r.stderr}`;
+  assert.notEqual(r.status, 0, out);
+  assert.equal(out.split("\n").filter((l) => l === "sphica db reindex").length, 1, out);
+  assert.match(out, /^✗ Stopped$/m, out);
 });
 
 /** Writes migrations numbered from current + 1 into dir. */

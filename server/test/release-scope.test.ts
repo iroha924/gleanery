@@ -16,8 +16,8 @@ test("separates no-release changes from plugin ones (the web UI is gone, so ther
   assert.equal(releaseKind(["README.md"]), "plugin");
   assert.equal(releaseKind(["plugin/skills/trace/SKILL.md"]), "plugin");
   assert.equal(releaseKind(["server/src/mcp.ts"]), "plugin");
-  assert.equal(releaseKind(["server/src/tui/app.ts"]), "plugin");
-  assert.equal(releaseKind(["scripts/bundle-cli.ts"]), "plugin");
+  assert.equal(releaseKind(["server/src/cli/view.ts"]), "plugin");
+  assert.equal(releaseKind(["scripts/bundle.mjs"]), "plugin");
 });
 
 test("version-only changes can be left out of the release type input", () => {

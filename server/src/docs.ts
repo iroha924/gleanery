@@ -2,7 +2,7 @@
 //
 // **Code is not imported, documents are.** Design docs and ADRs say why things are the way they are, and they vanish with the repository.
 // **Split at headings.** One entry per file mixes the terms of a long design doc into one hit and hides which section it came from.
-// **The source text is kept separately.** Heading-only sections are dropped, so joining sections does not restore the Markdown. Screens show the source.
+// **The source text is kept separately.** Heading-only sections are dropped, so joining sections does not restore the Markdown. read shows the source.
 //
 // **The truth is the commit on the remote's default branch; the working tree is never read.** Reading it would let sync order decide which
 // machine's, which branch's, half-written state lands in the database (branch switches, unpushed commits, and old clones would roll it back).
@@ -353,7 +353,7 @@ export async function excludedOf(db: Kysely<DB>, projectId: number): Promise<Exc
  * **Only fast-forwards advance automatically.** Otherwise it fetches once more. If the stored commit has moved past the refused one,
  * another concurrent sync stored a newer commit first, so this ends without writing (a commit stored by another machine is not in
  * this clone until fetched). If not, it is a rollback, force push, or switch to a diverged branch, and it cannot tell which is right,
- * so it stops without writing (doctor and the dashboard show it; a leaked document removed by rollback is never kept silently).
+ * so it stops without writing (doctor shows it; a leaked document removed by rollback is never kept silently).
  * Only a person (reset) brings it to the current state.
  */
 export async function syncDocs(

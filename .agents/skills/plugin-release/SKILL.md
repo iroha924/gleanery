@@ -1,6 +1,6 @@
 ---
 name: plugin-release
-description: Ships changes to Sphica's MCP, CLI (including the terminal screen), capture hooks, or plugin Skills and Agents to npm. Covers bundle entry points and the modules they depend on, matching versions, and confirming delivery to both Claude and Codex. For DB schema or role changes, use knowledge-schema first, then this Skill to ship.
+description: Ships changes to Sphica's MCP, CLI, capture hooks, or plugin Skills and Agents to npm. Covers bundle entry points and the modules they depend on, matching versions, and confirming delivery to both Claude and Codex. For DB schema or role changes, use knowledge-schema first, then this Skill to ship.
 ---
 
 # Ship the package
@@ -24,9 +24,6 @@ Claude Code resolves the package with the npm client and unpacks the tarball int
 
 - **No install scripts run, and no dependencies are installed.** The tarball must be self-contained
   (it ships one file each, bundled with `bun build`). The DB is `node:sqlite` (built into Node), so there are no native dependencies
-- The CLI includes Ink, so it is bundled with `scripts/bundle-cli.ts` (`Bun.build`). Ink loads `react-devtools-core` only when `DEV=true`,
-  so `ink/build/devtools.js` is replaced with an empty module (without that, it fails at startup in environments with `react-devtools-core`
-  in a parent directory)
 - `sphica init` / `sphica db migrate` read the bundled `db/schema.sql` (and `db/migrations`, if any). CI checks it by running `init`
   in a temporary HOME with the CLI from the unpacked tarball
 - The cache updates only when the version changes. `bun run bundle` or a commit alone does not deliver anything; nothing arrives until publish
@@ -80,7 +77,7 @@ that does not bump the version fails CI's version gate. Pull them into a release
 | Kind | Changes | Versions to move |
 |---|---|---|
 | `none` | Dev docs that do not ship, repository dev Skills, tests only (the root `README.md` goes into npm, so it is `plugin`) | None |
-| `plugin` | MCP, CLI (including the terminal screen), capture, hooks, plugin Skills and Agents, shared modules | The npm package and the 3 places of the plugin channel |
+| `plugin` | MCP, CLI, capture, hooks, plugin Skills and Agents, shared modules | The npm package and the 3 places of the plugin channel |
 
 The source of truth for the classification is `scripts/lib/release-scope.mjs`; the version gate and
 the release command read the same file.
@@ -151,7 +148,7 @@ So that the marketplace never points to an unpublished version between the merge
 4. In `sphica doctor`, check that the npm package matches between the repository and the global CLI, that the plugin channel matches between the repository
    and both hosts' caches, and that no reconnect instruction remains for the running MCP
 5. From a session after the update, call `recall` and check the contents of the changed MCP tools, Skills, and Agents. If capture changed,
-   also check that the session's messages show in `sphica dashboard`'s sessions, and that the "Recording" line in `sphica doctor` has nothing
+   also check that the session's messages are found by `recall` with `mode: said`, and that the "Recording" line in `sphica doctor` has nothing
    waiting
 
 `plugin/skills/review/reviewers/` also goes through the cache, so saving or restarting a session does not give the new text.

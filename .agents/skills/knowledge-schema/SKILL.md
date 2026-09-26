@@ -1,6 +1,6 @@
 ---
 name: knowledge-schema
-description: Changes Sphica's DB schema (db/schema.sql and db/migrations, SQLite), connection roles and authorizers, the full-text search index (FTS5), knowledge kinds and statuses, and how ingestion sources write. Use when touching tables, columns, CHECKs, views, triggers, permissions, or a new import path, and when applying a migration to an existing DB. Not for changes only to the terminal screen.
+description: Changes Sphica's DB schema (db/schema.sql and db/migrations, SQLite), connection roles and authorizers, the full-text search index (FTS5), knowledge kinds and statuses, and how ingestion sources write. Use when touching tables, columns, CHECKs, views, triggers, permissions, or a new import path, and when applying a migration to an existing DB.
 ---
 
 # Change the knowledge schema
@@ -16,7 +16,6 @@ description: Changes Sphica's DB schema (db/schema.sql and db/migrations, SQLite
 
 ## Does not trigger
 
-- Changing the terminal screen, which only reads the existing schema
 - Work that only creates a DB
 
 ## Source of truth and versions
@@ -74,7 +73,7 @@ imports and connection function calls in other files. Name variables holding a n
 | Nesting a list of children in one row | `jsonArrayFrom` / `jsonObjectFrom` from `kysely/helpers/sqlite`. Add the column names to `JSON_COLUMNS` in `db.ts` (otherwise they come back as strings) |
 | JSON column values | On read, `ParseJSONResultsPlugin` turns only the `JSON_COLUMNS` columns back into values. **Narrow it by name** (the default check turns even body text starting with `[` or `{` into arrays). On write, pass `JSON.stringify` output |
 | Word search | Join the FTS5 table as a subquery in a `sql` template (`knowledgeFts` in `search.ts`). Build the query with `ftsQuery` in `text.ts` |
-| Times | Strings (ISO 8601, UTC, to the millisecond). Lexical order is time order. Convert with `new Date()` at the boundary to the screen and MCP |
+| Times | Strings (ISO 8601, UTC, to the millisecond). Lexical order is time order. Convert with `new Date()` at the boundary to the CLI and MCP |
 | Booleans | `integer` 0/1. node:sqlite cannot bind booleans |
 | BLOBs | Come back as Buffer on read (the adapter converts from Uint8Array). Compare `content_hash` with `.equals` |
 | Matching against an array | kysely's `in` is fine (SQLite accepts an empty `in ()`) |
@@ -111,7 +110,7 @@ Search is ranked word search (FTS5's bm25). The calling AI makes up for semantic
 - What `knowledge_fts` holds for a record comes from the view `knowledge_search_text`. The knowledge and knowledge_terms triggers and `db reindex`
   all insert from it, so change the rule there only
 - `knowledge_terms` holds extra search words per record (synonyms, abbreviations, English equivalents). **They are search only**: no search result,
-  read, CLI output, or dashboard view selects them. They carry the record's `content_hash` from when they were written and are indexed only while
+  read, or CLI output selects them. They carry the record's `content_hash` from when they were written and are indexed only while
   it still matches (a record whose text changed stops being found by words written for its old text). Writers: trace (`terms` on an item; a decision's
   words go to its options), GitHub sync (a `  - Terms: a, b` line under a PR decision; a blank line clears, no line keeps), and the owner's
   `sphica db terms import`. All go through `searchTerms()` in `server/src/terms.ts`. docs sync writes none (the product generates no text):
@@ -136,7 +135,6 @@ After adding a kind or status, handle these interfaces in the same change.
 - The filters in `server/src/search.ts`, and which way the `stance` expression sorts the new value
 - The input schema and descriptions in `server/src/mcp.ts` (`kinds` of `recall`)
 - The record contract in `plugin/skills/trace/SKILL.md`, and the checks in `server/src/trace.ts`
-- The display and search of `sphica dashboard` (`server/src/tui/`)
 - If the pair can be listed, add it to `scripts/check-pairs.mjs`
 
 ## Connection roles
@@ -146,12 +144,12 @@ the path where Sphica's code writes by mistake, or because untrusted text talked
 
 | Role | How it opens | Authorizer | Interfaces using it |
 |---|---|---|---|
-| owner | Writable | None | `sphica db *` (`admin.ts`) |
-| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the terminal screen, `sphica search` |
+| owner | Writable | None | `sphica db *` and the database check in `doctor` (`admin.ts`) |
+| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the CLI's listings (`project list`, `who`, the projects in `doctor`) |
 | ingest | Writable | Rejects DDL, ATTACH, creating virtual tables, and pragmas that write | `harvest`, `trace save`, `who`, `project` |
 | capture | Writable | Only inserts into the 3 views (`capture_*`) and the writes in their triggers. It can read only `project`'s id, key, and name, and `message`'s id | Capture (`capture.ts`) |
 
-- Write connections live only in `server/src/db-write.ts`. `bun run architecture` checks they cannot be reached from the MCP and terminal screen entries
+- Write connections live only in `server/src/db-write.ts`. `bun run architecture` checks they cannot be reached from the MCP entry
 - Enable `enableDefensive(true)` on every connection (it stops direct writes to FTS5's shadow tables). node:sqlite's
   default enables it too, but it is explicit so that a change in the default does not turn it off
 - Refer to authorizer actions by their names in `constants`, not by number (there is a record of mixing up `SQLITE_UPDATE` and `SQLITE_DETACH`)

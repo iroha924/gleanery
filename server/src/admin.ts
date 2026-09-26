@@ -6,15 +6,16 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import readline from "node:readline/promises";
 import { constants as C, type DatabaseSync } from "node:sqlite";
+import type { Readable, Writable } from "node:stream";
+import { confirm, isCancel } from "@clack/prompts";
 import { dbDir } from "./assets.ts";
+import { indent } from "./cli/view.ts";
 import { dbFile, SCHEMA_REVISION } from "./db.ts";
 import { connectWriter } from "./db-write.ts";
 import { plain } from "./panel.ts";
 import { searchTerms } from "./terms.ts";
 import { plural } from "./text.ts";
-import { indent } from "./tui/view.ts";
 
 /** Indented like other CLI output (the db command in cli.ts adds the heading and closing) */
 const say = (text: string) => console.log(indent(text));
@@ -203,44 +204,67 @@ export function applyMigrations(
   }
 }
 
+/** What migrate did. The CLI closes with Stopped only for cancelled (declining is not "done") */
+export type Migrated = "applied" | "up-to-date" | "cancelled";
+
+/** Asks in the terminal. No is the default, and Esc, Ctrl-C, and a closed stdin all count as no */
+export const askToApply = async (
+  input: NodeJS.ReadableStream = process.stdin,
+  output: NodeJS.WritableStream = process.stdout,
+): Promise<boolean> => {
+  // Clack does not settle when its input ends, so a closed input cancels the question (also one that ended before asking)
+  const stream = input as Readable;
+  if (stream.readableEnded || stream.destroyed) return false;
+  const closed = new AbortController();
+  const stop = () => closed.abort();
+  input.once("end", stop);
+  input.once("close", stop);
+  try {
+    const answer = await confirm({
+      message: "Apply these migrations?",
+      initialValue: false,
+      input: input as Readable,
+      output: output as Writable,
+      signal: closed.signal,
+    });
+    return !isCancel(answer) && answer;
+  } finally {
+    input.off("end", stop);
+    input.off("close", stop);
+  }
+};
+
 /**
  * Applies migrations newer than the database version. See applyMigrations for how.
  * **Lists them for confirmation before applying.** Without a terminal it cannot ask, so `--yes` is required.
  */
+const defaultAsk = () => askToApply();
+
 export async function migrate(
   yes: boolean,
   file: string = dbFile(),
   dir: string = MIGRATIONS(),
-): Promise<void> {
+  ask: () => Promise<boolean> = defaultAsk,
+): Promise<Migrated> {
   const files = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
   const current = withOwner(file, versionOf);
   const todo = pendingMigrations(files, current);
   if (todo.length === 0) {
     say(`Nothing to apply: ${file} is at revision ${current}`);
-    return;
+    return "up-to-date";
   }
   say(`DB: ${file}`);
   say(`Current revision: ${current}`);
   say(`To apply: ${todo.map((m) => m.file).join(" / ")}`);
   if (!yes) {
-    if (!process.stdin.isTTY) throw new Error("Add --yes when not running in a terminal");
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    // question never settles when stdin closes at EOF.
-    const closed = new AbortController();
-    rl.once("close", () => closed.abort());
-    const typed = (
-      await rl.question("Type yes to continue: ", { signal: closed.signal }).catch(() => "")
-    ).trim();
-    rl.close();
-    if (typed !== "yes") {
-      say("Stopped.");
-      process.exitCode = 1;
-      return;
-    }
+    if (ask === defaultAsk && !process.stdin.isTTY)
+      throw new Error("Add --yes when not running in a terminal");
+    if (!(await ask())) return "cancelled";
   }
   const applied = withOwner(file, (raw) => applyMigrations(raw, files, dir));
   say(`Applied: ${applied.map((m) => m.file).join(" / ") || "none"}`);
   say(`${file} is at revision ${withOwner(file, versionOf)}`);
+  return "applied";
 }
 
 /**

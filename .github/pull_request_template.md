@@ -1,7 +1,7 @@
 <!--
 Delete any section you do not fill, and delete this comment.
 **The body goes into the database as is** (server/src/github.ts; the diff does not). Each PR becomes one conversation,
-found by message search (recall mode: said) and `sphica dashboard` search.
+found by message search (recall mode: said).
 This is the only explanation that shows up there, so do not water it down with boilerplate.
 
 If this PR resolves an issue, put `Closes #12` on one line at the top of the body (merging closes it).

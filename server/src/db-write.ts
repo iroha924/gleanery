@@ -1,4 +1,4 @@
-// Writing connections (owner, ingest, capture). **Never imported from MCP, the dashboard, or search** (scripts/check-architecture.mjs).
+// Writing connections (owner, ingest, capture). **Never imported from MCP or search** (scripts/check-architecture.mjs).
 // Connection setup order is fixed: open → defensive and pragmas → the tokenizer function → authorizer.
 
 import { constants as C, DatabaseSync } from "node:sqlite";

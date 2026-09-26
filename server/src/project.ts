@@ -173,7 +173,7 @@ export type Connector = { id: number; headOid: string | null; snapshotAt: string
 /**
  * The source row, created when missing. **Call inside a transaction (inTransaction, which takes the write lock first)**
  * so syncs of the same source commit one at a time.
- * Sync results and the last snapshot are written here (`sphica doctor` and the dashboard show the last sync).
+ * Sync results and the last snapshot are written here (`sphica doctor` shows the last sync).
  */
 export async function connectorOf(
   db: Kysely<DB>,

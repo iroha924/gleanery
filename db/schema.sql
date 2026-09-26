@@ -4,7 +4,7 @@
 -- Three boundaries: the current state of sources (connector / source_item), verbatim conversations (conversation / message),
 -- and searchable knowledge (knowledge). Work status (work_item) is state that gets updated, so it has its own table.
 --
--- The version is `pragma user_version` at the end. MCP, the CLI, and the terminal screen compare it with SCHEMA_REVISION in server/src/db.ts
+-- The version is `pragma user_version` at the end. MCP and the CLI compare it with SCHEMA_REVISION in server/src/db.ts
 -- when opening, and stop on a mismatch. `sphica init` creates an empty database (server/src/admin.ts).
 -- Every table is STRICT (rejects type mismatches). Every primary key says not null (SQLite allows NULL in non-integer primary keys).
 -- server/src/sqlite.ts sets journal_mode and foreign_keys per connection (not here).
@@ -257,7 +257,7 @@ create index knowledge_listing on knowledge (project_id, kind, status, occurred_
 create index knowledge_work on knowledge (work_item_id) where work_item_id is not null;
 
 -- Extra search words for a record (synonyms, abbreviations, English equivalents of its words). **Search only**: no search result, read,
--- CLI output, or dashboard view shows them. content_hash is the record's hash when they were written; they are indexed only while it
+-- or CLI output shows them. content_hash is the record's hash when they were written; they are indexed only while it
 -- still matches, so a record whose text changed stops being found by words written for its old text. source says who wrote them.
 create table knowledge_terms (
   knowledge_id integer primary key not null references knowledge (id) on delete cascade,

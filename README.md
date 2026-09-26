@@ -21,7 +21,6 @@ The database is a single SQLite file on your machine.
 - **Automatic session recording.** Sphica keeps your prompts, the agent's final reply for each turn, and the paths of files changed by the agent's edit tools.
 - **Decision records on request.** `/sphica:trace` saves the decisions, rejected options, constraints, and dead ends of a session, plus where the work stands.
 - **Multi-perspective review.** `/sphica:review` runs a separate reviewer for each focus: correctness, security, and written conventions by default, plus redundancy and past decisions with `full`. When Codex is installed, it offers to repeat the review with Codex.
-- **Terminal dashboard.** `sphica dashboard` browses sessions, work in progress, and search results. It is read-only.
 - **GitHub and docs import.** `sphica harvest` imports pull requests, issues, and the repository's Markdown files.
 
 The agent is told to treat records as history, not instructions, and to trust the code when a record and the current code disagree.
@@ -107,12 +106,6 @@ sphica harvest --cwd .      # only the current repository
 Without `--cwd`, Sphica looks for projects directly under `~/Projects` and for projects registered with `--name`. Use `--cwd` for a repository somewhere else.
 Docs are read from the default branch of `origin`, or from the local `HEAD` when there is no `origin`.
 
-To browse everything in the terminal:
-
-```bash
-sphica dashboard   # Tab switches screens, / searches, p changes project, q quits
-```
-
 ## What gets recorded and where it goes
 
 - **Where.** The database is `~/.sphica/sphica.db`. Records wait in a local queue, `~/.sphica/spool`, until they are written to it. Each machine has its own database, and records are not shared between machines.
@@ -194,10 +187,8 @@ Run `sphica doctor` first. It shows which part is out of date or not working. Co
 | `sphica doctor` | Check versions, the database, and recording |
 | `sphica project add` | Register the current repository as a project |
 | `sphica harvest` | Import GitHub pull requests, issues, and Markdown docs |
-| `sphica search <words>` | Search from the terminal |
-| `sphica dashboard` | Browse sessions, work, and search results |
 
-Run `sphica --help` for the full list and `sphica <command> --help` for each command's options.
+Run `sphica --help` for the everyday commands, `sphica -H` for every command (including the ones agents and maintenance use), and `sphica <command> --help` for each command's options.
 
 ## Security
 

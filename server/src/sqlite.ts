@@ -1,5 +1,5 @@
 // Where the database file lives, and the read-only connection. **Writing connections live only in db-write.ts.**
-// The modules are split so that interfaces reading untrusted text (MCP, the dashboard, search) cannot reach a
+// The modules are split so that interfaces reading untrusted text (MCP, search) cannot reach a
 // writing connection, and scripts/check-architecture.mjs enforces the import direction.
 //
 // This guards against sphica's own code writing by mistake or because untrusted text told it to. It is not an
@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { constants as C, DatabaseSync } from "node:sqlite";
 
-/** Schema version the MCP server, CLI, and dashboard expect. Keep it equal to `pragma user_version` at the end of db/schema.sql. */
+/** Schema version the MCP server and CLI expect. Keep it equal to `pragma user_version` at the end of db/schema.sql. */
 export const SCHEMA_REVISION = 5;
 
 /** Connection roles: owner applies the schema, reader only reads, ingest imports, capture records conversations (append only). */
@@ -24,7 +24,7 @@ export const dbFile = (): string => process.env.SPHICA_DB || path.join(os.homedi
 
 /**
  * Whether Node has the APIs the permission boundary needs. **Never continue in a weaker state.** npm may only warn
- * about `engines`, so every entry point (MCP, recording, CLI, dashboard) checks this (setAuthorizer is v24.10,
+ * about `engines`, so every entry point (MCP, recording, CLI) checks this (setAuthorizer is v24.10,
  * enableDefensive is v24.12).
  */
 export function requireRuntime(): void {
