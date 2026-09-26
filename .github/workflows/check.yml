@@ -120,7 +120,7 @@ jobs:
           # On Windows, os.homedir() reads USERPROFILE.
           home="$(mktemp -d)"
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" init
-          test -f "$home/.gleanery/gleanery.db"
+          test -f "$home/.sphica/sphica.db"
           # doctor can return 1 depending on plugin install state (this runner has no plugin). Check only the DB rows.
           HOME="$home" USERPROFILE="$home" node "$out/package/dist/cli.js" doctor > doctor.out || true
           grep -E "✓ Schema version" doctor.out

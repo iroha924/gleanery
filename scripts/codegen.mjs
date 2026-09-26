@@ -38,7 +38,7 @@ const overrides = {
 
 const raw = new DatabaseSync(":memory:");
 // Triggers and the knowledge_search_text view reference it, so it must be registered with its one argument (type generation never calls it).
-raw.function("gleanery_terms", (_text) => "");
+raw.function("sphica_terms", (_text) => "");
 raw.exec(fs.readFileSync(path.join(root, "db/schema.sql"), "utf8"));
 const db = new Kysely({ dialect: new SqliteDialect({ database: adapt(raw) }) });
 const text = await generate({

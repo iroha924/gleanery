@@ -1,11 +1,11 @@
 ---
 name: tui
-description: Changes gleanery's terminal screen (`gleanery dashboard`, Ink in server/src/tui/) and the look of CLI output (server/src/tui/view.ts). Use when touching screens, key bindings, list and detail views, the shape of CLI output, symbols and icons, Markdown rendering, or the CLI bundle. Also use when changing how sessions and work are read (server/src/sessions.ts) for the screen. Not for changes only to MCP or other CLI commands, or to the DB schema.
+description: Changes Sphica's terminal screen (`sphica dashboard`, Ink in server/src/tui/) and the look of CLI output (server/src/tui/view.ts). Use when touching screens, key bindings, list and detail views, the shape of CLI output, symbols and icons, Markdown rendering, or the CLI bundle. Also use when changing how sessions and work are read (server/src/sessions.ts) for the screen. Not for changes only to MCP or other CLI commands, or to the DB schema.
 ---
 
 # Change the terminal screen
 
-`gleanery dashboard` is a terminal screen drawn with Ink, and it **only reads**.
+`sphica dashboard` is a terminal screen drawn with Ink, and it **only reads**.
 
 ## Triggers
 

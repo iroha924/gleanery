@@ -1,8 +1,8 @@
-// gleanery's colors: muted earth tones (the owner's decision). The CLI, the terminal screen, and hook output use the same values.
+// sphica's colors: muted earth tones (the owner's decision). The CLI, the terminal screen, and hook output use the same values.
 // Screen code refers to them by meaning, and hex values appear nowhere else. chalk and Ink reduce them to the terminal's color depth.
 
 export const PALETTE = {
-  /** gleanery's base color: titles, the selected row, tabs, and ratio bars (the owner's decision) */
+  /** sphica's base color: titles, the selected row, tabs, and ratio bars (the owner's decision) */
   terracotta: "#C4704B",
   /** Paths to avoid (shifted toward red to tell it apart from terracotta) */
   rosewood: "#A85D5D",

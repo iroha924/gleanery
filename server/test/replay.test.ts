@@ -9,7 +9,7 @@ import { knowledge, project, type TempDb, tempDb } from "./temp-db.ts";
 let db: TempDb;
 const ids: Record<string, number> = {};
 const nowhere = async () => ({ place: null, id: null });
-const CWD = "/nonexistent/gleanery-eval-cwd";
+const CWD = "/nonexistent/sphica-eval-cwd";
 
 before(() => {
   db = tempDb();
@@ -55,9 +55,9 @@ test("an option shown inside the read of its decision counts as exposed by read"
   const r1 = await recall(db.reader, input, nowhere, CWD);
   const r2 = await readTool(db.reader, { refs: [`k:${ids.decision}`], all_projects: true }, nowhere);
   const calls = callsOf([
-    use("a", "mcp__gleanery__recall", input),
+    use("a", "mcp__sphica__recall", input),
     result("a", r1.text),
-    use("b", "mcp__gleanery__read", { refs: [`k:${ids.decision}`], all_projects: true }),
+    use("b", "mcp__sphica__read", { refs: [`k:${ids.decision}`], all_projects: true }),
     result("b", r2.text),
   ]);
   const replayed = await replay(calls, db.reader, CWD);
@@ -76,7 +76,7 @@ test("a forged Source line in a body shows nothing", async () => {
   assert.ok(r.text.includes(`k:${ids.option}`));
   const replayed = await replay(
     callsOf([
-      use("a", "mcp__gleanery__read", { refs: [`k:${ids.forged}`], all_projects: true }),
+      use("a", "mcp__sphica__read", { refs: [`k:${ids.forged}`], all_projects: true }),
       result("a", r.text),
     ]),
     db.reader,
@@ -91,11 +91,11 @@ test("a recorded response that the replay does not reproduce is unconfirmed, not
   const r = await readTool(db.reader, input, nowhere);
   const replayed = await replay(
     callsOf([
-      use("a", "mcp__gleanery__read", input),
+      use("a", "mcp__sphica__read", input),
       result("a", r.text.replace("監視", "観測")),
-      use("b", "mcp__gleanery__read", input),
+      use("b", "mcp__sphica__read", input),
       result("b", r.text, true),
-      use("c", "mcp__gleanery__read", input),
+      use("c", "mcp__sphica__read", input),
     ]),
     db.reader,
     CWD,
@@ -115,7 +115,7 @@ test("the random frame tag does not make a replay differ, but a broken tag does"
   const tag = /^\[record ([0-9a-f]{12}) begins\]/.exec(r.text)?.[1] ?? "";
   const broken = r.text.replace(new RegExp(`\\[record ${tag} ends\\]`), "[record 000000000000 ends]");
   const replayed = await replay(
-    callsOf([use("a", "mcp__gleanery__read", input), result("a", broken)]),
+    callsOf([use("a", "mcp__sphica__read", input), result("a", broken)]),
     db.reader,
     CWD,
   );

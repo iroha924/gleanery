@@ -1,11 +1,11 @@
--- gleanery の DB の正本（SQLite、`node:sqlite`）。持ち主 1 人が、その PC での判断と会話を引くためにある。
--- **PC ごとに独立していて、記録を共有しない。**1 ファイル（~/.gleanery/gleanery.db）が 1 つの DB で、schema 修飾は持たない。
+-- sphica の DB の正本（SQLite、`node:sqlite`）。持ち主 1 人が、その PC での判断と会話を引くためにある。
+-- **PC ごとに独立していて、記録を共有しない。**1 ファイル（~/.sphica/sphica.db）が 1 つの DB で、schema 修飾は持たない。
 --
 -- 境界は 3 つ。取り込み元の今の状態（connector / source_item）、逐語の会話（conversation / message）、
 -- 検索する知識（knowledge）。作業の現在地（work_item）は更新される状態なので知識とは表を分ける。
 --
 -- バージョンは末尾の `pragma user_version`。MCP・CLI・端末の画面は開くときに server/src/db.ts の SCHEMA_REVISION と
--- 突き合わせ、食い違えば止まる。空の DB は `gleanery db init` が作る（server/src/admin.ts）。
+-- 突き合わせ、食い違えば止まる。空の DB は `sphica db init` が作る（server/src/admin.ts）。
 -- 全表 STRICT（型違いを拒む）。主キーは全部 not null を書く（SQLite は integer 以外の主キーに NULL を許す）。
 -- journal_mode・foreign_keys は接続ごとに server/src/sqlite.ts が設定する（ここには書かない）。
 --
@@ -151,18 +151,18 @@ create index message_order on message (conversation_id, sent_at);
 create index message_by_identity on message (identity_id, sent_at desc) where identity_id is not null;
 create index message_self on message (sent_at desc) where speaker_kind = 'self';
 
--- 全文検索の索引。rowid = message.seq。語は gleanery_terms()（server/src/text.ts の terms() を接続ごとに登録）で切る。
+-- 全文検索の索引。rowid = message.seq。語は sphica_terms()（server/src/text.ts の terms() を接続ごとに登録）で切る。
 -- 関数を登録していない接続からの書き込みは no such function で失敗する（索引を黙って欠かさない）。
 create virtual table message_fts using fts5(lexemes, content='', contentless_delete=1);
 create trigger message_fts_ai after insert on message when new.indexed = 1 begin
-  insert into message_fts (rowid, lexemes) values (new.seq, gleanery_terms(new.body));
+  insert into message_fts (rowid, lexemes) values (new.seq, sphica_terms(new.body));
 end;
 create trigger message_fts_ad after delete on message when old.indexed = 1 begin
   delete from message_fts where rowid = old.seq;
 end;
 create trigger message_fts_au after update of body, indexed on message begin
   delete from message_fts where rowid = old.seq and old.indexed = 1;
-  insert into message_fts (rowid, lexemes) select new.seq, gleanery_terms(new.body) where new.indexed = 1;
+  insert into message_fts (rowid, lexemes) select new.seq, sphica_terms(new.body) where new.indexed = 1;
 end;
 
 -- 発言に結んだファイル。自動記録は、編集したファイル（edit）と読んだ要件定義・設計書（read）を、触る前に持ち主が
@@ -261,7 +261,7 @@ create index knowledge_work on knowledge (work_item_id) where work_item_id is no
 create virtual table knowledge_fts using fts5(h, b, content='', contentless_delete=1);
 create trigger knowledge_fts_ai after insert on knowledge begin
   insert into knowledge_fts (rowid, h, b)
-  values (new.id, gleanery_terms(coalesce(new.heading, '')), gleanery_terms(new.body || char(10) || coalesce(new.reason, '')));
+  values (new.id, sphica_terms(coalesce(new.heading, '')), sphica_terms(new.body || char(10) || coalesce(new.reason, '')));
 end;
 create trigger knowledge_fts_ad after delete on knowledge begin
   delete from knowledge_fts where rowid = old.id;
@@ -269,7 +269,7 @@ end;
 create trigger knowledge_fts_au after update of heading, body, reason on knowledge begin
   delete from knowledge_fts where rowid = old.id;
   insert into knowledge_fts (rowid, h, b)
-  values (new.id, gleanery_terms(coalesce(new.heading, '')), gleanery_terms(new.body || char(10) || coalesce(new.reason, '')));
+  values (new.id, sphica_terms(coalesce(new.heading, '')), sphica_terms(new.body || char(10) || coalesce(new.reason, '')));
 end;
 
 -- 判断とファイルの直接の関係。applies_to は編集の前に出す制約、evidence は根拠として挙げたファイル。

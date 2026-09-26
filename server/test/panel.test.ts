@@ -27,7 +27,7 @@ test("terminal control sequences are dropped whole, not just ESC (no payload lef
 });
 
 test("a panel is title, content, and closing in order, and blank content lines are just the marker", () => {
-  assert.equal(panel("gleanery x", ["a\n\nb"], "おわり"), "✦ gleanery x\n│ a\n│\n│ b\n╰─ おわり");
+  assert.equal(panel("sphica x", ["a\n\nb"], "おわり"), "✦ sphica x\n│ a\n│\n│ b\n╰─ おわり");
 });
 
 test("inline text turns newlines and tabs into spaces and keeps ideographic spaces as stored", () => {

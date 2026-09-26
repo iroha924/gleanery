@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { Budget, fixedDb, runDir, summarize } from "../evals/agentic/run.ts";
 import { type Conditions, ineligible, type Run, solved, verdict } from "../evals/agentic/verdict.ts";
 
-const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-evals-test-")));
+const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-evals-test-")));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 const out = path.join(tmp, "out");
 fs.mkdirSync(out);
@@ -121,19 +121,19 @@ test("verdict adopts only a net gain of 2+ with no guardrail broken", () => {
 });
 
 test("the measured DB must be a fixed copy without pending WAL", () => {
-  const saved = process.env.GLEANERY_DB;
+  const saved = process.env.SPHICA_DB;
   try {
-    delete process.env.GLEANERY_DB;
-    assert.throws(() => fixedDb(), /GLEANERY_DB/);
+    delete process.env.SPHICA_DB;
+    assert.throws(() => fixedDb(), /SPHICA_DB/);
     const db = path.join(tmp, "copy.db");
     fs.writeFileSync(db, "x");
-    process.env.GLEANERY_DB = db;
+    process.env.SPHICA_DB = db;
     assert.equal(fixedDb(), db);
     fs.writeFileSync(`${db}-wal`, "pending");
     assert.throws(() => fixedDb(), /WAL/);
   } finally {
-    if (saved === undefined) delete process.env.GLEANERY_DB;
-    else process.env.GLEANERY_DB = saved;
+    if (saved === undefined) delete process.env.SPHICA_DB;
+    else process.env.SPHICA_DB = saved;
   }
 });
 
@@ -237,28 +237,28 @@ test("a budget that is not a positive number is refused", () => {
 });
 
 test("the live database is not a fixed copy, even without a WAL", () => {
-  const saved = process.env.GLEANERY_DB;
+  const saved = process.env.SPHICA_DB;
   try {
-    process.env.GLEANERY_DB = path.join(os.homedir(), ".gleanery", "gleanery.db");
+    process.env.SPHICA_DB = path.join(os.homedir(), ".sphica", "sphica.db");
     assert.throws(() => fixedDb(), /live/);
   } finally {
-    if (saved === undefined) delete process.env.GLEANERY_DB;
-    else process.env.GLEANERY_DB = saved;
+    if (saved === undefined) delete process.env.SPHICA_DB;
+    else process.env.SPHICA_DB = saved;
   }
 });
 
 test("the live database is refused through a symlink too", () => {
-  const saved = process.env.GLEANERY_DB;
+  const saved = process.env.SPHICA_DB;
   const live = path.join(tmp, "live.db");
   fs.writeFileSync(live, "x");
   const link = path.join(tmp, "live-link.db");
   fs.symlinkSync(live, link);
   try {
-    process.env.GLEANERY_DB = link;
+    process.env.SPHICA_DB = link;
     assert.throws(() => fixedDb(live), /live/);
   } finally {
-    if (saved === undefined) delete process.env.GLEANERY_DB;
-    else process.env.GLEANERY_DB = saved;
+    if (saved === undefined) delete process.env.SPHICA_DB;
+    else process.env.SPHICA_DB = saved;
   }
 });
 
@@ -277,20 +277,20 @@ test("the summary keeps the unrounded mean of turns for the guardrail", () => {
 });
 
 test("a pending WAL beside the link or beside its target both refuse the copy", () => {
-  const saved = process.env.GLEANERY_DB;
+  const saved = process.env.SPHICA_DB;
   const target = path.join(tmp, "copy-target.db");
   const link = path.join(tmp, "copy-link.db");
   fs.writeFileSync(target, "x");
   fs.symlinkSync(target, link);
   try {
-    process.env.GLEANERY_DB = link;
+    process.env.SPHICA_DB = link;
     fs.writeFileSync(`${link}-wal`, "pending");
     assert.throws(() => fixedDb(path.join(tmp, "none.db")), /WAL/);
     fs.rmSync(`${link}-wal`);
     fs.writeFileSync(`${target}-wal`, "pending");
     assert.throws(() => fixedDb(path.join(tmp, "none.db")), /WAL/);
   } finally {
-    if (saved === undefined) delete process.env.GLEANERY_DB;
-    else process.env.GLEANERY_DB = saved;
+    if (saved === undefined) delete process.env.SPHICA_DB;
+    else process.env.SPHICA_DB = saved;
   }
 });

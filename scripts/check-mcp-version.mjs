@@ -36,7 +36,7 @@ const PACKAGE = "plugin/package.json";
 const PLUGIN_MANIFESTS = {
   // **The version lives in source.** Putting it directly in the entry too makes Claude Code use plugin.json without warning
   // and silently ignore the marketplace value (official plugin-marketplaces docs). Keep it in one place.
-  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "gleanery")?.source?.version,
+  ".claude-plugin/marketplace.json": (j) => j.plugins?.find((x) => x.name === "sphica")?.source?.version,
   "plugin/.claude-plugin/plugin.json": (j) => j.version,
   "plugin/.codex-plugin/plugin.json": (j) => j.version,
 };
@@ -46,6 +46,12 @@ const read = (f) => JSON.parse(git("show", `:${f}`));
 /** The file as staged in the index (what the commit will contain). An empty ref gives `git show :path`. */
 const staged = (f) => at("", f);
 const packageVersion = read(PACKAGE).version;
+const packageName = read(PACKAGE).name;
+// Versions order within one package name. A ref that shipped another name started another line, so it is not compared
+const sameName = (ref) => {
+  const text = at(ref, PACKAGE);
+  return text !== null && JSON.parse(text).name === packageName;
+};
 const versions = Object.entries(PLUGIN_MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
 const distinct = [...new Set(versions.map(([, v]) => v))];
 if (distinct.length !== 1) {
@@ -104,6 +110,7 @@ const compare = (a, b) => {
 const versionRefs = base ? [ref] : [ref, "refs/heads/main", "refs/remotes/origin/main"];
 const newest = (file) =>
   versionRefs
+    .filter(sameName)
     .map((r) => at(r, file))
     .filter((text) => text !== null)
     .map((text) => JSON.parse(text).version)
@@ -115,7 +122,7 @@ const oldPluginVersion = newest("plugin/.claude-plugin/plugin.json");
 // **Lowering the version fails even without shipped changes.** User caches only move to newer versions.
 // Compare with the previous commit as well as the base (fork point), so a drop after a bump in the branch is caught.
 const versionAt = (r, file) => {
-  const text = at(r, file);
+  const text = sameName(r) ? at(r, file) : null;
   return text ? JSON.parse(text).version : undefined;
 };
 const headVersion = (file) => versionAt("HEAD", file);
@@ -145,11 +152,11 @@ console.error(
   [
     `${changed.length} plugin channel inputs changed, but the npm package and plugin versions were not bumped together (for example ${changed[0]}).`,
     "",
-    "  A plugin installed from the marketplace (GitHub) runs from a copy at <cache>/gleanery/gleanery/<version>/ in both Claude Code and Codex.",
+    "  A plugin installed from the marketplace (GitHub) runs from a copy at <cache>/sphica/sphica/<version>/ in both Claude Code and Codex.",
     "  The copy is made only when the version changes, so as is, the change never reaches sessions.",
     "",
     "  Bump the npm package and the 3 plugin channel manifests to the same new version.",
-    '  After it reaches the marketplace source, run the update steps under "Plugin channel versions" in `gleanery doctor` and restart sessions.',
+    '  After it reaches the marketplace source, run the update steps under "Plugin channel versions" in `sphica doctor` and restart sessions.',
   ].join("\n"),
 );
 process.exit(1);

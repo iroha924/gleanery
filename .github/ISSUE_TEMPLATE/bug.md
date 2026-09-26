@@ -1,6 +1,6 @@
 ---
 name: Bug
-about: gleanery does not work as expected
+about: Sphica does not work as expected
 title: ''
 ---
 
@@ -17,4 +17,4 @@ Leftover boilerplate dilutes message search results.
 
 ## Environment
 
-<!-- `gleanery --version`, the mismatched lines from `gleanery doctor`, the OS, and whether it was Claude Code or Codex. -->
+<!-- `sphica --version`, the mismatched lines from `sphica doctor`, the OS, and whether it was Claude Code or Codex. -->

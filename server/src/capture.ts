@@ -7,7 +7,7 @@
 // **Prompts you did not type are never recorded as your messages.** In a prior case, prompts meant for another agent
 // made up 97.2% of the database as "user messages". There are five checks, none of them guesses.
 //   - turns inside a subagent carry agent_id in the hook input
-//   - children started by Claude Code (claude -p or codex exec run from Bash) inherit GLEANERY_PARENT_SESSION, which the parent's
+//   - children started by Claude Code (claude -p or codex exec run from Bash) inherit SPHICA_PARENT_SESSION, which the parent's
 //     SessionStart wrote to CLAUDE_ENV_FILE. If it differs from its own session id, it is a child
 //     (to keep a launch from being recorded, set a value that matches no session. The value is that session's id so that, if this
 //     variable ever reaches the hook's own environment, it matches your own session id and recording does not stop)
@@ -31,8 +31,8 @@ import { identify, patchPaths, relativeTo } from "./project.ts";
 import { bytes, clean, head, mask, plural, reason, sha256, tail, uuidFrom } from "./text.ts";
 
 // Resolve the location on every call (so tests that replace HOME never touch the real queue).
-export const spoolDir = (): string => path.join(os.homedir(), ".gleanery", "spool");
-const stateFile = (): string => path.join(os.homedir(), ".gleanery", "capture.json");
+export const spoolDir = (): string => path.join(os.homedir(), ".sphica", "spool");
+const stateFile = (): string => path.join(os.homedir(), ".sphica", "capture.json");
 /** Records the database rejected. Moved here instead of deleted, and counted by doctor (fix and move them back to resend). */
 export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
 /**
@@ -172,7 +172,7 @@ type HookInput = {
 /** Whether this is your turn. Drops subagents, children started by agents, and headless runs that inherit no marker. */
 export function isOwnerTurn(
   input: HookInput,
-  parent = process.env.GLEANERY_PARENT_SESSION,
+  parent = process.env.SPHICA_PARENT_SESSION,
   entrypoint = process.env.CLAUDE_CODE_ENTRYPOINT,
   codexParent?: string,
 ): boolean {
@@ -293,23 +293,23 @@ export function answersOf(input: HookInput): string | null {
 export function captureNotice(file: string = dbFile()): string | null {
   if (!fs.existsSync(file))
     return panel(
-      "gleanery: no database, so conversations are not recorded",
+      "sphica: no database, so conversations are not recorded",
       [file],
-      "Create it with gleanery init",
+      "Create it with sphica init",
     );
   const s = readState();
   if (s.stuck)
     return panel(
-      "gleanery: cannot send recordings",
+      "sphica: cannot send recordings",
       [`${s.pending} pending / failed: ${plain(s.stuck.slice(0, 120))}`],
-      "Check with gleanery doctor",
+      "Check with sphica doctor",
     );
   if (s.rejected > 0)
     return panel(
-      `gleanery: the database rejected ${plural(s.rejected, "record")}`,
+      `sphica: the database rejected ${plural(s.rejected, "record")}`,
       // Paths go in the box lines: a newline in HOME must not forge a line outside the box.
       [rejectedDir(), `Move them back to ${spoolDir()} to resend`],
-      "Fix them first, then check with gleanery doctor",
+      "Fix them first, then check with sphica doctor",
     );
   return null;
 }
@@ -324,7 +324,7 @@ export function onHook(host: Host, input: HookInput): { flush: boolean; notice?:
     // Pass this session's id on to children the agent starts from Bash.
     const file = process.env.CLAUDE_ENV_FILE;
     if (file && input.session_id && /^[A-Za-z0-9_-]+$/.test(input.session_id)) {
-      fs.appendFileSync(file, `export GLEANERY_PARENT_SESSION=${input.session_id}\n`);
+      fs.appendFileSync(file, `export SPHICA_PARENT_SESSION=${input.session_id}\n`);
     }
     return { flush: false, notice: captureNotice() };
   }
@@ -440,7 +440,7 @@ export function readState(): State & {
  * breaks and retakes it once when the holder is gone or it is older than 5 minutes (a send killed when `-p` ends would leave the lock
  * and the next send would silently do nothing; this happened). A lock just created without a pid yet is treated as alive.
  */
-function lock(): (() => void) | null {
+export function lock(): (() => void) | null {
   const file = path.join(spoolDir(), ".lock");
   fs.mkdirSync(spoolDir(), { recursive: true, mode: 0o700 });
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -595,7 +595,7 @@ const rejected = (e: unknown): boolean => REJECTED.has(sqliteCode(e) ?? -1);
 
 /**
  * Sends the queue to the database. **The connection is capture (append only).** Sending the same thing twice adds no rows.
- * Records of unregistered projects are dropped (only projects added with `gleanery project add` are recorded).
+ * Records of unregistered projects are dropped (only projects added with `sphica project add` are recorded).
  * **One invalid record never stops later records.** When a batch fails on a bad value it resends one by one and moves only the failed records
  * to rejected/ (never deleting them). Failures such as a lost connection keep the whole batch queued for the next send.
  *

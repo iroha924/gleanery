@@ -267,7 +267,7 @@ function parse(line: string, d: Dialect): Extracted | null {
 }
 
 /** Version of the extraction rules. Bump it when the format or line shape changes (the next sync rewrites every row's content and keeps statuses). */
-const RULE = 2;
+export const RULE = 2;
 
 /** Candidate PRs for extraction. The body is the message with external_id "body", and the author is the GitHub user id. */
 export type PrForDecisions = {
@@ -291,6 +291,26 @@ type Row = {
   pr: PrForDecisions;
   heading: string;
 };
+
+/**
+ * The content hash of a row extracted from a PR body. status is the extracted one (accepted, chosen, rejected), never a status
+ * set later, and parent is the decision's source_key. Shared with `project move`, which rewrites keys and URLs of stored rows
+ * and also accepts rows last written under an earlier rule.
+ */
+export const decisionHash = (
+  r: {
+    kind: string;
+    status: string;
+    body: string;
+    reason: string | null;
+    heading: string;
+    refs: string;
+    occurred: string;
+    parent: string | null;
+  },
+  rule = RULE,
+): Buffer =>
+  sha256(JSON.stringify([rule, r.kind, r.status, r.body, r.reason, r.heading, r.refs, r.occurred, r.parent]));
 
 const CHUNK = 500;
 const chunks = <T>(xs: T[]): T[][] =>
@@ -385,9 +405,7 @@ export async function syncDecisions(
           reason: r.reason,
           refs,
           occurred_at: occurred,
-          content_hash: sha256(
-            JSON.stringify([RULE, r.kind, r.status, r.body, r.reason, r.heading, refs, occurred, r.parent]),
-          ),
+          content_hash: decisionHash({ ...r, refs, occurred }),
         };
       });
       // status and superseded_by_id are never rewritten. Only rows whose content hash changed are written

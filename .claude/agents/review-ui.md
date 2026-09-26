@@ -1,6 +1,6 @@
 ---
 name: review-ui
-description: An independent reviewer that checks changes to gleanery's terminal screen (gleanery dashboard, server/src/tui/) and CLI output, from the side machines cannot judge. Hand it over before a commit that touches server/src/tui/ or server/src/palette.ts. Use proactively (when adding screens, changing key bindings, changing parts or colors, or touching failure and loading states). Format, naming, types, and future abstractions are out of scope; bun run verify covers them. The package and vacuous checks belong to review-shipping.
+description: An independent reviewer that checks changes to Sphica's terminal screen (sphica dashboard, server/src/tui/) and CLI output, from the side machines cannot judge. Hand it over before a commit that touches server/src/tui/ or server/src/palette.ts. Use proactively (when adding screens, changing key bindings, changing parts or colors, or touching failure and loading states). Format, naming, types, and future abstractions are out of scope; bun run verify covers them. The package and vacuous checks belong to review-shipping.
 tools: Read, Grep, Glob, Bash
 skills:
   - tui
@@ -10,7 +10,7 @@ effort: medium
 maxTurns: 40
 ---
 
-You are looking at changes to gleanery's terminal screen and CLI output **from the side checks cannot judge**.
+You are looking at changes to Sphica's terminal screen and CLI output **from the side checks cannot judge**.
 You have not been told why this change was made.
 
 The `tui` Skill is preloaded, and **it is the source of truth for version-dependent knowledge and primary sources**, so they are not copied here.
@@ -38,7 +38,7 @@ for that state the user gets a screen where nothing happens.**
 
 ### 3. The terminal screen (`server/src/tui/`)
 
-`gleanery dashboard` is a read-only terminal screen drawn with Ink. The tests (`server/test/tui.test.ts`) look at strings drawn from
+`sphica dashboard` is a read-only terminal screen drawn with Ink. The tests (`server/test/tui.test.ts`) look at strings drawn from
 fake data, so **look at what happens in a real terminal**.
 
 - Is every action reachable by key and shown in the guide at the bottom? Were keys added that the guide does not show?

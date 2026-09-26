@@ -36,15 +36,15 @@ const reply = (text: string): Reply => ({ text, items: [] });
 
 const unregistered = (h: Here) =>
   h.place
-    ? `This project (${head(h.place.name, 200)}) is not registered with gleanery. Register it with \`gleanery project add\`.`
-    : "This location has no git remote or project name, so gleanery cannot tell which project it is.";
+    ? `This project (${head(h.place.name, 200)}) is not registered with Sphica. Register it with \`sphica project add\`.`
+    : "This location has no git remote or project name, so Sphica cannot tell which project it is.";
 
 /**
  * A tool failure with its reason. Left thrown, the SDK returns only error.message, which is empty for an AggregateError
  * without a message (reason(), as in the CLI, includes the reasons of inner errors).
  */
 const failed = (e: unknown): Reply => ({
-  ...reply(`gleanery: failed (${head(reason(e), 1000)})`),
+  ...reply(`sphica: failed (${head(reason(e), 1000)})`),
   isError: true,
 });
 

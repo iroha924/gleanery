@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { hasBannedName } from "./lib/banned-name.mjs";
 import { tarballProblems, trackedDistribution } from "./lib/tarball.mjs";
 
 const tgz = process.argv[2] && path.resolve(process.argv[2]);
@@ -24,11 +25,11 @@ if (problems.length) {
 }
 
 // **Extract outside the repository.** Inside it, a wrong bundle would still resolve by walking up and pass.
-const out = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-tarball-"));
-const home = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-home-"));
-// Do not pass GLEANERY_DB, which points to the owner's database, to the child (only the temp HOME database is created)
+const out = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-tarball-"));
+const home = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-home-"));
+// Do not pass SPHICA_DB, which points to the owner's database, to the child (only the temp HOME database is created)
 const parentEnv = { ...process.env };
-delete parentEnv.GLEANERY_DB;
+delete parentEnv.SPHICA_DB;
 try {
   execFileSync("tar", ["xzf", tgz, "-C", out]);
   const pkg = path.join(out, "package");
@@ -48,8 +49,20 @@ try {
   cli("--help");
   cli("db", "--help");
   cli("init");
-  if (!fs.existsSync(path.join(home, ".gleanery", "gleanery.db")))
+  if (!fs.existsSync(path.join(home, ".sphica", "sphica.db")))
     throw new Error("init did not create a database");
+  const filesIn = (dir) =>
+    fs
+      .readdirSync(dir, { withFileTypes: true, recursive: true })
+      .filter((e) => e.isFile())
+      .map((e) => path.join(e.parentPath, e.name));
+  const banned = filesIn(pkg).filter(
+    (f) => hasBannedName(path.relative(pkg, f)) || hasBannedName(fs.readFileSync(f, "latin1")),
+  );
+  if (banned.length)
+    throw new Error(
+      `the tarball has the banned name in ${banned.map((f) => path.relative(pkg, f)).join(", ")}`,
+    );
   // Web UI assets no longer ship (the UI moved to the terminal). If they remain, bundle forgot to remove them
   if (fs.existsSync(path.join(pkg, "dist", "dashboard")))
     throw new Error("tarball still contains dist/dashboard");

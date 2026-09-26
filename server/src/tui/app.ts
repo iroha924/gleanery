@@ -425,7 +425,7 @@ function WorkList(p: {
           items: works.items,
           selected,
           height,
-          empty: "No traced work yet. Record where work stands with trace (/gleanery:trace).",
+          empty: "No traced work yet. Record where work stands with trace (/sphica:trace).",
           row: (w, on) =>
             h(
               Box,

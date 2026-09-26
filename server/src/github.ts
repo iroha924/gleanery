@@ -263,10 +263,15 @@ const chunks = <T>(xs: T[], n = 1000): T[][] =>
  * Syncs one project's GitHub. repo is `owner/name`.
  * **Nothing is written when reading started before the snapshot already stored** (a late commit never rolls back a newer state).
  */
-export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string): Promise<string> {
+export async function syncGithub(
+  db: Kysely<DB>,
+  projectId: number,
+  repo: string,
+  source: GithubSource = cliSource(repo),
+): Promise<string> {
   // When reading started. Syncs on the same machine are compared, so this machine's clock is enough (each machine has its own database).
   const snapshotAt = iso(Date.now());
-  const { items, said } = await collect(cliSource(repo));
+  const { items, said } = await collect(source);
 
   const counts = await inTransaction(db, async (trx) => {
     const connector = await connectorOf(trx, projectId, "github");
@@ -323,6 +328,21 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
     );
 
     const sourceId = new Map([...known].map(([n, r]) => [n, r.id]));
+    // A PR or issue keeps the conversation it already has, so its ids (and message ids) survive a repository rename.
+    const existing = new Map(
+      (
+        await trx
+          .selectFrom("conversation as c")
+          .innerJoin("source_item as s", "s.id", "c.source_item_id")
+          .select(["c.id", "c.source_item_id"])
+          .where("c.project_id", "=", projectId)
+          .where("c.origin", "=", "github")
+          .where("s.connector_id", "=", connector.id)
+          .execute()
+      ).map((r) => [r.source_item_id, r.id]),
+    );
+    const conversationOf = (source: number, number: number): string =>
+      existing.get(source) ?? conversationId(projectId, "github", `${repo}#${number}`);
     const changedItems = items.filter((i) => !known.get(String(i.number))?.content_hash.equals(itemHash(i)));
     for (const part of chunks(changedItems)) {
       const rows = await trx
@@ -370,7 +390,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
     for (const item of items) {
       const source = sourceId.get(String(item.number));
       if (!source) throw new Error(`Could not write PR or issue #${item.number}`);
-      const conversation = conversationId(projectId, "github", `${repo}#${item.number}`);
+      const conversation = conversationOf(source, item.number);
       for (const s of said.get(item.number) ?? []) {
         const messageId = uuidFrom(conversation, s.externalId);
         live.add(messageId);
@@ -471,7 +491,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
             mergedAt: i.closedAt,
             url: i.url,
             sourceItemId: source,
-            conversationId: conversationId(projectId, "github", `${repo}#${i.number}`),
+            conversationId: conversationOf(source, i.number),
             body: body?.body ?? null,
             authorId: body?.author?.id ?? null,
           },
@@ -512,7 +532,7 @@ export async function syncGithub(db: Kysely<DB>, projectId: number, repo: string
     `${plural(items.length, "PR or issue", "PRs and issues")} (${counts.itemsWritten} rewritten${counts.itemsRemoved ? `, ${counts.itemsRemoved} removed` : ""})`,
     `${plural(total, "message")} (${counts.messagesWritten} rewritten${counts.messagesRemoved ? `, ${counts.messagesRemoved} removed` : ""})`,
     counts.decisions.unlinked
-      ? "PR decisions not imported (your GitHub handle is not linked. Run gleanery who --me <name> <handle>, then harvest again)"
+      ? "PR decisions not imported (your GitHub handle is not linked. Run sphica who --me <name> <handle>, then harvest again)"
       : `PR decisions: ${plural(counts.decisions.written, "row")} rewritten${counts.decisions.skipped ? ` (${plural(counts.decisions.skipped, "row")} skipped for not matching the format)` : ""}`,
   ].join(" / ");
 }

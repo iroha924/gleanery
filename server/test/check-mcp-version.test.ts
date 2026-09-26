@@ -15,7 +15,7 @@ const SCRIPT = path.join(
 );
 
 function repo(): { dir: string; git: (...a: string[]) => string; done: () => void } {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-version-")));
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sphica-version-")));
   const git = (...a: string[]) =>
     execFileSync(
       "git",
@@ -32,13 +32,13 @@ function write(dir: string, file: string, body: string) {
 }
 
 function bump(dir: string, version: string) {
-  write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
+  write(dir, "plugin/package.json", JSON.stringify({ name: "sphica", version }));
   // The version lives in source (putting it directly in the entry too makes Claude Code silently prefer plugin.json).
   write(
     dir,
     ".claude-plugin/marketplace.json",
     JSON.stringify({
-      plugins: [{ name: "gleanery", source: { source: "npm", package: "gleanery", version } }],
+      plugins: [{ name: "sphica", source: { source: "npm", package: "sphica", version } }],
     }),
   );
   write(dir, "plugin/.claude-plugin/plugin.json", JSON.stringify({ version }));
@@ -46,7 +46,7 @@ function bump(dir: string, version: string) {
 }
 
 function bumpPackage(dir: string, version: string) {
-  write(dir, "plugin/package.json", JSON.stringify({ name: "gleanery", version }));
+  write(dir, "plugin/package.json", JSON.stringify({ name: "sphica", version }));
 }
 
 function check(dir: string, ...args: string[]) {
@@ -149,9 +149,7 @@ test("fails a commit that changes only the marketplace source without a version 
       r.dir,
       ".claude-plugin/marketplace.json",
       JSON.stringify({
-        plugins: [
-          { name: "gleanery", source: { source: "npm", package: "gleanery-fork", version: "1.0.0" } },
-        ],
+        plugins: [{ name: "sphica", source: { source: "npm", package: "sphica-fork", version: "1.0.0" } }],
       }),
     );
     r.git("commit", "-qam", "change only the source");
@@ -273,6 +271,36 @@ test("without a base, a work branch compares against its fork point from main (o
     write(r.dir, "plugin/skills/a.md", "e");
     r.git("add", "-A");
     assert.equal(check(r.dir).status, 1);
+  } finally {
+    r.done();
+  }
+});
+
+// Versions order within one package name. A renamed package starts its own line, so a range from the old name may start lower.
+test("a range that renames the package may start its versions over, and a lower version under the same name still fails", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "3.0.0");
+    write(r.dir, "plugin/package.json", JSON.stringify({ name: "old-name", version: "3.0.0" }));
+    write(r.dir, "plugin/skills/a.md", "a");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+
+    bump(r.dir, "0.1.0");
+    write(r.dir, "plugin/skills/a.md", "b");
+    r.git("add", "-A");
+    const staged = check(r.dir);
+    assert.equal(staged.status, 0, staged.stderr);
+    r.git("commit", "-qm", "rename and start over");
+    const renamed = check(r.dir, "--base", base);
+    assert.equal(renamed.status, 0, renamed.stderr);
+
+    bump(r.dir, "0.0.9");
+    r.git("add", "-A");
+    const lower = check(r.dir);
+    assert.equal(lower.status, 1, "a lower version under the new name still fails");
+    assert.match(lower.stderr, /goes down from 0\.1\.0 to 0\.0\.9/);
   } finally {
     r.done();
   }

@@ -1,6 +1,6 @@
 # Starting the other model's lanes
 
-Part of `/gleanery:review`. **Read this only when you decided to use the other model.**
+Part of `/sphica:review`. **Read this only when you decided to use the other model.**
 **Do not assemble it by guesswork without reading**: this holds not just spellings but the flags whose removal widens permissions,
 and the paths where failure looks like success. If you could not read it, mark those lanes `unable` and do not start them.
 

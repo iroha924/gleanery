@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Drafts search words for existing records, for the owner to review and load with `gleanery db terms import`. Not shipped.
+// Drafts search words for existing records, for the owner to review and load with `sphica db terms import`. Not shipped.
 // One record per `claude -p` call, with no tools and no MCP, and the record passed as data. Drafts go outside the repository.
 // Document sections are included: docs sync writes no words, so this import is their only writer. The model and prompt version go to <out>.meta.json.
-//   bun run terms:draft -- <db> <project key> <out.json> [--par 4] [--budget 20]
+//   bun run terms:draft -- <db> <project key> <out.json> [--par 4] [--budget 20] [--keys <file of source keys, one per line>]
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -29,11 +29,14 @@ const { values, positionals } = parseArgs({
   options: {
     par: { type: "string", default: "4" },
     budget: { type: "string", default: "20" },
+    keys: { type: "string" },
   },
 });
 const [dbFile, projectKey, out] = positionals;
 if (!dbFile || !projectKey || !out)
-  throw new Error("usage: terms-draft.mjs <db> <project key> <out.json> [--par 4] [--budget 20]");
+  throw new Error(
+    "usage: terms-draft.mjs <db> <project key> <out.json> [--par 4] [--budget 20] [--keys <file>]",
+  );
 const par = Number(values.par);
 const cap = Number(values.budget);
 if (!Number.isInteger(par) || par < 1) throw new Error(`--par must be a positive integer (${values.par})`);
@@ -43,7 +46,7 @@ if (!(Number.isFinite(cap) && cap >= 0.5))
 
 const db = new DatabaseSync(dbFile, { readOnly: true });
 if (!db.prepare("select 1 from project where key = ?").get(projectKey))
-  throw new Error(`${projectKey} is not a project in ${dbFile} (see \`gleanery project list\`)`);
+  throw new Error(`${projectKey} is not a project in ${dbFile} (see \`sphica project list\`)`);
 const rows = db
   .prepare(
     `select k.source_key key, k.kind, k.status, coalesce(k.heading, '') heading, k.body, coalesce(k.reason, '') reason,
@@ -55,6 +58,22 @@ const rows = db
   )
   .all(projectKey);
 db.close();
+// Only the listed records, for redrafting the sections whose text changed. A listed key missing from the project stops the draft
+const only = values.keys
+  ? new Set(
+      fs
+        .readFileSync(values.keys, "utf8")
+        .split(/\r?\n/)
+        .map((k) => k.trim())
+        .filter(Boolean),
+    )
+  : null;
+if (only) {
+  const missing = [...only].filter((k) => !rows.some((r) => r.key === k));
+  if (missing.length)
+    throw new Error(`--keys lists records not in ${projectKey}: ${missing.slice(0, 5).join(", ")}`);
+}
+const picked = only ? rows.filter((r) => only.has(r.key)) : rows;
 
 // Resumable: records drafted for their current text are not asked again
 const draft = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, "utf8")) : {};
@@ -87,7 +106,7 @@ for (const e of Object.values(draft)) e.terms = fit(e.terms.split(","));
 fs.writeFileSync(out, JSON.stringify(draft, null, 1));
 
 function claude(text) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-terms-"));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-terms-"));
   return new Promise((resolve) => {
     const child = spawn(
       "claude",
@@ -145,7 +164,7 @@ function claude(text) {
 }
 
 // A record whose text changed since its draft is drafted again (the import would skip the old words)
-const todo = rows.filter((r) => draft[r.key]?.content_hash !== r.hash.toLowerCase());
+const todo = picked.filter((r) => draft[r.key]?.content_hash !== r.hash.toLowerCase());
 let done = 0;
 await Promise.all(
   Array.from({ length: par }, async () => {

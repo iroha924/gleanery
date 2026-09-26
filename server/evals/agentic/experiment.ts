@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One experiment: bundle a git ref, pilot 10 questions, run a split 3 times, judge, apply the adoption rule, append to <OUT>/ledger.jsonl.
 // Measure the base first (--name base); later experiments reuse its runs. Steps: .claude/rules/evals.md
-//   GLEANERY_DB=<copy> bun run evals:experiment -- --name k1 --ref <git ref> [--base base] [--split dev] [--budget 10]
+//   SPHICA_DB=<copy> bun run evals:experiment -- --name k1 --ref <git ref> [--base base] [--split dev] [--budget 10]
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

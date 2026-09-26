@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Keeps English-only files free of Japanese. gleanery is moving to English one area at a time,
+// Keeps English-only files free of Japanese. sphica is moving to English one area at a time,
 // and a file that was translated drifts back unless something stops it.
 //
-// Records that users write stay in their own language. Only the text gleanery itself writes is checked.
+// Records that users write stay in their own language. Only the text sphica itself writes is checked.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -48,7 +48,7 @@ const COMMENTS = [
   ),
 ];
 
-/** Markdown, YAML, SQL, JSON, and config files gleanery writes. Checked line by line, since they are not JavaScript. */
+/** Markdown, YAML, SQL, JSON, and config files Sphica writes. Checked line by line, since they are not JavaScript. */
 const TEXT = [
   ...filesUnder("plugin/skills", /\.(md|json|ya?ml)$/),
   ".github/pull_request_template.md",

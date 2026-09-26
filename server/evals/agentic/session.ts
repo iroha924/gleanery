@@ -20,8 +20,8 @@ type Block = {
   text?: string;
 };
 
-const RECALL = "mcp__gleanery__recall";
-const READ = "mcp__gleanery__read";
+const RECALL = "mcp__sphica__recall";
+const READ = "mcp__sphica__read";
 
 /** One recorded tool call with the response the agent received. */
 export type Call = {
@@ -39,7 +39,7 @@ const blocksOf = (e: Event): Block[] => {
   return Array.isArray(content) ? (content as Block[]) : [];
 };
 
-/** The gleanery tool calls of a trace in the order they were made, each with its recorded result. */
+/** The sphica tool calls of a trace in the order they were made, each with its recorded result. */
 export function callsOf(events: Event[]): Call[] {
   const results = new Map<string, Block>();
   for (const e of events)
@@ -101,7 +101,7 @@ export async function replay(calls: Call[], db: Kysely<DB>, cwd: string): Promis
   const out: Replayed[] = [];
   for (const c of calls) {
     if (c.tool === "other") {
-      out.push({ ...c, matched: false, why: "not a gleanery tool", items: [] });
+      out.push({ ...c, matched: false, why: "not a sphica tool", items: [] });
       continue;
     }
     let r: Reply;

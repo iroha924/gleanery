@@ -147,7 +147,7 @@ export function commitOf(root: string, remote: boolean): string {
         "--no-tags",
         "--no-recurse-submodules",
         "origin",
-        "+HEAD:refs/gleanery/docs-head",
+        "+HEAD:refs/sphica/docs-head",
       ]);
     } catch (e) {
       const err = e as { code?: string; stderr?: Buffer };
@@ -159,7 +159,7 @@ export function commitOf(root: string, remote: boolean): string {
         `Could not fetch the remote's default branch (${detail}). Documents stay as of the last sync.`,
       );
     }
-    return git(root, ["rev-parse", "--verify", "refs/gleanery/docs-head^{commit}"]).toString().trim();
+    return git(root, ["rev-parse", "--verify", "refs/sphica/docs-head^{commit}"]).toString().trim();
   }
   try {
     return git(root, ["rev-parse", "--verify", "HEAD^{commit}"]).toString().trim();
@@ -251,8 +251,16 @@ const EXCLUDE_NONE: Excluded = { files: [], directories: [] };
 const excluded = (rel: string, ex: Excluded): boolean =>
   ex.files.includes(rel) || ex.directories.some((d) => rel.startsWith(`${d}/`));
 
-/** Where requirements and design docs used to live. Excluded with nested paths so unapproved drafts never reach search. */
-const underGleanery = (rel: string): boolean => /(^|\/)\.gleanery\//.test(rel);
+/**
+ * SHA-256 of the directory name where requirements and design drafts used to be committed. Paths under it, at any depth, are
+ * never imported, so leftover unapproved drafts stay out of search. The name is kept out of the tree, so it is matched by hash.
+ */
+const DRAFT_DIRS = ["53d254b7afcb172532012bacf0ed0fbd20c5e4d0f1901e33197b200c58b50ff7"];
+const inDraftDir = (rel: string, dirs: string[]): boolean =>
+  rel
+    .split("/")
+    .slice(0, -1)
+    .some((d) => dirs.includes(sha256(d).toString("hex")));
 
 export type Doc = {
   path: string;
@@ -302,11 +310,12 @@ export function collectDocs(
   root: string,
   commit: string,
   ex: Excluded = EXCLUDE_NONE,
+  draftDirs: string[] = DRAFT_DIRS,
 ): { docs: Doc[]; skipped: number } {
   const tree = treeOf(root, commit);
   // **Apply exclusions before reading blobs.** Reading then discarding would load excluded text into memory once.
   const md = [...tree.entries].filter(
-    ([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex) && !underGleanery(rel),
+    ([rel]) => /\.mdx?$/i.test(rel) && !excluded(rel, ex) && !inDraftDir(rel, draftDirs),
   );
   const readable = md.filter(([, e]) => FILE_MODES.has(e.mode) && e.size <= MAX_FILE);
   const blobs = blobsOf(
@@ -484,7 +493,7 @@ export async function syncDocs(
     throw new Error(
       `The stored commit (${done.refused.slice(0, 8)}) is not a fast-forward to ${opts.remote ? "the remote's default branch" : "HEAD"} (${commit.slice(0, 8)}), ` +
         "so nothing was written (a rollback, force push, or switch to a diverged branch). " +
-        `To match the current state, run \`gleanery harvest --cwd ${root} --reset-docs\``,
+        `To match the current state, run \`sphica harvest --cwd ${root} --reset-docs\``,
     );
   }
   const sectionCount = docs.reduce((n, d) => n + d.sections.length, 0);

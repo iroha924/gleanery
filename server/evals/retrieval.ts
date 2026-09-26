@@ -6,7 +6,7 @@
 // It measures recall@k (share of answers in the top k), MRR (mean reciprocal rank of the answer), and top1.
 //
 // **It reads the owner's records, so it is not part of `bun run verify`.** Run it by hand (`bun run evals:retrieval`).
-// Point `GLEANERY_DB` at a database (for measuring a SQLite copy made for evaluation).
+// Point `SPHICA_DB` at a database (for measuring a SQLite copy made for evaluation).
 // To compare, use the same retrieval.json and the same DB copy before and after a change. Rebuilt questions are not comparable,
 // and a different DB scores a different set (questions whose answer is missing are listed, not scored).
 //
@@ -64,7 +64,7 @@ const rank = (hits: Hit[], expect: string[]): number =>
 
 type Strategy = (c: Case) => Promise<Hit[]>;
 
-// The same functions and order as `gleanery search` and the terminal screen (without kinds, decision records come before document sections).
+// The same functions and order as `sphica search` and the terminal screen (without kinds, decision records come before document sections).
 const strategies: Record<string, Strategy> = {
   "shipped: one-shot search (knowledge)": async (c) => {
     if (c.source === "message") return [];

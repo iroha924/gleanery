@@ -1,4 +1,4 @@
--- gleanery: foreign_keys=off
+-- sphica: foreign_keys=off
 -- Adds extra search words per record (knowledge_terms) and rebuilds the knowledge index with a third column for them.
 create table knowledge_terms (
   knowledge_id integer primary key not null references knowledge (id) on delete cascade,
@@ -10,9 +10,9 @@ create table knowledge_terms (
 
 create view knowledge_search_text as
 select k.id,
-  gleanery_terms(coalesce(k.heading, '')) as h,
-  gleanery_terms(k.body || char(10) || coalesce(k.reason, '')) as b,
-  gleanery_terms(coalesce(t.terms, '')) as e
+  sphica_terms(coalesce(k.heading, '')) as h,
+  sphica_terms(k.body || char(10) || coalesce(k.reason, '')) as b,
+  sphica_terms(coalesce(t.terms, '')) as e
 from knowledge k
 left join knowledge_terms t on t.knowledge_id = k.id and t.content_hash = k.content_hash;
 

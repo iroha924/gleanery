@@ -10,7 +10,7 @@ import { dbDir } from "../src/assets.ts";
  * Inside it, lookups would walk up to the repository's db even with candidates removed, and a broken layout would pass.
  */
 function packaged(): { pkg: string; dist: string } {
-  const pkg = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-assets-"));
+  const pkg = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-assets-"));
   fs.mkdirSync(path.join(pkg, "dist"), { recursive: true });
   fs.mkdirSync(path.join(pkg, "db"), { recursive: true });
   fs.writeFileSync(path.join(pkg, "db", "schema.sql"), "-- schema");

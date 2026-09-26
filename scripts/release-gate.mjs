@@ -40,7 +40,7 @@ const tagCommit = exact(`refs/tags/${tag}^{}`) ?? exact(`refs/tags/${tag}`) ?? n
 // Whether npm already has this version. If not, npm view fails with E404 (any other failure throws and stops)
 let published = false;
 try {
-  published = run("npm", ["view", `gleanery@${tag.replace(/^v/, "")}`, "version"]) !== "";
+  published = run("npm", ["view", `sphica@${tag.replace(/^v/, "")}`, "version"]) !== "";
 } catch (e) {
   if (!String(e instanceof Error && "stderr" in e ? e.stderr : e).includes("E404")) throw e;
 }
@@ -53,7 +53,7 @@ const { problems, pull } = gateProblems({
     package: read("plugin/package.json").version,
     claude: read("plugin/.claude-plugin/plugin.json").version,
     codex: read("plugin/.codex-plugin/plugin.json").version,
-    marketplace: read(".claude-plugin/marketplace.json").plugins.find((entry) => entry.name === "gleanery")
+    marketplace: read(".claude-plugin/marketplace.json").plugins.find((entry) => entry.name === "sphica")
       ?.source?.version,
   },
   mainIsAncestor,

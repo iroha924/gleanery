@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "gleanery": {
+    "sphica": {
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp.js"]
     }

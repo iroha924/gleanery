@@ -1,4 +1,4 @@
-// Sessions, projects, and work lists the dashboard (gleanery dashboard) reads. **Read only**; takes a reader connection.
+// Sessions, projects, and work lists the dashboard (sphica dashboard) reads. **Read only**; takes a reader connection.
 // Search and lookups use search.ts. Only the ordering and grouping for people live here.
 
 import { type Kysely, sql } from "kysely";

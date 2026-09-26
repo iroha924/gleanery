@@ -1,6 +1,6 @@
 // Versions of the npm package and the distributed plugin, and where each one runs from.
 //
-// Claude Code and Codex both copy the plugin to `<cache>/<marketplace>/gleanery/<version>/`
+// Claude Code and Codex both copy the plugin to `<cache>/<marketplace>/sphica/<version>/`
 // and start MCP from there. Only Claude Code with a directory marketplace (observed in 2.1.268) and
 // `--plugin-dir` read the working tree directly.
 
@@ -14,27 +14,27 @@ import { caution, faint, type Mark, mark, pad, width } from "./panel.ts";
 const MANIFEST = path.join(".claude-plugin", "plugin.json");
 const PACKAGE = "package.json";
 
-/** The version when root is a gleanery package. null for a removed cache or another plugin. */
+/** The version when root is a sphica package. null for a removed cache or another plugin. */
 export function versionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, MANIFEST), "utf8")) as {
       name?: unknown;
       version?: unknown;
     };
-    return m.name === "gleanery" && typeof m.version === "string" ? m.version : null;
+    return m.name === "sphica" && typeof m.version === "string" ? m.version : null;
   } catch {
     return null;
   }
 }
 
-/** The version when root is the gleanery npm package. It can move independently of the plugin channel version. */
+/** The version when root is the sphica npm package. It can move independently of the plugin channel version. */
 export function packageVersionAt(root: string): string | null {
   try {
     const m = JSON.parse(fs.readFileSync(path.join(root, PACKAGE), "utf8")) as {
       name?: unknown;
       version?: unknown;
     };
-    return m.name === "gleanery" && typeof m.version === "string" ? m.version : null;
+    return m.name === "sphica" && typeof m.version === "string" ? m.version : null;
   } catch {
     return null;
   }
@@ -182,7 +182,7 @@ function cwdOf(pid: number): { dir: string; replaced: boolean } | null {
   }
 }
 
-const CACHED = /\/plugins\/cache\/[^/]+\/gleanery\/[^/]+$/;
+const CACHED = /\/plugins\/cache\/[^/]+\/sphica\/[^/]+$/;
 
 export type Install = { version: string | null; packageVersion?: string | null; root: string };
 type Running = {
@@ -195,7 +195,7 @@ type Running = {
 };
 
 export type Seen = {
-  /** The working tree's plugin/. Visible only when cwd or the CLI location is the gleanery repository. */
+  /** The working tree's plugin/. Visible only when cwd or the CLI location is the sphica repository. */
   repository: Install | null;
   cli: Install;
   /**
@@ -236,7 +236,7 @@ export function observe(cwdRoot: string): Seen {
     ) as { id: string; version?: string; installPath?: string; scope?: string }[];
     // The same id appears per scope. Only the user install is checked, matching the README install steps and `claude plugin update`
     // below (user scope by default). project / local installs only affect sessions elsewhere.
-    const m = list.find((p) => p.id.startsWith("gleanery@") && p.scope === "user");
+    const m = list.find((p) => p.id.startsWith("sphica@") && p.scope === "user");
     claude = m?.installPath ? { version: m.version ?? null, root: m.installPath } : null;
   } catch {
     claude = "unknown";
@@ -255,8 +255,8 @@ export function observe(cwdRoot: string): Seen {
   const codexCache = path.join(codexHome, "plugins", "cache");
   const codex: Install[] = [];
   for (const market of safeDirs(codexCache)) {
-    for (const v of safeDirs(path.join(codexCache, market, "gleanery"))) {
-      codex.push(install(path.join(codexCache, market, "gleanery", v)));
+    for (const v of safeDirs(path.join(codexCache, market, "sphica"))) {
+      codex.push(install(path.join(codexCache, market, "sphica", v)));
     }
   }
 
@@ -299,7 +299,7 @@ export function observe(cwdRoot: string): Seen {
   // revision goes up, only the old CLI fails with "expects revision N".
   let global: Install | null = null;
   try {
-    const at = path.join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "gleanery");
+    const at = path.join(execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim(), "sphica");
     if (fs.existsSync(at)) global = install(at);
   } catch {
     global = null;
@@ -324,15 +324,15 @@ function safeDirs(dir: string): string[] {
 // /reload-plugins moves them to the new path (official plugins-reference). Codex needs to be reopened.
 /** How to fix an old install: the command to run and what to do after it (after) */
 const UPDATE = {
-  global: { who: "npm CLI", command: "npm i -g gleanery@<version>", after: null },
+  global: { who: "npm CLI", command: "npm i -g sphica@<version>", after: null },
   claude: {
     who: "Claude Code",
-    command: "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery",
+    command: "claude plugin marketplace update sphica && claude plugin update sphica@sphica",
     after: "run /reload-plugins in open sessions",
   },
   codex: {
     who: "Codex",
-    command: "codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery",
+    command: "codex plugin marketplace upgrade sphica && codex plugin add sphica@sphica",
     after: "reopen Codex",
   },
 } as const;
@@ -419,7 +419,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
       return {
         note: s.repository
           ? `newer than the repository (${base.version}); the repository checkout is old`
-          : `newer than this CLI (${base.version}). Match the CLI with \`npm i -g gleanery@${i.version}\``,
+          : `newer than this CLI (${base.version}). Match the CLI with \`npm i -g sphica@${i.version}\``,
       };
     }
     if (path.resolve(i.root) === path.resolve(base.root)) return {};
@@ -505,7 +505,7 @@ export function report(s: Seen, now = new Date()): { lines: string[]; issues: st
   const updates = [...todo].map((k): Update => {
     const u = UPDATE[k];
     return k === "global" && packageBase.version
-      ? { ...u, command: `npm i -g gleanery@${packageBase.version}` }
+      ? { ...u, command: `npm i -g sphica@${packageBase.version}` }
       : { ...u };
   });
   return { lines, issues, updates };

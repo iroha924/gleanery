@@ -24,7 +24,7 @@ import { tempDb } from "./temp-db.ts";
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
 const REPO_PLUGIN = path.join(SRC, "..", "..", "plugin");
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-plugin-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-plugin-"));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 /** Builds a package with a manifest and one content file. */
 function plugin(where: string, version: string, body = "x"): Install {
@@ -33,11 +33,11 @@ function plugin(where: string, version: string, body = "x"): Install {
   fs.mkdirSync(path.join(root, "dist"), { recursive: true });
   fs.writeFileSync(
     path.join(root, ".claude-plugin", "plugin.json"),
-    JSON.stringify({ name: "gleanery", version }),
+    JSON.stringify({ name: "sphica", version }),
   );
   fs.writeFileSync(
     path.join(root, "package.json"),
-    JSON.stringify({ name: "gleanery", version, type: "module" }),
+    JSON.stringify({ name: "sphica", version, type: "module" }),
   );
   fs.writeFileSync(path.join(root, "dist", "mcp.js"), body);
   return { version, packageVersion: version, root };
@@ -66,7 +66,7 @@ test("an outdated npm i -g CLI shows in both the row and the update steps", () =
   // Fill in the target version so the command can be run as is
   assert.deepEqual(
     updates.find((u) => u.who === "npm CLI"),
-    { who: "npm CLI", command: "npm i -g gleanery@0.33.12", after: null },
+    { who: "npm CLI", command: "npm i -g sphica@0.33.12", after: null },
   );
 });
 
@@ -82,7 +82,7 @@ test("versions compare numerically (0.10.9 < 0.10.18)", () => {
   assert.equal(compareVersions("1.0.0", "0.99.99"), 1);
 });
 
-test("manifests other than gleanery and missing roots have no version", () => {
+test("manifests other than sphica and missing roots have no version", () => {
   const other = path.join(tmp, "other");
   fs.mkdirSync(path.join(other, ".claude-plugin"), { recursive: true });
   fs.writeFileSync(
@@ -135,7 +135,7 @@ test("on the repository side, only files tracked by git are compared as shipped 
 
 test("picks only node …/dist/mcp.js from ps output", () => {
   const out = [
-    "18319 Fri Sep 11 09:07:27 2026     node /Users/me/Projects/gleanery/plugin/dist/mcp.js",
+    "18319 Fri Sep 11 09:07:27 2026     node /Users/me/Projects/sphica/plugin/dist/mcp.js",
     "29334 Fri Sep  4 14:10:31 2026     node ./dist/mcp.js",
     "  401 Fri Sep 11 09:00:00 2026     /opt/homebrew/bin/node /Users/me/Library/Application Support/x/dist/mcp.js",
     "  500 Fri Sep 11 09:00:00 2026     node /Users/me/other/dist/cli.js",
@@ -145,7 +145,7 @@ test("picks only node …/dist/mcp.js from ps output", () => {
   assert.deepEqual(
     got.map((p) => [p.pid, p.script]),
     [
-      [18319, "/Users/me/Projects/gleanery/plugin/dist/mcp.js"],
+      [18319, "/Users/me/Projects/sphica/plugin/dist/mcp.js"],
       [29334, "./dist/mcp.js"],
       [401, "/Users/me/Library/Application Support/x/dist/mcp.js"],
     ],
@@ -159,8 +159,8 @@ test("installs older than the repository show update steps for both hosts", () =
     seen({
       repository,
       cli: repository,
-      claude: plugin("claude/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18"),
-      codex: [plugin("codex/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18")],
+      claude: plugin("claude/plugins/cache/sphica/sphica/0.10.18", "0.10.18"),
+      codex: [plugin("codex/plugins/cache/sphica/sphica/0.10.18", "0.10.18")],
     }),
   );
   // Running in-process on a terminal colors the markers. Strip them before comparing.
@@ -172,12 +172,12 @@ test("installs older than the repository show update steps for both hosts", () =
   assert.deepEqual(r.updates, [
     {
       who: "Claude Code",
-      command: "claude plugin marketplace update gleanery && claude plugin update gleanery@gleanery",
+      command: "claude plugin marketplace update sphica && claude plugin update sphica@sphica",
       after: "run /reload-plugins in open sessions",
     },
     {
       who: "Codex",
-      command: "codex plugin marketplace upgrade gleanery && codex plugin add gleanery@gleanery",
+      command: "codex plugin marketplace upgrade sphica && codex plugin add sphica@sphica",
       after: "reopen Codex",
     },
   ]);
@@ -189,8 +189,8 @@ test("running from an old cached CLI does not call a newer install outdated", ()
   const out = report(
     seen({
       repository,
-      cli: plugin("claude/plugins/cache/gleanery/gleanery/0.10.18b", "0.10.18"),
-      claude: plugin("claude/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19"),
+      cli: plugin("claude/plugins/cache/sphica/sphica/0.10.18b", "0.10.18"),
+      claude: plugin("claude/plugins/cache/sphica/sphica/0.10.19", "0.10.19"),
     }),
   );
   assert.match(
@@ -208,7 +208,7 @@ test("with the same version but different content, only the repository CLI shows
     seen({
       repository,
       cli: repository,
-      codex: [plugin("codex/plugins/cache/gleanery/gleanery/0.10.18c", "0.10.18", "old")],
+      codex: [plugin("codex/plugins/cache/sphica/sphica/0.10.18c", "0.10.18", "old")],
     }),
   );
   const out = r.lines.join("\n");
@@ -224,7 +224,7 @@ test("when the install is newer, says the checkout is outdated instead of showin
   const r = report(
     seen({
       repository: plugin("r4/plugin", "0.10.18"),
-      claude: plugin("claude4/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19"),
+      claude: plugin("claude4/plugins/cache/sphica/sphica/0.10.19", "0.10.19"),
     }),
   );
   assert.match(
@@ -238,16 +238,16 @@ test("does not crash without a repository and with a missing Claude install", ()
   const out = report(
     seen({
       claude: { version: "0.10.18", root: path.join(tmp, "claude5", "missing") },
-      codex: [plugin("codex5/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18")],
+      codex: [plugin("codex5/plugins/cache/sphica/sphica/0.10.18", "0.10.18")],
     }),
   ).lines.join("\n");
   assert.match(out, /Claude Code [^\n]*\n +The install directory is gone/);
 });
 
 test("the running MCP is judged by its launch source and the installed version", () => {
-  const installed = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.19", "0.10.19");
-  const older = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.18", "0.10.18");
-  const replaced = plugin("claude2/plugins/cache/gleanery/gleanery/0.10.17", "0.10.17");
+  const installed = plugin("claude2/plugins/cache/sphica/sphica/0.10.19", "0.10.19");
+  const older = plugin("claude2/plugins/cache/sphica/sphica/0.10.18", "0.10.18");
+  const replaced = plugin("claude2/plugins/cache/sphica/sphica/0.10.17", "0.10.17");
   fs.writeFileSync(path.join(replaced.root, ".orphaned_at"), "1");
   const codexCache = path.join(tmp, "codex2", "plugins", "cache");
   const started = new Date("2026-09-11T00:07:27Z");
@@ -262,7 +262,7 @@ test("the running MCP is judged by its launch source and the installed version",
         {
           pid: 4,
           started,
-          root: path.join(codexCache, "gleanery", "gleanery", "0.10.16"),
+          root: path.join(codexCache, "sphica", "sphica", "0.10.16"),
           version: "0.10.16",
         },
         { pid: 5, started, root: plugin("work/plugin", "0.10.19").root, version: "0.10.19" },
@@ -270,7 +270,7 @@ test("the running MCP is judged by its launch source and the installed version",
         {
           pid: 6,
           started,
-          root: plugin("codex2/plugins/cache/gleanery/gleanery/0.10.15", "0.10.15").root,
+          root: plugin("codex2/plugins/cache/sphica/sphica/0.10.15", "0.10.15").root,
           version: "0.10.15",
           replaced: true,
         },
@@ -297,7 +297,7 @@ test("the running MCP is judged by its launch source and the installed version",
 
 test("identifies the running MCP from its launch source and detects a cache recreated in place", async () => {
   // Like Codex, start with root as cwd and a relative path.
-  const where = "obs/plugins/cache/gleanery/gleanery/0.0.1";
+  const where = "obs/plugins/cache/sphica/sphica/0.0.1";
   const idle = "setInterval(() => {}, 1000);";
   const { root } = plugin(where, "0.0.1", idle);
   const child = spawn("node", ["./dist/mcp.js"], { cwd: root, stdio: "ignore" });
@@ -338,7 +338,7 @@ test("reports unobservable things as unknown, not missing", () => {
   assert.deepEqual(r.issues, [], "unobservable items are not counted as fixes");
 });
 
-test("gleanery --version prints the npm package version", () => {
+test("sphica --version prints the npm package version", () => {
   const out = execFileSync(process.execPath, [path.join(SRC, "cli.ts"), "--version"], {
     encoding: "utf8",
     env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent" },
@@ -366,7 +366,7 @@ test("MCP serverInfo reports the manifest version", async () => {
 
 test("MCP recall and read return failures with isError and a non-empty reason", async () => {
   // A thrown error makes the SDK return only error.message. Return failures with a reason (the same reason() as the CLI).
-  // all_projects avoids depending on where it runs. The database points to a missing path (the owner's ~/.gleanery stays untouched).
+  // all_projects avoids depending on where it runs. The database points to a missing path (the owner's ~/.sphica stays untouched).
   const client = new Client({ name: "test", version: "0" });
   await client.connect(
     new StdioClientTransport({
@@ -375,7 +375,7 @@ test("MCP recall and read return failures with isError and a non-empty reason", 
       env: {
         PATH: process.env.PATH ?? "",
         HOME: "/nonexistent",
-        GLEANERY_DB: "/nonexistent/gleanery.db",
+        SPHICA_DB: "/nonexistent/sphica.db",
       },
       stderr: "ignore",
     }),
@@ -387,7 +387,7 @@ test("MCP recall and read return failures with isError and a non-empty reason", 
     ] as const) {
       const r = await client.callTool({ name, arguments: args });
       assert.equal(r.isError, true, name);
-      assert.match(JSON.stringify(r.content), /gleanery: failed \(No database at/, name);
+      assert.match(JSON.stringify(r.content), /sphica: failed \(No database at/, name);
     }
   } finally {
     await client.close();
@@ -400,8 +400,8 @@ test("reports a CLI and plugin version gap without a repository", () => {
   const older = report(
     seen({
       cli: plugin("npm-cli-new", "0.15.0"),
-      claude: plugin("npm-claude-old/gleanery/0.14.0", "0.14.0"),
-      codex: [plugin("npm-codex-old/plugins/cache/gleanery/gleanery/0.14.0", "0.14.0")],
+      claude: plugin("npm-claude-old/sphica/0.14.0", "0.14.0"),
+      codex: [plugin("npm-codex-old/plugins/cache/sphica/sphica/0.14.0", "0.14.0")],
     }),
   ).lines.join("\n");
   assert.match(older, /Claude Code [^\n]*\n +older than this CLI \(0\.15\.0\)/);
@@ -411,10 +411,10 @@ test("reports a CLI and plugin version gap without a repository", () => {
   const newer = report(
     seen({
       cli: plugin("npm-cli-old", "0.14.0"),
-      claude: plugin("npm-claude-new/gleanery/0.16.0", "0.16.0"),
+      claude: plugin("npm-claude-new/sphica/0.16.0", "0.16.0"),
     }),
   ).lines.join("\n");
-  assert.match(newer, /npm i -g gleanery@0\.16\.0/);
+  assert.match(newer, /npm i -g sphica@0\.16\.0/);
 });
 
 // With the same version, compare content too. Without a repository, suggest reinstalling.
@@ -422,7 +422,7 @@ test("without a repository, same version with different content suggests reinsta
   const out = report(
     seen({
       cli: plugin("same-cli", "0.15.0", "new"),
-      claude: plugin("same-claude/gleanery/0.15.0", "0.15.0", "old"),
+      claude: plugin("same-claude/sphica/0.15.0", "0.15.0", "old"),
     }),
   ).lines.join("\n");
   assert.match(out, /same version, different contents.*Reinstall to match/);
@@ -436,7 +436,7 @@ test("MCP server instructions and tool descriptions fit in 2,048 characters and 
     new StdioClientTransport({
       command: process.execPath,
       args: [path.join(SRC, "mcp.ts")],
-      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", GLEANERY_DB: "/nonexistent/gleanery.db" },
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", SPHICA_DB: "/nonexistent/sphica.db" },
       stderr: "ignore",
     }),
   );
@@ -477,7 +477,7 @@ test("MCP adds the frame only through framedWithin", () => {
 // An unregistered project name comes from the remote spelling. Copying it without a length cap goes over the limit.
 test("the response fits the limit even with a long unregistered project name", async () => {
   const db = tempDb();
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-unreg-"));
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-unreg-"));
   execFileSync("git", ["init", "-q"], { cwd: repo });
   execFileSync("git", ["remote", "add", "origin", `https://example.test/o/${"r".repeat(9000)}.git`], {
     cwd: repo,
@@ -487,14 +487,14 @@ test("the response fits the limit even with a long unregistered project name", a
     new StdioClientTransport({
       command: process.execPath,
       args: [path.join(SRC, "mcp.ts")],
-      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", GLEANERY_DB: db.file },
+      env: { PATH: process.env.PATH ?? "", HOME: "/nonexistent", SPHICA_DB: db.file },
       stderr: "ignore",
     }),
   );
   try {
     const r = await client.callTool({ name: "recall", arguments: { question: "x", cwd: repo } });
     const t = (r.content as { text: string }[])[0]?.text ?? "";
-    assert.match(t, /is not registered with gleanery/);
+    assert.match(t, /is not registered with Sphica/);
     assert.ok(Buffer.byteLength(t) <= 4096, `${Buffer.byteLength(t)} bytes`);
   } finally {
     await client.close();

@@ -1,11 +1,11 @@
--- The source of truth for gleanery's database (SQLite, `node:sqlite`). It lets one owner look up decisions and conversations on that machine.
--- **Each machine is independent and shares no records.** One file (~/.gleanery/gleanery.db) is one database, with no schema qualifiers.
+-- The source of truth for sphica's database (SQLite, `node:sqlite`). It lets one owner look up decisions and conversations on that machine.
+-- **Each machine is independent and shares no records.** One file (~/.sphica/sphica.db) is one database, with no schema qualifiers.
 --
 -- Three boundaries: the current state of sources (connector / source_item), verbatim conversations (conversation / message),
 -- and searchable knowledge (knowledge). Work status (work_item) is state that gets updated, so it has its own table.
 --
 -- The version is `pragma user_version` at the end. MCP, the CLI, and the terminal screen compare it with SCHEMA_REVISION in server/src/db.ts
--- when opening, and stop on a mismatch. `gleanery init` creates an empty database (server/src/admin.ts).
+-- when opening, and stop on a mismatch. `sphica init` creates an empty database (server/src/admin.ts).
 -- Every table is STRICT (rejects type mismatches). Every primary key says not null (SQLite allows NULL in non-integer primary keys).
 -- server/src/sqlite.ts sets journal_mode and foreign_keys per connection (not here).
 --
@@ -151,18 +151,18 @@ create index message_order on message (conversation_id, sent_at);
 create index message_by_identity on message (identity_id, sent_at desc) where identity_id is not null;
 create index message_self on message (sent_at desc) where speaker_kind = 'self';
 
--- The full-text index. rowid = message.seq. Terms are split by gleanery_terms() (terms() in server/src/text.ts, registered per connection).
+-- The full-text index. rowid = message.seq. Terms are split by sphica_terms() (terms() in server/src/text.ts, registered per connection).
 -- Writes from a connection without the function fail with no such function (the index never silently misses rows).
 create virtual table message_fts using fts5(lexemes, content='', contentless_delete=1);
 create trigger message_fts_ai after insert on message when new.indexed = 1 begin
-  insert into message_fts (rowid, lexemes) values (new.seq, gleanery_terms(new.body));
+  insert into message_fts (rowid, lexemes) values (new.seq, sphica_terms(new.body));
 end;
 create trigger message_fts_ad after delete on message when old.indexed = 1 begin
   delete from message_fts where rowid = old.seq;
 end;
 create trigger message_fts_au after update of body, indexed on message begin
   delete from message_fts where rowid = old.seq and old.indexed = 1;
-  insert into message_fts (rowid, lexemes) select new.seq, gleanery_terms(new.body) where new.indexed = 1;
+  insert into message_fts (rowid, lexemes) select new.seq, sphica_terms(new.body) where new.indexed = 1;
 end;
 
 -- Files linked to messages. Capture links an edited file (edit) to the owner's last message before the edit.
@@ -268,12 +268,12 @@ create table knowledge_terms (
 ) strict;
 
 -- What the knowledge index holds for each record: heading (h), body plus reason (b), and the extra search words whose hash matches (e).
--- The triggers and `gleanery db reindex` all insert from here, so the rule lives in one place.
+-- The triggers and `sphica db reindex` all insert from here, so the rule lives in one place.
 create view knowledge_search_text as
 select k.id,
-  gleanery_terms(coalesce(k.heading, '')) as h,
-  gleanery_terms(k.body || char(10) || coalesce(k.reason, '')) as b,
-  gleanery_terms(coalesce(t.terms, '')) as e
+  sphica_terms(coalesce(k.heading, '')) as h,
+  sphica_terms(k.body || char(10) || coalesce(k.reason, '')) as b,
+  sphica_terms(coalesce(t.terms, '')) as e
 from knowledge k
 left join knowledge_terms t on t.knowledge_id = k.id and t.content_hash = k.content_hash;
 
@@ -346,4 +346,4 @@ create trigger capture_message_file_insert instead of insert on capture_message_
   on conflict do nothing;
 end;
 
-pragma user_version = 4;
+pragma user_version = 5;

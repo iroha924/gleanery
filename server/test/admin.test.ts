@@ -12,7 +12,7 @@ import { connectWriter } from "../src/db-write.ts";
 import { at, hash } from "./temp-db.ts";
 
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "cli.ts");
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-admin-"));
+const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "sphica-admin-"));
 
 /** Runs fn with admin output (console.log) silenced. */
 async function quiet<T>(fn: () => T | Promise<T>): Promise<T> {
@@ -25,8 +25,8 @@ async function quiet<T>(fn: () => T | Promise<T>): Promise<T> {
   }
 }
 
-test("gleanery init creates the database in WAL mode with a version and leaves it alone the second time", async () => {
-  const file = path.join(tmp(), "nested", "gleanery.db");
+test("sphica init creates the database in WAL mode with a version and leaves it alone the second time", async () => {
+  const file = path.join(tmp(), "nested", "sphica.db");
   await quiet(() => dbInit(file));
   const raw = new DatabaseSync(file, { readOnly: true });
   assert.equal((raw.prepare("pragma journal_mode").get() as { journal_mode: string }).journal_mode, "wal");
@@ -53,9 +53,9 @@ test("gleanery init creates the database in WAL mode with a version and leaves i
   );
 });
 
-// Even if two gleanery init runs both see no database, the later one does not replace the first one's database, with its records, by an empty one.
-test("gleanery init does not replace a database placed just before it", async (t) => {
-  const file = path.join(tmp(), "gleanery.db");
+// Even if two sphica init runs both see no database, the later one does not replace the first one's database, with its records, by an empty one.
+test("sphica init does not replace a database placed just before it", async (t) => {
+  const file = path.join(tmp(), "sphica.db");
   await quiet(() => dbInit(file));
   const w = connectWriter("owner", file);
   w.prepare("insert into project (key, name) values ('git:x/y', 'x/y')").run();
@@ -76,7 +76,7 @@ test("gleanery init does not replace a database placed just before it", async (t
 });
 
 test("uses rename on file systems without hard links", async (t) => {
-  const file = path.join(tmp(), "gleanery.db");
+  const file = path.join(tmp(), "sphica.db");
   t.mock.method(fs, "linkSync", () => {
     throw Object.assign(new Error("operation not permitted"), { code: "EPERM" });
   });
@@ -94,19 +94,19 @@ test("uses rename on file systems without hard links", async (t) => {
 });
 
 // If another app's database sits under the same name, do not break it by applying the schema on top.
-test("gleanery init does not overwrite a file that is not a gleanery database", async () => {
-  const file = path.join(tmp(), "gleanery.db");
+test("sphica init does not overwrite a file that is not a Sphica database", async () => {
+  const file = path.join(tmp(), "sphica.db");
   const raw = new DatabaseSync(file);
   raw.exec("create table mine (a)");
   raw.close();
   await assert.rejects(
     quiet(() => dbInit(file)),
-    /is not a gleanery database/,
+    /is not a Sphica database/,
   );
 });
 
 test("db reindex rebuilds the full-text index and passes the doctor check", async () => {
-  const file = path.join(tmp(), "gleanery.db");
+  const file = path.join(tmp(), "sphica.db");
   await quiet(() => dbInit(file));
   const w = connectWriter("owner", file);
   w.exec("insert into project (key, name) values ('git:x/y', 'x/y')");
@@ -134,24 +134,24 @@ test("db reindex rebuilds the full-text index and passes the doctor check", asyn
 });
 
 test("db migrate does nothing when there are no migrations to apply", async () => {
-  const file = path.join(tmp(), "gleanery.db");
+  const file = path.join(tmp(), "sphica.db");
   await quiet(() => dbInit(file));
   await quiet(() => migrate(true, file));
   assert.equal(inspect(file).revision, SCHEMA_REVISION);
 });
 
-// The path taken by the shipped CLI. HOME points to a temp directory so the owner's ~/.gleanery is untouched.
-test("gleanery init creates the database in .gleanery under HOME", () => {
+// The path taken by the shipped CLI. HOME points to a temp directory so the owner's ~/.sphica is untouched.
+test("sphica init creates the database in .sphica under HOME", () => {
   const home = tmp();
   execFileSync(process.execPath, [CLI, "init"], {
     env: { PATH: process.env.PATH ?? "", HOME: home, USERPROFILE: home },
     stdio: "ignore",
     timeout: 30_000,
   });
-  assert.equal(inspect(path.join(home, ".gleanery", "gleanery.db")).revision, SCHEMA_REVISION);
+  assert.equal(inspect(path.join(home, ".sphica", "sphica.db")).revision, SCHEMA_REVISION);
 });
 
-// No aliases for old names. The old `gleanery db init`, and the old `gleanery init --cwd` and `gleanery check` that created the requirements folder, fail.
+// No aliases for old names. The old `sphica db init`, and the old `sphica init --cwd` and `sphica check` that created the requirements folder, fail.
 test("old command forms are rejected and create no database", () => {
   for (const args of [["db", "init"], ["init", "--cwd", "."], ["check"]]) {
     const home = tmp();
@@ -161,14 +161,14 @@ test("old command forms are rejected and create no database", () => {
       timeout: 30_000,
     });
     assert.notEqual(r.status, 0, `${args.join(" ")}: ${r.stdout}${r.stderr}`);
-    assert.equal(fs.existsSync(path.join(home, ".gleanery", "gleanery.db")), false, args.join(" "));
+    assert.equal(fs.existsSync(path.join(home, ".sphica", "sphica.db")), false, args.join(" "));
   }
 });
 
 // A failure midway must not leave the first half committed without a version bump (running again would apply it twice).
 test("db migrate applies new migrations in one transaction and bumps the version, leaving nothing on failure", async () => {
   const dir = tmp();
-  const file = path.join(dir, "gleanery.db");
+  const file = path.join(dir, "sphica.db");
   await quiet(() => dbInit(file));
   const migrations = path.join(dir, "migrations");
   fs.mkdirSync(migrations);
@@ -207,7 +207,7 @@ function writeMigrations(dir: string, bodies: string[]): string[] {
 // A migration that rebuilds a parent table deletes child rows by cascade through DROP's implicit delete while foreign keys are on.
 test("a migration declaring foreign_keys=off runs alone with foreign keys off and turns them back on after", async () => {
   const dir = tmp();
-  const file = path.join(dir, "gleanery.db");
+  const file = path.join(dir, "sphica.db");
   await quiet(() => dbInit(file));
   const raw = connectWriter("owner", file);
   const migrations = path.join(dir, "migrations");
@@ -217,7 +217,7 @@ create table child (id integer primary key not null, parent_id integer not null 
 insert into parent (v) values ('a');
 insert into child (id, parent_id) values (1, 1);`,
     // Leading spaces on line 1 still count as the declaration (missing it would rebuild with foreign keys on)
-    `  -- gleanery: foreign_keys=off
+    `  -- sphica: foreign_keys=off
 create table "parent_new" (id integer primary key autoincrement not null, v text not null check (v <> '')) strict;
 insert into "parent_new" (id, v) select id, v from parent;
 drop table parent;
@@ -243,13 +243,13 @@ alter table "parent_new" rename to parent;`,
 
 test("when a foreign-keys-off migration fails, it rolls back on the same connection, turns foreign keys back on, and stops at the previous version", async () => {
   const dir = tmp();
-  const file = path.join(dir, "gleanery.db");
+  const file = path.join(dir, "sphica.db");
   await quiet(() => dbInit(file));
   const raw = connectWriter("owner", file);
   const migrations = path.join(dir, "migrations");
   const files = writeMigrations(migrations, [
     "create table note (a text) strict;",
-    "-- gleanery: foreign_keys=off\ncreate table half (a text) strict;\ncreate table broken (;",
+    "-- sphica: foreign_keys=off\ncreate table half (a text) strict;\ncreate table broken (;",
   ]);
   assert.throws(() => applyMigrations(raw, files, migrations), /syntax error/);
   assert.equal((raw.prepare("pragma foreign_keys").get() as { foreign_keys: number }).foreign_keys, 1);
@@ -262,7 +262,7 @@ test("when a foreign-keys-off migration fails, it rolls back on the same connect
   assert.ok(!has("half"), "the first half of the failed migration is rolled back");
   fs.writeFileSync(
     path.join(migrations, files[1] as string),
-    "-- gleanery: foreign_keys=off\ncreate table half (a text) strict;",
+    "-- sphica: foreign_keys=off\ncreate table half (a text) strict;",
   );
   applyMigrations(raw, files, migrations);
   assert.equal(
@@ -275,13 +275,13 @@ test("when a foreign-keys-off migration fails, it rolls back on the same connect
 // Misreading the declaration and applying with foreign keys on deletes child rows that should stay. Unreadable declarations stop before applying.
 test("stops without applying anything on an unknown declaration or one not on line 1", async () => {
   for (const body of [
-    "-- gleanery: foreign_keys=of\ncreate table x (a text) strict;",
-    "create table x (a text) strict;\n-- gleanery: foreign_keys=off",
+    "-- sphica: foreign_keys=of\ncreate table x (a text) strict;",
+    "create table x (a text) strict;\n-- sphica: foreign_keys=off",
     // Leading spaces still count as the declaration (reading it as absent would rebuild tables with foreign keys on)
-    "create table x (a text) strict;\n  -- gleanery: foreign_keys=off",
+    "create table x (a text) strict;\n  -- sphica: foreign_keys=off",
   ]) {
     const dir = tmp();
-    const file = path.join(dir, "gleanery.db");
+    const file = path.join(dir, "sphica.db");
     await quiet(() => dbInit(file));
     const raw = connectWriter("owner", file);
     const files = writeMigrations(path.join(dir, "migrations"), [body]);
@@ -305,7 +305,7 @@ test("a migration without the declaration cannot drop or rebuild tables however 
     "alter table parent rename to parent_old;\ncreate table parent (id integer primary key not null) strict;\ninsert into parent select * from parent_old;\ndelete from parent_old;",
   ]) {
     const dir = tmp();
-    const file = path.join(dir, "gleanery.db");
+    const file = path.join(dir, "sphica.db");
     await quiet(() => dbInit(file));
     const raw = connectWriter("owner", file);
     raw.exec(`create table parent (id integer primary key not null) strict;
@@ -319,7 +319,7 @@ insert into child (id, parent_id) values (1, 1);`);
     raw.close();
   }
   const dir = tmp();
-  const file = path.join(dir, "gleanery.db");
+  const file = path.join(dir, "sphica.db");
   await quiet(() => dbInit(file));
   const raw = connectWriter("owner", file);
   const migrations = path.join(dir, "migrations");

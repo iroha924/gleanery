@@ -16,7 +16,7 @@ import { coveredSites } from "./lib/coverage.mjs";
 import { root } from "./lib/live-harness.mjs";
 import { ALLOWED_UNCOVERED, callSites, LIVE_FILES } from "./lib/sql-call-sites.mjs";
 
-const covDir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-sql-reach-"));
+const covDir = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-sql-reach-"));
 process.on("exit", () => fs.rmSync(covDir, { recursive: true, force: true }));
 
 // Counting and testing happen in one command. Separately, a change of order alone could count runs that never happened and go green.

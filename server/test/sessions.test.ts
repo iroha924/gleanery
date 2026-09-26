@@ -14,7 +14,7 @@ before(() => {
   message(db, p1, {
     id: "m-a1",
     session: "a",
-    body: '<pasted_content id="90a1">\ngleanery を SQLite へ移す</pasted_content> 続きも',
+    body: '<pasted_content id="90a1">\nsphica を SQLite へ移す</pasted_content> 続きも',
     sent: "2026-09-10T00:00:00Z",
   });
   message(db, p1, {
@@ -59,7 +59,7 @@ test("the session list is newest by last message, strips wrapper tags from title
     ["b", "a"],
   );
   const a = page.items[1];
-  assert.equal(a?.title, "gleanery を SQLite へ移す 続きも");
+  assert.equal(a?.title, "sphica を SQLite へ移す 続きも");
   assert.equal(a?.said, 1);
   assert.equal(a?.files, 1);
   assert.equal(a?.lastAt?.toISOString(), "2026-09-10T00:01:00.000Z");
@@ -103,7 +103,7 @@ test("session details gather messages, touched files, knowledge, and work, with 
     updated_at: at("2026-09-10T00:03:00Z"),
   });
   const found = await sessionDetail(db.reader, conversation);
-  assert.equal(found?.title, "gleanery を SQLite へ移す 続きも");
+  assert.equal(found?.title, "sphica を SQLite へ移す 続きも");
   assert.deepEqual(
     found?.messages.map((m) => [m.speaker, m.files.map((f) => f.path)]),
     [
@@ -150,7 +150,7 @@ test("groups matched messages by session and strips wrapper tags from titles", a
   const found = await searchSessions(db.reader, { q: "SQLite", mode: "said", project: p1 });
   assert.equal(found.length, 1);
   assert.equal(found[0]?.sessionId, "a");
-  assert.equal(found[0]?.title, "gleanery を SQLite へ移す 続きも");
+  assert.equal(found[0]?.title, "sphica を SQLite へ移す 続きも");
   const all = await searchSessions(db.reader, { q: "認証", mode: "said" });
   assert.deepEqual(new Set(all.map((s) => s.sessionId)), new Set(["b", "c"]));
   knowledge(db, p1, { source_key: "k#auth", body: "認証は OAuth" });

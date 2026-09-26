@@ -52,7 +52,7 @@ const packageVersion = read("plugin/package.json").version;
 const claudeVersion = read("plugin/.claude-plugin/plugin.json").version;
 const codexVersion = read("plugin/.codex-plugin/plugin.json").version;
 const marketplaceVersion = read(".claude-plugin/marketplace.json").plugins.find(
-  (entry) => entry.name === "gleanery",
+  (entry) => entry.name === "sphica",
 )?.source?.version;
 const actions =
   kind === "none"
@@ -66,9 +66,9 @@ const actions =
         "owner: approve the stage on npmjs.com (Staged Packages, check provenance, 2FA)",
         "gh pr merge <PR> --merge --match-head-commit <PR head>",
         "git diff --exit-code <PR head> <merge commit>",
-        `compare the SHA-512 of npm pack gleanery@${packageVersion} --silent`,
-        `owner: in your own terminal, npm dist-tag add gleanery@${packageVersion} latest (OTP fails in Claude's non-TTY shell)`,
-        "npm view gleanery dist-tags --json",
+        `compare the SHA-512 of npm pack sphica@${packageVersion} --silent`,
+        `owner: in your own terminal, npm dist-tag add sphica@${packageVersion} latest (OTP fails in Claude's non-TTY shell)`,
+        "npm view sphica dist-tags --json",
         "bun run release:status",
         `gh release create v${packageVersion} --verify-tag --title v${packageVersion} --notes-file <Release notes from the PR>`,
         "update the Claude and Codex plugin caches and restart sessions",

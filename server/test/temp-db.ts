@@ -1,4 +1,4 @@
-// The real SQLite database tests use. Created in a temp directory with db/schema.sql applied. **Never touches ~/.gleanery.**
+// The real SQLite database tests use. Created in a temp directory with db/schema.sql applied. **Never touches ~/.sphica.**
 // Role connections (reader, ingest, capture) open through the production factory, so the authorizer works as in production.
 
 import fs from "node:fs";
@@ -23,8 +23,8 @@ export type TempDb = {
 };
 
 export function tempDb(): TempDb {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gleanery-db-"));
-  const file = path.join(dir, "gleanery.db");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sphica-db-"));
+  const file = path.join(dir, "sphica.db");
   const owner = connectWriter("owner", file, true);
   owner.exec("pragma journal_mode = wal");
   owner.exec(SCHEMA);

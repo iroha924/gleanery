@@ -1,6 +1,6 @@
 // String preparation: splitting terms, full-text queries, hashes, deterministic ids, and cutting by bytes.
 //
-// **SQLite does not split terms.** FTS5's default tokenizer cannot split Japanese into words, so the index side (gleanery_terms,
+// **SQLite does not split terms.** FTS5's default tokenizer cannot split Japanese into words, so the index side (sphica_terms,
 // called by database triggers and registered in server/src/db-write.ts) and the query side go through the same function (terms).
 // With the same splitting on both sides, dictionary differences never shift terms on one side only.
 
@@ -19,7 +19,7 @@ const MAX_TERM = 100;
 
 /**
  * Returns search terms in order of appearance (with duplicates). Imports and queries use the same function.
- * **Changing the rules leaves existing indexes as they were.** A PR that changes them adds `gleanery db reindex` to its release steps.
+ * **Changing the rules leaves existing indexes as they were.** A PR that changes them adds `sphica db reindex` to its release steps.
  */
 export function terms(text: string): string[] {
   const norm = text.normalize("NFKC").toLowerCase();

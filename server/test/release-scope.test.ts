@@ -22,12 +22,12 @@ test("separates no-release changes from plugin ones (the web UI is gone, so ther
 
 test("version-only changes can be left out of the release type input", () => {
   assert.equal(
-    withoutReleaseVersion('{"name":"gleanery","version":"1.1.0"}'),
-    withoutReleaseVersion('{"name":"gleanery","version":"1.0.0"}'),
+    withoutReleaseVersion('{"name":"sphica","version":"1.1.0"}'),
+    withoutReleaseVersion('{"name":"sphica","version":"1.0.0"}'),
   );
   assert.notEqual(
-    withoutReleaseVersion('{"name":"gleanery","version":"1.1.0","files":["dist"]}'),
-    withoutReleaseVersion('{"name":"gleanery","version":"1.0.0","files":["src"]}'),
+    withoutReleaseVersion('{"name":"sphica","version":"1.1.0","files":["dist"]}'),
+    withoutReleaseVersion('{"name":"sphica","version":"1.0.0","files":["src"]}'),
   );
 });
 
