@@ -46,6 +46,12 @@ const read = (f) => JSON.parse(git("show", `:${f}`));
 /** The file as staged in the index (what the commit will contain). An empty ref gives `git show :path`. */
 const staged = (f) => at("", f);
 const packageVersion = read(PACKAGE).version;
+const packageName = read(PACKAGE).name;
+// Versions order within one package name. A ref that shipped another name started another line, so it is not compared
+const sameName = (ref) => {
+  const text = at(ref, PACKAGE);
+  return text !== null && JSON.parse(text).name === packageName;
+};
 const versions = Object.entries(PLUGIN_MANIFESTS).map(([f, pick]) => [f, pick(read(f))]);
 const distinct = [...new Set(versions.map(([, v]) => v))];
 if (distinct.length !== 1) {
@@ -104,6 +110,7 @@ const compare = (a, b) => {
 const versionRefs = base ? [ref] : [ref, "refs/heads/main", "refs/remotes/origin/main"];
 const newest = (file) =>
   versionRefs
+    .filter(sameName)
     .map((r) => at(r, file))
     .filter((text) => text !== null)
     .map((text) => JSON.parse(text).version)
@@ -115,7 +122,7 @@ const oldPluginVersion = newest("plugin/.claude-plugin/plugin.json");
 // **Lowering the version fails even without shipped changes.** User caches only move to newer versions.
 // Compare with the previous commit as well as the base (fork point), so a drop after a bump in the branch is caught.
 const versionAt = (r, file) => {
-  const text = at(r, file);
+  const text = sameName(r) ? at(r, file) : null;
   return text ? JSON.parse(text).version : undefined;
 };
 const headVersion = (file) => versionAt("HEAD", file);

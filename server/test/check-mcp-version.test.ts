@@ -277,3 +277,33 @@ test("without a base, a work branch compares against its fork point from main (o
     r.done();
   }
 });
+
+// Versions order within one package name. A renamed package starts its own line, so a range from the old name may start lower.
+test("a range that renames the package may start its versions over, and a lower version under the same name still fails", () => {
+  const r = repo();
+  try {
+    bump(r.dir, "3.0.0");
+    write(r.dir, "plugin/package.json", JSON.stringify({ name: "old-name", version: "3.0.0" }));
+    write(r.dir, "plugin/skills/a.md", "a");
+    r.git("add", "-A");
+    r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+
+    bump(r.dir, "0.1.0");
+    write(r.dir, "plugin/skills/a.md", "b");
+    r.git("add", "-A");
+    const staged = check(r.dir);
+    assert.equal(staged.status, 0, staged.stderr);
+    r.git("commit", "-qm", "rename and start over");
+    const renamed = check(r.dir, "--base", base);
+    assert.equal(renamed.status, 0, renamed.stderr);
+
+    bump(r.dir, "0.0.9");
+    r.git("add", "-A");
+    const lower = check(r.dir);
+    assert.equal(lower.status, 1, "a lower version under the new name still fails");
+    assert.match(lower.stderr, /goes down from 0\.1\.0 to 0\.0\.9/);
+  } finally {
+    r.done();
+  }
+});
