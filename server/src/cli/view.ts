@@ -70,7 +70,7 @@ function wrapLine(line: string, room: number): string[] {
   const hang = lead + stringWidth(label);
   // A label too wide to leave room for its value wraps as ordinary text
   const [head, text, at] = cells?.[2] && room - hang >= 10 ? [label, cells[2], hang] : ["", body, lead];
-  return wrapAnsi(text, Math.max(10, room - at), { hard: true, trim: true })
+  return wrapAnsi(text, Math.max(1, room - at), { hard: true, trim: true })
     .split("\n")
     .map((part, i) => (i === 0 ? `${" ".repeat(lead)}${head}${part}` : `${" ".repeat(at)}${part}`));
 }

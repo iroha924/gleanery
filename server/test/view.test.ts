@@ -253,6 +253,7 @@ test("in a terminal a long heading and a very narrow terminal still keep every l
     [40, asTerminal(40, () => title("x".repeat(50), "要点")).split("\n")],
     [30, asTerminal(30, () => closing("x".repeat(60))).split("\n")],
     [30, asTerminal(30, () => indent("y".repeat(60))).split("\n")],
+    [10, asTerminal(10, () => indent("y".repeat(60))).split("\n")],
   ] as const)
     for (const line of lines) assert.ok(cols(line) <= width, `${cols(line)} > ${width}: ${line}`);
 });
