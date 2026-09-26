@@ -272,3 +272,9 @@ test("a sphica call that started but never finished is marked unfinished, so a r
     [["recall", true]],
   );
 });
+
+test("only sphica's own recall and read count as refused by MCP input validation", async () => {
+  const text = "MCP error -32602: Input validation error";
+  const shell = [use("a", "Bash", { command: "echo" }), result("a", text, true)];
+  assert.equal(sessionOf(await replay(callsOf(shell), db.reader, CWD), keyOf, []).disallowed, 1);
+});

@@ -94,7 +94,8 @@ export function callsOf(events: Event[]): Call[] {
         rejected:
           r?.is_error === true &&
           ((denied.has(b.id) && refused.has(b.id)) ||
-            (b.name !== undefined && text.startsWith(INVALID_PARAMS))),
+            // Only sphica's server can have produced this; another tool's output may start with the same text
+            ((b.name === RECALL || b.name === READ) && text.startsWith(INVALID_PARAMS))),
       });
     }
   }

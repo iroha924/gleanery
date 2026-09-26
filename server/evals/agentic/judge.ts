@@ -173,7 +173,8 @@ function recount(dir: string, host: string, results: Result[]): { violations: nu
     const calls = events === null ? [] : host === "codex" ? codexCallsOf(events) : callsOf(events);
     const used = events === null ? 1 : disallowedOf(calls);
     // A sphica call that never finished has no response to replay, whatever a run saved before it was recognized
-    if (r.session.unconfirmed > 0 || used > 0 || calls.some((c) => c.unfinished)) violations++;
+    // A result without session metrics was never replayed, so what it showed is unknown
+    if (!r.session || r.session.unconfirmed > 0 || used > 0 || calls.some((c) => c.unfinished)) violations++;
     // A question failed only for its tool use is an error only while the tool use still counts
     if (used > 0 || (r.error !== undefined && r.error !== DISALLOWED)) errors++;
   }
