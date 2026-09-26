@@ -245,3 +245,17 @@ test("Codex's resource listings count as showing nothing only when they list not
   // What it can read is not established, so it never counts as showing nothing
   assert.equal(count(item("read_mcp_resource", "")), 1);
 });
+
+test("a Codex tool item that started but never finished counts as a call whose outcome is unknown", async () => {
+  const started = (id: string, type: string, extra: object = {}) => ({
+    type: "item.started",
+    item: { id, type, status: "in_progress", ...extra },
+  });
+  const shell = [started("a", "command_execution"), { type: "turn.failed", error: { message: "x" } }];
+  assert.equal(sessionOf(await replay(codexCallsOf(shell), db.reader, CWD), keyOf, []).disallowed, 1);
+  const recallOnly = [
+    started("b", "mcp_tool_call", { server: "sphica", tool: "recall", arguments: { question: "監視" } }),
+  ];
+  // Its response is unknown, so the replay cannot confirm what it showed
+  assert.equal(sessionOf(await replay(codexCallsOf(recallOnly), db.reader, CWD), keyOf, []).unconfirmed, 1);
+});

@@ -59,6 +59,14 @@ const complete = (d: string) =>
   false;
 if (name !== values.base && dirsOf(values.base).filter(complete).length !== RUNS)
   throw new Error(`--base ${values.base} has no complete ${RUNS} runs on ${split}. Measure it first`);
+// A base of the other host would be paid for in full and then never compared (for Codex, pass --base codex-base or the like)
+if (name !== values.base)
+  for (const d of dirsOf(values.base)) {
+    const h =
+      (JSON.parse(fs.readFileSync(path.join(d, "summary.json"), "utf8")) as { host?: string }).host ??
+      "claude";
+    if (h !== host) throw new Error(`--base ${values.base} was measured on ${h}, not ${host}`);
+  }
 
 /**
  * Bundles the MCP server of a git ref in its own worktree (bundle.mjs rewrites plugin/dist, so the working tree is never touched)
@@ -167,7 +175,9 @@ if (name !== values.base) {
   );
   verdicts = JSON.parse(fs.readFileSync(out, "utf8"));
   if (!Array.isArray(verdicts) || verdicts.length === 0)
-    throw new Error(`no verdict against ${values.base}: its runs and ${name}'s differ in split or model`);
+    throw new Error(
+      `no verdict against ${values.base}: its runs and ${name}'s differ in split, host, or model`,
+    );
 }
 
 log({

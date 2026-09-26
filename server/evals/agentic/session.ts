@@ -110,12 +110,22 @@ type CodexItem = {
 };
 
 /**
- * The tool calls of a `codex exec --json` stream, in the order they finished. Every finished item other than the agent's messages
- * and reasoning is a call; only sphica's recall and read count as sphica tools.
+ * The tool calls of a `codex exec --json` stream, in the order they finished, then those that started and never finished (outcome
+ * unknown, so they count as failed with no response). Every item other than the agent's messages and reasoning is a call; only
+ * sphica's recall and read count as sphica tools.
  */
 export function codexCallsOf(events: Event[]): Call[] {
   const calls: Call[] = [];
-  for (const e of events) {
+  const finished = new Set<unknown>();
+  for (const e of events) if (e.type === "item.completed") finished.add((e.item as { id?: unknown })?.id);
+  const unfinished = events
+    .filter((e) => e.type === "item.started" && !finished.has((e.item as { id?: unknown })?.id))
+    .map((e) => ({
+      ...e,
+      type: "item.completed",
+      item: { ...(e.item as object), result: null, status: "unfinished" },
+    }));
+  for (const e of [...events, ...unfinished]) {
     if (e.type !== "item.completed") continue;
     const it = (e.item ?? {}) as CodexItem;
     if (it.type === "agent_message" || it.type === "reasoning") continue;

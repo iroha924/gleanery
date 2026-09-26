@@ -319,6 +319,7 @@ async function keys(): Promise<(ref: string) => string | null> {
 
 /** The error of a question that used another tool. judge.ts recounts it from the trace, so a narrower rule applies to saved runs too */
 export const DISALLOWED = "used a tool other than sphica recall and read";
+const UNPARSED = "cannot parse the final refs JSON (a format failure, not a search miss)";
 
 type Asked = {
   run: string;
@@ -377,9 +378,10 @@ async function solve(c: Case, i: number, o: Asked): Promise<Result> {
       ...(a.error
         ? { error: a.error.slice(0, 200) }
         : session.disallowed > 0
-          ? { error: DISALLOWED }
+          ? // Keeps the format failure too, so a later, narrower rule that clears the tool use still counts it
+            { error: refs === null ? `${DISALLOWED}; ${UNPARSED}` : DISALLOWED }
           : refs === null
-            ? { error: "cannot parse the final refs JSON (a format failure, not a search miss)" }
+            ? { error: UNPARSED }
             : {}),
     };
     fs.writeFileSync(path.join(dir, "result.json"), JSON.stringify(res, null, 1));

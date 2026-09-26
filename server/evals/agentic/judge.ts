@@ -36,7 +36,7 @@ type Row = {
 type Top = { i: number; rank: number; key: string | null; grade?: Grade; slot?: string };
 /**
  * violations: questions with a call to another tool not refused before running, or a call whose replay did not match, counted from
- * the run's saved traces. null when no trace could be read (a run loaded from baseline.json without the count): it cannot be compared
+ * the run's saved traces (a missing trace counts as one). null for a run loaded from a baseline.json that has no count: it cannot be compared
  */
 type System = {
   summary: ReturnType<typeof summarize>;
@@ -63,7 +63,7 @@ const { values, positionals } = parseArgs({
     // A model id, not an alias: cached grades are keyed by it, and an alias would mix grades of two models
     model: { type: "string", default: "claude-opus-5-5" },
     par: { type: "string", default: "4" },
-    // The setup (name without -rN) every other setup of the same split and model is judged against
+    // The setup (name without -rN) every other setup of the same split, host, and model is judged against
     base: { type: "string" },
     // Writes the verdicts as JSON (the experiment command reads it)
     json: { type: "string" },
@@ -173,6 +173,7 @@ function recount(dir: string, host: string, results: Result[]): { violations: nu
     const used =
       events === null ? 1 : disallowedOf(host === "codex" ? codexCallsOf(events) : callsOf(events));
     if (r.session.unconfirmed > 0 || used > 0) violations++;
+    // A question failed only for its tool use is an error only while the tool use still counts
     if (used > 0 || (r.error !== undefined && r.error !== DISALLOWED)) errors++;
   }
   return { violations, errors };
@@ -308,7 +309,7 @@ const rowsOut = runs.map((s) => {
 });
 console.table(rowsOut);
 
-// Even the same setup moves 7 of 42 questions per run (measured 2026-09-23). The gate compares means per setup (name without -rN), split, and model
+// Even the same setup moves 7 of 42 questions per run (measured 2026-09-23). The gate compares means per setup (name without -rN), split, host, and model
 const configOf = (s: System) => s.summary.name.replace(/-r\d+$/, "");
 const groups = Map.groupBy(
   runs,
