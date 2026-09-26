@@ -28,7 +28,8 @@ await withTempDir(async (dir) => {
   fakeGh(dir);
 
   {
-    note("init", runCli(["init"], dir, covDir));
+    // Outside any repository, so init only creates the database (from the repository root it would register this checkout too)
+    note("init", runCli(["init", "--cwd", dir], dir, covDir));
 
     // ---- CLI: create, import, then delete, in that order ----
     // The repo has a remote, so no --name (the CLI would refuse it). The key becomes git:github.com/example/live.

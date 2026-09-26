@@ -335,6 +335,21 @@ test("sphica init in a repository without a remote asks for --name and registers
   assert.deepEqual(projectKeys(home), ["local:notes"]);
 });
 
+// A subdirectory of a named place belongs to it already. Writing the name again for the subdirectory would give the key two places,
+// and harvest skips a project with two places on one machine
+test("sphica init --name in a subdirectory of the named place changes nothing", () => {
+  const home = tmp();
+  const place = fs.realpathSync(tmp());
+  fs.mkdirSync(path.join(place, "sub"));
+  assert.equal(cli(home, "init", "--cwd", place, "--name", "notes").code, 0);
+  const table = path.join(home, ".sphica", "projects.json");
+  const before = fs.readFileSync(table, "utf8");
+  const r = cli(home, "init", "--cwd", path.join(place, "sub"), "--name", "notes");
+  assert.equal(r.code, 0, r.out);
+  assert.equal(fs.readFileSync(table, "utf8"), before);
+  assert.deepEqual(projectKeys(home), ["local:notes"]);
+});
+
 test("sphica init refuses a bad --name and --sync without a project before creating anything", () => {
   for (const args of [["--name", "Bad Name"], ["--sync"]]) {
     const home = tmp();

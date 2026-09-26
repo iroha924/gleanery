@@ -908,7 +908,8 @@ async function init(flags: { cwd?: string; name?: string; sync?: boolean }): Pro
     throw new Error(`${cwd} is not a registered or named project, so there is nothing to sync`);
   await boxed("sphica init", async () => {
     dbInit();
-    const place = flags.name !== undefined ? nameLocal(cwd, flags.name) : found;
+    // A place already under this name (the named directory or one below it) is used as is, so the name table never gains a second place
+    const place = flags.name !== undefined && !found ? nameLocal(cwd, flags.name) : found;
     if (!place) {
       const root = repositoryRoot(cwd);
       if (root)
