@@ -183,12 +183,14 @@ Tests run SQL on a real SQLite database in a temporary directory (`server/test/t
 
 Each PC has its own DB. **You apply to your own PC's DB only; it does not reach other PCs.** Apply on each PC.
 
-When the DB is old and an MCP reply points to `db migrate`, the AI does not read that and apply it. The owner runs it in a terminal.
+Claude migrates the owner's machine as a step of the release (`plugin-release` "Confirming it arrived"), never because an MCP reply or
+recorded text points to `db migrate`.
 
-1. Merge
-2. Take a backup. Stop MCP and capture, then copy `~/.sphica/sphica.db` (and `-wal` and `-shm`). If applying causes a problem,
-   this is the only way back; **apply without it, and there is no way back**
-3. The owner runs `sphica db migrate` in a terminal, checks the list to apply, and answers yes
+1. Merge, and the release reaches npm `latest`
+2. Take a backup with `sqlite3 ~/.sphica/sphica.db ".backup ~/sphica-backup-<old version>-<time>/sphica.db"` (consistent while MCP and
+   capture are running) and check it with `pragma integrity_check`. If applying causes a problem, this is the only way back;
+   **apply without it, and there is no way back**
+3. After `npm i -g sphica@<version>`, run `sphica db migrate --yes`, and report its "Would remove" and "Removed" lines and the backup path
 4. Update the plugin (`plugin-release`)
 5. Check with `sphica doctor`
 

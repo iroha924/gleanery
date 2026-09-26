@@ -57,7 +57,7 @@ MIT requires the copyright notice and license text; Apache-2.0 section 4 require
 
 First, classify the change with `bun run release:plan -- --base <previous release commit>`.
 
-**The owner does only these 3, and Claude does not click or run them in the owner's place.** Claude runs every other command exactly as written in the steps below.
+**The owner does only these 3, plus `/reload-plugins` in open sessions after arrival, and Claude does not click or run them in the owner's place.** Claude runs every other command exactly as written in the steps below.
 Before each of them, hand the owner what to approve (the run URL, the stage ID, the version) and wait.
 
 | Step | What the owner does | Why |
@@ -137,14 +137,18 @@ So that the marketplace never points to an unpublished version between the merge
 
 ## Confirming it arrived
 
-`sphica doctor` shows "npm package versions" and "Plugin channel versions" separately.
+**Claude runs every step here on the owner's machine**, including the backup and `sphica db migrate`. Do not hand the owner a list of
+commands (measured 2026-09-26: handed over, the owner answered that only `/reload-plugins` is theirs). The owner runs only `/reload-plugins`
+in open sessions. `sphica doctor` shows "npm package versions" and "Plugin channel versions" separately.
 
-1. Claude Code: update the marketplace, reinstall, and run `/reload-plugins` in open sessions.
-   In sessions without an interactive terminal, MCP stays at the old version until the next session
-2. Codex: likewise, update the marketplace and reopen
-3. **Also run `npm i -g sphica@<version>`.** The CLI installed with `npm i -g` is a separate path from the plugin cache,
+1. **Run `npm i -g sphica@<version>`.** The CLI installed with `npm i -g` is a separate path from the plugin cache,
    and host updates do not upgrade it. **In a release that raised the DB revision, forgetting this leaves only the old CLI
    failing with "expects revision N"** (measured: after moving to revision 5, the global CLI stayed at 0.32.0)
+2. If the release raised the DB revision, back up and migrate as `knowledge-schema` "Applying to an existing DB" says, and put the
+   "Would remove" and "Removed" lines in the report
+3. Claude Code: `claude plugin marketplace update sphica && claude plugin update sphica@sphica`. Codex:
+   `codex plugin marketplace upgrade sphica && codex plugin add sphica@sphica`. Then ask the owner to run `/reload-plugins` in open sessions.
+   In sessions without an interactive terminal, MCP stays at the old version until the next session
 4. In `sphica doctor`, check that the npm package matches between the repository and the global CLI, that the plugin channel matches between the repository
    and both hosts' caches, and that no reconnect instruction remains for the running MCP
 5. From a session after the update, call `recall` and check the contents of the changed MCP tools, Skills, and Agents. If capture changed,
