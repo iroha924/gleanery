@@ -168,3 +168,26 @@ test("keeps replies that say something was fixed, and links", () => {
   assert.equal(isFiller("対応しました。"), false);
   assert.equal(isFiller("[reason](https://example.com/review)"), false);
 });
+
+// A reference from another repository must not read as this repository's issue of the same number
+test("names the repository of a cross-reference from another repository", async () => {
+  const f = fake({
+    "issues/12/timeline": [
+      {
+        event: "cross-referenced",
+        created_at: "2026-09-10T05:00:00Z",
+        source: {
+          issue: { number: 3, title: "Elsewhere", repository_url: "https://api.github.com/repos/other/repo" },
+        },
+      },
+      {
+        event: "cross-referenced",
+        created_at: "2026-09-10T05:00:01Z",
+        source: { issue: { number: 4, title: "Here", repository_url: "https://api.github.com/repos/o/r" } },
+      },
+    ],
+  });
+  const { text } = await readPull("o/r", 12, f.get);
+  assert.match(text, /issue other\/repo#3 \(Elsewhere\) referred to this/);
+  assert.match(text, /issue #4 \(Here\) referred to this/);
+});

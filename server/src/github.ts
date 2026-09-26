@@ -59,7 +59,7 @@ type Event = {
   event: string;
   created_at?: string;
   actor?: User;
-  source?: { issue?: { number: number; title: string; pull_request?: unknown } };
+  source?: { issue?: { number: number; title: string; pull_request?: unknown; repository_url?: string } };
 };
 
 // Acknowledgments carry nothing to harvest. **Length alone does not drop a message**: "fixed" or a bare link can be the only sign a finding was handled.
@@ -128,11 +128,15 @@ export async function readPull(
   for (const c of commits)
     add(c.commit.author?.date, `commit ${c.sha.slice(0, 12)}: ${c.commit.message.trim()}`);
   for (const e of events)
-    if (e.event === "cross-referenced" && e.source?.issue)
+    if (e.event === "cross-referenced" && e.source?.issue) {
+      // A reference from another repository names it, so it never reads as this repository's issue of the same number
+      const from = e.source.issue.repository_url?.replace(/^.*\/repos\//, "");
+      const where = from && from !== repo ? from : "";
       add(
         e.created_at,
-        `${e.source.issue.pull_request ? "pull request" : "issue"} #${e.source.issue.number} (${e.source.issue.title}) referred to this`,
+        `${e.source.issue.pull_request ? "pull request" : "issue"} ${where}#${e.source.issue.number} (${e.source.issue.title}) referred to this`,
       );
+    }
   entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
   const text = [
     `# #${p.number}: ${p.title}`,
