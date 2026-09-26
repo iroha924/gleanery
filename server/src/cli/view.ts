@@ -1,8 +1,6 @@
-// CLI output. In a terminal it is drawn with Clack (@clack/prompts); in pipes (an AI reading through Bash, the harvest log) it is plain text.
-// Each part returns a string for console.log: Clack writes to a stream, so it writes into a collector here.
-// **Only the heading and the closing line start a line.** Content sits behind Clack's guide (│) in a terminal and is indented in pipes,
-// so text from outside (PR titles, errors stored in the database) cannot forge a closing or status line even with newlines
-// (test/view.test.ts and test/cli.test.ts check). Recording hooks are not the CLI and keep the server/src/panel.ts format.
+// CLI output: Clack in a terminal, plain indented text in pipes (an AI reading through Bash, the harvest log). Parts return strings for console.log.
+// **Only the heading and the closing line start a line**, so outside text cannot forge a status line (test/view.test.ts, test/cli.test.ts check).
+// The recording hooks do not load Clack and keep the server/src/panel.ts format.
 
 import { Writable } from "node:stream";
 import { styleText } from "node:util";
@@ -50,6 +48,12 @@ const oneLine = (text: string) => clean(text).replace(/[\n\t]+/g, " ");
 const bold = (text: string) => styleText("bold", text);
 const dim = (text: string) => styleText("dim", text);
 
+/** A heading or closing line without Clack. Where stdout is a terminal it wraps, continuing indented, so no continuation starts a line */
+const plainLine = (text: string): string =>
+  wrapAnsi(oneLine(text), columns() - 2, { hard: true, trim: true })
+    .split("\n")
+    .join("\n  ");
+
 /** Clack's guide adds 3 columns (│ and 2 spaces) before each content line */
 const GUIDE = 3;
 
@@ -91,7 +95,7 @@ function content(lines: string[], spacing = 0): string {
  * In pipes it is the text alone on one line (the summary goes to the closing line; an AI reads it).
  */
 export function title(text: string, meta?: string): string {
-  if (!colored()) return oneLine(text);
+  if (!colored()) return plainLine(text);
   // The inverted heading adds a space on each side; a heading wider than the terminal is cut
   const t = cut(oneLine(text), columns() - GUIDE - 2);
   const room = columns() - GUIDE - stringWidth(t) - 2;
@@ -139,8 +143,8 @@ export function indent(text: string): string {
 
 /** The closing line. It is the only line besides the heading at the line start, so newlines collapse into one line (no forged lines) */
 export function closing(text: string): string {
+  if (!colored()) return plainLine(text);
   const t = oneLine(text);
-  if (!colored()) return t;
   // Wrapped here, not by the terminal, so a continuation starts indented rather than at column 0
   const lines = wrapAnsi(t, columns() - GUIDE, { hard: true, trim: true }).split("\n");
   return capture((output) => outro(bold(lines.join(`\n${" ".repeat(GUIDE)}`)), { output }));

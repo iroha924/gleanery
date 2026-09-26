@@ -188,7 +188,7 @@ Run `sphica doctor` first. It shows which part is out of date or not working. Co
 | `sphica project add` | Register the current repository as a project |
 | `sphica harvest` | Import GitHub pull requests, issues, and Markdown docs |
 
-Run `sphica --help` for the full list and `sphica <command> --help` for each command's options.
+Run `sphica --help` for the everyday commands, `sphica -H` for every command (including the ones agents and maintenance use), and `sphica <command> --help` for each command's options.
 
 ## Security
 

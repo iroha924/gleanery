@@ -290,3 +290,19 @@ test("in a terminal spinner labels stay within the width", () => {
   for (const line of stripVTControlCharacters(drawn).split(/\r?\n/))
     assert.ok(cols(line) <= 40, `${cols(line)} columns: ${line}`);
 });
+
+// stdout alone is a terminal (stderr redirected, or NO_COLOR): output stays plain, but the terminal still wraps long lines
+test("plain output to a terminal wraps the heading and closing line within the width", () => {
+  const tty = process.stdout.isTTY;
+  const columns = process.stdout.columns;
+  Object.assign(process.stdout, { isTTY: true, columns: 40 });
+  try {
+    const long = `${"n".repeat(45)} ✓ done`;
+    for (const line of [...title(long).split("\n"), ...closing(long).split("\n")]) {
+      assert.ok(cols(line) <= 40, `${cols(line)} columns: ${line}`);
+      if (!line.startsWith("n")) assert.match(line, /^ {2}\S/, line);
+    }
+  } finally {
+    Object.assign(process.stdout, { isTTY: tty, columns });
+  }
+});

@@ -188,7 +188,7 @@ codex plugin remove sphica@sphica
 | `sphica project add` | いまのリポジトリをプロジェクトとして登録する |
 | `sphica harvest` | GitHub の PR・issue と Markdown の文書を取り込む |
 
-全部の一覧は `sphica --help`、各コマンドのオプションは `sphica <コマンド> --help` で見られます。
+ふだん使うコマンドは `sphica --help`、エージェントや保守で使うものも含めた全部の一覧は `sphica -H`、各コマンドのオプションは `sphica <コマンド> --help` で見られます。
 
 ## セキュリティ
 

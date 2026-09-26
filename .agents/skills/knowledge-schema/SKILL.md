@@ -144,8 +144,8 @@ the path where Sphica's code writes by mistake, or because untrusted text talked
 
 | Role | How it opens | Authorizer | Interfaces using it |
 |---|---|---|---|
-| owner | Writable | None | `sphica db *` (`admin.ts`) |
-| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the CLI's read-only commands (`doctor`, `project list`) |
+| owner | Writable | None | `sphica db *` and the database check in `doctor` (`admin.ts`) |
+| reader | `readOnly` | Only reads and allowed functions. Rejects DDL, ATTACH, and pragmas | MCP, the CLI's listings (`project list`, `who`, the projects in `doctor`) |
 | ingest | Writable | Rejects DDL, ATTACH, creating virtual tables, and pragmas that write | `harvest`, `trace save`, `who`, `project` |
 | capture | Writable | Only inserts into the 3 views (`capture_*`) and the writes in their triggers. It can read only `project`'s id, key, and name, and `message`'s id | Capture (`capture.ts`) |
 
