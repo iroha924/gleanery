@@ -170,9 +170,10 @@ function recount(dir: string, host: string, results: Result[]): { violations: nu
           .filter((l) => l.trim())
           .map((l) => JSON.parse(l) as { type?: string; [k: string]: unknown })
       : null;
-    const used =
-      events === null ? 1 : disallowedOf(host === "codex" ? codexCallsOf(events) : callsOf(events));
-    if (r.session.unconfirmed > 0 || used > 0) violations++;
+    const calls = events === null ? [] : host === "codex" ? codexCallsOf(events) : callsOf(events);
+    const used = events === null ? 1 : disallowedOf(calls);
+    // A sphica call that never finished has no response to replay, whatever a run saved before it was recognized
+    if (r.session.unconfirmed > 0 || used > 0 || calls.some((c) => c.unfinished)) violations++;
     // A question failed only for its tool use is an error only while the tool use still counts
     if (used > 0 || (r.error !== undefined && r.error !== DISALLOWED)) errors++;
   }

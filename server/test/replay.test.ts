@@ -259,3 +259,16 @@ test("a Codex tool item that started but never finished counts as a call whose o
   // Its response is unknown, so the replay cannot confirm what it showed
   assert.equal(sessionOf(await replay(codexCallsOf(recallOnly), db.reader, CWD), keyOf, []).unconfirmed, 1);
 });
+
+test("a sphica call that started but never finished is marked unfinished, so a recount never trusts a saved replay for it", () => {
+  const calls = codexCallsOf([
+    {
+      type: "item.started",
+      item: { id: "b", type: "mcp_tool_call", server: "sphica", tool: "recall", arguments: {} },
+    },
+  ]);
+  assert.deepEqual(
+    calls.map((c) => [c.tool, c.unfinished]),
+    [["recall", true]],
+  );
+});

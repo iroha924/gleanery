@@ -601,11 +601,12 @@ export async function probeCodex(run: string, mcp: string, model: string, effort
   }
 }
 
-/** Tool calls in a probe that ran to completion without being a sphica recall or read, or a probe that never finished */
+/** Calls in a probe to anything but sphica's recall and read (the rule the questions use: a failure is no proof it did not run), or a probe that never finished */
 export function probeLeaks(events: Event[]): string[] {
-  const out = codexCallsOf(events)
-    .filter((c) => c.tool === "other" && !c.error)
-    .map((c) => `a call completed: ${c.text.slice(0, 120) || "(no text)"}`);
+  const calls = codexCallsOf(events);
+  const out = calls
+    .filter((c) => c.tool === "other" && !c.inert)
+    .map((c) => `another tool was called: ${c.text.slice(0, 120) || "(no text)"}`);
   if (!events.some((e) => e.type === "turn.completed")) out.push("the probe did not finish");
   return out;
 }

@@ -375,7 +375,21 @@ test("the Codex probe fails on any other tool that completed, or when it never f
   const done = { type: "turn.completed", usage: {} };
   const ran = { type: "item.completed", item: { type: "command_execution", status: "completed" } };
   const refused = { type: "item.completed", item: { type: "command_execution", status: "failed" } };
-  assert.deepEqual(probeLeaks([refused, done]), []);
+  // A failed item is no proof that it did not run (a shell command that exited nonzero fails too)
+  assert.equal(probeLeaks([refused, done]).length, 1);
   assert.equal(probeLeaks([ran, done]).length, 1);
-  assert.deepEqual(probeLeaks([refused]), ["the probe did not finish"]);
+  const listed = {
+    type: "item.completed",
+    item: {
+      type: "mcp_tool_call",
+      server: "codex",
+      tool: "list_mcp_resources",
+      arguments: {},
+      status: "completed",
+      result: { content: [{ type: "text", text: '{"resources":[]}' }] },
+    },
+  };
+  assert.deepEqual(probeLeaks([listed, done]), []);
+  assert.deepEqual(probeLeaks([done]), []);
+  assert.ok(probeLeaks([]).includes("the probe did not finish"));
 });

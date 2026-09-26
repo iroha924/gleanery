@@ -36,6 +36,8 @@ export type Call = {
   rejected: boolean;
   /** A Codex built-in that listed the configured MCP servers' resources and got an empty list: it showed nothing */
   inert?: boolean;
+  /** A Codex item that started and never finished: what it did or showed is unknown */
+  unfinished?: boolean;
 };
 
 /** Codex built-ins allowed only with exactly this empty result. sphica exposes no resources, so a nonempty one is not sphica's */
@@ -144,6 +146,7 @@ export function codexCallsOf(events: Event[]): Call[] {
       error,
       // Only input validation proves a refusal before running here; Codex reports other refusals like any failure
       rejected: sphica && error && text.startsWith(INVALID_PARAMS),
+      unfinished: it.status === "unfinished",
       inert:
         it.type === "mcp_tool_call" &&
         it.server === "codex" &&
