@@ -86,20 +86,6 @@ function content(lines: string[], spacing = 0): string {
   return capture((output) => log.message(wrapped, { output, spacing }));
 }
 
-/** The ASCII title shown once at the top of a command run in a terminal (never in pipes or logs) */
-const BANNER = String.raw`           _     _
-          | |   (_)
- ___ _ __ | |__  _  ___ __ _
-/ __| '_ \| '_ \| |/ __/ _${"`"} |
-\__ \ |_) | | | | | (_| (_| |
-|___/ .__/|_| |_|_|\___\__,_|
-    | |
-    |_|`;
-
-export function banner(): string {
-  return colored() ? `${BANNER}\n` : "";
-}
-
 /**
  * A heading. In a terminal it opens Clack's frame, with the summary (meta) dimmed beside it and cut at the terminal width.
  * In pipes it is the text alone on one line (the summary goes to the closing line; an AI reads it).

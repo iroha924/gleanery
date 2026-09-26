@@ -27,7 +27,6 @@ import { dbInit, importTerms, inspect, listTerms, migrate, reindex } from "./adm
 import { flush, readState, rejectedDir, unregisteredDir } from "./capture.ts";
 import {
   type Block,
-  banner,
   type Card,
   closing,
   document,
@@ -1464,7 +1463,6 @@ const app = buildApplication(
   },
 );
 
-process.stdout.write(banner());
 await run(app, process.argv.slice(2), {
   process,
   forCommand: ({ prefix }: CommandInfo) => {
