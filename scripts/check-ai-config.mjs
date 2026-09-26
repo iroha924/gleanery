@@ -401,6 +401,7 @@ const GONE = [
   /db:roles/,
   /sphica dashboard/,
   /sphica search/,
+  /sphica project add/,
   /\bInk\b/,
   /server\/src\/tui/,
 ];

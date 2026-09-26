@@ -48,6 +48,7 @@ import { moveProject } from "./move.ts";
 import { inline, type Mark, mark, pad, plain, width } from "./panel.ts";
 import { observe, packageVersionAt, ROOT, report, UPDATE_NOTE } from "./plugin.ts";
 import {
+  checkLocalName,
   connectorOf,
   identify,
   localRoots,
@@ -55,6 +56,7 @@ import {
   type Place,
   projectId,
   relativeTo,
+  repositoryRoot,
 } from "./project.ts";
 import { directory, framed, openWork, renderWork, workDetail } from "./search.ts";
 import { requireRuntime } from "./sqlite.ts";
@@ -127,9 +129,7 @@ async function withDb<T>(role: Exclude<Role, "owner">, fn: (db: Kysely<DB>) => P
 function placeOf(cwd: string): Place {
   const place = identify(cwd);
   if (!place) {
-    throw new Error(
-      `${cwd} has no git remote and no name. Name it with \`sphica project add --name <name>\``,
-    );
+    throw new Error(`${cwd} has no git remote and no name. Name it with \`sphica init --name <name>\``);
   }
   return place;
 }
@@ -137,7 +137,7 @@ function placeOf(cwd: string): Place {
 async function registered(db: Kysely<DB>, place: Place): Promise<number> {
   const id = await projectId(db, place.key);
   if (id === null)
-    throw new Error(`${place.name} is not registered with Sphica. Register it with \`sphica project add\``);
+    throw new Error(`${place.name} is not registered with Sphica. Register it with \`sphica init\``);
   return id;
 }
 
@@ -359,7 +359,7 @@ async function doctor(cwd: string): Promise<void> {
     s.stuck ? "fail" : s.rejected ? "warn" : "ok",
     "Recording",
     `${s.pending} pending${s.flushedAt ? ` / last sent ${new Date(s.flushedAt).toLocaleString("sv-SE")}` : ""}${
-      s.stuck ? ` / failed: ${plain(s.stuck)}` : ""
+      s.stuck ? ` / failed: ${plain(s.stuck)} (send again with sphica capture flush)` : ""
     }${s.unregistered ? ` / ${s.unregistered} set aside for unregistered projects (${unregisteredDir()})` : ""}${
       s.rejected ? ` / ${s.rejected} rejected by the database (${rejectedDir()})` : ""
     }`,
@@ -569,52 +569,8 @@ const excludeRoutes = buildRouteMap({
 });
 
 const projectRoutes = buildRouteMap({
-  docs: { brief: "Register and remove recorded projects" },
+  docs: { brief: "List, exclude, move, and remove recorded projects (sphica init registers one)" },
   routes: {
-    add: buildCommand({
-      docs: { brief: "Register a project (without a remote, name it on this machine with --name)" },
-      parameters: {
-        flags: {
-          cwd: CWD,
-          name: {
-            kind: "parsed",
-            parse: String,
-            brief: "Name a project without a remote on this machine",
-            placeholder: "name",
-            optional: true,
-          },
-        },
-      },
-      func: async (flags: { cwd?: string; name?: string }) => {
-        const cwd = flags.cwd ?? process.cwd();
-        const place = flags.name ? nameLocal(cwd, flags.name) : placeOf(cwd);
-        await withDb("ingest", async (db) => {
-          const added = await db
-            .insertInto("project")
-            .values({ key: place.key, name: place.name })
-            .onConflict((oc) => oc.column("key").doNothing())
-            .returning("id")
-            .executeTakeFirst();
-          console.log(
-            document(
-              "sphica project add",
-              undefined,
-              [
-                {
-                  kind: "fields",
-                  rows: [
-                    ["project", inline(place.name)],
-                    ["key", inline(place.key)],
-                    ["location", inline(place.root)],
-                  ],
-                },
-              ],
-              added ? `${mark("ok")} registered` : `${mark("none")} already registered`,
-            ),
-          );
-        });
-      },
-    }),
     list: buildCommand({
       docs: { brief: "Registered projects and their last sync" },
       parameters: {},
@@ -659,7 +615,7 @@ const projectRoutes = buildRouteMap({
                     {
                       kind: "note",
                       tone: "info",
-                      text: "No registered projects. Register one with sphica project add",
+                      text: "No registered projects. Register one with sphica init in the repository",
                     },
                   ],
               cards.length ? plural(cards.length, "project") : "none registered",
@@ -930,6 +886,66 @@ const captureRoutes = buildRouteMap({
   },
 });
 
+/**
+ * First-time setup: the database, then the project dir belongs to (a repository without a remote needs --name). Safe to run again.
+ * A bad --name, a name that differs from the one already given, and --sync with no project stop before anything is written.
+ */
+async function init(flags: { cwd?: string; name?: string; sync?: boolean }): Promise<void> {
+  const cwd = flags.cwd ?? process.cwd();
+  const found = identify(cwd);
+  if (flags.name !== undefined) {
+    checkLocalName(flags.name);
+    if (found?.key.startsWith("git:"))
+      throw new Error(
+        `${found.root} has a git remote, so its key is ${found.key}. Run sphica init without --name`,
+      );
+    if (found && found.key !== `local:${flags.name}`)
+      throw new Error(
+        `${found.root} is already named ${found.name}. Its records stay under that name, so keep it`,
+      );
+  }
+  if (flags.sync && !found && flags.name === undefined)
+    throw new Error(`${cwd} is not a registered or named project, so there is nothing to sync`);
+  await boxed("sphica init", async () => {
+    dbInit();
+    const place = flags.name !== undefined ? nameLocal(cwd, flags.name) : found;
+    if (!place) {
+      const root = repositoryRoot(cwd);
+      if (root)
+        console.log(
+          indent(`${mark("warn")} ${root} has no git remote. Register it with \`sphica init --name <name>\``),
+        );
+      return;
+    }
+    await withDb("ingest", async (db) => {
+      const added = await db
+        .insertInto("project")
+        .values({ key: place.key, name: place.name })
+        .onConflict((oc) => oc.column("key").doNothing())
+        .returning("id")
+        .executeTakeFirst();
+      console.log(
+        indent(
+          `${mark(added ? "ok" : "none")} ${inline(place.name)} ${added ? "registered" : "already registered"} (${inline(place.key)}, ${inline(place.root)})`,
+        ),
+      );
+      if (!flags.sync) return;
+      const id = await registered(db, place);
+      const step = progress(`${inline(place.name)}: syncing`);
+      try {
+        const lines = await syncOne(db, id, place, false, (what) =>
+          step.message(`${inline(place.name)}: ${what}`),
+        );
+        step.done(`${inline(place.name)}: synced`);
+        for (const line of lines) console.log(indent(`${mark("ok")} ${inline(line)}`));
+      } catch (e) {
+        step.fail(`${inline(place.name)}: failed`);
+        throw e;
+      }
+    });
+  });
+}
+
 /** Adds a heading and closing to admin.ts output lines. A failure closes the heading already printed (not a second block from stricli) */
 async function boxed(head: string, fn: () => unknown): Promise<void> {
   console.log(title(head));
@@ -1021,8 +1037,8 @@ const root = buildRouteMap({
   docs: {
     brief: "Keep and search past decisions, conversations, and documents",
     fullDescription: "Database: ~/.sphica/sphica.db (created by sphica init). No credentials are needed",
-    // Run by the trace Skill, the capture hooks, or the maintainer, not typed by people. They still run, and -H lists them
-    hideRoute: { trace: true, capture: true, advice: true },
+    // Usage shows only what people type. The rest are run by the trace Skill, the capture hooks, maintenance, or on doctor's advice; -H lists them
+    hideRoute: { project: true, who: true, trace: true, capture: true, db: true },
   },
   routes: {
     project: projectRoutes,
@@ -1231,10 +1247,26 @@ const root = buildRouteMap({
     init: buildCommand({
       docs: {
         brief:
-          "Create this machine's database (~/.sphica/sphica.db). An existing one is left alone; safe to run again",
+          "Set up: create this machine's database and register the current repository (safe to run again)",
       },
-      parameters: {},
-      func: () => boxed("sphica init", () => dbInit()),
+      parameters: {
+        flags: {
+          cwd: CWD,
+          name: {
+            kind: "parsed",
+            parse: String,
+            brief: "Name a project without a git remote on this machine",
+            placeholder: "name",
+            optional: true,
+          },
+          sync: {
+            kind: "boolean",
+            brief: "Also import the project's GitHub history and documents now",
+            optional: true,
+          },
+        },
+      },
+      func: (flags: { cwd?: string; name?: string; sync?: boolean }) => init(flags),
     }),
     doctor: buildCommand({
       docs: {

@@ -60,13 +60,14 @@ codex plugin add sphica@sphica
 
 In Codex, open `/hooks` and mark Sphica's hooks as trusted. Nothing is recorded until you do. If a plugin update changes the hooks, trust them again.
 
-**3. Create the database**
+**3. Set up in your repository**
 
 ```bash
+cd ~/Projects/your-repo
 sphica init
 ```
 
-This creates `~/.sphica/sphica.db`. Running it again leaves an existing database untouched.
+This creates `~/.sphica/sphica.db` and registers the repository. Running it again leaves both untouched. If the repository has no `origin` remote, give it a name: `sphica init --name <name>`. Add `--sync` to import its GitHub history and docs right away.
 
 **4. Check the setup**
 
@@ -78,14 +79,7 @@ sphica doctor
 
 ## Quick start
 
-Sphica writes sessions to the database only for repositories you register. A registered repository is called a project.
-
-```bash
-cd ~/Projects/your-repo
-sphica project add
-```
-
-If the repository has no `origin` remote, give it a name: `sphica project add --name <name>`.
+Sphica writes sessions to the database only for repositories you register. A registered repository is called a project; run `sphica init` in each repository you want recorded.
 
 Then work as usual in Claude Code or Codex. To bring back earlier decisions, ask the agent:
 
@@ -183,12 +177,12 @@ Run `sphica doctor` first. It shows which part is out of date or not working. Co
 
 | Command | What it does |
 |---|---|
-| `sphica init` | Create the database |
-| `sphica doctor` | Check versions, the database, and recording |
-| `sphica project add` | Register the current repository as a project |
+| `sphica init` | Create the database and register the current repository |
+| `sphica doctor` | Check versions, the database, recording, and each project's last import |
 | `sphica harvest` | Import GitHub pull requests, issues, and Markdown docs |
+| `sphica advice` | See how often the edit hook showed constraints |
 
-Run `sphica --help` for the everyday commands, `sphica -H` for every command (including the ones agents and maintenance use), and `sphica <command> --help` for each command's options.
+Run `sphica --help` for these, `sphica -H` for every command (managing projects and people, and the ones agents and maintenance use), and `sphica <command> --help` for each command's options.
 
 ## Security
 

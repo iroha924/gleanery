@@ -32,7 +32,7 @@ await withTempDir(async (dir) => {
 
     // ---- CLI: create, import, then delete, in that order ----
     // The repo has a remote, so no --name (the CLI would refuse it). The key becomes git:github.com/example/live.
-    note("project add", runCli(["project", "add", "--cwd", repo], dir, covDir));
+    note("init (register)", runCli(["init", "--cwd", repo], dir, covDir));
     note("project list", runCli(["project", "list"], dir, covDir));
     // Document exclusions. add creates the connector, list reads with a join, and remove filters with a subquery.
     note("exclude add", runCli(["project", "exclude", "add", "--cwd", repo, "docs"], dir, covDir));
@@ -126,7 +126,7 @@ await withTempDir(async (dir) => {
     note("capture flush", runCli(["capture", "flush"], dir, covDir, asSession("live-1")));
 
     // Records from an unregistered project are set aside, not dropped (#104). If the owner works on a new machine before
-    // running project add, those messages land here. Deleting them would lose them for good.
+    // running init, those messages land here. Deleting them would lose them for good.
     const stranger = makeRepo(dir, "https://github.com/example/stranger.git", "stranger");
     const strangerTurn = { session_id: "live-3", prompt_id: "p9", cwd: stranger };
     const strangerAs = { cwd: stranger, CLAUDE_CODE_SESSION_ID: "live-3" };
@@ -158,7 +158,7 @@ await withTempDir(async (dir) => {
     fs.writeFileSync(stale, JSON.stringify({ v: 1, kind: "message", project: "git:example/none" }));
 
     // Registering the project brings the set-aside records in. Without this link, setting them aside would be pointless.
-    note("project add (set-aside project)", runCli(["project", "add", "--cwd", stranger], dir, covDir));
+    note("init (set-aside project)", runCli(["init", "--cwd", stranger], dir, covDir));
     const retried = runCli(["capture", "flush"], dir, covDir, strangerAs);
     if (!/new messages\s+[1-9]/.test(retried.out)) {
       failures.push(`set-aside records were not stored after registering\n${retried.out.slice(0, 400)}`);
@@ -215,11 +215,7 @@ await withTempDir(async (dir) => {
         `trace context does not head the owner's messages with "## Owner"\n${context.out.slice(0, 400)}`,
       );
     const evil = makeRepo(dir, `https://github.com/example/ev${esc}il.git`, "evil\u001b[2Jdir");
-    clean(
-      "project add (remote and directory name)",
-      runCli(["project", "add", "--cwd", evil], dir, covDir),
-      "evil",
-    );
+    clean("init (remote and directory name)", runCli(["init", "--cwd", evil], dir, covDir), "evil");
     clean("project list", runCli(["project", "list"], dir, covDir), "example/ev");
     // The doctor exit code depends on the local plugin state, so it is not checked (same reason as above)
     clean("doctor", runCli(["doctor"], dir, covDir), "example/ev", { status: false });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { framedShown, read, renderHits, type Shown, searchSplit, splitJson } from "../src/search.ts";
+import { peopleTool } from "../src/tools.ts";
 import { knowledge, message, project, type TempDb, tempDb } from "./temp-db.ts";
 
 // Which records a response shows in full comes from the renderer, never from parsing its text.
@@ -117,4 +118,28 @@ test("split JSON shows only the entries that fit, with their field", async () =>
     refs(few),
     json.records.map((x) => x.ref),
   );
+});
+
+// Names come from GitHub, so the list is framed like every other MCP reply, and a control sequence in a name never reaches the agent
+test("the people tool lists the directory in the frame and marks the owner", async () => {
+  const t = tempDb();
+  try {
+    assert.match((await peopleTool(t.reader)).text, /The directory is empty/);
+    const me = await t.ingest
+      .insertInto("person")
+      .values({ display_name: "Owner\u001b[2J", is_self: 1 })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    await t.ingest
+      .insertInto("person_identity")
+      .values({ provider: "github", external_id: "1", handle: "iroha924", person_id: me.id })
+      .execute();
+    const r = await peopleTool(t.reader);
+    assert.equal(r.isError, undefined, r.text);
+    assert.match(r.text, /- Owner \(the owner\): iroha924/);
+    assert.equal(r.text.includes("\u001b"), false);
+    assert.match(r.text, /^\[record [0-9a-f]{12} begins\]/);
+  } finally {
+    await t.done();
+  }
 });

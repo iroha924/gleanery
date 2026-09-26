@@ -89,24 +89,26 @@ test("no arguments and --help print usage for that level and succeed", () => {
     assert.match(r.out, /Usage:/, `${args.join(" ")}: ${r.out}`);
   }
   // Usage is built from the declarations. Check that command names show up there so no hand-copied text drifts.
-  assert.match(run("--help").out, /^ {2}db {2}/m);
+  assert.match(run("--help").out, /^ {2}harvest {2}/m);
   assert.match(run("db", "--help").out, /^ {2}migrate {2}/m);
   assert.match(run("project", "--help").out, /^ {2}forget {2}/m);
 });
 
-// Commands only agents, hooks, or the maintainer run stay out of usage; -H still lists them, and they still run
-test("usage hides commands people do not type, and -H shows them", () => {
-  const usage = run("--help").out;
-  for (const name of ["trace", "capture", "advice"])
-    assert.doesNotMatch(usage, new RegExp(`^ {2}${name} {2}`, "m"), name);
+// Usage lists only what people type. Commands for agents, hooks, and maintenance still run, and -H lists them
+test("usage lists only init, doctor, advice, and harvest, and -H shows the rest", () => {
+  const commands = (out: string) =>
+    [...(out.split("Commands:")[1] ?? "").matchAll(/^ {2}(\S+) {2}/gm)].map((m) => m[1]);
+  assert.deepEqual(commands(run("--help").out).sort(), ["advice", "doctor", "harvest", "init"]);
+  const all = commands(run("-H").out);
+  for (const name of ["project", "who", "db", "trace", "capture"]) assert.ok(all.includes(name), name);
   const db = run("db", "--help").out;
   for (const name of ["reindex", "terms"]) assert.doesNotMatch(db, new RegExp(`^ {2}${name} {2}`, "m"), name);
   assert.match(db, /^ {2}migrate {2}/m);
-  const all = run("-H").out;
-  for (const name of ["trace", "capture", "advice"])
-    assert.match(all, new RegExp(`^ {2}${name} {2}`, "m"), name);
-  assert.match(run("db", "-H").out, /^ {2}reindex {2}/m);
   assert.equal(run("trace", "--help").code, 0);
+  // init registers the project now, so the old command is gone without an alias
+  const add = run("project", "add");
+  assert.notEqual(add.code, 0);
+  assert.match(add.out, /Unknown command: add/, add.out);
 });
 
 test("trace check validates the record shape without touching the database", () => {

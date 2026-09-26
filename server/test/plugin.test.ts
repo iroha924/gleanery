@@ -448,7 +448,7 @@ test("MCP server instructions and tool descriptions fit in 2,048 characters and 
       `server instructions are ${[...instructions].length} characters`,
     );
     const { tools } = await client.listTools();
-    assert.deepEqual(tools.map((t) => t.name).sort(), ["check_path", "read", "recall"]);
+    assert.deepEqual(tools.map((t) => t.name).sort(), ["check_path", "people", "read", "recall"]);
     // The agent reads these, so "me" must name the owner, not the agent ("you").
     const recall = tools.find((t) => t.name === "recall");
     const who =

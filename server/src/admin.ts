@@ -309,7 +309,7 @@ function projectFor(raw: DatabaseSync, place: Named): number {
     | { id: number }
     | undefined;
   if (!project)
-    throw new Error(`${place.name} is not registered with Sphica. Register it with \`sphica project add\``);
+    throw new Error(`${place.name} is not registered with Sphica. Register it with \`sphica init\``);
   return project.id;
 }
 

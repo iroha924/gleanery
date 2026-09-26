@@ -60,13 +60,14 @@ codex plugin add sphica@sphica
 
 Codex では `/hooks` を開き、Sphica のフックを信頼してください。信頼するまで何も記録されません。plugin の更新でフックが変わったら、もう一度信頼します。
 
-**3. DB を作る**
+**3. リポジトリで始める**
 
 ```bash
+cd ~/Projects/your-repo
 sphica init
 ```
 
-`~/.sphica/sphica.db` ができます。もう一度打っても、既にある DB には触りません。
+`~/.sphica/sphica.db` を作り、このリポジトリを登録します。もう一度打っても、DB にも登録にも触りません。`origin` の remote が無いリポジトリは、名前を付けて登録します: `sphica init --name <名前>`。`--sync` を付けると、GitHub の履歴と文書もすぐに取り込みます。
 
 **4. 確かめる**
 
@@ -78,14 +79,7 @@ sphica doctor
 
 ## 使い始める
 
-Sphica がセッションを DB に書くのは、登録したリポジトリだけです。登録したリポジトリを「プロジェクト」と呼びます。
-
-```bash
-cd ~/Projects/your-repo
-sphica project add
-```
-
-`origin` の remote が無いリポジトリは、名前を付けて登録します: `sphica project add --name <名前>`。
+Sphica がセッションを DB に書くのは、登録したリポジトリだけです。登録したリポジトリを「プロジェクト」と呼びます。記録したいリポジトリごとに `sphica init` を打ってください。
 
 あとはいつもどおり Claude Code か Codex で作業します。前の判断を引きたいときは、エージェントにそのまま聞きます。
 
@@ -183,12 +177,12 @@ codex plugin remove sphica@sphica
 
 | コマンド | すること |
 |---|---|
-| `sphica init` | DB を作る |
-| `sphica doctor` | バージョン・DB・記録を確かめる |
-| `sphica project add` | いまのリポジトリをプロジェクトとして登録する |
+| `sphica init` | DB を作り、いまのリポジトリを登録する |
+| `sphica doctor` | バージョン・DB・記録と、プロジェクトごとの最後の取り込みを確かめる |
 | `sphica harvest` | GitHub の PR・issue と Markdown の文書を取り込む |
+| `sphica advice` | 編集のフックが制約を出した割合を見る |
 
-ふだん使うコマンドは `sphica --help`、エージェントや保守で使うものも含めた全部の一覧は `sphica -H`、各コマンドのオプションは `sphica <コマンド> --help` で見られます。
+ふだん使うこれらは `sphica --help`、プロジェクトや人の管理、エージェントや保守で使うものも含めた全部の一覧は `sphica -H`、各コマンドのオプションは `sphica <コマンド> --help` で見られます。
 
 ## セキュリティ
 

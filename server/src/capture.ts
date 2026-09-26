@@ -37,7 +37,7 @@ const stateFile = (): string => path.join(os.homedir(), ".sphica", "capture.json
 export const rejectedDir = (): string => path.join(spoolDir(), "rejected");
 /**
  * Records of projects not registered yet. Kept here instead of deleted. Hooks do not touch the database, so whether a project is
- * registered is known only when sending. Deleting them would lose the messages in between even after a later `project add`.
+ * registered is known only when sending. Deleting them would lose the messages in between even after a later `sphica init`.
  * The next send reads here too, so registering is enough for them to go in.
  */
 export const unregisteredDir = (): string => path.join(spoolDir(), "unregistered");
@@ -595,7 +595,7 @@ const rejected = (e: unknown): boolean => REJECTED.has(sqliteCode(e) ?? -1);
 
 /**
  * Sends the queue to the database. **The connection is capture (append only).** Sending the same thing twice adds no rows.
- * Records of unregistered projects are dropped (only projects added with `sphica project add` are recorded).
+ * Records of unregistered projects are dropped (only projects registered with `sphica init` are recorded).
  * **One invalid record never stops later records.** When a batch fails on a bad value it resends one by one and moves only the failed records
  * to rejected/ (never deleting them). Failures such as a lost connection keep the whole batch queued for the next send.
  *
